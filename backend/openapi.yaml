@@ -1,0 +1,4034 @@
+﻿openapi: 3.0.3
+info:
+  title: Sistema ERP API
+  version: 1.1.0
+  description: |
+    Contrato técnico oficial da API v1 do backend central do Sistema ERP.
+
+    Fonte de runtime: backend/routes/api.php.
+    Fonte canônica de contrato técnico: backend/openapi.yaml.
+    Guia humano: documentacao/03-arquitetura-tecnica/contrato-api-backend-central.md.
+
+    Todos os endpoints JSON usam envelope com status, data, error e meta.
+    Endpoints protegidos usam Bearer Token emitido pelo backend central.
+  contact:
+    name: Equipe Dev
+    email: dev@example.com
+  license:
+    name: Proprietary
+
+servers:
+  - url: http://127.0.0.1:8000/api/v1
+    description: Desenvolvimento local
+  - url: https://api.example.com/api/v1
+    description: Produção
+
+security:
+  - BearerAuth: []
+
+tags:
+  - name: Health
+    description: Verificação operacional da API e dependências essenciais.
+  - name: Autenticação
+    description: Login, sessão, perfil e senha.
+  - name: Dashboard
+    description: Sumários agregados para telas iniciais.
+  - name: Notificações
+    description: Notificações do usuário autenticado.
+  - name: Ordens
+    description: Ordens de serviço, status e anexos autenticados.
+  - name: Orçamentos
+    description: Fluxo comercial de orçamentos com catalogo, itens e histórico.
+  - name: Clientes
+    description: Cadastro operacional de clientes.
+  - name: Fornecedores
+    description: Cadastro operacional de fornecedores.
+  - name: Configurações
+    description: Integrações, parâmetros operacionais e webhooks.
+  - name: Equipamentos
+    description: Consulta, cadastro operacional, fotos privadas e apoio de coletor remoto.
+  - name: Usuários
+    description: Administração de usuários.
+  - name: Grupos
+    description: Administração de grupos e permissões.
+  - name: Webhooks
+    description: Entradas externas autenticadas por token específico.
+  - name: Catálogos
+    description: Catálogos centrais de módulos e permissões.
+  - name: Central de Atendimento
+    description: Inbox de conversas multicanal (Fase 1 - WhatsApp via Evolution API) com tempo real via Reverb.
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum
+      description: Token Bearer retornado por POST /auth/login.
+
+  parameters:
+    PageParam:
+      name: page
+      in: query
+      description: Página solicitada.
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPageParam:
+      name: per_page
+      in: query
+      description: Itens por página. O backend aplica limite máximo por endpoint.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 15
+    SearchParam:
+      name: search
+      in: query
+      description: Busca textual.
+      schema:
+        type: string
+    QParam:
+      name: q
+      in: query
+      description: Alias de busca textual para endpoints que aceitam `q`.
+      schema:
+        type: string
+    OrderId:
+      name: order
+      in: path
+      required: true
+      description: Identificador da ordem de serviço.
+      schema:
+        type: integer
+        minimum: 1
+    PhotoId:
+      name: photo
+      in: path
+      required: true
+      description: Identificador da foto da OS.
+      schema:
+        type: integer
+        minimum: 1
+    DocumentId:
+      name: document
+      in: path
+      required: true
+      description: Identificador do documento da OS.
+      schema:
+        type: integer
+        minimum: 1
+    BudgetId:
+      name: budget
+      in: path
+      required: true
+      description: Identificador do orçamento.
+      schema:
+        type: integer
+        minimum: 1
+    ClientId:
+      name: client
+      in: path
+      required: true
+      description: Identificador do cliente.
+      schema:
+        type: integer
+        minimum: 1
+    SupplierId:
+      name: supplier
+      in: path
+      required: true
+      description: Identificador do fornecedor.
+      schema:
+        type: integer
+        minimum: 1
+    EquipmentId:
+      name: equipment
+      in: path
+      required: true
+      description: Identificador do equipamento.
+      schema:
+        type: integer
+        minimum: 1
+    UserId:
+      name: user
+      in: path
+      required: true
+      description: Identificador do usuário.
+      schema:
+        type: integer
+        minimum: 1
+    GroupId:
+      name: group
+      in: path
+      required: true
+      description: Identificador do grupo.
+      schema:
+        type: integer
+        minimum: 1
+    NotificationId:
+      name: notification
+      in: path
+      required: true
+      description: Identificador da notificação.
+      schema:
+        type: integer
+        minimum: 1
+    ConversationId:
+      name: conversation
+      in: path
+      required: true
+      description: Identificador da conversa na Central de Atendimento.
+      schema:
+        type: integer
+        minimum: 1
+    ChatAttachmentId:
+      name: attachment
+      in: path
+      required: true
+      description: Identificador do anexo privado de uma mensagem do chat.
+      schema:
+        type: integer
+        minimum: 1
+
+  schemas:
+    ApiMeta:
+      type: object
+      required:
+        - timestamp
+        - request_id
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-06-24T10:00:00-03:00"
+        request_id:
+          type: string
+          example: "req_550e8400-e29b-41d4-a716-446655440000"
+        checked_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Presente em respostas de health check.
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+    Pagination:
+      type: object
+      properties:
+        current_page:
+          type: integer
+          example: 1
+        per_page:
+          type: integer
+          example: 15
+        total:
+          type: integer
+          example: 120
+        last_page:
+          type: integer
+          example: 8
+        from:
+          type: integer
+          nullable: true
+          example: 1
+        to:
+          type: integer
+          nullable: true
+          example: 15
+
+    ApiSuccess:
+      type: object
+      required:
+        - status
+        - data
+        - error
+        - meta
+      properties:
+        status:
+          type: string
+          enum:
+            - success
+          example: success
+        data:
+          description: Payload específico do endpoint.
+          nullable: true
+        error:
+          nullable: true
+          example: null
+        meta:
+          $ref: "#/components/schemas/ApiMeta"
+
+    ApiError:
+      type: object
+      required:
+        - status
+        - data
+        - error
+        - meta
+      properties:
+        status:
+          type: string
+          enum:
+            - error
+          example: error
+        data:
+          nullable: true
+          example: null
+        error:
+          type: object
+          required:
+            - code
+            - message
+            - details
+          properties:
+            code:
+              type: string
+              example: AUTH_REQUIRED
+            message:
+              type: string
+              example: Usuário não autenticado.
+            details:
+              nullable: true
+        meta:
+          $ref: "#/components/schemas/ApiMeta"
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        nome:
+          type: string
+          example: João Silva
+        email:
+          type: string
+          format: email
+          example: joao@example.com
+        telefone:
+          type: string
+          nullable: true
+          example: "11999999999"
+        perfil:
+          type: string
+          example: admin
+        grupo_id:
+          type: integer
+          nullable: true
+          example: 1
+        group:
+          $ref: "#/components/schemas/GroupNullable"
+        modules:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        permissions:
+          type: array
+          items:
+            type: string
+          example:
+            - os:visualizar
+            - clientes:editar
+        foto:
+          type: string
+          nullable: true
+        ativo:
+          type: boolean
+          example: true
+        ultimo_acesso:
+          type: string
+          format: date-time
+          nullable: true
+
+    Group:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        nome:
+          type: string
+          example: Administradores
+        descricao:
+          type: string
+          nullable: true
+        sistema:
+          type: boolean
+          example: false
+        users_count:
+          type: integer
+          example: 3
+
+    GroupNullable:
+      nullable: true
+      allOf:
+        - $ref: "#/components/schemas/Group"
+
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 255
+        device_name:
+          type: string
+          maxLength: 100
+          nullable: true
+          default: mobile-app
+
+    LoginData:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        expires_at:
+          type: string
+          format: date-time
+        user:
+          $ref: "#/components/schemas/User"
+
+    ForgotPasswordRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        frontend:
+          type: string
+          description: Canal aprovado para montar o link de redefinição. O backend resolve a URL por configuração, sem aceitar URL livre do cliente.
+          enum:
+            - desktop
+            - sistema-hml
+          default: desktop
+
+    ResetPasswordRequest:
+      type: object
+      required:
+        - token
+        - email
+        - password
+        - password_confirmation
+      properties:
+        token:
+          type: string
+          maxLength: 255
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 255
+        password_confirmation:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 255
+
+    UpdateProfileRequest:
+      type: object
+      required:
+        - nome
+      properties:
+        nome:
+          type: string
+          minLength: 3
+          maxLength: 100
+
+    UpdatePasswordRequest:
+      type: object
+      required:
+        - current_password
+        - password
+        - password_confirmation
+      properties:
+        current_password:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 255
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 255
+        password_confirmation:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 255
+
+    HealthData:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+        version:
+          type: string
+        environment:
+          type: string
+        laravel:
+          type: string
+        database:
+          type: string
+          example: ok
+
+    DashboardSummary:
+      type: object
+      additionalProperties: true
+      description: Sumário agregado do dashboard conforme permissões do usuário autenticado.
+
+    Notification:
+      type: object
+      properties:
+        id:
+          type: integer
+        tipo_evento:
+          type: string
+        titulo:
+          type: string
+        corpo:
+          type: string
+        rota_destino:
+          type: string
+          nullable: true
+        payload:
+          type: object
+          additionalProperties: true
+          nullable: true
+        lida_em:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ConversationContact:
+      type: object
+      properties:
+        id:
+          type: integer
+          nullable: true
+        nome:
+          type: string
+          nullable: true
+        telefone:
+          type: string
+          nullable: true
+        cliente_id:
+          type: integer
+          nullable: true
+        cliente_nome:
+          type: string
+          nullable: true
+        client:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ChatClientSummary"
+
+    ChatClientSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        nome_razao:
+          type: string
+        cpf_cnpj:
+          type: string
+        cidade:
+          type: string
+        uf:
+          type: string
+        telefone1:
+          type: string
+        telefone2:
+          type: string
+        telefone_contato:
+          type: string
+        nome_contato:
+          type: string
+
+    ChatClientSearchResult:
+      type: object
+      properties:
+        id:
+          type: integer
+        nome_razao:
+          type: string
+        cpf_cnpj:
+          type: string
+        cidade:
+          type: string
+        uf:
+          type: string
+        telefone_principal:
+          type: string
+          nullable: true
+        telefones:
+          type: array
+          items:
+            type: string
+        nome_contato:
+          type: string
+        can_start_conversation:
+          type: boolean
+
+    ChatAttachment:
+      type: object
+      properties:
+        id:
+          type: integer
+        attachment_type:
+          type: string
+          enum: [image, audio, video, document, unknown]
+        transfer_status:
+          type: string
+          enum: [available, failed]
+        original_name:
+          type: string
+          nullable: true
+        mime_type:
+          type: string
+          nullable: true
+        byte_size:
+          type: integer
+          nullable: true
+        available:
+          type: boolean
+        url:
+          type: string
+          description: Endpoint autenticado para download ou streaming do anexo.
+        provider_url:
+          type: string
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+          nullable: true
+
+    ConversationMessagePreview:
+      type: object
+      properties:
+        id:
+          type: integer
+        message_type:
+          type: string
+          enum: [incoming, outgoing, activity]
+        content_type:
+          type: string
+          enum: [text, image, audio, video, document, mixed, unknown]
+        sender_type:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, sent, delivered, read, failed]
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        preview:
+          type: string
+        attachment_count:
+          type: integer
+
+    ConversationSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        display_id:
+          type: integer
+        status:
+          type: string
+          enum: [open, resolved, pending, snoozed]
+        status_label:
+          type: string
+        last_activity_at:
+          type: string
+          format: date-time
+          nullable: true
+        unread:
+          type: boolean
+        unread_count:
+          type: integer
+        contact:
+          $ref: "#/components/schemas/ConversationContact"
+        last_message:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/ConversationMessagePreview"
+
+    ChatMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversa_id:
+          type: integer
+        message_type:
+          type: string
+          enum: [incoming, outgoing, activity]
+        content_type:
+          type: string
+          enum: [text, image, audio, video, document, mixed, unknown]
+        conteudo:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [pending, sent, delivered, read, failed]
+        sender_type:
+          type: string
+          nullable: true
+        sender_id:
+          type: integer
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        attachments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChatAttachment"
+
+    ConversationDetail:
+      allOf:
+        - $ref: "#/components/schemas/ConversationSummary"
+        - type: object
+          properties:
+            messages:
+              type: array
+              items:
+                $ref: "#/components/schemas/ChatMessage"
+
+    StartConversationRequest:
+      type: object
+      description: >
+        Inicia uma conversa por cliente do sistema_hml ou por telefone livre. Pelo menos um
+        entre `client_id` ou `telefone` deve ser informado. A mensagem inicial e os anexos
+        são opcionais.
+      properties:
+        client_id:
+          type: integer
+          minimum: 1
+          nullable: true
+        telefone:
+          type: string
+          nullable: true
+        nome:
+          type: string
+          nullable: true
+        mensagem:
+          type: string
+          maxLength: 4096
+          nullable: true
+        attachments:
+          type: array
+          items:
+            type: string
+            format: binary
+
+    SendConversationMessageRequest:
+      type: object
+      description: Envia texto, anexos ou ambos para uma conversa existente.
+      properties:
+        conteudo:
+          type: string
+          maxLength: 4096
+          nullable: true
+        attachments:
+          type: array
+          items:
+            type: string
+            format: binary
+
+    Order:
+      type: object
+      additionalProperties: true
+      properties:
+        id:
+          type: integer
+        numero_os:
+          type: string
+        cliente_id:
+          type: integer
+        cliente_nome:
+          type: string
+        cliente_telefone:
+          type: string
+          description: Telefone do cliente (telefone1, com fallback para telefone_contato) já formatado para link de WhatsApp.
+        equipamento_id:
+          type: integer
+        equipamento_resumo_curto:
+          type: string
+          description: Resumo curto (tipo + marca + modelo) para exibição em listagem; o resumo técnico completo continua em equipamento_resumo_tecnico.
+        equipamento_foto_url:
+          type: string
+          nullable: true
+          description: URL autenticada da foto principal do equipamento (rota de fotos do módulo de equipamentos), nula quando não há foto principal cadastrada.
+        status:
+          type: string
+        estado_fluxo:
+          type: string
+        prioridade:
+          type: string
+        data_entrada:
+          type: string
+          format: date-time
+          nullable: true
+        data_previsao:
+          type: string
+          format: date
+          nullable: true
+        data_conclusao:
+          type: string
+          format: date-time
+          nullable: true
+        data_entrega:
+          type: string
+          format: date-time
+          nullable: true
+        prazo:
+          type: object
+          description: Estado de prazo calculado a partir de data_previsao/data_conclusao/data_entrega.
+          properties:
+            estado:
+              type: string
+              enum:
+                - sem_previsao
+                - atrasado
+                - vence_hoje
+                - critico
+                - no_prazo
+                - concluido_no_prazo
+                - concluido_atrasado
+            label:
+              type: string
+            dias:
+              type: integer
+              nullable: true
+        orcamento:
+          type: object
+          nullable: true
+          description: Orçamento mais recente vinculado à OS (tabela orcamentos), nulo quando não há orçamento vinculado.
+          properties:
+            id:
+              type: integer
+            numero:
+              type: string
+            status:
+              type: string
+            status_label:
+              type: string
+            status_color:
+              type: string
+        valor_mao_obra:
+          type: string
+          nullable: true
+        valor_pecas:
+          type: string
+          nullable: true
+        desconto:
+          type: string
+          nullable: true
+        valor_final:
+          type: string
+          nullable: true
+        valor_recebido:
+          type: string
+          nullable: true
+          description: Soma dos financeiro_movimentos do título a receber (financeiro) mais recente vinculado à OS; nulo quando não há título vinculado.
+        saldo:
+          type: string
+          nullable: true
+          description: valor_final menos valor_recebido; nulo quando não há título financeiro vinculado.
+
+    UpsertOrderRequest:
+      type: object
+      properties:
+        cliente_id:
+          type: integer
+          minimum: 1
+        equipamento_id:
+          type: integer
+          minimum: 1
+        tecnico_id:
+          type: integer
+          minimum: 1
+          nullable: true
+        status:
+          type: string
+          maxLength: 80
+          nullable: true
+        estado_fluxo:
+          type: string
+          maxLength: 40
+          nullable: true
+        prioridade:
+          type: string
+          enum:
+            - baixa
+            - normal
+            - alta
+            - urgente
+          nullable: true
+        relato_cliente:
+          type: string
+        diagnostico_tecnico:
+          type: string
+          nullable: true
+        solucao_aplicada:
+          type: string
+          nullable: true
+        procedimentos_executados:
+          type: string
+          nullable: true
+        acessorios:
+          type: string
+          nullable: true
+        forma_pagamento:
+          type: string
+          maxLength: 30
+          nullable: true
+        data_abertura:
+          type: string
+          format: date
+          nullable: true
+        data_entrada:
+          type: string
+          format: date
+          nullable: true
+        data_previsao:
+          type: string
+          format: date
+          nullable: true
+        data_conclusao:
+          type: string
+          format: date
+          nullable: true
+        data_entrega:
+          type: string
+          format: date
+          nullable: true
+        baixa_tecnica_em:
+          type: string
+          format: date
+          nullable: true
+        baixa_tecnica_por:
+          type: integer
+          minimum: 1
+          nullable: true
+        valor_mao_obra:
+          type: number
+          minimum: 0
+          nullable: true
+        valor_pecas:
+          type: number
+          minimum: 0
+          nullable: true
+        valor_total:
+          type: number
+          minimum: 0
+          nullable: true
+        desconto:
+          type: number
+          minimum: 0
+          nullable: true
+        valor_final:
+          type: number
+          minimum: 0
+          nullable: true
+        orcamento_aprovado:
+          type: boolean
+          nullable: true
+        data_aprovacao:
+          type: string
+          format: date
+          nullable: true
+        orcamento_pdf:
+          type: string
+          maxLength: 255
+          nullable: true
+        garantia_dias:
+          type: integer
+          minimum: 0
+          nullable: true
+        garantia_validade:
+          type: string
+          format: date
+          nullable: true
+        observacoes_internas:
+          type: string
+          nullable: true
+        observacoes_cliente:
+          type: string
+          nullable: true
+
+    UpdateOrderStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          maxLength: 80
+        observacao:
+          type: string
+          maxLength: 2000
+          nullable: true
+
+    CloseOrderReceipt:
+      type: object
+      required:
+        - valor
+      properties:
+        valor:
+          type: number
+          minimum: 0.01
+        classificacao_recebimento:
+          type: string
+          nullable: true
+          enum: [baixa, adiantamento, sinal]
+          description: "Default baixa. Forçado para baixa quando encerrar_como é devolvido_sem_reparo/descartado."
+        forma_pagamento:
+          type: string
+          nullable: true
+          enum: [dinheiro, cartao_credito, cartao_debito, pix, boleto, transferencia]
+        data_pagamento:
+          type: string
+          format: date
+          nullable: true
+          description: "Default: data_entrega."
+        observacoes:
+          type: string
+          maxLength: 2000
+          nullable: true
+        operadora_id:
+          type: integer
+          nullable: true
+          description: "Obrigatório quando forma_pagamento contém 'cartao'. ID de financeiro_cartao_operadoras."
+        bandeira_id:
+          type: integer
+          nullable: true
+          description: ID de financeiro_cartao_bandeiras. Quando omitido, usa a taxa genérica da operadora (sem bandeira específica).
+        modalidade:
+          type: string
+          nullable: true
+          enum: [credito, debito]
+          description: "Obrigatório quando forma_pagamento contém 'cartao'. Derivado de forma_pagamento se omitido."
+        parcelas:
+          type: integer
+          nullable: true
+          minimum: 1
+          maximum: 99
+          description: "Ignorado (forçado para 1) quando modalidade=debito."
+
+    CloseOrderRequest:
+      type: object
+      required:
+        - encerrar_como
+        - data_entrega
+      properties:
+        encerrar_como:
+          type: string
+          maxLength: 80
+          description: "Código de status com status_final=1 ativo no catálogo (ex.: entregue_reparado, devolvido_sem_reparo, descartado)."
+        data_entrega:
+          type: string
+          format: date
+        observacao:
+          type: string
+          maxLength: 2000
+          nullable: true
+        recebimentos:
+          type: array
+          nullable: true
+          description: "Lista de recebimentos desta baixa. Cada item em cartao_credito/cartao_debito é simulado via FinanceiroCartaoService antes de qualquer gravação; a taxa apurada gera uma despesa (financeiro tipo=pagar, categoria='Taxa de cartão') e um registro em financeiro_movimentos_cartao. Se o total recebido for menor que o valor da OS (e o encerramento não for devolvido_sem_reparo/descartado), a OS vai para o status intermediário entregue_pagamento_pendente e 3 cobranças são agendadas (D+1/D+3/D+5)."
+          items:
+            $ref: "#/components/schemas/CloseOrderReceipt"
+        notificar_cliente:
+          type: boolean
+          nullable: true
+          description: Quando true, tenta notificar o cliente por WhatsApp agora (envio único, sem agendamento). Falha no envio não desfaz a baixa.
+        agendar_retorno:
+          type: boolean
+          nullable: true
+          description: Quando true, cria um follow-up de retorno pós-serviço (crm_followups), deduplicado por OS+data.
+        retorno_data:
+          type: string
+          format: date
+          nullable: true
+          description: "Default: hoje + 180 dias."
+
+    Client:
+      type: object
+      properties:
+        id:
+          type: integer
+        tipo_pessoa:
+          type: string
+        nome_razao:
+          type: string
+        cpf_cnpj:
+          type: string
+          nullable: true
+        rg_ie:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        telefone1:
+          type: string
+        telefone2:
+          type: string
+          nullable: true
+        nome_contato:
+          type: string
+          nullable: true
+        telefone_contato:
+          type: string
+          nullable: true
+        cidade:
+          type: string
+          nullable: true
+        uf:
+          type: string
+          nullable: true
+        status_cadastro:
+          type: string
+
+    ClientUpsertRequest:
+      type: object
+      required:
+        - tipo_pessoa
+        - nome_razao
+        - telefone1
+        - status_cadastro
+      properties:
+        tipo_pessoa:
+          type: string
+          maxLength: 20
+        nome_razao:
+          type: string
+          maxLength: 100
+        cpf_cnpj:
+          type: string
+          maxLength: 20
+          nullable: true
+        rg_ie:
+          type: string
+          maxLength: 20
+          nullable: true
+        email:
+          type: string
+          format: email
+          maxLength: 100
+          nullable: true
+        telefone1:
+          type: string
+          maxLength: 20
+        telefone2:
+          type: string
+          maxLength: 20
+          nullable: true
+        nome_contato:
+          type: string
+          maxLength: 100
+          nullable: true
+        telefone_contato:
+          type: string
+          maxLength: 20
+          nullable: true
+        cep:
+          type: string
+          maxLength: 10
+          nullable: true
+        endereco:
+          type: string
+          maxLength: 100
+          nullable: true
+        numero:
+          type: string
+          maxLength: 10
+          nullable: true
+        complemento:
+          type: string
+          maxLength: 50
+          nullable: true
+        referencia:
+          type: string
+          maxLength: 255
+          nullable: true
+        bairro:
+          type: string
+          maxLength: 50
+          nullable: true
+        cidade:
+          type: string
+          maxLength: 50
+          nullable: true
+        uf:
+          type: string
+          maxLength: 2
+          nullable: true
+        observacoes:
+          type: string
+          nullable: true
+        status_cadastro:
+          type: string
+          maxLength: 20
+        preferencia_contato:
+          type: string
+          maxLength: 50
+          nullable: true
+
+    Supplier:
+      type: object
+      properties:
+        id:
+          type: integer
+        tipo_pessoa:
+          type: string
+        nome_fantasia:
+          type: string
+        razao_social:
+          type: string
+          nullable: true
+        cnpj_cpf:
+          type: string
+          nullable: true
+        ie_rg:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        telefone1:
+          type: string
+        telefone2:
+          type: string
+          nullable: true
+        cep:
+          type: string
+          nullable: true
+        endereco:
+          type: string
+          nullable: true
+        numero:
+          type: string
+          nullable: true
+        complemento:
+          type: string
+          nullable: true
+        bairro:
+          type: string
+          nullable: true
+        cidade:
+          type: string
+          nullable: true
+        uf:
+          type: string
+          nullable: true
+        observacoes:
+          type: string
+          nullable: true
+        ativo:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    SupplierUpsertRequest:
+      type: object
+      required:
+        - tipo_pessoa
+        - nome_fantasia
+        - telefone1
+      properties:
+        tipo_pessoa:
+          type: string
+          maxLength: 20
+        nome_fantasia:
+          type: string
+          maxLength: 100
+        razao_social:
+          type: string
+          maxLength: 100
+          nullable: true
+        cnpj_cpf:
+          type: string
+          maxLength: 20
+          nullable: true
+        ie_rg:
+          type: string
+          maxLength: 20
+          nullable: true
+        email:
+          type: string
+          format: email
+          maxLength: 100
+          nullable: true
+        telefone1:
+          type: string
+          maxLength: 20
+        telefone2:
+          type: string
+          maxLength: 20
+          nullable: true
+        cep:
+          type: string
+          maxLength: 10
+          nullable: true
+        endereco:
+          type: string
+          maxLength: 100
+          nullable: true
+        numero:
+          type: string
+          maxLength: 10
+          nullable: true
+        complemento:
+          type: string
+          maxLength: 50
+          nullable: true
+        bairro:
+          type: string
+          maxLength: 50
+          nullable: true
+        cidade:
+          type: string
+          maxLength: 50
+          nullable: true
+        uf:
+          type: string
+          maxLength: 2
+          nullable: true
+        observacoes:
+          type: string
+          nullable: true
+        ativo:
+          type: boolean
+          nullable: true
+
+    IntegrationSettings:
+      type: object
+      additionalProperties: true
+      description: Snapshot das configurações operacionais de integrações do desktop.
+
+    IntegrationActionResult:
+      type: object
+      additionalProperties: true
+      description: Resultado padronizado de ações operacionais de integrações e gateway.
+
+    WebhookWhatsappRequest:
+      type: object
+      additionalProperties: true
+      description: Payload inbound recebido do gateway WhatsApp.
+
+    Equipment:
+      type: object
+      properties:
+        id:
+          type: integer
+        cliente_id:
+          type: integer
+        cliente_nome:
+          type: string
+        resumo_tecnico:
+          type: string
+        numero_serie:
+          type: string
+        imei:
+          type: string
+        desktop_modalidade:
+          type: string
+        status_operacional:
+          type: string
+        orders_count:
+          type: integer
+        primary_photo_id:
+          type: integer
+          nullable: true
+        primary_photo_url:
+          type: string
+          nullable: true
+        photos:
+          type: array
+          items:
+            $ref: "#/components/schemas/EquipmentPhoto"
+
+    EquipmentPhoto:
+      type: object
+      properties:
+        id:
+          type: integer
+        is_principal:
+          type: boolean
+        url:
+          type: string
+
+    StoreUserRequest:
+      type: object
+      required:
+        - nome
+        - email
+        - password
+        - perfil
+      properties:
+        nome:
+          type: string
+          minLength: 3
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 100
+        password:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 255
+        telefone:
+          type: string
+          maxLength: 20
+          nullable: true
+        perfil:
+          type: string
+          enum:
+            - admin
+            - tecnico
+            - atendente
+        grupo_id:
+          type: integer
+          minimum: 1
+          nullable: true
+        foto:
+          type: string
+          maxLength: 255
+          nullable: true
+        ativo:
+          type: boolean
+          nullable: true
+
+    UpdateUserRequest:
+      type: object
+      description: Campos de usuário para atualização. Todos são opcionais e validados condicionalmente pelo backend.
+      properties:
+        nome:
+          type: string
+          minLength: 3
+          maxLength: 100
+        email:
+          type: string
+          format: email
+          maxLength: 100
+        password:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 255
+          nullable: true
+        telefone:
+          type: string
+          maxLength: 20
+          nullable: true
+        perfil:
+          type: string
+          enum:
+            - admin
+            - tecnico
+            - atendente
+        grupo_id:
+          type: integer
+          minimum: 1
+          nullable: true
+        foto:
+          type: string
+          maxLength: 255
+          nullable: true
+        ativo:
+          type: boolean
+          nullable: true
+
+    UpdateUserActiveRequest:
+      type: object
+      required:
+        - active
+      properties:
+        active:
+          type: boolean
+
+    StoreGroupRequest:
+      type: object
+      required:
+        - nome
+      properties:
+        nome:
+          type: string
+          minLength: 3
+          maxLength: 80
+        descricao:
+          type: string
+          maxLength: 200
+          nullable: true
+
+    UpdateGroupRequest:
+      type: object
+      properties:
+        nome:
+          type: string
+          minLength: 3
+          maxLength: 80
+        descricao:
+          type: string
+          maxLength: 200
+          nullable: true
+
+    UpdateGroupPermissionsRequest:
+      type: object
+      required:
+        - permissions
+      properties:
+        permissions:
+          type: object
+          description: Matriz de permissões por módulo.
+          additionalProperties:
+            type: array
+            items:
+              type: string
+
+  requestBodies:
+    Login:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/LoginRequest"
+    ForgotPassword:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ForgotPasswordRequest"
+    ResetPassword:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ResetPasswordRequest"
+    UpdateProfile:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/UpdateProfileRequest"
+    UpdatePassword:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/UpdatePasswordRequest"
+    UpsertOrder:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/UpsertOrderRequest"
+    UpdateOrderStatus:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/UpdateOrderStatusRequest"
+    CloseOrder:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/CloseOrderRequest"
+    ClientUpsert:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ClientUpsertRequest"
+    SupplierUpsert:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/SupplierUpsertRequest"
+    StoreUser:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/StoreUserRequest"
+    UpdateUser:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/UpdateUserRequest"
+    UpdateUserActive:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/UpdateUserActiveRequest"
+    StoreGroup:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/StoreGroupRequest"
+    UpdateGroup:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/UpdateGroupRequest"
+    UpdateGroupPermissions:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/UpdateGroupPermissionsRequest"
+
+  responses:
+    Success:
+      description: Resposta de sucesso no envelope padrão.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiSuccess"
+    Created:
+      description: Recurso criado com sucesso no envelope padrão.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiSuccess"
+    Unauthorized:
+      description: Token ausente, inválido ou expirado.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    Forbidden:
+      description: Usuário autenticado sem permissão para o recurso.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    NotFound:
+      description: Recurso não encontrado.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    ValidationError:
+      description: Dados inválidos ou regra de entrada rejeitada.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    TooManyRequests:
+      description: Limite de requisições excedido.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    ServerError:
+      description: Falha inesperada.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Verificar saúde da API.
+      security: []
+      responses:
+        "200":
+          description: API e banco disponíveis.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/HealthData"
+        "503":
+          $ref: "#/components/responses/ServerError"
+
+  /auth/login:
+    post:
+      tags:
+        - Autenticação
+      summary: Autenticar usuário.
+      description: Emite token Bearer e dados do usuário autenticado.
+      security: []
+      requestBody:
+        $ref: "#/components/requestBodies/Login"
+      responses:
+        "200":
+          description: Login efetuado.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/LoginData"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /auth/password/forgot:
+    post:
+      tags:
+        - Autenticação
+      summary: Solicitar redefinição de senha.
+      security: []
+      requestBody:
+        $ref: "#/components/requestBodies/ForgotPassword"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /auth/password/reset:
+    post:
+      tags:
+        - Autenticação
+      summary: Redefinir senha com token.
+      security: []
+      requestBody:
+        $ref: "#/components/requestBodies/ResetPassword"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /auth/me:
+    get:
+      tags:
+        - Autenticação
+      summary: Obter usuário autenticado.
+      responses:
+        "200":
+          description: Usuário, grupo, módulos e permissões efetivas.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    patch:
+      tags:
+        - Autenticação
+      summary: Atualizar perfil do usuário autenticado.
+      requestBody:
+        $ref: "#/components/requestBodies/UpdateProfile"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /auth/password:
+    put:
+      tags:
+        - Autenticação
+      summary: Alterar senha do usuário autenticado.
+      description: Revoga tokens e retorna `requires_relogin` quando a senha é alterada.
+      requestBody:
+        $ref: "#/components/requestBodies/UpdatePassword"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /auth/refresh:
+    post:
+      tags:
+        - Autenticação
+      summary: Renovar token autenticado.
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /auth/logout:
+    post:
+      tags:
+        - Autenticação
+      summary: Revogar token atual.
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /configuracoes/integracoes:
+    get:
+      tags:
+        - Configurações
+      summary: Obter o painel de integrações do desktop.
+      responses:
+        "200":
+          description: Configurações atuais de integrações.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          integration:
+                            $ref: "#/components/schemas/IntegrationSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags:
+        - Configurações
+      summary: Atualizar o painel de integrações do desktop.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IntegrationSettings"
+      responses:
+        "200":
+          description: Configurações salvas.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          integration:
+                            $ref: "#/components/schemas/IntegrationSettings"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /configuracoes/integracoes/testar-conexao:
+    post:
+      tags:
+        - Configurações
+      summary: Testar a conexão configurada com o provedor atual.
+      responses:
+        "200":
+          description: Resultado do teste de conexão.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          result:
+                            $ref: "#/components/schemas/IntegrationActionResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /configuracoes/integracoes/enviar-teste:
+    post:
+      tags:
+        - Configurações
+      summary: Enviar mensagem de teste para o número cadastrado.
+      responses:
+        "200":
+          description: Resultado do envio de teste.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          result:
+                            $ref: "#/components/schemas/IntegrationActionResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /configuracoes/integracoes/self-check-inbound:
+    post:
+      tags:
+        - Configurações
+      summary: Validar a rota inbound e a origem do gateway.
+      responses:
+        "200":
+          description: Resultado do self-check inbound.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          result:
+                            $ref: "#/components/schemas/IntegrationActionResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /configuracoes/integracoes/gateway/status:
+    get:
+      tags:
+        - Configurações
+      summary: Consultar o estado do gateway configurado.
+      responses:
+        "200":
+          description: Estado atual do gateway.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          gateway:
+                            $ref: "#/components/schemas/IntegrationActionResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /configuracoes/integracoes/gateway/qr:
+    get:
+      tags:
+        - Configurações
+      summary: Obter o QR code do gateway configurado.
+      responses:
+        "200":
+          description: QR code atual do gateway.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          gateway:
+                            $ref: "#/components/schemas/IntegrationActionResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /configuracoes/integracoes/gateway/restart:
+    post:
+      tags:
+        - Configurações
+      summary: Reiniciar o gateway configurado.
+      responses:
+        "200":
+          description: Resultado do restart do gateway.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          gateway:
+                            $ref: "#/components/schemas/IntegrationActionResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /configuracoes/integracoes/gateway/logout:
+    post:
+      tags:
+        - Configurações
+      summary: Encerrar a sessão do gateway configurado.
+      responses:
+        "200":
+          description: Resultado do logout do gateway.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          gateway:
+                            $ref: "#/components/schemas/IntegrationActionResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /configuracoes/integracoes/gateway/start:
+    post:
+      tags:
+        - Configurações
+      summary: Iniciar o gateway configurado.
+      responses:
+        "200":
+          description: Resultado do start do gateway.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          gateway:
+                            $ref: "#/components/schemas/IntegrationActionResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /webhooks/whatsapp:
+    post:
+      tags:
+        - Webhooks
+      summary: Receber eventos inbound do gateway WhatsApp.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookWhatsappRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /dashboard/summary:
+    get:
+      tags:
+        - Dashboard
+      summary: Obter resumo agregado do dashboard.
+      parameters:
+        - name: ano
+          in: query
+          description: Ano de referência do dashboard.
+          schema:
+            type: integer
+        - name: equip_mes
+          in: query
+          description: Mês de referência para indicadores de equipamentos.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 12
+        - name: equip_ano
+          in: query
+          description: Ano de referência para indicadores de equipamentos.
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Sumário do dashboard.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/DashboardSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /conversas:
+    get:
+      tags:
+        - Central de Atendimento
+      summary: Listar conversas da Central de Atendimento.
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+        - $ref: "#/components/parameters/SearchParam"
+        - name: status
+          in: query
+          description: Filtra por status da conversa.
+          schema:
+            type: string
+            enum: [open, resolved, pending, snoozed]
+        - name: unread_only
+          in: query
+          description: Quando verdadeiro, retorna apenas conversas com mensagens recebidas ainda não lidas.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Lista paginada de conversas com preview da última mensagem e contador de não lidas.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          items:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/ConversationSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags:
+        - Central de Atendimento
+      summary: Iniciar conversa por cliente do sistema_hml ou por telefone livre.
+      requestBody:
+        required: false
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/StartConversationRequest"
+            encoding:
+              attachments:
+                style: form
+                explode: true
+      responses:
+        "201":
+          description: Conversa criada ou reaproveitada, com mensagem inicial opcional.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          conversation:
+                            $ref: "#/components/schemas/ConversationDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /conversas/{conversation}:
+    get:
+      tags:
+        - Central de Atendimento
+      summary: Detalhe de uma conversa, com histórico de mensagens. Marca a conversa como lida.
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      responses:
+        "200":
+          description: Detalhe da conversa.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          conversation:
+                            $ref: "#/components/schemas/ConversationDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Sem acesso a esta conversa.
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /conversas/{conversation}/mensagens:
+    post:
+      tags:
+        - Central de Atendimento
+      summary: Enviar uma mensagem com texto, anexos ou ambos numa conversa.
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: "#/components/schemas/SendConversationMessageRequest"
+            encoding:
+              attachments:
+                style: form
+                explode: true
+      responses:
+        "201":
+          description: Mensagem criada com status inicial `pending`, atualizada de forma assíncrona após o provider responder.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            $ref: "#/components/schemas/ChatMessage"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Sem acesso a esta conversa.
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /chat/clientes/search:
+    get:
+      tags:
+        - Central de Atendimento
+      summary: Buscar clientes do sistema_hml para iniciar conversa no chat.
+      parameters:
+        - $ref: "#/components/parameters/QParam"
+        - $ref: "#/components/parameters/SearchParam"
+      responses:
+        "200":
+          description: Lista enxuta de clientes e telefones disponíveis para o atendimento.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          clients:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/ChatClientSearchResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /chat/anexos/{attachment}:
+    get:
+      tags:
+        - Central de Atendimento
+      summary: Fazer download ou streaming autenticado de um anexo privado do chat.
+      parameters:
+        - $ref: "#/components/parameters/ChatAttachmentId"
+      responses:
+        "200":
+          description: Conteúdo binário do anexo.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+            "image/*":
+              schema:
+                type: string
+                format: binary
+            "audio/*":
+              schema:
+                type: string
+                format: binary
+            "video/*":
+              schema:
+                type: string
+                format: binary
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Sem acesso a este anexo.
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /notifications:
+    get:
+      tags:
+        - Notificações
+      summary: Listar notificações do usuário autenticado.
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+        - name: only_unread
+          in: query
+          description: Quando verdadeiro, retorna apenas notificações não lidas.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Lista paginada de notificações.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          items:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/Notification"
+                          unread_count:
+                            type: integer
+                          last_notification_id:
+                            type: integer
+                            minimum: 0
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /notifications/{notification}/read:
+    patch:
+      tags:
+        - Notificações
+      summary: Marcar uma notificação como lida.
+      parameters:
+        - $ref: "#/components/parameters/NotificationId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /notifications/read-all:
+    patch:
+      tags:
+        - Notificações
+      summary: Marcar todas as notificações como lidas.
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /notifications/read:
+    delete:
+      tags:
+        - Notificações
+      summary: Remover todas as notificações já lidas do usuário autenticado.
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /orders:
+    get:
+      tags:
+        - Ordens
+      summary: Listar ordens de serviço.
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+        - $ref: "#/components/parameters/SearchParam"
+        - name: status_scope
+          in: query
+          description: Escopo opcional da fila operacional. Use `open` para ocultar OS com `estado_fluxo=encerrado`; use `all` para remover esse recorte.
+          schema:
+            type: string
+            enum:
+              - open
+              - all
+        - name: status
+          in: query
+          description: Filtro por status.
+          schema:
+            type: string
+        - name: technician_id
+          in: query
+          description: Filtro por técnico responsável (ignorado quando o usuário autenticado já é técnico, que só vê as próprias OS).
+          schema:
+            type: integer
+        - name: client_id
+          in: query
+          description: Filtro por cliente.
+          schema:
+            type: integer
+        - name: equipment_id
+          in: query
+          description: Filtro por equipamento.
+          schema:
+            type: integer
+        - name: grupo_macro
+          in: query
+          description: Filtro pela macrofase do status (os_status.grupo_macro).
+          schema:
+            type: string
+        - name: data_abertura_de
+          in: query
+          description: Filtro de data_abertura a partir de (inclusive).
+          schema:
+            type: string
+            format: date
+        - name: data_abertura_ate
+          in: query
+          description: Filtro de data_abertura até (inclusive).
+          schema:
+            type: string
+            format: date
+        - name: valor_min
+          in: query
+          description: Filtro de valor_final mínimo.
+          schema:
+            type: number
+        - name: valor_max
+          in: query
+          description: Filtro de valor_final máximo.
+          schema:
+            type: number
+        - name: sort
+          in: query
+          description: Ordenação quando suportada pelo backend.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Lista paginada de OS.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          orders:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/Order"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Ordens
+      summary: Criar ordem de serviço.
+      requestBody:
+        $ref: "#/components/requestBodies/UpsertOrder"
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /orders/{order}:
+    get:
+      tags:
+        - Ordens
+      summary: Obter detalhe de uma OS.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags:
+        - Ordens
+      summary: Atualizar OS.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        $ref: "#/components/requestBodies/UpsertOrder"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    patch:
+      tags:
+        - Ordens
+      summary: Atualizar parcialmente uma OS.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        $ref: "#/components/requestBodies/UpsertOrder"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /orders/{order}/photos/{photo}:
+    get:
+      tags:
+        - Ordens
+      summary: Servir foto autenticada da OS.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/PhotoId"
+      responses:
+        "200":
+          description: Arquivo de imagem.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /orders/{order}/documents/{document}:
+    get:
+      tags:
+        - Ordens
+      summary: Servir documento autenticado da OS.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/DocumentId"
+      responses:
+        "200":
+          description: Arquivo de documento.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /orders/{order}/status:
+    patch:
+      tags:
+        - Ordens
+      summary: Atualizar status da OS.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        $ref: "#/components/requestBodies/UpdateOrderStatus"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /orders/{order}/closure:
+    get:
+      tags:
+        - Ordens
+      summary: Obter dados para a tela de baixa da OS (status atual, opções de encerramento e resumo financeiro).
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags:
+        - Ordens
+      summary: Encerrar a OS (baixa) com data de entrega, lançamento financeiro opcional e notificação WhatsApp opcional.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        $ref: "#/components/requestBodies/CloseOrder"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /orcamentos:
+    get:
+      tags:
+        - Orçamentos
+      summary: Listar orçamentos.
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+        - $ref: "#/components/parameters/SearchParam"
+        - name: status
+          in: query
+          description: Filtro por status do orçamento.
+          schema:
+            type: string
+        - name: tipo
+          in: query
+          description: Filtro por tipo do orçamento.
+          schema:
+            type: string
+        - name: origem
+          in: query
+          description: Filtro por origem do orçamento.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Lista paginada de orçamentos.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          budgets:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+                          summary:
+                            type: object
+                            additionalProperties: true
+                          status_options:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Orçamentos
+      summary: Criar orçamento.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /orcamentos/form-data:
+    get:
+      tags:
+        - Orçamentos
+      summary: Obter catálogos do formulário de orçamento.
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /orcamentos/{budget}:
+    get:
+      tags:
+        - Orçamentos
+      summary: Obter detalhe de um orçamento.
+      parameters:
+        - $ref: "#/components/parameters/BudgetId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags:
+        - Orçamentos
+      summary: Atualizar orçamento.
+      parameters:
+        - $ref: "#/components/parameters/BudgetId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    patch:
+      tags:
+        - Orçamentos
+      summary: Atualizar parcialmente um orçamento.
+      parameters:
+        - $ref: "#/components/parameters/BudgetId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      tags:
+        - Orçamentos
+      summary: Excluir orçamento.
+      parameters:
+        - $ref: "#/components/parameters/BudgetId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /clients:
+    get:
+      tags:
+        - Clientes
+      summary: Listar clientes.
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+        - $ref: "#/components/parameters/SearchParam"
+        - $ref: "#/components/parameters/QParam"
+        - name: status
+          in: query
+          description: Filtro por status cadastral.
+          schema:
+            type: string
+        - name: sort
+          in: query
+          description: Ordenação. Valores atuais incluem `nome`, `nome_desc`, `recentes` e `recentes_asc`.
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Clientes
+      summary: Criar cliente.
+      requestBody:
+        $ref: "#/components/requestBodies/ClientUpsert"
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /clients/{client}:
+    get:
+      tags:
+        - Clientes
+      summary: Obter cliente.
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags:
+        - Clientes
+      summary: Atualizar cliente.
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+      requestBody:
+        $ref: "#/components/requestBodies/ClientUpsert"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    patch:
+      tags:
+        - Clientes
+      summary: Atualizar parcialmente cliente.
+      parameters:
+        - $ref: "#/components/parameters/ClientId"
+      requestBody:
+        $ref: "#/components/requestBodies/ClientUpsert"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /suppliers:
+    get:
+      tags:
+        - Fornecedores
+      summary: Listar fornecedores.
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+        - $ref: "#/components/parameters/SearchParam"
+        - $ref: "#/components/parameters/QParam"
+        - name: active
+          in: query
+          description: Filtra fornecedores ativos ou inativos.
+          schema:
+            type: boolean
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Fornecedores
+      summary: Criar fornecedor.
+      requestBody:
+        $ref: "#/components/requestBodies/SupplierUpsert"
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /suppliers/consultar-cnpj:
+    get:
+      tags:
+        - Fornecedores
+      summary: Consultar dados públicos de fornecedor a partir do CNPJ.
+      parameters:
+        - name: cnpj
+          in: query
+          required: true
+          description: CNPJ ou CPF informado pelo usuário para consulta e auto-preenchimento.
+          schema:
+            type: string
+            maxLength: 32
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /suppliers/{supplier}:
+    get:
+      tags:
+        - Fornecedores
+      summary: Obter fornecedor.
+      parameters:
+        - $ref: "#/components/parameters/SupplierId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags:
+        - Fornecedores
+      summary: Atualizar fornecedor.
+      parameters:
+        - $ref: "#/components/parameters/SupplierId"
+      requestBody:
+        $ref: "#/components/requestBodies/SupplierUpsert"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    patch:
+      tags:
+        - Fornecedores
+      summary: Atualizar parcialmente fornecedor.
+      parameters:
+        - $ref: "#/components/parameters/SupplierId"
+      requestBody:
+        $ref: "#/components/requestBodies/SupplierUpsert"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      tags:
+        - Fornecedores
+      summary: Excluir fornecedor.
+      parameters:
+        - $ref: "#/components/parameters/SupplierId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /suppliers/{supplier}/encerrar:
+    patch:
+      tags:
+        - Fornecedores
+      summary: Encerrar fornecedor sem excluir o registro.
+      parameters:
+        - $ref: "#/components/parameters/SupplierId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /collector/snapshots:
+    post:
+      tags:
+        - Equipamentos
+      summary: Receber snapshot remoto do coletor por código temporário.
+      security: []
+      parameters:
+        - name: X-Collector-Token
+          in: header
+          required: true
+          description: Token dedicado do agente remoto de bancada.
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - pairing_code
+                - snapshot
+              properties:
+                pairing_code:
+                  type: string
+                  example: AB12CD34
+                source:
+                  type: string
+                  nullable: true
+                  example: bench-agent
+                agent_version:
+                  type: string
+                  nullable: true
+                  example: 1.4.0
+                hostname:
+                  type: string
+                  nullable: true
+                  example: LAB-01
+                snapshot:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /equipments/form-data:
+    get:
+      tags:
+        - Equipamentos
+      summary: Obter clientes, catálogos, defaults, relações de cascade e metadados do formulário de equipamento para criação ou edição.
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /equipments/models/suggestions:
+    get:
+      tags:
+        - Equipamentos
+      summary: Buscar sugestões externas de modelo com fallback seguro.
+      parameters:
+        - name: nome
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: marca_nome
+          in: query
+          schema:
+            type: string
+            nullable: true
+        - name: tipo_nome
+          in: query
+          schema:
+            type: string
+            nullable: true
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /equipments/brands:
+    post:
+      tags:
+        - Equipamentos
+      summary: Criar marca rápida de equipamento ja vinculada ao tipo selecionado.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tipo_id
+                - nome
+              properties:
+                tipo_id:
+                  type: integer
+                  minimum: 1
+                nome:
+                  type: string
+                  example: Lenovo
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /equipments/models:
+    post:
+      tags:
+        - Equipamentos
+      summary: Criar modelo rápido de equipamento ja vinculado ao tipo e a marca selecionados.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tipo_id
+                - marca_id
+                - nome
+              properties:
+                tipo_id:
+                  type: integer
+                  minimum: 1
+                marca_id:
+                  type: integer
+                  minimum: 1
+                nome:
+                  type: string
+                  example: ThinkPad T14
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /equipments/collector-pairings:
+    post:
+      tags:
+        - Equipamentos
+      summary: Criar código temporário de pareamento do coletor remoto.
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /equipments/collector-pairings/{code}:
+    get:
+      tags:
+        - Equipamentos
+      summary: Consultar snapshot remoto pareado ao formulário atual.
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /equipments:
+    get:
+      tags:
+        - Equipamentos
+      summary: Listar equipamentos.
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+        - $ref: "#/components/parameters/SearchParam"
+        - $ref: "#/components/parameters/QParam"
+        - name: client_id
+          in: query
+          description: Filtra equipamentos por cliente.
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Equipamentos
+      summary: Criar equipamento completo com fotos e payload operacional.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - cliente_id
+                - tipo_id
+                - fotos
+              properties:
+                cliente_id:
+                  type: integer
+                  minimum: 1
+                tipo_id:
+                  type: integer
+                  minimum: 1
+                marca_id:
+                  type: integer
+                  nullable: true
+                modelo_id:
+                  type: integer
+                  nullable: true
+                numero_serie:
+                  type: string
+                  nullable: true
+                imei:
+                  type: string
+                  nullable: true
+                senha_tipo:
+                  type: string
+                  enum: [desenho, texto]
+                senha_acesso:
+                  type: string
+                  nullable: true
+                senha_desenho:
+                  type: string
+                  nullable: true
+                cor:
+                  type: string
+                  nullable: true
+                cor_hex:
+                  type: string
+                  nullable: true
+                cor_rgb:
+                  type: string
+                  nullable: true
+                estado_fisico:
+                  type: string
+                  nullable: true
+                acessorios:
+                  type: string
+                  nullable: true
+                observacoes:
+                  type: string
+                  nullable: true
+                desktop_modalidade:
+                  type: string
+                  nullable: true
+                  enum: [montado, oem]
+                gabinete_tipo:
+                  type: string
+                  nullable: true
+                gabinete_identificacao_status:
+                  type: string
+                  nullable: true
+                  enum: [a_confirmar, manual, detectado]
+                gabinete_observacao:
+                  type: string
+                  nullable: true
+                placa_mae:
+                  type: string
+                  nullable: true
+                chipset:
+                  type: string
+                  nullable: true
+                processador:
+                  type: string
+                  nullable: true
+                memoria_ram:
+                  type: string
+                  nullable: true
+                armazenamento:
+                  type: string
+                  nullable: true
+                placa_video:
+                  type: string
+                  nullable: true
+                fonte_alimentacao:
+                  type: string
+                  nullable: true
+                collector_pairing_code:
+                  type: string
+                  nullable: true
+                foto_principal_index:
+                  type: integer
+                  minimum: 0
+                  maximum: 3
+                fotos:
+                  type: array
+                  minItems: 1
+                  maxItems: 4
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /equipments/{equipment}:
+    get:
+      tags:
+        - Equipamentos
+      summary: Obter equipamento.
+      parameters:
+        - $ref: "#/components/parameters/EquipmentId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags:
+        - Equipamentos
+      summary: Atualizar equipamento completo e sincronizar a galeria privada existente.
+      parameters:
+        - $ref: "#/components/parameters/EquipmentId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - cliente_id
+                - tipo_id
+              properties:
+                cliente_id:
+                  type: integer
+                  minimum: 1
+                tipo_id:
+                  type: integer
+                  minimum: 1
+                marca_id:
+                  type: integer
+                  nullable: true
+                modelo_id:
+                  type: integer
+                  nullable: true
+                numero_serie:
+                  type: string
+                  nullable: true
+                imei:
+                  type: string
+                  nullable: true
+                senha_tipo:
+                  type: string
+                  enum: [desenho, texto]
+                senha_acesso:
+                  type: string
+                  nullable: true
+                senha_desenho:
+                  type: string
+                  nullable: true
+                cor:
+                  type: string
+                  nullable: true
+                cor_hex:
+                  type: string
+                  nullable: true
+                cor_rgb:
+                  type: string
+                  nullable: true
+                estado_fisico:
+                  type: string
+                  nullable: true
+                acessorios:
+                  type: string
+                  nullable: true
+                observacoes:
+                  type: string
+                  nullable: true
+                desktop_modalidade:
+                  type: string
+                  nullable: true
+                  enum: [montado, oem]
+                gabinete_tipo:
+                  type: string
+                  nullable: true
+                gabinete_identificacao_status:
+                  type: string
+                  nullable: true
+                  enum: [a_confirmar, manual, detectado]
+                gabinete_observacao:
+                  type: string
+                  nullable: true
+                placa_mae:
+                  type: string
+                  nullable: true
+                chipset:
+                  type: string
+                  nullable: true
+                processador:
+                  type: string
+                  nullable: true
+                memoria_ram:
+                  type: string
+                  nullable: true
+                armazenamento:
+                  type: string
+                  nullable: true
+                placa_video:
+                  type: string
+                  nullable: true
+                fonte_alimentacao:
+                  type: string
+                  nullable: true
+                collector_pairing_code:
+                  type: string
+                  nullable: true
+                foto_principal_index:
+                  type: integer
+                  minimum: 0
+                  maximum: 3
+                  nullable: true
+                existing_photo_sync:
+                  type: boolean
+                  description: Quando verdadeiro, o backend sincroniza a galeria final usando `existing_photo_ids[]`, novas `fotos[]` e a foto principal informada.
+                existing_photo_ids:
+                  type: array
+                  maxItems: 4
+                  items:
+                    type: integer
+                    minimum: 1
+                foto_principal_existente_id:
+                  type: integer
+                  minimum: 1
+                  nullable: true
+                fotos:
+                  type: array
+                  minItems: 0
+                  maxItems: 4
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    patch:
+      tags:
+        - Equipamentos
+      summary: Atualizar parcialmente equipamento completo e sincronizar a galeria privada existente.
+      parameters:
+        - $ref: "#/components/parameters/EquipmentId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - cliente_id
+                - tipo_id
+              properties:
+                cliente_id:
+                  type: integer
+                  minimum: 1
+                tipo_id:
+                  type: integer
+                  minimum: 1
+                marca_id:
+                  type: integer
+                  nullable: true
+                modelo_id:
+                  type: integer
+                  nullable: true
+                numero_serie:
+                  type: string
+                  nullable: true
+                imei:
+                  type: string
+                  nullable: true
+                senha_tipo:
+                  type: string
+                  enum: [desenho, texto]
+                senha_acesso:
+                  type: string
+                  nullable: true
+                senha_desenho:
+                  type: string
+                  nullable: true
+                cor:
+                  type: string
+                  nullable: true
+                cor_hex:
+                  type: string
+                  nullable: true
+                cor_rgb:
+                  type: string
+                  nullable: true
+                estado_fisico:
+                  type: string
+                  nullable: true
+                acessorios:
+                  type: string
+                  nullable: true
+                observacoes:
+                  type: string
+                  nullable: true
+                desktop_modalidade:
+                  type: string
+                  nullable: true
+                  enum: [montado, oem]
+                gabinete_tipo:
+                  type: string
+                  nullable: true
+                gabinete_identificacao_status:
+                  type: string
+                  nullable: true
+                  enum: [a_confirmar, manual, detectado]
+                gabinete_observacao:
+                  type: string
+                  nullable: true
+                placa_mae:
+                  type: string
+                  nullable: true
+                chipset:
+                  type: string
+                  nullable: true
+                processador:
+                  type: string
+                  nullable: true
+                memoria_ram:
+                  type: string
+                  nullable: true
+                armazenamento:
+                  type: string
+                  nullable: true
+                placa_video:
+                  type: string
+                  nullable: true
+                fonte_alimentacao:
+                  type: string
+                  nullable: true
+                collector_pairing_code:
+                  type: string
+                  nullable: true
+                foto_principal_index:
+                  type: integer
+                  minimum: 0
+                  maximum: 3
+                  nullable: true
+                existing_photo_sync:
+                  type: boolean
+                  description: Quando verdadeiro, o backend sincroniza a galeria final usando `existing_photo_ids[]`, novas `fotos[]` e a foto principal informada.
+                existing_photo_ids:
+                  type: array
+                  maxItems: 4
+                  items:
+                    type: integer
+                    minimum: 1
+                foto_principal_existente_id:
+                  type: integer
+                  minimum: 1
+                  nullable: true
+                fotos:
+                  type: array
+                  minItems: 0
+                  maxItems: 4
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /equipments/{equipment}/photos/{photo}:
+    get:
+      tags:
+        - Equipamentos
+      summary: Ler foto privada de equipamento autenticado para detalhe ou edição autorizada.
+      parameters:
+        - $ref: "#/components/parameters/EquipmentId"
+        - $ref: "#/components/parameters/PhotoId"
+      responses:
+        "200":
+          description: Binário da foto com `Content-Type` adequado.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /users:
+    get:
+      tags:
+        - Usuários
+      summary: Listar usuários.
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+        - $ref: "#/components/parameters/SearchParam"
+        - $ref: "#/components/parameters/QParam"
+        - name: active
+          in: query
+          description: Filtra por usuários ativos ou inativos.
+          schema:
+            type: boolean
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Usuários
+      summary: Criar usuário.
+      requestBody:
+        $ref: "#/components/requestBodies/StoreUser"
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /users/{user}:
+    put:
+      tags:
+        - Usuários
+      summary: Atualizar usuário.
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        $ref: "#/components/requestBodies/UpdateUser"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    patch:
+      tags:
+        - Usuários
+      summary: Atualizar parcialmente usuário.
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        $ref: "#/components/requestBodies/UpdateUser"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /users/{user}/active:
+    patch:
+      tags:
+        - Usuários
+      summary: Ativar ou inativar usuário.
+      parameters:
+        - $ref: "#/components/parameters/UserId"
+      requestBody:
+        $ref: "#/components/requestBodies/UpdateUserActive"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /groups:
+    get:
+      tags:
+        - Grupos
+      summary: Listar grupos.
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Grupos
+      summary: Criar grupo.
+      requestBody:
+        $ref: "#/components/requestBodies/StoreGroup"
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /groups/{group}:
+    put:
+      tags:
+        - Grupos
+      summary: Atualizar grupo.
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      requestBody:
+        $ref: "#/components/requestBodies/UpdateGroup"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    patch:
+      tags:
+        - Grupos
+      summary: Atualizar parcialmente grupo.
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      requestBody:
+        $ref: "#/components/requestBodies/UpdateGroup"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      tags:
+        - Grupos
+      summary: Excluir grupo.
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /groups/{group}/permissions:
+    get:
+      tags:
+        - Grupos
+      summary: Obter permissões de um grupo.
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags:
+        - Grupos
+      summary: Atualizar permissões de um grupo.
+      parameters:
+        - $ref: "#/components/parameters/GroupId"
+      requestBody:
+        $ref: "#/components/requestBodies/UpdateGroupPermissions"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /modules:
+    get:
+      tags:
+        - Catálogos
+      summary: Listar módulos ativos do RBAC.
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /permissions:
+    get:
+      tags:
+        - Catálogos
+      summary: Listar permissões do RBAC.
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"

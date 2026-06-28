@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sistema ERP Entrega por Especificacao"
+  short_description: "Fluxo oficial de entrega orientado a specs."
+  default_prompt: "Use $sistema-erp-entrega-especificada para conduzir uma feature do spec ate a documentacao final no Sistema ERP."

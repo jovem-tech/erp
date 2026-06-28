@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sistema ERP Documentacao Viva"
+  short_description: "Sincronizacao automatizada da documentacao."
+  default_prompt: "Use $sistema-erp-documentacao-viva para atualizar o contexto vivo, manifests e notas versionadas do Sistema ERP."

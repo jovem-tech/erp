@@ -1,0 +1,47 @@
+# Dependencias e build
+vendor/
+node_modules/
+dist/
+build/
+coverage/
+
+# Ambientes
+.env
+.env.local
+.env.*.local
+
+# Logs e arquivos temporarios
+*.log
+*.tmp
+*.swp
+
+# Futuro backend e frontends
+backend/vendor/
+backend/bootstrap/cache/
+frontends/**/node_modules/
+frontends/**/.next/
+frontends/**/dist/
+
+# Frontend/BFF legado clonado do sistema-hml
+frontend/**/vendor/
+frontend/**/writable/
+frontend/**/public/uploads/
+frontend/**/public/assets/agents/
+frontend/**/documentacao/**/node_modules/
+frontend/**/.env
+frontend/**/.env.*
+
+# Storage Laravel
+backend/storage/app/private/*
+!backend/storage/app/private/.gitignore
+backend/storage/logs/*
+!backend/storage/logs/.gitignore
+
+# Sistema e editores
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Quarentena de seguranca (scripts perigosos isolados em 2026-06-25, nunca versionar)
+/_quarentena-seguranca-*/

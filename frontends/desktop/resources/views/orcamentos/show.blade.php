@@ -1,0 +1,249 @@
+@extends('layouts.app')
+
+@section('content')
+    @php
+        $budget = is_array($budget ?? null) ? $budget : [];
+        $client = is_array($budget['cliente'] ?? null) ? $budget['cliente'] : [];
+        $equipment = is_array($budget['equipamento'] ?? null) ? $budget['equipamento'] : [];
+        $order = is_array($budget['os'] ?? null) ? $budget['os'] : [];
+        $numeroOs = trim((string) ($budget['numero_os'] ?? ($order['numero_os'] ?? '')));
+        $items = is_array($budget['itens'] ?? null) ? $budget['itens'] : [];
+        $histories = is_array($budget['historico'] ?? null) ? $budget['historico'] : [];
+        $sends = is_array($budget['envios'] ?? null) ? $budget['envios'] : [];
+        $approvals = is_array($budget['aprovacoes'] ?? null) ? $budget['aprovacoes'] : [];
+        $budgetId = (int) ($budget['id'] ?? 0);
+    @endphp
+
+    <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
+        <div>
+            <p class="desktop-eyebrow">Orçamento</p>
+            <h2 class="surface-title fs-3 mb-2">{{ $budget['numero'] !== '' ? $budget['numero'] : ('#' . $budgetId) }}</h2>
+            <div class="d-flex flex-wrap gap-2">
+                @include('layouts.partials.status-pill', [
+                    'label' => $budget['status_label'] ?? 'Rascunho',
+                    'color' => $budget['status_color'] ?? '#64748b',
+                ])
+                <span class="desktop-chip">{{ $budget['tipo_label'] ?? 'Orçamento prévio' }}</span>
+                <span class="desktop-chip">{{ $budget['origem_label'] ?? 'Manual' }}</span>
+                <span class="desktop-chip">Versão {{ (int) ($budget['versao'] ?? 1) }}</span>
+            </div>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2">
+            <a href="{{ route('orcamentos.index') }}" class="btn btn-outline-light">
+                <i class="bi bi-arrow-left me-2"></i>
+                Voltar
+            </a>
+            @if (! empty($budget['can_edit']))
+                <a href="{{ route('orcamentos.edit', $budgetId) }}" class="btn btn-primary">
+                    <i class="bi bi-pencil me-2"></i>
+                    Editar
+                </a>
+            @endif
+            @if (! empty($budget['can_delete']))
+                <form method="post" action="{{ route('orcamentos.destroy', $budgetId) }}" data-confirm="Deseja excluir este orçamento? Esta ação não poderá ser desfeita." data-confirm-title="Excluir orçamento" data-confirm-button="Sim, excluir">
+                    @csrf
+                    @method('DELETE')
+                    <button type="submit" class="btn btn-outline-danger">
+                        <i class="bi bi-trash me-2"></i>
+                        Excluir
+                    </button>
+                </form>
+            @endif
+        </div>
+    </div>
+
+    <section class="desktop-grid desktop-grid-four mb-4">
+        <article class="summary-card">
+            <span class="summary-card-eyebrow">Cliente</span>
+            <div class="summary-card-value">{{ $client['nome_razao'] ?? ($budget['cliente_nome_avulso'] ?? 'Não informado') }}</div>
+            <div class="summary-card-meta">{{ $client['cpf_cnpj'] ?? ($budget['telefone_contato'] ?? 'Sem documento') }}</div>
+        </article>
+
+        <article class="summary-card">
+            <span class="summary-card-eyebrow">Equipamento / OS</span>
+            <div class="summary-card-value">{{ $equipment['resumo_tecnico'] ?? ($numeroOs !== '' ? $numeroOs : 'Sem vínculo') }}</div>
+            <div class="summary-card-meta">{{ $equipment['numero_serie'] ?? ($order['status'] ?? 'Sem série informada') }}</div>
+        </article>
+
+        <article class="summary-card">
+            <span class="summary-card-eyebrow">Validade</span>
+            <div class="summary-card-value">{{ $budget['validade_data'] !== '' ? $budget['validade_data'] : 'Sem data' }}</div>
+            <div class="summary-card-meta">{{ (int) ($budget['validade_dias'] ?? 0) > 0 ? (int) ($budget['validade_dias'] ?? 0) . ' dias' : 'Prazo não definido' }}</div>
+        </article>
+
+        <article class="summary-card">
+            <span class="summary-card-eyebrow">Total</span>
+            <div class="summary-card-value">R$ {{ $budget['total_formatado'] ?? number_format((float) ($budget['total'] ?? 0), 2, ',', '.') }}</div>
+            <div class="summary-card-meta">Subtotal: R$ {{ number_format((float) ($budget['subtotal'] ?? 0), 2, ',', '.') }}</div>
+        </article>
+    </section>
+
+    <section class="desktop-grid desktop-grid-two mb-4">
+        <article class="surface-card">
+            <div class="surface-card-header">
+                <div>
+                    <h2 class="surface-title">Dados principais</h2>
+                    <p class="surface-subtitle">Cliente, equipamento, OS e origem do orçamento.</p>
+                </div>
+            </div>
+
+            <div class="detail-list">
+                <div class="detail-item"><strong>Cliente</strong><span>{{ $client['nome_razao'] ?? ($budget['cliente_nome_avulso'] ?? 'Não informado') }}</span></div>
+                <div class="detail-item"><strong>Documento</strong><span>{{ $client['cpf_cnpj'] ?? 'Não informado' }}</span></div>
+                <div class="detail-item"><strong>Contato</strong><span>{{ $budget['telefone_contato'] !== '' ? $budget['telefone_contato'] : 'Não informado' }}</span></div>
+                <div class="detail-item"><strong>E-mail</strong><span>{{ $budget['email_contato'] !== '' ? $budget['email_contato'] : 'Não informado' }}</span></div>
+                <div class="detail-item"><strong>Tipo</strong><span>{{ $budget['tipo_label'] ?? 'Orçamento prévio' }}</span></div>
+                <div class="detail-item"><strong>Origem</strong><span>{{ $budget['origem_label'] ?? 'Manual' }}</span></div>
+                <div class="detail-item"><strong>OS vinculada</strong><span>{{ $numeroOs !== '' ? $numeroOs : 'Sem OS' }}</span></div>
+                <div class="detail-item"><strong>Responsável</strong><span>{{ $budget['responsavel']['nome'] ?? 'Não informado' }}</span></div>
+            </div>
+        </article>
+
+        <article class="surface-card">
+            <div class="surface-card-header">
+                <div>
+                    <h2 class="surface-title">Status e vigência</h2>
+                    <p class="surface-subtitle">Controle operacional da proposta no fluxo comercial.</p>
+                </div>
+            </div>
+
+            <div class="detail-list">
+                <div class="detail-item"><strong>Status</strong><span>{{ $budget['status_label'] ?? 'Rascunho' }}</span></div>
+                <div class="detail-item"><strong>Validade até</strong><span>{{ $budget['validade_data'] !== '' ? $budget['validade_data'] : 'Não definida' }}</span></div>
+                <div class="detail-item"><strong>Prazo de execução</strong><span>{{ $budget['prazo_execucao'] !== '' ? $budget['prazo_execucao'] : 'Não informado' }}</span></div>
+                <div class="detail-item"><strong>Atualizado em</strong><span>{{ $budget['updated_at'] !== '' ? $budget['updated_at'] : 'Sem atualização' }}</span></div>
+                <div class="detail-item"><strong>Criado em</strong><span>{{ $budget['created_at'] !== '' ? $budget['created_at'] : 'Sem informação' }}</span></div>
+                <div class="detail-item"><strong>Condições</strong><p class="mb-0">{{ $budget['condicoes'] !== '' ? $budget['condicoes'] : 'Sem condições registradas' }}</p></div>
+            </div>
+        </article>
+    </section>
+
+    <section class="surface-card mb-4">
+        <div class="surface-card-header">
+            <div>
+                <h2 class="surface-title">Itens do orçamento</h2>
+                <p class="surface-subtitle">Serviços e peças com custo, margem e observações por linha.</p>
+            </div>
+        </div>
+
+        @if ($items !== [])
+            <div class="table-responsive">
+                <table class="table table-stack align-middle">
+                    <thead>
+                    <tr>
+                        <th>Tipo</th>
+                        <th>Descrição</th>
+                        <th>Qtd</th>
+                        <th>Valor unit.</th>
+                        <th>Desconto</th>
+                        <th>Acréscimo</th>
+                        <th>Total</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach ($items as $item)
+                        <tr>
+                            <td data-label="Tipo">{{ ucfirst((string) ($item['tipo_item'] ?? 'servico')) }}</td>
+                            <td data-label="Descrição">
+                                <div class="fw-semibold">{{ $item['descricao'] !== '' ? $item['descricao'] : 'Sem descrição' }}</div>
+                                @if (($item['observacoes'] ?? '') !== '')
+                                    <small class="text-secondary d-block">{{ $item['observacoes'] }}</small>
+                                @endif
+                            </td>
+                            <td data-label="Qtd">{{ number_format((float) ($item['quantidade'] ?? 0), 2, ',', '.') }}</td>
+                            <td data-label="Valor unit.">R$ {{ number_format((float) ($item['valor_unitario'] ?? 0), 2, ',', '.') }}</td>
+                            <td data-label="Desconto">R$ {{ number_format((float) ($item['desconto'] ?? 0), 2, ',', '.') }}</td>
+                            <td data-label="Acréscimo">R$ {{ number_format((float) ($item['acrescimo'] ?? 0), 2, ',', '.') }}</td>
+                            <td data-label="Total" class="fw-bold">R$ {{ number_format((float) ($item['total'] ?? 0), 2, ',', '.') }}</td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @else
+            @include('layouts.partials.empty-state', [
+                'icon' => 'bi-card-list',
+                'title' => 'Sem itens cadastrados',
+                'message' => 'Este orçamento ainda não possui pacotes ou serviços adicionados.',
+            ])
+        @endif
+    </section>
+
+    <section class="desktop-grid desktop-grid-two mb-4">
+        <article class="surface-card">
+            <div class="surface-card-header">
+                <div>
+                    <h2 class="surface-title">Histórico</h2>
+                    <p class="surface-subtitle">Eventos de status e alterações mais recentes.</p>
+                </div>
+            </div>
+
+            @if ($histories !== [])
+                <div class="timeline">
+                    @foreach ($histories as $history)
+                        <article class="timeline-item">
+                            <div class="d-flex flex-wrap justify-content-between gap-2">
+                                <strong>{{ $history['status_anterior'] !== '' ? $history['status_anterior'] : 'Sem origem' }} → {{ $history['status_novo'] !== '' ? $history['status_novo'] : 'Sem destino' }}</strong>
+                                <small>{{ $history['created_at'] !== '' ? $history['created_at'] : 'Data não informada' }}</small>
+                            </div>
+                            <p class="mb-2 mt-2">{{ $history['observacao'] !== '' ? $history['observacao'] : 'Sem observação registrada.' }}</p>
+                            <small>Responsável: {{ $history['alterado_por_nome'] !== '' ? $history['alterado_por_nome'] : 'Sistema' }}</small>
+                        </article>
+                    @endforeach
+                </div>
+            @else
+                @include('layouts.partials.empty-state', [
+                    'icon' => 'bi-clock-history',
+                    'title' => 'Sem histórico',
+                    'message' => 'Os próximos movimentos deste orçamento aparecerão aqui automaticamente.',
+                ])
+            @endif
+        </article>
+
+        <article class="surface-card">
+            <div class="surface-card-header">
+                <div>
+                    <h2 class="surface-title">Envios e aprovações</h2>
+                    <p class="surface-subtitle">Controle de comunicação e decisão do cliente.</p>
+                </div>
+            </div>
+
+            <div class="detail-list">
+                <div class="detail-item">
+                    <strong>Envios recentes</strong>
+                    @if ($sends !== [])
+                        <ul class="list-unstyled mb-0">
+                            @foreach ($sends as $send)
+                                <li class="mb-3">
+                                    <div class="fw-semibold">{{ $send['canal'] !== '' ? $send['canal'] : 'Canal não informado' }}</div>
+                                    <small class="text-secondary d-block">{{ $send['destino'] !== '' ? $send['destino'] : 'Destino não informado' }}</small>
+                                    <small class="text-secondary d-block">{{ $send['status'] !== '' ? $send['status'] : 'Status não informado' }}</small>
+                                </li>
+                            @endforeach
+                        </ul>
+                    @else
+                        <span>Sem envios registrados.</span>
+                    @endif
+                </div>
+
+                <div class="detail-item">
+                    <strong>Aprovações recentes</strong>
+                    @if ($approvals !== [])
+                        <ul class="list-unstyled mb-0">
+                            @foreach ($approvals as $approval)
+                                <li class="mb-3">
+                                    <div class="fw-semibold">{{ $approval['acao'] !== '' ? $approval['acao'] : 'Ação' }}</div>
+                                    <small class="text-secondary d-block">{{ $approval['usuario_nome'] !== '' ? $approval['usuario_nome'] : 'Usuário não identificado' }}</small>
+                                    <small class="text-secondary d-block">{{ $approval['resposta_cliente'] !== '' ? $approval['resposta_cliente'] : 'Sem resposta' }}</small>
+                                </li>
+                            @endforeach
+                        </ul>
+                    @else
+                        <span>Sem aprovações registradas.</span>
+                    @endif
+                </div>
+            </div>
+        </article>
+    </section>
+@endsection

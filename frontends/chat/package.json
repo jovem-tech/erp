@@ -1,0 +1,37 @@
+{
+  "name": "sistema-erp-chat",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "clean": "node -e \"const fs=require('fs'); fs.rmSync('.next', { recursive: true, force: true });\"",
+    "predev": "npm run clean",
+    "prebuild": "npm run clean",
+    "dev": "next dev -p 3002",
+    "build": "next build",
+    "start": "next start -p 3002",
+    "lint": "eslint . --ext .ts,.tsx",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "laravel-echo": "^2.0.2",
+    "next": "^15.3.3",
+    "pusher-js": "^8.4.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.0.3",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "^15.3.3",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.8.3",
+    "vitest": "^4.1.9"
+  }
+}

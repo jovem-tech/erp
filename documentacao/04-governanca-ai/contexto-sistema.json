@@ -1,0 +1,462 @@
+{
+    "generated_at": "2026-06-28T13:45:32+02:00",
+    "system": {
+        "name": "sistema-erp",
+        "app_version": "3.4.0",
+        "api_version": "1.1.0",
+        "production_target": "Ubuntu VPS",
+        "development_target": "Windows/XAMPP"
+    },
+    "architecture": {
+        "backend": "Laravel 13.x em backend/ como fonte unica de verdade",
+        "desktop": "Laravel/Blade em frontends/desktop consumindo apenas a API central",
+        "mobile": "Next.js em frontends/mobile consumindo a mesma API central"
+    },
+    "documentation_categories": [
+        {
+            "directory": "documentacao/00-visao-geral",
+            "files": [
+                {
+                    "file": "documentacao/00-visao-geral/arquitetura-alvo.md",
+                    "title": "Arquitetura Alvo"
+                },
+                {
+                    "file": "documentacao/00-visao-geral/prd-frontend-sistema-hml-bff.md",
+                    "title": "PRD - Frontend sistema-hml como BFF"
+                }
+            ]
+        },
+        {
+            "directory": "documentacao/01-fundacao",
+            "files": [
+                {
+                    "file": "documentacao/01-fundacao/acesso-seguro-a-arquivos.md",
+                    "title": "Acesso Seguro a Arquivos"
+                },
+                {
+                    "file": "documentacao/01-fundacao/contrato-de-ambiente.md",
+                    "title": "Contrato de Ambiente"
+                },
+                {
+                    "file": "documentacao/01-fundacao/estrutura-fisica.md",
+                    "title": "Estrutura Fisica Inicial"
+                }
+            ]
+        },
+        {
+            "directory": "documentacao/02-infraestrutura-ambientes",
+            "files": [
+                {
+                    "file": "documentacao/02-infraestrutura-ambientes/README.md",
+                    "title": "Fase 2 - Infraestrutura de Desenvolvimento e Produção"
+                },
+                {
+                    "file": "documentacao/02-infraestrutura-ambientes/cors-urls-logs-filas-scheduler.md",
+                    "title": "CORS, URLs, Logs, Filas e Scheduler"
+                },
+                {
+                    "file": "documentacao/02-infraestrutura-ambientes/linux-vps.md",
+                    "title": "VPS Linux (Ubuntu)"
+                },
+                {
+                    "file": "documentacao/02-infraestrutura-ambientes/windows-xampp.md",
+                    "title": "Windows + XAMPP"
+                }
+            ]
+        },
+        {
+            "directory": "documentacao/03-arquitetura-tecnica",
+            "files": [
+                {
+                    "file": "documentacao/03-arquitetura-tecnica/README.md",
+                    "title": "Arquitetura Técnica - Fases 4, 5, 6 e 7"
+                },
+                {
+                    "file": "documentacao/03-arquitetura-tecnica/backend-administrativo-rbac.md",
+                    "title": "Backend Administrativo e RBAC Central"
+                },
+                {
+                    "file": "documentacao/03-arquitetura-tecnica/backend-central-minimo.md",
+                    "title": "Backend Central Minimo"
+                },
+                {
+                    "file": "documentacao/03-arquitetura-tecnica/contrato-api-backend-central.md",
+                    "title": "Contrato da API do Backend Central"
+                },
+                {
+                    "file": "documentacao/03-arquitetura-tecnica/frontend-desktop-laravel.md",
+                    "title": "frontend-desktop-laravel"
+                },
+                {
+                    "file": "documentacao/03-arquitetura-tecnica/frontend-sistema-hml-bff.md",
+                    "title": "Frontend sistema-hml como BFF"
+                },
+                {
+                    "file": "documentacao/03-arquitetura-tecnica/mapa-migracao-legado-frontend-sistema-hml.md",
+                    "title": "Mapa Completo de Migração e Limpeza do `frontend/sistema-hml`"
+                },
+                {
+                    "file": "documentacao/03-arquitetura-tecnica/ordens-mobile.md",
+                    "title": "Fluxo de OS Mobile"
+                }
+            ]
+        },
+        {
+            "directory": "documentacao/04-governanca-ai",
+            "files": [
+                {
+                    "file": "documentacao/04-governanca-ai/README.md",
+                    "title": "Governança para Agentes"
+                },
+                {
+                    "file": "documentacao/04-governanca-ai/manifesto-do-sistema.md",
+                    "title": "Manifesto do Sistema"
+                },
+                {
+                    "file": "documentacao/04-governanca-ai/operacao-para-agentes.md",
+                    "title": "Operação para Agentes"
+                }
+            ]
+        },
+        {
+            "directory": "documentacao/07-novas-implementacoes",
+            "files": [
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-22-fase-5-pwa-mobile-sessao-seguranca.md",
+                    "title": "Fase 5 - PWA Mobile, Sessão e Segurança"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-22-fase-6-backend-administrativo-rbac.md",
+                    "title": "Fase 6 - Backend Administrativo e RBAC Central"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-22-fase-7-frontend-desktop-laravel.md",
+                    "title": "2026-06-22-fase-7-frontend-desktop-laravel"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-22-fluxo-os-mobile-detalhe-anexos.md",
+                    "title": "Fluxo de OS mobile: detalhe da OS e anexos controlados"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-23-clientes-operacionais-desktop-erp.md",
+                    "title": "2026-06-23 - Clientes operacionais no desktop do sistema-erp"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-23-equipamentos-operacionais-desktop-erp.md",
+                    "title": "2026-06-23 - Equipamentos operacionais no desktop do sistema-erp"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-24-cadastro-completo-equipamentos-desktop-erp.md",
+                    "title": "2026-06-24-cadastro-completo-equipamentos-desktop-erp"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-24-clientes-cadastro-rapido-os-desktop-erp.md",
+                    "title": "2026-06-24 - Cadastro rápido de clientes na OS do desktop ERP"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-24-clientes-formulario-paridade-visual-desktop-erp.md",
+                    "title": "2026-06-24 - Formulário de novo cliente com paridade visual no desktop do sistema-erp"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-24-frontend-sistema-hml-auth-bff.md",
+                    "title": "Autenticação BFF do frontend sistema-hml"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-24-frontend-sistema-hml-dashboard-bff.md",
+                    "title": "Dashboard BFF do frontend sistema-hml"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-24-frontend-sistema-hml-notificacoes-bff.md",
+                    "title": "Notificações BFF do frontend sistema-hml"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-24-governanca-bff-sistema-hml.md",
+                    "title": "Governança do frontend sistema-hml como BFF"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-24-menu-pessoas-comercial-sidebar-desktop-erp.md",
+                    "title": "2026-06-24 - Menu `Pessoas` na seção comercial da sidebar do desktop do sistema-erp"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-24-select2-obrigatorio-desktop.md",
+                    "title": "2026-06-24-select2-obrigatorio-desktop"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-25-auditoria-completa-e-correcoes-de-seguranca.md",
+                    "title": "Auditoria completa do sistema-erp e correções de segurança (Fase 0 e Fase 1)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-25-correcoes-ui-equipamentos-e-log-de-erros.md",
+                    "title": "Correções de UI no cadastro de equipamentos e padronização de log de erros"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-25-descontinuacao-frontend-sistema-hml.md",
+                    "title": "Descontinuação do frontend sistema-hml"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-25-edicao-operacional-equipamentos-desktop-erp.md",
+                    "title": "Edicao operacional de equipamentos no desktop ERP"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-25-equipamentos-upload-multipart-header.md",
+                    "title": "2026-06-25 - Correção do upload multipart no cadastro de equipamentos"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-25-fase-2-correcoes-fila-https-csp-mobile.md",
+                    "title": "Fase 2 da auditoria: fila assíncrona, HTTPS, CSP e limpeza no mobile"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-25-fase-3-testes-mobile-e-auditoria-independente.md",
+                    "title": "Fase 3 da auditoria: testes reais no mobile e skill de auditoria independente"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-25-foto-obrigatoria-destaque-equipamentos.md",
+                    "title": "Foto obrigatoria e destaque visual em equipamentos"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-25-modal-cliente-equipamentos-sem-resposta.md",
+                    "title": "2026-06-25 - Modal de cliente sem resposta no cadastro de equipamentos"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-25-vinculo-catalogo-quick-add-equipamentos.md",
+                    "title": "2026-06-25 - Vinculo de catalogo no quick-add de equipamentos"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-26-configuracoes-integracoes-desktop-erp.md",
+                    "title": "2026-06-26 - Configurações > Integrações no desktop ERP"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-26-fornecedores-operacionais-desktop-erp.md",
+                    "title": "2026-06-26 - Fornecedores operacionais no backend central e no desktop"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-26-orcamentos-comerciais-desktop-erp.md",
+                    "title": "Orçamentos comerciais no desktop ERP"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-26-paridade-painel-os-desktop.md",
+                    "title": "Paridade operacional do painel de Ordens de Serviço no desktop"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-26-release-v3.1.21-servicos-estoque-operacionais.md",
+                    "title": "Release v3.1.21 - Serviços e Estoque Operacionais"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-27-acoes-edicao-baixa-os-desktop.md",
+                    "title": "Ações de OS no desktop: dropdown, edição e baixa (paridade completa com o legado)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-27-inbox-whatsapp-tempo-real.md",
+                    "title": "Central de Atendimento v1: WhatsApp Web/mobile do ERP"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/historico-de-versoes.md",
+                    "title": "Historico de versoes"
+                }
+            ]
+        },
+        {
+            "directory": "documentacao/10-deploy",
+            "files": []
+        }
+    ],
+    "specs": [
+        {
+            "directory": "specs/001-fundacao-fisica",
+            "title": "001-fundacao-fisica",
+            "artifacts": {
+                "spec": false,
+                "plan": false,
+                "tasks": false,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/002-infraestrutura-ambientes",
+            "title": "Spec: Infraestrutura de Desenvolvimento e Produção",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": true,
+                "quickstart": true,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": true
+            }
+        },
+        {
+            "directory": "specs/003-backend-central-minimo",
+            "title": "Spec: Backend Central Mínimo",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": true,
+                "quickstart": true,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": true
+            }
+        },
+        {
+            "directory": "specs/004-os-mobile-flow",
+            "title": "Spec: Fluxo de OS Mobile",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": true,
+                "quickstart": true,
+                "analysis": false,
+                "data_model": true,
+                "contracts": true,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/005-pwa-mobile-session",
+            "title": "Spec: Sessão e segurança do PWA mobile",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/006-backend-administrativo-rbac",
+            "title": "Spec: Backend administrativo e RBAC central",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": true,
+                "quickstart": true,
+                "analysis": true,
+                "data_model": true,
+                "contracts": true,
+                "checklists": true
+            }
+        },
+        {
+            "directory": "specs/007-frontend-desktop-laravel",
+            "title": "Spec 007 - Frontend Desktop Laravel",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": true,
+                "analysis": true,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/008-cadastro-equipamentos-desktop",
+            "title": "Feature Specification: Cadastro Completo de Equipamentos no Desktop",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": true,
+                "quickstart": true,
+                "analysis": true,
+                "data_model": true,
+                "contracts": true,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/008-governanca-bff-sistema-hml",
+            "title": "Spec 008 - Governança do BFF sistema-hml",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": false,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": true,
+                "checklists": true
+            }
+        },
+        {
+            "directory": "specs/009-paridade-painel-os-desktop",
+            "title": "Feature Specification: Paridade Operacional do Painel de Ordens de Serviço no Desktop",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/010-inbox-whatsapp-tempo-real",
+            "title": "Feature Specification: Central de Atendimento — Inbox de WhatsApp em tempo real",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/011-acoes-edicao-baixa-os-desktop",
+            "title": "Feature Specification: Ações de OS no Desktop — Dropdown, Edição e Baixa (paridade completa com o legado)",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        }
+    ],
+    "sources_of_truth": {
+        "agentes": [
+            "AGENTS.md",
+            "documentacao/04-governanca-ai/operacao-para-agentes.md",
+            "documentacao/04-governanca-ai/manifesto-do-sistema.md"
+        ],
+        "arquitetura": [
+            "documentacao/00-visao-geral/arquitetura-alvo.md",
+            "documentacao/03-arquitetura-tecnica/README.md",
+            "backend/openapi.yaml"
+        ],
+        "governanca": [
+            ".specify/memory/constitution.md",
+            "specs/",
+            "documentacao/07-novas-implementacoes/historico-de-versoes.md"
+        ]
+    }
+}

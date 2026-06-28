@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sistema ERP Governanca"
+  short_description: "Guardrails e arquitetura oficial do ERP."
+  default_prompt: "Use $sistema-erp-governanca para orientar uma mudança segura e aderente ao escopo do Sistema ERP."
