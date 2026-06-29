@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-06-29T05:05:33+02:00",
+    "generated_at": "2026-06-29T06:15:08+02:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "3.4.2",
+        "app_version": "3.4.3",
         "api_version": "1.1.0",
         "production_target": "Ubuntu VPS",
         "development_target": "Windows/XAMPP"
@@ -266,6 +266,10 @@
                     "title": "2026-06-28 - Endurecimento de seguranca do chat e das integracoes"
                 },
                 {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-29-configuracoes-sistema-e-precificacao-financeiro-desktop.md",
+                    "title": "Configurações do sistema separadas e precificação no financeiro"
+                },
+                {
                     "file": "documentacao/07-novas-implementacoes/2026-06-29-fluxo-caixa-calendario-desktop.md",
                     "title": "Fluxo de caixa com visualização em calendário no desktop"
                 },
@@ -488,6 +492,21 @@
         {
             "directory": "specs/013-fluxo-caixa-calendario-desktop",
             "title": "Feature Specification: Fluxo de caixa no desktop com lista e calendário",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/014-configuracoes-sistema-e-precificacao-financeiro-desktop",
+            "title": "Feature Specification: Configuracoes do Sistema e Precificacao no desktop",
             "artifacts": {
                 "spec": true,
                 "plan": true,

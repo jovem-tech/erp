@@ -28,6 +28,13 @@ class ConfigurationController extends DesktopController
         ]);
     }
 
+    public function system(): View
+    {
+        return view('configurations.system', [
+            'pageTitle' => 'Configurações do Sistema',
+        ]);
+    }
+
     public function help(): View
     {
         return view('configurations.help', [

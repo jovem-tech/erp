@@ -9,6 +9,7 @@ use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\FinanceiroCartaoController;
 use App\Http\Controllers\FinanceiroCatalogController;
 use App\Http\Controllers\FinanceiroController;
+use App\Http\Controllers\FinanceiroPrecificacaoController;
 use App\Http\Controllers\FinanceiroMargemController;
 use App\Http\Controllers\FinanceiroReportController;
 use App\Http\Controllers\GroupController;
@@ -66,6 +67,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::patch('/perfil', [ProfileController::class, 'update'])->name('profile.update');
     Route::patch('/perfil/senha', [ProfileController::class, 'updatePassword'])->name('profile.password.update');
 
+    Route::get('/configuracoes/sistema', [ConfigurationController::class, 'system'])
+        ->middleware('desktop.permission:configuracoes,visualizar')
+        ->name('configurations.system.index');
     Route::get('/configuracoes/integracoes', [ConfigurationController::class, 'integrations'])
         ->middleware('desktop.permission:configuracoes,visualizar')
         ->name('configurations.integrations.index');
@@ -240,6 +244,18 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/financeiro/configuracoes', [FinanceiroCatalogController::class, 'index'])
         ->middleware('desktop.permission:financeiro,visualizar')
         ->name('financeiro.configuracoes');
+    Route::get('/financeiro/precificacao', [FinanceiroPrecificacaoController::class, 'index'])
+        ->middleware('desktop.permission:precificacao,visualizar')
+        ->name('financeiro.precificacao.index');
+    Route::match(['post', 'put'], '/financeiro/precificacao', [FinanceiroPrecificacaoController::class, 'save'])
+        ->middleware('desktop.permission:precificacao,editar')
+        ->name('financeiro.precificacao.save');
+    Route::post('/financeiro/precificacao/simular-peca', [FinanceiroPrecificacaoController::class, 'simulatePeca'])
+        ->middleware('desktop.permission:precificacao,visualizar')
+        ->name('financeiro.precificacao.simular-peca');
+    Route::post('/financeiro/precificacao/simular-servico', [FinanceiroPrecificacaoController::class, 'simulateServico'])
+        ->middleware('desktop.permission:precificacao,visualizar')
+        ->name('financeiro.precificacao.simular-servico');
     Route::get('/financeiro/cartoes', [FinanceiroCartaoController::class, 'index'])
         ->middleware('desktop.permission:financeiro,visualizar')
         ->name('financeiro.cartoes.index');

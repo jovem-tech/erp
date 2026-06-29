@@ -182,6 +182,12 @@ class DesktopNavigation
                         'module' => 'financeiro',
                         'icon' => 'bi-bar-chart-line',
                     ],
+                    [
+                        'label' => 'Precificação',
+                        'route' => 'financeiro.precificacao.index',
+                        'module' => 'precificacao',
+                        'icon' => 'bi-calculator',
+                    ],
                 ],
             ],
             [
@@ -252,6 +258,12 @@ class DesktopNavigation
             [
                 'label' => 'Configurações',
                 'items' => [
+                    [
+                        'label' => 'Configurações do Sistema',
+                        'route' => 'configurations.system.index',
+                        'module' => 'configuracoes',
+                        'icon' => 'bi-sliders',
+                    ],
                     [
                         'label' => 'Integrações',
                         'route' => 'configurations.integrations.index',

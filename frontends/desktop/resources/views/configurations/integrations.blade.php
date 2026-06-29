@@ -118,7 +118,7 @@
         <div class="desktop-page-hero">
             <div>
                 <h2>Configurações</h2>
-                <p>Começamos pelas integrações. Os demais painéis ficam reservados para a próxima etapa do módulo Empresa.</p>
+                <p>Esta página fica dedicada somente às integrações. Aparência, dados da empresa e segurança foram movidos para Configurações do Sistema.</p>
             </div>
 
             <a href="{{ route('configurations.integrations.help') }}" class="btn btn-outline-info rounded-pill">
@@ -127,34 +127,6 @@
         </div>
 
         <div class="surface-card desktop-config-tabs-shell">
-            <ul class="nav nav-pills flex-wrap gap-2 desktop-config-tabs" role="tablist" aria-label="Abas de configurações">
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" type="button" disabled>
-                        <i class="bi bi-palette me-1"></i>Aparência
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" type="button" disabled>
-                        <i class="bi bi-building me-1"></i>Dados da Empresa
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" type="button" disabled>
-                        <i class="bi bi-shield-lock me-1"></i>Sessão e Segurança
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link" type="button" disabled>
-                        <i class="bi bi-calculator me-1"></i>Precificação
-                    </button>
-                </li>
-                <li class="nav-item" role="presentation">
-                    <button class="nav-link active d-flex align-items-center" type="button" aria-current="page">
-                        <i class="bi bi-plug me-1"></i>Integrações
-                    </button>
-                </li>
-            </ul>
-
             <form
                 method="post"
                 action="{{ route('configurations.integrations.update') }}"

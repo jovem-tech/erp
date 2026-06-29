@@ -502,6 +502,25 @@ const DesktopUi = (() => {
         });
     };
 
+    const initConfigSubtabs = () => {
+        document.querySelectorAll('[data-config-subtab]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const shell = button.closest('.desktop-config-tabs-shell') || button.closest('.surface-card') || document;
+                const activeKey = button.getAttribute('data-config-subtab') || '';
+                const subtabs = shell.querySelectorAll('[data-config-subtab]');
+                const subpanels = shell.querySelectorAll('[data-config-subpanel]');
+
+                subtabs.forEach((tab) => {
+                    tab.classList.toggle('is-active', tab.getAttribute('data-config-subtab') === activeKey);
+                });
+
+                subpanels.forEach((panel) => {
+                    panel.classList.toggle('is-active', panel.getAttribute('data-config-subpanel') === activeKey);
+                });
+            });
+        });
+    };
+
     const initPasswordToggles = () => {
         document.querySelectorAll('[data-password-toggle]').forEach((button) => {
             button.addEventListener('click', () => {
@@ -1003,6 +1022,7 @@ const DesktopUi = (() => {
     const init = () => {
         initSidebar();
         initSidebarGroups();
+        initConfigSubtabs();
         initPasswordToggles();
         initFlash();
         initNotifications();

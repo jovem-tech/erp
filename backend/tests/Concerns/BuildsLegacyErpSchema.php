@@ -39,6 +39,9 @@ trait BuildsLegacyErpSchema
             'pecas',
             'servicos',
             'precificacao_categorias',
+            'precificacao_componentes',
+            'precificacao_categoria_encargos',
+            'precificacao_servico_overrides',
             'equipment_collector_pairings',
             'equipamentos_fotos',
             'equipamentos_catalogo_relacoes',
@@ -69,6 +72,9 @@ trait BuildsLegacyErpSchema
         $this->createPartsTable();
         $this->createMovimentacoesTable();
         $this->createPrecificacaoCategoriasTable();
+        $this->createPrecificacaoComponentesTable();
+        $this->createPrecificacaoCategoriaEncargosTable();
+        $this->createPrecificacaoServicoOverridesTable();
         $this->createEquipmentCatalogTables();
         $this->createEquipmentsTable();
         $this->createEquipmentPhotosTable();
@@ -82,6 +88,7 @@ trait BuildsLegacyErpSchema
         $this->createOrderItemsTable();
         $this->createBudgetTables();
         $this->seedEquipmentCatalog();
+        $this->seedPrecificacaoCatalog();
     }
 
     protected function seedRbacCatalog(): void
@@ -113,6 +120,7 @@ trait BuildsLegacyErpSchema
         DB::table('modulos')->insert([
             ['id' => 11, 'nome' => 'Financeiro', 'slug' => 'financeiro', 'icone' => 'bi-cash-coin', 'ordem_menu' => 45, 'ativo' => 1],
             ['id' => 12, 'nome' => 'Atendimento WhatsApp', 'slug' => 'atendimento_whatsapp', 'icone' => 'bi-chat-dots', 'ordem_menu' => 70, 'ativo' => 1],
+            ['id' => 13, 'nome' => 'Precificação', 'slug' => 'precificacao', 'icone' => 'bi-calculator', 'ordem_menu' => 46, 'ativo' => 1],
         ]);
 
         DB::table('permissoes')->insert([
@@ -725,6 +733,72 @@ trait BuildsLegacyErpSchema
         });
     }
 
+    private function createPrecificacaoComponentesTable(): void
+    {
+        Schema::create('precificacao_componentes', function (Blueprint $table): void {
+            $table->id();
+            $table->string('grupo', 50);
+            $table->string('nome', 120);
+            $table->string('tipo_valor', 20)->default('percentual');
+            $table->decimal('valor', 12, 4)->default(0);
+            $table->string('origem', 20)->default('manual');
+            $table->boolean('ativo')->default(true);
+            $table->integer('ordem')->default(0);
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
+        });
+    }
+
+    private function createPrecificacaoCategoriaEncargosTable(): void
+    {
+        Schema::create('precificacao_categoria_encargos', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('categoria_id');
+            $table->string('nome', 140);
+            $table->decimal('percentual', 8, 2)->default(0);
+            $table->boolean('ativo')->default(true);
+            $table->integer('ordem')->default(0);
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
+
+            $table->foreign('categoria_id')->references('id')->on('precificacao_categorias')->cascadeOnDelete();
+        });
+    }
+
+    private function createPrecificacaoServicoOverridesTable(): void
+    {
+        Schema::create('precificacao_servico_overrides', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('servico_id');
+            $table->decimal('custo_hora_produtiva', 14, 4)->default(0);
+            $table->decimal('custos_diretos_total', 14, 4)->default(0);
+            $table->decimal('margem_percentual', 8, 4)->default(0);
+            $table->decimal('taxa_recebimento_percentual', 8, 4)->default(0);
+            $table->decimal('imposto_percentual', 8, 4)->default(0);
+            $table->decimal('tempo_tecnico_horas', 10, 4)->default(0);
+            $table->decimal('risco_percentual', 8, 4)->default(0);
+            $table->decimal('preco_tabela_referencia', 14, 4)->default(0);
+            $table->decimal('custos_fixos_mensais', 14, 4)->default(0);
+            $table->decimal('tecnicos_ativos', 10, 4)->default(1);
+            $table->decimal('horas_produtivas_dia', 10, 4)->default(0);
+            $table->decimal('dias_uteis_mes', 10, 4)->default(1);
+            $table->decimal('consumiveis_valor', 14, 4)->default(0);
+            $table->decimal('tempo_indireto_horas', 10, 4)->default(0);
+            $table->decimal('reserva_garantia_valor', 14, 4)->default(0);
+            $table->decimal('perdas_pequenas_valor', 14, 4)->default(0);
+            $table->decimal('tempo_desmontagem_min', 10, 4)->default(0);
+            $table->decimal('tempo_substituicao_min', 10, 4)->default(0);
+            $table->decimal('tempo_montagem_min', 10, 4)->default(0);
+            $table->decimal('tempo_teste_final_min', 10, 4)->default(0);
+            $table->boolean('ativo')->default(true);
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
+
+            $table->unique('servico_id', 'ux_precificacao_servico_overrides_servico');
+            $table->foreign('servico_id')->references('id')->on('servicos')->cascadeOnDelete();
+        });
+    }
+
     private function createEquipmentCatalogTables(): void
     {
         Schema::create('equipamentos_tipos', function (Blueprint $table): void {
@@ -1286,6 +1360,19 @@ trait BuildsLegacyErpSchema
         DB::table('precificacao_categorias')->insert([
             ['id' => 1, 'tipo' => 'servico', 'categoria_nome' => 'Software', 'encargos_percentual' => 10, 'margem_percentual' => 35, 'ativo' => 1, 'ordem' => 1, 'created_at' => now(), 'updated_at' => now()],
             ['id' => 2, 'tipo' => 'peca', 'categoria_nome' => 'Insumos', 'encargos_percentual' => 5, 'margem_percentual' => 20, 'ativo' => 1, 'ordem' => 1, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('precificacao_componentes')->insert([
+            ['grupo' => 'encargo_peca_percentual', 'nome' => 'Triagem e testes da peça', 'tipo_valor' => 'percentual', 'valor' => 4, 'origem' => 'manual', 'ativo' => 1, 'ordem' => 10, 'created_at' => now(), 'updated_at' => now()],
+            ['grupo' => 'encargo_peca_percentual', 'nome' => 'Risco de garantia da peça', 'tipo_valor' => 'percentual', 'valor' => 5, 'origem' => 'manual', 'ativo' => 1, 'ordem' => 20, 'created_at' => now(), 'updated_at' => now()],
+            ['grupo' => 'encargo_peca_percentual', 'nome' => 'Armazenagem e obsolescência', 'tipo_valor' => 'percentual', 'valor' => 3, 'origem' => 'manual', 'ativo' => 1, 'ordem' => 30, 'created_at' => now(), 'updated_at' => now()],
+            ['grupo' => 'custo_servico_fixo', 'nome' => 'Consumíveis e limpeza técnica', 'tipo_valor' => 'valor', 'valor' => 6, 'origem' => 'manual', 'ativo' => 1, 'ordem' => 10, 'created_at' => now(), 'updated_at' => now()],
+            ['grupo' => 'risco_servico_percentual', 'nome' => 'Reserva de garantia e retrabalho', 'tipo_valor' => 'percentual', 'valor' => 3, 'origem' => 'manual', 'ativo' => 1, 'ordem' => 10, 'created_at' => now(), 'updated_at' => now()],
+        ]);
+
+        DB::table('precificacao_categoria_encargos')->insert([
+            ['categoria_id' => 1, 'nome' => 'Margem técnica de software', 'percentual' => 12, 'ativo' => 1, 'ordem' => 1, 'created_at' => now(), 'updated_at' => now()],
+            ['categoria_id' => 2, 'nome' => 'Triagem e garantia da peça', 'percentual' => 8, 'ativo' => 1, 'ordem' => 1, 'created_at' => now(), 'updated_at' => now()],
         ]);
     }
 }

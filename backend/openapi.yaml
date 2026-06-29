@@ -2237,6 +2237,152 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /financeiro/precificacao:
+    get:
+      tags:
+        - Financeiro
+      summary: Obter o painel de precificação.
+      responses:
+        "200":
+          description: Configurações, regras e catálogos de precificação.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          precificacao:
+                            type: object
+                            additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags:
+        - Financeiro
+      summary: Salvar as configurações e catálogos de precificação.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: Precificação atualizada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          precificacao:
+                            type: object
+                            additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+  /financeiro/precificacao/simular-peca:
+    post:
+      tags:
+        - Financeiro
+      summary: Simular a precificação de uma peça.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                peca_id:
+                  type: integer
+                preco_custo:
+                  type: number
+                preco_venda:
+                  type: number
+                categoria:
+                  type: string
+      responses:
+        "200":
+          description: Resultado da simulação da peça.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          simulation:
+                            type: object
+                            additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /financeiro/precificacao/simular-servico:
+    post:
+      tags:
+        - Financeiro
+      summary: Simular a precificação de um serviço.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                servico_id:
+                  type: integer
+                tempo_padrao_horas:
+                  type: number
+                custo_direto_padrao:
+                  type: number
+                valor_cadastro:
+                  type: number
+                tipo_equipamento:
+                  type: string
+      responses:
+        "200":
+          description: Resultado da simulação do serviço.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          simulation:
+                            type: object
+                            additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
   /financeiro/cartoes:
     get:
       tags:

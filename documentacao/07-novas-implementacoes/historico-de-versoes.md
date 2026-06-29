@@ -1,10 +1,20 @@
 # Historico de versoes
 
+## v3.4.3 - 2026-06-29
+
+- a pagina de configuracoes do desktop foi dividida entre Integracoes e Configuracoes do Sistema, reduzindo a sensacao de sobrecarga visual nas transicoes;
+- o novo menu `Configuracoes do Sistema` concentra aparencia, dados da empresa e sessao/seguranca em um bloco proprio da sidebar;
+- a precificacao ganhou pagina dedicada dentro do Financeiro, com regras, catalogos e simuladores para pecas e servicos usando o backend central como fonte de verdade;
+- o backend central recebeu contrato novo de precificacao, com indexacao, salvamento e simulacao de peca/servico documentados em `backend/openapi.yaml`;
+- nota de entrega criada em `documentacao/07-novas-implementacoes/2026-06-29-configuracoes-sistema-e-precificacao-financeiro-desktop.md` e versao global atualizada para `3.4.3`.
+
 ## v3.4.2 - 2026-06-28
 
 - o relatorio de fluxo de caixa do desktop ganhou alternancia entre lista diaria e calendario mensal, preservando o mesmo periodo selecionado;
 - o calendario do fluxo de caixa foi montado no Blade com base nas linhas diarias ja retornadas pelo payload do relatorio, sem mudar o contrato da API central;
 - a visualizacao destaca dias fora do mes selecionado, entradas, saidas e saldo por dia, com navegacao mensal por query string;
+- os badges de entradas e saidas passaram a ocultar valores zero; quando nao ha lancamentos no dia, o calendario mostra apenas um badge cinza "Sem lancamentos";
+- a visualizacao em lista agora colore entradas em verde, saidas em vermelho e saldo realizado em azul, sem adicionar badges;
 - a documentacao do desktop e a versao global do sistema foram atualizadas para registrar a nova leitura do fluxo de caixa.
 
 ## v3.4.1 - 2026-06-28

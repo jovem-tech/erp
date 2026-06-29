@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\V1\BudgetController;
 use App\Http\Controllers\Api\V1\ConfigurationController;
 use App\Http\Controllers\Api\V1\FinanceiroCatalogController;
 use App\Http\Controllers\Api\V1\FinanceiroCartaoController;
+use App\Http\Controllers\Api\V1\FinanceiroPrecificacaoController;
 use App\Http\Controllers\Api\V1\FinanceiroController;
 use App\Http\Controllers\Api\V1\FinanceiroMargemController;
 use App\Http\Controllers\Api\V1\FinanceiroReportController;
@@ -88,6 +89,15 @@ Route::prefix('v1')->group(function (): void {
                 Route::post('/taxas-online', [FinanceiroCartaoController::class, 'storeGatewayTaxa'])->name('taxas_online.store');
                 Route::match(['put', 'patch'], '/taxas-online/{gatewayTaxa}', [FinanceiroCartaoController::class, 'updateGatewayTaxa'])->name('taxas_online.update');
                 Route::delete('/taxas-online/{gatewayTaxa}', [FinanceiroCartaoController::class, 'destroyGatewayTaxa'])->name('taxas_online.destroy');
+            });
+
+        Route::prefix('financeiro/precificacao')
+            ->name('api.v1.financeiro.precificacao.')
+            ->group(function (): void {
+                Route::get('/', [FinanceiroPrecificacaoController::class, 'index'])->name('index');
+                Route::put('/', [FinanceiroPrecificacaoController::class, 'update'])->name('update');
+                Route::post('/simular-peca', [FinanceiroPrecificacaoController::class, 'simulatePeca'])->name('simular_peca');
+                Route::post('/simular-servico', [FinanceiroPrecificacaoController::class, 'simulateServico'])->name('simular_servico');
             });
 
         Route::prefix('financeiro')

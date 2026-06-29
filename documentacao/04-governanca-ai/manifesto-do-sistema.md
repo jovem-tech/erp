@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-06-29T05:05:33+02:00`
-- Versao do sistema: `3.4.2`
+- Gerado em: `2026-06-29T06:15:08+02:00`
+- Versao do sistema: `3.4.3`
 - Versao da API: `1.1.0`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Windows/XAMPP`
@@ -109,6 +109,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-06-28-correcao-utf8-painel-os-desktop.md` - Correcao UTF-8 no painel de OS do desktop
 - `documentacao/07-novas-implementacoes/2026-06-28-endurecimento-recuperacao-senha-email.md` - Endurecimento da recuperacao de senha por e-mail
 - `documentacao/07-novas-implementacoes/2026-06-28-endurecimento-seguranca-chat-integracoes.md` - 2026-06-28 - Endurecimento de seguranca do chat e das integracoes
+- `documentacao/07-novas-implementacoes/2026-06-29-configuracoes-sistema-e-precificacao-financeiro-desktop.md` - Configurações do sistema separadas e precificação no financeiro
 - `documentacao/07-novas-implementacoes/2026-06-29-fluxo-caixa-calendario-desktop.md` - Fluxo de caixa com visualização em calendário no desktop
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 
@@ -133,4 +134,5 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/011-acoes-edicao-baixa-os-desktop` - Feature Specification: Ações de OS no Desktop — Dropdown, Edição e Baixa (paridade completa com o legado) | artefatos: spec, plan, tasks
 - `specs/012-financeiro-cartoes-taxas-desktop` - Feature Specification: Financeiro - Cartões e Taxas no Desktop | artefatos: spec, plan, tasks, research, quickstart, data_model, contracts
 - `specs/013-fluxo-caixa-calendario-desktop` - Feature Specification: Fluxo de caixa no desktop com lista e calendário | artefatos: spec, plan, tasks
+- `specs/014-configuracoes-sistema-e-precificacao-financeiro-desktop` - Feature Specification: Configuracoes do Sistema e Precificacao no desktop | artefatos: spec, plan, tasks
 
