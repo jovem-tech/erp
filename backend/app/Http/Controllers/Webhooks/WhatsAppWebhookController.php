@@ -24,9 +24,24 @@ class WhatsAppWebhookController extends Controller
         $expectedToken = trim($this->integrationSettingsService->webhookToken());
         $providedToken = $this->resolveProvidedToken($request);
 
-        if ($expectedToken !== '' && ! hash_equals($expectedToken, $providedToken)) {
+        if ($expectedToken === '') {
+            logger()->warning('[API V1][WHATSAPP] Webhook rejeitado por token nao configurado.', [
+                'ip' => $request->ip(),
+            ]);
+
             return ApiResponse::error(
-                'Token do webhook inválido.',
+                'Token do webhook invalido.',
+                403,
+                'WHATSAPP_WEBHOOK_FORBIDDEN',
+                null,
+                [],
+                $request
+            );
+        }
+
+        if (! hash_equals($expectedToken, $providedToken)) {
+            return ApiResponse::error(
+                'Token do webhook invalido.',
                 403,
                 'WHATSAPP_WEBHOOK_FORBIDDEN',
                 null,
@@ -58,7 +73,7 @@ class WhatsAppWebhookController extends Controller
 
     /**
      * Repassa o payload para a Central de Atendimento (specs/010-inbox-whatsapp-tempo-real).
-     * Falhas aqui MUST NOT quebrar o ack do webhook (a Evolution API reenviaria em loop) —
+     * Falhas aqui MUST NOT quebrar o ack do webhook (a Evolution API reenviaria em loop) -
      * apenas registradas em log para investigacao.
      */
     private function processIncomingMessage(Request $request): void

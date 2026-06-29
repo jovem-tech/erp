@@ -2,7 +2,6 @@
 
 namespace App\Providers;
 
-use App\Services\NotificationService;
 use App\Services\SearchService;
 use App\Support\DesktopNavigation;
 use App\Support\DesktopSession;
@@ -40,7 +39,11 @@ class DesktopAppServiceProvider extends ServiceProvider
             $view->with('desktopUser', DesktopSession::user());
             $view->with('desktopNavigation', app(DesktopNavigation::class)->sections());
             $view->with('desktopSearchScopes', app(SearchService::class)->scopes());
-            $view->with('desktopNotifications', app(NotificationService::class)->summary());
+            $view->with('desktopNotifications', [
+                'items' => [],
+                'unread_count' => 0,
+                'pagination' => [],
+            ]);
             $view->with('desktopSystemFooter', [
                 'version' => $version !== '' ? $version : '3.0.0',
                 'copyright' => sprintf('(c) %s %s', date('Y'), $appName !== '' ? $appName : 'Sistema ERP Desktop'),

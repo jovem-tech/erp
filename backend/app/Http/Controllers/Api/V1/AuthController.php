@@ -9,7 +9,7 @@ use App\Http\Requests\Api\V1\UpdatePasswordRequest;
 use App\Http\Requests\Api\V1\UpdateProfileRequest;
 use App\Models\User;
 use App\Services\Auth\RbacAuthorizationService;
-use Illuminate\Cookie\Middleware\SetCookie;
+use App\Services\Integrations\EmailIntegrationSettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cookie;
@@ -21,7 +21,8 @@ use Throwable;
 class AuthController extends BaseApiController
 {
     public function __construct(
-        private readonly RbacAuthorizationService $rbacAuthorizationService
+        private readonly RbacAuthorizationService $rbacAuthorizationService,
+        private readonly EmailIntegrationSettingsService $emailIntegrationSettingsService
     ) {
     }
 
@@ -107,6 +108,23 @@ class AuthController extends BaseApiController
         $validated = $request->validated();
         $email = mb_strtolower(trim((string) $validated['email']));
         $frontend = (string) ($validated['frontend'] ?? 'desktop');
+
+        if (! $this->emailIntegrationSettingsService->operationalMailerAvailable()) {
+            logger()->warning('[API V1][AUTH] Canal de redefinicao indisponivel', [
+                'frontend' => $frontend,
+                'ip' => $request->ip(),
+                'mailer' => (string) config('mail.default', ''),
+            ]);
+
+            return $this->error(
+                'A recuperacao de senha por e-mail esta temporariamente indisponivel. Contate o administrador.',
+                503,
+                'AUTH_PASSWORD_RESET_CHANNEL_UNAVAILABLE',
+                null,
+                request: $request
+            );
+        }
+
         $user = User::query()
             ->where('email', $email)
             ->where('ativo', true)
@@ -152,6 +170,9 @@ class AuthController extends BaseApiController
 
         return $this->success([
             'reset_link_sent' => true,
+            'delivery' => [
+                'mode' => 'email',
+            ],
         ], request: $request);
     }
 

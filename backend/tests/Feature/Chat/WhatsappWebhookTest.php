@@ -12,6 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Testing\TestResponse;
 use Tests\Concerns\BuildsLegacyErpSchema;
 use Tests\TestCase;
 
@@ -19,6 +20,8 @@ class WhatsappWebhookTest extends TestCase
 {
     use BuildsLegacyErpSchema;
     use RefreshDatabase;
+
+    private const WEBHOOK_TOKEN = 'token-webhook-123';
 
     protected function setUp(): void
     {
@@ -34,11 +37,13 @@ class WhatsappWebhookTest extends TestCase
             'channel_type' => 'whatsapp',
             'channel_id' => $channel->id,
         ]);
+
+        $this->seedWebhookSecuritySettings();
     }
 
     public function test_self_check_nao_cria_conversa(): void
     {
-        $response = $this->postJson('/webhooks/whatsapp', [
+        $response = $this->postWebhook([
             'self_check' => true,
             'source' => 'erp_direct_self_check',
         ]);
@@ -47,23 +52,30 @@ class WhatsappWebhookTest extends TestCase
         $this->assertSame(0, Message::query()->count());
     }
 
+    public function test_webhook_rejeita_requisicoes_quando_o_token_nao_esta_configurado(): void
+    {
+        DB::table('configuracoes')
+            ->where('chave', 'whatsapp_webhook_token')
+            ->update(['valor' => '']);
+
+        $this->postJson('/webhooks/whatsapp', [
+            'data' => [
+                'key' => ['remoteJid' => '5511988887777@s.whatsapp.net', 'fromMe' => false, 'id' => 'MSG-WITHOUT-CONFIG'],
+                'message' => ['conversation' => 'Mensagem sem token configurado'],
+            ],
+        ], [
+            'X-Webhook-Token' => self::WEBHOOK_TOKEN,
+        ])->assertForbidden()
+            ->assertJsonPath('error.code', 'WHATSAPP_WEBHOOK_FORBIDDEN');
+    }
+
     public function test_webhook_accepta_formatos_comuns_de_token(): void
     {
-        DB::table('configuracoes')->upsert([
-            [
-                'chave' => 'whatsapp_webhook_token',
-                'valor' => 'token-webhook-123',
-                'tipo' => 'texto',
-                'updated_at' => now(),
-                'created_at' => now(),
-            ],
-        ], ['chave'], ['valor', 'tipo', 'updated_at']);
-
         $headersList = [
-            ['Authorization' => 'Bearer token-webhook-123'],
-            ['X-Api-Token' => 'token-webhook-123'],
-            ['X-Api-Key' => 'token-webhook-123'],
-            ['apikey' => 'token-webhook-123'],
+            ['Authorization' => 'Bearer ' . self::WEBHOOK_TOKEN],
+            ['X-Api-Token' => self::WEBHOOK_TOKEN],
+            ['X-Api-Key' => self::WEBHOOK_TOKEN],
+            ['apikey' => self::WEBHOOK_TOKEN],
         ];
 
         foreach ($headersList as $index => $headers) {
@@ -86,7 +98,7 @@ class WhatsappWebhookTest extends TestCase
 
     public function test_payload_real_cria_contato_conversa_e_mensagem(): void
     {
-        $response = $this->postJson('/webhooks/whatsapp', [
+        $response = $this->postWebhook([
             'event' => 'messages.upsert',
             'data' => [
                 'key' => ['remoteJid' => '5511988887777@s.whatsapp.net', 'fromMe' => false, 'id' => 'MSG-1'],
@@ -104,7 +116,7 @@ class WhatsappWebhookTest extends TestCase
 
     public function test_payload_real_com_fromme_textual_false_nao_e_ignorado(): void
     {
-        $response = $this->postJson('/webhooks/whatsapp', [
+        $response = $this->postWebhook([
             'event' => 'messages.upsert',
             'data' => [
                 'key' => ['remoteJid' => '5511991112222@s.whatsapp.net', 'fromMe' => 'false', 'id' => 'MSG-TEXT-FALSE'],
@@ -125,10 +137,10 @@ class WhatsappWebhookTest extends TestCase
     {
         Storage::fake('local');
         Http::fake([
-            'https://provider.test/*' => Http::response('image-binary', 200, ['Content-Type' => 'image/png']),
+            'https://example.com/*' => Http::response('image-binary', 200, ['Content-Type' => 'image/png']),
         ]);
 
-        $response = $this->postJson('/webhooks/whatsapp', [
+        $response = $this->postWebhook([
             'event' => 'messages.upsert',
             'data' => [
                 'key' => ['remoteJid' => '5511988887777@s.whatsapp.net', 'fromMe' => false, 'id' => 'MSG-IMG'],
@@ -137,7 +149,7 @@ class WhatsappWebhookTest extends TestCase
                     'imageMessage' => [
                         'mimetype' => 'image/png',
                         'fileName' => 'foto.png',
-                        'mediaUrl' => 'https://provider.test/foto.png',
+                        'mediaUrl' => 'https://example.com/foto.png',
                     ],
                 ],
             ],
@@ -153,20 +165,47 @@ class WhatsappWebhookTest extends TestCase
         Storage::disk('local')->assertExists((string) $attachment->storage_path);
     }
 
+    public function test_url_de_midia_nao_confiavel_gera_placeholder_sem_download(): void
+    {
+        Http::fake([
+            'https://nao-confiavel.example.net/*' => Http::response('blocked', 200),
+        ]);
+
+        $this->postWebhook([
+            'data' => [
+                'key' => ['remoteJid' => '5511997776666@s.whatsapp.net', 'fromMe' => false, 'id' => 'MSG-BLOCKED'],
+                'message' => [
+                    'documentMessage' => [
+                        'mimetype' => 'application/pdf',
+                        'fileName' => 'laudo.pdf',
+                        'mediaUrl' => 'https://nao-confiavel.example.net/laudo.pdf',
+                    ],
+                ],
+            ],
+        ])->assertOk();
+
+        $message = Message::query()->where('source_id', 'MSG-BLOCKED')->firstOrFail();
+        $attachment = MessageAttachment::query()->where('mensagem_id', $message->id)->firstOrFail();
+
+        $this->assertSame('document', $message->content_type);
+        $this->assertSame('failed', $attachment->transfer_status);
+        $this->assertNull($attachment->storage_path);
+    }
+
     public function test_falha_no_download_da_midia_registra_placeholder_para_auditoria(): void
     {
         Http::fake([
-            'https://provider.test/*' => Http::response('', 500),
+            'https://example.com/*' => Http::response('', 500),
         ]);
 
-        $this->postJson('/webhooks/whatsapp', [
+        $this->postWebhook([
             'data' => [
                 'key' => ['remoteJid' => '5511997776666@s.whatsapp.net', 'fromMe' => false, 'id' => 'MSG-DOC'],
                 'message' => [
                     'documentMessage' => [
                         'mimetype' => 'application/pdf',
                         'fileName' => 'laudo.pdf',
-                        'mediaUrl' => 'https://provider.test/laudo.pdf',
+                        'mediaUrl' => 'https://example.com/laudo.pdf',
                     ],
                 ],
             ],
@@ -190,8 +229,8 @@ class WhatsappWebhookTest extends TestCase
             ],
         ];
 
-        $this->postJson('/webhooks/whatsapp', $payload)->assertOk();
-        $this->postJson('/webhooks/whatsapp', $payload)->assertOk();
+        $this->postWebhook($payload)->assertOk();
+        $this->postWebhook($payload)->assertOk();
 
         $this->assertSame(1, Message::query()->where('source_id', 'MSG-DUP')->count());
     }
@@ -211,8 +250,8 @@ class WhatsappWebhookTest extends TestCase
             ],
         ];
 
-        $this->postJson('/webhooks/whatsapp', $primeira)->assertOk();
-        $this->postJson('/webhooks/whatsapp', $segunda)->assertOk();
+        $this->postWebhook($primeira)->assertOk();
+        $this->postWebhook($segunda)->assertOk();
 
         $this->assertSame(1, Conversation::query()->count());
         $this->assertSame(2, Message::query()->count());
@@ -220,7 +259,7 @@ class WhatsappWebhookTest extends TestCase
 
     public function test_mensagem_de_grupo_e_ignorada(): void
     {
-        $this->postJson('/webhooks/whatsapp', [
+        $this->postWebhook([
             'data' => [
                 'key' => ['remoteJid' => '123456789-987654321@g.us', 'fromMe' => false, 'id' => 'MSG-GROUP'],
                 'message' => ['conversation' => 'Mensagem de grupo'],
@@ -232,7 +271,7 @@ class WhatsappWebhookTest extends TestCase
 
     public function test_mensagem_enviada_pelo_proprio_numero_e_ignorada(): void
     {
-        $this->postJson('/webhooks/whatsapp', [
+        $this->postWebhook([
             'data' => [
                 'key' => ['remoteJid' => '5511988887777@s.whatsapp.net', 'fromMe' => true, 'id' => 'MSG-FROM-ME'],
                 'message' => ['conversation' => 'Mensagem enviada do proprio telefone'],
@@ -240,5 +279,46 @@ class WhatsappWebhookTest extends TestCase
         ])->assertOk();
 
         $this->assertSame(0, Message::query()->count());
+    }
+
+    private function postWebhook(array $payload, array $headers = []): TestResponse
+    {
+        return $this->postJson('/webhooks/whatsapp', $payload, array_merge([
+            'X-Webhook-Token' => self::WEBHOOK_TOKEN,
+        ], $headers));
+    }
+
+    private function seedWebhookSecuritySettings(): void
+    {
+        DB::table('configuracoes')->upsert([
+            [
+                'chave' => 'whatsapp_webhook_token',
+                'valor' => self::WEBHOOK_TOKEN,
+                'tipo' => 'texto',
+                'updated_at' => now(),
+                'created_at' => now(),
+            ],
+            [
+                'chave' => 'whatsapp_evolution_url',
+                'valor' => 'https://example.com',
+                'tipo' => 'texto',
+                'updated_at' => now(),
+                'created_at' => now(),
+            ],
+            [
+                'chave' => 'whatsapp_evolution_apikey',
+                'valor' => 'api-key-example',
+                'tipo' => 'texto',
+                'updated_at' => now(),
+                'created_at' => now(),
+            ],
+            [
+                'chave' => 'whatsapp_evolution_instance',
+                'valor' => 'central-erp',
+                'tipo' => 'texto',
+                'updated_at' => now(),
+                'created_at' => now(),
+            ],
+        ], ['chave'], ['valor', 'tipo', 'updated_at']);
     }
 }

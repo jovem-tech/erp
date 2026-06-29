@@ -5,13 +5,15 @@ namespace App\Http\Controllers\Api\V1\Chat;
 use App\Http\Controllers\Api\V1\BaseApiController;
 use App\Models\User;
 use App\Services\Chat\ChatClientLookupService;
+use App\Services\Chat\ConversationAccessService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ClientSearchController extends BaseApiController
 {
     public function __construct(
-        private readonly ChatClientLookupService $clientLookup
+        private readonly ChatClientLookupService $clientLookup,
+        private readonly ConversationAccessService $accessService
     ) {
     }
 
@@ -23,6 +25,7 @@ class ClientSearchController extends BaseApiController
         }
 
         $this->authorize('atendimento_whatsapp:visualizar');
+        $canStartConversation = $this->accessService->defaultAccountIdForUser($user) !== null;
 
         $query = trim((string) $request->query('q', $request->query('search', '')));
         if ($query === '') {
@@ -30,9 +33,9 @@ class ClientSearchController extends BaseApiController
         }
 
         $clients = $this->clientLookup->search($query)
-            ->map(function ($client): array {
+            ->map(function ($client) use ($canStartConversation): array {
                 $summary = $this->clientLookup->mapSummary($client);
-                $summary['can_start_conversation'] = ! empty($summary['telefones']);
+                $summary['can_start_conversation'] = $canStartConversation && ! empty($summary['telefones']);
 
                 return $summary;
             })

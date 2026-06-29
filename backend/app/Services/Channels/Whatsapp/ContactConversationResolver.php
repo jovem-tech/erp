@@ -8,19 +8,21 @@ use App\Models\Chat\ContactInbox;
 use App\Models\Chat\Conversation;
 use App\Models\Chat\Inbox;
 use App\Services\Chat\ChatClientLookupService;
+use App\Services\Chat\ChatAccountContextService;
 use Illuminate\Support\Facades\DB;
 
 class ContactConversationResolver
 {
     public function __construct(
-        private readonly ChatClientLookupService $clientLookup
+        private readonly ChatClientLookupService $clientLookup,
+        private readonly ChatAccountContextService $accountContextService
     ) {
     }
 
-    public function resolve(string $phone, ?string $nome = null, ?int $clientId = null): Conversation
+    public function resolve(string $phone, ?string $nome = null, ?int $clientId = null, ?int $accountId = null): Conversation
     {
-        return DB::connection('chat')->transaction(function () use ($phone, $nome, $clientId) {
-            $account = Account::query()->lockForUpdate()->firstOrFail();
+        return DB::connection('chat')->transaction(function () use ($phone, $nome, $clientId, $accountId) {
+            $account = $this->resolveAccount($accountId);
 
             $contact = $this->findOrCreateContact($account, $phone, $nome ?? '', $clientId);
             $inbox = $this->firstWhatsappInbox($account);
@@ -107,5 +109,14 @@ class ContactConversationResolver
             'status' => 'open',
             'last_activity_at' => now(),
         ]);
+    }
+
+    private function resolveAccount(?int $accountId = null): Account
+    {
+        if ($accountId !== null && $accountId > 0) {
+            return Account::query()->lockForUpdate()->findOrFail($accountId);
+        }
+
+        return $this->accountContextService->defaultAccount();
     }
 }

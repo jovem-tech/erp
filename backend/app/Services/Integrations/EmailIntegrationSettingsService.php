@@ -4,6 +4,7 @@ namespace App\Services\Integrations;
 
 use App\Mail\IntegrationTestMail;
 use App\Models\Configuration;
+use App\Support\SecretSettings;
 use Illuminate\Support\Facades\Mail;
 use Throwable;
 
@@ -26,16 +27,61 @@ class EmailIntegrationSettingsService
     ];
 
     /**
+     * @var array<int, string>
+     */
+    private const SECRET_KEYS = [
+        'smtp_pass',
+    ];
+
+    /**
      * @return array<string, mixed>
      */
     public function payload(): array
     {
         $settings = $this->loadSettings();
+        $maskedSettings = SecretSettings::blank($settings, self::SECRET_KEYS);
 
         return [
-            'settings' => $settings,
+            'settings' => $maskedSettings,
+            'secret_status' => SecretSettings::status($settings, self::SECRET_KEYS),
             'summary' => $this->buildSummary($settings),
         ];
+    }
+
+    public function applyRuntimeConfig(): bool
+    {
+        $settings = $this->safeLoadSettings();
+
+        if ($settings === null || ! $this->isOperationalSmtpConfigured($settings)) {
+            return false;
+        }
+
+        config([
+            'mail.default' => 'smtp',
+            'mail.mailers.smtp' => $this->runtimeMailerConfig($settings),
+            'mail.from' => [
+                'address' => $this->resolveFromEmail($settings),
+                'name' => $this->resolveFromName($settings),
+            ],
+        ]);
+
+        Mail::purge('smtp');
+
+        return true;
+    }
+
+    public function operationalMailerAvailable(): bool
+    {
+        $this->applyRuntimeConfig();
+
+        $defaultMailer = trim(mb_strtolower((string) config('mail.default', '')));
+        $defaultTransport = trim(mb_strtolower((string) config('mail.mailers.' . $defaultMailer . '.transport', '')));
+
+        if ($defaultMailer === '' || in_array($defaultMailer, ['array', 'log'], true)) {
+            return false;
+        }
+
+        return ! in_array($defaultTransport, ['array', 'log'], true);
     }
 
     /**
@@ -148,6 +194,18 @@ class EmailIntegrationSettingsService
     }
 
     /**
+     * @return array<string, string>|null
+     */
+    private function safeLoadSettings(): ?array
+    {
+        try {
+            return $this->loadSettings();
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @param array<string, string> $current
      * @return array<string, string>
@@ -183,7 +241,7 @@ class EmailIntegrationSettingsService
             $normalized[$key] = is_scalar($value) ? trim((string) $value) : (string) $defaultValue;
         }
 
-        return $normalized;
+        return SecretSettings::preserveExisting($normalized, $current, self::SECRET_KEYS);
     }
 
     /**
@@ -192,13 +250,47 @@ class EmailIntegrationSettingsService
      */
     private function buildSummary(array $settings): array
     {
-        $configured = trim((string) ($settings['smtp_host'] ?? '')) !== '' && (int) ($settings['smtp_port'] ?? 0) > 0;
+        $configured = $this->isOperationalSmtpConfigured($settings);
 
         return [
             'configured' => $configured,
             'status' => $configured ? 'success' : 'secondary',
             'status_label' => $configured ? 'Configurado' : 'Aguardando configuração',
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $settings
+     * @return array<string, mixed>
+     */
+    private function runtimeMailerConfig(array $settings): array
+    {
+        $port = (int) ($settings['smtp_port'] ?? 0);
+        $crypto = $this->resolveCrypto((string) ($settings['smtp_crypto'] ?? 'auto'), $port);
+        $timeout = max(5, (int) ($settings['smtp_timeout'] ?? 20));
+        $user = trim((string) ($settings['smtp_user'] ?? ''));
+        $pass = trim((string) ($settings['smtp_pass'] ?? ''));
+        $localDomain = (string) (parse_url((string) config('app.url', 'http://localhost'), PHP_URL_HOST) ?: 'localhost');
+
+        return [
+            'transport' => 'smtp',
+            'scheme' => $crypto === 'ssl' ? 'smtps' : 'smtp',
+            'host' => trim((string) ($settings['smtp_host'] ?? '')),
+            'port' => $port,
+            'username' => $user !== '' ? $user : null,
+            'password' => $pass !== '' ? $pass : null,
+            'timeout' => $timeout,
+            'local_domain' => $localDomain,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $settings
+     */
+    private function isOperationalSmtpConfigured(array $settings): bool
+    {
+        return trim((string) ($settings['smtp_host'] ?? '')) !== ''
+            && (int) ($settings['smtp_port'] ?? 0) > 0;
     }
 
     /**

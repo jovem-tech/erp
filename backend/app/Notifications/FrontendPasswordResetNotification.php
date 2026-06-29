@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Services\Integrations\EmailIntegrationSettingsService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -26,24 +27,31 @@ class FrontendPasswordResetNotification extends Notification implements ShouldQu
         return ['mail'];
     }
 
+    public static function resetUrlFor(string $email, string $token): string
+    {
+        $frontendUrl = rtrim((string) config('services.frontend_desktop.url', 'http://127.0.0.1:8080'), '/');
+        $query = http_build_query([
+            'email' => $email,
+        ]);
+
+        return sprintf(
+            '%s/redefinir-senha/%s?%s',
+            $frontendUrl,
+            rawurlencode($token),
+            $query
+        );
+    }
+
     /**
      * @param mixed $notifiable
      */
     public function toMail($notifiable): MailMessage
     {
-        $frontendLabel = 'desktop';
-        $frontendUrl = rtrim((string) config('services.frontend_desktop.url', 'http://127.0.0.1:8080'), '/');
-        $email = (string) $notifiable->getEmailForPasswordReset();
-        $query = http_build_query([
-            'email' => $email,
-        ]);
+        app(EmailIntegrationSettingsService::class)->applyRuntimeConfig();
 
-        $resetUrl = sprintf(
-            '%s/redefinir-senha/%s?%s',
-            $frontendUrl,
-            rawurlencode($this->token),
-            $query
-        );
+        $frontendLabel = 'desktop';
+        $email = (string) $notifiable->getEmailForPasswordReset();
+        $resetUrl = self::resetUrlFor($email, $this->token);
 
         return (new MailMessage)
             ->subject('Redefinição de senha do Sistema ERP')

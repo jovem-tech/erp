@@ -1,7 +1,16 @@
 # Historico de versoes
 
+## v3.4.1 - 2026-06-28
+
+- o desktop recebeu o módulo financeiro `Cartões e Taxas`, com paridade funcional do legado visível em `/financeiro/cartoes`, incluindo abas operacionais, simulador de recebimento líquido, taxas online e ajuda local;
+- o backend central foi integrado ao desktop para esse módulo, com rotas de operadoras, bandeiras, taxas por parcela e taxas online acessíveis somente via API central;
+- a documentação técnica, o contrato humano da API, o inventário do Spec Kit e a versão global do sistema foram atualizados para refletir a entrega;
+- Select2 permanece obrigatório em todos os selects visíveis do desktop, inclusive neste módulo financeiro.
+
 ## v3.4.0 - 2026-06-28
 
+- o desktop ganhou um loader visual global de transição de página, exibido antes de navegações e submits reais para reduzir a sensação de travamento entre telas;
+- a navbar do desktop deixou de carregar o resumo de notificações no render inicial; o badge e a lista agora são buscados sob demanda por uma rota same-origin autenticada, reduzindo o custo percebido na troca de páginas sem abrir mão da segurança;
 - ao entrar em `/os` sem filtros, o desktop voltou a abrir a fila operacional de OS abertas por padrão, enviando `status_scope=open` só na listagem principal e mantendo consultas secundárias sem esse recorte implícito;
 
 - a baixa de OS (`/os/{id}/baixa`) ganhou paridade completa com o legado: simulação automática de taxa de cartão por operadora/bandeira/parcelas (`FinanceiroCartaoService`, com despesa de taxa registrada automaticamente), cobrança agendada por WhatsApp em D+1/D+3/D+5 quando sobra saldo em aberto (novo comando `app:process-pending-os-collections`, status intermediário `entregue_pagamento_pendente`), e follow-up opcional de retorno pós-serviço via CRM (`crm_followups`, deduplicado por OS + data);

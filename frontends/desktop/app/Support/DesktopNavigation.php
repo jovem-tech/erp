@@ -53,7 +53,7 @@ class DesktopNavigation
             }
         }
 
-        return 'dashboard';
+        return self::routeExists('profile.show') ? 'profile.show' : 'dashboard';
     }
 
     /**
@@ -169,6 +169,12 @@ class DesktopNavigation
                         'route' => 'financeiro.relatorios.margem',
                         'module' => 'financeiro',
                         'icon' => 'bi-graph-up',
+                    ],
+                    [
+                        'label' => 'Cartões e Taxas',
+                        'route' => 'financeiro.cartoes.index',
+                        'module' => 'financeiro',
+                        'icon' => 'bi-credit-card-2-front',
                     ],
                     [
                         'label' => 'Configurações Financeiras',

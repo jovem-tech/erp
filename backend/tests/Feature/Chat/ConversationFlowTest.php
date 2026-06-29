@@ -106,6 +106,18 @@ class ConversationFlowTest extends TestCase
             ->assertJsonPath('data.items.0.last_message.preview', 'Mensagem inicial');
     }
 
+    public function test_lista_conversas_falha_fechado_quando_existem_multiplas_contas_sem_contexto_explicito(): void
+    {
+        Sanctum::actingAs($this->createUserRecord());
+
+        $this->createConversationWithMessage();
+        Account::create(['nome' => 'Conta Secundaria', 'proximo_display_id' => 1]);
+
+        $this->getJson('/api/v1/conversas')
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'CHAT_ACCOUNT_CONTEXT_UNAVAILABLE');
+    }
+
     public function test_detalhe_marca_conversa_como_lida(): void
     {
         Sanctum::actingAs($this->createUserRecord());

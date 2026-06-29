@@ -3,6 +3,7 @@
 namespace App\Services\Integrations;
 
 use App\Models\Configuration;
+use App\Support\SecretSettings;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -71,14 +72,28 @@ class IntegrationSettingsService
     ];
 
     /**
+     * @var array<int, string>
+     */
+    private const SECRET_KEYS = [
+        'whatsapp_menuia_appkey',
+        'whatsapp_menuia_authkey',
+        'whatsapp_webhook_token',
+        'whatsapp_evolution_apikey',
+        'whatsapp_local_node_token',
+        'whatsapp_linux_node_token',
+    ];
+
+    /**
      * @return array<string, mixed>
      */
     public function payload(): array
     {
         $settings = $this->loadSettings();
+        $maskedSettings = SecretSettings::blank($settings, self::SECRET_KEYS);
 
         return [
-            'settings' => $settings,
+            'settings' => $maskedSettings,
+            'secret_status' => SecretSettings::status($settings, self::SECRET_KEYS),
             'summary' => $this->buildSummary($settings),
             'provider_options' => [
                 'direct' => [
@@ -105,8 +120,8 @@ class IntegrationSettingsService
                 ],
             ],
             'gateway' => [
-                'local' => $this->gatewayConfig($settings, 'api_whats_local'),
-                'linux' => $this->gatewayConfig($settings, 'api_whats_linux'),
+                'local' => $this->sanitizeGatewayConfig($this->gatewayConfig($settings, 'api_whats_local')),
+                'linux' => $this->sanitizeGatewayConfig($this->gatewayConfig($settings, 'api_whats_linux')),
             ],
         ];
     }
@@ -342,6 +357,14 @@ class IntegrationSettingsService
     }
 
     /**
+     * @return array<int, string>
+     */
+    public function trustedInboundMediaOrigins(): array
+    {
+        return $this->originsFromSettings($this->loadSettings());
+    }
+
+    /**
      * Envia uma mensagem de texto real (nao de teste de conexao) usando o provider direto
      * configurado. Usado pelo canal WhatsApp da Central de Atendimento
      * (App\Services\Channels\Whatsapp\WhatsappChannelDriver) para nao duplicar a
@@ -518,7 +541,7 @@ class IntegrationSettingsService
             (string) ($payload['whatsapp_linux_node_origin'] ?? $current['whatsapp_linux_node_origin'] ?? '')
         );
 
-        return $normalized;
+        return SecretSettings::preserveExisting($normalized, $current, self::SECRET_KEYS);
     }
 
     /**
@@ -637,6 +660,17 @@ class IntegrationSettingsService
     }
 
     /**
+     * @param array<string, mixed> $gateway
+     * @return array<string, mixed>
+     */
+    private function sanitizeGatewayConfig(array $gateway): array
+    {
+        unset($gateway['token']);
+
+        return $gateway;
+    }
+
+    /**
      * @param array<string, mixed> $settings
      * @param string $provider
      * @return array<string, mixed>
@@ -693,7 +727,7 @@ class IntegrationSettingsService
             return $this->sendEvolutionText($settings, $phone, '[Teste de integração] Conexão Evolution ativa em ' . now()->format('d/m/Y H:i:s') . '.');
         }
 
-        $response = $this->httpClient(true, (int) ($settings['whatsapp_evolution_timeout'] ?? 20))
+        $response = $this->httpClient((int) ($settings['whatsapp_evolution_timeout'] ?? 20))
             ->withHeaders(['apikey' => $apiKey])
             ->get(rtrim($baseUrl, '/') . '/instance/connectionState/' . rawurlencode($instance));
 
@@ -819,7 +853,7 @@ class IntegrationSettingsService
             return $this->failureResponse('Configuração da Evolution incompleta (URL, API key ou instância).');
         }
 
-        $response = $this->httpClient(true, (int) ($settings['whatsapp_evolution_timeout'] ?? 20))
+        $response = $this->httpClient((int) ($settings['whatsapp_evolution_timeout'] ?? 20))
             ->withHeaders(['apikey' => $apiKey])
             ->post(rtrim($baseUrl, '/') . '/message/sendText/' . rawurlencode($instance), [
                 'number' => $this->normalizePhone($phone),
@@ -865,7 +899,7 @@ class IntegrationSettingsService
             $resolvedFileName = basename($absoluteFilePath);
         }
 
-        $response = $this->httpClient(true, (int) ($settings['whatsapp_evolution_timeout'] ?? 20))
+        $response = $this->httpClient((int) ($settings['whatsapp_evolution_timeout'] ?? 20))
             ->withHeaders(['apikey' => $apiKey])
             ->attach(
                 'media',
@@ -962,6 +996,13 @@ class IntegrationSettingsService
     {
         $webhookUrl = rtrim((string) config('app.url'), '/') . '/webhooks/whatsapp';
         $token = trim((string) ($settings['whatsapp_webhook_token'] ?? ''));
+
+        if ($token === '') {
+            return $this->failureResponse('Configure o token do webhook antes de executar o self-check inbound.', [
+                'url' => $webhookUrl,
+            ]);
+        }
+
         $payload = [
             'self_check' => true,
             'source' => 'erp_direct_self_check',
@@ -979,8 +1020,7 @@ class IntegrationSettingsService
         }
 
         try {
-            $response = Http::withoutVerifying()
-                ->timeout(10)
+            $response = $this->httpClient(10)
                 ->acceptJson()
                 ->withHeaders($headers)
                 ->post($webhookUrl, $payload);
@@ -1030,7 +1070,7 @@ class IntegrationSettingsService
             'Accept' => 'application/json',
         ];
 
-        $client = $this->httpClient(true, $timeout);
+        $client = $this->httpClient($timeout);
 
         if ($gateway['token'] !== '') {
             $headers['X-Api-Token'] = (string) $gateway['token'];
@@ -1085,13 +1125,11 @@ class IntegrationSettingsService
         ];
     }
 
-    private function httpClient(bool $allowInsecure = false, int $timeout = 20)
+    private function httpClient(int $timeout = 20)
     {
-        $client = Http::acceptJson()
+        return Http::acceptJson()
             ->timeout($timeout)
             ->connectTimeout(min(10, $timeout));
-
-        return $allowInsecure ? $client->withoutVerifying() : $client;
     }
 
     private function resolveDirectProvider(array $settings, string $override = ''): string
@@ -1140,13 +1178,79 @@ class IntegrationSettingsService
     {
         $provider = $this->resolveDirectProvider($settings);
 
-        return match ($provider) {
+        $rawSignature = match ($provider) {
             'menuia' => strtolower(trim((string) ($settings['whatsapp_menuia_url'] ?? ''))) . '|' . trim((string) ($settings['whatsapp_menuia_appkey'] ?? '')) . '|' . trim((string) ($settings['whatsapp_menuia_authkey'] ?? '')),
             'evolution' => strtolower(trim((string) ($settings['whatsapp_evolution_url'] ?? ''))) . '|' . trim((string) ($settings['whatsapp_evolution_apikey'] ?? '')) . '|' . trim((string) ($settings['whatsapp_evolution_instance'] ?? '')),
             'api_whats_local' => strtolower(trim((string) ($settings['whatsapp_local_node_url'] ?? ''))) . '|' . trim((string) ($settings['whatsapp_local_node_token'] ?? '')) . '|' . trim((string) ($settings['whatsapp_local_node_origin'] ?? '')),
             'api_whats_linux' => strtolower(trim((string) ($settings['whatsapp_linux_node_url'] ?? ''))) . '|' . trim((string) ($settings['whatsapp_linux_node_token'] ?? '')) . '|' . trim((string) ($settings['whatsapp_linux_node_origin'] ?? '')),
             default => strtolower(trim((string) ($settings['whatsapp_webhook_url'] ?? ''))) . '|' . trim((string) ($settings['whatsapp_webhook_token'] ?? '')),
         };
+
+        return $rawSignature !== '' ? hash('sha256', $rawSignature) : '';
+    }
+
+    /**
+     * @param array<string, string> $settings
+     * @return array<int, string>
+     */
+    private function originsFromSettings(array $settings): array
+    {
+        $origins = [];
+
+        $candidates = [
+            [
+                'url_key' => 'whatsapp_evolution_url',
+                'enabled' => trim((string) ($settings['whatsapp_evolution_apikey'] ?? '')) !== ''
+                    && trim((string) ($settings['whatsapp_evolution_instance'] ?? '')) !== '',
+            ],
+            [
+                'url_key' => 'whatsapp_menuia_url',
+                'enabled' => trim((string) ($settings['whatsapp_menuia_appkey'] ?? '')) !== ''
+                    && trim((string) ($settings['whatsapp_menuia_authkey'] ?? '')) !== '',
+            ],
+            [
+                'url_key' => 'whatsapp_local_node_url',
+                'enabled' => trim((string) ($settings['whatsapp_local_node_token'] ?? '')) !== '',
+            ],
+            [
+                'url_key' => 'whatsapp_linux_node_url',
+                'enabled' => trim((string) ($settings['whatsapp_linux_node_token'] ?? '')) !== '',
+            ],
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (! ($candidate['enabled'] ?? false)) {
+                continue;
+            }
+
+            $origin = $this->normalizeOriginFromUrl((string) ($settings[$candidate['url_key']] ?? ''));
+
+            if ($origin !== '') {
+                $origins[] = $origin;
+            }
+        }
+
+        sort($origins);
+
+        return array_values(array_unique($origins));
+    }
+
+    private function normalizeOriginFromUrl(string $url): string
+    {
+        $parts = parse_url(trim($url));
+        if (! is_array($parts)) {
+            return '';
+        }
+
+        $scheme = strtolower(trim((string) ($parts['scheme'] ?? '')));
+        $host = strtolower(trim((string) ($parts['host'] ?? '')));
+        $port = isset($parts['port']) ? (int) $parts['port'] : null;
+
+        if ($scheme === '' || $host === '') {
+            return '';
+        }
+
+        return $scheme . '://' . $host . ($port !== null ? ':' . $port : '');
     }
 
     private function clearLastCheck(): void

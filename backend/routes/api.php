@@ -20,6 +20,7 @@ use App\Http\Controllers\Api\V1\GroupController;
 use App\Http\Controllers\Api\V1\BudgetController;
 use App\Http\Controllers\Api\V1\ConfigurationController;
 use App\Http\Controllers\Api\V1\FinanceiroCatalogController;
+use App\Http\Controllers\Api\V1\FinanceiroCartaoController;
 use App\Http\Controllers\Api\V1\FinanceiroController;
 use App\Http\Controllers\Api\V1\FinanceiroMargemController;
 use App\Http\Controllers\Api\V1\FinanceiroReportController;
@@ -65,6 +66,29 @@ Route::prefix('v1')->group(function (): void {
         Route::get('orcamentos/{budget}', [BudgetController::class, 'show'])->name('api.v1.orcamentos.show');
         Route::match(['put', 'patch'], 'orcamentos/{budget}', [BudgetController::class, 'update'])->name('api.v1.orcamentos.update');
         Route::delete('orcamentos/{budget}', [BudgetController::class, 'destroy'])->name('api.v1.orcamentos.destroy');
+
+        Route::prefix('financeiro/cartoes')
+            ->name('api.v1.financeiro.cartoes.')
+            ->group(function (): void {
+                Route::get('/', [FinanceiroCartaoController::class, 'index'])->name('index');
+                Route::post('/simular', [FinanceiroCartaoController::class, 'simulate'])->name('simular');
+
+                Route::post('/operadoras', [FinanceiroCartaoController::class, 'storeOperadora'])->name('operadoras.store');
+                Route::match(['put', 'patch'], '/operadoras/{operadora}', [FinanceiroCartaoController::class, 'updateOperadora'])->name('operadoras.update');
+                Route::delete('/operadoras/{operadora}', [FinanceiroCartaoController::class, 'destroyOperadora'])->name('operadoras.destroy');
+
+                Route::post('/bandeiras', [FinanceiroCartaoController::class, 'storeBandeira'])->name('bandeiras.store');
+                Route::match(['put', 'patch'], '/bandeiras/{bandeira}', [FinanceiroCartaoController::class, 'updateBandeira'])->name('bandeiras.update');
+                Route::delete('/bandeiras/{bandeira}', [FinanceiroCartaoController::class, 'destroyBandeira'])->name('bandeiras.destroy');
+
+                Route::post('/taxas', [FinanceiroCartaoController::class, 'storeTaxa'])->name('taxas.store');
+                Route::match(['put', 'patch'], '/taxas/{taxa}', [FinanceiroCartaoController::class, 'updateTaxa'])->name('taxas.update');
+                Route::delete('/taxas/{taxa}', [FinanceiroCartaoController::class, 'destroyTaxa'])->name('taxas.destroy');
+
+                Route::post('/taxas-online', [FinanceiroCartaoController::class, 'storeGatewayTaxa'])->name('taxas_online.store');
+                Route::match(['put', 'patch'], '/taxas-online/{gatewayTaxa}', [FinanceiroCartaoController::class, 'updateGatewayTaxa'])->name('taxas_online.update');
+                Route::delete('/taxas-online/{gatewayTaxa}', [FinanceiroCartaoController::class, 'destroyGatewayTaxa'])->name('taxas_online.destroy');
+            });
 
         Route::prefix('financeiro')
             ->name('api.v1.financeiro.')

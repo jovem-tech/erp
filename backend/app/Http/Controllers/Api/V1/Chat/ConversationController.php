@@ -39,12 +39,24 @@ class ConversationController extends BaseApiController
         }
 
         $this->authorize('atendimento_whatsapp:visualizar');
+        $accountIds = $this->accessService->accessibleAccountIds($user);
+
+        if ($accountIds === []) {
+            return $this->error(
+                'Nenhuma conta de atendimento autorizada para este usuario.',
+                403,
+                'CHAT_ACCOUNT_CONTEXT_UNAVAILABLE',
+                null,
+                request: $request
+            );
+        }
 
         $status = trim((string) $request->query('status', ''));
         $search = trim((string) $request->query('search', ''));
         $unreadOnly = filter_var($request->query('unread_only', false), FILTER_VALIDATE_BOOL);
 
         $query = Conversation::query()
+            ->whereIn('conta_id', $accountIds)
             ->with(['contact.client', 'latestMessage.attachments'])
             ->orderByDesc('last_activity_at')
             ->orderByDesc('id');
@@ -114,6 +126,17 @@ class ConversationController extends BaseApiController
         }
 
         $this->authorize('atendimento_whatsapp:criar');
+        $accountId = $this->accessService->defaultAccountIdForUser($user);
+
+        if ($accountId === null) {
+            return $this->error(
+                'Nenhuma conta padrao de atendimento autorizada para este usuario.',
+                403,
+                'CHAT_ACCOUNT_CONTEXT_UNAVAILABLE',
+                null,
+                request: $request
+            );
+        }
 
         $validator = Validator::make($request->all(), [
             'client_id' => ['nullable', 'integer', 'min:1'],
@@ -140,7 +163,7 @@ class ConversationController extends BaseApiController
         $hasInitialContent = $initialText !== '' || $attachments !== [];
 
         try {
-            [$conversation, $resolvedName] = $this->resolveConversationTarget($data);
+            [$conversation, $resolvedName] = $this->resolveConversationTarget($data, $accountId);
         } catch (\RuntimeException $exception) {
             return $this->error($exception->getMessage(), 422, 'CONVERSATION_TARGET_INVALID', null, request: $request);
         }
@@ -192,7 +215,7 @@ class ConversationController extends BaseApiController
      * @param array<string, mixed> $data
      * @return array{0: Conversation, 1: string|null}
      */
-    private function resolveConversationTarget(array $data): array
+    private function resolveConversationTarget(array $data, int $accountId): array
     {
         $clientId = (int) ($data['client_id'] ?? 0);
         $nome = trim((string) ($data['nome'] ?? ''));
@@ -217,7 +240,7 @@ class ConversationController extends BaseApiController
             $resolvedName = trim((string) ($client->nome_razao ?? ''));
 
             return [
-                $this->resolver->resolve($normalizedPhone, $resolvedName !== '' ? $resolvedName : $nome, $client->id),
+                $this->resolver->resolve($normalizedPhone, $resolvedName !== '' ? $resolvedName : $nome, $client->id, $accountId),
                 $resolvedName !== '' ? $resolvedName : ($nome !== '' ? $nome : null),
             ];
         }
@@ -228,7 +251,7 @@ class ConversationController extends BaseApiController
         }
 
         return [
-            $this->resolver->resolve($normalizedPhone, $nome !== '' ? $nome : null),
+            $this->resolver->resolve($normalizedPhone, $nome !== '' ? $nome : null, null, $accountId),
             $nome !== '' ? $nome : null,
         ];
     }

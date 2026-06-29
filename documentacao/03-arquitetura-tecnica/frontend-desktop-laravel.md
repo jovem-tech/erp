@@ -127,9 +127,10 @@ A navbar do desktop já transpôs as funções principais do topo do legado:
 
 - busca completa com autocomplete e filtro por escopo, incluindo texto livre em OS, clientes, equipamentos e orçamentos;
 - ação rápida `Nova OS`, visível apenas com `os:criar`;
-- notificações com contador, abertura do item, marcação individual e marcação geral;
+- notificações com contador, abertura do item, marcação individual e marcação geral, carregadas sob demanda para não travar o render inicial;
+- loader visual de transição de página no desktop, exibido antes de navegações e submits para reduzir a sensação de travamento;
 - menu do usuário com `Meu Perfil`, `Configurações do perfil`, `Sair` e `Sair e Esquecer Login`.
-- recuperação de senha pública com envio de link para o e-mail cadastrado e tela de redefinição no desktop.
+- recuperação de senha pública com envio de link para o e-mail cadastrado e tela de redefinição no desktop, sempre dependente de um canal seguro de e-mail configurado no backend central.
 
 ### Itens adiados
 
@@ -197,6 +198,10 @@ A sidebar do desktop foi mantida intencionalmente enxuta: exibe marca, navegaç�
 Na listagem de OS, a sidebar entra retraida por padrao para ampliar a area util da tabela operacional.
 
 Como reforço de robustez, o `DesktopNavigation` descarta rotas que ainda nao existem no canal desktop antes de renderizar a sidebar. Isso evita `RouteNotFoundException` em paginas que compartilham o layout com modulos ainda nao liberados, sem alterar permissoes nem a hierarquia visual do menu.
+
+O resumo de notificações da topbar é buscado sob demanda via rota same-origin autenticada, depois do carregamento inicial da página. Isso mantém o contador e a lista disponíveis sem obrigar cada troca de página a pagar o custo de consultar a API central no render do servidor.
+
+O desktop também exibe um overlay de carregamento leve quando o usuário dispara navegações reais ou submits de formulário. O objetivo é dar feedback imediato de progresso sem alterar permissões, sessão ou contratos de API.
 
 Como padrão de interface, todos os dropdowns do desktop usam `Select2`, com a mesma linguagem visual das telas do ERP e com exceções técnicas apenas quando documentadas de forma explícita.
 
@@ -374,3 +379,10 @@ Módulos entregues nesta fase:
 
 Expandir o desktop para edição completa de OS e progressivamente migrar os demais módulos do legado usando o mesmo padrão: Blade + services + API central.
 
+### Cartões e taxas
+
+- painel financeiro com abas `Operadoras`, `Bandeiras`, `Taxa por parcela`, `Simulador de faturamento líquido` e `Taxas online`
+- cadastro, edição e desativação dos catálogos financeiros sem acesso direto ao banco
+- simulador de recebimento com retorno de taxa total, valor líquido e previsão de repasse
+- ajuda local com foco operacional para uso no desktop
+- todos os selects visíveis da tela usam Select2 com o helper compartilhado do canal desktop

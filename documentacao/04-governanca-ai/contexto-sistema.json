@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-06-28T13:45:32+02:00",
+    "generated_at": "2026-06-29T04:41:49+02:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "3.4.0",
+        "app_version": "3.4.1",
         "api_version": "1.1.0",
         "production_target": "Ubuntu VPS",
         "development_target": "Windows/XAMPP"
@@ -85,7 +85,7 @@
                 },
                 {
                     "file": "documentacao/03-arquitetura-tecnica/frontend-desktop-laravel.md",
-                    "title": "frontend-desktop-laravel"
+                    "title": "Frontend Desktop Laravel"
                 },
                 {
                     "file": "documentacao/03-arquitetura-tecnica/frontend-sistema-hml-bff.md",
@@ -250,6 +250,22 @@
                     "title": "Central de Atendimento v1: WhatsApp Web/mobile do ERP"
                 },
                 {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-28-cartoes-taxas-desktop.md",
+                    "title": "Cartões e Taxas no Desktop ERP"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-28-correcao-utf8-painel-os-desktop.md",
+                    "title": "Correcao UTF-8 no painel de OS do desktop"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-28-endurecimento-recuperacao-senha-email.md",
+                    "title": "Endurecimento da recuperacao de senha por e-mail"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-28-endurecimento-seguranca-chat-integracoes.md",
+                    "title": "2026-06-28 - Endurecimento de seguranca do chat e das integracoes"
+                },
+                {
                     "file": "documentacao/07-novas-implementacoes/historico-de-versoes.md",
                     "title": "Historico de versoes"
                 }
@@ -257,7 +273,16 @@
         },
         {
             "directory": "documentacao/10-deploy",
-            "files": []
+            "files": [
+                {
+                    "file": "documentacao/10-deploy/README.md",
+                    "title": "Deploy e Operacao"
+                },
+                {
+                    "file": "documentacao/10-deploy/manual-inicializacao-local-windows-xampp.md",
+                    "title": "Manual de Inicializacao Local no Windows com XAMPP"
+                }
+            ]
         }
     ],
     "specs": [
@@ -438,6 +463,21 @@
                 "analysis": false,
                 "data_model": false,
                 "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/012-financeiro-cartoes-taxas-desktop",
+            "title": "Feature Specification: Financeiro - Cartões e Taxas no Desktop",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": true,
+                "quickstart": true,
+                "analysis": false,
+                "data_model": true,
+                "contracts": true,
                 "checklists": false
             }
         }

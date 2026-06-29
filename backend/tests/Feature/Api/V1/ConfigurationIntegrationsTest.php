@@ -50,6 +50,7 @@ class ConfigurationIntegrationsTest extends TestCase
             'whatsapp_direct_provider' => 'api_whats_local',
             'whatsapp_bulk_provider' => 'meta_oficial',
             'whatsapp_test_phone' => '(22) 99999-9999',
+            'whatsapp_webhook_token' => 'token-webhook-123',
             'whatsapp_local_node_url' => 'http://127.0.0.1:3001',
             'whatsapp_local_node_token' => 'token-local',
             'whatsapp_local_node_origin' => 'http://127.0.0.1:8080',
@@ -85,13 +86,23 @@ class ConfigurationIntegrationsTest extends TestCase
             ->assertJsonPath('data.integration.settings.whatsapp_enabled', '1')
             ->assertJsonPath('data.integration.settings.whatsapp_direct_provider', 'api_whats_local')
             ->assertJsonPath('data.integration.settings.whatsapp_test_phone', '(22) 99999-9999')
-            ->assertJsonPath('data.integration.payments.settings.pagamentos_mercadopago_access_token', 'APP_USR-token')
+            ->assertJsonPath('data.integration.settings.whatsapp_webhook_token', '')
+            ->assertJsonPath('data.integration.secret_status.whatsapp_local_node_token.configured', true)
+            ->assertJsonPath('data.integration.secret_status.whatsapp_webhook_token.configured', true)
+            ->assertJsonPath('data.integration.payments.settings.pagamentos_mercadopago_access_token', '')
+            ->assertJsonPath('data.integration.payments.secret_status.pagamentos_mercadopago_access_token.configured', true)
             ->assertJsonPath('data.integration.payments.summary.mercado_pago.ready', true)
             ->assertJsonPath('data.integration.payments.summary.asaas.ready', true)
             ->assertJsonPath('data.integration.email.settings.smtp_host', 'smtp.example.com')
+            ->assertJsonPath('data.integration.email.settings.smtp_pass', '')
+            ->assertJsonPath('data.integration.email.secret_status.smtp_pass.configured', true)
             ->assertJsonPath('data.integration.email.summary.configured', true)
             ->assertJsonPath('data.integration.google.settings.portal_google_client_id', 'client-id.apps.googleusercontent.com')
+            ->assertJsonPath('data.integration.google.settings.portal_google_client_secret', '')
+            ->assertJsonPath('data.integration.google.secret_status.portal_google_client_secret.configured', true)
             ->assertJsonPath('data.integration.google.summary.configured', true);
+
+        $update->assertJsonMissingPath('data.integration.gateway.local.token');
 
         $this->assertDatabaseHas('configuracoes', [
             'chave' => 'whatsapp_enabled',
@@ -109,6 +120,11 @@ class ConfigurationIntegrationsTest extends TestCase
         ]);
 
         $this->assertDatabaseHas('configuracoes', [
+            'chave' => 'whatsapp_webhook_token',
+            'valor' => 'token-webhook-123',
+        ]);
+
+        $this->assertDatabaseHas('configuracoes', [
             'chave' => 'pagamentos_mercadopago_access_token',
             'valor' => 'APP_USR-token',
         ]);
@@ -116,6 +132,42 @@ class ConfigurationIntegrationsTest extends TestCase
         $this->assertDatabaseHas('configuracoes', [
             'chave' => 'smtp_host',
             'valor' => 'smtp.example.com',
+        ]);
+
+        $this->assertDatabaseHas('configuracoes', [
+            'chave' => 'portal_google_client_secret',
+            'valor' => 'GOCSPX-secret',
+        ]);
+
+        $blankSecretUpdate = $this->putJson('/api/v1/configuracoes/integracoes', [
+            'whatsapp_direct_provider' => 'api_whats_local',
+            'whatsapp_bulk_provider' => 'meta_oficial',
+            'whatsapp_local_node_url' => 'http://127.0.0.1:3001',
+            'whatsapp_local_node_token' => '',
+            'pagamentos_mercadopago_access_token' => '',
+            'smtp_pass' => '',
+            'portal_google_client_secret' => '',
+        ]);
+
+        $blankSecretUpdate->assertOk()
+            ->assertJsonPath('data.integration.secret_status.whatsapp_local_node_token.configured', true)
+            ->assertJsonPath('data.integration.payments.secret_status.pagamentos_mercadopago_access_token.configured', true)
+            ->assertJsonPath('data.integration.email.secret_status.smtp_pass.configured', true)
+            ->assertJsonPath('data.integration.google.secret_status.portal_google_client_secret.configured', true);
+
+        $this->assertDatabaseHas('configuracoes', [
+            'chave' => 'whatsapp_local_node_token',
+            'valor' => 'token-local',
+        ]);
+
+        $this->assertDatabaseHas('configuracoes', [
+            'chave' => 'pagamentos_mercadopago_access_token',
+            'valor' => 'APP_USR-token',
+        ]);
+
+        $this->assertDatabaseHas('configuracoes', [
+            'chave' => 'smtp_pass',
+            'valor' => 'secret',
         ]);
 
         $this->assertDatabaseHas('configuracoes', [

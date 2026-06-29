@@ -90,9 +90,8 @@ Rotas públicas:
 `POST /auth/password/forgot` aceita o campo opcional `frontend` com valores fechados:
 
 - `desktop`
-- `sistema-hml`
 
-Esse campo escolhe qual URL aprovada pelo backend será usada no e-mail de redefinição. O backend resolve a URL por `FRONTEND_DESKTOP_URL` ou `FRONTEND_SISTEMA_HML_URL`; o cliente nunca deve enviar URL livre.
+Esse campo escolhe qual URL aprovada pelo backend será usada no e-mail de redefinição. Nesta fase, o único valor aceito é `desktop`, resolvido por `FRONTEND_DESKTOP_URL`; o cliente nunca deve enviar URL livre.
 
 Rotas autenticadas exigem:
 
@@ -116,7 +115,7 @@ Consumo atual por `frontend/sistema-hml`:
 - `POST /auth/logout` revoga o token no backend central antes de destruir a sessão local.
 - `POST /auth/password/forgot` solicita recuperação de senha sem consulta local ao banco.
 - `POST /auth/password/reset` redefine a senha no backend central.
-- O BFF envia `frontend=sistema-hml` ao solicitar recuperação para que o link do e-mail retorne ao próprio BFF.
+- Se não houver um canal operacional de e-mail no backend central, `POST /auth/password/forgot` responde com erro operacional e não faz preview local do link.
 - O token fica na sessão do CodeIgniter como dado server-side e nunca é renderizado no HTML.
 
 ## Autorização e RBAC
@@ -490,3 +489,27 @@ Antes de integrar um frontend:
 - confirme que retries não repetem mutações;
 - confirme que anexos não são expostos por pasta pública;
 - atualize este documento e o OpenAPI se o backend evoluir.
+## Financeiro - Cartões e taxas
+
+- `GET /financeiro/cartoes`
+- `POST /financeiro/cartoes/simular`
+- `POST /financeiro/cartoes/operadoras`
+- `PATCH /financeiro/cartoes/operadoras/{operadora}`
+- `DELETE /financeiro/cartoes/operadoras/{operadora}`
+- `POST /financeiro/cartoes/bandeiras`
+- `PATCH /financeiro/cartoes/bandeiras/{bandeira}`
+- `DELETE /financeiro/cartoes/bandeiras/{bandeira}`
+- `POST /financeiro/cartoes/taxas`
+- `PATCH /financeiro/cartoes/taxas/{taxa}`
+- `DELETE /financeiro/cartoes/taxas/{taxa}`
+- `POST /financeiro/cartoes/taxas-online`
+- `PATCH /financeiro/cartoes/taxas-online/{gatewayTaxa}`
+- `DELETE /financeiro/cartoes/taxas-online/{gatewayTaxa}`
+
+Contrato funcional atual de cartões e taxas:
+
+- `GET /financeiro/cartoes` devolve os catálogos operacionais, o resumo de operadoras/bandeiras/taxas, o conjunto mínimo para o simulador e o estado das taxas online;
+- `POST /financeiro/cartoes/simular` calcula taxa total, valor líquido, percentual aplicado e previsão de recebimento para a combinação ativa de operadora, bandeira e parcelas;
+- `POST /financeiro/cartoes/operadoras`, `POST /financeiro/cartoes/bandeiras` e `POST /financeiro/cartoes/taxas` mantêm o catálogo financeiro do desktop com gravação centralizada;
+- `PATCH` e `DELETE` das rotas de cartões e taxas fazem desativação controlada ou atualização assistida, preservando o contrato do desktop;
+- `POST /financeiro/cartoes/taxas-online` e seus `PATCH`/`DELETE` mantêm o catálogo de gateway para Pix, boleto, crédito e débito.

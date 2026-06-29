@@ -149,6 +149,7 @@ O desktop continua sem acesso direto ao banco e sem lógica de integração embu
 - usuários: listagem, criação, edição e ativação
 - grupos: listagem, criação, edição, exclusão e matriz de permissões
 - configurações > integrações: painel operacional de WhatsApp, Evolution, gateway local/Linux e webhook de entrada
+- cartões e taxas: painel financeiro com operadoras, bandeiras, taxas por parcela, simulador de recebimento e taxas online, mantendo Select2 nos selects visíveis e ajuda local dedicada
 
 ## Validação executada na fase
 

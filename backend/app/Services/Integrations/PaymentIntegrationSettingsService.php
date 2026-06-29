@@ -3,6 +3,7 @@
 namespace App\Services\Integrations;
 
 use App\Models\Configuration;
+use App\Support\SecretSettings;
 use Illuminate\Support\Facades\Http;
 use Throwable;
 
@@ -24,14 +25,24 @@ class PaymentIntegrationSettingsService
     ];
 
     /**
+     * @var array<int, string>
+     */
+    private const SECRET_KEYS = [
+        'pagamentos_mercadopago_access_token',
+        'pagamentos_asaas_api_key',
+    ];
+
+    /**
      * @return array<string, mixed>
      */
     public function payload(): array
     {
         $settings = $this->loadSettings();
+        $maskedSettings = SecretSettings::blank($settings, self::SECRET_KEYS);
 
         return [
-            'settings' => $settings,
+            'settings' => $maskedSettings,
+            'secret_status' => SecretSettings::status($settings, self::SECRET_KEYS),
             'summary' => $this->buildSummary($settings),
         ];
     }
@@ -228,7 +239,7 @@ class PaymentIntegrationSettingsService
             $normalized[$key] = is_scalar($value) ? trim((string) $value) : (string) $defaultValue;
         }
 
-        return $normalized;
+        return SecretSettings::preserveExisting($normalized, $current, self::SECRET_KEYS);
     }
 
     /**

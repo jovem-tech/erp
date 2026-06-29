@@ -3,6 +3,7 @@
 namespace App\Services\Integrations;
 
 use App\Models\Configuration;
+use App\Support\SecretSettings;
 
 class GoogleIntegrationSettingsService
 {
@@ -15,14 +16,23 @@ class GoogleIntegrationSettingsService
     ];
 
     /**
+     * @var array<int, string>
+     */
+    private const SECRET_KEYS = [
+        'portal_google_client_secret',
+    ];
+
+    /**
      * @return array<string, mixed>
      */
     public function payload(): array
     {
         $settings = $this->loadSettings();
+        $maskedSettings = SecretSettings::blank($settings, self::SECRET_KEYS);
 
         return [
-            'settings' => $settings,
+            'settings' => $maskedSettings,
+            'secret_status' => SecretSettings::status($settings, self::SECRET_KEYS),
             'summary' => $this->buildSummary($settings),
         ];
     }
@@ -77,7 +87,7 @@ class GoogleIntegrationSettingsService
             $normalized[$key] = is_scalar($value) ? trim((string) $value) : (string) $defaultValue;
         }
 
-        return $normalized;
+        return SecretSettings::preserveExisting($normalized, $current, self::SECRET_KEYS);
     }
 
     /**

@@ -130,12 +130,19 @@ class FinanceiroGatewayTaxaService
 
     public function delete(int $id): void
     {
-        $rows = array_values(array_filter(
-            $this->storedRowsOrDefaults(),
-            static fn (array $row): bool => (int) ($row['id'] ?? 0) !== $id
-        ));
+        $rows = $this->storedRowsOrDefaults();
 
-        $this->persistRows($rows);
+        foreach ($rows as $index => $row) {
+            if ((int) ($row['id'] ?? 0) !== $id) {
+                continue;
+            }
+
+            $rows[$index]['ativo'] = 0;
+            $rows[$index]['updated_at'] = now()->toISOString();
+            $this->persistRows($rows);
+
+            return;
+        }
     }
 
     /**
@@ -367,6 +374,7 @@ class FinanceiroGatewayTaxaService
 
         $row['provider'] = $provider;
         $row['modalidade'] = $mode;
+        $row['ativo'] = (bool) ($row['ativo'] ?? false);
         $row['provider_label'] = $this->resolveProviderLabel($provider);
         $row['modalidade_label'] = $this->resolveModeLabel($provider, $mode);
         $row['catalog_description'] = $this->resolveModeDescription($provider, $mode);

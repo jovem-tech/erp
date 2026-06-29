@@ -8,8 +8,6 @@
         }
     }
 
-    $notifications = $desktopNotifications['items'] ?? [];
-    $unreadCount = (int) ($desktopNotifications['unread_count'] ?? 0);
     $profileName = (string) ($desktopUser['nome'] ?? 'Usuário');
     $profileGroup = (string) ($desktopUser['group']['nome'] ?? ($desktopUser['perfil'] ?? 'Acesso administrativo'));
     $profileEmail = (string) ($desktopUser['email'] ?? '');
@@ -84,25 +82,28 @@
             </a>
         @endif
 
-        <div class="dropdown desktop-notification-dropdown">
+        <div
+            class="dropdown desktop-notification-dropdown"
+            data-desktop-notification-root
+            data-desktop-notification-summary-url="{{ route('notifications.summary') }}"
+        >
             <button
                 type="button"
                 class="desktop-icon-button position-relative"
                 data-bs-toggle="dropdown"
                 aria-expanded="false"
                 aria-label="Notificações"
+                data-desktop-notification-toggle
             >
                 <i class="bi bi-bell"></i>
-                @if ($unreadCount > 0)
-                    <span class="desktop-notification-badge">{{ $unreadCount > 9 ? '9+' : $unreadCount }}</span>
-                @endif
+                <span class="desktop-notification-badge d-none" data-desktop-notification-badge></span>
             </button>
 
-            <div class="dropdown-menu dropdown-menu-end desktop-notification-menu">
+            <div class="dropdown-menu dropdown-menu-end desktop-notification-menu" data-desktop-notification-menu>
                 <div class="desktop-dropdown-head">
                     <div>
                         <strong>Notificações</strong>
-                        <small>{{ $unreadCount }} não lidas</small>
+                        <small data-desktop-notification-unread>Resumo carregado sob demanda.</small>
                     </div>
 
                     <form method="post" action="{{ route('notifications.mark-all') }}">
@@ -113,30 +114,13 @@
                     </form>
                 </div>
 
-                <div class="desktop-notification-list">
-                    @forelse ($notifications as $notification)
-                        <a
-                            href="{{ route('notifications.open', $notification['id']) }}"
-                            class="desktop-notification-item {{ empty($notification['lida_em']) ? 'is-unread' : 'is-read' }}"
-                        >
-                            <span class="desktop-notification-icon">
-                                <i class="{{ $notification['icone'] ?? 'bi bi-bell' }}"></i>
-                            </span>
-
-                            <span class="desktop-notification-copy">
-                                <strong>{{ $notification['titulo'] ?? 'Notificação' }}</strong>
-                                <small>{{ $notification['corpo'] ?? '' }}</small>
-                                <span>{{ $notification['criada_em_humano'] ?? 'Agora' }}</span>
-                            </span>
-                        </a>
-                    @empty
-                        <div class="desktop-notification-empty">
-                            Nenhuma notificação disponível.
-                        </div>
-                    @endforelse
+                <div class="desktop-notification-list" data-desktop-notification-list>
+                    <div class="desktop-notification-empty" data-desktop-notification-placeholder>
+                        Abra este menu para carregar as notificações mais recentes.
+                    </div>
                 </div>
 
-                <a href="{{ route('notifications.index') }}" class="desktop-notification-footer">
+                <a href="{{ route('notifications.index') }}" class="desktop-notification-footer" data-desktop-notification-footer>
                     Ver todas
                 </a>
             </div>

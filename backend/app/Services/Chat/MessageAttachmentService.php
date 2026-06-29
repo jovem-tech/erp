@@ -4,6 +4,7 @@ namespace App\Services\Chat;
 
 use App\Models\Chat\Message;
 use App\Models\Chat\MessageAttachment;
+use App\Services\Integrations\IntegrationSettingsService;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
@@ -13,6 +14,11 @@ use Illuminate\Support\Str;
 
 class MessageAttachmentService
 {
+    public function __construct(
+        private readonly IntegrationSettingsService $integrationSettingsService
+    ) {
+    }
+
     /**
      * @param array<int, UploadedFile> $files
      */
@@ -84,6 +90,7 @@ class MessageAttachmentService
         if (! $bytesAlreadyResolved && $bytes === null) {
             $bytes = $this->resolveInboundBytes($base64, $providerUrl);
         }
+
         if ($bytes !== null) {
             $storedName = Str::uuid()->toString() . '.' . $this->extensionFor($mimeType, $originalName);
             $storagePath = $this->directoryFor($message) . '/' . $storedName;
@@ -247,14 +254,33 @@ class MessageAttachmentService
             return null;
         }
 
+        if (! $this->isTrustedProviderUrl($providerUrl)) {
+            logger()->warning('[CHAT][ANEXO] URL inbound bloqueada por origem nao confiavel', [
+                'url' => $providerUrl,
+            ]);
+
+            return null;
+        }
+
         try {
-            $response = Http::withoutVerifying()
-                ->timeout(20)
+            $response = Http::timeout(20)
+                ->connectTimeout(10)
                 ->get($providerUrl);
+
+            $contentLength = (int) $response->header('Content-Length', 0);
+            if ($contentLength > 0 && ! $this->withinInboundSizeLimit($contentLength)) {
+                logger()->warning('[CHAT][ANEXO] Download inbound bloqueado por tamanho excedido', [
+                    'url' => $providerUrl,
+                    'content_length' => $contentLength,
+                    'max_bytes' => $this->maxInboundBytes(),
+                ]);
+
+                return null;
+            }
 
             return $this->responseToBytes($response);
         } catch (\Throwable $exception) {
-            logger()->warning('[CHAT][ANEXO] Falha ao baixar mídia inbound', [
+            logger()->warning('[CHAT][ANEXO] Falha ao baixar midia inbound', [
                 'url' => $providerUrl,
                 'error' => $exception->getMessage(),
             ]);
@@ -271,6 +297,15 @@ class MessageAttachmentService
 
         $bytes = $response->body();
 
+        if (! $this->withinInboundSizeLimit(strlen($bytes))) {
+            logger()->warning('[CHAT][ANEXO] Corpo inbound descartado por tamanho excedido', [
+                'byte_size' => strlen($bytes),
+                'max_bytes' => $this->maxInboundBytes(),
+            ]);
+
+            return null;
+        }
+
         return $bytes !== '' ? $bytes : null;
     }
 
@@ -285,8 +320,59 @@ class MessageAttachmentService
             [, $normalized] = explode(',', $normalized, 2);
         }
 
-        $decoded = base64_decode($normalized, true);
+        $estimatedBytes = (int) ceil((strlen($normalized) * 3) / 4);
+        if (! $this->withinInboundSizeLimit($estimatedBytes)) {
+            logger()->warning('[CHAT][ANEXO] Payload base64 inbound descartado por tamanho excedido', [
+                'estimated_bytes' => $estimatedBytes,
+                'max_bytes' => $this->maxInboundBytes(),
+            ]);
 
-        return $decoded === false ? null : $decoded;
+            return null;
+        }
+
+        $decoded = base64_decode($normalized, true);
+        if ($decoded === false) {
+            return null;
+        }
+
+        return $this->withinInboundSizeLimit(strlen($decoded)) ? $decoded : null;
+    }
+
+    private function maxInboundBytes(): int
+    {
+        return max(1024 * 1024, (int) config('chat.inbound_attachment_max_bytes', 25 * 1024 * 1024));
+    }
+
+    private function withinInboundSizeLimit(int $byteSize): bool
+    {
+        return $byteSize > 0 && $byteSize <= $this->maxInboundBytes();
+    }
+
+    private function isTrustedProviderUrl(string $providerUrl): bool
+    {
+        $origin = $this->normalizeOrigin($providerUrl);
+        if ($origin === null) {
+            return false;
+        }
+
+        return in_array($origin, $this->integrationSettingsService->trustedInboundMediaOrigins(), true);
+    }
+
+    private function normalizeOrigin(string $url): ?string
+    {
+        $parts = parse_url(trim($url));
+        if (! is_array($parts)) {
+            return null;
+        }
+
+        $scheme = strtolower(trim((string) ($parts['scheme'] ?? '')));
+        $host = strtolower(trim((string) ($parts['host'] ?? '')));
+        $port = isset($parts['port']) ? (int) $parts['port'] : null;
+
+        if ($scheme === '' || $host === '' || ! in_array($scheme, ['http', 'https'], true)) {
+            return null;
+        }
+
+        return $scheme . '://' . $host . ($port !== null ? ':' . $port : '');
     }
 }

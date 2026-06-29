@@ -14,12 +14,45 @@ use App\Models\User;
  */
 class ConversationAccessService
 {
+    public function __construct(
+        private readonly ChatAccountContextService $accountContextService
+    ) {
+    }
+
     public function canAccessConversation(User $user, Conversation $conversation): bool
     {
-        return (bool) $user->ativo;
+        return $this->isActive($user)
+            && in_array((int) $conversation->conta_id, $this->accessibleAccountIds($user), true);
     }
 
     public function canAccessAccount(User $user, int $contaId): bool
+    {
+        return $this->isActive($user)
+            && in_array($contaId, $this->accessibleAccountIds($user), true);
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    public function accessibleAccountIds(User $user): array
+    {
+        if (! $this->isActive($user)) {
+            return [];
+        }
+
+        return $this->accountContextService->allowedAccountIds();
+    }
+
+    public function defaultAccountIdForUser(User $user): ?int
+    {
+        if (! $this->isActive($user)) {
+            return null;
+        }
+
+        return $this->accountContextService->defaultAccountId();
+    }
+
+    private function isActive(User $user): bool
     {
         return (bool) $user->ativo;
     }

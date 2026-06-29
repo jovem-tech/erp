@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\ApiRequestException;
 use App\Services\ApiClient;
 use App\Support\DesktopSession;
 use Illuminate\Http\RedirectResponse;
@@ -31,7 +32,22 @@ class PasswordResetController extends DesktopController
             'email' => 'e-mail',
         ]);
 
-        $this->apiClient->requestPasswordResetLink($validated['email']);
+        try {
+            $this->apiClient->requestPasswordResetLink($validated['email']);
+        } catch (ApiRequestException $exception) {
+            $message = $exception->statusCode() === 503
+                ? $exception->getMessage()
+                : (
+                    $exception->statusCode() >= 500
+                        ? 'Nao foi possivel solicitar a redefinicao agora. Tente novamente em instantes.'
+                        : $exception->getMessage()
+                );
+
+            return redirect()
+                ->route('password.request')
+                ->withInput($request->only('email'))
+                ->with('error', $message);
+        }
 
         return redirect()
             ->route('login')

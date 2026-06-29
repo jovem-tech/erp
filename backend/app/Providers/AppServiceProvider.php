@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Models\User;
 use App\Services\Auth\RbacAuthorizationService;
+use App\Services\Integrations\EmailIntegrationSettingsService;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
@@ -38,6 +39,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->loadMigrationsFrom(database_path('migrations/chat'));
+        app(EmailIntegrationSettingsService::class)->applyRuntimeConfig();
 
         // O sistema-erp e 100% Bearer/Sanctum (sem cookie de sessao); o endpoint padrao
         // /broadcasting/auth do Laravel assume guard "web" se nao for sobrescrito aqui.

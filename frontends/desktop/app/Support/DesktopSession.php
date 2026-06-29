@@ -48,6 +48,24 @@ class DesktopSession
         return is_array($permissions) ? $permissions : [];
     }
 
+    public static function hasAuthorizationSnapshot(): bool
+    {
+        $user = self::user();
+
+        if ($user === []) {
+            return false;
+        }
+
+        $modules = $user['modules'] ?? null;
+        $permissions = $user['permissions'] ?? null;
+
+        if (! is_array($modules) || ! is_array($permissions)) {
+            return false;
+        }
+
+        return $modules !== [] || $permissions !== [];
+    }
+
     public static function can(string $module, string $action = 'visualizar'): bool
     {
         $permissions = self::permissions();
@@ -61,6 +79,10 @@ class DesktopSession
 
     public static function shouldSyncProfile(): bool
     {
+        if (! self::hasAuthorizationSnapshot()) {
+            return true;
+        }
+
         $lastSynced = session(self::SESSION_KEY . '.synced_at');
         $ttl = (int) config('services.erp_api.profile_sync_ttl', 300);
 

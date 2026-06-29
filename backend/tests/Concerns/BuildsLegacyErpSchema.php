@@ -49,6 +49,9 @@ trait BuildsLegacyErpSchema
             'clientes',
             'fornecedores',
             'configuracoes',
+            'financeiro_cartao_taxas',
+            'financeiro_cartao_bandeiras',
+            'financeiro_cartao_operadoras',
         ] as $table) {
             Schema::dropIfExists($table);
         }
@@ -59,6 +62,7 @@ trait BuildsLegacyErpSchema
         $this->createUsersTable();
         $this->createPasswordResetTokensTable();
         $this->createConfigurationsTable();
+        $this->createFinanceiroCartaoTables();
         $this->createClientsTable();
         $this->createSuppliersTable();
         $this->createServicesTable();
@@ -546,6 +550,46 @@ trait BuildsLegacyErpSchema
             $table->string('tipo', 20)->default('texto');
             $table->dateTime('created_at')->nullable();
             $table->dateTime('updated_at')->nullable();
+        });
+    }
+
+    private function createFinanceiroCartaoTables(): void
+    {
+        Schema::create('financeiro_cartao_operadoras', function (Blueprint $table): void {
+            $table->id();
+            $table->string('nome', 120);
+            $table->string('descricao', 255)->nullable();
+            $table->integer('ordem_exibicao')->default(0);
+            $table->integer('prazo_padrao_dias')->default(30);
+            $table->boolean('ativo')->default(true);
+            $table->timestamps();
+        });
+
+        Schema::create('financeiro_cartao_bandeiras', function (Blueprint $table): void {
+            $table->id();
+            $table->string('nome', 80);
+            $table->integer('ordem_exibicao')->default(0);
+            $table->boolean('ativo')->default(true);
+            $table->timestamps();
+        });
+
+        Schema::create('financeiro_cartao_taxas', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('operadora_id');
+            $table->unsignedBigInteger('bandeira_id')->nullable();
+            $table->string('modalidade', 20);
+            $table->integer('parcelas_inicial')->default(1);
+            $table->integer('parcelas_final')->default(1);
+            $table->decimal('taxa_percentual', 10, 4)->default(0);
+            $table->decimal('taxa_fixa', 10, 2)->default(0);
+            $table->integer('prazo_recebimento_dias')->default(0);
+            $table->text('observacoes')->nullable();
+            $table->boolean('ativo')->default(true);
+            $table->timestamps();
+
+            $table->foreign('operadora_id')->references('id')->on('financeiro_cartao_operadoras')->cascadeOnDelete();
+            $table->foreign('bandeira_id')->references('id')->on('financeiro_cartao_bandeiras')->nullOnDelete();
+            $table->index(['operadora_id', 'bandeira_id', 'modalidade'], 'idx_financeiro_cartao_taxas_catalogo');
         });
     }
 

@@ -2,7 +2,7 @@
 
 namespace Tests\Feature\Api\V1;
 
-use App\Models\User;
+use App\Models\Configuration;
 use App\Notifications\FrontendPasswordResetNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -27,6 +27,7 @@ class PasswordResetFlowTest extends TestCase
     public function test_forgot_password_sends_reset_link_for_active_user(): void
     {
         Notification::fake();
+        config()->set('mail.default', 'smtp');
 
         $user = $this->createUserRecord([
             'email' => 'suporte@empresa.com',
@@ -47,6 +48,83 @@ class PasswordResetFlowTest extends TestCase
             $user,
             FrontendPasswordResetNotification::class
         );
+    }
+
+    public function test_forgot_password_uses_database_smtp_when_env_mailer_is_log(): void
+    {
+        Notification::fake();
+
+        config()->set('mail.default', 'log');
+
+        foreach ([
+            'smtp_host' => 'smtp.example.com',
+            'smtp_port' => '587',
+            'smtp_crypto' => 'tls',
+            'smtp_timeout' => '20',
+            'smtp_user' => 'noreply@example.com',
+            'smtp_pass' => 'smtp-secret',
+            'smtp_from_email' => 'noreply@example.com',
+            'smtp_from_name' => 'Sistema ERP',
+        ] as $key => $value) {
+            Configuration::query()->create([
+                'chave' => $key,
+                'valor' => $value,
+                'tipo' => 'texto',
+            ]);
+        }
+
+        $user = $this->createUserRecord([
+            'email' => 'preview@empresa.com',
+            'perfil' => 'atendente',
+            'grupo_id' => 3,
+            'ativo' => true,
+        ]);
+
+        $response = $this->postJson('/api/v1/auth/password/forgot', [
+            'email' => $user->email,
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.reset_link_sent', true)
+            ->assertJsonPath('data.delivery.mode', 'email');
+
+        $this->assertSame('smtp', config('mail.default'));
+        $this->assertSame('smtp.example.com', config('mail.mailers.smtp.host'));
+        $this->assertSame('noreply@example.com', config('mail.from.address'));
+
+        Notification::assertSentTo(
+            $user,
+            FrontendPasswordResetNotification::class
+        );
+    }
+
+    public function test_forgot_password_fails_closed_when_no_operational_mailer_is_available(): void
+    {
+        Notification::fake();
+
+        config()->set('mail.default', 'log');
+
+        $user = $this->createUserRecord([
+            'email' => 'sem-mailer@empresa.com',
+            'perfil' => 'atendente',
+            'grupo_id' => 3,
+            'ativo' => true,
+        ]);
+
+        $this->postJson('/api/v1/auth/password/forgot', [
+            'email' => $user->email,
+        ])->assertStatus(503)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('error.code', 'AUTH_PASSWORD_RESET_CHANNEL_UNAVAILABLE');
+
+        $this->postJson('/api/v1/auth/password/forgot', [
+            'email' => 'nao-existe@empresa.com',
+        ])->assertStatus(503)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('error.code', 'AUTH_PASSWORD_RESET_CHANNEL_UNAVAILABLE');
+
+        Notification::assertNothingSent();
     }
 
     public function test_forgot_password_rejects_decommissioned_sistema_hml_frontend(): void
@@ -74,6 +152,7 @@ class PasswordResetFlowTest extends TestCase
     public function test_forgot_password_responds_without_leaking_unknown_email(): void
     {
         Notification::fake();
+        config()->set('mail.default', 'smtp');
 
         $response = $this->postJson('/api/v1/auth/password/forgot', [
             'email' => 'nao-existe@empresa.com',

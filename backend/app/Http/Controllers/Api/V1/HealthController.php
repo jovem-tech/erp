@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Api\V1;
 
-use Illuminate\Foundation\Application;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -31,9 +30,6 @@ class HealthController extends BaseApiController
         return $this->success([
             'status' => 'ok',
             'service' => config('app.name'),
-            'version' => config('app.version'),
-            'environment' => app()->environment(),
-            'laravel' => Application::VERSION,
             'database' => 'ok',
         ], 200, [
             'checked_at' => now()->toIso8601String(),

@@ -15,7 +15,7 @@ final class ApiResponse
             'data' => $data,
             'error' => null,
             'meta' => self::meta($request, $meta),
-        ], $status, [], JSON_UNESCAPED_UNICODE);
+        ], $status, [], JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
     }
 
     public static function error(
@@ -35,7 +35,7 @@ final class ApiResponse
                 'details' => $details,
             ],
             'meta' => self::meta($request, $meta),
-        ], $status, [], JSON_UNESCAPED_UNICODE);
+        ], $status, [], JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
     }
 
     public static function meta(?Request $request = null, array $meta = []): array

@@ -45,6 +45,8 @@ tags:
     description: Cadastro operacional de fornecedores.
   - name: Configurações
     description: Integrações, parâmetros operacionais e webhooks.
+  - name: Financeiro
+    description: Cartões, taxas e simulação de recebimento.
   - name: Equipamentos
     description: Consulta, cadastro operacional, fotos privadas e apoio de coletor remoto.
   - name: Usuários
@@ -402,22 +404,21 @@ components:
         user:
           $ref: "#/components/schemas/User"
 
-    ForgotPasswordRequest:
-      type: object
-      required:
-        - email
-      properties:
-        email:
-          type: string
-          format: email
-          maxLength: 255
-        frontend:
-          type: string
-          description: Canal aprovado para montar o link de redefinição. O backend resolve a URL por configuração, sem aceitar URL livre do cliente.
-          enum:
-            - desktop
-            - sistema-hml
-          default: desktop
+      ForgotPasswordRequest:
+        type: object
+        required:
+          - email
+        properties:
+          email:
+            type: string
+            format: email
+            maxLength: 255
+          frontend:
+            type: string
+            description: Canal aprovado para montar o link de redefinição. O backend resolve a URL por configuração, sem aceitar URL livre do cliente, e exige um canal real de e-mail para o envio.
+            enum:
+              - desktop
+            default: desktop
 
     ResetPasswordRequest:
       type: object
@@ -485,12 +486,6 @@ components:
           type: string
           example: ok
         service:
-          type: string
-        version:
-          type: string
-        environment:
-          type: string
-        laravel:
           type: string
         database:
           type: string
@@ -1348,12 +1343,153 @@ components:
     IntegrationSettings:
       type: object
       additionalProperties: true
-      description: Snapshot das configurações operacionais de integrações do desktop.
+      description: Snapshot das configurações operacionais de integrações do desktop. Campos sensíveis retornam vazios em `settings` e o estado fica em `secret_status`.
 
     IntegrationActionResult:
       type: object
       additionalProperties: true
       description: Resultado padronizado de ações operacionais de integrações e gateway.
+
+    FinanceiroCartoesDataset:
+      type: object
+      additionalProperties: true
+      description: Catálogos, resumo e simulador operacional do módulo de cartões e taxas.
+
+    FinanceiroCartaoSimulation:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        valor_bruto:
+          type: number
+        valor_taxa:
+          type: number
+        valor_liquido:
+          type: number
+        taxa_percentual:
+          type: number
+        taxa_fixa:
+          type: number
+        parcelas:
+          type: integer
+        modalidade:
+          type: string
+        modalidade_label:
+          type: string
+        prazo_recebimento_dias:
+          type: integer
+        data_prevista_recebimento:
+          type: string
+        data_prevista_repasse:
+          type: string
+        data_credito_efetivo:
+          type: string
+          nullable: true
+        operadora_id:
+          type: integer
+          nullable: true
+        operadora_nome:
+          type: string
+        bandeira_id:
+          type: integer
+          nullable: true
+        bandeira_nome:
+          type: string
+        taxa_id:
+          type: integer
+
+    FinanceiroCartaoOperadora:
+      type: object
+      properties:
+        id:
+          type: integer
+        nome:
+          type: string
+        descricao:
+          type: string
+          nullable: true
+        ordem_exibicao:
+          type: integer
+        prazo_padrao_dias:
+          type: integer
+        ativo:
+          type: boolean
+        taxas_count:
+          type: integer
+
+    FinanceiroCartaoBandeira:
+      type: object
+      properties:
+        id:
+          type: integer
+        nome:
+          type: string
+        ordem_exibicao:
+          type: integer
+        ativo:
+          type: boolean
+
+    FinanceiroCartaoTaxa:
+      type: object
+      properties:
+        id:
+          type: integer
+        operadora_id:
+          type: integer
+        operadora_nome:
+          type: string
+          nullable: true
+        bandeira_id:
+          type: integer
+          nullable: true
+        bandeira_nome:
+          type: string
+          nullable: true
+        modalidade:
+          type: string
+        parcelas_inicial:
+          type: integer
+        parcelas_final:
+          type: integer
+        taxa_percentual:
+          type: number
+        taxa_fixa:
+          type: number
+        prazo_recebimento_dias:
+          type: integer
+        observacoes:
+          type: string
+          nullable: true
+        ativo:
+          type: boolean
+
+    FinanceiroGatewayTaxa:
+      type: object
+      properties:
+        id:
+          type: integer
+        provider:
+          type: string
+        provider_label:
+          type: string
+        modalidade:
+          type: string
+        modalidade_label:
+          type: string
+        taxa_percentual:
+          type: number
+        taxa_fixa:
+          type: number
+        ordem_exibicao:
+          type: integer
+        observacoes:
+          type: string
+          nullable: true
+        ativo:
+          type: boolean
+        catalog_description:
+          type: string
+          nullable: true
 
     WebhookWhatsappRequest:
       type: object
@@ -1745,6 +1881,8 @@ paths:
           $ref: "#/components/responses/ValidationError"
         "429":
           $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/ServerError"
         "500":
           $ref: "#/components/responses/ServerError"
 
@@ -2099,12 +2237,658 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /financeiro/cartoes:
+    get:
+      tags:
+        - Financeiro
+      summary: Obter catálogos operacionais de cartões e taxas.
+      responses:
+        "200":
+          description: Catálogos, resumo e simulador do módulo financeiro.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          cartoes:
+                            $ref: "#/components/schemas/FinanceiroCartoesDataset"
+                          gateway:
+                            type: object
+                            additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /financeiro/cartoes/simular:
+    post:
+      tags:
+        - Financeiro
+      summary: Simular recebimento líquido no cartão.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - valor_bruto
+                - operadora_id
+              properties:
+                valor_bruto:
+                  type: number
+                operadora_id:
+                  type: integer
+                bandeira_id:
+                  type: integer
+                  nullable: true
+                modalidade:
+                  type: string
+                forma_pagamento:
+                  type: string
+                parcelas:
+                  type: integer
+      responses:
+        "200":
+          description: Resultado da simulação.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          simulation:
+                            $ref: "#/components/schemas/FinanceiroCartaoSimulation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /financeiro/cartoes/operadoras:
+    post:
+      tags:
+        - Financeiro
+      summary: Criar operadora de maquininha.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - nome
+              properties:
+                nome:
+                  type: string
+                descricao:
+                  type: string
+                ordem_exibicao:
+                  type: integer
+                prazo_padrao_dias:
+                  type: integer
+                ativo:
+                  type: boolean
+      responses:
+        "201":
+          description: Operadora criada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          operadora:
+                            $ref: "#/components/schemas/FinanceiroCartaoOperadora"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /financeiro/cartoes/operadoras/{operadora}:
+    patch:
+      tags:
+        - Financeiro
+      summary: Atualizar operadora de maquininha.
+      parameters:
+        - name: operadora
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - nome
+              properties:
+                nome:
+                  type: string
+                descricao:
+                  type: string
+                ordem_exibicao:
+                  type: integer
+                prazo_padrao_dias:
+                  type: integer
+                ativo:
+                  type: boolean
+      responses:
+        "200":
+          description: Operadora atualizada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          operadora:
+                            $ref: "#/components/schemas/FinanceiroCartaoOperadora"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      tags:
+        - Financeiro
+      summary: Desativar operadora de maquininha.
+      parameters:
+        - name: operadora
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Operadora desativada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          operadora:
+                            $ref: "#/components/schemas/FinanceiroCartaoOperadora"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /financeiro/cartoes/bandeiras:
+    post:
+      tags:
+        - Financeiro
+      summary: Criar bandeira de cartão.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - nome
+              properties:
+                nome:
+                  type: string
+                ordem_exibicao:
+                  type: integer
+                ativo:
+                  type: boolean
+      responses:
+        "201":
+          description: Bandeira criada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          bandeira:
+                            $ref: "#/components/schemas/FinanceiroCartaoBandeira"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /financeiro/cartoes/bandeiras/{bandeira}:
+    patch:
+      tags:
+        - Financeiro
+      summary: Atualizar bandeira de cartão.
+      parameters:
+        - name: bandeira
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - nome
+              properties:
+                nome:
+                  type: string
+                ordem_exibicao:
+                  type: integer
+                ativo:
+                  type: boolean
+      responses:
+        "200":
+          description: Bandeira atualizada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          bandeira:
+                            $ref: "#/components/schemas/FinanceiroCartaoBandeira"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      tags:
+        - Financeiro
+      summary: Desativar bandeira de cartão.
+      parameters:
+        - name: bandeira
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Bandeira desativada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          bandeira:
+                            $ref: "#/components/schemas/FinanceiroCartaoBandeira"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /financeiro/cartoes/taxas:
+    post:
+      tags:
+        - Financeiro
+      summary: Criar taxa por parcela.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - operadora_id
+                - modalidade
+                - parcelas_inicial
+                - parcelas_final
+                - taxa_percentual
+                - taxa_fixa
+                - prazo_recebimento_dias
+              properties:
+                operadora_id:
+                  type: integer
+                bandeira_id:
+                  type: integer
+                  nullable: true
+                modalidade:
+                  type: string
+                parcelas_inicial:
+                  type: integer
+                parcelas_final:
+                  type: integer
+                taxa_percentual:
+                  type: number
+                taxa_fixa:
+                  type: number
+                prazo_recebimento_dias:
+                  type: integer
+                observacoes:
+                  type: string
+                ativo:
+                  type: boolean
+      responses:
+        "201":
+          description: Taxa criada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          taxa:
+                            $ref: "#/components/schemas/FinanceiroCartaoTaxa"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /financeiro/cartoes/taxas/{taxa}:
+    patch:
+      tags:
+        - Financeiro
+      summary: Atualizar taxa por parcela.
+      parameters:
+        - name: taxa
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - operadora_id
+                - modalidade
+                - parcelas_inicial
+                - parcelas_final
+                - taxa_percentual
+                - taxa_fixa
+                - prazo_recebimento_dias
+              properties:
+                operadora_id:
+                  type: integer
+                bandeira_id:
+                  type: integer
+                  nullable: true
+                modalidade:
+                  type: string
+                parcelas_inicial:
+                  type: integer
+                parcelas_final:
+                  type: integer
+                taxa_percentual:
+                  type: number
+                taxa_fixa:
+                  type: number
+                prazo_recebimento_dias:
+                  type: integer
+                observacoes:
+                  type: string
+                ativo:
+                  type: boolean
+      responses:
+        "200":
+          description: Taxa atualizada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          taxa:
+                            $ref: "#/components/schemas/FinanceiroCartaoTaxa"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      tags:
+        - Financeiro
+      summary: Desativar taxa por parcela.
+      parameters:
+        - name: taxa
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Taxa desativada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          taxa:
+                            $ref: "#/components/schemas/FinanceiroCartaoTaxa"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /financeiro/cartoes/taxas-online:
+    post:
+      tags:
+        - Financeiro
+      summary: Criar taxa online por gateway.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - provider
+                - modalidade
+              properties:
+                provider:
+                  type: string
+                modalidade:
+                  type: string
+                taxa_percentual:
+                  type: number
+                taxa_fixa:
+                  type: number
+                ordem_exibicao:
+                  type: integer
+                observacoes:
+                  type: string
+                ativo:
+                  type: boolean
+      responses:
+        "201":
+          description: Taxa online criada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          gateway_taxa:
+                            $ref: "#/components/schemas/FinanceiroGatewayTaxa"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /financeiro/cartoes/taxas-online/{gatewayTaxa}:
+    patch:
+      tags:
+        - Financeiro
+      summary: Atualizar taxa online por gateway.
+      parameters:
+        - name: gatewayTaxa
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - provider
+                - modalidade
+              properties:
+                provider:
+                  type: string
+                modalidade:
+                  type: string
+                taxa_percentual:
+                  type: number
+                taxa_fixa:
+                  type: number
+                ordem_exibicao:
+                  type: integer
+                observacoes:
+                  type: string
+                ativo:
+                  type: boolean
+      responses:
+        "200":
+          description: Taxa online atualizada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          gateway_taxa:
+                            $ref: "#/components/schemas/FinanceiroGatewayTaxa"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      tags:
+        - Financeiro
+      summary: Desativar taxa online por gateway.
+      parameters:
+        - name: gatewayTaxa
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Taxa online desativada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          gateway_taxa:
+                            $ref: "#/components/schemas/FinanceiroGatewayTaxa"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /webhooks/whatsapp:
     post:
       tags:
         - Webhooks
       summary: Receber eventos inbound do gateway WhatsApp.
+      description: Endpoint público protegido por token compartilhado no header `X-Webhook-Token`.
       security: []
+      parameters:
+        - in: header
+          name: X-Webhook-Token
+          required: true
+          schema:
+            type: string
+          description: Token compartilhado configurado no painel de integrações.
       requestBody:
         required: true
         content:
@@ -2118,6 +2902,8 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
         "422":
           $ref: "#/components/responses/ValidationError"
 

@@ -40,7 +40,10 @@ class AuthFlowTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('status', 'success')
             ->assertJsonPath('data.status', 'ok')
-            ->assertJsonPath('data.version', config('app.version'));
+            ->assertJsonPath('data.database', 'ok')
+            ->assertJsonMissingPath('data.version')
+            ->assertJsonMissingPath('data.environment')
+            ->assertJsonMissingPath('data.laravel');
     }
 
     public function test_login_returns_bearer_token_with_expiration(): void

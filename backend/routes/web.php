@@ -8,4 +8,5 @@ Route::get('/', function () {
 });
 
 Route::post('/webhooks/whatsapp', WhatsAppWebhookController::class)
+    ->middleware('throttle:120,1')
     ->name('webhooks.whatsapp');

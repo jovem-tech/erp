@@ -99,6 +99,32 @@ class DesktopFrontendTest extends TestCase
             ->assertSessionHas('success');
     }
 
+    public function test_password_reset_request_redirects_back_with_error_when_mail_channel_is_unavailable(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/auth/password/forgot' => Http::response([
+                'status' => 'error',
+                'data' => null,
+                'error' => [
+                    'code' => 'AUTH_PASSWORD_RESET_CHANNEL_UNAVAILABLE',
+                    'message' => 'A recuperacao de senha por e-mail esta temporariamente indisponivel. Contate o administrador.',
+                ],
+                'meta' => [],
+            ], 503),
+        ]);
+
+        $response = $this
+            ->from('/esqueci-minha-senha')
+            ->post('/esqueci-minha-senha', [
+                'email' => 'suporte@empresa.com',
+            ]);
+
+        $response
+            ->assertRedirect(route('password.request'))
+            ->assertSessionHas('error', 'A recuperacao de senha por e-mail esta temporariamente indisponivel. Contate o administrador.')
+            ->assertSessionHasInput('email', 'suporte@empresa.com');
+    }
+
     public function test_password_reset_page_renders_from_email_link(): void
     {
         $response = $this->get('/redefinir-senha/token-abc?email=suporte@empresa.com');
@@ -143,29 +169,42 @@ class DesktopFrontendTest extends TestCase
             ->assertSessionMissing('desktop_auth');
     }
 
-    public function test_dashboard_index_renders_shell_before_summary_hydration(): void
+    public function test_dashboard_recovers_permissions_from_backend_when_session_snapshot_is_incomplete(): void
     {
         Http::fake([
-            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response([
+            'http://127.0.0.1:8000/api/v1/auth/me' => Http::response([
                 'status' => 'success',
-                'data' => [
-                    'items' => [],
-                    'unread_count' => 0,
-                ],
-                'error' => null,
-                'meta' => [
-                    'pagination' => [
-                        'current_page' => 1,
-                        'per_page' => 6,
-                        'total' => 0,
-                        'last_page' => 1,
-                        'from' => 0,
-                        'to' => 0,
+                'data' => $this->fakeUser([
+                    'permissions' => [
+                        'dashboard' => ['visualizar'],
                     ],
-                ],
+                    'modules' => ['dashboard'],
+                ]),
+                'error' => null,
+                'meta' => [],
             ]),
         ]);
 
+        $response = $this
+            ->withSession([
+                'desktop_auth' => [
+                    'token' => 'desktop-session-token',
+                    'synced_at' => time(),
+                    'user' => $this->fakeUser(),
+                ],
+            ])
+            ->get('/dashboard');
+
+        $response
+            ->assertOk()
+            ->assertSee('window.__DESKTOP_DASHBOARD = {"dataUrl":"', false)
+            ->assertSessionHas('desktop_auth.user.permissions.dashboard.0', 'visualizar');
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_dashboard_index_renders_shell_before_summary_hydration(): void
+    {
         $response = $this
             ->withSession($this->desktopSession([
                 'dashboard' => ['visualizar'],
@@ -181,7 +220,7 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('dashboardEquipmentMonth')
             ->assertSee('dashboardEquipmentYear');
 
-        Http::assertSentCount(1);
+        Http::assertNothingSent();
     }
 
     public function test_commercial_people_menu_groups_clients_suppliers_and_technical_team(): void
@@ -505,7 +544,9 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Sair e Esquecer Login')
             ->assertSee('Nova OS')
             ->assertSee('Abrir página cheia')
-            ->assertSee('OS pronta para execução')
+            ->assertSee(route('notifications.summary'), false)
+            ->assertSee('Resumo carregado sob demanda.')
+            ->assertSee('Abra este menu para carregar as notificações mais recentes.')
             ->assertDontSee('Configurações do sistema');
     }
 
@@ -838,6 +879,103 @@ class DesktopFrontendTest extends TestCase
             ->assertOk()
             ->assertSee('OS pronta para execução')
             ->assertSee('Marcar todas como lidas');
+    }
+
+    public function test_notifications_summary_endpoint_returns_lazy_loaded_payload(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'items' => [
+                        [
+                            'id' => 'notif-1',
+                            'tipo' => 'os',
+                            'titulo' => 'OS pronta para execução',
+                            'corpo' => 'A OS 1001 foi liberada para o técnico.',
+                            'rota_destino' => '/os/1001',
+                            'icone' => 'clipboard-check',
+                            'dados' => [],
+                            'lida_em' => null,
+                            'criada_em' => '2026-06-22T10:00:00-03:00',
+                        ],
+                    ],
+                    'unread_count' => 1,
+                ],
+                'error' => null,
+                'meta' => [
+                    'pagination' => [
+                        'current_page' => 1,
+                        'per_page' => 6,
+                        'total' => 1,
+                        'last_page' => 1,
+                        'from' => 1,
+                        'to' => 1,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'dashboard' => ['visualizar'],
+            ]))
+            ->get('/notificacoes/resumo');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.unread_count', 1)
+            ->assertJsonPath('data.items.0.id', 'notif-1')
+            ->assertJsonPath('data.items.0.url', route('orders.show', 1001));
+    }
+
+    public function test_dashboard_render_does_not_hit_notifications_api(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'items' => [],
+                    'unread_count' => 0,
+                ],
+                'error' => null,
+                'meta' => [
+                    'pagination' => [
+                        'current_page' => 1,
+                        'per_page' => 6,
+                        'total' => 0,
+                        'last_page' => 1,
+                        'from' => 0,
+                        'to' => 0,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'dashboard' => ['visualizar'],
+            ]))
+            ->get('/dashboard');
+
+        $response->assertOk();
+
+        Http::assertNothingSent();
+    }
+
+    public function test_desktop_layout_exposes_page_transition_loader(): void
+    {
+        $response = $this
+            ->withSession($this->desktopSession([
+                'dashboard' => ['visualizar'],
+            ]))
+            ->get('/dashboard');
+
+        $response
+            ->assertOk()
+            ->assertSee('data-desktop-page-loader', false)
+            ->assertSee('Carregando página');
     }
 
     public function test_nova_os_button_visible_and_create_page_renders_form(): void

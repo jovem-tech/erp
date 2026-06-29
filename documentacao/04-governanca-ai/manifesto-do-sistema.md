@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-06-28T13:45:32+02:00`
-- Versao do sistema: `3.4.0`
+- Gerado em: `2026-06-29T04:41:49+02:00`
+- Versao do sistema: `3.4.1`
 - Versao da API: `1.1.0`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Windows/XAMPP`
@@ -60,7 +60,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/03-arquitetura-tecnica/backend-administrativo-rbac.md` - Backend Administrativo e RBAC Central
 - `documentacao/03-arquitetura-tecnica/backend-central-minimo.md` - Backend Central Minimo
 - `documentacao/03-arquitetura-tecnica/contrato-api-backend-central.md` - Contrato da API do Backend Central
-- `documentacao/03-arquitetura-tecnica/frontend-desktop-laravel.md` - frontend-desktop-laravel
+- `documentacao/03-arquitetura-tecnica/frontend-desktop-laravel.md` - Frontend Desktop Laravel
 - `documentacao/03-arquitetura-tecnica/frontend-sistema-hml-bff.md` - Frontend sistema-hml como BFF
 - `documentacao/03-arquitetura-tecnica/mapa-migracao-legado-frontend-sistema-hml.md` - Mapa Completo de Migração e Limpeza do `frontend/sistema-hml`
 - `documentacao/03-arquitetura-tecnica/ordens-mobile.md` - Fluxo de OS Mobile
@@ -105,10 +105,16 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-06-26-release-v3.1.21-servicos-estoque-operacionais.md` - Release v3.1.21 - Serviços e Estoque Operacionais
 - `documentacao/07-novas-implementacoes/2026-06-27-acoes-edicao-baixa-os-desktop.md` - Ações de OS no desktop: dropdown, edição e baixa (paridade completa com o legado)
 - `documentacao/07-novas-implementacoes/2026-06-27-inbox-whatsapp-tempo-real.md` - Central de Atendimento v1: WhatsApp Web/mobile do ERP
+- `documentacao/07-novas-implementacoes/2026-06-28-cartoes-taxas-desktop.md` - Cartões e Taxas no Desktop ERP
+- `documentacao/07-novas-implementacoes/2026-06-28-correcao-utf8-painel-os-desktop.md` - Correcao UTF-8 no painel de OS do desktop
+- `documentacao/07-novas-implementacoes/2026-06-28-endurecimento-recuperacao-senha-email.md` - Endurecimento da recuperacao de senha por e-mail
+- `documentacao/07-novas-implementacoes/2026-06-28-endurecimento-seguranca-chat-integracoes.md` - 2026-06-28 - Endurecimento de seguranca do chat e das integracoes
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 
 ### `documentacao/10-deploy`
 
+- `documentacao/10-deploy/README.md` - Deploy e Operacao
+- `documentacao/10-deploy/manual-inicializacao-local-windows-xampp.md` - Manual de Inicializacao Local no Windows com XAMPP
 
 ## Inventario de specs
 
@@ -124,4 +130,5 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/009-paridade-painel-os-desktop` - Feature Specification: Paridade Operacional do Painel de Ordens de Serviço no Desktop | artefatos: spec, plan, tasks
 - `specs/010-inbox-whatsapp-tempo-real` - Feature Specification: Central de Atendimento — Inbox de WhatsApp em tempo real | artefatos: spec, plan, tasks
 - `specs/011-acoes-edicao-baixa-os-desktop` - Feature Specification: Ações de OS no Desktop — Dropdown, Edição e Baixa (paridade completa com o legado) | artefatos: spec, plan, tasks
+- `specs/012-financeiro-cartoes-taxas-desktop` - Feature Specification: Financeiro - Cartões e Taxas no Desktop | artefatos: spec, plan, tasks, research, quickstart, data_model, contracts
 

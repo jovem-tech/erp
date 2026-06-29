@@ -55,6 +55,16 @@
         </div>
     </div>
 
+    <div class="desktop-page-loader" data-desktop-page-loader hidden aria-hidden="true">
+        <div class="desktop-page-loader-card" role="status" aria-live="polite" aria-busy="true">
+            <span class="spinner-border text-primary desktop-page-loader-spinner" aria-hidden="true"></span>
+            <div class="desktop-page-loader-copy">
+                <strong>Carregando página</strong>
+                <span>Preparando a próxima tela...</span>
+            </div>
+        </div>
+    </div>
+
     <script>
         window.__DESKTOP_FLASH = {{ \Illuminate\Support\Js::from($desktopFlash) }};
     </script>

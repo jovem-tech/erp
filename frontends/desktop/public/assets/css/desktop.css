@@ -57,8 +57,70 @@ a {
     min-height: 100vh;
 }
 
+.desktop-body.is-page-transitioning {
+    overflow: hidden;
+}
+
 .desktop-shell {
     min-height: 100vh;
+}
+
+.desktop-page-loader {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: rgba(245, 247, 252, 0.72);
+    backdrop-filter: blur(12px);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.18s ease, visibility 0.18s ease;
+}
+
+.desktop-page-loader.is-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+}
+
+.desktop-page-loader-card {
+    display: inline-flex;
+    align-items: center;
+    gap: 1rem;
+    min-width: min(90vw, 360px);
+    padding: 1rem 1.15rem;
+    border-radius: 22px;
+    background: var(--desktop-surface);
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.16);
+}
+
+.desktop-page-loader-spinner {
+    width: 2.1rem;
+    height: 2.1rem;
+    flex-shrink: 0;
+    color: var(--desktop-primary);
+}
+
+.desktop-page-loader-copy {
+    display: grid;
+    gap: 0.12rem;
+}
+
+.desktop-page-loader-copy strong {
+    color: #1f2a44;
+    font-size: 0.98rem;
+    font-weight: 900;
+}
+
+.desktop-page-loader-copy span {
+    color: var(--desktop-text-soft);
+    font-size: 0.86rem;
+    line-height: 1.35;
 }
 
 .desktop-sidebar {

@@ -14,8 +14,20 @@ const DesktopUi = (() => {
     const searchResults = searchForm?.querySelector('[data-desktop-search-results]');
     const searchSuggestUrl = searchForm?.dataset.suggestUrl || '';
 
+    const notificationRoot = document.querySelector('[data-desktop-notification-root]');
+    const notificationSummaryUrl = notificationRoot?.dataset.notificationSummaryUrl || '';
+    const notificationList = notificationRoot?.querySelector('[data-desktop-notification-list]');
+    const notificationUnread = notificationRoot?.querySelector('[data-desktop-notification-unread]');
+    const notificationBadge = notificationRoot?.querySelector('[data-desktop-notification-badge]');
+
+    const pageLoaderRoot = document.querySelector('[data-desktop-page-loader]');
+    const pageLoaderMessage = pageLoaderRoot?.querySelector('.desktop-page-loader-copy span');
+
     let searchTimer = null;
     let searchAbortController = null;
+    let notificationSummaryPromise = null;
+    let pageLoaderTimer = null;
+    let pageLoaderVisible = false;
 
     const SENSITIVE_KEY_PATTERN = /token|senha|password|secret|authoriza|cookie|cpf|cnpj|cart[aã]o|api[_-]?key/i;
 
@@ -84,6 +96,351 @@ const DesktopUi = (() => {
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#039;');
+
+    const hidePageLoader = () => {
+        if (!(pageLoaderRoot instanceof HTMLElement)) {
+            return;
+        }
+
+        if (pageLoaderTimer !== null) {
+            window.clearTimeout(pageLoaderTimer);
+            pageLoaderTimer = null;
+        }
+
+        pageLoaderVisible = false;
+        pageLoaderRoot.classList.remove('is-visible');
+        pageLoaderRoot.hidden = true;
+        pageLoaderRoot.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('is-page-transitioning');
+    };
+
+    const showPageLoader = (message = 'Preparando a próxima tela...') => {
+        if (!(pageLoaderRoot instanceof HTMLElement)) {
+            return;
+        }
+
+        if (pageLoaderVisible) {
+            if (pageLoaderMessage instanceof HTMLElement && message !== '') {
+                pageLoaderMessage.textContent = message;
+            }
+
+            return;
+        }
+
+        pageLoaderVisible = true;
+
+        if (pageLoaderMessage instanceof HTMLElement && message !== '') {
+            pageLoaderMessage.textContent = message;
+        }
+
+        pageLoaderRoot.hidden = false;
+        pageLoaderRoot.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('is-page-transitioning');
+
+        window.requestAnimationFrame(() => {
+            pageLoaderRoot.classList.add('is-visible');
+        });
+    };
+
+    const isSameOriginUrl = (url) => {
+        try {
+            return new URL(url, window.location.href).origin === window.location.origin;
+        } catch {
+            return false;
+        }
+    };
+
+    const shouldHandleLinkNavigation = (link, event) => {
+        if (!(link instanceof HTMLAnchorElement) || event.defaultPrevented) {
+            return false;
+        }
+
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+            return false;
+        }
+
+        if (link.dataset.noPageLoader === 'true' || link.closest('[data-no-page-loader="true"]')) {
+            return false;
+        }
+
+        if (link.hasAttribute('download') || (link.target && link.target !== '_self')) {
+            return false;
+        }
+
+        const href = (link.getAttribute('href') ?? '').trim();
+        if (href === '' || href === '#' || href.startsWith('javascript:')) {
+            return false;
+        }
+
+        if (!isSameOriginUrl(href)) {
+            return false;
+        }
+
+        const targetUrl = new URL(link.href, window.location.href);
+        if (targetUrl.href === window.location.href || (
+            targetUrl.pathname === window.location.pathname
+            && targetUrl.search === window.location.search
+            && targetUrl.hash !== ''
+        )) {
+            return false;
+        }
+
+        return true;
+    };
+
+    const shouldHandleFormNavigation = (form, event) => {
+        if (!(form instanceof HTMLFormElement) || event.defaultPrevented) {
+            return false;
+        }
+
+        if (form.dataset.noPageLoader === 'true' || form.closest('[data-no-page-loader="true"]')) {
+            return false;
+        }
+
+        if (form.target && form.target !== '_self') {
+            return false;
+        }
+
+        return form.method !== 'dialog';
+    };
+
+    const renderNotificationBadge = (unreadCount) => {
+        if (!(notificationBadge instanceof HTMLElement)) {
+            return;
+        }
+
+        if (unreadCount > 0) {
+            notificationBadge.textContent = unreadCount > 9 ? '9+' : String(unreadCount);
+            notificationBadge.classList.remove('d-none');
+            return;
+        }
+
+        notificationBadge.textContent = '';
+        notificationBadge.classList.add('d-none');
+    };
+
+    const renderNotificationEmptyState = (message) => {
+        if (!(notificationList instanceof HTMLElement)) {
+            return;
+        }
+
+        notificationList.innerHTML = `
+            <div class="desktop-notification-empty">
+                ${escapeHtml(message)}
+            </div>
+        `;
+    };
+
+    const renderNotificationSummary = (summary) => {
+        if (!(notificationList instanceof HTMLElement)) {
+            return;
+        }
+
+        const items = Array.isArray(summary?.items) ? summary.items : [];
+        const unreadCount = Math.max(0, Number(summary?.unread_count ?? 0));
+
+        if (notificationUnread instanceof HTMLElement) {
+            notificationUnread.textContent = unreadCount > 0
+                ? `${unreadCount} não lidas`
+                : '0 não lidas';
+        }
+
+        renderNotificationBadge(unreadCount);
+
+        if (items.length === 0) {
+            renderNotificationEmptyState('Nenhuma notificação disponível.');
+            return;
+        }
+
+        notificationList.innerHTML = items.map((notification) => {
+            const unreadClass = notification?.lida_em ? 'is-read' : 'is-unread';
+            const icon = escapeHtml(notification?.icone || 'bi bi-bell');
+            const title = escapeHtml(notification?.titulo || 'Notificação');
+            const body = escapeHtml(notification?.corpo || '');
+            const humanTime = escapeHtml(notification?.criada_em_humano || 'Agora');
+            const url = escapeHtml(notification?.url || '#');
+
+            return `
+                <a href="${url}" class="desktop-notification-item ${unreadClass}">
+                    <span class="desktop-notification-icon">
+                        <i class="${icon}"></i>
+                    </span>
+
+                    <span class="desktop-notification-copy">
+                        <strong>${title}</strong>
+                        <small>${body}</small>
+                        <span>${humanTime}</span>
+                    </span>
+                </a>
+            `;
+        }).join('');
+    };
+
+    const setNotificationLoadingState = () => {
+        if (notificationRoot instanceof HTMLElement) {
+            notificationRoot.dataset.notificationsLoading = '1';
+        }
+
+        if (notificationUnread instanceof HTMLElement) {
+            notificationUnread.textContent = 'Carregando resumo...';
+        }
+
+        renderNotificationEmptyState('Carregando notificações...');
+    };
+
+    const setNotificationErrorState = () => {
+        if (notificationUnread instanceof HTMLElement) {
+            notificationUnread.textContent = 'Resumo indisponível';
+        }
+
+        renderNotificationEmptyState('Não foi possível carregar as notificações agora.');
+    };
+
+    const loadNotificationSummary = () => {
+        if (!(notificationRoot instanceof HTMLElement) || notificationSummaryUrl === '') {
+            return Promise.resolve(null);
+        }
+
+        if (notificationSummaryPromise !== null) {
+            return notificationSummaryPromise;
+        }
+
+        setNotificationLoadingState();
+
+        notificationSummaryPromise = fetch(notificationSummaryUrl, {
+            headers: {
+                Accept: 'application/json',
+            },
+            credentials: 'same-origin',
+        })
+            .then((response) => {
+                if (response.status === 401) {
+                    window.location.href = '/login';
+                    return null;
+                }
+
+                if (!response.ok) {
+                    throw new Error('Não foi possível carregar o resumo de notificações.');
+                }
+
+                return response.json();
+            })
+            .then((payload) => {
+                if (payload === null) {
+                    return null;
+                }
+
+                const summary = payload?.data || payload;
+                renderNotificationSummary(summary);
+
+                if (notificationRoot instanceof HTMLElement) {
+                    notificationRoot.dataset.notificationsLoaded = '1';
+                }
+
+                return summary;
+            })
+            .catch((error) => {
+                logError('notifications', error, {
+                    url: notificationSummaryUrl,
+                });
+                setNotificationErrorState();
+                return null;
+            })
+            .finally(() => {
+                if (notificationRoot instanceof HTMLElement) {
+                    notificationRoot.dataset.notificationsLoading = '0';
+                }
+
+                notificationSummaryPromise = null;
+            });
+
+        return notificationSummaryPromise;
+    };
+
+    const initNotifications = () => {
+        if (!(notificationRoot instanceof HTMLElement) || notificationSummaryUrl === '') {
+            return;
+        }
+
+        const scheduleLoad = () => {
+            if (notificationRoot.dataset.notificationsLoaded === '1' || notificationRoot.dataset.notificationsLoading === '1') {
+                return;
+            }
+
+            loadNotificationSummary();
+        };
+
+        notificationRoot.addEventListener('show.bs.dropdown', scheduleLoad);
+
+        if (typeof window.requestIdleCallback === 'function') {
+            window.requestIdleCallback(scheduleLoad, { timeout: 1200 });
+            return;
+        }
+
+        window.setTimeout(scheduleLoad, 500);
+    };
+
+    const initPageTransitions = () => {
+        if (!(pageLoaderRoot instanceof HTMLElement)) {
+            return;
+        }
+
+        hidePageLoader();
+
+        document.addEventListener('click', (event) => {
+            const target = event.target;
+            const link = target instanceof Element ? target.closest('a[href]') : null;
+
+            if (!(link instanceof HTMLAnchorElement) || !shouldHandleLinkNavigation(link, event)) {
+                return;
+            }
+
+            event.preventDefault();
+
+            showPageLoader(link.dataset.pageLoaderMessage || 'Abrindo a próxima tela...');
+
+            if (pageLoaderTimer !== null) {
+                window.clearTimeout(pageLoaderTimer);
+            }
+
+            pageLoaderTimer = window.setTimeout(() => {
+                window.location.assign(link.href);
+            }, 60);
+        });
+
+        document.addEventListener('submit', (event) => {
+            const form = event.target;
+
+            if (!(form instanceof HTMLFormElement) || !shouldHandleFormNavigation(form, event)) {
+                return;
+            }
+
+            event.preventDefault();
+
+            showPageLoader(form.dataset.pageLoaderMessage || 'Enviando dados...');
+
+            if (pageLoaderTimer !== null) {
+                window.clearTimeout(pageLoaderTimer);
+            }
+
+            pageLoaderTimer = window.setTimeout(() => {
+                form.submit();
+            }, 60);
+        });
+
+        window.addEventListener('pageshow', hidePageLoader);
+        window.addEventListener('pagehide', hidePageLoader);
+        window.addEventListener('beforeunload', () => {
+            if (!(pageLoaderRoot instanceof HTMLElement)) {
+                return;
+            }
+
+            pageLoaderRoot.hidden = false;
+            pageLoaderRoot.classList.add('is-visible');
+            pageLoaderRoot.setAttribute('aria-hidden', 'false');
+            document.body.classList.add('is-page-transitioning');
+        });
+    };
 
     const initSidebar = () => {
         if (!sidebar || !main) {
@@ -383,6 +740,17 @@ const DesktopUi = (() => {
         }
     });
 
+    document.addEventListener('shown.bs.tab', (event) => {
+        if (event.target instanceof HTMLElement) {
+            const targetSelector = event.target.getAttribute('data-bs-target')
+                || event.target.getAttribute('href')
+                || '';
+            const targetPanel = targetSelector !== '' ? document.querySelector(targetSelector) : null;
+
+            refreshSelect2(targetPanel instanceof HTMLElement ? targetPanel : event.target);
+        }
+    });
+
     const initOsPreviewModals = () => {
         document.querySelectorAll('[data-os-modal-url]').forEach((trigger) => {
             trigger.addEventListener('click', (event) => {
@@ -637,7 +1005,9 @@ const DesktopUi = (() => {
         initSidebarGroups();
         initPasswordToggles();
         initFlash();
+        initNotifications();
         initConfirmForms();
+        initPageTransitions();
         initModalFillers();
         initSelect2();
         initOsPreviewModals();
