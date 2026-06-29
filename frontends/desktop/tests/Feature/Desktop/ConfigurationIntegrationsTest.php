@@ -55,7 +55,7 @@ class ConfigurationIntegrationsTest extends TestCase
             ->assertSee('Host SMTP')
             ->assertSee('Google Client ID');
 
-        Http::assertSentCount(2);
+        Http::assertSentCount(1);
     }
 
     public function test_payment_test_connection_route_returns_json_result(): void
@@ -194,6 +194,79 @@ class ConfigurationIntegrationsTest extends TestCase
             ->assertJsonPath('result.ok', true)
             ->assertJsonPath('result.provider', 'api_whats_local')
             ->assertJsonPath('result.response.data.message_id', 'msg-789');
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_integrations_page_does_not_spoof_put_on_save_form(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'items' => [],
+                    'unread_count' => 0,
+                ],
+                'error' => null,
+                'meta' => [
+                    'pagination' => [
+                        'current_page' => 1,
+                        'per_page' => 6,
+                        'total' => 0,
+                        'last_page' => 1,
+                        'from' => 0,
+                        'to' => 0,
+                    ],
+                ],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/configuracoes/integracoes' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'integration' => $this->fakeIntegrationPayload(),
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'configuracoes' => ['visualizar', 'editar'],
+            ]))
+            ->get('/configuracoes/integracoes');
+
+        $response
+            ->assertOk()
+            ->assertDontSee('name="_method"');
+    }
+
+    public function test_integrations_update_route_accepts_put_for_backward_compatibility(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/configuracoes/integracoes' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'integration' => $this->fakeIntegrationPayload(),
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'configuracoes' => ['visualizar', 'editar'],
+            ]))
+            ->put('/configuracoes/integracoes', [
+                'whatsapp_enabled' => '1',
+                'whatsapp_direct_provider' => 'api_whats_local',
+                'whatsapp_bulk_provider' => 'meta_oficial',
+                'whatsapp_test_phone' => '(22) 99999-9999',
+            ]);
+
+        $response
+            ->assertRedirect(route('configurations.integrations.index'))
+            ->assertSessionHas('success', 'Integrações salvas com sucesso.');
 
         Http::assertSentCount(1);
     }

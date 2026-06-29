@@ -3,31 +3,39 @@
 @section('content')
     @php
         $settings = is_array($integration['settings'] ?? null) ? $integration['settings'] : [];
+        $secretStatus = is_array($integration['secret_status'] ?? null) ? $integration['secret_status'] : [];
         $summary = is_array($integration['summary'] ?? null) ? $integration['summary'] : [];
         $providerOptions = is_array($integration['provider_options'] ?? null) ? $integration['provider_options'] : [];
         $gateway = is_array($integration['gateway'] ?? null) ? $integration['gateway'] : [];
         $localGateway = is_array($gateway['local'] ?? null) ? $gateway['local'] : [];
         $linuxGateway = is_array($gateway['linux'] ?? null) ? $gateway['linux'] : [];
+        $isConfiguredSecret = static fn (array $status, string $key): bool => (bool) data_get($status, $key . '.configured', false);
 
         $directProvider = old('whatsapp_direct_provider', (string) ($settings['whatsapp_direct_provider'] ?? 'api_whats_local'));
         $bulkProvider = old('whatsapp_bulk_provider', (string) ($settings['whatsapp_bulk_provider'] ?? 'meta_oficial'));
         $enabled = old('whatsapp_enabled', (bool) ($settings['whatsapp_enabled'] ?? false));
         $testPhone = old('whatsapp_test_phone', (string) ($settings['whatsapp_test_phone'] ?? ''));
         $menuiaUrl = old('whatsapp_menuia_url', (string) ($settings['whatsapp_menuia_url'] ?? 'https://chatbot.menuia.com/api'));
-        $menuiaAppKey = old('whatsapp_menuia_appkey', (string) ($settings['whatsapp_menuia_appkey'] ?? ''));
-        $menuiaAuthKey = old('whatsapp_menuia_authkey', (string) ($settings['whatsapp_menuia_authkey'] ?? ''));
-        $webhookToken = old('whatsapp_webhook_token', (string) ($settings['whatsapp_webhook_token'] ?? ''));
+        $menuiaAppKey = old('whatsapp_menuia_appkey', '');
+        $menuiaAppKeyConfigured = $isConfiguredSecret($secretStatus, 'whatsapp_menuia_appkey');
+        $menuiaAuthKey = old('whatsapp_menuia_authkey', '');
+        $menuiaAuthKeyConfigured = $isConfiguredSecret($secretStatus, 'whatsapp_menuia_authkey');
+        $webhookToken = old('whatsapp_webhook_token', '');
+        $webhookTokenConfigured = $isConfiguredSecret($secretStatus, 'whatsapp_webhook_token');
         $evolutionUrl = old('whatsapp_evolution_url', (string) ($settings['whatsapp_evolution_url'] ?? 'http://127.0.0.1:8080'));
-        $evolutionApiKey = old('whatsapp_evolution_apikey', (string) ($settings['whatsapp_evolution_apikey'] ?? ''));
+        $evolutionApiKey = old('whatsapp_evolution_apikey', '');
+        $evolutionApiKeyConfigured = $isConfiguredSecret($secretStatus, 'whatsapp_evolution_apikey');
         $evolutionInstance = old('whatsapp_evolution_instance', (string) ($settings['whatsapp_evolution_instance'] ?? ''));
         $evolutionTimeout = old('whatsapp_evolution_timeout', (string) ($settings['whatsapp_evolution_timeout'] ?? '20'));
         $evolutionSyncAvatar = old('whatsapp_evolution_sync_avatar', (bool) ($settings['whatsapp_evolution_sync_avatar'] ?? true));
         $localNodeUrl = old('whatsapp_local_node_url', (string) ($settings['whatsapp_local_node_url'] ?? 'http://127.0.0.1:3001'));
-        $localNodeToken = old('whatsapp_local_node_token', (string) ($settings['whatsapp_local_node_token'] ?? ''));
+        $localNodeToken = old('whatsapp_local_node_token', '');
+        $localNodeTokenConfigured = $isConfiguredSecret($secretStatus, 'whatsapp_local_node_token');
         $localNodeOrigin = old('whatsapp_local_node_origin', (string) ($settings['whatsapp_local_node_origin'] ?? config('app.url')));
         $localNodeTimeout = old('whatsapp_local_node_timeout', (string) ($settings['whatsapp_local_node_timeout'] ?? '20'));
         $linuxNodeUrl = old('whatsapp_linux_node_url', (string) ($settings['whatsapp_linux_node_url'] ?? 'http://127.0.0.1:3001'));
-        $linuxNodeToken = old('whatsapp_linux_node_token', (string) ($settings['whatsapp_linux_node_token'] ?? ''));
+        $linuxNodeToken = old('whatsapp_linux_node_token', '');
+        $linuxNodeTokenConfigured = $isConfiguredSecret($secretStatus, 'whatsapp_linux_node_token');
         $linuxNodeOrigin = old('whatsapp_linux_node_origin', (string) ($settings['whatsapp_linux_node_origin'] ?? config('app.url')));
         $linuxNodeTimeout = old('whatsapp_linux_node_timeout', (string) ($settings['whatsapp_linux_node_timeout'] ?? '20'));
         $webhookUrl = old('whatsapp_webhook_url', (string) ($settings['whatsapp_webhook_url'] ?? ''));
@@ -65,38 +73,45 @@
 
         $payments = is_array($integration['payments'] ?? null) ? $integration['payments'] : [];
         $paymentSettings = is_array($payments['settings'] ?? null) ? $payments['settings'] : [];
+        $paymentSecretStatus = is_array($payments['secret_status'] ?? null) ? $payments['secret_status'] : [];
         $paymentSummary = is_array($payments['summary'] ?? null) ? $payments['summary'] : [];
 
         $mercadoPagoEnabled = old('pagamentos_mercadopago_enabled', (bool) ($paymentSettings['pagamentos_mercadopago_enabled'] ?? false));
-        $mercadoPagoAccessToken = old('pagamentos_mercadopago_access_token', (string) ($paymentSettings['pagamentos_mercadopago_access_token'] ?? ''));
+        $mercadoPagoAccessToken = old('pagamentos_mercadopago_access_token', '');
+        $mercadoPagoAccessTokenConfigured = $isConfiguredSecret($paymentSecretStatus, 'pagamentos_mercadopago_access_token');
         $mercadoPagoPublicKey = old('pagamentos_mercadopago_public_key', (string) ($paymentSettings['pagamentos_mercadopago_public_key'] ?? ''));
         $mercadoPagoReady = (bool) ($paymentSummary['mercado_pago']['ready'] ?? false);
         $mercadoPagoStatusLabel = (string) ($paymentSummary['mercado_pago']['status_label'] ?? 'Aguardando configuração');
 
         $asaasEnabled = old('pagamentos_asaas_enabled', (bool) ($paymentSettings['pagamentos_asaas_enabled'] ?? false));
         $asaasBaseUrl = old('pagamentos_asaas_base_url', (string) ($paymentSettings['pagamentos_asaas_base_url'] ?? 'https://api-sandbox.asaas.com/v3'));
-        $asaasApiKey = old('pagamentos_asaas_api_key', (string) ($paymentSettings['pagamentos_asaas_api_key'] ?? ''));
+        $asaasApiKey = old('pagamentos_asaas_api_key', '');
+        $asaasApiKeyConfigured = $isConfiguredSecret($paymentSecretStatus, 'pagamentos_asaas_api_key');
         $asaasBillingTypeDefault = old('pagamentos_asaas_billing_type_default', (string) ($paymentSettings['pagamentos_asaas_billing_type_default'] ?? 'PIX'));
         $asaasReady = (bool) ($paymentSummary['asaas']['ready'] ?? false);
         $asaasStatusLabel = (string) ($paymentSummary['asaas']['status_label'] ?? 'Aguardando configuração');
 
         $emailIntegration = is_array($integration['email'] ?? null) ? $integration['email'] : [];
         $emailSettings = is_array($emailIntegration['settings'] ?? null) ? $emailIntegration['settings'] : [];
+        $emailSecretStatus = is_array($emailIntegration['secret_status'] ?? null) ? $emailIntegration['secret_status'] : [];
         $emailConfigured = (bool) ($emailIntegration['summary']['configured'] ?? false);
         $smtpHost = old('smtp_host', (string) ($emailSettings['smtp_host'] ?? ''));
         $smtpPort = old('smtp_port', (string) ($emailSettings['smtp_port'] ?? '587'));
         $smtpCrypto = old('smtp_crypto', (string) ($emailSettings['smtp_crypto'] ?? 'auto'));
         $smtpTimeout = old('smtp_timeout', (string) ($emailSettings['smtp_timeout'] ?? '20'));
         $smtpUser = old('smtp_user', (string) ($emailSettings['smtp_user'] ?? ''));
-        $smtpPass = old('smtp_pass', (string) ($emailSettings['smtp_pass'] ?? ''));
+        $smtpPass = old('smtp_pass', '');
+        $smtpPassConfigured = $isConfiguredSecret($emailSecretStatus, 'smtp_pass');
         $smtpFromEmail = old('smtp_from_email', (string) ($emailSettings['smtp_from_email'] ?? ''));
         $smtpFromName = old('smtp_from_name', (string) ($emailSettings['smtp_from_name'] ?? ''));
 
         $googleIntegration = is_array($integration['google'] ?? null) ? $integration['google'] : [];
         $googleSettings = is_array($googleIntegration['settings'] ?? null) ? $googleIntegration['settings'] : [];
+        $googleSecretStatus = is_array($googleIntegration['secret_status'] ?? null) ? $googleIntegration['secret_status'] : [];
         $googleConfigured = (bool) ($googleIntegration['summary']['configured'] ?? false);
         $googleClientId = old('portal_google_client_id', (string) ($googleSettings['portal_google_client_id'] ?? ''));
-        $googleClientSecret = old('portal_google_client_secret', (string) ($googleSettings['portal_google_client_secret'] ?? ''));
+        $googleClientSecret = old('portal_google_client_secret', '');
+        $googleClientSecretConfigured = $isConfiguredSecret($googleSecretStatus, 'portal_google_client_secret');
     @endphp
 
     <section class="desktop-page-stack">
@@ -146,7 +161,6 @@
                 data-integration-form
             >
                 @csrf
-                @method('put')
 
                 <div class="config-subtabs" role="tablist" aria-label="Sub-abas de integrações">
                     <button type="button" class="config-subtab is-active" data-config-subtab="whatsapp" aria-pressed="true">
@@ -271,7 +285,10 @@
 
                                     <div>
                                         <label for="whatsappEvolutionApiKey">API Key (Evolution)</label>
-                                        <input type="password" id="whatsappEvolutionApiKey" name="whatsapp_evolution_apikey" class="form-control" value="{{ $evolutionApiKey }}" autocomplete="new-password">
+                                        <input type="password" id="whatsappEvolutionApiKey" name="whatsapp_evolution_apikey" class="form-control" value="{{ $evolutionApiKey }}" autocomplete="new-password" placeholder="{{ $evolutionApiKeyConfigured ? 'Credencial salva. Preencha apenas para trocar.' : '' }}">
+                                        @if ($evolutionApiKeyConfigured)
+                                            <small class="text-muted">Uma API key ja esta salva no backend. Deixe em branco para manter.</small>
+                                        @endif
                                     </div>
 
                                     <div>
@@ -312,7 +329,10 @@
 
                                     <div>
                                         <label for="whatsappLocalNodeToken">Token local</label>
-                                        <input type="password" id="whatsappLocalNodeToken" name="whatsapp_local_node_token" class="form-control" value="{{ $localNodeToken }}" autocomplete="new-password">
+                                        <input type="password" id="whatsappLocalNodeToken" name="whatsapp_local_node_token" class="form-control" value="{{ $localNodeToken }}" autocomplete="new-password" placeholder="{{ $localNodeTokenConfigured ? 'Credencial salva. Preencha apenas para trocar.' : '' }}">
+                                        @if ($localNodeTokenConfigured)
+                                            <small class="text-muted">O token atual permanece salvo se este campo continuar vazio.</small>
+                                        @endif
                                     </div>
 
                                     <div>
@@ -343,7 +363,10 @@
 
                                     <div>
                                         <label for="whatsappLinuxNodeToken">Token Linux</label>
-                                        <input type="password" id="whatsappLinuxNodeToken" name="whatsapp_linux_node_token" class="form-control" value="{{ $linuxNodeToken }}" autocomplete="new-password">
+                                        <input type="password" id="whatsappLinuxNodeToken" name="whatsapp_linux_node_token" class="form-control" value="{{ $linuxNodeToken }}" autocomplete="new-password" placeholder="{{ $linuxNodeTokenConfigured ? 'Credencial salva. Preencha apenas para trocar.' : '' }}">
+                                        @if ($linuxNodeTokenConfigured)
+                                            <small class="text-muted">O token atual permanece salvo se este campo continuar vazio.</small>
+                                        @endif
                                     </div>
 
                                     <div>
@@ -369,17 +392,24 @@
 
                                     <div>
                                         <label for="whatsappWebhookToken">Webhook Token (inbound)</label>
-                                        <input type="password" id="whatsappWebhookToken" name="whatsapp_webhook_token" class="form-control" value="{{ $webhookToken }}" autocomplete="new-password">
+                                        <input type="password" id="whatsappWebhookToken" name="whatsapp_webhook_token" class="form-control" value="{{ $webhookToken }}" autocomplete="new-password" placeholder="{{ $webhookTokenConfigured ? 'Token salvo. Preencha apenas para trocar.' : 'Obrigatorio para aceitar eventos inbound.' }}">
+                                        <small class="text-muted">Obrigatorio para liberar o webhook inbound. Deixe em branco para manter o token atual.</small>
                                     </div>
 
                                     <div>
                                         <label for="whatsappMenuiaAppKey">App Key Menuia</label>
-                                        <input type="password" id="whatsappMenuiaAppKey" name="whatsapp_menuia_appkey" class="form-control" value="{{ $menuiaAppKey }}" autocomplete="new-password">
+                                        <input type="password" id="whatsappMenuiaAppKey" name="whatsapp_menuia_appkey" class="form-control" value="{{ $menuiaAppKey }}" autocomplete="new-password" placeholder="{{ $menuiaAppKeyConfigured ? 'Credencial salva. Preencha apenas para trocar.' : '' }}">
+                                        @if ($menuiaAppKeyConfigured)
+                                            <small class="text-muted">A App Key atual permanece salva se este campo continuar vazio.</small>
+                                        @endif
                                     </div>
 
                                     <div>
                                         <label for="whatsappMenuiaAuthKey">Auth Key Menuia</label>
-                                        <input type="password" id="whatsappMenuiaAuthKey" name="whatsapp_menuia_authkey" class="form-control" value="{{ $menuiaAuthKey }}" autocomplete="new-password">
+                                        <input type="password" id="whatsappMenuiaAuthKey" name="whatsapp_menuia_authkey" class="form-control" value="{{ $menuiaAuthKey }}" autocomplete="new-password" placeholder="{{ $menuiaAuthKeyConfigured ? 'Credencial salva. Preencha apenas para trocar.' : '' }}">
+                                        @if ($menuiaAuthKeyConfigured)
+                                            <small class="text-muted">A Auth Key atual permanece salva se este campo continuar vazio.</small>
+                                        @endif
                                     </div>
                                 </div>
 
@@ -571,7 +601,10 @@
                                 </div>
                                 <div class="desktop-grid-span-2">
                                     <label for="mercadoPagoAccessToken">Access Token</label>
-                                    <input type="password" id="mercadoPagoAccessToken" name="pagamentos_mercadopago_access_token" class="form-control" value="{{ $mercadoPagoAccessToken }}" autocomplete="new-password" placeholder="APP_USR-...">
+                                    <input type="password" id="mercadoPagoAccessToken" name="pagamentos_mercadopago_access_token" class="form-control" value="{{ $mercadoPagoAccessToken }}" autocomplete="new-password" placeholder="{{ $mercadoPagoAccessTokenConfigured ? 'Credencial salva. Preencha apenas para trocar.' : 'APP_USR-...' }}">
+                                    @if ($mercadoPagoAccessTokenConfigured)
+                                        <small class="text-muted">O Access Token atual permanece salvo se este campo continuar vazio.</small>
+                                    @endif
                                 </div>
                             </div>
 
@@ -616,7 +649,10 @@
                                 </div>
                                 <div class="desktop-grid-span-2">
                                     <label for="asaasApiKey">API Key</label>
-                                    <input type="password" id="asaasApiKey" name="pagamentos_asaas_api_key" class="form-control" value="{{ $asaasApiKey }}" autocomplete="new-password" placeholder="$aact_...">
+                                    <input type="password" id="asaasApiKey" name="pagamentos_asaas_api_key" class="form-control" value="{{ $asaasApiKey }}" autocomplete="new-password" placeholder="{{ $asaasApiKeyConfigured ? 'Credencial salva. Preencha apenas para trocar.' : '$aact_...' }}">
+                                    @if ($asaasApiKeyConfigured)
+                                        <small class="text-muted">A API Key atual permanece salva se este campo continuar vazio.</small>
+                                    @endif
                                 </div>
                             </div>
 
@@ -670,7 +706,10 @@
                             </div>
                             <div>
                                 <label for="smtpPass">Senha SMTP</label>
-                                <input type="password" id="smtpPass" name="smtp_pass" class="form-control" value="{{ $smtpPass }}" autocomplete="new-password" placeholder="Senha ou token do provedor">
+                                <input type="password" id="smtpPass" name="smtp_pass" class="form-control" value="{{ $smtpPass }}" autocomplete="new-password" placeholder="{{ $smtpPassConfigured ? 'Credencial salva. Preencha apenas para trocar.' : 'Senha ou token do provedor' }}">
+                                @if ($smtpPassConfigured)
+                                    <small class="text-muted">A senha atual permanece salva se este campo continuar vazio.</small>
+                                @endif
                             </div>
                             <div>
                                 <label for="smtpFromEmail">E-mail remetente</label>
@@ -715,7 +754,10 @@
                             </div>
                             <div>
                                 <label for="googleClientSecret">Google Client Secret</label>
-                                <input type="password" id="googleClientSecret" name="portal_google_client_secret" class="form-control" value="{{ $googleClientSecret }}" autocomplete="new-password" placeholder="GOCSPX-...">
+                                <input type="password" id="googleClientSecret" name="portal_google_client_secret" class="form-control" value="{{ $googleClientSecret }}" autocomplete="new-password" placeholder="{{ $googleClientSecretConfigured ? 'Credencial salva. Preencha apenas para trocar.' : 'GOCSPX-...' }}">
+                                @if ($googleClientSecretConfigured)
+                                    <small class="text-muted">O Client Secret atual permanece salvo se este campo continuar vazio.</small>
+                                @endif
                             </div>
                         </div>
                         <p class="surface-subtitle mt-3 mb-0">

@@ -6,6 +6,7 @@ use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DefectController;
 use App\Http\Controllers\EquipmentController;
+use App\Http\Controllers\FinanceiroCartaoController;
 use App\Http\Controllers\FinanceiroCatalogController;
 use App\Http\Controllers\FinanceiroController;
 use App\Http\Controllers\FinanceiroMargemController;
@@ -56,6 +57,7 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/buscar/sugestoes', [SearchController::class, 'suggest'])->name('search.suggest');
 
     Route::get('/notificacoes', [NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/notificacoes/resumo', [NotificationController::class, 'summary'])->name('notifications.summary');
     Route::get('/notificacoes/{notification}/abrir', [NotificationController::class, 'open'])->name('notifications.open');
     Route::post('/notificacoes/lidas', [NotificationController::class, 'markAllRead'])->name('notifications.mark-all');
 
@@ -70,7 +72,7 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/configuracoes/integracoes/ajuda', [ConfigurationController::class, 'help'])
         ->middleware('desktop.permission:configuracoes,visualizar')
         ->name('configurations.integrations.help');
-    Route::post('/configuracoes/integracoes', [ConfigurationController::class, 'update'])
+    Route::match(['post', 'put'], '/configuracoes/integracoes', [ConfigurationController::class, 'update'])
         ->middleware('desktop.permission:configuracoes,editar')
         ->name('configurations.integrations.update');
     Route::post('/configuracoes/integracoes/testar-conexao', [ConfigurationController::class, 'testConnection'])
@@ -238,6 +240,39 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/financeiro/configuracoes', [FinanceiroCatalogController::class, 'index'])
         ->middleware('desktop.permission:financeiro,visualizar')
         ->name('financeiro.configuracoes');
+    Route::get('/financeiro/cartoes', [FinanceiroCartaoController::class, 'index'])
+        ->middleware('desktop.permission:financeiro,visualizar')
+        ->name('financeiro.cartoes.index');
+    Route::get('/financeiro/cartoes/ajuda', [FinanceiroCartaoController::class, 'help'])
+        ->middleware('desktop.permission:financeiro,visualizar')
+        ->name('financeiro.cartoes.help');
+    Route::post('/financeiro/cartoes/simular', [FinanceiroCartaoController::class, 'simulate'])
+        ->middleware('desktop.permission:financeiro,visualizar')
+        ->name('financeiro.cartoes.simulate');
+    Route::post('/financeiro/cartoes/operadoras', [FinanceiroCartaoController::class, 'saveOperadora'])
+        ->middleware('desktop.permission:financeiro,editar')
+        ->name('financeiro.cartoes.operadoras.save');
+    Route::delete('/financeiro/cartoes/operadoras/{operadora}', [FinanceiroCartaoController::class, 'destroyOperadora'])
+        ->middleware('desktop.permission:financeiro,excluir')
+        ->name('financeiro.cartoes.operadoras.delete');
+    Route::post('/financeiro/cartoes/bandeiras', [FinanceiroCartaoController::class, 'saveBandeira'])
+        ->middleware('desktop.permission:financeiro,editar')
+        ->name('financeiro.cartoes.bandeiras.save');
+    Route::delete('/financeiro/cartoes/bandeiras/{bandeira}', [FinanceiroCartaoController::class, 'destroyBandeira'])
+        ->middleware('desktop.permission:financeiro,excluir')
+        ->name('financeiro.cartoes.bandeiras.delete');
+    Route::post('/financeiro/cartoes/taxas', [FinanceiroCartaoController::class, 'saveTaxa'])
+        ->middleware('desktop.permission:financeiro,editar')
+        ->name('financeiro.cartoes.taxas.save');
+    Route::delete('/financeiro/cartoes/taxas/{taxa}', [FinanceiroCartaoController::class, 'destroyTaxa'])
+        ->middleware('desktop.permission:financeiro,excluir')
+        ->name('financeiro.cartoes.taxas.delete');
+    Route::post('/financeiro/cartoes/taxas-online', [FinanceiroCartaoController::class, 'saveGatewayTaxa'])
+        ->middleware('desktop.permission:financeiro,editar')
+        ->name('financeiro.cartoes.gateway.save');
+    Route::delete('/financeiro/cartoes/taxas-online/{gatewayTaxa}', [FinanceiroCartaoController::class, 'destroyGatewayTaxa'])
+        ->middleware('desktop.permission:financeiro,excluir')
+        ->name('financeiro.cartoes.gateway.delete');
     Route::get('/financeiro/relatorios/dre', [FinanceiroReportController::class, 'dre'])
         ->middleware('desktop.permission:financeiro,visualizar')
         ->name('financeiro.relatorios.dre');
