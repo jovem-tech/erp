@@ -386,3 +386,10 @@ Expandir o desktop para edição completa de OS e progressivamente migrar os dem
 - simulador de recebimento com retorno de taxa total, valor líquido e previsão de repasse
 - ajuda local com foco operacional para uso no desktop
 - todos os selects visíveis da tela usam Select2 com o helper compartilhado do canal desktop
+
+### Fluxo de caixa
+
+- relatório `financeiro/relatorios/fluxo-caixa` com alternância entre lista diária e calendário mensal
+- preservação do mês selecionado e da visualização via query string, sem quebrar o fluxo atual de atualização
+- calendário montado no Blade a partir das linhas diárias já devolvidas pelo payload do relatório
+- dias fora do mês selecionado aparecem atenuados e os dias com movimento mostram entradas, saídas e saldo

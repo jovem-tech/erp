@@ -86,6 +86,48 @@ class FinanceiroReportTest extends TestCase
             ->assertSee('Internet');
     }
 
+    public function test_fluxo_caixa_calendar_view_renders_month_grid(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/relatorios/fluxo-caixa*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'fluxo' => [
+                        'mes' => '2026-06',
+                        'periodo_label' => '06/2026',
+                        'saldo_inicial' => 0,
+                        'entradas_realizadas' => 300,
+                        'saidas_realizadas' => 90,
+                        'saldo_final' => 210,
+                        'entradas_previstas' => 0,
+                        'saidas_previstas' => 0,
+                        'saldo_projetado' => 210,
+                        'realizados_por_categoria' => ['ServiÃ§os e peÃ§as de OS' => 210],
+                        'previstos_por_categoria' => [],
+                        'linhas_diarias' => [
+                            ['data' => '2026-06-01', 'entradas_realizadas' => 300, 'saidas_realizadas' => 0, 'saldo_realizado' => 300],
+                            ['data' => '2026-06-02', 'entradas_realizadas' => 0, 'saidas_realizadas' => 90, 'saldo_realizado' => 210],
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar']]))
+            ->get('/financeiro/relatorios/fluxo-caixa?mes=2026-06&view=calendar');
+
+        $response->assertOk()
+            ->assertSee('CalendÃ¡rio de lanÃ§amentos')
+            ->assertSee('Junho de 2026')
+            ->assertSee('data-cashflow-day="2026-06-01"', false)
+            ->assertSee('data-cashflow-day="2026-06-02"', false)
+            ->assertSee('Saldo positivo no dia');
+    }
+
     /**
      * @return array<string, mixed>
      */

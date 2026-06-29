@@ -1,5 +1,12 @@
 # Historico de versoes
 
+## v3.4.2 - 2026-06-28
+
+- o relatorio de fluxo de caixa do desktop ganhou alternancia entre lista diaria e calendario mensal, preservando o mesmo periodo selecionado;
+- o calendario do fluxo de caixa foi montado no Blade com base nas linhas diarias ja retornadas pelo payload do relatorio, sem mudar o contrato da API central;
+- a visualizacao destaca dias fora do mes selecionado, entradas, saidas e saldo por dia, com navegacao mensal por query string;
+- a documentacao do desktop e a versao global do sistema foram atualizadas para registrar a nova leitura do fluxo de caixa.
+
 ## v3.4.1 - 2026-06-28
 
 - o desktop recebeu o módulo financeiro `Cartões e Taxas`, com paridade funcional do legado visível em `/financeiro/cartoes`, incluindo abas operacionais, simulador de recebimento líquido, taxas online e ajuda local;
@@ -223,3 +230,4 @@
 - cadastro completo de equipamentos no desktop com abas `Informacoes`, `Cor` e `Fotos`
 - quick-add de cliente, marca e modelo
 - integracao com camera, galeria, Cropper.js e fotos privadas
+
