@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-06-29T06:15:08+02:00",
+    "generated_at": "2026-06-29T22:25:28+02:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "3.4.3",
+        "app_version": "3.4.11",
         "api_version": "1.1.0",
         "production_target": "Ubuntu VPS",
         "development_target": "Windows/XAMPP"
@@ -274,6 +274,38 @@
                     "title": "Fluxo de caixa com visualização em calendário no desktop"
                 },
                 {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-29-fluxo-trabalho-os-visual-desktop.md",
+                    "title": "Fluxo de trabalho visual das OS no desktop"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-29-modelo-assistencia-tecnica-desktop.md",
+                    "title": "Modelo ideal da assistência técnica no desktop"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-29-nova-os-dropdown-equipamento-foto-marca-modelo.md",
+                    "title": "Nova OS: dropdown de equipamento com foto e fallback por marca/modelo"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-29-nova-os-editar-equipamento-selecionado.md",
+                    "title": "Nova OS: edicao do equipamento selecionado"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-29-nova-os-modal-cadastro-equipamento.md",
+                    "title": "Nova OS: modal de cadastro completo de equipamento"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-29-nova-os-modal-equipamento-retorno-iframe.md",
+                    "title": "Nova OS: retorno do equipamento criado no iframe"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-29-nova-os-resumo-cliente-editar.md",
+                    "title": "2026-06-29 - Resumo do cliente e edicao direta na Nova OS"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-29-select2-manual-init-collision-desktop.md",
+                    "title": "2026-06-29 - Correcao do Select2 manual na criacao de OS do desktop"
+                },
+                {
                     "file": "documentacao/07-novas-implementacoes/historico-de-versoes.md",
                     "title": "Historico de versoes"
                 }
@@ -507,6 +539,36 @@
         {
             "directory": "specs/014-configuracoes-sistema-e-precificacao-financeiro-desktop",
             "title": "Feature Specification: Configuracoes do Sistema e Precificacao no desktop",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/015-nova-os-wizard-desktop",
+            "title": "Feature Specification: Nova OS em modo wizard no desktop",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/016-modelo-assistencia-tecnica-desktop",
+            "title": "Feature Specification: Modelo Ideal da Assistência Técnica no Desktop",
             "artifacts": {
                 "spec": true,
                 "plan": true,

@@ -110,6 +110,7 @@ class EstoqueController extends BaseApiController
             ->where('ativo', 1)
             ->whereColumn('quantidade_atual', '<=', 'estoque_minimo')
             ->orderBy('nome')
+            ->limit(500)
             ->get();
 
         return $this->success([
@@ -150,6 +151,7 @@ class EstoqueController extends BaseApiController
             ->leftJoin('os', 'os.id', '=', 'movimentacoes.os_id')
             ->where('movimentacoes.peca_id', $peca)
             ->orderByDesc('movimentacoes.created_at')
+            ->limit(500)
             ->get();
 
         return $this->success([

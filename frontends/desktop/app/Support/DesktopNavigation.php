@@ -216,6 +216,12 @@ class DesktopNavigation
                                 'icon' => 'bi-diagram-3-fill',
                             ],
                             [
+                                'label' => 'Modelo da Assistência Técnica',
+                                'route' => 'knowledge.assistance-model.index',
+                                'module' => 'conhecimento',
+                                'icon' => 'bi-diagram-2-fill',
+                            ],
+                            [
                                 'label' => 'Checklist de Entrada',
                                 'route' => 'knowledge.checklists.entrada',
                                 'module' => 'conhecimento',

@@ -9,6 +9,7 @@ use App\Services\Orders\OrderClosureService;
 use App\Services\Orders\OrderWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class OrderController extends BaseApiController
@@ -86,7 +87,11 @@ class OrderController extends BaseApiController
             return $this->unauthenticatedResponse($request);
         }
 
-        $result = $this->orderWorkflowService->createOrder($user, $request->validated());
+        $result = $this->orderWorkflowService->createOrder(
+            $user,
+            $request->validated(),
+            $this->extractUploadedFiles($request, 'fotos')
+        );
 
         return match ($result['result'] ?? 'error') {
             'ok' => $this->success(
@@ -127,7 +132,12 @@ class OrderController extends BaseApiController
             return $this->unauthenticatedResponse($request);
         }
 
-        $result = $this->orderWorkflowService->updateOrder($order, $user, $request->validated());
+        $result = $this->orderWorkflowService->updateOrder(
+            $order,
+            $user,
+            $request->validated(),
+            $this->extractUploadedFiles($request, 'fotos')
+        );
 
         return match ($result['result'] ?? 'error') {
             'ok' => $this->success(
@@ -417,5 +427,26 @@ class OrderController extends BaseApiController
                 request: $request
             ),
         };
+    }
+
+    /**
+     * @return array<int, UploadedFile>
+     */
+    private function extractUploadedFiles(Request $request, string $key): array
+    {
+        $files = $request->file($key, []);
+
+        if ($files instanceof UploadedFile) {
+            return [$files];
+        }
+
+        if (! is_array($files)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $files,
+            static fn ($file): bool => $file instanceof UploadedFile && $file->isValid()
+        ));
     }
 }

@@ -19,6 +19,7 @@
     @include('knowledge.reported-defects.form', [
         'defeito' => $defeito ?? [],
         'equipmentTypes' => $equipmentTypes ?? [],
+        'categoryMap' => $categoryMap ?? [],
         'formAction' => route('knowledge.reported-defects.update', $defeito['id'] ?? 0),
         'formMethod' => 'PUT',
         'formTitle' => 'Edição de defeito relatado',

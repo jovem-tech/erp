@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use Illuminate\Http\UploadedFile;
+
 class OrderService
 {
     public function __construct(
@@ -35,22 +37,38 @@ class OrderService
 
     /**
      * @param array<string, mixed> $payload
+     * @param array<int, UploadedFile> $photos
      * @return array<string, mixed>
      */
-    public function create(array $payload): array
+    public function create(array $payload, array $photos = []): array
     {
-        $response = $this->apiClient->post('/orders', $payload);
+        if ($photos !== []) {
+            $response = $this->apiClient->postMultipart('/orders', $payload, [
+                'fotos[]' => $photos,
+            ]);
+        } else {
+            $response = $this->apiClient->post('/orders', $payload);
+        }
 
         return $response['data']['order'] ?? [];
     }
 
     /**
      * @param array<string, mixed> $payload
+     * @param array<int, UploadedFile> $photos
      * @return array<string, mixed>
      */
-    public function update(int $id, array $payload): array
+    public function update(int $id, array $payload, array $photos = []): array
     {
-        $response = $this->apiClient->patch('/orders/' . $id, $payload);
+        if ($photos !== []) {
+            $response = $this->apiClient->postMultipart('/orders/' . $id, array_merge($payload, [
+                '_method' => 'PATCH',
+            ]), [
+                'fotos[]' => $photos,
+            ]);
+        } else {
+            $response = $this->apiClient->patch('/orders/' . $id, $payload);
+        }
 
         return $response['data']['order'] ?? [];
     }

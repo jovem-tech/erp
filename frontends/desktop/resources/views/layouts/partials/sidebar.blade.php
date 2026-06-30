@@ -1,4 +1,9 @@
-<aside class="desktop-sidebar {{ ($desktopSidebarCollapsed ?? false) ? 'is-collapsed' : '' }}" id="desktopSidebar" aria-label="Navegacao principal do sistema">
+@php
+    $desktopSidebarStateClass = ($desktopSidebarHidden ?? false)
+        ? 'is-hidden'
+        : (($desktopSidebarCollapsed ?? false) ? 'is-collapsed' : '');
+@endphp
+<aside class="desktop-sidebar {{ $desktopSidebarStateClass }}" id="desktopSidebar" aria-label="Navegacao principal do sistema">
     <div class="desktop-sidebar-header">
         <a href="{{ route(\App\Support\DesktopNavigation::firstAllowedRouteName()) }}" class="desktop-brand">
             <span class="desktop-brand-mark">

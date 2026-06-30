@@ -3,6 +3,18 @@
     $formMethod = strtoupper((string) ($formMethod ?? 'POST'));
     $tipoEquipamentoId = old('tipo_equipamento_id', $defeito['tipo_equipamento_id'] ?? '');
     $ativo = old('ativo', $defeito['ativo'] ?? true);
+
+    $categoryMap = is_array($categoryMap ?? null) ? $categoryMap : [];
+    $categoriaAtual = trim((string) old('categoria', $defeito['categoria'] ?? ''));
+    $subcategoriaAtual = trim((string) old('subcategoria', $defeito['subcategoria'] ?? ''));
+
+    if ($categoriaAtual !== '' && ! array_key_exists($categoriaAtual, $categoryMap)) {
+        $categoryMap[$categoriaAtual] = [];
+    }
+
+    if ($categoriaAtual !== '' && $subcategoriaAtual !== '' && ! in_array($subcategoriaAtual, $categoryMap[$categoriaAtual], true)) {
+        $categoryMap[$categoriaAtual][] = $subcategoriaAtual;
+    }
 @endphp
 
 <section class="desktop-form-card">
@@ -47,12 +59,21 @@
 
                 <div>
                     <label for="defeitoCategoria">Categoria *</label>
-                    <input type="text" id="defeitoCategoria" name="categoria" class="form-control" value="{{ old('categoria', $defeito['categoria'] ?? '') }}" maxlength="80" required>
+                    <select id="defeitoCategoria" name="categoria" class="form-select" required data-native-select="true">
+                        <option value="">Selecione...</option>
+                        @foreach (array_keys($categoryMap) as $categoriaOption)
+                            <option value="{{ $categoriaOption }}" @selected($categoriaAtual === $categoriaOption)>{{ $categoriaOption }}</option>
+                        @endforeach
+                    </select>
+                    <div class="form-text">Escolha uma categoria existente ou digite uma nova.</div>
                 </div>
 
                 <div>
                     <label for="defeitoSubcategoria">Subcategoria</label>
-                    <input type="text" id="defeitoSubcategoria" name="subcategoria" class="form-control" value="{{ old('subcategoria', $defeito['subcategoria'] ?? '') }}" maxlength="80">
+                    <select id="defeitoSubcategoria" name="subcategoria" class="form-select" data-native-select="true" data-current-subcategoria="{{ $subcategoriaAtual }}">
+                        <option value="">Nenhuma / Geral</option>
+                    </select>
+                    <div class="form-text">Escolha uma subcategoria existente ou digite uma nova.</div>
                 </div>
             </div>
         </div>
@@ -108,3 +129,85 @@
         </div>
     </form>
 </section>
+
+@section('scripts')
+    <script>
+        (function () {
+            const categoryMap = @json($categoryMap);
+            const categoriaSelect = document.getElementById('defeitoCategoria');
+            const subcategoriaSelect = document.getElementById('defeitoSubcategoria');
+
+            if (!categoriaSelect || !subcategoriaSelect || typeof window.jQuery === 'undefined' || !window.jQuery.fn || typeof window.jQuery.fn.select2 !== 'function') {
+                return;
+            }
+
+            const $ = window.jQuery;
+
+            const select2Options = (select, placeholder) => ({
+                theme: 'bootstrap-5',
+                width: '100%',
+                tags: true,
+                allowClear: select.querySelector('option[value=""]') !== null,
+                placeholder,
+                language: {
+                    noResults: () => 'Nenhum resultado encontrado',
+                    searching: () => 'Buscando...',
+                    inputTooShort: () => 'Digite para buscar ou cadastrar um novo valor',
+                },
+            });
+
+            $(categoriaSelect).select2(select2Options(categoriaSelect, 'Selecione ou digite uma categoria'));
+            $(subcategoriaSelect).select2(select2Options(subcategoriaSelect, 'Selecione ou digite uma subcategoria'));
+
+            const populateSubcategoryOptions = (categoria, selectedValue) => {
+                const subcategorias = Array.isArray(categoryMap[categoria]) ? categoryMap[categoria] : [];
+
+                subcategoriaSelect.innerHTML = '';
+
+                const emptyOption = document.createElement('option');
+                emptyOption.value = '';
+                emptyOption.textContent = 'Nenhuma / Geral';
+                subcategoriaSelect.appendChild(emptyOption);
+
+                subcategorias.forEach((subcategoria) => {
+                    const option = document.createElement('option');
+                    option.value = subcategoria;
+                    option.textContent = subcategoria;
+                    subcategoriaSelect.appendChild(option);
+                });
+
+                const valueToSelect = subcategorias.includes(selectedValue) ? selectedValue : '';
+                $(subcategoriaSelect).val(valueToSelect).trigger('change.select2');
+            };
+
+            $(categoriaSelect).on('change', () => {
+                const categoria = categoriaSelect.value;
+
+                if (categoria !== '' && !Array.isArray(categoryMap[categoria])) {
+                    categoryMap[categoria] = [];
+                }
+
+                populateSubcategoryOptions(categoria, '');
+            });
+
+            $(subcategoriaSelect).on('select2:select', (event) => {
+                const categoria = categoriaSelect.value;
+                const subcategoria = event.params?.data?.id || '';
+
+                if (categoria === '' || subcategoria === '') {
+                    return;
+                }
+
+                if (!Array.isArray(categoryMap[categoria])) {
+                    categoryMap[categoria] = [];
+                }
+
+                if (!categoryMap[categoria].includes(subcategoria)) {
+                    categoryMap[categoria].push(subcategoria);
+                }
+            });
+
+            populateSubcategoryOptions(categoriaSelect.value, subcategoriaSelect.dataset.currentSubcategoria || '');
+        })();
+    </script>
+@endsection

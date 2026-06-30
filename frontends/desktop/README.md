@@ -13,6 +13,8 @@ Na listagem de OS, o shell abre com a sidebar retraida por padrao para ampliar a
 - consumir a API do `backend/` exclusivamente pela camada de services;
 - montar menu, navbar, busca completa e proteção de rotas a partir do payload de `GET /api/v1/auth/me`;
 - transpor para o desktop as funções do topo do legado: busca completa, `Nova OS`, notificações, `Meu Perfil`, `Configurações do perfil`, `Sair` e `Sair e Esquecer Login`.
+- expor o fluxo de trabalho visual de OS em `Gestão de Conhecimento`, com diagrama por macrofase e matriz de transições editável;
+- expor também o modelo ideal da assistência técnica em `Gestão de Conhecimento`, com diagrama operacional focado em fila saudável, SLA, WIP e saídas controladas, incluindo um fluxo natural simulado com os status atuais.
 - oferecer recuperação de senha por e-mail com link temporário apontando para a tela de redefinição do desktop.
 - padronizar todos os dropdowns do canal desktop com `Select2` + tema `Bootstrap 5`, usando helper compartilhado e `dropdownParent` automático em modais e offcanvas.
 - organizar a seção comercial da sidebar com o grupo `Pessoas`, contendo `Clientes`, `Fornecedores` e `Equipe Técnica`, no mesmo padrão de agrupamento do legado;
@@ -136,6 +138,7 @@ O desktop continua sem acesso direto ao banco e sem lógica de integração embu
 
 - dashboard com paridade visual do legado visível e gráficos reais via Chart.js CDN
 - ordens de serviço: listagem, detalhe, criação, atualização de status, fotos e documentos, com preservação de filtros contextuais por cliente e equipamento; na rota `/os`, a sidebar abre retraida por padrao para priorizar a area util da tabela
+- gestão de conhecimento: fluxo de trabalho de OS e modelo ideal da assistência técnica, ambos com leitura visual e foco operacional para reduzir gargalos, incluindo a simulação do caminho feliz da OS
 - busca completa
 - notificações
 - perfil do usuário

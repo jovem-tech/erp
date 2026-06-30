@@ -447,6 +447,14 @@ const DesktopUi = (() => {
             return;
         }
 
+        // Paginas com sidebar "is-hidden" (ex.: /os, /os/criar) usam um modelo
+        // de estado proprio, aberto/fechado via hamburguer. O modo "recolhido"
+        // (icon-only, persistido em localStorage) e de outras paginas e nao
+        // deve ser reaplicado aqui, senao as classes is-collapsed/is-expanded
+        // entram em conflito com is-hidden/is-full e deixam uma folga vazia
+        // no canto esquerdo.
+        const isHiddenLayout = sidebar.classList.contains('is-hidden');
+
         const syncSidebarToggleState = () => {
             if (!sidebarToggle) {
                 return;
@@ -463,7 +471,7 @@ const DesktopUi = (() => {
             }
         };
 
-        if (localStorage.getItem(collapseStorageKey) === '1') {
+        if (!isHiddenLayout && localStorage.getItem(collapseStorageKey) === '1') {
             sidebar.classList.add('is-collapsed');
             main.classList.add('is-expanded');
         }
@@ -471,20 +479,42 @@ const DesktopUi = (() => {
         syncSidebarToggleState();
 
         sidebarToggle?.addEventListener('click', () => {
+            if (isHiddenLayout) {
+                return;
+            }
+
             sidebar.classList.toggle('is-collapsed');
             main.classList.toggle('is-expanded');
             localStorage.setItem(collapseStorageKey, sidebar.classList.contains('is-collapsed') ? '1' : '0');
             syncSidebarToggleState();
         });
 
-        mobileSidebarToggle?.addEventListener('click', () => {
+        const closeMobileSidebar = () => {
+            sidebar.classList.remove('is-open');
+            overlay?.classList.remove('is-open');
+            mobileSidebarToggle?.setAttribute('aria-expanded', 'false');
+        };
+
+        const openMobileSidebar = () => {
             sidebar.classList.add('is-open');
             overlay?.classList.add('is-open');
+            mobileSidebarToggle?.setAttribute('aria-expanded', 'true');
+        };
+
+        mobileSidebarToggle?.addEventListener('click', () => {
+            if (sidebar.classList.contains('is-open')) {
+                closeMobileSidebar();
+            } else {
+                openMobileSidebar();
+            }
         });
 
-        overlay?.addEventListener('click', () => {
-            sidebar.classList.remove('is-open');
-            overlay.classList.remove('is-open');
+        overlay?.addEventListener('click', closeMobileSidebar);
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && sidebar.classList.contains('is-open')) {
+                closeMobileSidebar();
+            }
         });
     };
 

@@ -1,10 +1,62 @@
 # Historico de versoes
 
+## v3.4.11 - 2026-06-29
+
+- a Gestão de Conhecimento recebeu o novo modelo ideal da assistência técnica em `/conhecimento/modelo-assistencia-tecnica`, com diagrama de leitura rápida para fila única, triagem, garantia, diagnóstico, orçamento, execução, qualidade, entrega e pós-venda;
+- o fluxo destaca regras anti-gargalo como próxima ação obrigatória, SLA curto, prioridade por aging, WIP limitado e escalonamento de pendências;
+- ramos especiais como garantia, aguardando peça, pagamento pendente e cancelada ficaram visíveis como saídas controladas, sem misturar exceção com produção normal;
+- o modelo também passou a exibir um fluxo natural simulado do caso feliz usando os status atuais do catálogo, facilitando leitura e treinamento do caminho de entrada, reparo e entrega;
+- nota de entrega criada em `documentacao/07-novas-implementacoes/2026-06-29-modelo-assistencia-tecnica-desktop.md` e versão global ajustada para `3.4.11`.
+
+## v3.4.10 - 2026-06-29
+
+- a página `Gestão de Conhecimento > Fluxo de Trabalho OS` passou a abrir com um mapa visual por macrofase, mostrando lanes, status, saídas permitidas e legenda operacional antes da matriz editável;
+- o desktop continua consumindo o mesmo contrato da API central para statuses e transições, mas agora transforma esse catálogo em um diagrama de leitura rápida para operação e treinamento;
+- nota de entrega criada em `documentacao/07-novas-implementacoes/2026-06-29-fluxo-trabalho-os-visual-desktop.md` e versão global ajustada para `3.4.10`.
+
+## v3.4.9 - 2026-06-29
+
+- a Nova OS passou a exibir a acao `Editar equipamento` quando ha equipamento selecionado e permissao de edicao, permitindo corrigir o ativo sem sair do wizard da OS;
+- o link de edicao permanece sincronizado com o equipamento atualmente selecionado no Select2 e reaproveita a rota autenticada do desktop;
+- nota de entrega criada em `documentacao/07-novas-implementacoes/2026-06-29-nova-os-editar-equipamento-selecionado.md` e versao global ajustada para `3.4.9`.
+
+## v3.4.8 - 2026-06-29
+
+- a miniatura do equipamento na Nova OS passou a usar a rota autenticada do desktop, evitando links quebrados para a API central e mantendo a foto visivel no Select2 e no resumo inicial;
+- a busca e o prefill da OS continuam consumindo `photo_url`, mas agora esse campo aponta para `equipments.photos.show` no desktop;
+- nota de entrega atualizada em `documentacao/07-novas-implementacoes/2026-06-29-nova-os-dropdown-equipamento-foto-marca-modelo.md` e versao global ajustada para `3.4.8`.
+
+## v3.4.7 - 2026-06-29
+
+- o cadastro embutido de equipamento agora devolve o equipamento criado para a tela da OS via `postMessage`, fecha o modal pai e seleciona automaticamente o novo item no wizard;
+- o submit do iframe passou a usar envio multipart assíncrono com resposta JSON, preservando o fluxo principal sem navegar a tela inteira;
+- nota de entrega criada em `documentacao/07-novas-implementacoes/2026-06-29-nova-os-modal-equipamento-retorno-iframe.md` e versao global ajustada para `3.4.7`.
+
+## v3.4.6 - 2026-06-29
+
+- o botao `Cancelar` do modal de novo equipamento passou a fechar o modal da Nova OS em vez de navegar para a listagem dentro do iframe;
+- o iframe do cadastro embutido permanece dedicado ao formulario oficial de equipamento, enquanto o fechamento da janela continua controlado pela tela pai;
+- nota de entrega atualizada em `documentacao/07-novas-implementacoes/2026-06-29-nova-os-modal-cadastro-equipamento.md` e versao global ajustada para `3.4.6`.
+
+## v3.4.5 - 2026-06-29
+
+- o modal `Novo equipamento` da Nova OS passou a abrir a pagina de cadastro em modo embutido, sem navbar, sidebar, footer, botao `Voltar` ou botao `Ajuda`;
+- a URL do iframe passou a carregar `embedded=1`, garantindo que o cadastro de equipamento reaproveite a mesma tela oficial sem exibir chrome desnecessaria dentro do modal;
+- nota de entrega atualizada em `documentacao/07-novas-implementacoes/2026-06-29-nova-os-modal-cadastro-equipamento.md` e versao global ajustada para `3.4.5`.
+
+## v3.4.4 - 2026-06-29
+
+- a Nova OS do desktop passou a exibir o resumo do cliente selecionado com telefone, contato, email, cidade e UF, mantendo o atalho de edicao direta quando a permissao existe;
+- o campo de equipamento da OS agora mostra miniatura no dropdown e usa `marca / modelo` como fallback quando `resumo_tecnico` nao estiver cadastrado;
+- quando o equipamento do cliente nao aparece na lista, a tela de OS oferece o botao `Novo equipamento`, abrindo um modal com o cadastro oficial de `equipamentos/novo` reaproveitado em iframe e com prefill de cliente;
+- notas de entrega criadas em `documentacao/07-novas-implementacoes/2026-06-29-nova-os-resumo-cliente-editar.md`, `documentacao/07-novas-implementacoes/2026-06-29-nova-os-dropdown-equipamento-foto-marca-modelo.md` e `documentacao/07-novas-implementacoes/2026-06-29-nova-os-modal-cadastro-equipamento.md`, com a versao global atualizada para `3.4.4`.
+
 ## v3.4.3 - 2026-06-29
 
 - a pagina de configuracoes do desktop foi dividida entre Integracoes e Configuracoes do Sistema, reduzindo a sensacao de sobrecarga visual nas transicoes;
 - o novo menu `Configuracoes do Sistema` concentra aparencia, dados da empresa e sessao/seguranca em um bloco proprio da sidebar;
 - a precificacao ganhou pagina dedicada dentro do Financeiro, com regras, catalogos e simuladores para pecas e servicos usando o backend central como fonte de verdade;
+- a Nova OS passou a buscar clientes por Select2 remoto e paginado, deixando de depender da primeira pagina carregada no HTML e mantendo o resumo lateral sincronizado com a selecao;
 - o backend central recebeu contrato novo de precificacao, com indexacao, salvamento e simulacao de peca/servico documentados em `backend/openapi.yaml`;
 - nota de entrega criada em `documentacao/07-novas-implementacoes/2026-06-29-configuracoes-sistema-e-precificacao-financeiro-desktop.md` e versao global atualizada para `3.4.3`.
 

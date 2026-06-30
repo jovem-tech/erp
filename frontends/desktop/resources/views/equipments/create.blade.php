@@ -14,6 +14,7 @@
     $resolvedCancelUrl = $cancelUrl ?? route('equipments.index');
     $canQuickClient = \App\Support\DesktopSession::can('clientes', 'criar');
     $canQuickCatalog = \App\Support\DesktopSession::can('equipamentos', 'criar');
+    $embedded = (bool) ($embedded ?? false);
 
     $fieldValue = static function (string $name, mixed $default = null) use ($equipment) {
         return old($name, $equipment[$name] ?? $default);
@@ -149,16 +150,18 @@
             </p>
         </div>
 
-        <div class="d-flex flex-wrap gap-2 align-self-start">
-            <a href="{{ route('equipments.help') }}" class="btn btn-outline-info">
-                <i class="bi bi-question-circle me-2"></i>
-                Ajuda
-            </a>
-            <a href="{{ $resolvedCancelUrl }}" class="btn btn-outline-light">
-                <i class="bi bi-arrow-left me-2"></i>
-                Voltar
-            </a>
-        </div>
+        @unless ($embedded)
+            <div class="d-flex flex-wrap gap-2 align-self-start">
+                <a href="{{ route('equipments.help') }}" class="btn btn-outline-info">
+                    <i class="bi bi-question-circle me-2"></i>
+                    Ajuda
+                </a>
+                <a href="{{ $resolvedCancelUrl }}" class="btn btn-outline-light">
+                    <i class="bi bi-arrow-left me-2"></i>
+                    Voltar
+                </a>
+            </div>
+        @endunless
     </div>
 
     <form
@@ -529,7 +532,17 @@
             </div>
 
             <div class="surface-card-actions mt-4">
-                <a href="{{ $resolvedCancelUrl }}" class="btn btn-outline-light">Cancelar</a>
+                @if ($embedded)
+                    <button
+                        type="button"
+                        class="btn btn-outline-light"
+                        data-equipment-embedded-cancel
+                    >
+                        Cancelar
+                    </button>
+                @else
+                    <a href="{{ $resolvedCancelUrl }}" class="btn btn-outline-light">Cancelar</a>
+                @endif
                 <button type="submit" class="btn btn-primary">
                     <i class="bi bi-save me-2"></i>
                     {{ $resolvedSubmitLabel }}

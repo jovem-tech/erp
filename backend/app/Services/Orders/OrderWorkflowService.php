@@ -18,9 +18,11 @@ use App\Services\Financeiro\OsMargemService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 class OrderWorkflowService
@@ -395,7 +397,11 @@ class OrderWorkflowService
             ];
         }
 
-        $file = $this->resolveLegacyPhotoFile((string) ($photo->arquivo ?? ''), (string) ($photo->tipo ?? ''));
+        $file = $this->resolveManagedPhotoFile((string) ($photo->arquivo ?? ''));
+
+        if (! is_array($file)) {
+            $file = $this->resolveLegacyPhotoFile((string) ($photo->arquivo ?? ''), (string) ($photo->tipo ?? ''));
+        }
         if (! is_array($file)) {
             logger()->warning('[API V1][ORDERS] Foto da OS não encontrada em disco', [
                 'order_id' => $orderId,
@@ -412,6 +418,30 @@ class OrderWorkflowService
         return [
             'result' => 'ok',
             'file' => $file,
+        ];
+    }
+
+    /**
+     * @return array{absolute_path:string, relative_path:string, filename:string, mime_type:string}|null
+     */
+    private function resolveManagedPhotoFile(string $arquivo): ?array
+    {
+        $relative = $this->normalizeStoredPath($arquivo);
+        if ($relative === '') {
+            return null;
+        }
+
+        if (! Storage::disk('local')->exists($relative)) {
+            return null;
+        }
+
+        $mimeType = trim((string) Storage::disk('local')->mimeType($relative));
+
+        return [
+            'absolute_path' => Storage::disk('local')->path($relative),
+            'relative_path' => $relative,
+            'filename' => basename($relative),
+            'mime_type' => $mimeType !== '' ? $mimeType : $this->inferMimeType($relative),
         ];
     }
 
@@ -461,6 +491,49 @@ class OrderWorkflowService
             'result' => 'ok',
             'file' => $file,
         ];
+    }
+
+    /**
+     * @param array<int, UploadedFile> $uploadedPhotos
+     * @return array<int, int>
+     */
+    private function storeOrderPhotos(Order $order, array $uploadedPhotos, string $tipo = 'recepcao'): array
+    {
+        $files = array_values(array_filter(
+            $uploadedPhotos,
+            static fn ($file): bool => $file instanceof UploadedFile && $file->isValid()
+        ));
+
+        if ($files === []) {
+            return [];
+        }
+
+        $directory = 'private/os/' . (int) $order->id;
+        $createdPhotoIds = [];
+
+        foreach ($files as $index => $file) {
+            $extension = strtolower((string) ($file->getClientOriginalExtension() ?: $file->extension() ?: 'jpg'));
+            $filename = sprintf(
+                'os_%d_%s_%02d.%s',
+                (int) $order->id,
+                now()->format('YmdHisv'),
+                $index + 1,
+                $extension
+            );
+
+            Storage::disk('local')->putFileAs($directory, $file, $filename);
+
+            $photo = OrderPhoto::query()->create([
+                'os_id' => (int) $order->id,
+                'tipo' => $tipo !== '' ? $tipo : 'recepcao',
+                'arquivo' => $directory . '/' . $filename,
+                'created_at' => now(),
+            ]);
+
+            $createdPhotoIds[] = (int) $photo->id;
+        }
+
+        return $createdPhotoIds;
     }
 
     public function updateStatus(int $orderId, User $actor, string $newStatus, ?string $observacao = null): array
@@ -553,9 +626,10 @@ class OrderWorkflowService
 
     /**
      * @param array<string, mixed> $attributes
+     * @param array<int, UploadedFile> $uploadedPhotos
      * @return array<string, mixed>
      */
-    public function createOrder(User $actor, array $attributes): array
+    public function createOrder(User $actor, array $attributes, array $uploadedPhotos = []): array
     {
         $clientId = (int) ($attributes['cliente_id'] ?? 0);
         $equipmentId = (int) ($attributes['equipamento_id'] ?? 0);
@@ -604,6 +678,10 @@ class OrderWorkflowService
             return $order;
         });
 
+        if ($uploadedPhotos !== []) {
+            $this->storeOrderPhotos($order, $uploadedPhotos);
+        }
+
         $createdOrder = $this->detailQuery()->find((int) $order->id);
 
         if ($createdOrder instanceof Order) {
@@ -629,9 +707,10 @@ class OrderWorkflowService
 
     /**
      * @param array<string, mixed> $attributes
+     * @param array<int, UploadedFile> $uploadedPhotos
      * @return array<string, mixed>
      */
-    public function updateOrder(int $orderId, User $actor, array $attributes): array
+    public function updateOrder(int $orderId, User $actor, array $attributes, array $uploadedPhotos = []): array
     {
         $order = Order::query()->find($orderId);
 
@@ -694,6 +773,10 @@ class OrderWorkflowService
                     );
                 }
             });
+        }
+
+        if ($uploadedPhotos !== []) {
+            $this->storeOrderPhotos($order, $uploadedPhotos);
         }
 
         $updatedOrder = $this->detailQuery()->find($orderId);
@@ -941,7 +1024,7 @@ class OrderWorkflowService
                 return ['estado' => 'concluido_no_prazo', 'label' => 'Concluída no prazo', 'dias' => 0];
             }
 
-            return ['estado' => 'concluido_atrasado', 'label' => 'Concluída com atraso', 'dias' => $diasAtraso];
+            return ['estado' => 'concluido_atrasado', 'label' => 'Concluída, atraso', 'dias' => $diasAtraso];
         }
 
         $diasParaPrevisao = (int) floor(($previsaoDate->getTimestamp() - Carbon::now()->startOfDay()->getTimestamp()) / 86400);

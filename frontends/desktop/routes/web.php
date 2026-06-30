@@ -15,6 +15,7 @@ use App\Http\Controllers\FinanceiroReportController;
 use App\Http\Controllers\GroupController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\ConfigurationController;
+use App\Http\Controllers\AssistanceModelController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\PeopleController;
 use App\Http\Controllers\PasswordResetController;
@@ -148,6 +149,15 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/os/criar', [OrderController::class, 'create'])
         ->middleware('desktop.permission:os,criar')
         ->name('orders.create');
+    Route::get('/os/clientes/buscar', [OrderController::class, 'searchClients'])
+        ->middleware('desktop.permission:os,criar|editar')
+        ->name('orders.clients.search');
+    Route::get('/os/equipamentos/buscar', [OrderController::class, 'searchEquipments'])
+        ->middleware('desktop.permission:os,criar|editar')
+        ->name('orders.equipments.search');
+    Route::get('/os/defeitos-relatados/buscar', [OrderController::class, 'searchReportedDefects'])
+        ->middleware('desktop.permission:os,criar|editar')
+        ->name('orders.reported-defects.search');
     Route::post('/os', [OrderController::class, 'store'])
         ->middleware('desktop.permission:os,criar')
         ->name('orders.store');
@@ -498,6 +508,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/conhecimento/fluxo-os', [OrderStatusFlowController::class, 'index'])
         ->middleware('desktop.permission:conhecimento,visualizar')
         ->name('knowledge.os-flow.index');
+    Route::get('/conhecimento/modelo-assistencia-tecnica', [AssistanceModelController::class, 'index'])
+        ->middleware('desktop.permission:conhecimento,visualizar')
+        ->name('knowledge.assistance-model.index');
     Route::post('/conhecimento/fluxo-os/status', [OrderStatusFlowController::class, 'storeStatus'])
         ->middleware('desktop.permission:conhecimento,criar')
         ->name('knowledge.os-flow.status.store');

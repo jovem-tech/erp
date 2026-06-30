@@ -61,13 +61,94 @@ class OsMargemService
             $query->where('os.data_entrega', '>=', $desde->toDateString());
         }
 
-        $ids = $query->pluck('os.id');
+        $orders = $query->get(['os.id', 'os.valor_final', 'os.tecnico_id']);
 
-        foreach ($ids as $id) {
-            $this->calcularParaOs((int) $id);
+        if ($orders->isEmpty()) {
+            return 0;
         }
 
-        return $ids->count();
+        $ids = $orders->pluck('id');
+        $custosPecas = $this->custoPecasAplicadasEmLote($ids->all());
+        $comissaoPadrao = $this->resolveComissaoPadrao();
+        $comissoesPorTecnico = $this->resolveComissoesPorTecnico(
+            $orders->pluck('tecnico_id')->filter()->unique()->all()
+        );
+
+        $agora = now();
+        $registros = $orders->map(function (Order $order) use ($custosPecas, $comissoesPorTecnico, $comissaoPadrao, $agora): array {
+            $receitaLiquida = round((float) $order->valor_final, 2);
+            $custoPecas = $custosPecas[$order->id] ?? 0.0;
+            $percentualComissao = $comissoesPorTecnico[$order->tecnico_id] ?? $comissaoPadrao;
+            $custoComissao = round($receitaLiquida * $percentualComissao / 100, 2);
+            $margem = round($receitaLiquida - $custoPecas - $custoComissao, 2);
+            $percentualMargem = $receitaLiquida > 0 ? round(($margem / $receitaLiquida) * 100, 2) : 0.0;
+
+            return [
+                'os_id' => $order->id,
+                'receita_liquida' => $receitaLiquida,
+                'custo_pecas' => $custoPecas,
+                'custo_comissao' => $custoComissao,
+                'margem_contribuicao' => $margem,
+                'percentual_margem' => $percentualMargem,
+                'calculado_em' => $agora,
+            ];
+        })->all();
+
+        OsMargem::query()->upsert(
+            $registros,
+            ['os_id'],
+            ['receita_liquida', 'custo_pecas', 'custo_comissao', 'margem_contribuicao', 'percentual_margem', 'calculado_em']
+        );
+
+        return $orders->count();
+    }
+
+    /**
+     * @param array<int, int> $osIds
+     * @return array<int, float> custo de peças aplicadas, indexado por os_id
+     */
+    private function custoPecasAplicadasEmLote(array $osIds): array
+    {
+        if ($osIds === []) {
+            return [];
+        }
+
+        return Movimentacao::query()
+            ->join('pecas', 'pecas.id', '=', 'movimentacoes.peca_id')
+            ->whereIn('movimentacoes.os_id', $osIds)
+            ->where('movimentacoes.tipo', 'saida')
+            ->selectRaw('movimentacoes.os_id as os_id, COALESCE(SUM(movimentacoes.quantidade * pecas.preco_custo), 0) as total')
+            ->groupBy('movimentacoes.os_id')
+            ->get()
+            ->mapWithKeys(static fn ($row): array => [(int) $row->os_id => round((float) $row->total, 2)])
+            ->all();
+    }
+
+    /**
+     * @param array<int, int> $tecnicoIds
+     * @return array<int, float> percentual de comissao ativo, indexado por tecnico_id
+     */
+    private function resolveComissoesPorTecnico(array $tecnicoIds): array
+    {
+        if ($tecnicoIds === []) {
+            return [];
+        }
+
+        return ComissaoTecnico::query()
+            ->whereIn('tecnico_id', $tecnicoIds)
+            ->where('ativo', true)
+            ->pluck('percentual_padrao', 'tecnico_id')
+            ->map(static fn ($percentual): float => (float) $percentual)
+            ->all();
+    }
+
+    private function resolveComissaoPadrao(): float
+    {
+        $padrao = Configuration::query()
+            ->where('chave', 'comissao_tecnico_percentual_padrao')
+            ->value('valor');
+
+        return $padrao !== null ? (float) $padrao : 0.0;
     }
 
     /**

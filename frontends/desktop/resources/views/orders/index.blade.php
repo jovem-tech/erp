@@ -9,6 +9,9 @@
             || trim((string) ($filters['data_abertura_ate'] ?? '')) !== ''
             || trim((string) ($filters['valor_min'] ?? '')) !== ''
             || trim((string) ($filters['valor_max'] ?? '')) !== '';
+        $hasBasicFilters = trim((string) ($filters['search'] ?? '')) !== ''
+            || trim((string) ($filters['status'] ?? '')) !== '';
+        $hasAnyFilters = $hasBasicFilters || $hasAdvancedFilters;
 
         $statusPlaceholder = $usesOpenQueueScope ? 'Padrão: OS abertas' : 'Todos os status';
 
@@ -40,15 +43,20 @@
             <div>
                 <h2 class="surface-title">Filtro operacional de OS</h2>
                 @if ($usesOpenQueueScope)
-                    <p class="surface-subtitle">Ao entrar em /os sem filtros, a fila abre mostrando apenas as OS abertas.</p>
                 @else
                     <p class="surface-subtitle">Listagem administrativa ou técnica conforme as permissões efetivas do usuário.</p>
                 @endif
             </div>
-            <span class="desktop-chip">{{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} resultados</span>
+            <div class="d-flex align-items-center gap-2">
+                <span class="desktop-chip">{{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} resultados</span>
+                <button type="button" class="btn btn-sm btn-outline-light" data-bs-toggle="collapse" data-bs-target="#osFilterPanel" aria-expanded="{{ $hasAnyFilters ? 'true' : 'false' }}" aria-controls="osFilterPanel">
+                    <i class="bi bi-funnel me-2"></i>
+                    Filtros
+                </button>
+            </div>
         </div>
 
-        <form method="get" class="desktop-filter-grid">
+        <form method="get" class="desktop-filter-grid collapse {{ $hasAnyFilters ? 'show' : '' }}" id="osFilterPanel">
             @if ((int) ($filters['client_id'] ?? 0) > 0)
                 <input type="hidden" name="client_id" value="{{ $filters['client_id'] }}">
             @endif
@@ -166,7 +174,6 @@
         <div class="surface-table-header">
             <div>
                 <h2 class="surface-title">Ordens de Serviço</h2>
-                <p class="surface-subtitle">Consumo direto da API central, sem leitura do banco pelo frontend desktop.</p>
             </div>
         </div>
 

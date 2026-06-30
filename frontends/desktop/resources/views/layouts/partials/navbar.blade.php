@@ -16,7 +16,14 @@
 
 <header class="desktop-topbar">
     <div class="desktop-topbar-left">
-        <button type="button" class="mobile-sidebar-toggle d-lg-none" id="mobileSidebarToggle" aria-label="Abrir menu">
+        <button
+            type="button"
+            class="mobile-sidebar-toggle {{ ($desktopSidebarHidden ?? false) ? '' : 'd-lg-none' }}"
+            id="mobileSidebarToggle"
+            aria-label="Abrir menu"
+            aria-expanded="false"
+            aria-controls="desktopSidebar"
+        >
             <i class="bi bi-list"></i>
         </button>
     </div>

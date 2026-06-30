@@ -9,10 +9,14 @@ use App\Services\ClientService;
 use App\Services\DesktopOrderStatusFlowService;
 use App\Services\EquipmentService;
 use App\Services\OrderService;
+use App\Services\ReportedDefectService;
 use App\Services\UserService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 
 class OrderController extends DesktopController
@@ -21,6 +25,7 @@ class OrderController extends DesktopController
         private readonly OrderService $orderService,
         private readonly ClientService $clientService,
         private readonly EquipmentService $equipmentService,
+        private readonly ReportedDefectService $reportedDefectService,
         private readonly UserService $userService,
         private readonly DesktopOrderStatusFlowService $statusFlowService
     ) {
@@ -86,7 +91,15 @@ class OrderController extends DesktopController
     private function resolveTechnicianOptions(): array
     {
         try {
-            $result = $this->userService->paginate(['per_page' => 100, 'active' => 1]);
+            // Cacheado por ser catalogo de referencia (lista de tecnicos ativos), igual
+            // para qualquer usuario com acesso; evita repetir essa chamada na API a cada
+            // carregamento da listagem de OS. Erros (sem permissao/API fora) nao sao
+            // cacheados, entao um usuario sem acesso nunca "contamina" o cache para quem tem.
+            $result = Cache::remember(
+                'desktop:order_filters:technicians',
+                60,
+                fn (): array => $this->userService->paginate(['per_page' => 100, 'active' => 1])
+            );
         } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
             // O filtro de tecnico e um complemento operacional: se o usuario atual nao
             // tem permissao de visualizar usuarios (ou a API falhar), a listagem de OS
@@ -106,7 +119,13 @@ class OrderController extends DesktopController
     private function resolveStatusCatalog(): array
     {
         try {
-            return $this->statusFlowService->index()['statuses'];
+            // Mesmo raciocinio de cache curto do resolveTechnicianOptions(): catalogo de
+            // status e dado de referencia, nao muda a cada request.
+            return Cache::remember(
+                'desktop:order_filters:status_catalog',
+                60,
+                fn (): array => $this->statusFlowService->index()['statuses']
+            );
         } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
             // Sem o catalogo (ex.: usuario sem permissao de conhecimento), os filtros de
             // status e macrofase caem para campo de texto livre em vez de quebrar a tela.
@@ -134,30 +153,319 @@ class OrderController extends DesktopController
 
     public function create(Request $request): View
     {
-        $selectedClientId = (int) $request->query('cliente_id', 0);
-        $selectedEquipmentId = (int) $request->query('equipamento_id', 0);
+        $oldInput = $request->session()->getOldInput();
 
-        $clients = $this->clientService->paginate([
-            'per_page' => 100,
-        ]);
+        $selectedClientId = (int) ($oldInput['cliente_id'] ?? $request->query('cliente_id', 0));
+        $selectedEquipmentId = (int) ($oldInput['equipamento_id'] ?? $request->query('equipamento_id', 0));
+        $selectedTechnicianId = (int) ($oldInput['tecnico_id'] ?? 0);
 
-        $equipmentFilters = [
-            'per_page' => 100,
-        ];
+        $selectedEquipment = $this->resolveSelectedEquipment($selectedEquipmentId);
 
-        if ($selectedClientId > 0) {
-            $equipmentFilters['client_id'] = $selectedClientId;
+        if ($selectedClientId <= 0 && (int) ($selectedEquipment['cliente_id'] ?? 0) > 0) {
+            $selectedClientId = (int) $selectedEquipment['cliente_id'];
         }
 
-        $equipments = $this->equipmentService->paginate($equipmentFilters);
+        $selectedClient = $this->resolveSelectedClient($selectedClientId);
+        $technicians = $this->resolveTechnicianOptions();
+        $selectedTechnician = $this->resolveSelectedTechnician($technicians, $selectedTechnicianId);
+        $technicians = $this->ensureSelectedItemPresent($technicians, $selectedTechnicianId, $selectedTechnician);
 
         return view('orders.create', [
             'pageTitle' => 'Nova OS',
-            'clients' => $clients['items'],
-            'equipments' => $equipments['items'],
+            'technicians' => $technicians,
             'selectedClientId' => $selectedClientId,
             'selectedEquipmentId' => $selectedEquipmentId,
+            'selectedTechnicianId' => $selectedTechnicianId,
+            'selectedClient' => $selectedClient,
+            'selectedEquipment' => $selectedEquipment,
+            'selectedTechnician' => $selectedTechnician,
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolveSelectedClient(int $clientId): array
+    {
+        if ($clientId <= 0) {
+            return [];
+        }
+
+        try {
+            $client = $this->clientService->find($clientId);
+        } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
+            $client = [];
+        }
+
+        if ($client === []) {
+            $client = [
+                'id' => $clientId,
+                'nome_razao' => 'Cliente #' . $clientId,
+                'telefone1' => '',
+                'email' => '',
+                'nome_contato' => '',
+                'cidade' => '',
+                'uf' => '',
+            ];
+        }
+
+        return $client;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function resolveSelectedEquipment(int $equipmentId): array
+    {
+        if ($equipmentId <= 0) {
+            return [];
+        }
+
+        try {
+            $equipment = $this->equipmentService->find($equipmentId);
+        } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
+            return [];
+        }
+
+        if ($equipment !== []) {
+            $equipment = $this->decorateEquipmentPhotoAccess($equipment);
+        }
+
+        return $equipment;
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $technicians
+     * @return array<string, mixed>
+     */
+    private function resolveSelectedTechnician(array $technicians, int $technicianId): array
+    {
+        foreach ($technicians as $technician) {
+            if ((int) ($technician['id'] ?? 0) === $technicianId) {
+                return $technician;
+            }
+        }
+
+        if ($technicianId > 0) {
+            return [
+                'id' => $technicianId,
+                'nome' => 'Tecnico #' . $technicianId,
+                'email' => '',
+            ];
+        }
+
+        return [];
+    }
+
+    public function searchEquipments(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'search' => ['nullable', 'string', 'max:100'],
+            'client_id' => ['nullable', 'integer', 'min:0'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:20'],
+        ]);
+
+        $search = trim((string) ($validated['q'] ?? $validated['search'] ?? ''));
+        $clientId = (int) ($validated['client_id'] ?? 0);
+        $page = max(1, (int) ($validated['page'] ?? 1));
+        $perPage = max(1, min(20, (int) ($validated['per_page'] ?? 10)));
+
+        try {
+            $result = $this->equipmentService->paginate(array_filter([
+                'search' => $search,
+                'client_id' => $clientId,
+                'page' => $page,
+                'per_page' => $perPage,
+            ], static fn ($value): bool => $value !== '' && $value !== 0));
+        } catch (ApiAuthenticationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 401);
+        } catch (ApiAuthorizationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 403);
+        } catch (ApiRequestException $exception) {
+            return $this->jsonFailure(
+                $exception->getMessage(),
+                $exception->statusCode() > 0 ? $exception->statusCode() : 422,
+                $exception->details()
+            );
+        }
+
+        $items = array_map(function (array $equipment): array {
+            $equipment = $this->decorateEquipmentPhotoAccess($equipment);
+            $equipmentId = (int) ($equipment['id'] ?? 0);
+            $summary = trim((string) ($equipment['resumo_tecnico'] ?? ''));
+            $brandName = trim((string) ($equipment['marca_nome'] ?? ''));
+            $modelName = trim((string) ($equipment['modelo_nome'] ?? ''));
+            $brandModel = trim(implode(' / ', array_filter([
+                $brandName,
+                $modelName,
+            ], static fn (string $value): bool => $value !== '')));
+            $label = $summary !== '' ? $summary : $brandModel;
+
+            return [
+                'id' => $equipmentId,
+                'label' => $label !== '' ? $label : ('Equipamento #' . $equipmentId),
+                'summary' => $summary,
+                'brand_name' => $brandName,
+                'model_name' => $modelName,
+                'serial' => trim((string) ($equipment['numero_serie'] ?? '')),
+                'client_id' => (int) ($equipment['cliente_id'] ?? 0),
+                'client_name' => trim((string) ($equipment['cliente_nome'] ?? '')),
+                'photo_url' => trim((string) ($equipment['primary_photo_url'] ?? $equipment['photo_url'] ?? '')),
+                'tipo_id' => (int) ($equipment['tipo_id'] ?? 0),
+                'tipo_name' => trim((string) ($equipment['tipo_nome'] ?? '')),
+            ];
+        }, $result['items']);
+
+        return response()->json([
+            'success' => true,
+            'equipments' => $items,
+            'pagination' => $result['pagination'] ?? [],
+        ]);
+    }
+
+    public function searchReportedDefects(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'tipo_equipamento_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $tipoEquipamentoId = (int) $validated['tipo_equipamento_id'];
+
+        try {
+            $result = $this->reportedDefectService->paginate([
+                'tipo_equipamento_id' => $tipoEquipamentoId,
+                'active' => 1,
+                'per_page' => 50,
+            ]);
+        } catch (ApiAuthenticationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 401);
+        } catch (ApiAuthorizationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 403);
+        } catch (ApiRequestException $exception) {
+            return $this->jsonFailure(
+                $exception->getMessage(),
+                $exception->statusCode() > 0 ? $exception->statusCode() : 422,
+                $exception->details()
+            );
+        }
+
+        $items = array_map(static function (array $defeito): array {
+            return [
+                'id' => (int) ($defeito['id'] ?? 0),
+                'categoria' => trim((string) ($defeito['categoria'] ?? '')),
+                'subcategoria' => trim((string) ($defeito['subcategoria'] ?? '')),
+                'texto_relato' => trim((string) ($defeito['texto_relato'] ?? '')),
+                'icone' => trim((string) ($defeito['icone'] ?? '')),
+                'ordem_exibicao' => (int) ($defeito['ordem_exibicao'] ?? 0),
+            ];
+        }, $result['items']);
+
+        return response()->json([
+            'success' => true,
+            'defects' => $items,
+        ]);
+    }
+
+    public function searchClients(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'search' => ['nullable', 'string', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:20'],
+        ]);
+
+        $search = trim((string) ($validated['q'] ?? $validated['search'] ?? ''));
+        $page = max(1, (int) ($validated['page'] ?? 1));
+        $perPage = max(1, min(20, (int) ($validated['per_page'] ?? 10)));
+
+        try {
+            $result = $this->clientService->paginate(array_filter([
+                'search' => $search,
+                'page' => $page,
+                'per_page' => $perPage,
+            ], static fn ($value): bool => $value !== '' && $value !== 0));
+        } catch (ApiAuthenticationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 401);
+        } catch (ApiAuthorizationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 403);
+        } catch (ApiRequestException $exception) {
+            return $this->jsonFailure(
+                $exception->getMessage(),
+                $exception->statusCode() > 0 ? $exception->statusCode() : 422,
+                $exception->details()
+            );
+        }
+
+        $items = array_map(static function (array $client): array {
+            $clientId = (int) ($client['id'] ?? 0);
+            $label = trim((string) ($client['nome_razao'] ?? ''));
+
+            return [
+                'id' => $clientId,
+                'text' => $label !== '' ? $label : ('Cliente #' . $clientId),
+                'name' => $label,
+                'phone' => trim((string) ($client['telefone1'] ?? '')),
+                'email' => trim((string) ($client['email'] ?? '')),
+                'contact' => trim((string) ($client['nome_contato'] ?? '')),
+                'city' => trim((string) ($client['cidade'] ?? '')),
+                'uf' => trim((string) ($client['uf'] ?? '')),
+            ];
+        }, $result['items']);
+
+        return response()->json([
+            'success' => true,
+            'clients' => $items,
+            'pagination' => $result['pagination'] ?? [],
+        ]);
+    }
+
+    /**
+     * @param array<string, mixed> $equipment
+     * @return array<string, mixed>
+     */
+    private function decorateEquipmentPhotoAccess(array $equipment): array
+    {
+        $equipmentId = (int) ($equipment['id'] ?? 0);
+        $photoId = (int) ($equipment['primary_photo_id'] ?? 0);
+
+        if ($photoId <= 0) {
+            $photoId = $this->extractPhotoIdFromUrl((string) ($equipment['primary_photo_url'] ?? ''));
+        }
+
+        if ($equipmentId > 0 && $photoId > 0) {
+            $desktopPhotoUrl = route('equipments.photos.show', [
+                'equipment' => $equipmentId,
+                'photo' => $photoId,
+            ]);
+
+            $equipment['primary_photo_id'] = $photoId;
+            $equipment['primary_photo_url'] = $desktopPhotoUrl;
+            $equipment['photo_url'] = $desktopPhotoUrl;
+
+            return $equipment;
+        }
+
+        $fallbackPhotoUrl = trim((string) ($equipment['primary_photo_url'] ?? $equipment['photo_url'] ?? ''));
+        $equipment['photo_url'] = $fallbackPhotoUrl;
+
+        return $equipment;
+    }
+
+    private function extractPhotoIdFromUrl(string $url): int
+    {
+        $normalized = trim($url);
+        if ($normalized === '') {
+            return 0;
+        }
+
+        if (preg_match('~/(?:api/v1/)?equipments/\d+/photos/(\d+)(?:[/?#].*)?$~i', $normalized, $matches) === 1) {
+            return (int) ($matches[1] ?? 0);
+        }
+
+        return 0;
     }
 
     public function store(Request $request): RedirectResponse
@@ -170,6 +478,8 @@ class OrderController extends DesktopController
             'tecnico_id' => ['nullable', 'integer', 'min:1'],
             'data_previsao' => ['nullable', 'date'],
             'observacoes_internas' => ['nullable', 'string'],
+            'fotos' => ['nullable', 'array', 'max:4'],
+            'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
         ], [], [
             'cliente_id' => 'cliente',
             'equipamento_id' => 'equipamento',
@@ -190,7 +500,10 @@ class OrderController extends DesktopController
             'observacoes_internas' => trim((string) ($validated['observacoes_internas'] ?? '')),
         ], static fn ($value): bool => $value !== null && $value !== '');
 
-        $order = $this->orderService->create($payload);
+        $order = $this->orderService->create(
+            $payload,
+            $this->extractUploadedFiles($request, 'fotos')
+        );
 
         return redirect()
             ->route('orders.show', $order['id'] ?? 0)
@@ -205,30 +518,74 @@ class OrderController extends DesktopController
         ]);
     }
 
-    public function edit(int $order): View
+    /**
+     * @param array<int, array<string, mixed>> $items
+     * @param array<string, mixed> $selectedItem
+     * @return array<int, array<string, mixed>>
+     */
+    private function ensureSelectedItemPresent(array $items, int $selectedId, array $selectedItem): array
     {
-        $orderData = $this->orderService->find($order);
-        $selectedClientId = (int) ($orderData['cliente_id'] ?? 0);
-
-        $clients = $this->clientService->paginate([
-            'per_page' => 100,
-        ]);
-
-        $equipmentFilters = [
-            'per_page' => 100,
-        ];
-
-        if ($selectedClientId > 0) {
-            $equipmentFilters['client_id'] = $selectedClientId;
+        if ($selectedId <= 0 || $selectedItem === []) {
+            return $items;
         }
 
-        $equipments = $this->equipmentService->paginate($equipmentFilters);
+        foreach ($items as $item) {
+            if ((int) ($item['id'] ?? 0) === $selectedId) {
+                return $items;
+            }
+        }
+
+        array_unshift($items, $selectedItem);
+
+        return $items;
+    }
+
+    /**
+     * @return array<int, UploadedFile>
+     */
+    private function extractUploadedFiles(Request $request, string $key): array
+    {
+        $files = $request->file($key, []);
+
+        if ($files instanceof UploadedFile) {
+            return [$files];
+        }
+
+        if (! is_array($files)) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            $files,
+            static fn ($file): bool => $file instanceof UploadedFile && $file->isValid()
+        ));
+    }
+
+    public function edit(Request $request, int $order): View
+    {
+        $orderData = $this->orderService->find($order);
+        $oldInput = $request->session()->getOldInput();
+
+        $selectedClientId = (int) ($oldInput['cliente_id'] ?? data_get($orderData, 'cliente_id', data_get($orderData, 'cliente.id', 0)));
+        $selectedEquipmentId = (int) ($oldInput['equipamento_id'] ?? data_get($orderData, 'equipamento_id', data_get($orderData, 'equipamento.id', 0)));
+        $selectedTechnicianId = (int) ($oldInput['tecnico_id'] ?? data_get($orderData, 'tecnico_id', data_get($orderData, 'tecnico.id', 0)));
+
+        $selectedClient = $this->resolveSelectedClient($selectedClientId);
+        $selectedEquipment = $this->resolveSelectedEquipment($selectedEquipmentId);
+        $technicians = $this->resolveTechnicianOptions();
+        $selectedTechnician = $this->resolveSelectedTechnician($technicians, $selectedTechnicianId);
+        $technicians = $this->ensureSelectedItemPresent($technicians, $selectedTechnicianId, $selectedTechnician);
 
         return view('orders.edit', [
             'pageTitle' => 'Editar OS',
             'order' => $orderData,
-            'clients' => $clients['items'],
-            'equipments' => $equipments['items'],
+            'technicians' => $technicians,
+            'selectedClientId' => $selectedClientId,
+            'selectedEquipmentId' => $selectedEquipmentId,
+            'selectedTechnicianId' => $selectedTechnicianId,
+            'selectedClient' => $selectedClient,
+            'selectedEquipment' => $selectedEquipment,
+            'selectedTechnician' => $selectedTechnician,
         ]);
     }
 
@@ -242,6 +599,8 @@ class OrderController extends DesktopController
             'tecnico_id' => ['nullable', 'integer', 'min:1'],
             'data_previsao' => ['nullable', 'date'],
             'observacoes_internas' => ['nullable', 'string'],
+            'fotos' => ['nullable', 'array', 'max:4'],
+            'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
         ], [], [
             'cliente_id' => 'cliente',
             'equipamento_id' => 'equipamento',
@@ -262,7 +621,11 @@ class OrderController extends DesktopController
             'observacoes_internas' => trim((string) ($validated['observacoes_internas'] ?? '')),
         ];
 
-        $this->orderService->update($order, $payload);
+        $this->orderService->update(
+            $order,
+            $payload,
+            $this->extractUploadedFiles($request, 'fotos')
+        );
 
         return redirect()
             ->route('orders.show', $order)

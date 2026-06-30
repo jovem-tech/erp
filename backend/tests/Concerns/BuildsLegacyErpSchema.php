@@ -1009,6 +1009,17 @@ trait BuildsLegacyErpSchema
             $table->text('observacoes_cliente')->nullable();
             $table->dateTime('created_at')->nullable();
             $table->dateTime('updated_at')->nullable();
+            // Espelha as colunas geradas/indexadas criadas pela migration
+            // 2026_06_30_120000_add_effective_dates_index_to_os_table (que e
+            // no-op em teste, pois `os` so existe via este trait). Mantém
+            // DashboardSummaryService::OPEN_DATE_SQL/DELIVERY_DATE_SQL
+            // funcionando igual em teste e em producao.
+            $table->dateTime('data_abertura_efetiva')
+                ->storedAs('COALESCE(data_abertura, data_entrada, status_atualizado_em, updated_at, created_at)')
+                ->nullable();
+            $table->dateTime('data_entrega_efetiva')
+                ->storedAs('COALESCE(data_entrega, data_conclusao, status_atualizado_em, updated_at, created_at)')
+                ->nullable();
             $table->foreign('cliente_id')->references('id')->on('clientes');
             $table->foreign('equipamento_id')->references('id')->on('equipamentos');
             $table->foreign('tecnico_id')->references('id')->on('usuarios');

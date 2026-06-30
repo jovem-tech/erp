@@ -14,6 +14,7 @@
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
     const maxPhotos = Number(config.maxPhotos || 4);
     const isEditMode = Boolean(config.isEdit);
+    const isEmbeddedMode = document.body.classList.contains('desktop-body-embedded');
 
     const state = {
         brands: Array.isArray(config.formData?.brands) ? [...config.formData.brands] : [],
@@ -81,6 +82,8 @@
         quickModelSubmit: document.getElementById('quickModelSubmit'),
         quickModelSuggest: document.getElementById('quickModelSuggest'),
         quickModelSuggestions: document.getElementById('quickModelSuggestions'),
+        embeddedCancelButton: document.querySelector('[data-equipment-embedded-cancel]'),
+        submitButton: form.querySelector('button[type="submit"]'),
         collectorCode: document.getElementById('collectorPairingCode'),
         collectorDisplay: document.getElementById('collectorPairingDisplay'),
         collectorStatus: document.getElementById('collectorPairingStatus'),
@@ -400,6 +403,21 @@
         Swal.fire({ icon, title, text });
     };
 
+    const extractErrorMessages = (details) => {
+        if (Array.isArray(details)) {
+            return details.map((message) => String(message || '').trim()).filter(Boolean);
+        }
+
+        if (details && typeof details === 'object') {
+            return Object.values(details)
+                .flat()
+                .map((message) => String(message || '').trim())
+                .filter(Boolean);
+        }
+
+        return [];
+    };
+
     const renderQuickClientErrors = (messages, fallbackMessage = '') => {
         const errorBox = document.getElementById('quickClientErrors');
         if (!(errorBox instanceof HTMLElement)) {
@@ -460,6 +478,42 @@
 
             if (window.DesktopUi && typeof window.DesktopUi.logError === 'function') {
                 window.DesktopUi.logError('equipments-create.requestJson', error, {
+                    path: String(url).split('?')[0],
+                    method,
+                });
+            }
+
+            throw error;
+        }
+
+        return payload;
+    };
+
+    const requestMultipart = async (url, { method = 'POST', body = null } = {}) => {
+        const options = {
+            method,
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-TOKEN': csrfToken,
+            },
+            credentials: 'same-origin',
+        };
+
+        if (body !== null) {
+            options.body = body;
+        }
+
+        const response = await fetch(url, options);
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || payload.success === false) {
+            const error = new Error(payload.message || 'Falha ao processar a solicitaÃ§Ã£o.');
+            error.status = response.status;
+            error.details = payload.errors || null;
+
+            if (window.DesktopUi && typeof window.DesktopUi.logError === 'function') {
+                window.DesktopUi.logError('equipments-create.requestMultipart', error, {
                     path: String(url).split('?')[0],
                     method,
                 });
@@ -1014,6 +1068,26 @@
         return false;
     };
 
+    const setFormSubmitState = (loading) => {
+        if (!(els.submitButton instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        if (loading) {
+            if (!els.submitButton.dataset.originalHtml) {
+                els.submitButton.dataset.originalHtml = els.submitButton.innerHTML;
+            }
+
+            els.submitButton.disabled = true;
+            els.submitButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Salvando...';
+            return;
+        }
+
+        els.submitButton.disabled = false;
+        els.submitButton.innerHTML = els.submitButton.dataset.originalHtml
+            || '<i class="bi bi-save me-2"></i>Criar equipamento';
+    };
+
     const applyDominantColor = (file) => {
         const image = new Image();
         image.onload = () => {
@@ -1527,11 +1601,51 @@
 
     const initFormSubmission = () => {
         form.addEventListener('submit', (event) => {
-            if (ensureRequiredPhotos()) {
+            if (!form.reportValidity()) {
+                event.preventDefault();
+                return;
+            }
+
+            if (!ensureRequiredPhotos()) {
+                event.preventDefault();
+                return;
+            }
+
+            if (!isEmbeddedMode) {
                 return;
             }
 
             event.preventDefault();
+            setFormSubmitState(true);
+
+            (async () => {
+                try {
+                    const response = await requestMultipart(form.action, {
+                        method: form.method || 'POST',
+                        body: new FormData(form),
+                    });
+
+                    const equipment = response.equipment || {};
+                    if (window.parent && window.parent !== window) {
+                        window.parent.postMessage({
+                            type: 'equipment-created',
+                            message: response.message || 'Equipamento cadastrado com sucesso.',
+                            equipment,
+                        }, window.location.origin);
+                    } else {
+                        showAlert('success', 'Equipamento cadastrado com sucesso.');
+                    }
+                } catch (error) {
+                    const details = extractErrorMessages(error?.details);
+                    showAlert(
+                        'error',
+                        'Falha ao cadastrar equipamento',
+                        details.length > 0 ? details.join(' · ') : error.message
+                    );
+                } finally {
+                    setFormSubmitState(false);
+                }
+            })();
         });
     };
 
@@ -1565,12 +1679,7 @@
                 getModal(els.quickClientModal)?.hide();
                 showToast('success', 'Cliente cadastrado e selecionado.');
             } catch (error) {
-                const details = Array.isArray(error?.details)
-                    ? error.details
-                    : error?.details && typeof error.details === 'object'
-                        ? Object.values(error.details).flat().filter(Boolean)
-                        : [];
-
+                const details = extractErrorMessages(error?.details);
                 renderQuickClientErrors(details, error.message);
                 showAlert('error', 'Falha ao cadastrar cliente', error.message);
             } finally {
@@ -1735,6 +1844,48 @@
         });
     };
 
+    const closeParentEquipmentModal = () => {
+        try {
+            if (window.parent && window.parent !== window) {
+                const parentDocument = window.parent.document;
+                const modalElement = parentDocument.getElementById('quickEquipmentModal');
+
+                if (modalElement && window.parent.bootstrap && window.parent.bootstrap.Modal) {
+                    const modal = window.parent.bootstrap.Modal.getInstance(modalElement)
+                        || window.parent.bootstrap.Modal.getOrCreateInstance(modalElement);
+
+                    modal.hide();
+                    return true;
+                }
+
+                const dismissButton = parentDocument.querySelector('#quickEquipmentModal [data-bs-dismiss="modal"]');
+                if (dismissButton instanceof HTMLElement) {
+                    dismissButton.click();
+                    return true;
+                }
+            }
+        } catch (error) {
+            console.warn('[equipments-create] Falha ao fechar o modal pai', error);
+        }
+
+        return false;
+    };
+
+    const initEmbeddedCancel = () => {
+        if (!isEmbeddedMode) {
+            return;
+        }
+
+        if (!(els.embeddedCancelButton instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        els.embeddedCancelButton.addEventListener('click', (event) => {
+            event.preventDefault();
+            closeParentEquipmentModal();
+        });
+    };
+
     const initCollector = () => {
         const collectorCard = document.querySelector('.equipment-collector-card');
         const collectorTitle = collectorCard?.querySelector('.surface-title');
@@ -1804,6 +1955,7 @@
     initPhotos();
     initFormSubmission();
     initQuickAdd();
+    initEmbeddedCancel();
     initCollector();
     initFillButtons();
 })();

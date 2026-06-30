@@ -47,7 +47,7 @@ class EquipmentController extends DesktopController
         ]);
     }
 
-    public function create(): View|RedirectResponse
+    public function create(Request $request): View|RedirectResponse
     {
         try {
             $form = $this->equipmentService->formData();
@@ -59,13 +59,25 @@ class EquipmentController extends DesktopController
             return redirect()->route('equipments.index')->with('error', $exception->getMessage());
         }
 
+        $clientId = (int) $request->query('cliente_id', 0);
+        $clientLabel = trim((string) $request->query('cliente_busca_label', ''));
+        $embedded = $request->boolean('embedded');
+        $equipment = $this->equipmentFormDefaults();
+
+        if ($clientId > 0) {
+            $equipment['cliente_id'] = $clientId;
+            $equipment['cliente_busca_label'] = $clientLabel !== '' ? $clientLabel : ('Cliente #' . $clientId);
+        }
+
         return $this->renderEquipmentFormView(
             'Novo equipamento',
             $form,
-            $this->equipmentFormDefaults(),
+            $equipment,
             route('equipments.store'),
             'Criar equipamento',
-            route('equipments.index')
+            route('equipments.index'),
+            false,
+            $embedded
         );
     }
 
@@ -103,7 +115,7 @@ class EquipmentController extends DesktopController
         );
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request): JsonResponse|RedirectResponse
     {
         $payload = $this->validatedEquipmentPayload($request);
 
@@ -116,14 +128,38 @@ class EquipmentController extends DesktopController
         try {
             $equipment = $this->equipmentService->create($payload, $photos);
         } catch (ApiAuthenticationException $exception) {
+            if ($request->expectsJson()) {
+                return $this->jsonFailure($exception->getMessage(), 401);
+            }
+
             return redirect()->route('login')->with('error', $exception->getMessage());
         } catch (ApiAuthorizationException $exception) {
+            if ($request->expectsJson()) {
+                return $this->jsonFailure($exception->getMessage(), 403);
+            }
+
             return redirect()->route('equipments.index')->with('error', $exception->getMessage());
         } catch (ApiRequestException $exception) {
+            if ($request->expectsJson()) {
+                return $this->jsonFailure(
+                    $exception->getMessage(),
+                    $exception->statusCode() > 0 ? $exception->statusCode() : 422,
+                    $exception->details()
+                );
+            }
+
             return back()
                 ->withInput($request->except('fotos'))
                 ->withErrors($this->formatApiErrors($exception))
                 ->with('error', $exception->getMessage());
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Equipamento cadastrado com sucesso.',
+                'equipment' => $this->buildEquipmentSelectionPayload($equipment),
+            ], 201);
         }
 
         return redirect()
@@ -603,6 +639,94 @@ class EquipmentController extends DesktopController
     }
 
     /**
+     * @param array<string, mixed> $equipment
+     * @return array<string, mixed>
+     */
+    private function buildEquipmentSelectionPayload(array $equipment): array
+    {
+        $decoratedEquipment = $this->decorateEquipmentPhotoAccess($equipment);
+        $equipmentId = (int) ($decoratedEquipment['id'] ?? 0);
+        $client = is_array($decoratedEquipment['client'] ?? null) ? $decoratedEquipment['client'] : [];
+
+        $clientId = (int) ($decoratedEquipment['cliente_id'] ?? 0);
+        if ($clientId <= 0) {
+            $clientId = (int) ($decoratedEquipment['client_id'] ?? 0);
+        }
+        if ($clientId <= 0) {
+            $clientId = (int) ($client['id'] ?? 0);
+        }
+
+        $clientName = trim((string) (
+            $client['nome_razao']
+            ?? $decoratedEquipment['cliente_nome']
+            ?? $decoratedEquipment['client_name']
+            ?? ''
+        ));
+        if ($clientName === '') {
+            $clientName = $this->buildClientSearchLabel($client);
+        }
+        if ($clientName === '' && $clientId > 0) {
+            $clientName = 'Cliente #' . $clientId;
+        }
+
+        $brandName = trim((string) (
+            $decoratedEquipment['marca_nome']
+            ?? $decoratedEquipment['brand_name']
+            ?? ''
+        ));
+        $modelName = trim((string) (
+            $decoratedEquipment['modelo_nome']
+            ?? $decoratedEquipment['model_name']
+            ?? ''
+        ));
+        $summary = trim((string) (
+            $decoratedEquipment['equipamento_resumo_tecnico']
+            ?? $decoratedEquipment['equipamento_resumo_curto']
+            ?? $decoratedEquipment['summary']
+            ?? ''
+        ));
+        $serial = trim((string) (
+            $decoratedEquipment['numero_serie']
+            ?? $decoratedEquipment['serial']
+            ?? $decoratedEquipment['imei']
+            ?? ''
+        ));
+        $photoUrl = trim((string) (
+            $decoratedEquipment['primary_photo_url']
+            ?? $decoratedEquipment['photo_url']
+            ?? ''
+        ));
+
+        $label = $summary !== ''
+            ? $summary
+            : implode(' / ', array_values(array_filter([$brandName, $modelName])));
+
+        if ($label === '') {
+            $label = $serial !== ''
+                ? $serial
+                : ($equipmentId > 0 ? 'Equipamento #' . $equipmentId : '');
+        }
+
+        return [
+            'id' => $equipmentId,
+            'label' => $label,
+            'text' => $label,
+            'summary' => $summary,
+            'brandName' => $brandName,
+            'brand_name' => $brandName,
+            'modelName' => $modelName,
+            'model_name' => $modelName,
+            'serial' => $serial,
+            'photoUrl' => $photoUrl,
+            'photo_url' => $photoUrl,
+            'clientId' => $clientId,
+            'client_id' => $clientId,
+            'clientName' => $clientName,
+            'client_name' => $clientName,
+        ];
+    }
+
+    /**
      * @return array{senha_tipo:string,senha_acesso:string,senha_desenho:string}
      */
     private function extractPasswordFields(string $storedPassword): array
@@ -649,7 +773,8 @@ class EquipmentController extends DesktopController
         string $formAction,
         string $submitLabel,
         string $cancelUrl,
-        bool $isEdit = false
+        bool $isEdit = false,
+        bool $embedded = false
     ): View {
         return view('equipments.create', [
             'pageTitle' => $pageTitle,
@@ -659,6 +784,7 @@ class EquipmentController extends DesktopController
             'submitLabel' => $submitLabel,
             'cancelUrl' => $cancelUrl,
             'isEdit' => $isEdit,
+            'embedded' => $embedded,
         ]);
     }
 

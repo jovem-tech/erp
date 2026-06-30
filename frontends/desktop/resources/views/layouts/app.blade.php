@@ -5,7 +5,9 @@
         'warning' => session('warning'),
         'info' => session('info'),
     ];
-    $desktopSidebarCollapsed = $desktopSidebarCollapsed ?? request()->routeIs('orders.index');
+    $desktopSidebarHidden = $desktopSidebarHidden ?? request()->routeIs('orders.index', 'orders.create');
+    $desktopSidebarCollapsed = $desktopSidebarCollapsed ?? false;
+    $desktopEmbedded = (bool) ($desktopEmbedded ?? $embedded ?? request()->boolean('embedded'));
 @endphp
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -25,35 +27,42 @@
     <link href="{{ asset('assets/css/desktop.css') }}?v={{ filemtime(public_path('assets/css/desktop.css')) }}" rel="stylesheet">
     @yield('styles')
 </head>
-<body class="desktop-body">
-    <div class="desktop-shell">
-        @include('layouts.partials.sidebar')
+<body class="desktop-body {{ $desktopEmbedded ? 'desktop-body-embedded' : '' }}">
+    @if ($desktopEmbedded)
+        <main class="desktop-embedded-shell">
+            @include('layouts.partials.flash')
+            @yield('content')
+        </main>
+    @else
+        <div class="desktop-shell">
+            @include('layouts.partials.sidebar')
 
-        <div class="desktop-main {{ $desktopSidebarCollapsed ? 'is-expanded' : '' }}" id="desktopMain">
-            @include('layouts.partials.navbar')
+            <div class="desktop-main {{ $desktopSidebarHidden ? 'is-full' : ($desktopSidebarCollapsed ? 'is-expanded' : '') }}" id="desktopMain">
+                @include('layouts.partials.navbar')
 
-            <main class="desktop-content">
-                @include('layouts.partials.flash')
-                @yield('content')
-            </main>
+                <main class="desktop-content">
+                    @include('layouts.partials.flash')
+                    @yield('content')
+                </main>
 
-            @php
-                $footerVersion = data_get($desktopSystemFooter, 'version', config('app.version', '3.0.0'));
-                $footerCopyright = data_get($desktopSystemFooter, 'copyright', '(c) ' . date('Y') . ' ' . config('app.name', 'Sistema ERP Desktop'));
-                $footerDevelopedBy = data_get($desktopSystemFooter, 'developed_by', 'Jovem Tech');
-            @endphp
+                @php
+                    $footerVersion = data_get($desktopSystemFooter, 'version', config('app.version', '3.0.0'));
+                    $footerCopyright = data_get($desktopSystemFooter, 'copyright', '(c) ' . date('Y') . ' ' . config('app.name', 'Sistema ERP Desktop'));
+                    $footerDevelopedBy = data_get($desktopSystemFooter, 'developed_by', 'Jovem Tech');
+                @endphp
 
-            <footer class="desktop-system-footer" aria-label="Rodape institucional do sistema">
-                <div class="desktop-system-footer-inner">
-                    <div class="desktop-system-footer-meta">
-                        <span class="desktop-version-pill" title="Versao atual do sistema">v{{ $footerVersion }}</span>
-                        <span class="desktop-system-footer-credit">Desenvolvido por {{ $footerDevelopedBy }}</span>
-                        <span class="desktop-system-footer-copyright">{{ $footerCopyright }}</span>
+                <footer class="desktop-system-footer" aria-label="Rodape institucional do sistema">
+                    <div class="desktop-system-footer-inner">
+                        <div class="desktop-system-footer-meta">
+                            <span class="desktop-version-pill" title="Versao atual do sistema">v{{ $footerVersion }}</span>
+                            <span class="desktop-system-footer-credit">Desenvolvido por {{ $footerDevelopedBy }}</span>
+                            <span class="desktop-system-footer-copyright">{{ $footerCopyright }}</span>
+                        </div>
                     </div>
-                </div>
-            </footer>
+                </footer>
+            </div>
         </div>
-    </div>
+    @endif
 
     <div class="desktop-page-loader" data-desktop-page-loader hidden aria-hidden="true">
         <div class="desktop-page-loader-card" role="status" aria-live="polite" aria-busy="true">

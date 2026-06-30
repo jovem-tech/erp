@@ -9,6 +9,7 @@ use App\Services\Auth\RbacAuthorizationService;
 use App\Services\Orders\OrderWorkflowService;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -51,15 +52,19 @@ class DashboardSummaryService
     ];
 
     /**
-     * Expressão SQL para a data de "abertura" da OS: primeiro valor não nulo
-     * entre data_abertura, data_entrada, status_atualizado_em, updated_at, created_at.
+     * Coluna gerada/indexada (migration 2026_06_30_120000) equivalente a
+     * COALESCE(os.data_abertura, os.data_entrada, os.status_atualizado_em,
+     * os.updated_at, os.created_at). Usar a coluna em vez do COALESCE inline
+     * permite que filtros baseados em range (ver monthRange()) usem o
+     * indice idx_os_data_abertura_efetiva.
      */
-    private const OPEN_DATE_SQL = 'COALESCE(os.data_abertura, os.data_entrada, os.status_atualizado_em, os.updated_at, os.created_at)';
+    private const OPEN_DATE_SQL = 'os.data_abertura_efetiva';
 
     /**
-     * Expressão SQL para a data de "entrega/conclusão" da OS.
+     * Coluna gerada/indexada equivalente a COALESCE(os.data_entrega,
+     * os.data_conclusao, os.status_atualizado_em, os.updated_at, os.created_at).
      */
-    private const DELIVERY_DATE_SQL = 'COALESCE(os.data_entrega, os.data_conclusao, os.status_atualizado_em, os.updated_at, os.created_at)';
+    private const DELIVERY_DATE_SQL = 'os.data_entrega_efetiva';
 
     /**
      * Expressão SQL para a data de referência usada no alerta de "OS parada".
@@ -73,6 +78,12 @@ class DashboardSummaryService
      */
     private const DELIVERED_SQL = "(os_status.status_final = 1 OR os.status LIKE '%entregue%' OR os.status IN ('concluido', 'finalizado', 'encerrado'))";
 
+    /**
+     * TTL curto: o painel tolera ate 1 minuto de atraso em troca de evitar
+     * ~15 queries de agregacao a cada carregamento/refresh do dashboard.
+     */
+    private const CACHE_TTL_SECONDS = 60;
+
     public function __construct(
         private readonly OrderWorkflowService $orderWorkflowService,
         private readonly RbacAuthorizationService $rbacAuthorizationService
@@ -84,6 +95,29 @@ class DashboardSummaryService
      * @return array<string, mixed>
      */
     public function build(User $user, array $filters = []): array
+    {
+        return Cache::remember(
+            $this->buildCacheKey($user, $filters),
+            self::CACHE_TTL_SECONDS,
+            fn (): array => $this->buildUncached($user, $filters)
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     */
+    private function buildCacheKey(User $user, array $filters): string
+    {
+        ksort($filters);
+
+        return sprintf('dashboard:summary:user:%d:%s', $user->id, md5(json_encode($filters)));
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     * @return array<string, mixed>
+     */
+    private function buildUncached(User $user, array $filters = []): array
     {
         $access = $this->buildAccessFlags($user);
         $canViewOrders = $access['can_view_orders'];
@@ -233,6 +267,27 @@ class DashboardSummaryService
     }
 
     /**
+     * Limites [inicio, fim) de um ano ou mes especifico, para filtrar por
+     * range (>= inicio AND < fim) em vez de YEAR()/MONTH(coluna) = ?. Range
+     * sobre a coluna gerada/indexada permite "type: range" no plano de
+     * execucao; YEAR()/MONTH() sempre forcam scan (mesmo com indice).
+     *
+     * @return array{0: string, 1: string}
+     */
+    private function periodBounds(int $year, ?int $month = null): array
+    {
+        $start = $month === null
+            ? Carbon::create($year, 1, 1)->startOfDay()
+            : Carbon::create($year, $month, 1)->startOfDay();
+
+        $end = $month === null
+            ? $start->copy()->addYear()
+            : $start->copy()->addMonthNoOverflow();
+
+        return [$start->toDateTimeString(), $end->toDateTimeString()];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function buildStats(
@@ -372,15 +427,20 @@ class DashboardSummaryService
      */
     private function buildMonthlyChart(User $user, int $year): array
     {
+        [$yearStart, $yearEnd] = $this->periodBounds($year);
+
         $opened = $this->baseOrdersQuery($user)
             ->selectRaw('MONTH(' . self::OPEN_DATE_SQL . ') as mes, COUNT(*) as total')
-            ->whereRaw('YEAR(' . self::OPEN_DATE_SQL . ') = ?', [$year])
+            ->whereRaw(self::OPEN_DATE_SQL . ' >= ? AND ' . self::OPEN_DATE_SQL . ' < ?', [$yearStart, $yearEnd])
             ->groupByRaw('MONTH(' . self::OPEN_DATE_SQL . ')')
             ->pluck('total', 'mes');
 
         $delivered = $this->baseOrdersQuery($user)
             ->selectRaw('MONTH(' . self::DELIVERY_DATE_SQL . ') as mes, COUNT(*) as total')
-            ->whereRaw('YEAR(' . self::DELIVERY_DATE_SQL . ') = ? AND ' . self::DELIVERED_SQL, [$year])
+            ->whereRaw(
+                self::DELIVERY_DATE_SQL . ' >= ? AND ' . self::DELIVERY_DATE_SQL . ' < ? AND ' . self::DELIVERED_SQL,
+                [$yearStart, $yearEnd]
+            )
             ->groupByRaw('MONTH(' . self::DELIVERY_DATE_SQL . ')')
             ->pluck('total', 'mes');
 
@@ -536,9 +596,11 @@ class DashboardSummaryService
             $groupByRaw = 'equipamentos_tipos.nome, equipamentos.desktop_modalidade';
         }
 
+        [$periodStart, $periodEnd] = $this->periodBounds($year, $month);
+
         $rows = $query
             ->selectRaw("{$labelExpr} as raw_label, COUNT(*) as total, COUNT(DISTINCT os.equipamento_id) as equip_unicos")
-            ->whereRaw('MONTH(' . self::OPEN_DATE_SQL . ') = ? AND YEAR(' . self::OPEN_DATE_SQL . ') = ?', [$month, $year])
+            ->whereRaw(self::OPEN_DATE_SQL . ' >= ? AND ' . self::OPEN_DATE_SQL . ' < ?', [$periodStart, $periodEnd])
             ->groupByRaw($groupByRaw)
             ->get();
 
@@ -620,27 +682,30 @@ class DashboardSummaryService
         $previousMonth = (int) $previousMonthDate->month;
         $previousYear = (int) $previousMonthDate->year;
 
+        [$currentPeriodStart, $currentPeriodEnd] = $this->periodBounds($currentYear, $currentMonth);
+        [$previousPeriodStart, $previousPeriodEnd] = $this->periodBounds($previousYear, $previousMonth);
+
         $currentMonthRow = $this->baseOrdersQuery($user)
             ->selectRaw('COALESCE(SUM(os.valor_final), 0) as total, COUNT(*) as cnt')
             ->whereRaw(
-                self::DELIVERED_SQL . ' AND YEAR(' . self::DELIVERY_DATE_SQL . ') = ? AND MONTH(' . self::DELIVERY_DATE_SQL . ') = ?',
-                [$currentYear, $currentMonth]
+                self::DELIVERED_SQL . ' AND ' . self::DELIVERY_DATE_SQL . ' >= ? AND ' . self::DELIVERY_DATE_SQL . ' < ?',
+                [$currentPeriodStart, $currentPeriodEnd]
             )
             ->first();
 
         $previousMonthRow = $this->baseOrdersQuery($user)
             ->selectRaw('COALESCE(SUM(os.valor_final), 0) as total')
             ->whereRaw(
-                self::DELIVERED_SQL . ' AND YEAR(' . self::DELIVERY_DATE_SQL . ') = ? AND MONTH(' . self::DELIVERY_DATE_SQL . ') = ?',
-                [$previousYear, $previousMonth]
+                self::DELIVERED_SQL . ' AND ' . self::DELIVERY_DATE_SQL . ' >= ? AND ' . self::DELIVERY_DATE_SQL . ' < ?',
+                [$previousPeriodStart, $previousPeriodEnd]
             )
             ->first();
 
         $despesasRow = $this->baseOrdersQuery($user)
             ->selectRaw('COALESCE(SUM(os.valor_mao_obra + os.valor_pecas), 0) as total')
             ->whereRaw(
-                'NOT ' . self::DELIVERED_SQL . ' AND YEAR(' . self::OPEN_DATE_SQL . ') = ? AND MONTH(' . self::OPEN_DATE_SQL . ') = ?',
-                [$currentYear, $currentMonth]
+                'NOT ' . self::DELIVERED_SQL . ' AND ' . self::OPEN_DATE_SQL . ' >= ? AND ' . self::OPEN_DATE_SQL . ' < ?',
+                [$currentPeriodStart, $currentPeriodEnd]
             )
             ->first();
 
@@ -719,11 +784,13 @@ class DashboardSummaryService
 
         $commissionTotal = 0.0;
         if ($access['is_technician']) {
+            [$periodStart, $periodEnd] = $this->periodBounds($currentYear, $currentMonth);
+
             $commissionRow = $this->baseOrdersQuery($user)
                 ->selectRaw('COALESCE(SUM(os.valor_final * 0.1), 0) as total')
                 ->whereRaw(
-                    self::DELIVERED_SQL . ' AND os.tecnico_id = ? AND YEAR(' . self::DELIVERY_DATE_SQL . ') = ? AND MONTH(' . self::DELIVERY_DATE_SQL . ') = ?',
-                    [(int) $user->id, $currentYear, $currentMonth]
+                    self::DELIVERED_SQL . ' AND os.tecnico_id = ? AND ' . self::DELIVERY_DATE_SQL . ' >= ? AND ' . self::DELIVERY_DATE_SQL . ' < ?',
+                    [(int) $user->id, $periodStart, $periodEnd]
                 )
                 ->first();
 

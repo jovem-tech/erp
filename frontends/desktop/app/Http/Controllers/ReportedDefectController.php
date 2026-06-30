@@ -53,6 +53,7 @@ class ReportedDefectController extends DesktopController
             'pageTitle' => 'Novo defeito relatado',
             'defeito' => $this->defeitoFormDefaults(),
             'equipmentTypes' => $this->knowledgeLookupService->equipmentTypes(),
+            'categoryMap' => $this->categoryCatalog(),
         ]);
     }
 
@@ -113,6 +114,7 @@ class ReportedDefectController extends DesktopController
             'pageTitle' => 'Editar defeito relatado',
             'defeito' => $defeitoData,
             'equipmentTypes' => $this->knowledgeLookupService->equipmentTypes(),
+            'categoryMap' => $this->categoryCatalog(),
         ]);
     }
 
@@ -181,6 +183,48 @@ class ReportedDefectController extends DesktopController
         return redirect()
             ->route('knowledge.reported-defects.index')
             ->with('success', 'Defeito relatado excluido com sucesso.');
+    }
+
+    /**
+     * Categorias e subcategorias ja usadas no catalogo, para alimentar os
+     * selects do formulario (categoria => lista de subcategorias).
+     *
+     * @return array<string, array<int, string>>
+     */
+    private function categoryCatalog(): array
+    {
+        try {
+            $result = $this->reportedDefectService->paginate(['per_page' => 50]);
+        } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
+            return [];
+        }
+
+        $map = [];
+
+        foreach ($result['items'] as $item) {
+            $categoria = trim((string) ($item['categoria'] ?? ''));
+            if ($categoria === '') {
+                continue;
+            }
+
+            if (! isset($map[$categoria])) {
+                $map[$categoria] = [];
+            }
+
+            $subcategoria = trim((string) ($item['subcategoria'] ?? ''));
+            if ($subcategoria !== '' && ! in_array($subcategoria, $map[$categoria], true)) {
+                $map[$categoria][] = $subcategoria;
+            }
+        }
+
+        ksort($map, SORT_NATURAL | SORT_FLAG_CASE);
+
+        foreach ($map as &$subcategorias) {
+            sort($subcategorias, SORT_NATURAL | SORT_FLAG_CASE);
+        }
+        unset($subcategorias);
+
+        return $map;
     }
 
     /**

@@ -4,11 +4,19 @@
     @php
         $canEdit = \App\Support\DesktopSession::can('conhecimento', 'editar');
         $canCreate = \App\Support\DesktopSession::can('conhecimento', 'criar');
-        $activeStatuses = collect($statuses)->filter(fn ($status) => (bool) ($status['ativo'] ?? false))->values();
-        $transitionLookup = collect($transitions)
-            ->filter(fn ($transition) => (bool) ($transition['ativo'] ?? false))
-            ->map(fn ($transition) => $transition['status_origem_id'] . '-' . $transition['status_destino_id'])
-            ->all();
+        $workflowGroups = collect($workflowGroups ?? []);
+        $workflowTrail = collect($workflowTrail ?? []);
+        $workflowStats = array_merge([
+            'status_count' => 0,
+            'active_status_count' => 0,
+            'inactive_status_count' => 0,
+            'final_status_count' => 0,
+            'pause_status_count' => 0,
+            'group_count' => 0,
+            'transition_count' => 0,
+        ], $workflowStats ?? []);
+        $activeStatuses = collect($activeStatuses ?? []);
+        $transitionLookup = $transitionLookup ?? [];
     @endphp
 
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
@@ -21,12 +29,170 @@
         </div>
     </div>
 
-    @foreach ($statusesByGroup as $grupoMacro => $statusesOfGroup)
+    <section class="workflow-diagram surface-card mb-4">
+        <div class="surface-card-header">
+            <div>
+                <p class="desktop-eyebrow">Mapa visual do andamento</p>
+                <h2 class="surface-title">Leitura operacional do fluxo</h2>
+                <p class="surface-subtitle mb-0">
+                    O backend grava <code>status</code> e <code>estado_fluxo</code> juntos na mudança da OS.
+                    O diagrama abaixo mostra as macrofases ativas, a ordem dos status e as saídas permitidas
+                    pela matriz oficial de transições.
+                </p>
+            </div>
+
+            <div class="workflow-legend">
+                <span class="workflow-legend-item">Ativo</span>
+                <span class="workflow-legend-item is-final">Final</span>
+                <span class="workflow-legend-item is-pause">Pausa</span>
+                <span class="workflow-legend-item is-transition">Transição</span>
+            </div>
+        </div>
+
+        <div class="workflow-overview-grid">
+            <div>
+                <p class="workflow-overview-label">Trajeto macro</p>
+                <div class="workflow-trail">
+                    @forelse ($workflowTrail as $trailLabel)
+                        <span class="workflow-trail-step">{{ $trailLabel }}</span>
+                        @if (! $loop->last)
+                            <i class="bi bi-arrow-right workflow-trail-arrow" aria-hidden="true"></i>
+                        @endif
+                    @empty
+                        <span class="workflow-trail-empty">Nenhuma macrofase encontrada.</span>
+                    @endforelse
+                </div>
+            </div>
+
+            <div class="workflow-stats-grid">
+                <article class="workflow-stat-card">
+                    <span>Status</span>
+                    <strong>{{ (int) ($workflowStats['status_count'] ?? 0) }}</strong>
+                    <small>catalogados no fluxo</small>
+                </article>
+                <article class="workflow-stat-card">
+                    <span>Ativos</span>
+                    <strong>{{ (int) ($workflowStats['active_status_count'] ?? 0) }}</strong>
+                    <small>disponíveis para operação</small>
+                </article>
+                <article class="workflow-stat-card">
+                    <span>Finais</span>
+                    <strong>{{ (int) ($workflowStats['final_status_count'] ?? 0) }}</strong>
+                    <small>encerram a OS</small>
+                </article>
+                <article class="workflow-stat-card">
+                    <span>Transições</span>
+                    <strong>{{ (int) ($workflowStats['transition_count'] ?? 0) }}</strong>
+                    <small>rotas ativas na matriz</small>
+                </article>
+            </div>
+        </div>
+
+        <div class="workflow-lanes">
+            @forelse ($workflowGroups as $group)
+                <section
+                    class="workflow-lane"
+                    style="--workflow-lane-accent: {{ $group['accent'] ?? '#6f5afc' }}; --workflow-lane-soft-accent: {{ $group['soft_accent'] ?? 'rgba(111, 90, 252, 0.12)' }};"
+                >
+                    <div class="workflow-lane-header">
+                        <div>
+                            <p class="desktop-eyebrow mb-1">{{ $group['label'] ?? 'Sem grupo macro' }}</p>
+                            <h3 class="surface-title fs-5 mb-1">{{ $group['label'] ?? 'Sem grupo macro' }}</h3>
+                            <p class="surface-subtitle mb-0">{{ $group['description'] ?? 'Fase operacional agrupada por macroprocesso.' }}</p>
+                        </div>
+
+                        <div class="workflow-lane-stats">
+                            <span class="desktop-chip">Status {{ (int) ($group['status_count'] ?? 0) }}</span>
+                            <span class="desktop-chip">Ativos {{ (int) ($group['active_status_count'] ?? 0) }}</span>
+                            <span class="desktop-chip">Final {{ (int) ($group['final_count'] ?? 0) }}</span>
+                            <span class="desktop-chip">Pausa {{ (int) ($group['pause_count'] ?? 0) }}</span>
+                            <span class="desktop-chip">Saídas {{ (int) ($group['transition_count'] ?? 0) }}</span>
+                        </div>
+                    </div>
+
+                    <div class="workflow-lane-track">
+                        @forelse ($group['statuses'] ?? [] as $status)
+                            <article class="workflow-node" style="--workflow-node-accent: {{ $status['accent_color'] ?? '#6f5afc' }};">
+                                <div class="workflow-node-head">
+                                    <div class="workflow-node-order">{{ (int) ($status['ordem_fluxo'] ?? 0) }}</div>
+
+                                    <div class="workflow-node-copy">
+                                        <div class="workflow-node-title-row">
+                                            <h4 class="workflow-node-title">{{ $status['nome'] ?? '' }}</h4>
+                                            @include('layouts.partials.status-pill', [
+                                                'label' => !empty($status['ativo']) ? 'Ativo' : 'Inativo',
+                                                'color' => !empty($status['ativo']) ? '#29c384' : '#8b93a7',
+                                                'small' => true,
+                                            ])
+                                        </div>
+                                        <p class="workflow-node-code">{{ $status['codigo'] ?? '' }}</p>
+                                    </div>
+                                </div>
+
+                                <div class="workflow-node-body">
+                                    <div class="workflow-node-flags">
+                                        @include('layouts.partials.status-pill', [
+                                            'label' => !empty($status['status_final']) ? 'Final' : 'Operacional',
+                                            'color' => !empty($status['status_final']) ? '#4da4ff' : '#8b93a7',
+                                            'small' => true,
+                                        ])
+                                        @include('layouts.partials.status-pill', [
+                                            'label' => !empty($status['status_pausa']) ? 'Pausa' : 'Fluxo',
+                                            'color' => !empty($status['status_pausa']) ? '#ffb84d' : '#8b93a7',
+                                            'small' => true,
+                                        ])
+                                        <span class="workflow-node-state">{{ $status['flow_state_label'] ?? 'Sem estado' }}</span>
+                                    </div>
+
+                                    <div class="workflow-node-metrics">
+                                        <span class="desktop-chip">Saídas ativas {{ (int) ($status['outgoing_count'] ?? 0) }}</span>
+                                        <span class="desktop-chip">Grupo {{ $group['label'] ?? 'Sem grupo macro' }}</span>
+                                    </div>
+
+                                    <div class="workflow-node-destinations">
+                                        <strong>Próximos passos</strong>
+                                        <div class="workflow-node-destination-list">
+                                            @forelse ($status['outgoing_transitions'] ?? [] as $destination)
+                                                <div class="workflow-node-destination">
+                                                    @include('layouts.partials.status-pill', [
+                                                        'label' => $destination['nome'] ?? '',
+                                                        'color' => $destination['accent_color'] ?? '#6f5afc',
+                                                        'small' => true,
+                                                    ])
+                                                    <small>{{ $destination['codigo'] ?? '' }}</small>
+                                                </div>
+                                            @empty
+                                                <span class="workflow-node-empty">Sem transições ativas.</span>
+                                            @endforelse
+                                        </div>
+                                    </div>
+                                </div>
+                            </article>
+
+                            @if (! $loop->last)
+                                <div class="workflow-connector" aria-hidden="true">
+                                    <span class="workflow-connector-line"></span>
+                                    <i class="bi bi-arrow-right"></i>
+                                    <span class="workflow-connector-line"></span>
+                                </div>
+                            @endif
+                        @empty
+                            <div class="workflow-lane-empty">Nenhum status ativo nesta macrofase.</div>
+                        @endforelse
+                    </div>
+                </section>
+            @empty
+                <div class="workflow-lane-empty">Nenhum status de fluxo foi retornado pela API central.</div>
+            @endforelse
+        </div>
+    </section>
+
+    @foreach ($workflowGroups as $group)
         <section class="surface-card mb-4">
             <div class="surface-card-header">
                 <div>
-                    <h2 class="surface-title">{{ $grupoMacro !== '' ? $grupoMacro : 'Sem grupo macro' }}</h2>
-                    <p class="surface-subtitle">Status do fluxo agrupados pela fase macro "{{ $grupoMacro }}".</p>
+                    <h2 class="surface-title">{{ $group['label'] ?? 'Sem grupo macro' }}</h2>
+                    <p class="surface-subtitle">{{ $group['description'] ?? 'Status do fluxo agrupados pela fase macro.' }}</p>
                 </div>
             </div>
 
@@ -42,7 +208,7 @@
                     </tr>
                     </thead>
                     <tbody>
-                    @foreach ($statusesOfGroup as $status)
+                    @foreach ($group['statuses'] ?? [] as $status)
                         @php
                             $statusId = (int) ($status['id'] ?? 0);
                             $active = (bool) ($status['ativo'] ?? false);
@@ -361,8 +527,8 @@
     <section class="surface-table">
         <div class="surface-table-header">
             <div>
-                <h2 class="surface-title">Matriz de transições</h2>
-                <p class="surface-subtitle">Marque para quais status cada situação pode avançar.</p>
+                <h2 class="surface-title">Matriz operacional de transições</h2>
+                <p class="surface-subtitle">Marque para quais status cada situação pode avançar. A matriz abaixo alimenta o diagrama visual acima.</p>
             </div>
         </div>
 

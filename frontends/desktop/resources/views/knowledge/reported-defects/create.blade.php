@@ -19,6 +19,7 @@
     @include('knowledge.reported-defects.form', [
         'defeito' => $defeito ?? [],
         'equipmentTypes' => $equipmentTypes ?? [],
+        'categoryMap' => $categoryMap ?? [],
         'formAction' => route('knowledge.reported-defects.store'),
         'formMethod' => 'POST',
         'formTitle' => 'Cadastro de defeito relatado',

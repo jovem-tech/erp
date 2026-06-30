@@ -256,6 +256,13 @@ Módulos entregues nesta fase:
 - acesso controlado a fotos e documentos
 - preservação de filtros contextuais por cliente e equipamento ao navegar a partir dos módulos relacionados
 
+### Gestão de conhecimento
+
+- fluxo de trabalho de OS publicado em `/conhecimento/fluxo-os`
+- diagrama visual por macrofase com status ordenados e saídas ativas do catálogo
+- matriz editável de transições mantida como fonte de verdade das rotas permitidas
+- modelo ideal da assistência técnica publicado em `/conhecimento/modelo-assistencia-tecnica`, com foco em evitar gargalos, procrastinação e quebra da fila, e com um caminho feliz simulado usando os status atuais
+
 ### Busca completa
 
 - autocomplete no topo

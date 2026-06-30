@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-06-29T06:15:08+02:00`
-- Versao do sistema: `3.4.3`
+- Gerado em: `2026-06-29T22:25:28+02:00`
+- Versao do sistema: `3.4.11`
 - Versao da API: `1.1.0`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Windows/XAMPP`
@@ -111,6 +111,14 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-06-28-endurecimento-seguranca-chat-integracoes.md` - 2026-06-28 - Endurecimento de seguranca do chat e das integracoes
 - `documentacao/07-novas-implementacoes/2026-06-29-configuracoes-sistema-e-precificacao-financeiro-desktop.md` - Configurações do sistema separadas e precificação no financeiro
 - `documentacao/07-novas-implementacoes/2026-06-29-fluxo-caixa-calendario-desktop.md` - Fluxo de caixa com visualização em calendário no desktop
+- `documentacao/07-novas-implementacoes/2026-06-29-fluxo-trabalho-os-visual-desktop.md` - Fluxo de trabalho visual das OS no desktop
+- `documentacao/07-novas-implementacoes/2026-06-29-modelo-assistencia-tecnica-desktop.md` - Modelo ideal da assistência técnica no desktop
+- `documentacao/07-novas-implementacoes/2026-06-29-nova-os-dropdown-equipamento-foto-marca-modelo.md` - Nova OS: dropdown de equipamento com foto e fallback por marca/modelo
+- `documentacao/07-novas-implementacoes/2026-06-29-nova-os-editar-equipamento-selecionado.md` - Nova OS: edicao do equipamento selecionado
+- `documentacao/07-novas-implementacoes/2026-06-29-nova-os-modal-cadastro-equipamento.md` - Nova OS: modal de cadastro completo de equipamento
+- `documentacao/07-novas-implementacoes/2026-06-29-nova-os-modal-equipamento-retorno-iframe.md` - Nova OS: retorno do equipamento criado no iframe
+- `documentacao/07-novas-implementacoes/2026-06-29-nova-os-resumo-cliente-editar.md` - 2026-06-29 - Resumo do cliente e edicao direta na Nova OS
+- `documentacao/07-novas-implementacoes/2026-06-29-select2-manual-init-collision-desktop.md` - 2026-06-29 - Correcao do Select2 manual na criacao de OS do desktop
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 
 ### `documentacao/10-deploy`
@@ -135,4 +143,6 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/012-financeiro-cartoes-taxas-desktop` - Feature Specification: Financeiro - Cartões e Taxas no Desktop | artefatos: spec, plan, tasks, research, quickstart, data_model, contracts
 - `specs/013-fluxo-caixa-calendario-desktop` - Feature Specification: Fluxo de caixa no desktop com lista e calendário | artefatos: spec, plan, tasks
 - `specs/014-configuracoes-sistema-e-precificacao-financeiro-desktop` - Feature Specification: Configuracoes do Sistema e Precificacao no desktop | artefatos: spec, plan, tasks
+- `specs/015-nova-os-wizard-desktop` - Feature Specification: Nova OS em modo wizard no desktop | artefatos: spec, plan, tasks
+- `specs/016-modelo-assistencia-tecnica-desktop` - Feature Specification: Modelo Ideal da Assistência Técnica no Desktop | artefatos: spec, plan, tasks
 

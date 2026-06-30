@@ -5,9 +5,11 @@ namespace Tests\Feature\Api\V1;
 use App\Models\Financeiro;
 use App\Models\FinanceiroMovimento;
 use App\Models\User;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Tests\Concerns\BuildsLegacyErpSchema;
 use Tests\TestCase;
 
@@ -592,6 +594,52 @@ class OrderFlowTest extends TestCase
             'equipamento_id' => $equipmentId,
             'tecnico_id' => $technician->id,
         ]);
+    }
+
+    public function test_admin_can_create_a_new_order_with_private_photos_and_access_them_through_the_authenticated_route(): void
+    {
+        Storage::fake('local');
+
+        [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this
+            ->withHeader('Authorization', 'Bearer ' . $token)
+            ->post('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'tecnico_id' => $technician->id,
+                'status' => 'triagem',
+                'relato_cliente' => 'Cliente informa superaquecimento.',
+                'diagnostico_tecnico' => 'Aguardando análise inicial.',
+                'garantia_dias' => 120,
+                'fotos' => [
+                    UploadedFile::fake()->image('entrada-1.jpg'),
+                    UploadedFile::fake()->image('entrada-2.jpg'),
+                ],
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.order.fotos.0.tipo', 'recepcao');
+
+        $orderId = (int) $response->json('data.order.id');
+        $this->assertGreaterThan(0, $orderId);
+
+        $this->assertDatabaseHas('os_fotos', [
+            'os_id' => $orderId,
+            'tipo' => 'recepcao',
+        ]);
+
+        $photo = DB::table('os_fotos')->where('os_id', $orderId)->orderBy('id')->first();
+        $this->assertNotNull($photo);
+        $this->assertStringStartsWith("private/os/{$orderId}/", (string) $photo->arquivo);
+        Storage::disk('local')->assertExists((string) $photo->arquivo);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->get("/api/v1/orders/{$orderId}/photos/{$photo->id}")
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/jpeg');
     }
 
     public function test_admin_can_update_an_order_and_cache_remains_valid_for_next_requests(): void

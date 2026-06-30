@@ -371,6 +371,7 @@ class EquipmentController extends BaseApiController
             'id' => (int) $equipment->id,
             'cliente_id' => (int) ($equipment->cliente_id ?? 0),
             'cliente_nome' => (string) ($equipment->client?->nome_razao ?? ''),
+            'tipo_id' => (int) ($equipment->tipo_id ?? 0),
             'tipo_nome' => (string) ($equipment->type?->nome ?? ''),
             'marca_nome' => (string) ($equipment->brand?->nome ?? ''),
             'modelo_nome' => (string) ($equipment->model?->nome ?? ''),

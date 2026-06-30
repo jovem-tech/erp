@@ -878,6 +878,13 @@ components:
           type: integer
           minimum: 1
           nullable: true
+        fotos:
+          type: array
+          nullable: true
+          maxItems: 4
+          items:
+            type: string
+            format: binary
         status:
           type: string
           maxLength: 80
@@ -1703,6 +1710,9 @@ components:
       required: true
       content:
         application/json:
+          schema:
+            $ref: "#/components/schemas/UpsertOrderRequest"
+        multipart/form-data:
           schema:
             $ref: "#/components/schemas/UpsertOrderRequest"
     UpdateOrderStatus:

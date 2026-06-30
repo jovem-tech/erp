@@ -15,6 +15,8 @@ class UpsertOrderRequest extends BaseApiFormRequest
             'cliente_id' => [$requiredOrSometimes, 'integer', 'min:1', Rule::exists('clientes', 'id')],
             'equipamento_id' => [$requiredOrSometimes, 'integer', 'min:1', Rule::exists('equipamentos', 'id')],
             'tecnico_id' => ['nullable', 'integer', 'min:1', Rule::exists('usuarios', 'id')],
+            'fotos' => ['nullable', 'array', 'max:4'],
+            'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'status' => [$this->isMethod('post') ? 'nullable' : 'sometimes', 'string', 'max:80', Rule::in(OrderStatus::activeCodes())],
             'estado_fluxo' => ['nullable', 'string', 'max:40'],
             'prioridade' => ['nullable', 'string', Rule::in(['baixa', 'normal', 'alta', 'urgente'])],
