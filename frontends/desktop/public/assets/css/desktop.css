@@ -5530,3 +5530,21 @@ a {
         aspect-ratio: 16 / 10;
     }
 }
+
+@media (max-width: 480px) {
+    .os-tabs-card .equipment-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        flex-wrap: wrap;
+        overflow-x: visible;
+        gap: 0.5rem;
+    }
+
+    .os-tabs-card .equipment-tab {
+        width: 100%;
+        flex: none;
+        justify-content: center;
+        font-size: 0.8rem;
+        padding: 0.55rem 0.8rem;
+    }
+}
