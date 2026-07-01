@@ -219,9 +219,31 @@ a {
 .desktop-sidebar.is-collapsed .desktop-brand-copy,
 .desktop-sidebar.is-collapsed .desktop-nav-section-label,
 .desktop-sidebar.is-collapsed .desktop-nav-link span,
-.desktop-sidebar.is-collapsed .desktop-nav-group-head span,
-.desktop-sidebar.is-collapsed .desktop-nav-sublist {
+.desktop-sidebar.is-collapsed .desktop-nav-group-head span {
     display: none;
+}
+
+/* Em collapsed, esconder submenus POR PADRÃO (regra mais específica) */
+.desktop-sidebar.is-collapsed .desktop-nav-group:not(.is-open) .desktop-nav-sublist {
+    display: none !important;
+}
+
+/* Submenus abertos em collapsed: dropdown absoluto elegante */
+.desktop-sidebar.is-collapsed .desktop-nav-group.is-open .desktop-nav-sublist {
+    position: absolute !important;
+    left: 80px;
+    top: 0;
+    width: 220px;
+    display: grid !important;
+    flex-direction: unset;
+    gap: 0.26rem;
+    padding: 0.5rem 0 !important;
+    margin: 0 !important;
+    background: var(--desktop-surface);
+    border: 1px solid var(--desktop-border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+    z-index: 10001;
 }
 
 /* Manter separadores de seção visualmente em collapsed */
@@ -257,6 +279,12 @@ a {
     color: var(--desktop-primary);
 }
 
+/* Grupos em collapsed precisam de position relative para posicionar submenus */
+.desktop-sidebar.is-collapsed .desktop-nav-group {
+    position: relative;
+    z-index: 10000;
+}
+
 /* Tooltip em modo collapsed — aparece ao hover */
 .desktop-sidebar.is-collapsed .desktop-nav-link:hover::after,
 .desktop-sidebar.is-collapsed .desktop-nav-sublink:hover::after {
@@ -282,6 +310,11 @@ a {
 /* Sublinks também precisam de position relative */
 .desktop-sidebar.is-collapsed .desktop-nav-sublink {
     position: relative;
+    margin-inline: 0.5rem;
+    padding: 0.55rem 0.8rem;
+    width: calc(100% - 1rem);
+    justify-content: flex-start;
+    font-size: 0.9rem;
 }
 
 @keyframes tooltip-fadeIn {
