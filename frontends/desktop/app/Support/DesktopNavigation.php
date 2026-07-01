@@ -125,7 +125,7 @@ class DesktopNavigation
                                 'label' => 'Fornecedores',
                                 'route' => 'suppliers.index',
                                 'module' => 'fornecedores',
-                                'icon' => 'bi-box-seam',
+                                'icon' => 'bi-truck',
                             ],
                             [
                                 'label' => 'Equipe Técnica',
@@ -274,13 +274,13 @@ class DesktopNavigation
                         'label' => 'Integrações',
                         'route' => 'configurations.integrations.index',
                         'module' => 'configuracoes',
-                        'icon' => 'bi-whatsapp',
+                        'icon' => 'bi-plug',
                     ],
                     [
                         'label' => 'Usuários',
                         'route' => 'users.index',
                         'module' => 'usuarios',
-                        'icon' => 'bi-person-badge-fill',
+                        'icon' => 'bi-people-fill',
                     ],
                     [
                         'label' => 'Níveis de Acesso',

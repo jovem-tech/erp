@@ -164,6 +164,84 @@ O desktop continua sem acesso direto ao banco e sem lógica de integração embu
 - `php artisan test tests/Feature/Desktop/DesktopFrontendTest.php --filter equipment` no desktop
 - `php artisan test tests/Feature/Desktop/DesktopFrontendTest.php --filter orcamento` no desktop
 
+## Manutenção do sistema visual
+
+### Design system consolidado
+Desde 2026-07-01, o frontend desktop opera com um **design system tokenizado**:
+
+#### Paleta de cores semântica
+- **Primário:** `#6f5afc` (roxo, gradiente active state até `#8b5cf6`)
+- **Títulos/Headings:** `var(--desktop-heading)` = `#1f2a44` (navy escuro, padroniza 29 ocorrências)
+- **Sucesso (positivo):** `var(--desktop-success-text)` = `#0e8f5d` + `var(--desktop-success-rgb)` = `22, 163, 74`
+- **Perigo (negativo):** `var(--desktop-danger-text)` = `#b91c1c` + `var(--desktop-danger-rgb)` = `239, 68, 68`
+- **Texto mutado:** `var(--desktop-text-muted)` = `#6b7280` (contraste ≥4.5:1 WCAG AA sobre fundo branco)
+- **Superfícies:** `var(--desktop-surface)` (fundo de cards), `var(--desktop-surface-soft)` (fundos suaves)
+
+#### Bootstrap 5.3.3 alineado
+Variáveis de utilitário Bootstrap (`--bs-*`) são sobrescritas no `:root` para alinhar automáticamente com a paleta do sistema:
+- `--bs-success-rgb`, `--bs-danger-rgb`, `--bs-secondary-color` mapeiam para tokens desktop
+- Afeta `.text-danger`, `.text-success`, `.text-muted` e variações sem necessidade de editar as 150+ ocorrências nas views
+
+#### Tipografia
+- **Fonte:** Plus Jakarta Sans, pesos 400/500/600/700/800 (self-hosted, woff2)
+- **Sem `font-weight: 900`:** todos os 23 usos normalizados para 800 (a fonte não possui 900; a renderização anterior era faux-bold)
+- **Tamanhos base:** definidos em tokens `--desktop-text-*` e aplicados via classes semânticas
+
+#### Escala de border-radius semântica
+- `--desktop-radius-control` = `14px` (campos de formulário, botões pequenos)
+- `--desktop-radius-md` = `12px` (cards, pills médias)
+- `--desktop-radius-lg` = `20px` (cards grandes, superfícies principais)
+- `--desktop-radius-full` = `999px` (pills, avatares)
+
+**Impacto visual:** consolidação resulta em **zero mudança perceptível** na aparência; apenas elimina fragmentação, duplicação e intenções mortas no CSS.
+
+### Robustez offline
+Todas as bibliotecas JavaScript e CSS, incluindo ícones e fontes web, são **self-hosted** em `public/assets/libs/` e `public/assets/fonts/`:
+- ✅ Bootstrap 5.3.3 (CSS + JS)
+- ✅ Bootstrap Icons (CSS + woff2 fonts)
+- ✅ Select2 + tema Bootstrap 5
+- ✅ SweetAlert2
+- ✅ jQuery 3.7.1
+- ✅ Chart.js
+- ✅ CropperJS
+- ✅ Plus Jakarta Sans (local `@font-face`)
+
+**Benefício:** aplicação funciona em modo offline ou em LAN desconectada da internet; não há ponto único de falha via CDN (googleapis.com, jsDelivr, etc.).
+
+### Responsividade em mobile
+Abas de detalhes de OS (`.os-tabs-card`) em devices ≤480px renderizam como **grid 2-coluna** (6 botões em layout 2×3) em vez de carousel horizontal, evitando transbordamento:
+```css
+@media (max-width: 480px) {
+    .os-tabs-card .equipment-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+    }
+    .os-tabs-card .equipment-tab {
+        width: 100%;
+        font-size: 0.8rem;
+        padding: 0.55rem 0.8rem;
+    }
+}
+```
+
+### Sidebar em modo retraído (collapsed)
+A navegação lateral em modo retraído (80px) oferece experiência de usuário robusta:
+
+#### ✅ Acessibilidade
+- **Zona de clique**: 44x44px mínimo (atende WCAG AAA para mobile)
+- **Separadores visuais**: Linhas entre seções mesmo em collapsed, mantendo hierarquia
+
+#### ✅ Usabilidade
+- **Tooltips ao hover**: Mostram o nome completo do link em navy com animação suave (puro CSS, sem JS)
+- **Feedback visual**: Hover com sombra inset 1.5px + background roxo 0.06
+- **Active state**: Triple feedback — sombra interna + glow externo + cor primária + background
+
+#### ✅ Clareza
+- **Ícones únicos**: Sem duplicatas (`bi-truck` para Fornecedores, `bi-plug` para Integrações)
+- **Semântica visual**: Cada ícone possui significado claro em contexto colapsado
+
+**Mais detalhes**: `SIDEBAR_IMPROVEMENTS.md`
+
 ## Próximo passo natural
 
 Expandir o desktop para uma paridade mais completa dos módulos do legado, mantendo o mesmo padrão: Blade + services + API central, sem acesso direto ao banco.

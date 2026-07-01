@@ -228,7 +228,7 @@
                             $canEditOrder = \App\Support\DesktopSession::can('os', 'editar');
                             $canCloseOrder = $canEditOrder && ! in_array($estadoFluxo, ['encerrado', 'cancelado'], true);
                         @endphp
-                        <tr>
+                        <tr data-order-id="{{ $orderId }}">
                             <td data-label="Foto / OS">
                                 <div class="os-photo-cell">
                                     @if ($fotoUrl !== '')
@@ -372,4 +372,23 @@
             ])
         @endif
     </section>
+@endsection
+
+@section('scripts')
+    <script>
+        window.__DESKTOP_ORDER_LIST = {!! json_encode([
+            'channelName'        => 'orders',
+            'broadcastAuthUrl'   => env('DESKTOP_BROADCAST_AUTH_URL', ''),
+            'pusherKey'          => env('REVERB_APP_KEY', ''),
+            'pusherHost'         => env('REVERB_HOST', 'localhost'),
+            'pusherPort'         => (int) env('REVERB_PORT', 8090),
+            'pusherScheme'       => env('REVERB_SCHEME', 'http'),
+            'apiToken'           => \App\Support\DesktopSession::token() ?? '',
+            'hasFilters'         => $hasAnyFilters,
+            'ordersShowUrlBase'  => rtrim(route('orders.show', ['order' => 0]), '0'),
+        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
+    </script>
+    @if (file_exists(public_path('assets/js/orders-list.js')))
+        <script src="{{ asset('assets/js/orders-list.js') }}?v={{ filemtime(public_path('assets/js/orders-list.js')) }}"></script>
+    @endif
 @endsection

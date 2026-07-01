@@ -72,7 +72,7 @@
                                     data-desktop-nav-group-toggle
                                     aria-expanded="{{ $isGroupActive ? 'true' : 'false' }}"
                                 >
-                                    <span class="desktop-nav-link {{ $isGroupActive ? 'is-active' : '' }}">
+                                    <span class="desktop-nav-link {{ $isGroupActive ? 'is-active' : '' }}" data-label="{{ $item['label'] }}">
                                         <i class="bi {{ $item['icon'] }}"></i>
                                         <span>{{ $item['label'] }}</span>
                                     </span>
@@ -88,7 +88,7 @@
                                         @endphp
                                         @if ($childRouteExists)
                                         <li class="desktop-nav-subitem">
-                                            <a href="{{ route($childRoute) }}" class="desktop-nav-sublink {{ $childActive ? 'is-active' : '' }}">
+                                            <a href="{{ route($childRoute) }}" class="desktop-nav-sublink {{ $childActive ? 'is-active' : '' }}" data-label="{{ $child['label'] ?? '' }}">
                                                 <i class="bi {{ $child['icon'] ?? 'bi-dot' }}"></i>
                                                 <span>{{ $child['label'] ?? '' }}</span>
                                             </a>
@@ -104,7 +104,7 @@
                             @endphp
                             @if ($routeExists)
                                 <li>
-                                    <a href="{{ route($item['route']) }}" class="desktop-nav-link {{ $isActive ? 'is-active' : '' }}">
+                                    <a href="{{ route($item['route']) }}" class="desktop-nav-link {{ $isActive ? 'is-active' : '' }}" data-label="{{ $item['label'] }}">
                                         <i class="bi {{ $item['icon'] }}"></i>
                                         <span>{{ $item['label'] }}</span>
                                     </a>

@@ -80,6 +80,7 @@
     <script src="{{ asset('assets/libs/bootstrap/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ asset('assets/libs/select2/select2.min.js') }}"></script>
     <script src="{{ asset('assets/libs/sweetalert2/sweetalert2.all.min.js') }}"></script>
+    <script src="{{ asset('assets/libs/pusher-js/pusher.min.js') }}"></script>
     <script src="{{ asset('assets/js/desktop.js') }}?v={{ filemtime(public_path('assets/js/desktop.js')) }}"></script>
     @yield('scripts')
 </body>

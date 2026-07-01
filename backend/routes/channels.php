@@ -27,3 +27,8 @@ Broadcast::channel('conversa.{conversaId}', function (User $user, int $conversaI
     return app(RbacAuthorizationService::class)->allows($user, 'atendimento_whatsapp', 'visualizar')
         && app(ConversationAccessService::class)->canAccessConversation($user, $conversation);
 });
+
+// Listagem de OS em tempo real (desktop frontend).
+Broadcast::channel('orders', function (User $user) {
+    return app(RbacAuthorizationService::class)->allows($user, 'os', 'visualizar');
+});

@@ -712,6 +712,19 @@ class OrderWorkflowService
                     'icon' => 'clipboard-plus',
                 ]
             );
+
+            broadcast(new \App\Events\OrderCreated([
+                'id'                   => (int) $createdOrder->id,
+                'numero_os'            => (string) ($createdOrder->numero_os ?? ''),
+                'cliente_nome'         => (string) ($createdOrder->client?->nome_razao ?? ''),
+                'cliente_telefone'     => (string) ($createdOrder->client?->telefone1 ?? ''),
+                'equipamento_resumo'   => (string) ($createdOrder->equipment?->resumo_tecnico ?? ''),
+                'equipamento_serie'    => (string) ($createdOrder->equipment?->numero_serie ?? ''),
+                'status_nome'          => (string) ($createdOrder->statusCatalog?->nome ?? ''),
+                'status_cor'           => (string) ($createdOrder->statusCatalog?->cor ?? '#64748b'),
+                'estado_fluxo'         => (string) ($createdOrder->estado_fluxo ?? ''),
+                'data_entrada'         => $createdOrder->data_entrada?->format('d/m/Y') ?? '',
+            ]))->afterResponse();
         }
 
         return [
