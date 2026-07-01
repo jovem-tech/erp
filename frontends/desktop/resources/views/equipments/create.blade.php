@@ -135,7 +135,7 @@
 @endphp
 
 @section('styles')
-    <link href="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.css" rel="stylesheet">
+    <link href="{{ asset('assets/libs/cropperjs/cropper.min.css') }}" rel="stylesheet">
 @endsection
 
 @section('content')
@@ -553,7 +553,7 @@
 @endsection
 
 @section('scripts')
-    <script src="https://cdn.jsdelivr.net/npm/cropperjs@1.6.2/dist/cropper.min.js"></script>
+    <script src="{{ asset('assets/libs/cropperjs/cropper.min.js') }}"></script>
     <script>
         window.__EQUIPMENT_CREATE = {!! \Illuminate\Support\Js::from([
             'isEdit' => $isEditMode,

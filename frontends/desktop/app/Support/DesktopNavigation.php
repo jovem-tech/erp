@@ -191,10 +191,10 @@ class DesktopNavigation
                 ],
             ],
             [
-                'label' => 'Gestão de Conhecimento',
+                'label' => 'Conhecimento',
                 'items' => [
                     [
-                        'label' => 'Gestão de Conhecimento',
+                        'label' => 'Base de Conhecimento',
                         'icon' => 'bi-journal-bookmark-fill',
                         'children' => [
                             [

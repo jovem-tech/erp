@@ -49,10 +49,31 @@
         $orcamento = $order['orcamento'] ?? null;
         $hasOrcamento = $orcamento !== null;
         $checklist = $order['checklist'] ?? null;
+
+        // Trilha de progresso enxuta: concluídas (limitadas) + etapa atual + próximas reais.
+        $concluded = [];
+        foreach ($statusOptions as $option) {
+            if ($currentOrdem !== null && (int) ($option['ordem_fluxo'] ?? 0) < $currentOrdem) {
+                $concluded[] = $option;
+            }
+        }
+        $hiddenConcluded = max(0, count($concluded) - 3);
+        $concluded = array_slice($concluded, -3);
+
+        $progressSteps = [];
+        foreach ($concluded as $option) {
+            $progressSteps[] = ['opt' => $option, 'state' => 'concluido'];
+        }
+        if ($currentOption !== null) {
+            $progressSteps[] = ['opt' => $currentOption, 'state' => 'atual'];
+        }
+        foreach ($nextSteps as $option) {
+            $progressSteps[] = ['opt' => $option, 'state' => 'proximo'];
+        }
     @endphp
 
     {{-- Cabeçalho + ações principais --}}
-    <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
+    <div class="d-flex flex-wrap justify-content-between gap-3 mb-4 os-detail-header">
         <div>
             <p class="desktop-eyebrow">Ordem de serviço</p>
             <h2 class="surface-title fs-3 mb-2">{{ ($order['numero_os'] ?? '') !== '' ? $order['numero_os'] : '#' . ($order['id'] ?? 0) }}</h2>
@@ -66,7 +87,7 @@
             </div>
         </div>
 
-        <div class="d-flex flex-wrap gap-2 align-items-start">
+        <div class="d-flex flex-wrap gap-2 align-items-start os-header-actions">
             <a href="{{ route('orders.index') }}" class="btn btn-outline-light">
                 <i class="bi bi-arrow-left me-2"></i>Voltar
             </a>
@@ -107,31 +128,32 @@
                 </div>
             </article>
 
-            <article class="surface-card">
-                <div class="surface-card-header">
+            <details class="surface-card os-progress-card" data-os-progress open>
+                <summary class="os-progress-summary">
                     <div>
                         <h2 class="surface-title fs-6"><i class="bi bi-diagram-3 me-1"></i>Histórico e Progresso</h2>
-                        <p class="surface-subtitle">Etapas percorridas, etapa atual e próximos movimentos prováveis.</p>
+                        <p class="surface-subtitle mb-0">
+                            Etapa atual:
+                            <strong>{{ ($order['status_nome'] ?? '') !== '' ? $order['status_nome'] : 'Sem status' }}</strong>
+                        </p>
                     </div>
-                </div>
+                    <i class="bi bi-chevron-down os-progress-chevron"></i>
+                </summary>
 
-                @if ($statusOptions !== [])
+                @if ($progressSteps !== [])
                     <ol class="os-progress">
-                        @foreach ($statusOptions as $option)
-                            @php
-                                $optionOrdem = (int) ($option['ordem_fluxo'] ?? 0);
-                                $isCurrent = ($option['codigo'] ?? '') === $currentCode;
-                                $isDone = $currentOrdem !== null && $optionOrdem < $currentOrdem;
-                                $state = $isCurrent ? 'atual' : ($isDone ? 'concluido' : 'proximo');
-                            @endphp
-                            <li class="os-progress-step is-{{ $state }}">
+                        @if ($hiddenConcluded > 0)
+                            <li class="os-progress-more">+{{ $hiddenConcluded }} etapa(s) anterior(es)</li>
+                        @endif
+                        @foreach ($progressSteps as $step)
+                            <li class="os-progress-step is-{{ $step['state'] }}">
                                 <span class="os-progress-dot"></span>
                                 <div>
-                                    <strong>{{ $option['nome'] ?? $option['codigo'] ?? 'Etapa' }}</strong>
+                                    <strong>{{ $step['opt']['nome'] ?? $step['opt']['codigo'] ?? 'Etapa' }}</strong>
                                     <small>
-                                        @if ($isCurrent) Etapa atual
-                                        @elseif ($isDone) Concluída
-                                        @else Provável
+                                        @if ($step['state'] === 'atual') Etapa atual
+                                        @elseif ($step['state'] === 'concluido') Concluída
+                                        @else Próxima provável
                                         @endif
                                     </small>
                                 </div>
@@ -141,12 +163,12 @@
                 @else
                     <p class="surface-subtitle mb-0">Nenhuma etapa de fluxo cadastrada no catálogo de status.</p>
                 @endif
-            </article>
+            </details>
         </aside>
 
         {{-- Painel principal: resumo + abas --}}
         <div class="os-detail-main">
-            <section class="desktop-grid desktop-grid-three mb-4">
+            <section class="desktop-grid desktop-grid-three mb-4 os-summary-section">
                 <article class="summary-card">
                     <span class="summary-card-eyebrow">Cliente</span>
                     <div class="summary-card-value">{{ ($order['cliente_nome'] ?? '') !== '' ? $order['cliente_nome'] : 'Não informado' }}</div>
@@ -199,26 +221,16 @@
 
                 {{-- Aba: Informações --}}
                 <div class="equipment-tab-panel is-active" data-os-panel="informacoes">
-                    <div class="os-panel-block">
-                        <h3 class="os-panel-title"><i class="bi bi-activity me-1"></i>Status atual da OS</h3>
-                        <div class="d-flex flex-wrap gap-2 mb-3">
-                            @include('layouts.partials.status-pill', [
-                                'label' => ($order['status_nome'] ?? '') !== '' ? $order['status_nome'] : 'Sem status',
-                                'color' => $order['status_cor'] ?? '#64748b',
-                            ])
-                            <span class="desktop-chip">{{ ($order['estado_fluxo'] ?? '') !== '' ? ucfirst(str_replace('_', ' ', $order['estado_fluxo'])) : 'Fluxo não definido' }}</span>
-                            <span class="desktop-chip">{{ ($order['prioridade'] ?? '') !== '' ? ucfirst(str_replace('_', ' ', $order['prioridade'])) : 'Prioridade não definida' }}</span>
-                        </div>
-
-                        @if ($nextSteps !== [])
-                            <p class="surface-subtitle mb-2">Próximas etapas prováveis</p>
+                    @if ($nextSteps !== [])
+                        <div class="os-panel-block">
+                            <h3 class="os-panel-title"><i class="bi bi-signpost-split me-1"></i>Próximas etapas prováveis</h3>
                             <div class="d-flex flex-wrap gap-2">
                                 @foreach ($nextSteps as $step)
                                     <span class="os-next-step">{{ $step['nome'] ?? $step['codigo'] }}</span>
                                 @endforeach
                             </div>
-                        @endif
-                    </div>
+                        </div>
+                    @endif
 
                     @if (\App\Support\DesktopSession::can('os', 'editar'))
                         <div class="os-panel-block">
@@ -427,7 +439,7 @@
             </article>
 
             {{-- Histórico real de movimentações --}}
-            <section class="surface-card mt-4">
+            <section class="surface-card mt-4 os-history-section">
                 <div class="surface-card-header">
                     <div>
                         <h2 class="surface-title fs-6"><i class="bi bi-clock-history me-1"></i>Histórico recente da OS</h2>
@@ -492,6 +504,25 @@
             if (initial && tabs.some((tab) => tab.dataset.osTab === initial)) {
                 activate(initial);
             }
+
+            // Mantém a aba ativa visível na faixa rolável ao trocar (sem rolar a página).
+            tabs.forEach((tab) => tab.addEventListener('click', () => {
+                tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            }));
+        })();
+
+        // Progresso: aberto no desktop, recolhido no mobile (o usuário pode expandir).
+        (function () {
+            const progress = document.querySelector('[data-os-progress]');
+            if (!progress) {
+                return;
+            }
+            const mq = window.matchMedia('(max-width: 992px)');
+            const sync = (event) => {
+                progress.open = !event.matches;
+            };
+            sync(mq);
+            mq.addEventListener('change', sync);
         })();
     </script>
 @endsection

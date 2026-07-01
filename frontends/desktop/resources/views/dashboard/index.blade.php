@@ -420,7 +420,7 @@
 @endsection
 
 @section('scripts')
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <script src="{{ asset('assets/libs/chartjs/chart.umd.min.js') }}"></script>
     <script src="{{ asset('assets/js/dashboard.js') }}"></script>
 @endsection
 

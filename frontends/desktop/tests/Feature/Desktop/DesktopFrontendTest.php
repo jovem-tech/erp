@@ -597,6 +597,8 @@ class DesktopFrontendTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('Conhecimento')
+            ->assertSee('Base de Conhecimento')
             ->assertSee('Mapa visual do andamento')
             ->assertSee('Recepção')
             ->assertSee('Diagnóstico')

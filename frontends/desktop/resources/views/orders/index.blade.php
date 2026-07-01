@@ -42,10 +42,9 @@
         <div class="surface-card-header">
             <div>
                 <h2 class="surface-title">Filtro operacional de OS</h2>
-                @if ($usesOpenQueueScope)
-                @else
+                @unless ($usesOpenQueueScope)
                     <p class="surface-subtitle">Listagem administrativa ou técnica conforme as permissões efetivas do usuário.</p>
-                @endif
+                @endunless
             </div>
             <div class="d-flex align-items-center gap-2">
                 <span class="desktop-chip">{{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} resultados</span>
