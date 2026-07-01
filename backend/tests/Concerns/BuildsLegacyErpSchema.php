@@ -28,6 +28,7 @@ trait BuildsLegacyErpSchema
             'os_documentos',
             'os_fotos',
             'os_status_historico',
+            'os_status_transicoes',
             'os_status',
             'os',
             'orcamento_aprovacoes',
@@ -81,6 +82,7 @@ trait BuildsLegacyErpSchema
         $this->createEquipmentCollectorPairingsTable();
         $this->createMobileNotificationsTable();
         $this->createOrderStatusesTable();
+        $this->createOrderStatusTransitionsTable();
         $this->createOrdersTable();
         $this->createOrderStatusHistoryTable();
         $this->createOrderPhotosTable();
@@ -943,6 +945,19 @@ trait BuildsLegacyErpSchema
             $table->boolean('ativo')->default(true);
             $table->dateTime('created_at')->nullable();
             $table->dateTime('updated_at')->nullable();
+        });
+    }
+
+    private function createOrderStatusTransitionsTable(): void
+    {
+        Schema::create('os_status_transicoes', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('status_origem_id');
+            $table->unsignedBigInteger('status_destino_id');
+            $table->boolean('ativo')->default(true);
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
+            $table->index(['status_origem_id', 'ativo'], 'idx_os_status_transicoes_origem');
         });
     }
 

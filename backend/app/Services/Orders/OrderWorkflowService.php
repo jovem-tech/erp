@@ -12,6 +12,7 @@ use App\Models\OrderDocument;
 use App\Models\OrderPhoto;
 use App\Models\OrderStatus;
 use App\Models\OrderStatusHistory;
+use App\Models\OrderStatusTransition;
 use App\Models\User;
 use App\Notifications\MobileNotification;
 use App\Services\Financeiro\OsMargemService;
@@ -562,6 +563,20 @@ class OrderWorkflowService
 
         $now = Carbon::now();
         $previousStatus = trim((string) ($order->status ?? ''));
+
+        // Só permite mover para uma etapa de destino prevista no catálogo de transições.
+        // Se a origem não possui transições cadastradas, mantém o comportamento permissivo.
+        if ($previousStatus !== '' && $newStatus !== $previousStatus) {
+            $allowed = $this->allowedTransitionCodes($previousStatus);
+            if ($allowed !== [] && ! in_array($newStatus, $allowed, true)) {
+                return [
+                    'result' => 'invalid_transition',
+                    'status_atual' => $previousStatus,
+                    'proximas_etapas' => $this->mapNextStatusOptions($previousStatus),
+                ];
+            }
+        }
+
         $estadoFluxo = trim((string) ($statusRow->estado_fluxo_padrao ?? '')) ?: 'em_atendimento';
 
         DB::transaction(function () use ($orderId, $previousStatus, $newStatus, $estadoFluxo, $actor, $observacao, $now): void {
@@ -1098,9 +1113,205 @@ class OrderWorkflowService
             'observacoes_cliente' => (string) ($order->observacoes_cliente ?? ''),
             'historico' => $this->mapHistoryCollection($order->statusHistory),
             'status_disponiveis' => $this->mapStatusOptions(),
+            'proximas_etapas' => $this->mapNextStatusOptions((string) ($order->status ?? '')),
             'fotos' => $this->mapPhotoCollection($order->photos, (int) ($order->id ?? 0)),
+            'equipamento_foto' => $this->mapEquipmentPrincipalPhoto($order->equipment),
             'documentos' => $this->mapDocumentCollection($order->documents, (int) ($order->id ?? 0)),
+            'orcamento' => $this->mapLinkedBudget((int) ($order->id ?? 0)),
+            'checklist' => $this->mapEntryChecklist((int) ($order->id ?? 0)),
         ];
+    }
+
+    /**
+     * Etapas de destino permitidas a partir do status atual (catálogo de transições).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function mapNextStatusOptions(string $currentCode): array
+    {
+        $currentCode = trim($currentCode);
+        if ($currentCode === '' || ! Schema::hasTable('os_status_transicoes')) {
+            return [];
+        }
+
+        $current = OrderStatus::query()
+            ->where('codigo', $currentCode)
+            ->first();
+        if (! $current instanceof OrderStatus) {
+            return [];
+        }
+
+        $destinoIds = OrderStatusTransition::query()
+            ->where('status_origem_id', (int) $current->id)
+            ->where('ativo', 1)
+            ->pluck('status_destino_id')
+            ->map(static fn ($id): int => (int) $id)
+            ->all();
+
+        if ($destinoIds === []) {
+            return [];
+        }
+
+        return OrderStatus::query()
+            ->whereIn('id', $destinoIds)
+            ->where('ativo', 1)
+            ->orderBy('ordem_fluxo')
+            ->get()
+            ->map(static function (OrderStatus $status): array {
+                return [
+                    'codigo' => (string) ($status->codigo ?? ''),
+                    'nome' => (string) ($status->nome ?? ''),
+                    'grupo_macro' => (string) ($status->grupo_macro ?? ''),
+                    'cor' => (string) ($status->cor ?? ''),
+                    'icone' => (string) ($status->icone ?? ''),
+                    'ordem_fluxo' => (int) ($status->ordem_fluxo ?? 0),
+                    'status_final' => (bool) ($status->status_final ?? false),
+                    'estado_fluxo_padrao' => (string) ($status->estado_fluxo_padrao ?? ''),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Códigos de status de destino permitidos a partir do status informado.
+     *
+     * @return array<int, string>
+     */
+    private function allowedTransitionCodes(string $currentCode): array
+    {
+        return array_values(array_filter(array_map(
+            static fn (array $option): string => (string) ($option['codigo'] ?? ''),
+            $this->mapNextStatusOptions($currentCode)
+        ), static fn (string $code): bool => $code !== ''));
+    }
+
+    /**
+     * Foto de perfil do equipamento (equipamentos_fotos.is_principal), para a coluna lateral.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function mapEquipmentPrincipalPhoto(?Equipment $equipment): ?array
+    {
+        if (! $equipment instanceof Equipment || (int) ($equipment->id ?? 0) <= 0 || ! Schema::hasTable('equipamentos_fotos')) {
+            return null;
+        }
+
+        $equipmentId = (int) $equipment->id;
+
+        $photo = DB::table('equipamentos_fotos')
+            ->where('equipamento_id', $equipmentId)
+            ->orderByDesc('is_principal')
+            ->orderBy('id')
+            ->first(['id', 'arquivo', 'is_principal']);
+
+        if ($photo === null) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $photo->id,
+            'equipamento_id' => $equipmentId,
+            'is_principal' => (bool) ($photo->is_principal ?? false),
+            'nome_arquivo' => $photo->arquivo !== null ? basename((string) $photo->arquivo) : '',
+            'url' => route('api.v1.equipments.photos.show', [
+                'equipment' => $equipmentId,
+                'photo' => (int) $photo->id,
+            ], false),
+        ];
+    }
+
+    /**
+     * Orçamento vinculado à OS (o mais recente), resumido para exibição.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function mapLinkedBudget(int $orderId): ?array
+    {
+        if ($orderId <= 0) {
+            return null;
+        }
+
+        $budget = Budget::query()
+            ->where('os_id', $orderId)
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $budget instanceof Budget) {
+            return null;
+        }
+
+        $status = (string) ($budget->status ?? '');
+
+        return [
+            'id' => (int) ($budget->id ?? 0),
+            'numero' => (string) ($budget->numero ?? ''),
+            'versao' => (int) ($budget->versao ?? 1),
+            'tipo_orcamento' => (string) ($budget->tipo_orcamento ?? ''),
+            'status' => $status,
+            'status_label' => $this->humanizeBudgetStatus($status),
+            'aprovado' => $status === Budget::STATUS_APPROVED || ($budget->aprovado_em ?? null) !== null,
+            'subtotal' => $this->normalizeDecimalString($budget->subtotal ?? null),
+            'desconto' => $this->normalizeDecimalString($budget->desconto ?? null),
+            'total' => $this->normalizeDecimalString($budget->total ?? null),
+            'validade_data' => $this->formatDate($budget->validade_data ?? null),
+            'enviado_em' => $this->formatDateTime($budget->enviado_em ?? null),
+            'aprovado_em' => $this->formatDateTime($budget->aprovado_em ?? null),
+            'created_at' => $this->formatDateTime($budget->created_at ?? null),
+        ];
+    }
+
+    /**
+     * Checklist de entrada (execução mais recente) da OS.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function mapEntryChecklist(int $orderId): ?array
+    {
+        if ($orderId <= 0 || ! Schema::hasTable('checklist_execucoes')) {
+            return null;
+        }
+
+        $execution = DB::table('checklist_execucoes')
+            ->where('os_id', $orderId)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($execution === null) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $execution->id,
+            'status' => (string) ($execution->status ?? ''),
+            'total_itens' => (int) ($execution->total_itens ?? 0),
+            'total_discrepancias' => (int) ($execution->total_discrepancias ?? 0),
+            'resumo_texto' => trim((string) ($execution->resumo_texto ?? '')),
+            'concluido_em' => $this->formatDateTime($execution->concluido_em ?? null),
+        ];
+    }
+
+    private function humanizeBudgetStatus(string $status): string
+    {
+        $status = strtolower(trim($status));
+        if ($status === '') {
+            return 'Sem status';
+        }
+
+        $map = [
+            Budget::STATUS_DRAFT => 'Rascunho',
+            Budget::STATUS_PENDING_SEND => 'Pendente de envio',
+            Budget::STATUS_SENT => 'Enviado',
+            Budget::STATUS_WAITING_REPLY => 'Aguardando resposta',
+            Budget::STATUS_WAITING_PACKAGE => 'Aguardando pacote',
+            Budget::STATUS_PACKAGE_APPROVED => 'Pacote aprovado',
+            Budget::STATUS_PENDING => 'Pendente',
+            Budget::STATUS_APPROVED => 'Aprovado',
+            Budget::STATUS_RESEND => 'Reenviar orçamento',
+            Budget::STATUS_PENDING_OS => 'Pendente abertura de OS',
+        ];
+
+        return $map[$status] ?? ucwords(str_replace('_', ' ', $status));
     }
 
     /**

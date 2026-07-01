@@ -564,6 +564,48 @@ class OrderFlowTest extends TestCase
         $this->assertNotEmpty($response->json('error.details.status'));
     }
 
+    public function test_patch_status_blocks_transition_not_allowed_by_catalog(): void
+    {
+        [$user, $assignedOrder] = $this->seedTechnicianOrders();
+        $token = $this->loginAndGetToken($user->email);
+
+        $triagemId = (int) DB::table('os_status')->where('codigo', 'triagem')->value('id');
+        $aguardandoId = (int) DB::table('os_status')->where('codigo', 'aguardando_reparo')->value('id');
+
+        // Só existe transição triagem -> aguardando_reparo.
+        DB::table('os_status_transicoes')->insert([
+            'status_origem_id' => $triagemId,
+            'status_destino_id' => $aguardandoId,
+            'ativo' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Destino fora das transições permitidas é recusado.
+        $blocked = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
+                'status' => 'entregue_reparado',
+            ]);
+
+        $blocked->assertUnprocessable()
+            ->assertJsonPath('error.code', 'ORDER_STATUS_TRANSITION_INVALID')
+            ->assertJsonPath('error.details.proximas_etapas.0.codigo', 'aguardando_reparo');
+
+        $this->assertDatabaseHas('os', [
+            'id' => $assignedOrder,
+            'status' => 'triagem',
+        ]);
+
+        // Destino permitido continua funcionando.
+        $allowed = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
+                'status' => 'aguardando_reparo',
+            ]);
+
+        $allowed->assertOk()
+            ->assertJsonPath('data.status_novo', 'aguardando_reparo');
+    }
+
     public function test_admin_can_create_a_new_order(): void
     {
         [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();

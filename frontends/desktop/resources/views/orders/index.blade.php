@@ -272,16 +272,22 @@
                             <td data-label="Datas">
                                 <div class="os-dates-cell">
                                     <div><span class="text-secondary small">Entrada:</span> {{ $dataEntrada ?? 'Não informada' }}</div>
-                                    <div>
-                                        <span class="text-secondary small">Prazo:</span>
-                                        @include('layouts.partials.status-pill', [
-                                            'label' => ($deadline['label'] ?? 'Sem previsão') . (($deadline['dias'] ?? null) !== null ? ' (' . $deadline['dias'] . 'd)' : ''),
-                                            'color' => $deadlineColor,
-                                            'small' => true,
-                                        ])
-                                    </div>
-                                    <div><span class="text-secondary small">Conclusão:</span> {{ $dataConclusao ?? 'Não concluída' }}</div>
-                                    <div><span class="text-secondary small">Entrega:</span> {{ $dataEntrega ?? 'Não entregue' }}</div>
+                                    @if ($deadline !== [] && ($deadline['estado'] ?? 'sem_previsao') !== 'sem_previsao')
+                                        <div>
+                                            <span class="text-secondary small">Prazo:</span>
+                                            @include('layouts.partials.status-pill', [
+                                                'label' => ($deadline['label'] ?? '') . (($deadline['dias'] ?? null) !== null ? ' (' . $deadline['dias'] . 'd)' : ''),
+                                                'color' => $deadlineColor,
+                                                'small' => true,
+                                            ])
+                                        </div>
+                                    @endif
+                                    @if ($dataConclusao !== null)
+                                        <div><span class="text-secondary small">Conclusão:</span> {{ $dataConclusao }}</div>
+                                    @endif
+                                    @if ($dataEntrega !== null)
+                                        <div><span class="text-secondary small">Entrega:</span> {{ $dataEntrega }}</div>
+                                    @endif
                                 </div>
                             </td>
                             <td data-label="Status / Orçamento">
