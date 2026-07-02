@@ -195,6 +195,37 @@ Variáveis de utilitário Bootstrap (`--bs-*`) são sobrescritas no `:root` para
 
 **Impacto visual:** consolidação resulta em **zero mudança perceptível** na aparência; apenas elimina fragmentação, duplicação e intenções mortas no CSS.
 
+### Temas e identidade visual (desde 2026-07-02)
+
+O desktop suporta **múltiplos temas** selecionáveis pelo usuário em `Configurações > Sistema > Aparência`.
+
+#### Temas disponíveis
+
+| Tema | Slug | Primário | Sidebar | Background |
+|------|------|----------|---------|------------|
+| Padrão | `default` | `#6f5afc` (roxo) | Branca | `#f5f7fc` |
+| Jovem Tech | `jovem-tech` | `#3868B0` (azul) | Navy gradient `#254F8D → #1E4278` | `#F4F8FF` |
+
+#### Arquitetura dos temas
+
+- **Arquivo de tema:** `public/assets/css/themes/{slug}.css`
+- **Escopo CSS:** bloco `[data-theme="{slug}"]` — sem impacto no tema padrão
+- **Aplicação:** atributo `data-theme` no `<html>` via diretiva `@if` no `app.blade.php`
+- **Preferência:** armazenada em sessão Laravel (`desktop_theme`) — sem migração de banco
+- **Carregamento:** CSS do tema é incluído condicionalmente após `desktop.css`, sobrescrevendo apenas as propriedades necessárias
+
+#### Adicionar um novo tema
+
+1. Criar `public/assets/css/themes/{slug}.css` com bloco `[data-theme="{slug}"] { ... }`
+2. Adicionar `{slug}` à lista `$allowed` em `ConfigurationController::updateAppearance()`
+3. Adicionar um card de preview na view `configurations/system.blade.php`
+
+#### Sublinks em modo colapsado
+
+O flyout do sidebar colapsado usa fundo branco (`--desktop-surface`). O seletor de cor dos sublinks deve ser separado:
+- Sidebar **expandida:** `color: rgba(255,255,255,0.72)` (via `:not(.is-collapsed)`)
+- Flyout **colapsado:** `color: #1F2937` (texto escuro sobre fundo branco)
+
 ### Robustez offline
 Todas as bibliotecas JavaScript e CSS, incluindo ícones e fontes web, são **self-hosted** em `public/assets/libs/` e `public/assets/fonts/`:
 - ✅ Bootstrap 5.3.3 (CSS + JS)

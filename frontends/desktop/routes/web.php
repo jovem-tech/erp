@@ -71,6 +71,8 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/configuracoes/sistema', [ConfigurationController::class, 'system'])
         ->middleware('desktop.permission:configuracoes,visualizar')
         ->name('configurations.system.index');
+    Route::post('/configuracoes/aparencia', [ConfigurationController::class, 'updateAppearance'])
+        ->name('configurations.appearance.update');
     Route::get('/configuracoes/integracoes', [ConfigurationController::class, 'integrations'])
         ->middleware('desktop.permission:configuracoes,visualizar')
         ->name('configurations.integrations.index');

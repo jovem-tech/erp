@@ -218,8 +218,7 @@ a {
 
 .desktop-sidebar.is-collapsed .desktop-brand-copy,
 .desktop-sidebar.is-collapsed .desktop-nav-section-label,
-.desktop-sidebar.is-collapsed .desktop-nav-link span,
-.desktop-sidebar.is-collapsed .desktop-nav-group-head span {
+.desktop-sidebar.is-collapsed .desktop-nav-link span {
     display: none;
 }
 
@@ -230,10 +229,12 @@ a {
 
 /* Submenus abertos em collapsed: dropdown absoluto elegante */
 .desktop-sidebar.is-collapsed .desktop-nav-group.is-open .desktop-nav-sublist {
-    position: absolute !important;
-    left: 80px;
+    position: fixed !important;
+    left: 0;
     top: 0;
     width: 220px;
+    max-width: min(260px, calc(100vw - 1rem));
+    max-height: calc(100vh - 1rem);
     display: grid !important;
     flex-direction: unset;
     gap: 0.26rem;
@@ -244,6 +245,7 @@ a {
     border-radius: 8px;
     box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
     z-index: 10001;
+    overflow-y: auto;
 }
 
 /* Manter separadores de seção visualmente em collapsed */
@@ -283,6 +285,41 @@ a {
 .desktop-sidebar.is-collapsed .desktop-nav-group {
     position: relative;
     z-index: 10000;
+}
+
+.desktop-sidebar.is-collapsed .desktop-nav-group-head {
+    position: relative;
+    justify-content: center;
+}
+
+.desktop-sidebar.is-collapsed .desktop-nav-group-chevron {
+    display: inline-flex;
+    position: absolute;
+    right: 0.35rem;
+    top: 50%;
+    width: 18px;
+    height: 18px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    border: 1px solid rgba(111, 90, 252, 0.12);
+    background: rgba(111, 90, 252, 0.08);
+    color: var(--desktop-primary);
+    opacity: 0.95;
+    pointer-events: none;
+    transform: translateY(-50%) rotate(-90deg);
+}
+
+.desktop-sidebar.is-collapsed .desktop-nav-group.is-open .desktop-nav-group-chevron {
+    background: rgba(111, 90, 252, 0.16);
+    border-color: rgba(111, 90, 252, 0.18);
+}
+
+.desktop-sidebar.is-collapsed .desktop-nav-group-head:hover .desktop-nav-group-chevron,
+.desktop-sidebar.is-collapsed .desktop-nav-group-head:focus-visible .desktop-nav-group-chevron {
+    background: rgba(111, 90, 252, 0.18);
+    border-color: rgba(111, 90, 252, 0.24);
+    opacity: 1;
 }
 
 /* Tooltip em modo collapsed — aparece ao hover */
@@ -326,6 +363,32 @@ a {
         opacity: 1;
         transform: translateY(-50%) translateX(0);
     }
+}
+
+.desktop-sidebar.is-collapsed .desktop-nav-group-head:hover::after,
+.desktop-sidebar.is-collapsed .desktop-nav-group-head:focus-visible::after {
+    content: attr(data-label);
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    margin-left: 0.8rem;
+    transform: translateY(-50%);
+    background: var(--desktop-heading);
+    color: white;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+    z-index: 10000;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.15);
+    animation: tooltip-fadeIn 0.15s ease;
+}
+
+.desktop-sidebar.is-collapsed .desktop-nav-group-head .desktop-nav-link:hover::after,
+.desktop-sidebar.is-collapsed .desktop-nav-group-head .desktop-nav-link:focus-visible::after {
+    content: none;
 }
 
 .desktop-sidebar-header,

@@ -10,7 +10,7 @@
     $desktopEmbedded = (bool) ($desktopEmbedded ?? $embedded ?? request()->boolean('embedded'));
 @endphp
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="pt-BR" @if(session('desktop_theme') && session('desktop_theme') !== 'default') data-theme="{{ session('desktop_theme') }}"@endif>
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -23,6 +23,9 @@
     <link href="{{ asset('assets/libs/select2/select2.min.css') }}" rel="stylesheet">
     <link href="{{ asset('assets/libs/select2-bootstrap-5-theme/select2-bootstrap-5-theme.min.css') }}" rel="stylesheet">
     <link href="{{ asset('assets/css/desktop.css') }}?v={{ filemtime(public_path('assets/css/desktop.css')) }}" rel="stylesheet">
+    @if (session('desktop_theme') && session('desktop_theme') !== 'default')
+        <link href="{{ asset('assets/css/themes/' . e(session('desktop_theme')) . '.css') }}" rel="stylesheet">
+    @endif
     @yield('styles')
 </head>
 <body class="desktop-body {{ $desktopEmbedded ? 'desktop-body-embedded' : '' }}">

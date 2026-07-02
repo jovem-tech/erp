@@ -35,6 +35,26 @@ class ConfigurationController extends DesktopController
         ]);
     }
 
+    public function updateAppearance(Request $request): RedirectResponse
+    {
+        $allowed = ['default', 'jovem-tech', 'dark'];
+        $theme = $request->input('theme', 'default');
+
+        if (! in_array($theme, $allowed, true)) {
+            return back()->with('error', 'Tema inválido.');
+        }
+
+        if ($theme === 'default') {
+            $request->session()->forget('desktop_theme');
+        } else {
+            $request->session()->put('desktop_theme', $theme);
+        }
+
+        return redirect()
+            ->route('configurations.system.index', ['tab' => 'aparencia'])
+            ->with('success', 'Tema alterado com sucesso.');
+    }
+
     public function help(): View
     {
         return view('configurations.help', [

@@ -1,0 +1,404 @@
+/*
+ * Jovem Tech Design System v3.0.0 — Theme Override Layer
+ * Aplica identidade azul institucional sobre o design system do ERP Desktop.
+ * Escopo: [data-theme="jovem-tech"] — não afeta o tema padrão.
+ *
+ * IMPORTANTE: usa `background` (shorthand) para sobrescrever gradients hardcoded
+ * em desktop.css que não usam CSS variables.
+ */
+
+/* ─── CSS Variables (tokens) ─────────────────────────────────────────────── */
+[data-theme="jovem-tech"] {
+    --desktop-bg:             #F4F8FF;
+    --desktop-surface:        #FFFFFF;
+    --desktop-surface-soft:   #F0F6FF;
+    --desktop-surface-muted:  #E8F1FF;
+    --desktop-border:         rgba(56, 104, 176, 0.14);
+    --desktop-border-strong:  rgba(37, 79, 141, 0.26);
+    --desktop-text:           #1F2937;
+    --desktop-text-soft:      #42526A;
+    --desktop-text-muted:     #5C6B82;
+    --desktop-heading:        #0F2847;
+    --desktop-primary:        #3868B0;
+    --desktop-primary-soft:   rgba(56, 104, 176, 0.10);
+    --desktop-shadow:         0 10px 30px rgba(56, 104, 176, 0.10);
+    --desktop-shadow-soft:    0 6px 18px rgba(56, 104, 176, 0.07);
+
+    /* Bootstrap override */
+    --bs-primary:             #3868B0;
+    --bs-primary-rgb:         56, 104, 176;
+    --bs-link-color:          #3868B0;
+    --bs-link-hover-color:    #254F8D;
+    --bs-body-bg:             #F4F8FF;
+    --bs-body-color:          #1F2937;
+    --bs-border-color:        #D7E3F4;
+    --bs-secondary-color:     #5C6B82;
+}
+
+/* ─── Tipografia ─────────────────────────────────────────────────────────── */
+[data-theme="jovem-tech"] body {
+    font-family: "Aptos", "Segoe UI", system-ui, sans-serif;
+}
+
+/* ─── Fundo e superfícies ────────────────────────────────────────────────── */
+[data-theme="jovem-tech"] .desktop-page-stack,
+[data-theme="jovem-tech"] .desktop-page-content,
+[data-theme="jovem-tech"] .desktop-main {
+    background-color: #F4F8FF;
+}
+
+/* ─── Sidebar — azul escuro institucional ────────────────────────────────── */
+[data-theme="jovem-tech"] .desktop-sidebar {
+    background: linear-gradient(180deg, #254F8D 0%, #1E4278 100%);
+    border-right-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="jovem-tech"] .desktop-sidebar-header {
+    background: transparent;
+    border-bottom-color: rgba(255, 255, 255, 0.10);
+}
+
+[data-theme="jovem-tech"] .desktop-brand-copy strong,
+[data-theme="jovem-tech"] .desktop-brand-copy span,
+[data-theme="jovem-tech"] .desktop-brand-copy {
+    color: #FFFFFF;
+}
+
+[data-theme="jovem-tech"] .desktop-sidebar-toggle {
+    color: rgba(255, 255, 255, 0.65);
+}
+
+[data-theme="jovem-tech"] .desktop-sidebar-toggle:hover {
+    color: #FFFFFF;
+    background: rgba(255, 255, 255, 0.10);
+}
+
+[data-theme="jovem-tech"] .desktop-nav-section-label {
+    color: rgba(255, 255, 255, 0.40);
+}
+
+/* Nav links na sidebar */
+[data-theme="jovem-tech"] .desktop-nav-link {
+    color: rgba(255, 255, 255, 0.82);
+}
+
+[data-theme="jovem-tech"] .desktop-nav-link .bi,
+[data-theme="jovem-tech"] .desktop-nav-link i {
+    color: rgba(255, 255, 255, 0.65);
+}
+
+[data-theme="jovem-tech"] .desktop-nav-link:hover {
+    background: rgba(255, 255, 255, 0.10);
+    border-color: rgba(255, 255, 255, 0.10);
+    color: #FFFFFF;
+}
+
+[data-theme="jovem-tech"] .desktop-nav-link:hover .bi,
+[data-theme="jovem-tech"] .desktop-nav-link:hover i {
+    color: #FFFFFF;
+}
+
+/* Active nav link — sobrescreve o gradient linear roxo do desktop.css */
+[data-theme="jovem-tech"] .desktop-nav-link.is-active {
+    background: rgba(255, 255, 255, 0.18);
+    border-color: rgba(255, 255, 255, 0.22);
+    color: #FFFFFF;
+    font-weight: 700;
+}
+
+[data-theme="jovem-tech"] .desktop-nav-link.is-active .bi,
+[data-theme="jovem-tech"] .desktop-nav-link.is-active i {
+    color: #FFFFFF;
+}
+
+/* Sidebar collapsed — sobrescreve rgba roxo das box-shadows */
+[data-theme="jovem-tech"] .desktop-sidebar.is-collapsed .desktop-nav-link:hover {
+    box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.10);
+}
+
+[data-theme="jovem-tech"] .desktop-sidebar.is-collapsed .desktop-nav-link.is-active {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.40),
+                0 0 8px rgba(56, 104, 176, 0.20);
+    background: rgba(255, 255, 255, 0.16);
+    color: #FFFFFF;
+}
+
+/* Sub-links na sidebar EXPANDIDA (inline dentro do sidebar navy) */
+[data-theme="jovem-tech"] .desktop-sidebar:not(.is-collapsed) .desktop-nav-sublink {
+    color: rgba(255, 255, 255, 0.72);
+}
+
+[data-theme="jovem-tech"] .desktop-sidebar:not(.is-collapsed) .desktop-nav-sublink:hover {
+    color: #FFFFFF;
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="jovem-tech"] .desktop-sidebar:not(.is-collapsed) .desktop-nav-sublink.is-active {
+    color: #FFFFFF;
+    background: rgba(255, 255, 255, 0.14);
+    border-color: rgba(255, 255, 255, 0.18);
+}
+
+/* Sub-links no flyout (sidebar colapsada) — fundo branco, texto escuro */
+[data-theme="jovem-tech"] .desktop-sidebar.is-collapsed .desktop-nav-group.is-open .desktop-nav-sublist .desktop-nav-sublink {
+    color: #1F2937;
+}
+
+[data-theme="jovem-tech"] .desktop-sidebar.is-collapsed .desktop-nav-group.is-open .desktop-nav-sublist .desktop-nav-sublink i,
+[data-theme="jovem-tech"] .desktop-sidebar.is-collapsed .desktop-nav-group.is-open .desktop-nav-sublist .desktop-nav-sublink .bi {
+    color: #5C6B82;
+}
+
+[data-theme="jovem-tech"] .desktop-sidebar.is-collapsed .desktop-nav-group.is-open .desktop-nav-sublist .desktop-nav-sublink:hover {
+    color: #3868B0;
+    background: rgba(56, 104, 176, 0.08);
+    border-color: rgba(56, 104, 176, 0.12);
+}
+
+[data-theme="jovem-tech"] .desktop-sidebar.is-collapsed .desktop-nav-group.is-open .desktop-nav-sublist .desktop-nav-sublink:hover i,
+[data-theme="jovem-tech"] .desktop-sidebar.is-collapsed .desktop-nav-group.is-open .desktop-nav-sublist .desktop-nav-sublink:hover .bi {
+    color: #3868B0;
+}
+
+[data-theme="jovem-tech"] .desktop-sidebar.is-collapsed .desktop-nav-group.is-open .desktop-nav-sublist .desktop-nav-sublink.is-active {
+    color: #3868B0;
+    background: rgba(56, 104, 176, 0.10);
+    border-color: rgba(56, 104, 176, 0.16);
+}
+
+[data-theme="jovem-tech"] .desktop-sidebar.is-collapsed .desktop-nav-group.is-open .desktop-nav-sublist .desktop-nav-sublink.is-active i,
+[data-theme="jovem-tech"] .desktop-sidebar.is-collapsed .desktop-nav-group.is-open .desktop-nav-sublist .desktop-nav-sublink.is-active .bi {
+    color: #3868B0;
+}
+
+/* Chevron do grupo colapsado — substituir rgba roxo */
+[data-theme="jovem-tech"] .desktop-sidebar.is-collapsed .desktop-nav-group.is-open .desktop-nav-group-chevron {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.22);
+}
+
+[data-theme="jovem-tech"] .desktop-sidebar.is-collapsed .desktop-nav-group-head:hover .desktop-nav-group-chevron {
+    background: rgba(255, 255, 255, 0.20);
+    border-color: rgba(255, 255, 255, 0.28);
+}
+
+/* Group head (pai de sub-links) */
+[data-theme="jovem-tech"] .desktop-nav-group-head {
+    color: rgba(255, 255, 255, 0.82);
+}
+
+[data-theme="jovem-tech"] .desktop-nav-group-head:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: #FFFFFF;
+}
+
+[data-theme="jovem-tech"] .desktop-nav-group-head.is-active {
+    background: rgba(255, 255, 255, 0.10);
+    color: #FFFFFF;
+}
+
+[data-theme="jovem-tech"] .desktop-sidebar-footer {
+    border-top-color: rgba(255, 255, 255, 0.10);
+}
+
+[data-theme="jovem-tech"] .desktop-sidebar-footer .desktop-nav-link {
+    color: rgba(255, 255, 255, 0.65);
+}
+
+[data-theme="jovem-tech"] .desktop-sidebar-footer .desktop-nav-link:hover {
+    color: #FFFFFF;
+    background: rgba(255, 255, 255, 0.10);
+}
+
+/* ─── Topbar ─────────────────────────────────────────────────────────────── */
+[data-theme="jovem-tech"] .desktop-topbar {
+    background-color: #FFFFFF;
+    border-bottom-color: #D7E3F4;
+    box-shadow: 0 2px 10px rgba(56, 104, 176, 0.07);
+}
+
+/* ─── Botões — usa `background` shorthand para sobrescrever gradients ──────── */
+[data-theme="jovem-tech"] .btn-primary {
+    background: linear-gradient(135deg, #3868B0, #4A7CC5);
+    border-color: transparent;
+    color: #FFFFFF;
+    box-shadow: 0 4px 12px rgba(56, 104, 176, 0.28);
+}
+
+[data-theme="jovem-tech"] .btn-primary:hover {
+    background: linear-gradient(135deg, #254F8D, #3868B0);
+    border-color: transparent;
+    color: #FFFFFF;
+    box-shadow: 0 6px 18px rgba(56, 104, 176, 0.36);
+}
+
+[data-theme="jovem-tech"] .btn-primary:active,
+[data-theme="jovem-tech"] .btn-primary.active {
+    background: #1E4278;
+    border-color: transparent;
+    color: #FFFFFF;
+}
+
+[data-theme="jovem-tech"] .btn-primary:focus-visible {
+    box-shadow: 0 0 0 3px rgba(56, 104, 176, 0.30);
+}
+
+[data-theme="jovem-tech"] .btn-soft {
+    background: rgba(56, 104, 176, 0.08);
+    color: #3868B0;
+    border: 1px solid rgba(56, 104, 176, 0.14);
+}
+
+[data-theme="jovem-tech"] .btn-soft:hover {
+    background: rgba(56, 104, 176, 0.14);
+    color: #254F8D;
+    border-color: rgba(56, 104, 176, 0.22);
+}
+
+[data-theme="jovem-tech"] .btn-outline-primary {
+    color: #3868B0;
+    border-color: #3868B0;
+}
+
+[data-theme="jovem-tech"] .btn-outline-primary:hover {
+    background: #3868B0;
+    border-color: #3868B0;
+    color: #FFFFFF;
+}
+
+[data-theme="jovem-tech"] .btn-outline-light:hover {
+    border-color: rgba(56, 104, 176, 0.30);
+    color: #3868B0;
+    background: rgba(56, 104, 176, 0.05);
+}
+
+/* ─── Tabs de configuração (config-subtab) — sobrescreve gradient roxo ───── */
+[data-theme="jovem-tech"] .config-subtab.is-active {
+    background: linear-gradient(135deg, #3868B0, #4A7CC5);
+    border-color: transparent;
+    color: #FFFFFF;
+}
+
+/* ─── Tabs de equipamento ────────────────────────────────────────────────── */
+[data-theme="jovem-tech"] .equipment-tab.is-active {
+    background: linear-gradient(135deg, #3868B0, #4A7CC5);
+    border-color: transparent;
+    color: #FFFFFF;
+}
+
+/* ─── Toggle de visão do fluxo de caixa ─────────────────────────────────── */
+[data-theme="jovem-tech"] .cashflow-view-toggle .btn.is-active {
+    background: linear-gradient(135deg, #3868B0, #4A7CC5);
+    border-color: transparent;
+    color: #FFFFFF;
+    box-shadow: 0 8px 20px rgba(56, 104, 176, 0.20);
+}
+
+/* ─── Nav pills (Bootstrap) ─────────────────────────────────────────────── */
+[data-theme="jovem-tech"] .nav-pills .nav-link.active,
+[data-theme="jovem-tech"] .nav-pills .show > .nav-link {
+    background: linear-gradient(135deg, #3868B0, #4A7CC5);
+    color: #FFFFFF;
+}
+
+/* ─── Cards e superfícies ────────────────────────────────────────────────── */
+[data-theme="jovem-tech"] .surface-card,
+[data-theme="jovem-tech"] .desktop-form-card,
+[data-theme="jovem-tech"] .desktop-kpi-card {
+    background-color: #FFFFFF;
+    border-color: #D7E3F4;
+    box-shadow: 0 10px 24px rgba(56, 104, 176, 0.08);
+}
+
+[data-theme="jovem-tech"] .surface-card-header {
+    border-bottom-color: #D7E3F4;
+}
+
+/* ─── Inputs e Formulários ───────────────────────────────────────────────── */
+[data-theme="jovem-tech"] .form-control,
+[data-theme="jovem-tech"] .form-select {
+    background-color: #FFFFFF;
+    border-color: #D7E3F4;
+    color: #1F2937;
+}
+
+[data-theme="jovem-tech"] .form-control:focus,
+[data-theme="jovem-tech"] .form-select:focus {
+    border-color: #3868B0;
+    box-shadow: 0 0 0 3px rgba(56, 104, 176, 0.16);
+}
+
+[data-theme="jovem-tech"] .form-control::placeholder {
+    color: #8A9AB0;
+}
+
+/* ─── Chips / badges ─────────────────────────────────────────────────────── */
+[data-theme="jovem-tech"] .desktop-chip {
+    color: #3868B0;
+    background: rgba(56, 104, 176, 0.10);
+}
+
+/* ─── Tabelas ─────────────────────────────────────────────────────────────── */
+[data-theme="jovem-tech"] .table {
+    --bs-table-bg: #FFFFFF;
+    --bs-table-striped-bg: #F4F8FF;
+    --bs-table-hover-bg: #EEF5FF;
+    --bs-table-border-color: #D7E3F4;
+    color: #1F2937;
+}
+
+[data-theme="jovem-tech"] .table thead th {
+    background-color: #EEF5FF;
+    border-bottom-color: #D7E3F4;
+    color: #42526A;
+}
+
+/* ─── Modais ─────────────────────────────────────────────────────────────── */
+[data-theme="jovem-tech"] .modal-content {
+    background-color: #FFFFFF;
+    border-color: #D7E3F4;
+    box-shadow: 0 20px 60px rgba(56, 104, 176, 0.16);
+}
+
+[data-theme="jovem-tech"] .modal-header {
+    border-bottom-color: #D7E3F4;
+}
+
+[data-theme="jovem-tech"] .modal-footer {
+    border-top-color: #D7E3F4;
+}
+
+/* ─── Dropdowns ──────────────────────────────────────────────────────────── */
+[data-theme="jovem-tech"] .dropdown-menu {
+    background-color: #FFFFFF;
+    border-color: #D7E3F4;
+    box-shadow: 0 10px 28px rgba(56, 104, 176, 0.12);
+}
+
+[data-theme="jovem-tech"] .dropdown-item:hover,
+[data-theme="jovem-tech"] .dropdown-item:focus {
+    background-color: #EEF5FF;
+    color: #3868B0;
+}
+
+[data-theme="jovem-tech"] .dropdown-item.active,
+[data-theme="jovem-tech"] .dropdown-item:active {
+    background-color: #3868B0;
+    color: #FFFFFF;
+}
+
+/* ─── Scrollbar ──────────────────────────────────────────────────────────── */
+[data-theme="jovem-tech"] ::-webkit-scrollbar-track {
+    background: #EEF5FF;
+}
+
+[data-theme="jovem-tech"] ::-webkit-scrollbar-thumb {
+    background: #C5D8F0;
+    border-radius: 6px;
+}
+
+[data-theme="jovem-tech"] ::-webkit-scrollbar-thumb:hover {
+    background: #3868B0;
+}

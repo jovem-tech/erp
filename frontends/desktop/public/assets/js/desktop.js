@@ -204,6 +204,97 @@ const DesktopUi = (() => {
         return form.method !== 'dialog';
     };
 
+    const clearCollapsedSidebarPopoverStyle = (submenu) => {
+        if (!(submenu instanceof HTMLElement)) {
+            return;
+        }
+
+        ['top', 'left', 'width', 'max-width', 'max-height', 'overflow-y'].forEach((property) => {
+            submenu.style.removeProperty(property);
+        });
+    };
+
+    const syncCollapsedSidebarGroupPopovers = () => {
+        if (!(sidebar instanceof HTMLElement)) {
+            return;
+        }
+
+        const collapsed = sidebar.classList.contains('is-collapsed');
+
+        sidebar.querySelectorAll('.desktop-nav-sublist').forEach((submenu) => {
+            if (!(submenu instanceof HTMLElement)) {
+                return;
+            }
+
+            if (!collapsed) {
+                clearCollapsedSidebarPopoverStyle(submenu);
+            }
+        });
+
+        if (!collapsed) {
+            return;
+        }
+
+        const sidebarRect = sidebar.getBoundingClientRect();
+        const margin = 8;
+
+        sidebar.querySelectorAll('.desktop-nav-group').forEach((group) => {
+            if (!(group instanceof HTMLElement)) {
+                return;
+            }
+
+            const submenu = group.querySelector('.desktop-nav-sublist');
+            const trigger = group.querySelector('.desktop-nav-group-head');
+
+            if (!(submenu instanceof HTMLElement) || !(trigger instanceof HTMLElement) || !group.classList.contains('is-open')) {
+                clearCollapsedSidebarPopoverStyle(submenu);
+                return;
+            }
+
+            const triggerRect = trigger.getBoundingClientRect();
+            const preferredWidth = submenu.getBoundingClientRect().width || submenu.scrollWidth || 220;
+            const maxWidth = Math.max(220, window.innerWidth - (margin * 2));
+            const width = Math.min(Math.max(preferredWidth, 220), maxWidth);
+            const popupHeight = Math.min(submenu.scrollHeight || 0, window.innerHeight - (margin * 2));
+            const left = Math.max(
+                margin,
+                Math.min(sidebarRect.right + 8, window.innerWidth - width - margin),
+            );
+            const top = Math.max(
+                margin,
+                Math.min(triggerRect.top, window.innerHeight - popupHeight - margin),
+            );
+
+            submenu.style.left = `${Math.round(left)}px`;
+            submenu.style.top = `${Math.round(top)}px`;
+            submenu.style.width = `${Math.round(width)}px`;
+            submenu.style.maxWidth = `${Math.round(maxWidth)}px`;
+            submenu.style.maxHeight = `${Math.max(140, Math.round(window.innerHeight - (margin * 2)))}px`;
+            submenu.style.overflowY = 'auto';
+        });
+    };
+
+    const closeCollapsedSidebarPopovers = () => {
+        if (!(sidebar instanceof HTMLElement) || !sidebar.classList.contains('is-collapsed')) {
+            return;
+        }
+
+        sidebar.querySelectorAll('.desktop-nav-group.is-open').forEach((group) => {
+            if (!(group instanceof HTMLElement)) {
+                return;
+            }
+
+            group.classList.remove('is-open');
+
+            const toggle = group.querySelector('[data-desktop-nav-group-toggle]');
+            if (toggle instanceof HTMLElement) {
+                toggle.setAttribute('aria-expanded', 'false');
+            }
+
+            clearCollapsedSidebarPopoverStyle(group.querySelector('.desktop-nav-sublist'));
+        });
+    };
+
     const renderNotificationBadge = (unreadCount) => {
         if (!(notificationBadge instanceof HTMLElement)) {
             return;
@@ -487,6 +578,7 @@ const DesktopUi = (() => {
             main.classList.toggle('is-expanded');
             localStorage.setItem(collapseStorageKey, sidebar.classList.contains('is-collapsed') ? '1' : '0');
             syncSidebarToggleState();
+            window.requestAnimationFrame(syncCollapsedSidebarGroupPopovers);
         });
 
         const closeMobileSidebar = () => {
@@ -519,6 +611,8 @@ const DesktopUi = (() => {
     };
 
     const initSidebarGroups = () => {
+        const sidebarNav = sidebar?.querySelector('.desktop-nav');
+
         document.querySelectorAll('[data-desktop-nav-group-toggle]').forEach((toggle) => {
             toggle.addEventListener('click', () => {
                 const group = toggle.closest('.desktop-nav-group');
@@ -526,10 +620,49 @@ const DesktopUi = (() => {
                     return;
                 }
 
+                if (sidebar instanceof HTMLElement && sidebar.classList.contains('is-collapsed')) {
+                    sidebar.querySelectorAll('.desktop-nav-group.is-open').forEach((openGroup) => {
+                        if (!(openGroup instanceof HTMLElement) || openGroup === group) {
+                            return;
+                        }
+
+                        openGroup.classList.remove('is-open');
+                        const openToggle = openGroup.querySelector('[data-desktop-nav-group-toggle]');
+                        if (openToggle instanceof HTMLElement) {
+                            openToggle.setAttribute('aria-expanded', 'false');
+                        }
+
+                        clearCollapsedSidebarPopoverStyle(openGroup.querySelector('.desktop-nav-sublist'));
+                    });
+                }
+
                 const isOpen = group.classList.toggle('is-open');
                 toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+
+                if (isOpen) {
+                    syncCollapsedSidebarGroupPopovers();
+                } else {
+                    clearCollapsedSidebarPopoverStyle(group.querySelector('.desktop-nav-sublist'));
+                }
             });
         });
+
+        sidebarNav?.addEventListener('scroll', syncCollapsedSidebarGroupPopovers, { passive: true });
+        window.addEventListener('resize', syncCollapsedSidebarGroupPopovers);
+        document.addEventListener('click', (event) => {
+            if (!(sidebar instanceof HTMLElement) || !sidebar.classList.contains('is-collapsed')) {
+                return;
+            }
+
+            const target = event.target;
+            if (!(target instanceof Node) || sidebar.contains(target)) {
+                return;
+            }
+
+            closeCollapsedSidebarPopovers();
+        });
+
+        syncCollapsedSidebarGroupPopovers();
     };
 
     const initConfigSubtabs = () => {

@@ -93,6 +93,12 @@ Features concluidas mais recentes:
 de OS) e `specs/011-acoes-edicao-baixa-os-desktop/plan.md` (dropdown de
 acoes no padrao de equipamentos, edicao completa de OS e baixa MVP com
 status final + financeiro + WhatsApp manual).
+Entregue em 2026-07-02 (v3.5.0–3.5.1): sistema de temas visuais com 3
+opções em `Configuracoes > Sistema > Aparencia`: Padrao (roxo #6f5afc),
+Jovem Tech (azul institucional #3868B0, sidebar navy, fundo #F4F8FF) e
+Escuro (roxo profundo #7C6EFA, sidebar #1A1035, fundo #0D1117); seleção
+via cards visuais, preferência em sessão Laravel, CSS escopo-isolado por
+[data-theme], sem migração de banco.
 Feature `specs/010-inbox-whatsapp-tempo-real/` em andamento por outra
 linha de trabalho — consultar o proprio plan.md dela para o estado atual
 antes de presumir o que ja foi entregue.

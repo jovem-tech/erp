@@ -1,5 +1,28 @@
 # Historico de versoes
 
+## v3.5.1 - 2026-07-02
+
+- adicionado o **Tema Escuro** (`dark`) como terceiro tema selecionável em `Configurações > Sistema > Aparência`;
+- o tema escuro usa sidebar em roxo profundo (`#1A1035 → #0E0A22`), fundo `#0D1117`, superfícies `#161B27` e primário `#7C6EFA` (roxo levemente mais claro para contraste adequado sobre escuro);
+- flyout do sidebar colapsado no modo escuro usa fundo escuro (`#1A2035`) com texto claro (`#CBD5E1`), mantendo a mesma arquitetura de seletores CSS separados do tema Jovem Tech;
+- alerts (warning, success, danger, info), tabelas, modais, dropdowns, inputs e scrollbar receberam overrides específicos para contraste WCAG no modo escuro;
+- `ConfigurationController::updateAppearance()` passou a aceitar `dark` na lista de temas permitidos;
+- card de preview do tema escuro adicionado à UI de seleção (sidebar roxa escura + conteúdo `#0D1117` com acento roxo `#7C6EFA`);
+- nota de entrega em `documentacao/07-novas-implementacoes/2026-07-02-jovem-tech-design-system-tema-desktop.md` e versão global ajustada para `3.5.1`.
+
+## v3.5.0 - 2026-07-02
+
+- implementado o **Jovem Tech Design System v3.0.0** como segundo tema selecionável do desktop, disponível em `Configurações > Sistema > Aparência`;
+- o novo tema `jovem-tech` substitui a identidade visual padrão (roxo `#6f5afc`) por azul institucional (`#3868B0`) com sidebar em gradiente azul marinho (`#254F8D → #1E4278`), fundo suave `#F4F8FF` e tipografia Aptos/Segoe UI;
+- o design system é totalmente escopo-isolado via seletor CSS `[data-theme="jovem-tech"]`, sem impacto no tema padrão;
+- a preferência de tema é armazenada na sessão Laravel (`desktop_theme`) sem necessidade de migração de banco;
+- o layout `app.blade.php` aplica o atributo `data-theme` e carrega o CSS do tema condicionalmente via diretiva `@if`, evitando o bug de escaping de aspas com `{{ }}` dentro de atributos HTML;
+- `ConfigurationController::updateAppearance()` valida o tema contra a lista de permitidos (`default`, `jovem-tech`) e persiste ou limpa a sessão;
+- a rota `POST /configuracoes/aparencia` foi adicionada ao grupo de middlewares autenticados;
+- a UI de seleção em `Configurações do Sistema > Aparência` foi elevada para cards visuais com preview de paleta, ícone de confirmação e feedback de `is-active`;
+- sublinks do menu colapsado recebem `color: #1F2937` no flyout branco (`:not(.is-collapsed)` recebe `rgba(255,255,255,0.72)` para o sidebar navy), corrigindo legibilidade em modo retraído;
+- nota de entrega criada em `documentacao/07-novas-implementacoes/2026-07-02-jovem-tech-design-system-tema-desktop.md` e versão global ajustada para `3.5.0`.
+
 ## v3.4.11 - 2026-06-29
 
 - a Gestão de Conhecimento recebeu o novo modelo ideal da assistência técnica em `/conhecimento/modelo-assistencia-tecnica`, com diagrama de leitura rápida para fila única, triagem, garantia, diagnóstico, orçamento, execução, qualidade, entrega e pós-venda;

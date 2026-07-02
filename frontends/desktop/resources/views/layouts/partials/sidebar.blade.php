@@ -70,6 +70,8 @@
                                     type="button"
                                     class="desktop-nav-group-head"
                                     data-desktop-nav-group-toggle
+                                    data-label="{{ $item['label'] }}"
+                                    aria-label="{{ $item['label'] }}"
                                     aria-expanded="{{ $isGroupActive ? 'true' : 'false' }}"
                                 >
                                     <span class="desktop-nav-link {{ $isGroupActive ? 'is-active' : '' }}" data-label="{{ $item['label'] }}">
@@ -88,7 +90,7 @@
                                         @endphp
                                         @if ($childRouteExists)
                                         <li class="desktop-nav-subitem">
-                                            <a href="{{ route($childRoute) }}" class="desktop-nav-sublink {{ $childActive ? 'is-active' : '' }}" data-label="{{ $child['label'] ?? '' }}">
+                                            <a href="{{ route($childRoute) }}" class="desktop-nav-sublink {{ $childActive ? 'is-active' : '' }}" data-label="{{ $child['label'] ?? '' }}" aria-label="{{ $child['label'] ?? '' }}">
                                                 <i class="bi {{ $child['icon'] ?? 'bi-dot' }}"></i>
                                                 <span>{{ $child['label'] ?? '' }}</span>
                                             </a>
@@ -104,7 +106,7 @@
                             @endphp
                             @if ($routeExists)
                                 <li>
-                                    <a href="{{ route($item['route']) }}" class="desktop-nav-link {{ $isActive ? 'is-active' : '' }}" data-label="{{ $item['label'] }}">
+                                    <a href="{{ route($item['route']) }}" class="desktop-nav-link {{ $isActive ? 'is-active' : '' }}" data-label="{{ $item['label'] }}" aria-label="{{ $item['label'] }}">
                                         <i class="bi {{ $item['icon'] }}"></i>
                                         <span>{{ $item['label'] }}</span>
                                     </a>
