@@ -2,13 +2,16 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Requests\Api\V1\UpdateCompanyProfileRequest;
 use App\Http\Requests\Api\V1\UpdateIntegrationsRequest;
+use App\Services\Company\CompanyProfileService;
 use App\Services\Integrations\EmailIntegrationSettingsService;
 use App\Services\Integrations\GoogleIntegrationSettingsService;
 use App\Services\Integrations\IntegrationSettingsService;
 use App\Services\Integrations\PaymentIntegrationSettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 class ConfigurationController extends BaseApiController
 {
@@ -16,8 +19,58 @@ class ConfigurationController extends BaseApiController
         private readonly IntegrationSettingsService $integrationSettingsService,
         private readonly PaymentIntegrationSettingsService $paymentIntegrationSettingsService,
         private readonly EmailIntegrationSettingsService $emailIntegrationSettingsService,
-        private readonly GoogleIntegrationSettingsService $googleIntegrationSettingsService
+        private readonly GoogleIntegrationSettingsService $googleIntegrationSettingsService,
+        private readonly CompanyProfileService $companyProfileService
     ) {
+    }
+
+    public function companyProfile(Request $request): JsonResponse
+    {
+        $this->authorize('configuracoes:visualizar');
+
+        return $this->success(
+            $this->companyProfileService->payload(),
+            request: $request
+        );
+    }
+
+    public function updateCompanyProfile(UpdateCompanyProfileRequest $request): JsonResponse
+    {
+        $this->authorize('configuracoes:editar');
+
+        $result = $this->companyProfileService->save($request->safe()->except('empresa_logo'));
+
+        $logo = $request->file('empresa_logo');
+        if ($logo instanceof \Illuminate\Http\UploadedFile && $logo->isValid()) {
+            $this->companyProfileService->storeLogo($logo);
+            $result = $this->companyProfileService->payload();
+        }
+
+        return $this->success($result, request: $request);
+    }
+
+    public function companyLogo(Request $request): Response|JsonResponse
+    {
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $file = $this->companyProfileService->resolveLogoFile();
+        if ($file === null) {
+            return $this->error(
+                'Logo da empresa nao configurada.',
+                404,
+                'COMPANY_LOGO_NOT_FOUND',
+                null,
+                request: $request
+            );
+        }
+
+        return response()->file($file['absolute_path'], [
+            'Content-Type' => $file['mime_type'],
+            'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
+        ]);
     }
 
     public function integrations(Request $request): JsonResponse

@@ -21,9 +21,6 @@ class DashboardSummaryTest extends TestCase
 
         $this->rebuildLegacySchema();
         $this->seedRbacCatalog();
-        DB::table('modulos')->insert([
-            ['id' => 7, 'nome' => 'Financeiro', 'slug' => 'financeiro', 'icone' => 'bi-cash-coin', 'ordem_menu' => 40, 'ativo' => 1],
-        ]);
         $this->grantGroupPermissions(2, [
             'dashboard' => ['visualizar'],
             'os' => ['visualizar'],
@@ -132,8 +129,8 @@ class DashboardSummaryTest extends TestCase
                 ->assertJsonPath('data.stats.total_os', 3)
                 ->assertJsonPath('data.stats.equipamento_entregue_total', 2)
                 ->assertJsonPath('data.stats.equipamento_entregue_mes_atual', 1)
-                ->assertJsonPath('data.stats.faturamento_mes', 660)
-                ->assertJsonPath('data.stats.faturamento_mes_anterior', 350)
+                ->assertJsonPath('data.stats.faturamento_mes', 660.0)
+                ->assertJsonPath('data.stats.faturamento_mes_anterior', 350.0)
                 ->assertJsonPath('data.hero_card.type', 'financial')
                 ->assertJsonPath('data.hero_card.label', 'Faturamento mês')
                 ->assertJsonPath('data.context_card.type', 'financial')
@@ -157,7 +154,7 @@ class DashboardSummaryTest extends TestCase
                 ->assertJsonPath('data.alerts.os_paradas', 0)
                 ->assertJsonPath('data.alerts.orcamentos_pendentes', 1)
                 ->assertJsonPath('data.alerts.prontos_retirada', 0)
-                ->assertJsonPath('data.charts.financial.previous_month_revenue', 350)
+                ->assertJsonPath('data.charts.financial.previous_month_revenue', 350.0)
                 ->assertJsonPath('data.recent_orders.0.numero_os', 'OS26010002')
                 ->assertJsonPath('data.recent_orders.0.dias_em_aberto', 8)
                 ->assertJsonPath('data.recent_clients.0.nome_razao', 'Ana Comércio LTDA')
@@ -229,8 +226,8 @@ class DashboardSummaryTest extends TestCase
                 ->assertJsonPath('data.hero_card.type', 'technician')
                 ->assertJsonPath('data.hero_card.label', 'Comissões acumuladas')
                 ->assertJsonPath('data.context_card.type', 'technician')
-                ->assertJsonPath('data.stats.comissao_acumulada', 10)
-                ->assertJsonPath('data.charts.technician.commission_total', 10);
+                ->assertJsonPath('data.stats.comissao_acumulada', 10.0)
+                ->assertJsonPath('data.charts.technician.commission_total', 10.0);
         } finally {
             Carbon::setTestNow();
         }

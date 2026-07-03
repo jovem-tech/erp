@@ -161,29 +161,79 @@
             </div>
 
             <div class="config-subpanel {{ $activeTab === 'empresa' ? 'is-active' : '' }}" data-config-subpanel="empresa">
-                <div class="desktop-grid desktop-grid-two">
-                    <div class="desktop-form-card">
+                @php
+                    $companySettings = $company['settings'] ?? [];
+                    $companyHasLogo = (bool) ($company['logo']['exists'] ?? false);
+                @endphp
+                <form method="POST" action="{{ route('configurations.company.update') }}" enctype="multipart/form-data">
+                    @csrf
+                    <div class="desktop-form-card mb-0">
                         <div class="surface-card-header">
                             <div>
                                 <h3 class="surface-title mb-1">Dados da Empresa</h3>
-                                <p class="surface-subtitle mb-0">Cadastro fiscal e institucional da operação.</p>
+                                <p class="surface-subtitle mb-0">Cadastro fiscal e institucional usado em documentos, rodapé e comunicações oficiais.</p>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-sm">
+                                <i class="bi bi-check2 me-1"></i>Salvar dados da empresa
+                            </button>
+                        </div>
+
+                        <div class="row g-3 mt-1">
+                            <div class="col-md-6">
+                                <label class="form-label" for="empresa_razao_social">Razão social</label>
+                                <input type="text" class="form-control" id="empresa_razao_social" name="empresa_razao_social" maxlength="255" value="{{ old('empresa_razao_social', $companySettings['empresa_razao_social'] ?? '') }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="empresa_nome_fantasia">Nome fantasia</label>
+                                <input type="text" class="form-control" id="empresa_nome_fantasia" name="empresa_nome_fantasia" maxlength="255" value="{{ old('empresa_nome_fantasia', $companySettings['empresa_nome_fantasia'] ?? '') }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label" for="empresa_cnpj">CNPJ</label>
+                                <input type="text" class="form-control" id="empresa_cnpj" name="empresa_cnpj" maxlength="32" value="{{ old('empresa_cnpj', $companySettings['empresa_cnpj'] ?? '') }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label" for="empresa_inscricao_estadual">Inscrição estadual</label>
+                                <input type="text" class="form-control" id="empresa_inscricao_estadual" name="empresa_inscricao_estadual" maxlength="32" value="{{ old('empresa_inscricao_estadual', $companySettings['empresa_inscricao_estadual'] ?? '') }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label" for="empresa_telefone">Telefone</label>
+                                <input type="text" class="form-control" id="empresa_telefone" name="empresa_telefone" maxlength="30" value="{{ old('empresa_telefone', $companySettings['empresa_telefone'] ?? '') }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="empresa_email">E-mail</label>
+                                <input type="email" class="form-control" id="empresa_email" name="empresa_email" maxlength="255" value="{{ old('empresa_email', $companySettings['empresa_email'] ?? '') }}">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label" for="empresa_endereco">Endereço</label>
+                                <input type="text" class="form-control" id="empresa_endereco" name="empresa_endereco" maxlength="255" value="{{ old('empresa_endereco', $companySettings['empresa_endereco'] ?? '') }}">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="desktop-form-card mt-3 mb-0">
+                        <div class="surface-card-header">
+                            <div>
+                                <h3 class="surface-title mb-1">Logo da Empresa</h3>
+                                <p class="surface-subtitle mb-0">Usada no menu lateral do sistema e como identidade institucional.</p>
                             </div>
                         </div>
 
-                        <div class="alert alert-warning border-0 mb-0">
-                            <strong>Em consolidação:</strong> este bloco vai reunir os dados usados em documentos, rodapé e comunicações oficiais.
+                        <div class="d-flex flex-wrap align-items-center gap-3 mt-1">
+                            <div class="d-flex align-items-center justify-content-center border rounded" style="width:96px; height:96px; overflow:hidden; background:var(--desktop-surface);">
+                                @if ($companyHasLogo)
+                                    <img src="{{ route('configurations.company.logo') }}" alt="Logo atual da empresa" style="max-width:100%; max-height:100%; object-fit:contain;">
+                                @else
+                                    <i class="bi bi-building text-muted" style="font-size:2rem;"></i>
+                                @endif
+                            </div>
+                            <div class="flex-grow-1" style="min-width:220px;">
+                                <label class="form-label" for="empresa_logo">Arquivo da logo</label>
+                                <input type="file" class="form-control" id="empresa_logo" name="empresa_logo" accept="image/png, image/jpeg, image/gif, image/svg+xml">
+                                <small class="text-muted d-block mt-1">PNG, JPG, GIF ou SVG, até 4&nbsp;MB.</small>
+                            </div>
                         </div>
                     </div>
-
-                    <div class="desktop-form-card">
-                        <h4 class="surface-title mb-2">Campos esperados</h4>
-                        <ul class="mb-0 ps-3 text-muted">
-                            <li>Razão social e nome fantasia</li>
-                            <li>CNPJ, inscrição e endereço</li>
-                            <li>Telefone, e-mail e logo institucional</li>
-                        </ul>
-                    </div>
-                </div>
+                </form>
             </div>
 
             <div class="config-subpanel {{ $activeTab === 'sessao' ? 'is-active' : '' }}" data-config-subpanel="sessao">

@@ -6,6 +6,7 @@ use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
 use App\Services\ServicoService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -119,6 +120,39 @@ class ServicoController extends DesktopController
         return redirect()
             ->route('servicos.index', ['search' => trim((string) ($service['nome'] ?? ''))])
             ->with('success', 'Serviço cadastrado com sucesso.');
+    }
+
+    public function quickStore(Request $request): JsonResponse
+    {
+        try {
+            $service = $this->servicoService->create($this->validatedServicePayload($request));
+        } catch (ApiAuthenticationException $exception) {
+            return $this->jsonFailure($exception->getMessage() ?: 'Sua sessão expirou. Faça login novamente.', 401);
+        } catch (ApiAuthorizationException $exception) {
+            return $this->jsonFailure($exception->getMessage() ?: 'Você não tem permissão para executar esta ação.', 403);
+        } catch (ApiRequestException $exception) {
+            return $this->jsonFailure(
+                $exception->getMessage() ?: 'Não foi possível cadastrar o serviço.',
+                $exception->statusCode() > 0 ? $exception->statusCode() : 422,
+                $exception->details() ?? []
+            );
+        } catch (ValidationException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Verifique os campos do serviço.',
+                'errors' => $exception->errors(),
+            ], 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->jsonFailure('Não foi possível cadastrar o serviço agora. Tente novamente.', 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Serviço cadastrado com sucesso.',
+            'service' => $service,
+        ], 201);
     }
 
     public function update(Request $request, int $service): RedirectResponse
@@ -325,5 +359,17 @@ class ServicoController extends DesktopController
         }
 
         return $messages;
+    }
+
+    /**
+     * @param array<string, mixed>|null $details
+     */
+    private function jsonFailure(string $message, int $status, ?array $details = null): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $message,
+            'errors' => $details ?? [],
+        ], $status);
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Services\CompanyProfileService;
 use App\Services\SearchService;
 use App\Support\DesktopNavigation;
 use App\Support\DesktopSession;
@@ -49,6 +50,10 @@ class DesktopAppServiceProvider extends ServiceProvider
                 'copyright' => sprintf('(c) %s %s', date('Y'), $appName !== '' ? $appName : 'Sistema ERP Desktop'),
                 'developed_by' => 'Jovem Tech',
             ]);
+
+            $view->with('desktopCompanyBranding', DesktopSession::hasToken()
+                ? app(CompanyProfileService::class)->branding()
+                : ['name' => 'Sistema ERP', 'has_logo' => false]);
         });
     }
 }

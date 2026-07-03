@@ -792,6 +792,16 @@ components:
           type: string
         estado_fluxo:
           type: string
+        status_disponiveis:
+          type: array
+          description: Catálogo de status disponíveis no detalhe da OS.
+          items:
+            $ref: "#/components/schemas/OrderWorkflowStatusOption"
+        proximas_etapas:
+          type: array
+          description: Etapas válidas para mudança rápida de status na listagem e no detalhe.
+          items:
+            $ref: "#/components/schemas/OrderWorkflowStatusOption"
         prioridade:
           type: string
         data_entrada:
@@ -864,6 +874,31 @@ components:
           type: string
           nullable: true
           description: valor_final menos valor_recebido; nulo quando não há título financeiro vinculado.
+
+    OrderWorkflowStatusOption:
+      type: object
+      additionalProperties: true
+      properties:
+        codigo:
+          type: string
+        nome:
+          type: string
+        grupo_macro:
+          type: string
+        cor:
+          type: string
+        icone:
+          type: string
+        ordem_fluxo:
+          type: integer
+        status_final:
+          type: boolean
+        status_pausa:
+          type: boolean
+        estado_fluxo_padrao:
+          type: string
+        ativo:
+          type: boolean
 
     UpsertOrderRequest:
       type: object

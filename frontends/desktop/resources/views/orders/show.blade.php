@@ -95,6 +95,15 @@
                 <a href="{{ route('orders.edit', $order['id']) }}" class="btn btn-soft">
                     <i class="bi bi-pencil me-2"></i>Editar
                 </a>
+                @if (($selectableStatuses ?? []) !== [])
+                    <button type="button" class="btn btn-soft"
+                        data-bs-toggle="modal"
+                        data-bs-target="#orderStatusModal"
+                        data-order-id="{{ $order['id'] }}"
+                        data-order-numero="{{ $order['numero_os'] ?? ('#' . $order['id']) }}">
+                        <i class="bi bi-arrow-left-right me-2"></i>Alterar status
+                    </button>
+                @endif
             @endif
             @if (! $hasOrcamento && \App\Support\DesktopSession::can('orcamentos', 'criar'))
                 <a href="{{ route('orcamentos.create', ['os_id' => $order['id']]) }}" class="btn btn-soft">
@@ -472,7 +481,19 @@
     </div>
 @endsection
 
+@push('modals')
+    @include('orders._status_modal')
+@endpush
+
 @section('scripts')
+    <script>
+        window.__DESKTOP_STATUS_MODAL = {
+            statusContextUrlTemplate: '{{ route('orders.status.context', ['order' => '__ORDER__']) }}',
+            statusUpdateUrlTemplate: '{{ route('orders.status.update', ['order' => '__ORDER__']) }}',
+            csrfToken: '{{ csrf_token() }}',
+        };
+    </script>
+    <script src="{{ asset('assets/js/orders-status-modal.js') }}"></script>
     <script>
         (function () {
             const root = document.querySelector('[data-os-tabs]');

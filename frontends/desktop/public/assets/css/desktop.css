@@ -440,6 +440,17 @@ a {
     color: var(--desktop-primary);
 }
 
+.desktop-brand-mark.has-logo {
+    background: var(--desktop-surface);
+    padding: 4px;
+}
+
+.desktop-brand-logo {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
 .desktop-brand-copy {
     min-width: 0;
 }
@@ -2776,6 +2787,189 @@ a {
     display: none;
 }
 
+.budget-items-table {
+    margin-bottom: 0;
+    border-collapse: separate;
+    border-spacing: 0 0.9rem;
+}
+
+.budget-items-table thead {
+    display: none;
+}
+
+.budget-item-card-cell {
+    padding: 1rem 1.05rem !important;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 248, 252, 0.96));
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 22px;
+    box-shadow: 0 18px 32px rgba(15, 23, 42, 0.06);
+}
+
+.budget-items-table tbody tr:hover > .budget-item-card-cell {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 1), rgba(241, 245, 249, 0.98));
+    border-color: rgba(111, 90, 252, 0.24);
+}
+
+.budget-item-layout {
+    display: grid;
+    gap: 0.8rem;
+}
+
+.budget-item-line {
+    display: grid;
+    gap: 0.8rem 0.9rem;
+}
+
+.budget-item-line-primary {
+    grid-template-columns: 96px minmax(280px, 1.45fr) minmax(240px, 1fr);
+    align-items: start;
+}
+
+.budget-item-line-financial {
+    grid-template-columns: 72px 124px 104px 104px 120px max-content;
+    align-items: start;
+}
+
+.budget-item-line-notes {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.budget-item-field {
+    display: grid;
+    gap: 0.38rem;
+    min-width: 0;
+}
+
+.budget-item-field-label {
+    color: var(--desktop-text-soft);
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    line-height: 1.1;
+    text-transform: uppercase;
+}
+
+.budget-item-field .select2-container {
+    width: 100% !important;
+}
+
+.budget-item-field-total .form-control {
+    background: rgba(111, 90, 252, 0.06);
+    border-color: rgba(111, 90, 252, 0.18);
+    color: var(--desktop-primary);
+    font-weight: 800;
+}
+
+.budget-item-field-notes textarea {
+    min-height: 4.8rem;
+    resize: vertical;
+}
+
+.budget-item-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.55rem;
+}
+
+.budget-item-field-actions {
+    justify-self: end;
+}
+
+.budget-item-quick-action,
+.budget-item-remove-action {
+    min-height: 2.65rem;
+    padding-inline: 0.95rem;
+    font-weight: 800;
+}
+
+.budget-item-remove-action {
+    white-space: nowrap;
+}
+
+@media (max-width: 1480px) {
+    .budget-item-line-primary {
+        grid-template-columns: 96px minmax(260px, 1.35fr) minmax(220px, 1fr);
+        align-items: start;
+    }
+
+    .budget-item-line-financial {
+        grid-template-columns: 72px 120px 100px 100px 116px max-content;
+        align-items: start;
+    }
+}
+
+@media (max-width: 1180px) {
+    .budget-item-line-primary {
+        grid-template-columns: 104px minmax(0, 1fr);
+    }
+
+    .budget-item-field-description {
+        grid-column: 1 / -1;
+    }
+
+    .budget-item-line-financial {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .budget-item-field-actions {
+        grid-column: 1 / -1;
+        justify-self: stretch;
+    }
+
+    .budget-item-actions {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 992px) {
+    .budget-item-card-cell {
+        padding: 0.95rem !important;
+    }
+
+    .budget-item-line-primary,
+    .budget-item-line-financial {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .budget-item-field-type,
+    .budget-item-field-reference,
+    .budget-item-field-description,
+    .budget-item-field-actions {
+        grid-column: 1 / -1;
+        justify-self: stretch;
+    }
+}
+
+@media (max-width: 768px) {
+    .budget-items-table {
+        border-spacing: 0 0.75rem;
+    }
+
+    .budget-item-line-primary,
+    .budget-item-line-financial {
+        grid-template-columns: 1fr;
+    }
+
+    .budget-item-field-type,
+    .budget-item-field-reference,
+    .budget-item-field-description,
+    .budget-item-field-actions {
+        grid-column: auto;
+        justify-self: stretch;
+    }
+
+    .budget-item-actions {
+        justify-content: stretch;
+    }
+
+    .budget-item-quick-action,
+    .budget-item-remove-action {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
 .client-list-name {
     line-height: 1.15;
 }
@@ -2943,10 +3137,13 @@ a {
 .equipment-actions-menu,
 .os-actions-menu {
     min-width: 16rem;
+    max-height: min(32rem, calc(100vh - 6rem));
     padding: 0.55rem;
     border: 1px solid rgba(148, 163, 184, 0.18);
     border-radius: 16px;
     box-shadow: 0 24px 50px rgba(15, 23, 42, 0.14);
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .equipment-actions-menu .dropdown-item,

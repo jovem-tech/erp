@@ -6,11 +6,15 @@
 <aside class="desktop-sidebar {{ $desktopSidebarStateClass }}" id="desktopSidebar" aria-label="Navegacao principal do sistema">
     <div class="desktop-sidebar-header">
         <a href="{{ route(\App\Support\DesktopNavigation::firstAllowedRouteName()) }}" class="desktop-brand">
-            <span class="desktop-brand-mark">
-                <i class="bi bi-houses-fill"></i>
+            <span class="desktop-brand-mark {{ ($desktopCompanyBranding['has_logo'] ?? false) ? 'has-logo' : '' }}">
+                @if ($desktopCompanyBranding['has_logo'] ?? false)
+                    <img src="{{ route('configurations.company.logo') }}" alt="Logo da empresa" class="desktop-brand-logo">
+                @else
+                    <i class="bi bi-houses-fill"></i>
+                @endif
             </span>
             <span class="desktop-brand-copy">
-                <strong>Sistema ERP</strong>
+                <strong>{{ $desktopCompanyBranding['name'] ?? 'Sistema ERP' }}</strong>
                 <small>Painel administrativo</small>
             </span>
         </a>

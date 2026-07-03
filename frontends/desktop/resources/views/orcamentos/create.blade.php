@@ -5,7 +5,6 @@
         <div>
             <p class="desktop-eyebrow">Comercial</p>
             <h2 class="surface-title fs-3 mb-2">Novo orçamento</h2>
-            <p class="surface-subtitle mb-0">Crie o orçamento sem acesso direto ao banco e com a mesma linguagem operacional do legado.</p>
         </div>
 
         <div class="d-flex flex-wrap gap-2 align-self-start">
@@ -23,10 +22,10 @@
     @include('orcamentos.form', [
         'budget' => $budget ?? [],
         'form' => $form ?? [],
+        'quickCatalogs' => $quickCatalogs ?? [],
         'formAction' => route('orcamentos.store'),
         'formMethod' => 'POST',
-        'formTitle' => 'Novo orçamento comercial',
-        'formSubtitle' => 'Use os catálogos de clientes, equipamentos, OS, serviços e peças para montar a proposta sem perder o fluxo do legado.',
+        'formTitle' => '',
         'submitLabel' => 'Salvar orçamento',
         'cancelUrl' => route('orcamentos.index'),
         'isEditMode' => false,
@@ -39,6 +38,7 @@
             'draftKey' => 'orcamentos:create',
             'isEditMode' => false,
             'budgetId' => 0,
+            'quickCatalogs' => $quickCatalogs ?? [],
             'catalogs' => [
                 'services' => collect($form['services'] ?? [])->map(static function (array $service): array {
                     return [

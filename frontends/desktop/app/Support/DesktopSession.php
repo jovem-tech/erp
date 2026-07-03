@@ -121,5 +121,6 @@ class DesktopSession
     public static function forget(): void
     {
         session()->forget(self::SESSION_KEY);
+        session()->forget('desktop_theme');
     }
 }

@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
 use App\Services\Financeiro\FinanceiroCartaoService;
 use App\Services\Financeiro\FinanceiroService;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -31,7 +32,8 @@ class OrderClosureService
         private readonly OrderWorkflowService $orderWorkflowService,
         private readonly FinanceiroService $financeiroService,
         private readonly FinanceiroCartaoService $financeiroCartaoService,
-        private readonly WhatsappMessagingService $whatsappMessagingService
+        private readonly WhatsappMessagingService $whatsappMessagingService,
+        private readonly OrderClosurePdfService $orderClosurePdfService
     ) {
     }
 
@@ -59,6 +61,23 @@ class OrderClosureService
             'custo_summary' => $this->buildCostSummary((int) $order->id),
             'retorno_padrao' => Carbon::now()->addDays(self::RETURN_FOLLOWUP_DEFAULT_DAYS)->toDateString(),
             'cartao' => $this->financeiroCartaoService->buildActiveDataset(),
+            'status_pagamento_pendente' => $this->pendingPaymentStatusInfo(),
+            'status_sem_reparo' => self::NO_REPAIR_STATUSES,
+        ];
+    }
+
+    /**
+     * @return array{codigo: string, nome: string}
+     */
+    private function pendingPaymentStatusInfo(): array
+    {
+        $nome = OrderStatus::query()
+            ->where('codigo', self::PENDING_PAYMENT_STATUS)
+            ->value('nome');
+
+        return [
+            'codigo' => self::PENDING_PAYMENT_STATUS,
+            'nome' => (string) ($nome ?? 'Entregue - Pendência Financeira'),
         ];
     }
 
@@ -183,7 +202,12 @@ class OrderClosureService
                     $this->cancelPendingCollections((int) $order->id);
                 }
 
-                return ['result' => 'ok'];
+                return [
+                    'result' => 'ok',
+                    'saldo_aberto' => $saldoAberto,
+                    'status_aplicado' => $statusAplicado,
+                    'titulo_valor' => round((float) $titulo->valor, 2),
+                ];
             });
         } catch (Throwable $exception) {
             logger()->error('[API V1][ORDERS][CLOSURE] Falha ao concluir a baixa', [
@@ -204,7 +228,15 @@ class OrderClosureService
 
         $notificacaoEnviada = null;
         if (filter_var($payload['notificar_cliente'] ?? false, FILTER_VALIDATE_BOOL)) {
-            $notificacaoEnviada = $this->sendClosureNotification($order, $statusRow);
+            $notificacaoEnviada = $this->sendClosureNotification(
+                $order,
+                (string) $result['status_aplicado'],
+                $dataEntrega,
+                $observacao,
+                $recebimentos,
+                (float) $result['saldo_aberto'],
+                (float) $result['titulo_valor']
+            );
         }
 
         $updatedOrder = Order::query()->with(['client', 'statusCatalog'])->find($order->id);
@@ -517,8 +549,18 @@ class OrderClosureService
         ]);
     }
 
-    private function sendClosureNotification(Order $order, OrderStatus $statusRow): bool
-    {
+    /**
+     * @param array<int, array<string, mixed>> $recebimentos
+     */
+    private function sendClosureNotification(
+        Order $order,
+        string $statusAplicadoCodigo,
+        string $dataEntrega,
+        string $observacaoEncerramento,
+        array $recebimentos,
+        float $saldoRestante,
+        float $valorTitulo
+    ): bool {
         $order->loadMissing('client');
         $telefone = trim((string) ($order->client?->telefone1 ?? ''));
 
@@ -526,18 +568,54 @@ class OrderClosureService
             return false;
         }
 
+        $statusNome = (string) (
+            OrderStatus::query()->where('codigo', $statusAplicadoCodigo)->value('nome')
+                ?? $statusAplicadoCodigo
+        );
+
+        $pdf = null;
+
+        try {
+            $pdf = $this->orderClosurePdfService->generate($order, [
+                'numeroOs' => (string) $order->numero_os,
+                'statusFinalNome' => $statusNome,
+                'dataEntrega' => $dataEntrega,
+                'observacaoEncerramento' => $observacaoEncerramento,
+                'valorFinal' => round((float) ($order->valor_final ?? 0), 2),
+                'valorTitulo' => round($valorTitulo, 2),
+                'saldoRestante' => round($saldoRestante, 2),
+                'recebimentos' => $recebimentos,
+            ]);
+        } catch (Throwable $exception) {
+            logger()->warning('[API V1][ORDERS][CLOSURE] Falha ao gerar PDF de encerramento', [
+                'order_id' => $order->id,
+                'message' => $exception->getMessage(),
+            ]);
+        }
+
+        $attachments = [];
+        if (($pdf['ok'] ?? false) && is_string($pdf['path'] ?? null) && is_file($pdf['path'])) {
+            $attachments[] = new UploadedFile(
+                $pdf['path'],
+                (string) ($pdf['file_name'] ?? ('OS-' . $order->numero_os . '.pdf')),
+                'application/pdf',
+                null,
+                true
+            );
+        }
+
         try {
             $resultado = $this->whatsappMessagingService->sendSystemMessage(
                 $telefone,
                 'Olá! Sua OS ' . $order->numero_os . ' foi encerrada como "'
-                    . $statusRow->nome . '". Qualquer dúvida, estamos à disposição.',
-                [],
+                    . $statusNome . '". Qualquer dúvida, estamos à disposição.',
+                $attachments,
                 trim((string) ($order->client?->nome_razao ?? '')) ?: null,
                 (int) ($order->cliente_id ?? 0) > 0 ? (int) $order->cliente_id : null,
                 [
                     'origin' => 'os_closure',
                     'os_id' => (int) $order->id,
-                    'status_codigo' => (string) ($statusRow->codigo ?? ''),
+                    'status_codigo' => $statusAplicadoCodigo,
                 ]
             );
 
@@ -549,6 +627,10 @@ class OrderClosureService
             ]);
 
             return false;
+        } finally {
+            if (($pdf['ok'] ?? false) && is_string($pdf['path'] ?? null) && is_file($pdf['path'])) {
+                @unlink($pdf['path']);
+            }
         }
     }
 

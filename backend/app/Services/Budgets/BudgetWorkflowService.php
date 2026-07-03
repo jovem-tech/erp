@@ -72,9 +72,40 @@ class BudgetWorkflowService
     {
         $selectedClientId = (int) ($context['cliente_id'] ?? 0);
         $selectedOrderId = (int) ($context['os_id'] ?? 0);
+        $selectedEquipmentId = 0;
+        $selectedClientPhone = '';
+        $selectedClientEmail = '';
+        $selectedOrderDeadline = '';
 
-        $clients = Client::query()
-            ->select(['id', 'nome_razao', 'cpf_cnpj', 'telefone1', 'email', 'cidade'])
+        if ($selectedOrderId > 0) {
+            $contextOrder = Order::query()->with('client')->find($selectedOrderId);
+
+            if ($contextOrder instanceof Order) {
+                if ($selectedClientId <= 0) {
+                    $selectedClientId = (int) ($contextOrder->cliente_id ?? 0);
+                }
+
+                $selectedEquipmentId = (int) ($contextOrder->equipamento_id ?? 0);
+
+                if ($contextOrder->client instanceof Client) {
+                    $selectedClientPhone = (string) ($contextOrder->client->telefone1 ?? '');
+                    $selectedClientEmail = (string) ($contextOrder->client->email ?? '');
+                }
+
+                if ($contextOrder->data_previsao !== null) {
+                    $selectedOrderDeadline = 'Previsão: ' . $contextOrder->data_previsao->format('d/m/Y');
+                }
+            }
+        }
+
+        $clientsQuery = Client::query()
+            ->select(['id', 'nome_razao', 'cpf_cnpj', 'telefone1', 'email', 'cidade']);
+
+        if ($selectedClientId > 0) {
+            $clientsQuery->orderByRaw('id = ? desc', [$selectedClientId]);
+        }
+
+        $clients = $clientsQuery
             ->orderBy('nome_razao')
             ->limit(80)
             ->get()
@@ -90,7 +121,7 @@ class BudgetWorkflowService
             ->all();
 
         $equipmentQuery = Equipment::query()
-            ->with('client')
+            ->with(['client', 'type', 'brand', 'model'])
             ->select(['id', 'cliente_id', 'tipo_id', 'marca_id', 'modelo_id', 'resumo_tecnico', 'numero_serie', 'imei', 'status'])
             ->orderByDesc('id')
             ->limit(80);
@@ -103,6 +134,9 @@ class BudgetWorkflowService
             'id' => (int) $equipment->id,
             'cliente_id' => (int) ($equipment->cliente_id ?? 0),
             'cliente_nome' => (string) ($equipment->client?->nome_razao ?? ''),
+            'tipo_nome' => (string) ($equipment->type?->nome ?? ''),
+            'marca_nome' => (string) ($equipment->brand?->nome ?? ''),
+            'modelo_nome' => (string) ($equipment->model?->nome ?? ''),
             'resumo_tecnico' => (string) ($equipment->resumo_tecnico ?? ''),
             'numero_serie' => (string) ($equipment->numero_serie ?? ''),
             'imei' => (string) ($equipment->imei ?? ''),
@@ -172,6 +206,10 @@ class BudgetWorkflowService
         return [
             'selected_client_id' => $selectedClientId,
             'selected_order_id' => $selectedOrderId,
+            'selected_equipment_id' => $selectedEquipmentId,
+            'selected_client_phone' => $selectedClientPhone,
+            'selected_client_email' => $selectedClientEmail,
+            'selected_order_deadline' => $selectedOrderDeadline,
             'clients' => $clients,
             'equipments' => $equipments,
             'orders' => $orders,

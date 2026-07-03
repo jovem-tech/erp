@@ -7,6 +7,10 @@
     $orders = $form['orders'] ?? [];
     $services = $form['services'] ?? [];
     $parts = $form['parts'] ?? [];
+    $quickCatalogs = is_array($quickCatalogs ?? null) ? $quickCatalogs : [];
+    $quickServiceEnabled = (bool) data_get($quickCatalogs, 'service.enabled', false);
+    $quickPartEnabled = (bool) data_get($quickCatalogs, 'part.enabled', false);
+    $canQuickCatalog = $quickServiceEnabled || $quickPartEnabled;
     $statusOptions = $form['status_options'] ?? [];
     $typeOptions = $form['type_options'] ?? [
         ['value' => 'previo', 'label' => 'Orçamento prévio'],
@@ -42,19 +46,30 @@
     $draftKey = 'orcamentos:' . ($isEditMode ? 'edit:' . $budgetId : 'create');
     $selectedClientId = (int) old('cliente_id', $form['selected_client_id'] ?? ($budget['cliente']['id'] ?? $budget['cliente_id'] ?? 0));
     $selectedOrderId = (int) old('os_id', $form['selected_order_id'] ?? ($budget['os']['id'] ?? $budget['os_id'] ?? 0));
-    $selectedEquipmentId = (int) old('equipamento_id', $budget['equipamento']['id'] ?? $budget['equipamento_id'] ?? 0);
-    $statusValue = old('status', $budget['status'] ?? 'rascunho');
-    $typeValue = old('tipo_orcamento', $budget['tipo_orcamento'] ?? 'previo');
-    $originValue = old('origem', $budget['origem'] ?? 'manual');
+    $selectedEquipmentId = (int) old('equipamento_id', $budget['equipamento']['id'] ?? $budget['equipamento_id'] ?? ($form['selected_equipment_id'] ?? 0));
+    $fromOrderListing = ! $isEditMode && $selectedOrderId > 0;
+    $statusValue = old('status', $budget['status'] ?? ($fromOrderListing ? 'pendente_envio' : 'rascunho'));
+    $typeValue = old('tipo_orcamento', $budget['tipo_orcamento'] ?? ($fromOrderListing ? 'assistencia' : 'previo'));
+    $originValue = old('origem', $budget['origem'] ?? ($fromOrderListing ? 'os' : 'manual'));
+    $prazoExecucaoValue = old('prazo_execucao', $budget['prazo_execucao'] ?? ($fromOrderListing ? ($form['selected_order_deadline'] ?? '') : ''));
+    $clientLocked = ! $isEditMode && $selectedOrderId > 0 && $selectedClientId > 0;
+    $lockedOrderNumber = '';
+    $lockedClientName = '';
+    if ($clientLocked) {
+        foreach ($orders as $orderOption) {
+            if ((int) ($orderOption['id'] ?? 0) === $selectedOrderId) {
+                $lockedOrderNumber = trim((string) ($orderOption['numero_os'] ?? ''));
+                $lockedClientName = trim((string) ($orderOption['cliente_nome'] ?? ''));
+                break;
+            }
+        }
+    }
 @endphp
 
 <section class="desktop-form-card">
     <div class="surface-card-header align-items-start">
         <div>
             <h2 class="surface-title mb-1">{{ $formTitle ?? 'Orçamento' }}</h2>
-            <p class="surface-subtitle mb-0">
-                {{ $formSubtitle ?? 'Fluxo comercial completo com catálogo de clientes, equipamentos, OS, serviços e peças, tudo mediado pela API central.' }}
-            </p>
         </div>
 
         <div class="d-flex flex-wrap gap-2 align-items-start">
@@ -111,10 +126,6 @@
                 <i class="bi bi-sliders"></i>
                 Dados operacionais
             </button>
-            <button type="button" class="equipment-tab" data-budget-tab="pacotes" aria-pressed="false">
-                <i class="bi bi-boxes"></i>
-                Pacotes de serviço
-            </button>
             <button type="button" class="equipment-tab" data-budget-tab="financeiro" aria-pressed="false">
                 <i class="bi bi-cash-coin"></i>
                 Orçamento e financeiro
@@ -122,10 +133,31 @@
         </div>
 
         <div class="equipment-tab-panel is-active" data-budget-panel="cliente">
+            @if ($clientLocked)
+                <div class="alert alert-info d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3" role="alert">
+                    <div class="d-flex align-items-center gap-2">
+                        <i class="bi bi-lock"></i>
+                        <div>
+                            Cliente definido pela OS {{ $lockedOrderNumber !== '' ? $lockedOrderNumber : '#' . $selectedOrderId }}{{ $lockedClientName !== '' ? ' — ' . $lockedClientName : '' }} e não pode ser alterado aqui.
+                            Para usar outro cliente, volte à listagem de OS e escolha a desejada.
+                        </div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <a href="{{ route('orders.create', ['cliente_id' => $selectedClientId]) }}" class="btn btn-outline-primary btn-sm">
+                            <i class="bi bi-plus-circle me-1"></i>
+                            Nova OS
+                        </a>
+                        <a href="{{ route('orcamentos.create') }}" class="btn btn-outline-secondary btn-sm">
+                            <i class="bi bi-file-earmark-plus me-1"></i>
+                            Novo orçamento
+                        </a>
+                    </div>
+                </div>
+            @endif
             <div class="desktop-grid desktop-grid-two">
-                <div class="desktop-grid-span-2">
+                <div>
                     <label for="orcamentoClienteId">Cliente cadastrado</label>
-                    <select id="orcamentoClienteId" name="cliente_id" class="form-select" data-select2-placeholder="Selecione um cliente..." data-select2-allow-clear="true">
+                    <select id="orcamentoClienteId" name="{{ $clientLocked ? '' : 'cliente_id' }}" class="form-select" data-select2-placeholder="Selecione um cliente..." data-select2-allow-clear="true" @disabled($clientLocked)>
                         <option value=""></option>
                         @foreach ($clients as $client)
                             @php
@@ -138,22 +170,26 @@
                             <option value="{{ $clientId }}" @selected($selectedClientId === $clientId)>{{ $clientLabel !== '' ? $clientLabel : 'Cliente' }}</option>
                         @endforeach
                     </select>
-                    <small class="text-secondary d-block mt-2">Se o cliente ainda não existir, preencha os dados avulsos abaixo.</small>
+                    @if ($clientLocked)
+                        <input type="hidden" name="cliente_id" value="{{ $selectedClientId }}">
+                    @else
+                        <small class="text-secondary d-block mt-2">Se o cliente ainda não existir, preencha os dados avulsos abaixo.</small>
+                    @endif
                 </div>
 
-                <div class="desktop-grid-span-2">
+                <div>
                     <label for="orcamentoClienteAvulso">Nome do cliente eventual</label>
-                    <input type="text" id="orcamentoClienteAvulso" name="cliente_nome_avulso" class="form-control" value="{{ old('cliente_nome_avulso', $budget['cliente_nome_avulso'] ?? '') }}" placeholder="Preencher apenas se não houver cadastro">
+                    <input type="text" id="orcamentoClienteAvulso" name="cliente_nome_avulso" class="form-control" value="{{ old('cliente_nome_avulso', $budget['cliente_nome_avulso'] ?? '') }}" placeholder="Preencher apenas se não houver cadastro" @disabled($clientLocked)>
                 </div>
 
                 <div>
                     <label for="orcamentoTelefoneContato">Telefone de contato</label>
-                    <input type="text" id="orcamentoTelefoneContato" name="telefone_contato" class="form-control" value="{{ old('telefone_contato', $budget['telefone_contato'] ?? '') }}" placeholder="(11) 98765-4321">
+                    <input type="text" id="orcamentoTelefoneContato" name="telefone_contato" class="form-control" value="{{ old('telefone_contato', $budget['telefone_contato'] ?? ($form['selected_client_phone'] ?? '')) }}" placeholder="(11) 98765-4321">
                 </div>
 
                 <div>
                     <label for="orcamentoEmailContato">E-mail de contato</label>
-                    <input type="email" id="orcamentoEmailContato" name="email_contato" class="form-control" value="{{ old('email_contato', $budget['email_contato'] ?? '') }}" placeholder="cliente@dominio.com">
+                    <input type="email" id="orcamentoEmailContato" name="email_contato" class="form-control" value="{{ old('email_contato', $budget['email_contato'] ?? ($form['selected_client_email'] ?? '')) }}" placeholder="cliente@dominio.com">
                 </div>
             </div>
         </div>
@@ -182,7 +218,14 @@
                         @foreach ($equipments as $equipment)
                             @php
                                 $equipmentId = (int) ($equipment['id'] ?? 0);
-                                $equipmentLabel = trim((string) ($equipment['resumo_tecnico'] ?? ''));
+                                $equipmentTipoNome = trim((string) ($equipment['tipo_nome'] ?? ''));
+                                $equipmentMarcaNome = trim((string) ($equipment['marca_nome'] ?? ''));
+                                $equipmentModeloNome = trim((string) ($equipment['modelo_nome'] ?? ''));
+                                $equipmentMarcaModelo = trim(implode(' ', array_filter([$equipmentMarcaNome, $equipmentModeloNome])));
+                                $equipmentLabel = trim(implode(' - ', array_filter([$equipmentTipoNome, $equipmentMarcaModelo])));
+                                if ($equipmentLabel === '') {
+                                    $equipmentLabel = trim((string) ($equipment['resumo_tecnico'] ?? ''));
+                                }
                                 $serial = trim((string) ($equipment['numero_serie'] ?? ''));
                                 $clientName = trim((string) ($equipment['cliente_nome'] ?? ''));
                             @endphp
@@ -198,12 +241,24 @@
 
                 <div>
                     <label for="orcamentoValidadeDias">Validade em dias</label>
-                    <input type="number" id="orcamentoValidadeDias" name="validade_dias" class="form-control" min="0" step="1" value="{{ old('validade_dias', $budget['validade_dias'] ?? $form['default_validity_days'] ?? 10) }}">
+                    @php
+                        $validadeDiasValue = (int) old('validade_dias', $budget['validade_dias'] ?? $form['default_validity_days'] ?? 10);
+                        $validadeDiasOptions = [10, 15, 20];
+                        if (! in_array($validadeDiasValue, $validadeDiasOptions, true)) {
+                            $validadeDiasOptions[] = $validadeDiasValue;
+                            sort($validadeDiasOptions);
+                        }
+                    @endphp
+                    <select id="orcamentoValidadeDias" name="validade_dias" class="form-select" data-budget-validity-days>
+                        @foreach ($validadeDiasOptions as $validadeDiasOption)
+                            <option value="{{ $validadeDiasOption }}" @selected($validadeDiasValue === $validadeDiasOption)>{{ $validadeDiasOption }} dias</option>
+                        @endforeach
+                    </select>
                 </div>
 
                 <div>
                     <label for="orcamentoValidadeData">Validade até</label>
-                    <input type="date" id="orcamentoValidadeData" name="validade_data" class="form-control" value="{{ old('validade_data', ! empty($budget['validade_data']) ? \Illuminate\Support\Carbon::parse($budget['validade_data'])->format('Y-m-d') : '') }}">
+                    <input type="date" id="orcamentoValidadeData" name="validade_data" class="form-control" data-budget-validity-date value="{{ old('validade_data', ! empty($budget['validade_data']) ? \Illuminate\Support\Carbon::parse($budget['validade_data'])->format('Y-m-d') : '') }}">
                 </div>
             </div>
         </div>
@@ -241,7 +296,7 @@
 
                 <div>
                     <label for="orcamentoPrazoExecucao">Prazo de execução</label>
-                    <input type="text" id="orcamentoPrazoExecucao" name="prazo_execucao" class="form-control" value="{{ old('prazo_execucao', $budget['prazo_execucao'] ?? '') }}" placeholder="Ex.: 3 dias úteis">
+                    <input type="text" id="orcamentoPrazoExecucao" name="prazo_execucao" class="form-control" value="{{ $prazoExecucaoValue }}" placeholder="Ex.: 3 dias úteis">
                 </div>
 
                 <div class="desktop-grid-span-2">
@@ -256,11 +311,11 @@
             </div>
         </div>
 
-        <div class="equipment-tab-panel" data-budget-panel="pacotes">
+        <div class="equipment-tab-panel" data-budget-panel="financeiro">
             <div class="surface-card-header align-items-start mb-3">
                 <div>
-                    <h3 class="surface-title fs-5 mb-1">Pacotes de serviço</h3>
-                    <p class="surface-subtitle mb-0">Selecione serviços e peças do catálogo do backend e monte o orçamento sem sair da tela.</p>
+                    <h3 class="surface-title fs-5 mb-1">Itens do orçamento</h3>
+                    <p class="surface-subtitle mb-0">Lance serviços cadastrados, peças do estoque ou itens avulsos sem cadastro vinculado.</p>
                 </div>
 
                 <button type="button" class="btn btn-primary" data-budget-item-add>
@@ -269,17 +324,15 @@
                 </button>
             </div>
 
-            <div class="table-responsive">
-                <table class="table table-stack align-middle">
+            <div class="table-responsive mb-4">
+                <table class="table align-middle budget-items-table">
                     <thead>
                     <tr>
                         <th>Tipo</th>
                         <th>Referência</th>
-                        <th>Descrição</th>
                         <th>Qtd</th>
                         <th>Valor unit.</th>
                         <th>Desconto</th>
-                        <th>Acréscimo</th>
                         <th>Total</th>
                         <th>Observações</th>
                         <th class="text-end">Ações</th>
@@ -287,19 +340,17 @@
                     </thead>
                     <tbody data-budget-items>
                         @foreach ($selectedItems as $index => $item)
-                            @include('orcamentos.partials.item-row', ['index' => $index, 'item' => $item])
+                            @include('orcamentos.partials.item-row', ['index' => $index, 'item' => $item, 'quickCatalogs' => $quickCatalogs])
                         @endforeach
                     </tbody>
                 </table>
             </div>
 
             <template id="orcamentoItemTemplate">
-                @include('orcamentos.partials.item-row', ['index' => '__INDEX__', 'item' => []])
+                @include('orcamentos.partials.item-row', ['index' => '__INDEX__', 'item' => [], 'quickCatalogs' => $quickCatalogs])
             </template>
-        </div>
 
-        <div class="equipment-tab-panel" data-budget-panel="financeiro">
-            <div class="desktop-grid desktop-grid-two">
+            <div class="desktop-grid desktop-grid-four">
                 <div class="desktop-grid-span-2">
                     <div class="surface-card-header align-items-start mb-2">
                         <div>
@@ -343,6 +394,10 @@
 </section>
 
 @push('modals')
+    @if ($canQuickCatalog)
+        @include('orcamentos.partials.quick-item-modal', ['quickCatalogs' => $quickCatalogs])
+    @endif
+
     <div class="modal fade" id="orcamentoDraftModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content modal-shell">

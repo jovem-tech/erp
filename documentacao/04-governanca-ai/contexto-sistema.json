@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-06-29T22:25:28+02:00",
+    "generated_at": "2026-07-03T08:34:30+02:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "3.4.11",
+        "app_version": "3.5.3",
         "api_version": "1.1.0",
         "production_target": "Ubuntu VPS",
         "development_target": "Windows/XAMPP"
@@ -52,7 +52,7 @@
                 },
                 {
                     "file": "documentacao/02-infraestrutura-ambientes/cors-urls-logs-filas-scheduler.md",
-                    "title": "CORS, URLs, Logs, Filas e Scheduler"
+                    "title": "CORS, URLs, Logs, Filas, Cache/Sessao e Scheduler"
                 },
                 {
                     "file": "documentacao/02-infraestrutura-ambientes/linux-vps.md",
@@ -78,6 +78,10 @@
                 {
                     "file": "documentacao/03-arquitetura-tecnica/backend-central-minimo.md",
                     "title": "Backend Central Minimo"
+                },
+                {
+                    "file": "documentacao/03-arquitetura-tecnica/catalogo-status-os.md",
+                    "title": "Catálogo de status das Ordens de Serviço"
                 },
                 {
                     "file": "documentacao/03-arquitetura-tecnica/contrato-api-backend-central.md",
@@ -304,6 +308,26 @@
                 {
                     "file": "documentacao/07-novas-implementacoes/2026-06-29-select2-manual-init-collision-desktop.md",
                     "title": "2026-06-29 - Correcao do Select2 manual na criacao de OS do desktop"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-06-30-otimizacao-performance-backend-desktop.md",
+                    "title": "Otimização de performance: backend e desktop"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-01-sidebar-conhecimento-layout.md",
+                    "title": "2026-07-01 - Ajuste de taxonomia e densidade do sidebar desktop"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-02-acoes-rapidas-listagem-os-desktop.md",
+                    "title": "Acoes rapidas na listagem de OS do desktop"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-02-jovem-tech-design-system-tema-desktop.md",
+                    "title": "Jovem Tech Design System v3.0.0 — Novo tema do desktop"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-03-cadastro-rapido-pecas-servicos-orcamento-desktop.md",
+                    "title": "Cadastro rapido de pecas e servicos no orcamento desktop"
                 },
                 {
                     "file": "documentacao/07-novas-implementacoes/historico-de-versoes.md",
@@ -569,6 +593,21 @@
         {
             "directory": "specs/016-modelo-assistencia-tecnica-desktop",
             "title": "Feature Specification: Modelo Ideal da Assistência Técnica no Desktop",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/017-cadastro-rapido-servicos-pecas-orcamento-desktop",
+            "title": "Feature Specification: Cadastro rápido de serviços e peças no orçamento desktop",
             "artifacts": {
                 "spec": true,
                 "plan": true,

@@ -6,6 +6,7 @@ use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
 use App\Services\OrcamentoService;
+use App\Support\DesktopSession;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -76,6 +77,7 @@ class OrcamentoController extends DesktopController
             'pageTitle' => 'Novo orçamento',
             'budget' => [],
             'form' => $form,
+            'quickCatalogs' => $this->quickCatalogConfig(),
             'isEditMode' => false,
         ]);
     }
@@ -175,6 +177,7 @@ class OrcamentoController extends DesktopController
             'pageTitle' => 'Editar orçamento',
             'budget' => $budget,
             'form' => $form,
+            'quickCatalogs' => $this->quickCatalogConfig(),
             'isEditMode' => true,
         ]);
     }
@@ -343,5 +346,30 @@ class OrcamentoController extends DesktopController
         }
 
         return $errors;
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    private function quickCatalogConfig(): array
+    {
+        return [
+            'service' => [
+                'enabled' => DesktopSession::can('servicos', 'criar'),
+                'label' => 'Serviço',
+                'title' => 'Cadastro rápido de serviço',
+                'submit_label' => 'Cadastrar serviço',
+                'store_url' => route('servicos.quick.store'),
+                'full_url' => route('servicos.create'),
+            ],
+            'part' => [
+                'enabled' => DesktopSession::can('estoque', 'criar'),
+                'label' => 'Peça',
+                'title' => 'Cadastro rápido de peça',
+                'submit_label' => 'Cadastrar peça',
+                'store_url' => route('estoque.quick.store'),
+                'full_url' => route('estoque.create'),
+            ],
+        ];
     }
 }

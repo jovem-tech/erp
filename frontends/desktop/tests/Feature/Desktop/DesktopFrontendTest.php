@@ -412,6 +412,20 @@ class DesktopFrontendTest extends TestCase
                             'data_entrega' => null,
                             'prazo' => ['estado' => 'atrasado', 'label' => 'Atrasada', 'dias' => 2],
                             'orcamento' => null,
+                            'proximas_etapas' => [
+                                [
+                                    'codigo' => 'aguardando_reparo',
+                                    'nome' => 'Aguardando Reparo',
+                                    'grupo_macro' => 'execucao',
+                                    'cor' => '#16a34a',
+                                    'icone' => 'bi-tools',
+                                    'ordem_fluxo' => 40,
+                                    'status_final' => false,
+                                    'status_pausa' => false,
+                                    'estado_fluxo_padrao' => 'em_execucao',
+                                    'ativo' => true,
+                                ],
+                            ],
                             'valor_final' => '150.00',
                             'valor_recebido' => null,
                             'saldo' => null,
@@ -438,7 +452,8 @@ class DesktopFrontendTest extends TestCase
         $response = $this
             ->withSession($this->desktopSession([
                 'dashboard' => ['visualizar'],
-                'os' => ['visualizar'],
+                'os' => ['visualizar', 'editar'],
+                'orcamentos' => ['visualizar', 'criar'],
             ]))
             ->get('/os');
 
@@ -448,7 +463,12 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('desktop-sidebar is-hidden', false)
             ->assertSee('desktop-main is-full', false)
             ->assertSee('OS26060006')
-            ->assertSee('Notebook Dell Inspiron 15');
+            ->assertSee('Notebook Dell Inspiron 15')
+            ->assertSee('Gerar orçamento')
+            ->assertSee('Alterar status')
+            ->assertSee('Aguardando Reparo')
+            ->assertSee(route('orcamentos.create', ['os_id' => 3578]), false)
+            ->assertSee(route('orders.status.update', 3578), false);
 
         Http::assertSent(static function ($request): bool {
             return $request->method() === 'GET'
@@ -456,6 +476,373 @@ class DesktopFrontendTest extends TestCase
                 && str_contains($request->url(), 'status_scope=open');
         });
     }
+
+    public function test_orcamentos_create_page_renders_dynamic_item_reference_select_without_select2_exclusion(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/configuracoes/empresa*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'settings' => [
+                        'empresa_nome_fantasia' => 'Sistema ERP',
+                    ],
+                    'logo' => [
+                        'exists' => false,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orcamentos/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'clients' => [
+                            [
+                                'id' => 201,
+                                'nome_razao' => 'Cliente Alpha',
+                                'cpf_cnpj' => '11.111.111/0001-11',
+                                'telefone1' => '(21) 98888-1111',
+                            ],
+                        ],
+                        'equipments' => [
+                            [
+                                'id' => 301,
+                                'tipo_nome' => 'Notebook',
+                                'marca_nome' => 'Dell',
+                                'modelo_nome' => 'Inspiron 15',
+                                'numero_serie' => 'SN-12345',
+                                'cliente_nome' => 'Cliente Alpha',
+                                'resumo_tecnico' => 'Notebook Dell Inspiron 15',
+                            ],
+                        ],
+                        'orders' => [
+                            [
+                                'id' => 401,
+                                'numero_os' => 'OS401',
+                                'cliente_nome' => 'Cliente Alpha',
+                            ],
+                        ],
+                        'services' => [
+                            [
+                                'id' => 11,
+                                'label' => 'Formatação completa',
+                                'description' => 'Formatação completa',
+                                'price' => 150.0,
+                            ],
+                        ],
+                        'parts' => [
+                            [
+                                'id' => 21,
+                                'label' => 'SSD 480GB',
+                                'description' => 'SSD 480GB',
+                                'price' => 300.0,
+                            ],
+                        ],
+                        'status_options' => [
+                            ['value' => 'rascunho', 'label' => 'Rascunho'],
+                            ['value' => 'pendente_envio', 'label' => 'Pendente de envio'],
+                        ],
+                        'default_validity_days' => 10,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'orcamentos' => ['visualizar', 'criar'],
+                    'clientes' => ['visualizar'],
+                    'equipamentos' => ['visualizar'],
+                    'os' => ['visualizar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/orcamentos/novo');
+
+        $response
+            ->assertOk()
+            ->assertSee('assets/js/orcamentos-form.js', false)
+            ->assertSee('data-budget-item-reference', false)
+            ->assertSee('desktop-grid-four', false)
+            ->assertSee('budget-item-layout', false)
+            ->assertDontSee('data-select2="false"', false);
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_create_page_renders_quick_item_modal_and_action_button_when_catalog_permissions_exist(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/configuracoes/empresa*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'settings' => [
+                        'empresa_nome_fantasia' => 'Sistema ERP',
+                    ],
+                    'logo' => [
+                        'exists' => false,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orcamentos/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'clients' => [],
+                        'equipments' => [],
+                        'orders' => [],
+                        'services' => [],
+                        'parts' => [],
+                        'status_options' => [
+                            ['value' => 'rascunho', 'label' => 'Rascunho'],
+                        ],
+                        'default_validity_days' => 10,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'orcamentos' => ['visualizar', 'criar'],
+                    'servicos' => ['visualizar', 'criar'],
+                    'estoque' => ['visualizar', 'criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/orcamentos/novo');
+
+        $response
+            ->assertOk()
+            ->assertSee('data-budget-item-quick-create', false)
+            ->assertSee('Novo serviço', false)
+            ->assertSee('id="orcamentoQuickItemModal"', false)
+            ->assertSee('id="orcamentoQuickItemForm"', false)
+            ->assertSee(route('servicos.quick.store'), false)
+            ->assertSee(route('estoque.quick.store'), false);
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_create_page_renders_quick_item_button_label_for_piece_rows(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/configuracoes/empresa*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'settings' => [
+                        'empresa_nome_fantasia' => 'Sistema ERP',
+                    ],
+                    'logo' => [
+                        'exists' => false,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orcamentos/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'clients' => [],
+                        'equipments' => [],
+                        'orders' => [],
+                        'services' => [],
+                        'parts' => [],
+                        'status_options' => [
+                            ['value' => 'rascunho', 'label' => 'Rascunho'],
+                        ],
+                        'default_validity_days' => 10,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'orcamentos' => ['visualizar', 'criar'],
+                    'servicos' => ['visualizar', 'criar'],
+                    'estoque' => ['visualizar', 'criar'],
+                ]),
+                [
+                    'desktop_theme' => 'default',
+                    '_old_input' => [
+                        'itens' => [
+                            [
+                                'tipo_item' => 'peca',
+                            ],
+                        ],
+                    ],
+                ]
+            ))
+            ->get('/orcamentos/novo');
+
+        $response
+            ->assertOk()
+            ->assertSee('Nova peça', false)
+            ->assertSee('data-budget-item-quick-create-label', false);
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_quick_service_store_creates_service_and_returns_json(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/servicos' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'servico' => [
+                        'id' => 901,
+                        'nome' => 'Limpeza interna',
+                        'descricao' => 'Serviço rápido de limpeza',
+                        'valor' => 120.0,
+                        'tempo_padrao_horas' => 1.5,
+                        'custo_direto_padrao' => 20.0,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'criar'],
+                    'servicos' => ['criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->postJson('/servicos/rapido', [
+                'nome' => 'Limpeza interna',
+                'descricao' => 'Serviço rápido de limpeza',
+                'tipo_equipamento' => 'Notebook',
+                'valor' => 120,
+                'tempo_padrao_horas' => 1.5,
+                'custo_direto_padrao' => 20,
+            ]);
+
+        $response
+            ->assertCreated()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('service.id', 901)
+            ->assertJsonPath('service.nome', 'Limpeza interna')
+            ->assertJsonPath('service.valor', 120);
+
+        Http::assertSent(static function ($request): bool {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/servicos'
+                && ($request['nome'] ?? null) === 'Limpeza interna'
+                && ($request['valor'] ?? null) == 120
+                && ($request['tipo_equipamento'] ?? null) === 'Notebook';
+        });
+    }
+
+    public function test_quick_part_store_creates_part_and_returns_json(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/estoque' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'peca' => [
+                        'id' => 902,
+                        'codigo' => 'SSD-480',
+                        'nome' => 'SSD 480GB',
+                        'preco_venda' => 300.0,
+                        'preco_custo' => 220.0,
+                        'quantidade_atual' => 4,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'criar'],
+                    'estoque' => ['criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->postJson('/estoque/rapido', [
+                'codigo' => 'SSD-480',
+                'nome' => 'SSD 480GB',
+                'tipo_equipamento' => 'Notebook',
+                'categoria' => 'Armazenamento',
+                'preco_venda' => 300,
+                'preco_custo' => 220,
+                'quantidade_atual' => 4,
+                'estoque_minimo' => 1,
+                'observacoes' => 'Peça de teste',
+            ]);
+
+        $response
+            ->assertCreated()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('part.id', 902)
+            ->assertJsonPath('part.codigo', 'SSD-480')
+            ->assertJsonPath('part.preco_venda', 300);
+
+        Http::assertSent(static function ($request): bool {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/estoque'
+                && ($request['codigo'] ?? null) === 'SSD-480'
+                && ($request['nome'] ?? null) === 'SSD 480GB'
+                && ($request['preco_venda'] ?? null) == 300
+                && ($request['categoria'] ?? null) === 'Armazenamento';
+        });
+    }
+
+    public function test_orders_update_status_redirects_back_with_backend_error_message(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/501/status' => Http::response([
+                'status' => 'error',
+                'data' => null,
+                'error' => [
+                    'message' => 'A transicao solicitada nao e permitida.',
+                ],
+                'meta' => [],
+            ], 422),
+        ]));
+
+        $response = $this
+            ->from('/os')
+            ->withSession($this->desktopSession([
+                'dashboard' => ['visualizar'],
+                'os' => ['visualizar', 'editar'],
+            ]))
+            ->post('/os/501/status', [
+                'status' => 'aguardando_reparo',
+            ]);
+
+        $response
+            ->assertRedirect('/os')
+            ->assertSessionHas('error', 'A transicao solicitada nao e permitida.')
+            ->assertSessionHasInput('status', 'aguardando_reparo');
+    }
+
     public function test_knowledge_os_flow_index_renders_visual_workflow_diagram_and_edit_sections(): void
     {
         Http::fake(array_merge($this->notificationsFixture(), [
@@ -984,9 +1371,60 @@ class DesktopFrontendTest extends TestCase
             ->assertOk()
             ->assertJsonPath('status', 'success')
             ->assertJsonPath('data.heroCard.label', 'Faturamento mês')
+            ->assertJsonPath('data.heroCard.action_url', null)
             ->assertJsonPath('data.charts.monthly.year', 2026)
             ->assertJsonPath('data.charts.equipmentTypes.period.mes', 1)
             ->assertJsonPath('data.lowStock', []);
+    }
+
+    public function test_dashboard_data_route_normalizes_api_orders_action_url_to_desktop_route(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/auth/me' => Http::response([
+                'status' => 'success',
+                'data' => $this->fakeUser([
+                    'permissions' => [
+                        'dashboard' => ['visualizar'],
+                        'os' => ['visualizar'],
+                    ],
+                    'modules' => ['dashboard', 'os'],
+                ]),
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/dashboard/summary*' => Http::response($this->dashboardSummaryFixture([
+                'data' => [
+                    'access' => [
+                        'profile' => 'tecnico',
+                        'is_technician' => true,
+                        'has_financial_access' => false,
+                    ],
+                    'hero_card' => [
+                        'type' => 'technician',
+                        'label' => 'Comissões acumuladas',
+                        'value' => 10.0,
+                        'value_type' => 'money',
+                        'meta' => 'Comissões estimadas neste mês.',
+                        'icon' => 'bi-wallet2',
+                        'accent' => '#16a34a',
+                        'action_label' => 'Ver minhas OS',
+                        'action_url' => '/api/v1/orders',
+                    ],
+                ],
+            ])),
+        ]));
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'dashboard' => ['visualizar'],
+                'os' => ['visualizar'],
+            ], syncedAt: 0))
+            ->getJson('/dashboard/dados?ano=2026&equip_mes=1&equip_ano=2026');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('data.heroCard.action_url', route('orders.index'))
+            ->assertJsonPath('data.heroCard.action_label', 'Ver minhas OS');
     }
 
     public function test_search_suggestions_returns_grouped_json_for_allowed_domains(): void
@@ -3661,9 +4099,9 @@ class DesktopFrontendTest extends TestCase
             ]),
         ];
     }
-    private function dashboardSummaryFixture(): array
+    private function dashboardSummaryFixture(array $overrides = []): array
     {
-        return [
+        return array_replace_recursive([
             'status' => 'success',
             'data' => [
                 'access' => [
@@ -3852,7 +4290,7 @@ class DesktopFrontendTest extends TestCase
             ],
             'error' => null,
             'meta' => [],
-        ];
+        ], $overrides);
     }
 
     private function desktopSession(array $permissions, ?int $syncedAt = null): array

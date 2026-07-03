@@ -207,8 +207,10 @@ class DashboardSummaryService
      */
     private function availableOrderYears(User $user): array
     {
+        $yearExpression = $this->datePartExpression(self::OPEN_DATE_SQL, 'year');
+
         $years = $this->baseOrdersQuery($user)
-            ->selectRaw('DISTINCT YEAR(' . self::OPEN_DATE_SQL . ') as y')
+            ->selectRaw($yearExpression . ' as y')
             ->pluck('y')
             ->map(static fn ($year): int => (int) $year)
             ->filter(static fn (int $year): bool => $year > 0)
@@ -285,6 +287,26 @@ class DashboardSummaryService
             : $start->copy()->addMonthNoOverflow();
 
         return [$start->toDateTimeString(), $end->toDateTimeString()];
+    }
+
+    /**
+     * @param 'year'|'month' $part
+     */
+    private function datePartExpression(string $column, string $part): string
+    {
+        $driver = DB::getDriverName();
+
+        if ($driver === 'sqlite') {
+            return match ($part) {
+                'year' => "CAST(strftime('%Y', {$column}) AS INTEGER)",
+                'month' => "CAST(strftime('%m', {$column}) AS INTEGER)",
+            };
+        }
+
+        return match ($part) {
+            'year' => "YEAR({$column})",
+            'month' => "MONTH({$column})",
+        };
     }
 
     /**
@@ -428,20 +450,22 @@ class DashboardSummaryService
     private function buildMonthlyChart(User $user, int $year): array
     {
         [$yearStart, $yearEnd] = $this->periodBounds($year);
+        $monthExpression = $this->datePartExpression(self::OPEN_DATE_SQL, 'month');
+        $deliveryMonthExpression = $this->datePartExpression(self::DELIVERY_DATE_SQL, 'month');
 
         $opened = $this->baseOrdersQuery($user)
-            ->selectRaw('MONTH(' . self::OPEN_DATE_SQL . ') as mes, COUNT(*) as total')
+            ->selectRaw($monthExpression . ' as mes, COUNT(*) as total')
             ->whereRaw(self::OPEN_DATE_SQL . ' >= ? AND ' . self::OPEN_DATE_SQL . ' < ?', [$yearStart, $yearEnd])
-            ->groupByRaw('MONTH(' . self::OPEN_DATE_SQL . ')')
+            ->groupByRaw($monthExpression)
             ->pluck('total', 'mes');
 
         $delivered = $this->baseOrdersQuery($user)
-            ->selectRaw('MONTH(' . self::DELIVERY_DATE_SQL . ') as mes, COUNT(*) as total')
+            ->selectRaw($deliveryMonthExpression . ' as mes, COUNT(*) as total')
             ->whereRaw(
                 self::DELIVERY_DATE_SQL . ' >= ? AND ' . self::DELIVERY_DATE_SQL . ' < ? AND ' . self::DELIVERED_SQL,
                 [$yearStart, $yearEnd]
             )
-            ->groupByRaw('MONTH(' . self::DELIVERY_DATE_SQL . ')')
+            ->groupByRaw($deliveryMonthExpression)
             ->pluck('total', 'mes');
 
         $points = [];

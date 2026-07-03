@@ -189,6 +189,17 @@ class OrderFlowTest extends TestCase
             'valor_final' => 300.00,
         ]);
 
+        $triagemId = (int) DB::table('os_status')->where('codigo', 'triagem')->value('id');
+        $aguardandoId = (int) DB::table('os_status')->where('codigo', 'aguardando_reparo')->value('id');
+
+        DB::table('os_status_transicoes')->insert([
+            'status_origem_id' => $triagemId,
+            'status_destino_id' => $aguardandoId,
+            'ativo' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
         $this->createBudgetRecord([
             'numero' => 'ORC-2606-000031',
             'os_id' => $orderId,
@@ -227,6 +238,7 @@ class OrderFlowTest extends TestCase
             ->assertJsonPath('data.orders.0.prazo.estado', 'atrasado')
             ->assertJsonPath('data.orders.0.prazo.dias', 2)
             ->assertJsonPath('data.orders.0.orcamento.status', 'aguardando_resposta')
+            ->assertJsonPath('data.orders.0.proximas_etapas.0.codigo', 'aguardando_reparo')
             ->assertJsonPath('data.orders.0.valor_recebido', '100.00')
             ->assertJsonPath('data.orders.0.saldo', '200.00');
     }

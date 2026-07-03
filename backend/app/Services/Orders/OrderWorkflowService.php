@@ -103,13 +103,23 @@ class OrderWorkflowService
         $orderIds = $orders->map(static fn (Order $order): int => (int) $order->id)->all();
         $budgetByOrderId = $this->resolveLatestBudgetByOrderId($orderIds);
         $receivableByOrderId = $this->resolveReceivableSummaryByOrderId($orderIds);
+        $nextStepsByStatusCode = $this->resolveNextStatusOptionsMap(
+            $orders
+                ->pluck('status')
+                ->map(static fn (mixed $status): string => trim((string) $status))
+                ->filter(static fn (string $status): bool => $status !== '')
+                ->unique()
+                ->values()
+                ->all()
+        );
 
         $paginator->setCollection(
             $orders->map(
                 fn (Order $order): array => $this->mapSummary(
                     $order,
                     $budgetByOrderId[(int) $order->id] ?? null,
-                    $receivableByOrderId[(int) $order->id] ?? null
+                    $receivableByOrderId[(int) $order->id] ?? null,
+                    $nextStepsByStatusCode[trim((string) ($order->status ?? ''))] ?? []
                 )
             )
         );
@@ -723,6 +733,7 @@ class OrderWorkflowService
                     'equipamento_serie'    => (string) ($createdOrder->equipment?->numero_serie ?? ''),
                     'status_nome'          => (string) ($createdOrder->statusCatalog?->nome ?? ''),
                     'status_cor'           => (string) ($createdOrder->statusCatalog?->cor ?? '#64748b'),
+                    'proximas_etapas'      => $this->mapNextStatusOptions($statusCode),
                     'estado_fluxo'         => (string) ($createdOrder->estado_fluxo ?? ''),
                     'data_entrada'         => $createdOrder->data_entrada?->format('d/m/Y') ?? '',
                 ]));
@@ -928,9 +939,15 @@ class OrderWorkflowService
     /**
      * @param array<string, mixed>|null $budget
      * @param array<string, mixed>|null $receivable
+     * @param array<int, array<string, mixed>>|null $nextStatusOptions
      * @return array<string, mixed>
      */
-    private function mapSummary(Order $order, ?array $budget = null, ?array $receivable = null): array
+    private function mapSummary(
+        Order $order,
+        ?array $budget = null,
+        ?array $receivable = null,
+        ?array $nextStatusOptions = null
+    ): array
     {
         $valorFinal = (float) ($order->valor_final ?? 0);
         $valorRecebido = (float) ($receivable['valor_recebido'] ?? 0);
@@ -981,6 +998,7 @@ class OrderWorkflowService
             'valor_final' => $this->normalizeDecimalString($order->valor_final ?? null),
             'valor_recebido' => $receivable !== null ? $this->normalizeDecimalString($valorRecebido) : null,
             'saldo' => $receivable !== null ? $this->normalizeDecimalString($receivable['saldo'] ?? max(0.0, $valorFinal - $valorRecebido)) : null,
+            'proximas_etapas' => array_values($nextStatusOptions ?? []),
         ];
     }
 
@@ -1147,47 +1165,63 @@ class OrderWorkflowService
     private function mapNextStatusOptions(string $currentCode): array
     {
         $currentCode = trim($currentCode);
-        if ($currentCode === '' || ! Schema::hasTable('os_status_transicoes')) {
+        if ($currentCode === '') {
             return [];
         }
 
-        $current = OrderStatus::query()
-            ->where('codigo', $currentCode)
-            ->first();
-        if (! $current instanceof OrderStatus) {
+        $catalog = $this->loadStatusWorkflowCatalog();
+        if ($catalog['status_by_code'] === [] || $catalog['transitions_by_origin'] === []) {
             return [];
         }
 
-        $destinoIds = OrderStatusTransition::query()
-            ->where('status_origem_id', (int) $current->id)
-            ->where('ativo', 1)
-            ->pluck('status_destino_id')
-            ->map(static fn ($id): int => (int) $id)
-            ->all();
-
-        if ($destinoIds === []) {
+        $current = $catalog['status_by_code'][$currentCode] ?? null;
+        if (! is_array($current)) {
             return [];
         }
 
-        return OrderStatus::query()
-            ->whereIn('id', $destinoIds)
-            ->where('ativo', 1)
-            ->orderBy('ordem_fluxo')
-            ->get()
-            ->map(static function (OrderStatus $status): array {
-                return [
-                    'codigo' => (string) ($status->codigo ?? ''),
-                    'nome' => (string) ($status->nome ?? ''),
-                    'grupo_macro' => (string) ($status->grupo_macro ?? ''),
-                    'cor' => (string) ($status->cor ?? ''),
-                    'icone' => (string) ($status->icone ?? ''),
-                    'ordem_fluxo' => (int) ($status->ordem_fluxo ?? 0),
-                    'status_final' => (bool) ($status->status_final ?? false),
-                    'estado_fluxo_padrao' => (string) ($status->estado_fluxo_padrao ?? ''),
-                ];
-            })
-            ->values()
-            ->all();
+        return $this->mapNextStatusOptionsFromCatalog(
+            (int) ($current['id'] ?? 0),
+            $catalog['status_by_id'],
+            $catalog['transitions_by_origin']
+        );
+    }
+
+    /**
+     * @param array<int, string> $statusCodes
+     * @return array<string, array<int, array<string, mixed>>>
+     */
+    private function resolveNextStatusOptionsMap(array $statusCodes): array
+    {
+        $statusCodes = array_values(array_unique(array_filter(
+            array_map(static fn (mixed $statusCode): string => trim((string) $statusCode), $statusCodes),
+            static fn (string $statusCode): bool => $statusCode !== ''
+        )));
+
+        if ($statusCodes === []) {
+            return [];
+        }
+
+        $catalog = $this->loadStatusWorkflowCatalog();
+        if ($catalog['status_by_code'] === [] || $catalog['transitions_by_origin'] === []) {
+            return [];
+        }
+
+        $optionsByStatus = [];
+
+        foreach ($statusCodes as $statusCode) {
+            $current = $catalog['status_by_code'][$statusCode] ?? null;
+            if (! is_array($current)) {
+                continue;
+            }
+
+            $optionsByStatus[$statusCode] = $this->mapNextStatusOptionsFromCatalog(
+                (int) ($current['id'] ?? 0),
+                $catalog['status_by_id'],
+                $catalog['transitions_by_origin']
+            );
+        }
+
+        return $optionsByStatus;
     }
 
     /**
@@ -1525,6 +1559,144 @@ class OrderWorkflowService
                     'estado_fluxo_padrao' => (string) ($status->estado_fluxo_padrao ?? ''),
                 ];
             })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array{
+     *     status_by_id: array<int, array<string, mixed>>,
+     *     status_by_code: array<string, array<string, mixed>>,
+     *     transitions_by_origin: array<int, array<int, array<string, mixed>>>
+     * }
+     */
+    private function loadStatusWorkflowCatalog(): array
+    {
+        if (! Schema::hasTable('os_status') || ! Schema::hasTable('os_status_transicoes')) {
+            return [
+                'status_by_id' => [],
+                'status_by_code' => [],
+                'transitions_by_origin' => [],
+            ];
+        }
+
+        $statuses = OrderStatus::query()
+            ->get([
+                'id',
+                'codigo',
+                'nome',
+                'grupo_macro',
+                'cor',
+                'icone',
+                'ordem_fluxo',
+                'status_final',
+                'status_pausa',
+                'estado_fluxo_padrao',
+                'ativo',
+            ]);
+
+        $statusById = [];
+        $statusByCode = [];
+
+        foreach ($statuses as $status) {
+            $row = [
+                'id' => (int) ($status->id ?? 0),
+                'codigo' => trim((string) ($status->codigo ?? '')),
+                'nome' => (string) ($status->nome ?? ''),
+                'grupo_macro' => (string) ($status->grupo_macro ?? ''),
+                'cor' => (string) ($status->cor ?? ''),
+                'icone' => (string) ($status->icone ?? ''),
+                'ordem_fluxo' => (int) ($status->ordem_fluxo ?? 0),
+                'status_final' => (bool) ($status->status_final ?? false),
+                'status_pausa' => (bool) ($status->status_pausa ?? false),
+                'estado_fluxo_padrao' => (string) ($status->estado_fluxo_padrao ?? ''),
+                'ativo' => (bool) ($status->ativo ?? false),
+            ];
+
+            $statusId = (int) $row['id'];
+            $statusCode = (string) $row['codigo'];
+
+            if ($statusId > 0) {
+                $statusById[$statusId] = $row;
+            }
+
+            if ($statusCode !== '') {
+                $statusByCode[$statusCode] = $row;
+            }
+        }
+
+        $transitionsByOrigin = [];
+
+        OrderStatusTransition::query()
+            ->where('ativo', 1)
+            ->get(['status_origem_id', 'status_destino_id'])
+            ->each(static function (OrderStatusTransition $transition) use (&$transitionsByOrigin): void {
+                $originId = (int) ($transition->status_origem_id ?? 0);
+                $destinationId = (int) ($transition->status_destino_id ?? 0);
+
+                if ($originId <= 0 || $destinationId <= 0) {
+                    return;
+                }
+
+                $transitionsByOrigin[$originId][] = [
+                    'status_destino_id' => $destinationId,
+                ];
+            });
+
+        return [
+            'status_by_id' => $statusById,
+            'status_by_code' => $statusByCode,
+            'transitions_by_origin' => $transitionsByOrigin,
+        ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $statusById
+     * @param array<int, array<int, array<string, mixed>>> $transitionsByOrigin
+     * @return array<int, array<string, mixed>>
+     */
+    private function mapNextStatusOptionsFromCatalog(
+        int $currentStatusId,
+        array $statusById,
+        array $transitionsByOrigin
+    ): array {
+        if ($currentStatusId <= 0 || ! isset($transitionsByOrigin[$currentStatusId])) {
+            return [];
+        }
+
+        $transitionRows = collect($transitionsByOrigin[$currentStatusId])
+            ->sortBy(function (array $transition) use ($statusById): int {
+                $targetId = (int) ($transition['status_destino_id'] ?? 0);
+                $targetStatus = $statusById[$targetId] ?? null;
+
+                return (int) ($targetStatus['ordem_fluxo'] ?? PHP_INT_MAX);
+            })
+            ->values();
+
+        return $transitionRows
+            ->map(function (array $transition) use ($statusById): ?array {
+                $targetId = (int) ($transition['status_destino_id'] ?? 0);
+                $targetStatus = $statusById[$targetId] ?? null;
+
+                if (! is_array($targetStatus) || ! (bool) ($targetStatus['ativo'] ?? false)) {
+                    return null;
+                }
+
+                return [
+                    'codigo' => (string) ($targetStatus['codigo'] ?? ''),
+                    'nome' => (string) ($targetStatus['nome'] ?? ''),
+                    'grupo_macro' => (string) ($targetStatus['grupo_macro'] ?? ''),
+                    'cor' => (string) ($targetStatus['cor'] ?? ''),
+                    'icone' => (string) ($targetStatus['icone'] ?? ''),
+                    'ordem_fluxo' => (int) ($targetStatus['ordem_fluxo'] ?? 0),
+                    'status_final' => (bool) ($targetStatus['status_final'] ?? false),
+                    'status_pausa' => (bool) ($targetStatus['status_pausa'] ?? false),
+                    'estado_fluxo_padrao' => (string) ($targetStatus['estado_fluxo_padrao'] ?? ''),
+                    'ativo' => (bool) ($targetStatus['ativo'] ?? false),
+                ];
+            })
+            ->filter(static fn (?array $target): bool => is_array($target))
+            ->unique(static fn (array $target): string => (string) ($target['codigo'] ?? ''))
             ->values()
             ->all();
     }

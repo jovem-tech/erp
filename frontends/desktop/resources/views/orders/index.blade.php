@@ -227,6 +227,19 @@
                             $estadoFluxo = trim((string) ($order['estado_fluxo'] ?? ''));
                             $canEditOrder = \App\Support\DesktopSession::can('os', 'editar');
                             $canCloseOrder = $canEditOrder && ! in_array($estadoFluxo, ['encerrado', 'cancelado'], true);
+                            $canCreateBudget = \App\Support\DesktopSession::can('orcamentos', 'criar');
+                            $canViewBudget = \App\Support\DesktopSession::can('orcamentos', 'visualizar');
+                            $nextStatusOptions = is_array($order['proximas_etapas'] ?? null) ? $order['proximas_etapas'] : [];
+                            $budgetActionUrl = '';
+                            $budgetActionLabel = '';
+
+                            if ($budget !== null && $canViewBudget) {
+                                $budgetActionUrl = route('orcamentos.show', (int) ($budget['id'] ?? 0));
+                                $budgetActionLabel = 'Abrir orçamento';
+                            } elseif ($canCreateBudget) {
+                                $budgetActionUrl = route('orcamentos.create', ['os_id' => $orderId]);
+                                $budgetActionLabel = 'Gerar orçamento';
+                            }
                         @endphp
                         <tr data-order-id="{{ $orderId }}">
                             <td data-label="Foto / OS">
@@ -337,6 +350,15 @@
                                             </a>
                                         </li>
 
+                                        @if ($budgetActionUrl !== '')
+                                            <li>
+                                                <a href="{{ $budgetActionUrl }}" class="dropdown-item">
+                                                    <i class="bi bi-receipt me-2"></i>
+                                                    {{ $budgetActionLabel }}
+                                                </a>
+                                            </li>
+                                        @endif
+
                                         @if ($canEditOrder)
                                             <li>
                                                 <a href="{{ route('orders.edit', $orderId) }}" class="dropdown-item">
@@ -352,6 +374,20 @@
                                                     <i class="bi bi-box-seam me-2"></i>
                                                     Baixa
                                                 </a>
+                                            </li>
+                                        @endif
+
+                                        @if ($canEditOrder && $nextStatusOptions !== [])
+                                            <li><hr class="dropdown-divider"></li>
+                                            <li>
+                                                <button type="button" class="dropdown-item"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#orderStatusModal"
+                                                    data-order-id="{{ $orderId }}"
+                                                    data-order-numero="{{ $order['numero_os'] ?? ('#' . $orderId) }}">
+                                                    <i class="bi bi-arrow-left-right me-2"></i>
+                                                    Alterar status
+                                                </button>
                                             </li>
                                         @endif
                                     </ul>
@@ -384,11 +420,29 @@
             'pusherPort'         => (int) env('REVERB_PORT', 8090),
             'pusherScheme'       => env('REVERB_SCHEME', 'http'),
             'apiToken'           => \App\Support\DesktopSession::token() ?? '',
+            'csrfToken'          => csrf_token(),
             'hasFilters'         => $hasAnyFilters,
             'ordersShowUrlBase'  => rtrim(route('orders.show', ['order' => 0]), '0'),
+            'canCreateBudget'    => \App\Support\DesktopSession::can('orcamentos', 'criar'),
+            'canEditOrder'       => \App\Support\DesktopSession::can('os', 'editar'),
+            'budgetCreateUrlBase'   => route('orcamentos.create') . '?os_id=',
+            'ordersEditUrlTemplate' => route('orders.edit', ['order' => '__ORDER__']),
+            'ordersClosureUrlTemplate' => route('orders.closure.show', ['order' => '__ORDER__']),
+            'ordersStatusUpdateUrlTemplate' => route('orders.status.update', ['order' => '__ORDER__']),
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
+
+        window.__DESKTOP_STATUS_MODAL = {
+            statusContextUrlTemplate: '{{ route('orders.status.context', ['order' => '__ORDER__']) }}',
+            statusUpdateUrlTemplate: '{{ route('orders.status.update', ['order' => '__ORDER__']) }}',
+            csrfToken: '{{ csrf_token() }}',
+        };
     </script>
     @if (file_exists(public_path('assets/js/orders-list.js')))
         <script src="{{ asset('assets/js/orders-list.js') }}?v={{ filemtime(public_path('assets/js/orders-list.js')) }}"></script>
     @endif
+    <script src="{{ asset('assets/js/orders-status-modal.js') }}"></script>
 @endsection
+
+@push('modals')
+    @include('orders._status_modal')
+@endpush

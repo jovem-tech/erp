@@ -7,6 +7,23 @@
         parts: Array.isArray(config.catalogs?.parts) ? config.catalogs.parts : [],
     };
 
+    const quickCatalogs = {
+        service: {
+            enabled: Boolean(config.quickCatalogs?.service?.enabled),
+            storeUrl: String(config.quickCatalogs?.service?.store_url || ''),
+            label: String(config.quickCatalogs?.service?.label || 'Serviço'),
+            title: String(config.quickCatalogs?.service?.title || 'Cadastro rápido de serviço'),
+            submitLabel: String(config.quickCatalogs?.service?.submit_label || 'Cadastrar serviço'),
+        },
+        part: {
+            enabled: Boolean(config.quickCatalogs?.part?.enabled),
+            storeUrl: String(config.quickCatalogs?.part?.store_url || ''),
+            label: String(config.quickCatalogs?.part?.label || 'Peça'),
+            title: String(config.quickCatalogs?.part?.title || 'Cadastro rápido de peça'),
+            submitLabel: String(config.quickCatalogs?.part?.submit_label || 'Cadastrar peça'),
+        },
+    };
+
     const draftKey = String(config.draftKey || 'orcamentos:create');
     const isEditMode = Boolean(config.isEditMode);
 
@@ -23,6 +40,140 @@
     };
 
     const formatNumber = (value) => Number(value || 0).toFixed(2);
+
+    const normalizeText = (value) => String(value ?? '').trim();
+
+    const escapeHtml = (value) => String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+
+    const getModal = (element) => {
+        if (!(element instanceof HTMLElement) || typeof window.bootstrap === 'undefined' || !window.bootstrap?.Modal) {
+            return null;
+        }
+
+        return window.bootstrap.Modal.getOrCreateInstance(element);
+    };
+
+    const showToast = (icon, title) => {
+        if (typeof window.Swal === 'undefined') {
+            return;
+        }
+
+        window.Swal.fire({
+            toast: true,
+            position: 'top-end',
+            timer: 3200,
+            timerProgressBar: true,
+            showConfirmButton: false,
+            icon,
+            title,
+        });
+    };
+
+    const showAlert = (icon, title, text = '') => {
+        if (typeof window.Swal === 'undefined') {
+            return;
+        }
+
+        window.Swal.fire({ icon, title, text });
+    };
+
+    const requestJson = async (url, { method = 'GET', body = null } = {}) => {
+        const options = {
+            method,
+            headers: {
+                Accept: 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+            credentials: 'same-origin',
+        };
+
+        if (method !== 'GET' && body !== null) {
+            options.headers['Content-Type'] = 'application/json';
+            options.headers['X-CSRF-TOKEN'] = csrfToken;
+            options.body = JSON.stringify(body);
+        }
+
+        const response = await fetch(url, options);
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || payload.success === false) {
+            const error = new Error(payload.message || 'Falha ao processar a solicitação.');
+            error.status = response.status;
+            error.details = payload.errors || null;
+
+            if (window.DesktopUi && typeof window.DesktopUi.logError === 'function') {
+                window.DesktopUi.logError('orcamentos-form.requestJson', error, {
+                    path: String(url).split('?')[0],
+                    method,
+                });
+            }
+
+            throw error;
+        }
+
+        return payload;
+    };
+
+    const extractErrorMessages = (details) => {
+        if (Array.isArray(details)) {
+            return details
+                .map((message) => normalizeText(message))
+                .filter(Boolean);
+        }
+
+        if (details && typeof details === 'object') {
+            return Object.values(details)
+                .flat()
+                .map((message) => normalizeText(message))
+                .filter(Boolean);
+        }
+
+        return [];
+    };
+
+    const normalizeServiceCatalogItem = (service) => ({
+        id: Number(service?.id || 0),
+        label: normalizeText(service?.nome || service?.label || service?.description || 'Serviço'),
+        description: normalizeText(service?.descricao || service?.description || service?.nome || ''),
+        price: toNumber(service?.valor ?? service?.price ?? 0),
+    });
+
+    const normalizePartCatalogItem = (part) => ({
+        id: Number(part?.id || 0),
+        label: normalizeText(
+            (normalizeText(part?.codigo || '') !== '' ? `${normalizeText(part?.codigo)} - ` : '') + (part?.nome || part?.label || part?.description || 'Peça')
+        ),
+        description: normalizeText(part?.nome || part?.description || part?.label || ''),
+        price: toNumber(part?.preco_venda ?? part?.price ?? 0),
+    });
+
+    const reinitReferenceSelect2 = (select) => {
+        if (!(select instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        if (window.DesktopUi && typeof window.DesktopUi.refreshSelect2 === 'function') {
+            window.DesktopUi.refreshSelect2(select);
+        }
+    };
+
+    const onSelectEvent = (select, eventName, handler) => {
+        if (!(select instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        if (typeof window.jQuery !== 'undefined' && window.jQuery.fn && typeof window.jQuery.fn.on === 'function') {
+            window.jQuery(select).on(eventName, handler);
+            return;
+        }
+
+        select.addEventListener(eventName, handler);
+    };
 
     const debounce = (callback, wait = 300) => {
         let timeoutId = null;
@@ -49,6 +200,18 @@
         const restoreButton = document.querySelector('[data-budget-draft-restore]');
         const discardButton = document.querySelector('[data-budget-draft-discard]');
         const itemsCount = document.querySelector('[data-budget-items-count]');
+        const validityDaysSelect = document.querySelector('[data-budget-validity-days]');
+        const validityDateInput = document.querySelector('[data-budget-validity-date]');
+        const quickItemModal = document.getElementById('orcamentoQuickItemModal');
+        const quickItemForm = document.getElementById('orcamentoQuickItemForm');
+        const quickItemSubmit = document.getElementById('orcamentoQuickItemSubmit');
+        const quickItemType = document.getElementById('orcamentoQuickItemType');
+        const quickItemTitle = document.querySelector('[data-budget-quick-title]');
+        const quickItemNote = document.querySelector('[data-budget-quick-note]');
+        const quickItemErrors = document.getElementById('orcamentoQuickItemErrors');
+        const quickItemNameLabel = document.querySelector('[data-budget-quick-name-label]');
+        const quickItemServiceGroup = document.querySelector('[data-budget-quick-group="servico"]');
+        const quickItemPartGroup = document.querySelector('[data-budget-quick-group="peca"]');
 
         if (!(form instanceof HTMLFormElement) || !(itemsBody instanceof HTMLElement) || !(template instanceof HTMLTemplateElement)) {
             return;
@@ -58,6 +221,9 @@
         const tabPanels = Array.from(document.querySelectorAll('[data-budget-panel]'));
         const state = {
             draftLoaded: false,
+            quickItemRow: null,
+            quickItemType: 'servico',
+            quickItemSubmitting: false,
         };
 
         const getRowCatalog = (type) => {
@@ -106,7 +272,332 @@
             }
 
             referenceSelect.dataset.selectedReference = referenceSelect.value;
+
+            reinitReferenceSelect2(referenceSelect);
+
             updateRowFromReference(row);
+        };
+
+        const getAllowedQuickTypes = () => {
+            const allowed = [];
+
+            if (quickCatalogs.service.enabled) {
+                allowed.push('servico');
+            }
+
+            if (quickCatalogs.part.enabled) {
+                allowed.push('peca');
+            }
+
+            return allowed;
+        };
+
+        const getResolvedQuickType = (type) => {
+            const normalized = type === 'peca' ? 'peca' : 'servico';
+
+            if (normalized === 'peca' && quickCatalogs.part.enabled) {
+                return normalized;
+            }
+
+            if (normalized === 'servico' && quickCatalogs.service.enabled) {
+                return normalized;
+            }
+
+            return getAllowedQuickTypes()[0] || normalized;
+        };
+
+        const getQuickCatalogKey = (type) => (type === 'peca' ? 'part' : 'service');
+
+        const getQuickCatalogConfig = (type) => quickCatalogs[getQuickCatalogKey(type)] || {};
+
+        const getQuickCreateLabelInfo = (type) => {
+            const selectedType = type === 'peca' ? 'peca' : 'servico';
+            if (selectedType === 'peca') {
+                return {
+                    label: 'Nova peça',
+                    ariaLabel: 'Cadastrar nova peça',
+                };
+            }
+
+            return {
+                label: 'Novo serviço',
+                ariaLabel: 'Cadastrar novo serviço',
+            };
+        };
+
+        const updateQuickCreateButtonLabel = (row) => {
+            if (!(row instanceof HTMLElement)) {
+                return;
+            }
+
+            const typeSelect = row.querySelector('[data-budget-item-type]');
+            const quickCreateButton = row.querySelector('[data-budget-item-quick-create]');
+
+            if (!(typeSelect instanceof HTMLSelectElement) || !(quickCreateButton instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            const labelElement = quickCreateButton.querySelector('[data-budget-item-quick-create-label]');
+            const { label, ariaLabel } = getQuickCreateLabelInfo(typeSelect.value);
+
+            if (labelElement instanceof HTMLElement) {
+                labelElement.textContent = label;
+            }
+
+            quickCreateButton.setAttribute('aria-label', ariaLabel);
+            quickCreateButton.title = ariaLabel;
+        };
+
+        const updateQuickItemSubmitState = (loading) => {
+            state.quickItemSubmitting = loading;
+
+            if (!(quickItemSubmit instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            quickItemSubmit.disabled = loading;
+            quickItemSubmit.innerHTML = loading
+                ? '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Salvando...'
+                : '<i class="bi bi-plus-circle me-2"></i>Salvar e aplicar';
+        };
+
+        const clearQuickItemErrors = () => {
+            if (!(quickItemErrors instanceof HTMLElement)) {
+                return;
+            }
+
+            quickItemErrors.classList.add('d-none');
+            quickItemErrors.innerHTML = '';
+        };
+
+        const renderQuickItemErrors = (messages, fallbackMessage = '') => {
+            if (!(quickItemErrors instanceof HTMLElement)) {
+                return;
+            }
+
+            const items = Array.isArray(messages) ? messages.filter(Boolean) : [];
+            quickItemErrors.innerHTML = items.length > 0
+                ? `<ul class="mb-0 ps-3">${items.map((message) => `<li>${escapeHtml(message)}</li>`).join('')}</ul>`
+                : escapeHtml(fallbackMessage || 'Não foi possível cadastrar o item.');
+            quickItemErrors.classList.remove('d-none');
+        };
+
+        const updateQuickItemMode = (type) => {
+            const resolvedType = getResolvedQuickType(type);
+            state.quickItemType = resolvedType;
+
+            if (quickItemType instanceof HTMLSelectElement) {
+                quickItemType.value = resolvedType;
+            }
+
+            if (quickItemForm instanceof HTMLFormElement) {
+                quickItemForm.action = getQuickCatalogConfig(resolvedType).storeUrl || quickItemForm.action;
+            }
+
+            if (quickItemTitle instanceof HTMLElement) {
+                quickItemTitle.textContent = getQuickCatalogConfig(resolvedType).title || 'Cadastro rápido de item';
+            }
+
+            if (quickItemNote instanceof HTMLElement) {
+                quickItemNote.textContent = resolvedType === 'peca'
+                    ? 'Cadastre a peça e aplique o cadastro novo nesta linha do orçamento sem sair do fluxo.'
+                    : 'Cadastre o serviço e aplique o cadastro novo nesta linha do orçamento sem sair do fluxo.';
+            }
+
+            if (quickItemNameLabel instanceof HTMLElement) {
+                quickItemNameLabel.textContent = resolvedType === 'peca' ? 'Nome da peça *' : 'Nome do serviço *';
+            }
+
+            const nameField = quickItemForm?.querySelector('[name="nome"]');
+            if (nameField instanceof HTMLInputElement) {
+                nameField.placeholder = resolvedType === 'peca'
+                    ? 'Ex.: SSD 480GB, bateria, tela LCD...'
+                    : 'Ex.: Troca de conector, limpeza interna...';
+            }
+
+            if (quickItemServiceGroup instanceof HTMLElement) {
+                quickItemServiceGroup.hidden = resolvedType !== 'servico';
+            }
+
+            if (quickItemPartGroup instanceof HTMLElement) {
+                quickItemPartGroup.hidden = resolvedType !== 'peca';
+            }
+
+            if (quickItemSubmit instanceof HTMLButtonElement) {
+                quickItemSubmit.innerHTML = `<i class="bi bi-plus-circle me-2"></i>${getQuickCatalogConfig(resolvedType).submitLabel || 'Salvar e aplicar'}`;
+            }
+        };
+
+        const resetQuickItemForm = () => {
+            if (!(quickItemForm instanceof HTMLFormElement)) {
+                return;
+            }
+
+            quickItemForm.reset();
+            clearQuickItemErrors();
+            updateQuickItemSubmitState(false);
+        };
+
+        const fillQuickItemFormFromRow = (row, type) => {
+            if (!(quickItemForm instanceof HTMLFormElement) || !(row instanceof HTMLElement)) {
+                return;
+            }
+
+            const descriptionInput = row.querySelector('[data-budget-item-description]');
+            const unitPriceInput = row.querySelector('[data-budget-item-unit-price]');
+            const referenceSelect = row.querySelector('[data-budget-item-reference]');
+            const selectedReferenceOption = referenceSelect instanceof HTMLSelectElement ? referenceSelect.selectedOptions?.[0] : null;
+            const preferredName = normalizeText(
+                selectedReferenceOption instanceof HTMLOptionElement && selectedReferenceOption.value !== ''
+                    ? selectedReferenceOption.dataset.description || selectedReferenceOption.textContent || ''
+                    : descriptionInput instanceof HTMLInputElement
+                        ? descriptionInput.value
+                        : ''
+            );
+            const preferredPrice = unitPriceInput instanceof HTMLInputElement ? unitPriceInput.value : '0.00';
+
+            if (quickItemType instanceof HTMLSelectElement) {
+                quickItemType.value = getResolvedQuickType(type);
+            }
+
+            const nameField = quickItemForm.querySelector('[name="nome"]');
+            if (nameField instanceof HTMLInputElement) {
+                nameField.value = preferredName;
+            }
+
+            const equipmentTypeField = quickItemForm.querySelector('[name="tipo_equipamento"]');
+            if (equipmentTypeField instanceof HTMLInputElement) {
+                equipmentTypeField.value = '';
+            }
+
+            if ((type === 'peca' || quickItemType?.value === 'peca') && quickItemForm instanceof HTMLFormElement) {
+                const salePriceField = quickItemForm.querySelector('[name="preco_venda"]');
+                if (salePriceField instanceof HTMLInputElement) {
+                    salePriceField.value = formatNumber(toNumber(preferredPrice));
+                }
+            }
+
+            if ((type === 'servico' || quickItemType?.value === 'servico') && quickItemForm instanceof HTMLFormElement) {
+                const serviceValueField = quickItemForm.querySelector('[name="valor"]');
+                if (serviceValueField instanceof HTMLInputElement) {
+                    serviceValueField.value = formatNumber(toNumber(preferredPrice));
+                }
+            }
+        };
+
+        const openQuickItemModal = (row) => {
+            if (!(row instanceof HTMLElement) || !(quickItemModal instanceof HTMLElement)) {
+                return;
+            }
+
+            const typeSelect = row.querySelector('[data-budget-item-type]');
+            const currentType = typeSelect instanceof HTMLSelectElement ? typeSelect.value : 'servico';
+            const resolvedType = getResolvedQuickType(currentType);
+
+            if (!getAllowedQuickTypes().includes(resolvedType)) {
+                showAlert('warning', 'Cadastro indisponível', 'Você não tem permissão para cadastrar esse tipo de item agora.');
+                return;
+            }
+
+            state.quickItemRow = row;
+            resetQuickItemForm();
+            updateQuickItemMode(resolvedType);
+            fillQuickItemFormFromRow(row, resolvedType);
+            clearQuickItemErrors();
+            getModal(quickItemModal)?.show();
+        };
+
+        const upsertCatalogItem = (type, item) => {
+            const catalog = getRowCatalog(type);
+            const index = catalog.findIndex((entry) => String(entry.id ?? '') === String(item.id ?? ''));
+
+            if (index >= 0) {
+                catalog[index] = item;
+                return;
+            }
+
+            catalog.push(item);
+        };
+
+        const applyQuickItemToRow = (row, type, item) => {
+            if (!(row instanceof HTMLElement)) {
+                return false;
+            }
+
+            const typeSelect = row.querySelector('[data-budget-item-type]');
+            const referenceSelect = row.querySelector('[data-budget-item-reference]');
+
+            if (!(typeSelect instanceof HTMLSelectElement) || !(referenceSelect instanceof HTMLSelectElement)) {
+                return false;
+            }
+
+            typeSelect.value = type;
+            updateQuickCreateButtonLabel(row);
+            referenceSelect.dataset.selectedReference = String(item.id || '');
+            populateReferenceSelect(row, true);
+            updateSummary();
+
+            return true;
+        };
+
+        const handleQuickItemSubmit = async (event) => {
+            event.preventDefault();
+
+            if (!(quickItemForm instanceof HTMLFormElement) || !(state.quickItemRow instanceof HTMLElement)) {
+                return;
+            }
+
+            clearQuickItemErrors();
+
+            if (!quickItemForm.reportValidity()) {
+                renderQuickItemErrors([], 'Preencha os campos obrigatórios antes de salvar.');
+                return;
+            }
+
+            const type = quickItemType instanceof HTMLSelectElement ? getResolvedQuickType(quickItemType.value) : state.quickItemType;
+            const storeUrl = getQuickCatalogConfig(type).storeUrl || '';
+
+            if (storeUrl === '') {
+                renderQuickItemErrors([], 'Nenhuma rota de cadastro rápido está disponível para este tipo.');
+                return;
+            }
+
+            updateQuickItemSubmitState(true);
+
+            try {
+                const payload = Object.fromEntries(new FormData(quickItemForm).entries());
+                const response = await requestJson(storeUrl, {
+                    method: 'POST',
+                    body: payload,
+                });
+
+                const sourceItem = type === 'peca'
+                    ? response.part || {}
+                    : response.service || {};
+                const normalizedItem = type === 'peca'
+                    ? normalizePartCatalogItem(sourceItem)
+                    : normalizeServiceCatalogItem(sourceItem);
+
+                if (normalizedItem.id <= 0) {
+                    throw new Error('O cadastro foi concluído, mas a resposta não trouxe um item válido.');
+                }
+
+                upsertCatalogItem(type, normalizedItem);
+                applyQuickItemToRow(state.quickItemRow, type, normalizedItem);
+
+                const rowLabel = type === 'peca'
+                    ? 'Peça cadastrada e aplicada.'
+                    : 'Serviço cadastrado e aplicado.';
+
+                getModal(quickItemModal)?.hide();
+                showToast('success', rowLabel);
+            } catch (error) {
+                const details = extractErrorMessages(error?.details);
+                renderQuickItemErrors(details, error.message);
+                showAlert('error', type === 'peca' ? 'Falha ao cadastrar peça' : 'Falha ao cadastrar serviço', error.message);
+            } finally {
+                updateQuickItemSubmitState(false);
+            }
         };
 
         const updateRowTotal = (row) => {
@@ -190,26 +681,38 @@
             const unitPriceInput = row.querySelector('[data-budget-item-unit-price]');
             const discountField = row.querySelector('[data-budget-item-discount]');
             const additionField = row.querySelector('[data-budget-item-addition]');
+            const quickCreateButton = row.querySelector('[data-budget-item-quick-create]');
             const removeButton = row.querySelector('[data-budget-item-remove]');
 
-            typeSelect?.addEventListener('change', () => {
+            const handleTypeChange = () => {
                 if (referenceSelect instanceof HTMLSelectElement) {
                     referenceSelect.dataset.selectedReference = '';
                     referenceSelect.value = '';
                 }
 
+                updateQuickCreateButtonLabel(row);
                 populateReferenceSelect(row, false);
                 updateSummary();
-            });
+            };
 
-            referenceSelect?.addEventListener('change', () => {
+            const handleReferenceChange = () => {
                 if (referenceSelect instanceof HTMLSelectElement) {
                     referenceSelect.dataset.selectedReference = referenceSelect.value;
                 }
 
                 updateRowFromReference(row);
                 updateSummary();
-            });
+            };
+
+            onSelectEvent(typeSelect, 'change', handleTypeChange);
+            onSelectEvent(typeSelect, 'select2:select', handleTypeChange);
+            onSelectEvent(typeSelect, 'select2:clear', handleTypeChange);
+
+            onSelectEvent(referenceSelect, 'change', handleReferenceChange);
+            onSelectEvent(referenceSelect, 'select2:select', handleReferenceChange);
+            onSelectEvent(referenceSelect, 'select2:clear', handleReferenceChange);
+
+            quickCreateButton?.addEventListener('click', () => openQuickItemModal(row));
 
             [quantityInput, unitPriceInput, discountField, additionField].forEach((input) => {
                 input?.addEventListener('input', () => updateSummary());
@@ -233,6 +736,7 @@
             });
 
             populateReferenceSelect(row);
+            updateQuickCreateButtonLabel(row);
         };
 
         const createRow = (data = {}) => {
@@ -501,6 +1005,34 @@
             });
         });
 
+        const formatDateInput = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
+        const syncValidityDate = () => {
+            if (!(validityDaysSelect instanceof HTMLSelectElement) || !(validityDateInput instanceof HTMLInputElement)) {
+                return;
+            }
+
+            const days = Number.parseInt(validityDaysSelect.value, 10);
+            if (!Number.isFinite(days)) {
+                return;
+            }
+
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + days);
+            validityDateInput.value = formatDateInput(dueDate);
+        };
+
+        validityDaysSelect?.addEventListener('change', syncValidityDate);
+
+        if (validityDateInput instanceof HTMLInputElement && validityDateInput.value === '') {
+            syncValidityDate();
+        }
+
         addButton?.addEventListener('click', () => {
             const row = createRow({});
             if (!row) {
@@ -532,6 +1064,34 @@
             });
 
             updateSummary();
+        });
+
+        if (quickItemType instanceof HTMLSelectElement) {
+            quickItemType.addEventListener('change', () => updateQuickItemMode(quickItemType.value));
+        }
+
+        if (quickItemForm instanceof HTMLFormElement) {
+            quickItemForm.addEventListener('submit', handleQuickItemSubmit);
+        }
+
+        quickItemSubmit?.addEventListener('click', () => {
+            if (!(quickItemForm instanceof HTMLFormElement)) {
+                return;
+            }
+
+            if (typeof quickItemForm.requestSubmit === 'function') {
+                quickItemForm.requestSubmit();
+                return;
+            }
+
+            quickItemForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+        });
+
+        quickItemModal?.addEventListener('hidden.bs.modal', () => {
+            state.quickItemRow = null;
+            state.quickItemType = 'servico';
+            resetQuickItemForm();
+            updateQuickItemMode(getResolvedQuickType('servico'));
         });
 
         loadDraft();

@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-06-29T22:25:28+02:00`
-- Versao do sistema: `3.4.11`
+- Gerado em: `2026-07-03T08:34:30+02:00`
+- Versao do sistema: `3.5.3`
 - Versao da API: `1.1.0`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Windows/XAMPP`
@@ -50,7 +50,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 ### `documentacao/02-infraestrutura-ambientes`
 
 - `documentacao/02-infraestrutura-ambientes/README.md` - Fase 2 - Infraestrutura de Desenvolvimento e Produção
-- `documentacao/02-infraestrutura-ambientes/cors-urls-logs-filas-scheduler.md` - CORS, URLs, Logs, Filas e Scheduler
+- `documentacao/02-infraestrutura-ambientes/cors-urls-logs-filas-scheduler.md` - CORS, URLs, Logs, Filas, Cache/Sessao e Scheduler
 - `documentacao/02-infraestrutura-ambientes/linux-vps.md` - VPS Linux (Ubuntu)
 - `documentacao/02-infraestrutura-ambientes/windows-xampp.md` - Windows + XAMPP
 
@@ -59,6 +59,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/03-arquitetura-tecnica/README.md` - Arquitetura Técnica - Fases 4, 5, 6 e 7
 - `documentacao/03-arquitetura-tecnica/backend-administrativo-rbac.md` - Backend Administrativo e RBAC Central
 - `documentacao/03-arquitetura-tecnica/backend-central-minimo.md` - Backend Central Minimo
+- `documentacao/03-arquitetura-tecnica/catalogo-status-os.md` - Catálogo de status das Ordens de Serviço
 - `documentacao/03-arquitetura-tecnica/contrato-api-backend-central.md` - Contrato da API do Backend Central
 - `documentacao/03-arquitetura-tecnica/frontend-desktop-laravel.md` - Frontend Desktop Laravel
 - `documentacao/03-arquitetura-tecnica/frontend-sistema-hml-bff.md` - Frontend sistema-hml como BFF
@@ -119,6 +120,11 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-06-29-nova-os-modal-equipamento-retorno-iframe.md` - Nova OS: retorno do equipamento criado no iframe
 - `documentacao/07-novas-implementacoes/2026-06-29-nova-os-resumo-cliente-editar.md` - 2026-06-29 - Resumo do cliente e edicao direta na Nova OS
 - `documentacao/07-novas-implementacoes/2026-06-29-select2-manual-init-collision-desktop.md` - 2026-06-29 - Correcao do Select2 manual na criacao de OS do desktop
+- `documentacao/07-novas-implementacoes/2026-06-30-otimizacao-performance-backend-desktop.md` - Otimização de performance: backend e desktop
+- `documentacao/07-novas-implementacoes/2026-07-01-sidebar-conhecimento-layout.md` - 2026-07-01 - Ajuste de taxonomia e densidade do sidebar desktop
+- `documentacao/07-novas-implementacoes/2026-07-02-acoes-rapidas-listagem-os-desktop.md` - Acoes rapidas na listagem de OS do desktop
+- `documentacao/07-novas-implementacoes/2026-07-02-jovem-tech-design-system-tema-desktop.md` - Jovem Tech Design System v3.0.0 — Novo tema do desktop
+- `documentacao/07-novas-implementacoes/2026-07-03-cadastro-rapido-pecas-servicos-orcamento-desktop.md` - Cadastro rapido de pecas e servicos no orcamento desktop
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 
 ### `documentacao/10-deploy`
@@ -145,4 +151,5 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/014-configuracoes-sistema-e-precificacao-financeiro-desktop` - Feature Specification: Configuracoes do Sistema e Precificacao no desktop | artefatos: spec, plan, tasks
 - `specs/015-nova-os-wizard-desktop` - Feature Specification: Nova OS em modo wizard no desktop | artefatos: spec, plan, tasks
 - `specs/016-modelo-assistencia-tecnica-desktop` - Feature Specification: Modelo Ideal da Assistência Técnica no Desktop | artefatos: spec, plan, tasks
+- `specs/017-cadastro-rapido-servicos-pecas-orcamento-desktop` - Feature Specification: Cadastro rápido de serviços e peças no orçamento desktop | artefatos: spec, plan, tasks
 

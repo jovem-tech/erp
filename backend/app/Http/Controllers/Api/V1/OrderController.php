@@ -311,6 +311,8 @@ class OrderController extends BaseApiController
                     'custo_summary' => $result['custo_summary'] ?? null,
                     'retorno_padrao' => $result['retorno_padrao'] ?? null,
                     'cartao' => $result['cartao'] ?? null,
+                    'status_pagamento_pendente' => $result['status_pagamento_pendente'] ?? null,
+                    'status_sem_reparo' => $result['status_sem_reparo'] ?? [],
                 ],
                 request: $request
             ),

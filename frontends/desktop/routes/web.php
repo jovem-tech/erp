@@ -73,6 +73,11 @@ Route::middleware('desktop.auth')->group(function (): void {
         ->name('configurations.system.index');
     Route::post('/configuracoes/aparencia', [ConfigurationController::class, 'updateAppearance'])
         ->name('configurations.appearance.update');
+    Route::post('/configuracoes/empresa', [ConfigurationController::class, 'updateCompany'])
+        ->middleware('desktop.permission:configuracoes,editar')
+        ->name('configurations.company.update');
+    Route::get('/configuracoes/empresa/logo', [ConfigurationController::class, 'companyLogo'])
+        ->name('configurations.company.logo');
     Route::get('/configuracoes/integracoes', [ConfigurationController::class, 'integrations'])
         ->middleware('desktop.permission:configuracoes,visualizar')
         ->name('configurations.integrations.index');
@@ -184,6 +189,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/os/{order}/baixa', [OrderController::class, 'closureStore'])
         ->middleware('desktop.permission:os,editar')
         ->name('orders.closure.store');
+    Route::get('/os/{order}/status-context', [OrderController::class, 'statusContext'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('orders.status.context');
     Route::post('/os/{order}/status', [OrderController::class, 'updateStatus'])
         ->middleware('desktop.permission:os,editar')
         ->name('orders.status.update');
@@ -535,6 +543,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/servicos', [ServicoController::class, 'store'])
         ->middleware('desktop.permission:servicos,criar')
         ->name('servicos.store');
+    Route::post('/servicos/rapido', [ServicoController::class, 'quickStore'])
+        ->middleware('desktop.permission:servicos,criar')
+        ->name('servicos.quick.store');
     Route::get('/servicos/exportar-csv', [ServicoController::class, 'exportCsv'])
         ->middleware('desktop.permission:servicos,exportar')
         ->name('servicos.export.csv');
@@ -569,6 +580,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/estoque', [StockController::class, 'store'])
         ->middleware('desktop.permission:estoque,criar')
         ->name('estoque.store');
+    Route::post('/estoque/rapido', [StockController::class, 'quickStore'])
+        ->middleware('desktop.permission:estoque,criar')
+        ->name('estoque.quick.store');
     Route::get('/estoque/exportar-csv', [StockController::class, 'exportCsv'])
         ->middleware('desktop.permission:estoque,exportar')
         ->name('estoque.export.csv');

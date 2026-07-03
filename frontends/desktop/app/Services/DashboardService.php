@@ -59,11 +59,12 @@ class DashboardService
         $response = $this->apiClient->get('/dashboard/summary', $query);
 
         $data = is_array($response['data'] ?? null) ? $response['data'] : [];
+        $heroCard = $this->normalizeHeroCard($data['hero_card'] ?? []);
 
         return [
             'access' => $this->arrayValue($data['access'] ?? []),
             'stats' => $this->arrayValue($data['stats'] ?? []),
-            'heroCard' => $this->arrayValue($data['hero_card'] ?? []),
+            'heroCard' => $heroCard,
             'contextCard' => $this->arrayValue($data['context_card'] ?? []),
             'charts' => [
                 'monthly' => $this->arrayValue($data['charts']['monthly'] ?? []),
@@ -86,6 +87,47 @@ class DashboardService
             'lowStock' => $this->listValue($data['low_stock'] ?? []),
             'raw' => $data,
         ];
+    }
+
+    /**
+     * Normaliza CTAs recebidos da API para rotas válidas do frontend desktop.
+     *
+     * O backend central pode expor links de API como fallback de contrato, mas o
+     * dashboard do desktop precisa apontar para rotas da interface, nao para a
+     * origem da API.
+     *
+     * @param mixed $value
+     * @return array<string, mixed>
+     */
+    private function normalizeHeroCard(mixed $value): array
+    {
+        $heroCard = $this->arrayValue($value);
+        $actionUrl = trim((string) ($heroCard['action_url'] ?? ''));
+
+        if ($actionUrl === '') {
+            $heroCard['action_url'] = null;
+
+            return $heroCard;
+        }
+
+        $path = parse_url($actionUrl, PHP_URL_PATH);
+        $normalizedPath = '/' . ltrim(is_string($path) && $path !== '' ? $path : $actionUrl, '/');
+
+        if ($normalizedPath === '/api/v1/orders' || str_starts_with($normalizedPath, '/api/v1/orders/')) {
+            $heroCard['action_url'] = route('orders.index');
+
+            return $heroCard;
+        }
+
+        if (str_starts_with($normalizedPath, '/api/v1/')) {
+            $heroCard['action_url'] = null;
+
+            return $heroCard;
+        }
+
+        $heroCard['action_url'] = $actionUrl;
+
+        return $heroCard;
     }
 
     /**

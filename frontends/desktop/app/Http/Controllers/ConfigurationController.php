@@ -5,10 +5,14 @@ namespace App\Http\Controllers;
 use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
+use App\Models\UserPreference;
+use App\Services\CompanyProfileService;
 use App\Services\ConfigurationService;
+use App\Support\DesktopSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Throwable;
@@ -16,7 +20,8 @@ use Throwable;
 class ConfigurationController extends DesktopController
 {
     public function __construct(
-        private readonly ConfigurationService $configurationService
+        private readonly ConfigurationService $configurationService,
+        private readonly CompanyProfileService $companyProfileService
     ) {
     }
 
@@ -30,9 +35,73 @@ class ConfigurationController extends DesktopController
 
     public function system(): View
     {
+        $company = [];
+
+        try {
+            $company = $this->companyProfileService->find();
+        } catch (Throwable) {
+            $company = [];
+        }
+
         return view('configurations.system', [
             'pageTitle' => 'Configurações do Sistema',
+            'company' => $company,
         ]);
+    }
+
+    public function updateCompany(Request $request): RedirectResponse
+    {
+        $payload = [
+            'empresa_razao_social' => trim((string) $request->input('empresa_razao_social', '')),
+            'empresa_nome_fantasia' => trim((string) $request->input('empresa_nome_fantasia', '')),
+            'empresa_cnpj' => trim((string) $request->input('empresa_cnpj', '')),
+            'empresa_inscricao_estadual' => trim((string) $request->input('empresa_inscricao_estadual', '')),
+            'empresa_telefone' => trim((string) $request->input('empresa_telefone', '')),
+            'empresa_email' => trim((string) $request->input('empresa_email', '')),
+            'empresa_endereco' => trim((string) $request->input('empresa_endereco', '')),
+        ];
+
+        $logo = $request->file('empresa_logo');
+
+        try {
+            $this->companyProfileService->update($payload, $logo instanceof UploadedFile ? $logo : null);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException $exception) {
+            return redirect()
+                ->route('configurations.system.index', ['tab' => 'empresa'])
+                ->with('error', $exception->getMessage());
+        } catch (ApiRequestException $exception) {
+            return back()
+                ->withInput()
+                ->withErrors($this->formatApiErrors($exception))
+                ->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return back()
+                ->withInput()
+                ->with('error', 'Não foi possível salvar os dados da empresa agora. Tente novamente.');
+        }
+
+        return redirect()
+            ->route('configurations.system.index', ['tab' => 'empresa'])
+            ->with('success', 'Dados da empresa salvos com sucesso.');
+    }
+
+    public function companyLogo(): \Illuminate\Http\Response
+    {
+        try {
+            $download = $this->companyProfileService->downloadLogo();
+        } catch (ApiAuthenticationException $exception) {
+            abort(401, $exception->getMessage());
+        } catch (ApiAuthorizationException $exception) {
+            abort(403, $exception->getMessage());
+        } catch (ApiRequestException $exception) {
+            abort($exception->statusCode() > 0 ? $exception->statusCode() : 404, $exception->getMessage());
+        }
+
+        return response($download['body'], $download['status'], $download['headers']);
     }
 
     public function updateAppearance(Request $request): RedirectResponse
@@ -44,10 +113,16 @@ class ConfigurationController extends DesktopController
             return back()->with('error', 'Tema inválido.');
         }
 
-        if ($theme === 'default') {
-            $request->session()->forget('desktop_theme');
-        } else {
-            $request->session()->put('desktop_theme', $theme);
+        // Persiste na sessão (sempre explícito para servir de sentinel ao middleware)
+        $request->session()->put('desktop_theme', $theme);
+
+        // Persiste no banco vinculado ao usuário para sobreviver ao logout/login
+        $userId = (int) (DesktopSession::user()['id'] ?? 0);
+        if ($userId > 0) {
+            UserPreference::updateOrCreate(
+                ['api_user_id' => $userId],
+                ['desktop_theme' => $theme]
+            );
         }
 
         return redirect()

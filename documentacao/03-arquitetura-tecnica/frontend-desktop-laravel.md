@@ -325,6 +325,7 @@ Módulos entregues nesta fase:
 - catálogo operacional carregado via API central para clientes, equipamentos, OS, serviços e peças
 - detalhe com cards, itens, histórico, envios, aprovações e ações de edição/exclusão conforme permissão
 - ajuda local dedicada ao módulo para orientar o uso do fluxo comercial
+- cadastro rápido de peças ou serviços em modal, sem sair do fluxo do orçamento e com aplicação imediata ao item atual
 - cadastro completo em `/equipamentos/novo` com abas `Informações`, `Cor` e `Fotos`
 - edicao completa em `/equipamentos/{id}/editar`, reutilizando o mesmo Blade e o mesmo JavaScript operacional do cadastro
 - na aba `Informações`, o layout operacional fica em um único bloco: `Cliente` em largura total, linha corrida com `Tipo`, `Marca`, `Modelo` e `Nº Série ou IMEI`, senha logo abaixo, `Acessórios` e `Estado físico` lado a lado, e `Observações` fechando a seção

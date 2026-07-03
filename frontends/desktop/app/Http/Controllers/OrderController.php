@@ -18,6 +18,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
+use Throwable;
 
 class OrderController extends DesktopController
 {
@@ -698,7 +699,42 @@ class OrderController extends DesktopController
         ]);
     }
 
-    public function updateStatus(Request $request, int $order): RedirectResponse
+    public function statusContext(int $order): JsonResponse
+    {
+        try {
+            $data = $this->orderService->find($order);
+        } catch (ApiAuthenticationException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 401);
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json(['error' => 'Não foi possível carregar os dados da OS.'], 500);
+        }
+
+        return response()->json([
+            'id'                       => $data['id'] ?? $order,
+            'numero_os'                => (string) ($data['numero_os'] ?? ('#' . $order)),
+            'status'                   => (string) ($data['status'] ?? ''),
+            'status_nome'              => (string) ($data['status_nome'] ?? ''),
+            'status_cor'               => (string) ($data['status_cor'] ?? '#64748b'),
+            'cliente_nome'             => (string) ($data['cliente_nome'] ?? ''),
+            'cliente_telefone'         => (string) ($data['cliente_telefone'] ?? ''),
+            'cliente_email'            => (string) ($data['cliente_email'] ?? ''),
+            'equipamento_nome'         => (string) ($data['equipamento_nome'] ?? ''),
+            'equipamento_tipo_nome'    => (string) ($data['equipamento_tipo_nome'] ?? ''),
+            'equipamento_numero_serie' => (string) ($data['equipamento_numero_serie'] ?? ''),
+            'proximas_etapas'          => is_array($data['proximas_etapas'] ?? null) ? $data['proximas_etapas'] : [],
+            'historico'                => array_slice(
+                is_array($data['historico'] ?? null) ? $data['historico'] : [],
+                0,
+                8
+            ),
+        ]);
+    }
+
+    public function updateStatus(Request $request, int $order): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([
             'status' => ['required', 'string'],
@@ -708,15 +744,52 @@ class OrderController extends DesktopController
             'observacao' => 'observação',
         ]);
 
-        $updatedOrder = $this->orderService->updateStatus(
-            $order,
-            $validated['status'],
-            $validated['observacao'] ?? null
-        );
+        try {
+            $updatedOrder = $this->orderService->updateStatus(
+                $order,
+                $validated['status'],
+                $validated['observacao'] ?? null
+            );
+        } catch (ApiAuthenticationException $exception) {
+            if ($request->wantsJson()) {
+                return response()->json(['error' => $exception->getMessage()], 401);
+            }
+
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            if ($request->wantsJson()) {
+                return response()->json(['error' => $exception->getMessage()], 422);
+            }
+
+            return back()
+                ->withInput($request->all())
+                ->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            if ($request->wantsJson()) {
+                return response()->json(['error' => 'Não foi possível atualizar o status da OS agora. Tente novamente.'], 500);
+            }
+
+            return back()
+                ->withInput($request->all())
+                ->with('error', 'Nao foi possivel atualizar o status da OS agora. Tente novamente.');
+        }
+
+        $statusNome = $updatedOrder['status_nome'] ?? 'o novo estado';
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success'     => true,
+                'message'     => 'Status da OS atualizado para ' . $statusNome . '.',
+                'status_nome' => $statusNome,
+                'status_cor'  => (string) ($updatedOrder['status_cor'] ?? '#64748b'),
+            ]);
+        }
 
         return redirect()
             ->route('orders.show', $order)
-            ->with('success', 'Status da OS atualizado para ' . ($updatedOrder['status_nome'] ?? 'o novo estado') . '.');
+            ->with('success', 'Status da OS atualizado para ' . $statusNome . '.');
     }
 
     public function photo(int $order, int $photo): Response

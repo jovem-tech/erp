@@ -308,6 +308,14 @@ Route::prefix('v1')->group(function (): void {
         Route::get('modules', [CatalogController::class, 'modules'])->name('api.v1.modules.index');
         Route::get('permissions', [CatalogController::class, 'permissions'])->name('api.v1.permissions.index');
 
+        Route::prefix('configuracoes/empresa')
+            ->name('api.v1.configuracoes.empresa.')
+            ->group(function (): void {
+                Route::get('/', [ConfigurationController::class, 'companyProfile'])->name('index');
+                Route::match(['put', 'patch'], '/', [ConfigurationController::class, 'updateCompanyProfile'])->name('update');
+                Route::get('/logo', [ConfigurationController::class, 'companyLogo'])->name('logo');
+            });
+
         Route::prefix('configuracoes/integracoes')
             ->name('api.v1.configuracoes.integracoes.')
             ->group(function (): void {

@@ -6,6 +6,7 @@ use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
 use App\Services\StockService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -150,6 +151,39 @@ class StockController extends DesktopController
         return redirect()
             ->route('estoque.index', ['search' => trim((string) ($part['nome'] ?? ''))])
             ->with('success', 'Peça cadastrada com sucesso.');
+    }
+
+    public function quickStore(Request $request): JsonResponse
+    {
+        try {
+            $part = $this->stockService->create($this->validatedPartPayload($request));
+        } catch (ApiAuthenticationException $exception) {
+            return $this->jsonFailure($exception->getMessage() ?: 'Sua sessão expirou. Faça login novamente.', 401);
+        } catch (ApiAuthorizationException $exception) {
+            return $this->jsonFailure($exception->getMessage() ?: 'Você não tem permissão para executar esta ação.', 403);
+        } catch (ApiRequestException $exception) {
+            return $this->jsonFailure(
+                $exception->getMessage() ?: 'Não foi possível cadastrar a peça.',
+                $exception->statusCode() > 0 ? $exception->statusCode() : 422,
+                $exception->details() ?? []
+            );
+        } catch (ValidationException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Verifique os campos da peça.',
+                'errors' => $exception->errors(),
+            ], 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->jsonFailure('Não foi possível cadastrar a peça agora. Tente novamente.', 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Peça cadastrada com sucesso.',
+            'part' => $part,
+        ], 201);
     }
 
     public function update(Request $request, int $part): RedirectResponse
@@ -417,5 +451,17 @@ class StockController extends DesktopController
         }
 
         return $messages;
+    }
+
+    /**
+     * @param array<string, mixed>|null $details
+     */
+    private function jsonFailure(string $message, int $status, ?array $details = null): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $message,
+            'errors' => $details ?? [],
+        ], $status);
     }
 }

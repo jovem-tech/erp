@@ -23,6 +23,7 @@
     @include('orcamentos.form', [
         'budget' => $budget ?? [],
         'form' => $form ?? [],
+        'quickCatalogs' => $quickCatalogs ?? [],
         'formAction' => route('orcamentos.update', $budget['id'] ?? 0),
         'formMethod' => 'PATCH',
         'formTitle' => 'Edição de orçamento',
@@ -39,6 +40,7 @@
             'draftKey' => 'orcamentos:edit:' . (int) ($budget['id'] ?? 0),
             'isEditMode' => true,
             'budgetId' => (int) ($budget['id'] ?? 0),
+            'quickCatalogs' => $quickCatalogs ?? [],
             'catalogs' => [
                 'services' => collect($form['services'] ?? [])->map(static function (array $service): array {
                     return [

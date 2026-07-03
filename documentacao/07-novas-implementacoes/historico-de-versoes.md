@@ -1,5 +1,31 @@
 # Historico de versoes
 
+## v3.5.3 - 2026-07-03
+
+- o formulario de orcamento do desktop ganhou um botao `Cadastrar` ao lado da referencia do item para criar rapidamente uma peca ou servico sem sair do fluxo;
+- o modal compartilhado reaproveita os endpoints autenticados do desktop para cadastro rapido de pecas e servicos, devolvendo o item criado para a linha atual;
+- a referencia do item continua filtrada pelo tipo selecionado, evitando mistura entre pecas e servicos no mesmo catalogo;
+- nota de entrega criada em `documentacao/07-novas-implementacoes/2026-07-03-cadastro-rapido-pecas-servicos-orcamento-desktop.md` e versao global ajustada para `3.5.3`.
+
+## v3.5.2 - 2026-07-02
+
+- a listagem de ordens de servico do desktop passou a exibir botao rapido para orcamento do equipamento e acoes de mudanca de status baseadas no fluxo de trabalho permitido para cada OS;
+- o backend central agora expõe `proximas_etapas` no payload da listagem e no evento de nova OS, evitando consultas extras no front e mantendo a fonte de verdade do workflow;
+- as rows inseridas em tempo real pelo broadcast de nova OS foram alinhadas ao mesmo menu de acoes da listagem;
+- o dropdown de acoes recebeu ajuste de capacidade de rolagem para evitar overflow quando o fluxo possui muitas transicoes;
+- nota de entrega criada em `documentacao/07-novas-implementacoes/2026-07-02-acoes-rapidas-listagem-os-desktop.md` e versao global ajustada para `3.5.2`.
+
+## v3.5.2 - 2026-07-02
+
+- a preferência de tema passou a ser **persistida por usuário** no banco de dados SQLite local do desktop (`user_preferences`), sobrevivendo a logout, reinicialização do servidor e troca de sessão;
+- cada usuário tem sua preferência independente: usuário A com tema escuro, usuário B com tema Jovem Tech e usuário C com o padrão — cada um mantém seu tema ao relogar;
+- `EnsureBackendToken` middleware passou a carregar a preferência do banco na primeira request autenticada da sessão (`session()->has('desktop_theme')` como sentinel — 0 queries adicionais em requests subsequentes);
+- `ConfigurationController::updateAppearance()` agora persiste via `UserPreference::updateOrCreate()` além de atualizar a sessão;
+- `DesktopSession::forget()` passou a limpar `desktop_theme` além de `desktop_auth` no logout, evitando que a preferência de um usuário vaze para o próximo login no mesmo browser;
+- tabela `user_preferences`: `api_user_id` (unique, BigInt — ID do usuário no backend central), `desktop_theme` (string 32, default `'default'`);
+- migration `2026_07_02_000001_create_user_preferences_table` aplicada no SQLite do desktop;
+- versão global ajustada para `3.5.2`.
+
 ## v3.5.1 - 2026-07-02
 
 - adicionado o **Tema Escuro** (`dark`) como terceiro tema selecionável em `Configurações > Sistema > Aparência`;
@@ -315,4 +341,3 @@
 - cadastro completo de equipamentos no desktop com abas `Informacoes`, `Cor` e `Fotos`
 - quick-add de cliente, marca e modelo
 - integracao com camera, galeria, Cropper.js e fotos privadas
-
