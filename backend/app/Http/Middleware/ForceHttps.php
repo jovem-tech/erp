@@ -34,7 +34,10 @@ class ForceHttps
         $response = $next($request);
 
         // Forçar HTTPS por 1 ano (31536000 segundos)
-        $response->header(
+        // Usa headers->set() em vez de header() porque BinaryFileResponse
+        // (ex.: downloads de fotos/logo) nao possui o metodo header() do
+        // Illuminate\Http\Response.
+        $response->headers->set(
             'Strict-Transport-Security',
             'max-age=31536000; includeSubDomains; preload'
         );

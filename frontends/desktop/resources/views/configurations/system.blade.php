@@ -19,6 +19,11 @@
                 'icon' => 'bi-shield-lock',
                 'description' => 'Políticas de acesso, sessão e endurecimento da navegação.',
             ],
+            'documentacao' => [
+                'label' => 'Documentação',
+                'icon' => 'bi-journal-text',
+                'description' => 'Documentação oficial do sistema: fundação, arquitetura, deploy e histórico.',
+            ],
         ];
     @endphp
 
@@ -261,6 +266,94 @@
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <div class="config-subpanel {{ $activeTab === 'documentacao' ? 'is-active' : '' }}" data-config-subpanel="documentacao">
+                @php
+                    $docsTree = $documentationTree ?? [];
+                    $docsDoc = $documentationDoc ?? null;
+                @endphp
+
+                @if ($docsTree === [])
+                    <div class="alert alert-warning border-0 mb-0">
+                        A pasta <code>documentacao/</code> não foi encontrada no servidor. Verifique se o repositório foi publicado completo.
+                    </div>
+                @else
+                    <div class="docs-browser">
+                        <aside class="docs-browser-nav surface-card p-3">
+                            <h4 class="surface-title mb-2" style="font-size:.9rem;">
+                                <i class="bi bi-collection me-1"></i>Índice da documentação
+                            </h4>
+                            @foreach ($docsTree as $group)
+                                @php
+                                    $groupOpen = $docsDoc !== null && (
+                                        $group['key'] === 'indice'
+                                            ? $docsDoc['path'] === 'README.md'
+                                            : str_starts_with($docsDoc['path'], $group['key'] . '/')
+                                    );
+                                @endphp
+                                <details class="docs-nav-group" {{ $groupOpen ? 'open' : '' }}>
+                                    <summary>{{ $group['label'] }} <span class="docs-count">{{ count($group['items']) }}</span></summary>
+                                    <ul class="docs-nav-list">
+                                        @foreach ($group['items'] as $item)
+                                            <li>
+                                                <a href="{{ route('configurations.system.index', ['tab' => 'documentacao', 'doc' => $item['path']]) }}"
+                                                   class="{{ $docsDoc !== null && $docsDoc['path'] === $item['path'] ? 'is-current' : '' }}">
+                                                    {{ $item['title'] }}
+                                                </a>
+                                            </li>
+                                        @endforeach
+                                    </ul>
+                                </details>
+                            @endforeach
+                        </aside>
+
+                        <article class="docs-browser-content surface-card p-4">
+                            @if ($docsDoc === null)
+                                <div class="alert alert-secondary border-0 mb-0">
+                                    Selecione um documento no índice ao lado para começar a leitura.
+                                </div>
+                            @else
+                                <div class="docs-content-meta d-flex align-items-center justify-content-between mb-3">
+                                    <span class="badge text-bg-light border text-secondary">
+                                        <i class="bi bi-file-earmark-text me-1"></i>{{ $docsDoc['path'] }}
+                                    </span>
+                                </div>
+                                <div class="docs-markdown">{!! $docsDoc['html'] !!}</div>
+                            @endif
+                        </article>
+                    </div>
+
+                    <style>
+                        .docs-browser { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 1rem; align-items: start; }
+                        @media (max-width: 992px) { .docs-browser { grid-template-columns: 1fr; } }
+                        .docs-browser-nav { position: sticky; top: 84px; max-height: calc(100vh - 110px); overflow-y: auto; }
+                        .docs-nav-group summary { cursor: pointer; font-weight: 600; font-size: .82rem; color: var(--desktop-heading); padding: .4rem .35rem; border-radius: 8px; }
+                        .docs-nav-group summary:hover { background: var(--desktop-primary-soft); }
+                        .docs-count { font-weight: 400; font-size: .72rem; color: var(--desktop-text-soft); }
+                        .docs-nav-list { list-style: none; margin: 0 0 .5rem; padding: 0 0 0 .9rem; }
+                        .docs-nav-list a { display: block; padding: .3rem .45rem; font-size: .8rem; color: var(--desktop-text-soft); border-radius: 7px; text-decoration: none; line-height: 1.25; }
+                        .docs-nav-list a:hover { background: var(--desktop-primary-soft); color: var(--desktop-heading); }
+                        .docs-nav-list a.is-current { background: var(--desktop-primary); color: #fff; }
+                        .docs-markdown { font-size: .9rem; line-height: 1.65; color: var(--desktop-text); overflow-wrap: anywhere; }
+                        .docs-markdown h1 { font-size: 1.45rem; margin: 0 0 1rem; color: var(--desktop-heading); }
+                        .docs-markdown h2 { font-size: 1.15rem; margin: 1.6rem 0 .7rem; padding-bottom: .3rem; border-bottom: 1px solid var(--desktop-border); color: var(--desktop-heading); }
+                        .docs-markdown h3 { font-size: 1rem; margin: 1.2rem 0 .5rem; color: var(--desktop-heading); }
+                        .docs-markdown h4 { font-size: .9rem; margin: 1rem 0 .4rem; color: var(--desktop-heading); }
+                        .docs-markdown pre { background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: .85rem 1rem; overflow-x: auto; font-size: .78rem; }
+                        .docs-markdown code { font-size: .8em; }
+                        .docs-markdown :not(pre) > code { background: var(--desktop-primary-soft); color: var(--desktop-heading); border-radius: 5px; padding: .1rem .35rem; }
+                        .docs-markdown table { width: 100%; border-collapse: collapse; margin: .8rem 0; font-size: .82rem; display: block; overflow-x: auto; }
+                        .docs-markdown th, .docs-markdown td { border: 1px solid var(--desktop-border); padding: .45rem .6rem; text-align: left; }
+                        .docs-markdown th { background: var(--desktop-primary-soft); color: var(--desktop-heading); }
+                        .docs-markdown blockquote { border-left: 4px solid var(--desktop-primary); background: var(--desktop-primary-soft); margin: .8rem 0; padding: .6rem .9rem; border-radius: 0 8px 8px 0; }
+                        .docs-markdown blockquote p:last-child { margin-bottom: 0; }
+                        .docs-markdown ul, .docs-markdown ol { padding-left: 1.4rem; }
+                        .docs-markdown a { color: var(--desktop-primary); }
+                        .docs-markdown img { max-width: 100%; }
+                        .docs-markdown hr { border: 0; border-top: 1px solid var(--desktop-border); margin: 1.4rem 0; }
+                    </style>
+                @endif
             </div>
         </div>
     </section>

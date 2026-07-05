@@ -8,6 +8,7 @@ use App\Exceptions\ApiRequestException;
 use App\Models\UserPreference;
 use App\Services\CompanyProfileService;
 use App\Services\ConfigurationService;
+use App\Services\DocumentationService;
 use App\Support\DesktopSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -21,7 +22,8 @@ class ConfigurationController extends DesktopController
 {
     public function __construct(
         private readonly ConfigurationService $configurationService,
-        private readonly CompanyProfileService $companyProfileService
+        private readonly CompanyProfileService $companyProfileService,
+        private readonly DocumentationService $documentationService
     ) {
     }
 
@@ -33,7 +35,7 @@ class ConfigurationController extends DesktopController
         ]);
     }
 
-    public function system(): View
+    public function system(Request $request): View
     {
         $company = [];
 
@@ -43,9 +45,31 @@ class ConfigurationController extends DesktopController
             $company = [];
         }
 
+        $documentationTree = [];
+        $documentationDoc = null;
+
+        try {
+            $documentationTree = $this->documentationService->tree();
+
+            $requestedDoc = trim((string) $request->query('doc', ''));
+
+            if ($requestedDoc === '' && $documentationTree !== []) {
+                $requestedDoc = 'README.md';
+            }
+
+            if ($requestedDoc !== '') {
+                $documentationDoc = $this->documentationService->read($requestedDoc);
+            }
+        } catch (Throwable) {
+            $documentationTree = [];
+            $documentationDoc = null;
+        }
+
         return view('configurations.system', [
             'pageTitle' => 'Configurações do Sistema',
             'company' => $company,
+            'documentationTree' => $documentationTree,
+            'documentationDoc' => $documentationDoc,
         ]);
     }
 

@@ -1,12 +1,34 @@
 <?php
 
+use App\Http\Controllers\Web\BudgetPublicController;
 use App\Http\Controllers\Webhooks\WhatsAppWebhookController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return view('welcome');
+    // Nao expor a welcome page do framework (revela versao do Laravel).
+    // A raiz do backend e apenas um banner de servico para health checks manuais.
+    return response()->json([
+        'service' => 'sistema-erp-api',
+        'status' => 'ok',
+    ]);
 });
 
 Route::post('/webhooks/whatsapp', WhatsAppWebhookController::class)
     ->middleware('throttle:120,1')
     ->name('webhooks.whatsapp');
+
+Route::get('/orcamento/{token}', [BudgetPublicController::class, 'show'])
+    ->middleware('throttle:120,1')
+    ->name('budgets.public.show');
+
+Route::get('/orcamento/{token}/pdf', [BudgetPublicController::class, 'pdf'])
+    ->middleware('throttle:60,1')
+    ->name('budgets.public.pdf');
+
+Route::post('/orcamento/{token}/aprovar', [BudgetPublicController::class, 'approve'])
+    ->middleware(['throttle:30,1'])
+    ->name('budgets.public.approve');
+
+Route::post('/orcamento/{token}/rejeitar', [BudgetPublicController::class, 'reject'])
+    ->middleware(['throttle:30,1'])
+    ->name('budgets.public.reject');

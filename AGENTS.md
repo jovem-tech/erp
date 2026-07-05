@@ -1,5 +1,15 @@
 # AGENTS.md - Sistema ERP
 
+## Versionamento — leitura obrigatoria
+
+Antes de gerar, alterar ou corrigir qualquer codigo neste repositorio, leia
+`VERSIONING.md` na raiz do projeto. Ele define como classificar sua alteracao
+(major/minor/patch/hotfix) e como registrar isso rodando
+`./scripts/bump-version.sh` ao final da tarefa. Nao pule essa etapa.
+O arquivo `VERSION` na raiz e a fonte unica da verdade da versao
+(`MAJOR.MINOR.PATCH.HOTFIX`); `shared/version.php` e sincronizado
+automaticamente pelo bump. Toda alteracao gera entrada no `CHANGELOG.md`.
+
 ## Escopo do repositorio
 
 Este repositorio contem a nova plataforma modular `sistema-erp`, com:
@@ -12,8 +22,24 @@ Este repositorio contem a nova plataforma modular `sistema-erp`, com:
 
 ## Ambiente oficial
 
-- Producao oficial: `Ubuntu VPS`
-- Desenvolvimento local de referencia: `Windows/XAMPP`
+- Desenvolvimento oficial: servidor **Linux `BANCADA-02` (192.168.1.100)** desde
+  2026-07-04 — desktop em `https://192.168.1.100` (443), backend/API em
+  `https://192.168.1.100:8443`. Detalhes em
+  `documentacao/02-infraestrutura-ambientes/ambiente-dev-linux-bancada.md`.
+  **Windows/XAMPP foi descontinuado para desenvolvimento** (mantido apenas como
+  origem historica de dados/uploads).
+- Producao oficial: VPS `Ubuntu` (Contabo, `161.97.93.120`) desde 2026-07-05, em
+  paralelo ao sistema legado — desktop em `https://erp.jovemtech.eco.br` (443),
+  backend/API em `https://api-erp.jovemtech.eco.br` (443), legado intocado em
+  `https://sistema.jovemtech.eco.br`. Runbook especifico em
+  `documentacao/10-deploy/deploy-producao-contabo-vps.md` (leitura obrigatoria
+  antes de qualquer operacao de deploy ou infraestrutura); fundamentos gerais em
+  `deploy-producao-lan-ubuntu.md`. O ERP reaproveita o banco `sistema_hml` real do
+  legado (dados dos clientes); migrations sao aditivas.
+- Stack real (dev e producao): PHP 8.5 (FPM com pools dedicados por app),
+  MySQL 8.4, Redis com senha, Nginx com TLS, Supervisor (queue + reverb),
+  cron do scheduler, UFW + fail2ban, backup diario do banco.
+- Regra critica de firewall: sempre `ufw allow 22/tcp` **antes** de `ufw enable`.
 
 Toda mudanca deve ser segura para Linux:
 
@@ -61,7 +87,8 @@ As skills versionadas do proprio ERP ficam em `.agents/skills/`:
 - `$sistema-erp-governanca`: arquitetura, limites, ambiente oficial e guardrails do sistema;
 - `$sistema-erp-entrega-especificada`: fluxo de entrega orientado a especificacoes;
 - `$sistema-erp-documentacao-viva`: sincronizacao de manifests, AGENTS, historico e artefatos documentais gerados;
-- `$sistema-erp-auditoria-independente`: processo de verificacao para auditorias e para qualquer alegacao de "corrigido"/"concluido" — nunca aceitar sem checar contra o codigo real.
+- `$sistema-erp-auditoria-independente`: processo de verificacao para auditorias e para qualquer alegacao de "corrigido"/"concluido" — nunca aceitar sem checar contra o codigo real;
+- `$sistema-erp-deploy-producao`: runbook, problemas conhecidos e checklist do deploy em servidor Ubuntu (LAN/VPS) — usar antes de instalar, atualizar ou diagnosticar producao.
 
 ## Automacao documental e versionamento
 

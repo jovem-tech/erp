@@ -309,20 +309,14 @@ class ApiClient
         $timeout = (int) config('services.erp_api.timeout', 15);
         $connectTimeout = min($timeout, 5);
 
-        // O timeout/connectTimeout do Guzzle por si só já deveria bastar, mas em
-        // produção observamos requisições penduradas até o max_execution_time do PHP
-        // (300s) em vez de respeitar esse limite. Forçar as opções de cURL diretamente
-        // garante que o limite seja realmente aplicado pela libcurl.
+        // Os limites usam apenas as opcoes nativas do Guzzle (timeout/connect_timeout),
+        // que a propria lib traduz para CURLOPT_TIMEOUT_MS/CURLOPT_CONNECTTIMEOUT_MS.
+        // Passar CURLOPT_* cru em withOptions(['curl' => ...]) esta deprecado no
+        // Guzzle 7.11 e sera rejeitado no Guzzle 8.
         return Http::acceptJson()
             ->asJson()
             ->timeout($timeout)
-            ->connectTimeout($connectTimeout)
-            ->withOptions([
-                'curl' => [
-                    CURLOPT_TIMEOUT => $timeout,
-                    CURLOPT_CONNECTTIMEOUT => $connectTimeout,
-                ],
-            ]);
+            ->connectTimeout($connectTimeout);
     }
 
     private function baseMultipartRequest(): PendingRequest
