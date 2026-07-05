@@ -1,3 +1,3 @@
 <?php
 
-return '3.5.3';
+return '3.7.3';
