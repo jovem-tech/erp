@@ -16,10 +16,20 @@ class DesktopAppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $versionFile = base_path('../../shared/version.php');
+        // Protocolo de versionamento (VERSIONING.md): o arquivo VERSION na raiz
+        // do monorepo e a fonte unica da verdade (MAJOR.MINOR.PATCH.HOTFIX).
+        // shared/version.php (3 posicoes) permanece como fallback.
+        $versionFile = base_path('../../VERSION');
         $version = is_file($versionFile)
-            ? (string) require $versionFile
-            : '3.0.0';
+            ? trim((string) file_get_contents($versionFile))
+            : '';
+
+        if ($version === '') {
+            $legacyVersionFile = base_path('../../shared/version.php');
+            $version = is_file($legacyVersionFile)
+                ? (string) require $legacyVersionFile
+                : '3.0.0';
+        }
 
         config([
             'app.version' => $version,
