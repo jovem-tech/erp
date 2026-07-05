@@ -8,13 +8,35 @@ Este índice organiza a documentação da nova plataforma `sistema-erp`.
 - `01-fundacao/`: base física inicial, contratos de ambiente e acesso seguro.
 - `02-infraestrutura-ambientes/`: paridade operacional entre Windows/XAMPP e VPS/Linux.
 - `03-arquitetura-tecnica/`: backend central, API v1, autenticação, RBAC, storage e fluxos operacionais.
+- `04-governanca-ai/`: manifesto do sistema, operação para agentes de IA e contexto vivo.
 - `07-novas-implementacoes/`: notas de entrega por fase e histórico executivo.
 - `10-deploy/`: orientações de instalação, publicação e operação.
+
+## Deploy em produção
+
+1. [Runbook de produção na VPS Contabo (subdomínios + dados reais)](10-deploy/deploy-producao-contabo-vps.md) — **produção atual** (`erp.` desktop + `api-erp.` backend), em paralelo ao legado.
+2. [Runbook de deploy em Ubuntu Server — LAN ou VPS](10-deploy/deploy-producao-lan-ubuntu.md) — fundamentos e problemas do primeiro deploy (2026-07-03/04).
+3. [Servidor Linux (Ubuntu)](02-infraestrutura-ambientes/linux-vps.md)
+4. [CORS, URLs, logs, filas e scheduler](02-infraestrutura-ambientes/cors-urls-logs-filas-scheduler.md)
 
 ## Operação local
 
 1. [Índice de deploy e operação](10-deploy/README.md)
 2. [Manual de inicialização local no Windows com XAMPP](10-deploy/manual-inicializacao-local-windows-xampp.md)
+
+## Versionamento
+
+O protocolo de versionamento (formato `MAJOR.MINOR.PATCH.HOTFIX`, arquivo `VERSION`
+na raiz como fonte única da verdade, registro em `CHANGELOG.md`) está definido em
+[`VERSIONING.md`](../VERSIONING.md) na raiz do repositório. Toda alteração de
+código — por IA ou manual — deve ser classificada e registrada via
+`./scripts/bump-version.sh`.
+
+## Consulta pela interface do sistema
+
+Toda esta documentação pode ser lida diretamente no frontend desktop, em
+`Configurações > Sistema > aba Documentação` (perfil com permissão de
+visualizar configurações).
 
 ## Leitura recomendada na Fase 1
 

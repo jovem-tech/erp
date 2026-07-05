@@ -1,5 +1,41 @@
 # Historico de versoes
 
+## v3.7.3 - 2026-07-05
+
+- cadastro de cliente do desktop (rapido e completo) passou a padronizar **nome** em Title Case pt-BR (conectores `de/da/do/dos/das/e` em minusculo, so pessoa fisica) e **telefone** com mascara `(DDD) numero` — celular `(21) 98061-4757`, fixo `(22) 2627-4120`;
+- duas camadas: JS (`clients-form.js`) para UX ao vivo + `ClientController` autoritativo;
+- nota em `documentacao/07-novas-implementacoes/2026-07-05-padronizacao-nome-telefone-cadastro-cliente-desktop.md`.
+
+## v3.7.2 - 2026-07-05
+
+- corrige `broadcasting/auth` 403 em producao: `channels.php` passou a ser carregado com `require` (nao `loadRoutesFrom`, que e' ignorado com `route:cache`), registrando os canais de broadcasting e mantendo o `route:cache` de producao;
+- ver nota `2026-07-05-deploy-producao-contabo-subdominios-e-dados-reais.md`.
+
+## v3.7.1 - 2026-07-04
+
+- corrige 500 na busca de clientes (Select2 da Nova OS): metodo `OrderController::jsonFailure()` faltante, adicionado no padrao dos demais controllers;
+- reconciliacao de schema entre os dados reais da VPS e o schema que o ERP espera: 18 colunas aditivas (ex.: `clientes.referencia`, `usuarios.remember_token_hash`) aplicadas na VPS e no dev;
+- ver nota `2026-07-05-deploy-producao-contabo-subdominios-e-dados-reais.md`.
+
+## v3.7.0 - 2026-07-04
+
+- servidor `192.168.1.100` (BANCADA-02) tornou-se o **ambiente oficial de desenvolvimento**, substituindo o Windows/XAMPP; repositorio git completo publicado em `/var/www/sistema-erp`;
+- nova topologia de portas: desktop na 443 (`https://192.168.1.100`), backend/API na 8443 (`https://192.168.1.100:8443`), 8444/8445 reservadas para mobile/chat;
+- correcoes de auditoria: dois pools PHP-FPM dedicados, limite de upload 25M (corrige o 413 em fotos/logo), MySQL buffer pool 1G + slow log, Redis maxmemory, UFW + fail2ban, SSH endurecido, `server_tokens off`, cookie `Secure`, TLS com SAN, backup diario do banco, remocao do banco orfao;
+- correcoes de codigo: `ApiClient` sem `CURLOPT_*` deprecado (Guzzle 8-ready) e raiz do backend sem welcome page;
+- nota de entrega em `documentacao/07-novas-implementacoes/2026-07-04-ambiente-dev-linux-oficial-correcoes-auditoria.md`;
+- licao aprendida: `ufw allow 22` antes de `ufw enable` (lockout real recuperado por acesso fisico).
+
+## v3.6.0 - 2026-07-04
+
+- primeiro deploy de producao real: backend em `https://192.168.1.100` e desktop em `https://192.168.1.100:8443` (Ubuntu Server 26.04, PHP 8.5, MySQL 8.4, Redis, Nginx com TLS autoassinado, Supervisor e cron);
+- banco `sistema_hml` migrado de MariaDB para MySQL 8 com correcao de colunas geradas; storage privado e uploads legados copiados com `LEGACY_PUBLIC_PATH`;
+- correcao de bug de producao no middleware `ForceHttps` (500 em respostas de arquivo binario — logo e fotos);
+- novo runbook `documentacao/10-deploy/deploy-producao-lan-ubuntu.md` com 11 problemas reais mapeados e checklist pos-deploy;
+- nova aba `Documentacao` em `Configuracoes > Sistema` no desktop para leitura da documentacao oficial dentro do sistema;
+- adotado protocolo de versionamento de 4 posicoes (`VERSIONING.md`, `VERSION`, `CHANGELOG.md`, `scripts/bump-version.sh`, `scripts/classify-change.sh`);
+- nota de entrega em `documentacao/07-novas-implementacoes/2026-07-04-deploy-producao-lan-documentacao-integrada-versionamento.md`.
+
 ## v3.5.3 - 2026-07-03
 
 - o formulario de orcamento do desktop ganhou um botao `Cadastrar` ao lado da referencia do item para criar rapidamente uma peca ou servico sem sair do fluxo;
