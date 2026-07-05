@@ -7,16 +7,24 @@ description: Arquitetura, escopo, limites de seguranca e ambiente oficial do Sis
 
 ## Quick start
 
-1. Ler `AGENTS.md`.
-2. Ler `references/arquitetura-e-escopo.md`.
-3. Ler `references/ambientes-e-seguranca.md`.
-4. Se a mudanca for ampla, ler `documentacao/04-governanca-ai/manifesto-do-sistema.md`.
+1. Ler `AGENTS.md` **por inteiro**, comecando pela secao "LEIA ISTO PRIMEIRO" (mandato
+   valido para qualquer IA usada neste repositorio, nao so Claude).
+2. Ler `documentacao/10-deploy/workflow-git-multiambiente.md` — em qual branch
+   trabalhar (`develop`) e como uma mudanca chega a producao (`main`, VPS).
+3. Ler `references/arquitetura-e-escopo.md`.
+4. Ler `references/ambientes-e-seguranca.md`.
+5. Se a mudanca for ampla, ler `documentacao/04-governanca-ai/manifesto-do-sistema.md`.
 
 ## Regras mestras
 
 1. Tratar `backend/` como fonte unica de verdade para negocio, autenticacao, autorizacao, storage privado e contratos.
-2. Tratar `Ubuntu VPS` como ambiente oficial de producao; `Windows/XAMPP` existe apenas para desenvolvimento local.
-3. Atualizar a documentacao afetada sempre que codigo, contrato, deploy ou comportamento operacional mudar.
+2. Tratar a VPS Contabo (`161.97.93.120`, branch `main`) como ambiente oficial de
+   producao; `192.168.1.100` (branch `develop`) como unico ambiente de desenvolvimento.
+   **`Windows/XAMPP` esta descontinuado — nunca desenvolver la.**
+3. O repositorio `https://github.com/jovem-tech/erp` e' a fonte unica da verdade do
+   codigo; qualquer alteracao nasce em `develop` e so chega a `main` por promocao
+   deliberada (ver workflow-git-multiambiente.md).
+4. Atualizar a documentacao afetada sempre que codigo, contrato, deploy ou comportamento operacional mudar.
 
 ## Workflow de decisao
 

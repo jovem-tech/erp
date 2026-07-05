@@ -24,6 +24,18 @@ raiz conhecida.
 | `broadcasting/auth` **403** (token valido) | `channels.php` via `loadRoutesFrom`, ignorado com `route:cache` → canais nao registrados | `require base_path('routes/channels.php')` no `AppServiceProvider` (corrigido em 3.7.2) |
 | login: "nao foi possivel conectar ao backend" **na VPS** | VPS parou de resolver o proprio hostname (cache DNS negativo) | `resolvectl flush-caches` + `/etc/hosts` `127.0.0.1 erp.jovemtech.eco.br` e `api-erp...` |
 | API/tempo real bloqueados em rede restritiva | backend em porta alta (8443) | backend em subdominio proprio na 443 (`api-erp.jovemtech.eco.br`) |
+| `git checkout`/`reset` recusa sobrescrever arquivos "untracked" ao transformar pasta tar-deployed em clone git | arquivos ja existem no disco sem estar rastreados | `git symbolic-ref HEAD refs/heads/main` + `git reset --hard origin/main` (reset, nao checkout de branch, sobrescreve untracked-que-vira-tracked sem reclamar) |
+| `git` recusa operar no diretorio da VPS | dono dos arquivos e' `www-data`, comando rodado como `root` | `git config --global --add safe.directory /var/www/sistema-erp` |
+| chave SSH recusada como deploy key no GitHub ("Key is already in use") | a chave ja esta cadastrada em outro lugar (conta pessoal, outro repo) | gerar uma chave **nova e dedicada** por servidor (`ssh-keygen -f ~/.ssh/id_ed25519_github_erp`), nunca reaproveitar uma chave existente |
+
+## Migracao para deploy git-based (2026-07-05)
+
+A VPS deixou de ser atualizada por tar+scp e passou a ser um clone git real da branch
+`main` (`https://github.com/jovem-tech/erp`), com deploy key **somente leitura**
+dedicada (`~/.ssh/id_ed25519_github_erp`). O servidor de dev (`192.168.1.100`) e' clone
+da branch `develop`, com deploy key de **escrita** (`~/.ssh/id_ed25519_github`). Ver
+`documentacao/10-deploy/workflow-git-multiambiente.md` para o fluxo completo e
+`scripts/bash/deploy-producao.sh` / `scripts/bash/atualizar-dev.sh` para os scripts.
 
 ## Comandos de diagnostico rapido
 

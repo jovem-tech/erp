@@ -2,12 +2,22 @@
 
 Base física da nova plataforma modular.
 
-## Ambiente oficial
+## Repositório e ambientes oficiais
 
-- Producao oficial: `Ubuntu VPS`
-- Desenvolvimento local de referencia: `Windows/XAMPP`
+- **Repositório:** `https://github.com/jovem-tech/erp` (privado). Branches `develop`
+  (trabalho ativo) e `main` (produção). Ver
+  [workflow-git-multiambiente.md](documentacao/10-deploy/workflow-git-multiambiente.md).
+- **Desenvolvimento oficial:** servidor Linux `192.168.1.100` (clone git da branch
+  `develop`). Ver
+  [ambiente-dev-linux-bancada.md](documentacao/02-infraestrutura-ambientes/ambiente-dev-linux-bancada.md).
+- **Produção oficial:** VPS Ubuntu (Contabo, `161.97.93.120`, clone git da branch
+  `main`). Ver
+  [deploy-producao-contabo-vps.md](documentacao/10-deploy/deploy-producao-contabo-vps.md).
 
-Toda decisao de arquitetura, automacao, seguranca, filesystem, paths e deploy deve priorizar compatibilidade com Linux/Ubuntu. O ambiente Windows existe apenas para acelerar desenvolvimento local.
+**Windows/XAMPP está definitivamente descontinuado para desenvolvimento.** Não editar
+código neste projeto a partir de uma cópia local em XAMPP — o ambiente oficial é o
+servidor Linux acima, via SSH. Toda decisão de arquitetura, automação, segurança,
+filesystem, paths e deploy deve priorizar compatibilidade com Linux/Ubuntu.
 
 ## Estrutura principal
 
@@ -95,7 +105,10 @@ php artisan key:generate
 php artisan migrate --force
 ```
 
-> No ambiente local oficial deste projeto, o backend sobe em `http://127.0.0.1:8000` via Apache/XAMPP. Consulte o manual em `documentacao/10-deploy/manual-inicializacao-local-windows-xampp.md`.
+> No ambiente de desenvolvimento oficial (`192.168.1.100`, Linux), o backend sobe via
+> Nginx + PHP-FPM. Consulte `documentacao/02-infraestrutura-ambientes/ambiente-dev-linux-bancada.md`.
+> O manual de XAMPP (`documentacao/10-deploy/manual-inicializacao-local-windows-xampp.md`)
+> é apenas histórico — não usar para desenvolvimento novo.
 
 ## Como subir o frontend mobile
 
@@ -116,7 +129,9 @@ copy .env.example .env
 php artisan key:generate
 ```
 
-> No ambiente local oficial deste projeto, o desktop sobe em `http://127.0.0.1:8080` via Apache/XAMPP. Consulte o manual em `documentacao/10-deploy/manual-inicializacao-local-windows-xampp.md`.
+> No ambiente de desenvolvimento oficial (`192.168.1.100`, Linux), o desktop sobe via
+> Nginx + PHP-FPM. Consulte `documentacao/02-infraestrutura-ambientes/ambiente-dev-linux-bancada.md`.
+> O manual de XAMPP é apenas histórico — não usar para desenvolvimento novo.
 
 ## Como subir o frontend chat
 
@@ -137,7 +152,10 @@ php artisan reverb:start --host=127.0.0.1 --port=8090
 ## Referências
 
 - [Documentação principal](documentacao/README.md)
-- [Manual de inicialização local](documentacao/10-deploy/manual-inicializacao-local-windows-xampp.md)
+- [Fluxo Git multiambiente (develop → main → VPS)](documentacao/10-deploy/workflow-git-multiambiente.md)
+- [Ambiente de desenvolvimento oficial (Linux)](documentacao/02-infraestrutura-ambientes/ambiente-dev-linux-bancada.md)
+- [Deploy de produção na VPS Contabo](documentacao/10-deploy/deploy-producao-contabo-vps.md)
+- [Manual de inicialização local (Windows/XAMPP, histórico/descontinuado)](documentacao/10-deploy/manual-inicializacao-local-windows-xampp.md)
 - [Contrato de ambiente](documentacao/01-fundacao/contrato-de-ambiente.md)
 - [Contrato da API do backend central](documentacao/03-arquitetura-tecnica/contrato-api-backend-central.md)
 - [Backend central mínimo](documentacao/03-arquitetura-tecnica/backend-central-minimo.md)

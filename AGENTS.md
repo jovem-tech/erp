@@ -1,5 +1,32 @@
 # AGENTS.md - Sistema ERP
 
+## LEIA ISTO PRIMEIRO — obrigatorio para qualquer agente de IA
+
+Este bloco vale para **qualquer** ferramenta de IA usada neste repositorio — Claude,
+Codex, GitHub Copilot, Antigravity ou qualquer outra. Antes de gerar, alterar, corrigir
+ou sugerir qualquer mudanca de codigo, leia nesta ordem:
+
+1. **Este arquivo (`AGENTS.md`) inteiro** — guardrails, ambiente oficial, fluxo de entrega.
+2. **`VERSIONING.md`** — como classificar e registrar a alteracao (`bump-version.sh`).
+3. **`documentacao/10-deploy/workflow-git-multiambiente.md`** — em qual branch
+   trabalhar, como promover para producao, como fazer deploy.
+4. **`documentacao/10-deploy/deploy-producao-contabo-vps.md`** — runbook da producao
+   real, se a tarefa tocar infraestrutura ou deploy.
+5. `documentacao/04-governanca-ai/operacao-para-agentes.md` e
+   `documentacao/04-governanca-ai/manifesto-do-sistema.md` para contexto amplo.
+
+**Por que isso existe:** este projeto e' trabalhado por multiplas ferramentas de IA
+diferentes, e cada uma tende a "fazer do seu jeito" se nao for ancorada num padrao
+comum. A documentacao deste repositorio — nao a memoria ou o estilo de cada
+ferramenta — e' a fonte da verdade. Se a documentacao estiver desatualizada em
+relacao ao codigo, corrija a documentacao como parte da mesma entrega (ver secao
+"Fluxo oficial de entrega" abaixo) em vez de ignora-la.
+
+**Repositorio oficial:** `https://github.com/jovem-tech/erp` (privado). Branches:
+`develop` (trabalho ativo, publicado em `192.168.1.100`) e `main` (producao, publicado
+na VPS `161.97.93.120`). Nunca commitar direto em `main` sem passar por `develop`
+primeiro. Detalhes completos no workflow-git-multiambiente.md citado acima.
+
 ## Versionamento — leitura obrigatoria
 
 Antes de gerar, alterar ou corrigir qualquer codigo neste repositorio, leia
@@ -22,12 +49,14 @@ Este repositorio contem a nova plataforma modular `sistema-erp`, com:
 
 ## Ambiente oficial
 
-- Desenvolvimento oficial: servidor **Linux `BANCADA-02` (192.168.1.100)** desde
-  2026-07-04 — desktop em `https://192.168.1.100` (443), backend/API em
-  `https://192.168.1.100:8443`. Detalhes em
-  `documentacao/02-infraestrutura-ambientes/ambiente-dev-linux-bancada.md`.
-  **Windows/XAMPP foi descontinuado para desenvolvimento** (mantido apenas como
-  origem historica de dados/uploads).
+- Desenvolvimento oficial: servidor **Linux (192.168.1.100)** desde 2026-07-04,
+  como clone git da branch `develop` de `https://github.com/jovem-tech/erp` — desktop
+  em `https://192.168.1.100` (443), backend/API em `https://192.168.1.100:8443`.
+  Detalhes em `documentacao/02-infraestrutura-ambientes/ambiente-dev-linux-bancada.md`.
+  **Windows/XAMPP esta definitivamente descontinuado** — nao usar para nenhum
+  desenvolvimento novo, nenhuma IA deve editar arquivos la. Qualquer trabalho neste
+  projeto acontece via SSH em `192.168.1.100` (branch `develop`) ou, quando aplicavel,
+  direto no repositorio GitHub.
 - Producao oficial: VPS `Ubuntu` (Contabo, `161.97.93.120`) desde 2026-07-05, em
   paralelo ao sistema legado — desktop em `https://erp.jovemtech.eco.br` (443),
   backend/API em `https://api-erp.jovemtech.eco.br` (443), legado intocado em

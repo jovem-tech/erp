@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-03T08:34:30+02:00`
-- Versao do sistema: `3.5.3`
+- Gerado em: `2026-07-05T23:04:36+02:00`
+- Versao do sistema: `3.7.3`
 - Versao da API: `1.1.0`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Windows/XAMPP`
@@ -50,8 +50,9 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 ### `documentacao/02-infraestrutura-ambientes`
 
 - `documentacao/02-infraestrutura-ambientes/README.md` - Fase 2 - Infraestrutura de Desenvolvimento e Produção
+- `documentacao/02-infraestrutura-ambientes/ambiente-dev-linux-bancada.md` - Ambiente Oficial de Desenvolvimento — Linux (BANCADA-02, 192.168.1.100)
 - `documentacao/02-infraestrutura-ambientes/cors-urls-logs-filas-scheduler.md` - CORS, URLs, Logs, Filas, Cache/Sessao e Scheduler
-- `documentacao/02-infraestrutura-ambientes/linux-vps.md` - VPS Linux (Ubuntu)
+- `documentacao/02-infraestrutura-ambientes/linux-vps.md` - Servidor Linux (Ubuntu) — LAN ou VPS
 - `documentacao/02-infraestrutura-ambientes/windows-xampp.md` - Windows + XAMPP
 
 ### `documentacao/03-arquitetura-tecnica`
@@ -125,12 +126,25 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-02-acoes-rapidas-listagem-os-desktop.md` - Acoes rapidas na listagem de OS do desktop
 - `documentacao/07-novas-implementacoes/2026-07-02-jovem-tech-design-system-tema-desktop.md` - Jovem Tech Design System v3.0.0 — Novo tema do desktop
 - `documentacao/07-novas-implementacoes/2026-07-03-cadastro-rapido-pecas-servicos-orcamento-desktop.md` - Cadastro rapido de pecas e servicos no orcamento desktop
+- `documentacao/07-novas-implementacoes/2026-07-03-orcamentos-ajustes-percentuais.md` - Orçamentos: desconto e acréscimo em valor ou percentual
+- `documentacao/07-novas-implementacoes/2026-07-03-orcamentos-aprovacao-publica-desktop.md` - Orcamentos com revisao antes de salvar e aprovacao publica
+- `documentacao/07-novas-implementacoes/2026-07-03-orcamentos-botao-cadastro-dinamico-por-tipo.md` - Orcamentos desktop: botao de cadastro dinamico por tipo
+- `documentacao/07-novas-implementacoes/2026-07-03-orcamentos-resumo-financeiro-4-colunas.md` - Orcamentos desktop: resumo financeiro em 4 colunas
+- `documentacao/07-novas-implementacoes/2026-07-03-orcamentos-valores-monetarios-brl.md` - Orçamentos: campos monetários em BRL com entrada segura
+- `documentacao/07-novas-implementacoes/2026-07-04-ambiente-dev-linux-oficial-correcoes-auditoria.md` - Ambiente de desenvolvimento oficial em Linux e correcoes da auditoria de infraestrutura
+- `documentacao/07-novas-implementacoes/2026-07-04-deploy-producao-lan-documentacao-integrada-versionamento.md` - Deploy de producao em LAN, documentacao integrada ao desktop e protocolo de versionamento
+- `documentacao/07-novas-implementacoes/2026-07-04-orcamentos-modal-compactacao.md` - Compactacao do modal de revisao de orcamento
+- `documentacao/07-novas-implementacoes/2026-07-05-deploy-producao-contabo-subdominios-e-dados-reais.md` - Deploy de producao na VPS Contabo com subdominios e dados reais do legado
+- `documentacao/07-novas-implementacoes/2026-07-05-padronizacao-nome-telefone-cadastro-cliente-desktop.md` - Padronizacao de nome e telefone no cadastro de cliente (desktop)
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 
 ### `documentacao/10-deploy`
 
 - `documentacao/10-deploy/README.md` - Deploy e Operacao
+- `documentacao/10-deploy/deploy-producao-contabo-vps.md` - Runbook de Producao — VPS Contabo (subdominios + dados reais)
+- `documentacao/10-deploy/deploy-producao-lan-ubuntu.md` - Deploy de Produção — Ubuntu Server (LAN ou VPS)
 - `documentacao/10-deploy/manual-inicializacao-local-windows-xampp.md` - Manual de Inicializacao Local no Windows com XAMPP
+- `documentacao/10-deploy/workflow-git-multiambiente.md` - Fluxo Git Multiambiente — Sistema ERP
 
 ## Inventario de specs
 
@@ -152,4 +166,6 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/015-nova-os-wizard-desktop` - Feature Specification: Nova OS em modo wizard no desktop | artefatos: spec, plan, tasks
 - `specs/016-modelo-assistencia-tecnica-desktop` - Feature Specification: Modelo Ideal da Assistência Técnica no Desktop | artefatos: spec, plan, tasks
 - `specs/017-cadastro-rapido-servicos-pecas-orcamento-desktop` - Feature Specification: Cadastro rápido de serviços e peças no orçamento desktop | artefatos: spec, plan, tasks
+- `specs/018-orcamentos-ajustes-percentuais-desktop` - Feature Specification: Orcamentos - Ajustes Monetarios ou Percentuais | artefatos: spec, plan, tasks
+- `specs/019-aprovacao-orcamento-desktop` - Feature Specification: Orcamentos - Revisao antes de salvar e envio para aprovacao | artefatos: spec, plan, tasks
 

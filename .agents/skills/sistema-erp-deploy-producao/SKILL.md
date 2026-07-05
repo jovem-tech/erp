@@ -7,9 +7,14 @@ description: Deploy, atualizacao e diagnostico do Sistema ERP em servidor Ubuntu
 
 ## Quick start
 
-1. Ler `documentacao/10-deploy/deploy-producao-lan-ubuntu.md` (runbook completo com problemas reais mapeados).
-2. Ler `references/problemas-conhecidos.md` desta skill antes de diagnosticar qualquer erro de producao.
-3. Conferir `documentacao/02-infraestrutura-ambientes/linux-vps.md` para regras de ambiente.
+1. Ler `documentacao/10-deploy/workflow-git-multiambiente.md` — o deploy e' git-based
+   desde 2026-07-05 (`git pull` de `main`), **nao mais** tar+scp.
+2. Ler `documentacao/10-deploy/deploy-producao-contabo-vps.md` — runbook da producao
+   real (VPS Contabo, subdominios `erp.`/`api-erp.jovemtech.eco.br`).
+3. Ler `references/problemas-conhecidos.md` desta skill antes de diagnosticar qualquer erro de producao.
+4. `deploy-producao-lan-ubuntu.md` e `linux-vps.md` continuam validos como fundamentos
+   gerais (pacotes, MySQL, TLS), mas a topologia e o mecanismo de deploy atuais estao
+   nos dois documentos do item 1-2.
 
 ## Fatos do ambiente de producao (deploy de referencia 2026-07-03/04)
 
@@ -28,11 +33,18 @@ description: Deploy, atualizacao e diagnostico do Sistema ERP em servidor Ubuntu
 4. Apos alterar `.env` ou codigo em producao: `php artisan config:clear && config:cache && route:cache && view:cache` e, se mudou extensao/ini de PHP, `systemctl restart php8.5-fpm`.
 5. Registrar a entrega com `./scripts/bump-version.sh` conforme `VERSIONING.md`.
 
-## Atualizacao de codigo em producao (fluxo curto)
+## Atualizacao de codigo em producao (fluxo atual — git-based)
 
-1. Empacotar na origem excluindo `.git`, `vendor`, `node_modules`, caches.
-2. `scp` + extrair em `/var/www/sistema-erp` (usar `sudo tar` se houver arquivos de `www-data`).
-3. `composer install --no-dev` quando o `composer.lock` mudar; `npm run build` no desktop quando assets mudarem.
-4. Limpar/reconstruir caches do Laravel (backend e desktop).
-5. `sudo supervisorctl restart all` se codigo de fila/reverb mudou.
-6. Rodar o checklist pos-deploy do runbook.
+Desde 2026-07-05 a VPS e' um clone git real de `https://github.com/jovem-tech/erp`
+(branch `main`), autenticado por deploy key **somente leitura**. O fluxo
+tar+scp usado ate' entao esta descontinuado.
+
+1. Promover o codigo validado de `develop` para `main` (ver workflow-git-multiambiente.md).
+2. Na VPS: `cd /var/www/sistema-erp && ./scripts/bash/deploy-producao.sh`.
+3. O script ja faz, nesta ordem: backup do banco -> `git fetch`+`checkout main`+
+   `pull --ff-only` -> `composer install` -> `migrate --force` -> rebuild de caches
+   (backend e desktop) -> `systemctl reload php8.3-fpm` -> `supervisorctl restart all`.
+4. Rodar o checklist pos-deploy do runbook Contabo.
+
+Se precisar atualizar so o servidor de dev (`192.168.1.100`, branch `develop`):
+`./scripts/bash/atualizar-dev.sh` (mais leve, sem backup obrigatorio).

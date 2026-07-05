@@ -1,5 +1,13 @@
 # Windows + XAMPP
 
+> ⚠️ **DESCONTINUADO — não usar para desenvolvimento novo.** Desde 2026-07-05 o único
+> ambiente de desenvolvimento oficial é o servidor Linux `192.168.1.100` (clone git da
+> branch `develop` de `https://github.com/jovem-tech/erp`). Ver
+> [ambiente-dev-linux-bancada.md](ambiente-dev-linux-bancada.md) e
+> [workflow-git-multiambiente.md](../10-deploy/workflow-git-multiambiente.md). Este
+> documento fica apenas como referência histórica de uma configuração anterior — nenhuma
+> IA ou desenvolvedor deve editar código a partir de uma cópia local em XAMPP.
+
 ## Objetivo
 
 Subir o backend e a operacao local de forma previsivel, sem caminhos absolutos espalhados pelo codigo.
