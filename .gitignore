@@ -37,6 +37,12 @@ backend/storage/app/private/*
 backend/storage/logs/*
 !backend/storage/logs/.gitignore
 
+# Backups de banco (podem conter dados reais de clientes - nunca versionar)
+backend/storage/backups/
+/backend/storage/backups/*.sql
+*.sql
+*.sql.gz
+
 # Sistema e editores
 .DS_Store
 Thumbs.db
