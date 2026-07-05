@@ -315,6 +315,11 @@ class ServicoController extends DesktopController
      */
     private function validatedServicePayload(Request $request): array
     {
+        $request->replace($this->normalizeMoneyPayload(
+            $request->all(),
+            ['valor', 'tempo_padrao_horas', 'custo_direto_padrao']
+        ));
+
         $validated = $request->validate([
             'nome' => ['required', 'string', 'max:120'],
             'descricao' => ['nullable', 'string'],

@@ -79,14 +79,14 @@
                             <div>
                                 <label for="orcamentoQuickItemServiceValue">Valor</label>
                                 <input
-                                    type="number"
+                                    type="text"
                                     id="orcamentoQuickItemServiceValue"
                                     name="valor"
                                     class="form-control"
-                                    min="0"
-                                    step="0.01"
-                                    value="0"
+                                    inputmode="decimal"
+                                    value="{{ $formatMoney(0) }}"
                                     data-budget-quick-field="valor"
+                                    data-budget-money
                                 >
                             </div>
 
@@ -107,14 +107,14 @@
                             <div>
                                 <label for="orcamentoQuickItemServiceCost">Custo direto</label>
                                 <input
-                                    type="number"
+                                    type="text"
                                     id="orcamentoQuickItemServiceCost"
                                     name="custo_direto_padrao"
                                     class="form-control"
-                                    min="0"
-                                    step="0.01"
-                                    value="0"
+                                    inputmode="decimal"
+                                    value="{{ $formatMoney(0) }}"
                                     data-budget-quick-field="custo_direto_padrao"
+                                    data-budget-money
                                 >
                             </div>
 
@@ -176,28 +176,28 @@
                             <div>
                                 <label for="orcamentoQuickItemPartSalePrice">Preço de venda</label>
                                 <input
-                                    type="number"
+                                    type="text"
                                     id="orcamentoQuickItemPartSalePrice"
                                     name="preco_venda"
                                     class="form-control"
-                                    min="0"
-                                    step="0.01"
-                                    value="0"
+                                    inputmode="decimal"
+                                    value="{{ $formatMoney(0) }}"
                                     data-budget-quick-field="preco_venda"
+                                    data-budget-money
                                 >
                             </div>
 
                             <div>
                                 <label for="orcamentoQuickItemPartCostPrice">Preço de custo</label>
                                 <input
-                                    type="number"
+                                    type="text"
                                     id="orcamentoQuickItemPartCostPrice"
                                     name="preco_custo"
                                     class="form-control"
-                                    min="0"
-                                    step="0.01"
-                                    value="0"
+                                    inputmode="decimal"
+                                    value="{{ $formatMoney(0) }}"
                                     data-budget-quick-field="preco_custo"
+                                    data-budget-money
                                 >
                             </div>
 

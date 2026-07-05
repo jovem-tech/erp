@@ -9,6 +9,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Budget extends Model
 {
+    public const ADJUSTMENT_MODE_VALUE = 'valor';
+    public const ADJUSTMENT_MODE_PERCENT = 'percentual';
+
     public const TYPE_PREVIEW = 'previo';
     public const TYPE_ASSISTANCE = 'assistencia';
 
@@ -50,7 +53,9 @@ class Budget extends Model
         'validade_dias' => 'integer',
         'subtotal' => 'float',
         'desconto' => 'float',
+        'desconto_percentual' => 'float',
         'acrescimo' => 'float',
+        'acrescimo_percentual' => 'float',
         'total' => 'float',
         'convertido_id' => 'integer',
         'validade_data' => 'date',
@@ -62,6 +67,26 @@ class Budget extends Model
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
+
+    public static function publicApprovalUrlForToken(string $token): ?string
+    {
+        $token = trim($token);
+        if ($token === '') {
+            return null;
+        }
+
+        $base = rtrim(trim((string) config('app.public_url')), '/');
+        if ($base === '') {
+            return route('budgets.public.show', ['token' => $token], true);
+        }
+
+        return $base . route('budgets.public.show', ['token' => $token], false);
+    }
+
+    public function publicApprovalUrl(): ?string
+    {
+        return self::publicApprovalUrlForToken((string) ($this->token_publico ?? ''));
+    }
 
     public static function statusOptions(): array
     {

@@ -241,6 +241,183 @@ components:
           nullable: true
           example: 15
 
+    BudgetAdjustmentMode:
+      type: string
+      description: Modo de aplicação do desconto ou acréscimo.
+      enum:
+        - valor
+        - percentual
+
+    BudgetItemUpsertInput:
+      type: object
+      additionalProperties: true
+      properties:
+        tipo_item:
+          type: string
+          example: servico
+        referencia_id:
+          type: integer
+          nullable: true
+          example: 11
+        descricao:
+          type: string
+          example: Troca de tela
+        quantidade:
+          type: number
+          format: float
+          minimum: 0
+          example: 1
+        valor_unitario:
+          type: number
+          format: float
+          minimum: 0
+          example: 330
+        desconto:
+          type: number
+          format: float
+          minimum: 0
+          description: Valor monetário efetivo do desconto do item.
+          example: 33
+        desconto_tipo:
+          $ref: "#/components/schemas/BudgetAdjustmentMode"
+        desconto_percentual:
+          type: number
+          format: float
+          minimum: 0
+          nullable: true
+          description: Percentual aplicado quando `desconto_tipo=percentual`.
+          example: 10
+        acrescimo:
+          type: number
+          format: float
+          minimum: 0
+          description: Valor monetário efetivo do acréscimo do item.
+          example: 5
+        acrescimo_tipo:
+          $ref: "#/components/schemas/BudgetAdjustmentMode"
+        acrescimo_percentual:
+          type: number
+          format: float
+          minimum: 0
+          nullable: true
+          description: Percentual aplicado quando `acrescimo_tipo=percentual`.
+          example: 5
+        total:
+          type: number
+          format: float
+          minimum: 0
+          example: 302
+        observacoes:
+          type: string
+          nullable: true
+          example: Item com garantia de 90 dias.
+
+    BudgetUpsertInput:
+      type: object
+      additionalProperties: true
+      properties:
+        numero:
+          type: string
+          nullable: true
+          example: ORC-2026-0001
+        versao:
+          type: integer
+          minimum: 1
+          nullable: true
+          example: 1
+        tipo_orcamento:
+          type: string
+          nullable: true
+          example: previo
+        status:
+          type: string
+          nullable: true
+          example: rascunho
+        origem:
+          type: string
+          nullable: true
+          example: manual
+        cliente_id:
+          type: integer
+          nullable: true
+          example: 201
+        cliente_nome_avulso:
+          type: string
+          nullable: true
+          example: Cliente eventual
+        os_id:
+          type: integer
+          nullable: true
+          example: 3598
+        equipamento_id:
+          type: integer
+          nullable: true
+          example: 301
+        titulo:
+          type: string
+          nullable: true
+          example: Orçamento para manutenção
+        validade_dias:
+          type: integer
+          minimum: 0
+          maximum: 3650
+          nullable: true
+          example: 10
+        validade_data:
+          type: string
+          format: date
+          nullable: true
+        subtotal:
+          type: number
+          format: float
+          minimum: 0
+          example: 330
+        desconto:
+          type: number
+          format: float
+          minimum: 0
+          description: Valor monetário efetivo do desconto geral.
+          example: 33
+        desconto_tipo:
+          $ref: "#/components/schemas/BudgetAdjustmentMode"
+        desconto_percentual:
+          type: number
+          format: float
+          minimum: 0
+          nullable: true
+          description: Percentual aplicado quando `desconto_tipo=percentual`.
+          example: 10
+        acrescimo:
+          type: number
+          format: float
+          minimum: 0
+          description: Valor monetário efetivo do acréscimo geral.
+          example: 5
+        acrescimo_tipo:
+          $ref: "#/components/schemas/BudgetAdjustmentMode"
+        acrescimo_percentual:
+          type: number
+          format: float
+          minimum: 0
+          nullable: true
+          description: Percentual aplicado quando `acrescimo_tipo=percentual`.
+          example: 5
+        total:
+          type: number
+          format: float
+          minimum: 0
+          example: 302
+        observacoes:
+          type: string
+          nullable: true
+        condicoes:
+          type: string
+          nullable: true
+        itens:
+          type: array
+          items:
+            $ref: "#/components/schemas/BudgetItemUpsertInput"
+
     ApiSuccess:
       type: object
       required:
@@ -3775,8 +3952,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: true
+              $ref: "#/components/schemas/BudgetUpsertInput"
       responses:
         "201":
           $ref: "#/components/responses/Created"
@@ -3829,8 +4005,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: true
+              $ref: "#/components/schemas/BudgetUpsertInput"
       responses:
         "200":
           $ref: "#/components/responses/Success"
@@ -3853,8 +4028,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              additionalProperties: true
+              $ref: "#/components/schemas/BudgetUpsertInput"
       responses:
         "200":
           $ref: "#/components/responses/Success"
@@ -3881,6 +4055,68 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /orcamentos/{budget}/send-approval:
+    post:
+      tags:
+        - Orçamentos
+      summary: Gerar PDF do orçamento e enviar para aprovação do cliente.
+      description: |
+        Persiste o disparo comercial do orçamento, gera o PDF privado, cria ou reaproveita
+        o token público de decisão e tenta enviar o documento pelo canal configurado.
+      parameters:
+        - $ref: "#/components/parameters/BudgetId"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                mensagem:
+                  type: string
+                  nullable: true
+                  description: Observação opcional para personalização futura do disparo.
+      responses:
+        "200":
+          description: Disparo aceito com sucesso.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          dispatch:
+                            type: object
+                            properties:
+                              canal:
+                                type: string
+                                example: whatsapp
+                              status:
+                                type: string
+                                example: enviado
+                              destino:
+                                type: string
+                                example: "5511999999999"
+                              public_url:
+                                type: string
+                                format: uri
+                                example: "https://app.example.com/orcamento/token-publico"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
 
   /clients:
     get:

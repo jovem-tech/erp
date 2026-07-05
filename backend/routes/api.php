@@ -66,6 +66,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('orcamentos', [BudgetController::class, 'store'])->name('api.v1.orcamentos.store');
         Route::get('orcamentos/{budget}', [BudgetController::class, 'show'])->name('api.v1.orcamentos.show');
         Route::match(['put', 'patch'], 'orcamentos/{budget}', [BudgetController::class, 'update'])->name('api.v1.orcamentos.update');
+        Route::post('orcamentos/{budget}/send-approval', [BudgetController::class, 'sendForApproval'])->name('api.v1.orcamentos.send_approval');
         Route::delete('orcamentos/{budget}', [BudgetController::class, 'destroy'])->name('api.v1.orcamentos.destroy');
 
         Route::prefix('financeiro/cartoes')

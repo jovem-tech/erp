@@ -389,6 +389,11 @@ class StockController extends DesktopController
      */
     private function validatedPartPayload(Request $request): array
     {
+        $request->replace($this->normalizeMoneyPayload(
+            $request->all(),
+            ['preco_custo', 'preco_venda']
+        ));
+
         $validated = $request->validate([
             'codigo' => ['nullable', 'string', 'max:120'],
             'codigo_fabricante' => ['nullable', 'string', 'max:120'],

@@ -19,6 +19,7 @@ Como atendente, quero abrir um modal de cadastro rápido a partir da linha do it
 1. **Given** uma linha de item do orçamento, **When** o usuário clica em `Cadastrar`, **Then** o modal rápido abre com o tipo de cadastro relevante.
 2. **Given** que o cadastro rápido foi salvo com sucesso, **When** a resposta chega do backend, **Then** o novo item é aplicado à linha atual e o select de referência é atualizado.
 3. **Given** validação inválida ou erro do backend, **When** o usuário tenta salvar, **Then** a mensagem é exibida no próprio modal e o fluxo do orçamento continua intacto.
+4. **Given** um campo monetário do orçamento ou do cadastro rápido, **When** a tela é renderizada ou o campo recebe foco, **Then** o valor é exibido em formato brasileiro `R$ 0,00` e a entrada continua pronta para edição sem quebrar o envio numérico.
 
 ### User Story 2 - Respeitar permissões e fonte de verdade
 
@@ -39,6 +40,7 @@ Como responsável técnico, quero que o cadastro rápido continue respeitando RB
 - **FR-003**: O submit do modal MUST chamar um endpoint JSON do desktop e aplicar o item criado à linha atual sem recarregar a página.
 - **FR-004**: O backend central MUST continuar sendo a fonte de verdade para o cadastro de serviços e peças.
 - **FR-005**: A implementação MUST preservar validação, tratamento de erro e compatibilidade com Select2 no orçamento.
+- **FR-006**: Os campos monetários do orçamento MUST exibir formato brasileiro `R$ 0,00` na interface e continuar submetendo valores numéricos normalizados ao desktop/backend.
 
 ## Edge Cases
 

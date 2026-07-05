@@ -264,6 +264,51 @@ trait BuildsLegacyErpSchema
                 'created_at' => now(),
                 'updated_at' => now(),
             ],
+            [
+                'codigo' => 'aguardando_orcamento',
+                'nome' => 'Aguardando Orçamento',
+                'grupo_macro' => 'recepcao',
+                'icone' => null,
+                'cor' => 'info',
+                'ordem_fluxo' => 12,
+                'status_final' => 0,
+                'status_pausa' => 0,
+                'gera_evento_crm' => 1,
+                'estado_fluxo_padrao' => 'em_atendimento',
+                'ativo' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'codigo' => 'aguardando_autorizacao',
+                'nome' => 'Aguardando Autorização',
+                'grupo_macro' => 'recepcao',
+                'icone' => null,
+                'cor' => 'info',
+                'ordem_fluxo' => 14,
+                'status_final' => 0,
+                'status_pausa' => 1,
+                'gera_evento_crm' => 1,
+                'estado_fluxo_padrao' => 'pausado',
+                'ativo' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'codigo' => 'cancelado',
+                'nome' => 'Cancelado',
+                'grupo_macro' => 'encerrado',
+                'icone' => null,
+                'cor' => 'danger',
+                'ordem_fluxo' => 90,
+                'status_final' => 1,
+                'status_pausa' => 0,
+                'gera_evento_crm' => 1,
+                'estado_fluxo_padrao' => 'cancelado',
+                'ativo' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
     }
 
@@ -1164,7 +1209,11 @@ trait BuildsLegacyErpSchema
             'validade_data' => now()->addDays(10)->toDateString(),
             'subtotal' => 0,
             'desconto' => 0,
+            'desconto_tipo' => 'valor',
+            'desconto_percentual' => null,
             'acrescimo' => 0,
+            'acrescimo_tipo' => 'valor',
+            'acrescimo_percentual' => null,
             'total' => 0,
             'prazo_execucao' => null,
             'observacoes' => null,
@@ -1196,7 +1245,11 @@ trait BuildsLegacyErpSchema
             'quantidade' => 1,
             'valor_unitario' => 100.00,
             'desconto' => 0,
+            'desconto_tipo' => 'valor',
+            'desconto_percentual' => null,
             'acrescimo' => 0,
+            'acrescimo_tipo' => 'valor',
+            'acrescimo_percentual' => null,
             'total' => 100.00,
             'ordem' => 1,
             'observacoes' => null,
@@ -1262,7 +1315,11 @@ trait BuildsLegacyErpSchema
             $table->date('validade_data')->nullable();
             $table->decimal('subtotal', 12, 2)->default(0);
             $table->decimal('desconto', 12, 2)->default(0);
+            $table->string('desconto_tipo', 20)->default('valor');
+            $table->decimal('desconto_percentual', 8, 4)->nullable();
             $table->decimal('acrescimo', 12, 2)->default(0);
+            $table->string('acrescimo_tipo', 20)->default('valor');
+            $table->decimal('acrescimo_percentual', 8, 4)->nullable();
             $table->decimal('total', 12, 2)->default(0);
             $table->string('prazo_execucao', 120)->nullable();
             $table->text('observacoes')->nullable();
@@ -1288,7 +1345,11 @@ trait BuildsLegacyErpSchema
             $table->decimal('quantidade', 12, 3)->default(1);
             $table->decimal('valor_unitario', 12, 2)->default(0);
             $table->decimal('desconto', 12, 2)->default(0);
+            $table->string('desconto_tipo', 20)->default('valor');
+            $table->decimal('desconto_percentual', 8, 4)->nullable();
             $table->decimal('acrescimo', 12, 2)->default(0);
+            $table->string('acrescimo_tipo', 20)->default('valor');
+            $table->decimal('acrescimo_percentual', 8, 4)->nullable();
             $table->decimal('total', 12, 2)->default(0);
             $table->integer('ordem')->default(0);
             $table->text('observacoes')->nullable();

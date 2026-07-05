@@ -21,6 +21,11 @@ use Illuminate\Support\Str;
 
 class BudgetWorkflowService
 {
+    public function __construct(
+        private readonly BudgetOrderSyncService $budgetOrderSyncService
+    ) {
+    }
+
     /**
      * @return array{paginator: LengthAwarePaginator, summary: array<string, mixed>, status_options: array<int, array<string, mixed>>}
      */
@@ -249,11 +254,22 @@ class BudgetWorkflowService
             $budget->validade_data = $this->resolveValidityDate($budgetAttributes, $budget->validade_dias);
             $budget->subtotal = $this->resolveMoney($budgetAttributes['subtotal'] ?? null);
             $budget->desconto = $this->resolveMoney($budgetAttributes['desconto'] ?? null);
+            $budget->desconto_tipo = $this->resolveAdjustmentMode($budgetAttributes['desconto_tipo'] ?? null);
+            $budget->desconto_percentual = $budget->desconto_tipo === Budget::ADJUSTMENT_MODE_PERCENT
+                ? $this->resolveDecimal($budgetAttributes['desconto_percentual'] ?? null, 4)
+                : null;
             $budget->acrescimo = $this->resolveMoney($budgetAttributes['acrescimo'] ?? null);
-            $budget->total = $this->resolveTotal($budgetAttributes, $budget->subtotal, $budget->desconto, $budget->acrescimo);
+            $budget->acrescimo_tipo = $this->resolveAdjustmentMode($budgetAttributes['acrescimo_tipo'] ?? null);
+            $budget->acrescimo_percentual = $budget->acrescimo_tipo === Budget::ADJUSTMENT_MODE_PERCENT
+                ? $this->resolveDecimal($budgetAttributes['acrescimo_percentual'] ?? null, 4)
+                : null;
+            $budget->total = 0;
             $budget->save();
 
-            $this->syncItems($budget, is_array($attributes['itens'] ?? null) ? $attributes['itens'] : []);
+            $itemsSubtotal = array_key_exists('itens', $attributes)
+                ? $this->syncItems($budget, is_array($attributes['itens'] ?? null) ? $attributes['itens'] : [])
+                : null;
+            $this->recalculateBudgetFinancials($budget, $itemsSubtotal, $budgetAttributes['subtotal'] ?? null);
             $this->recordStatusHistory(
                 $budget,
                 null,
@@ -262,6 +278,8 @@ class BudgetWorkflowService
                 'sistema',
                 $user->id
             );
+
+            $this->budgetOrderSyncService->syncFromBudget($budget, (int) $user->id);
 
             return $this->budgetDetail($this->loadBudgetOrFail((int) $budget->id));
         });
@@ -299,15 +317,35 @@ class BudgetWorkflowService
             $budget->atualizado_por = (int) ($budgetAttributes['atualizado_por'] ?? $user->id);
             $budget->validade_dias = max(0, (int) ($budgetAttributes['validade_dias'] ?? $budget->validade_dias ?? 10));
             $budget->validade_data = $this->resolveValidityDate($budgetAttributes, $budget->validade_dias, $budget->validade_data);
-            $budget->subtotal = $this->resolveMoney($budgetAttributes['subtotal'] ?? $budget->subtotal);
-            $budget->desconto = $this->resolveMoney($budgetAttributes['desconto'] ?? $budget->desconto);
-            $budget->acrescimo = $this->resolveMoney($budgetAttributes['acrescimo'] ?? $budget->acrescimo);
-            $budget->total = $this->resolveTotal($budgetAttributes, $budget->subtotal, $budget->desconto, $budget->acrescimo, $previousTotal);
+            $budget->desconto = array_key_exists('desconto', $budgetAttributes)
+                ? $this->resolveMoney($budgetAttributes['desconto'])
+                : (float) ($budget->desconto ?? 0);
+            $budget->desconto_tipo = $this->resolveAdjustmentMode(
+                $budgetAttributes['desconto_tipo'] ?? $budget->desconto_tipo,
+                $this->resolveAdjustmentMode($budget->desconto_tipo)
+            );
+            $budget->desconto_percentual = $budget->desconto_tipo === Budget::ADJUSTMENT_MODE_PERCENT
+                ? $this->resolveDecimal($budgetAttributes['desconto_percentual'] ?? $budget->desconto_percentual, 4)
+                : null;
+            $budget->acrescimo = array_key_exists('acrescimo', $budgetAttributes)
+                ? $this->resolveMoney($budgetAttributes['acrescimo'])
+                : (float) ($budget->acrescimo ?? 0);
+            $budget->acrescimo_tipo = $this->resolveAdjustmentMode(
+                $budgetAttributes['acrescimo_tipo'] ?? $budget->acrescimo_tipo,
+                $this->resolveAdjustmentMode($budget->acrescimo_tipo)
+            );
+            $budget->acrescimo_percentual = $budget->acrescimo_tipo === Budget::ADJUSTMENT_MODE_PERCENT
+                ? $this->resolveDecimal($budgetAttributes['acrescimo_percentual'] ?? $budget->acrescimo_percentual, 4)
+                : null;
+            $budget->total = $previousTotal;
             $budget->save();
 
+            $itemsSubtotal = null;
             if (array_key_exists('itens', $attributes)) {
-                $this->syncItems($budget, is_array($attributes['itens']) ? $attributes['itens'] : []);
+                $itemsSubtotal = $this->syncItems($budget, is_array($attributes['itens']) ? $attributes['itens'] : []);
             }
+
+            $this->recalculateBudgetFinancials($budget, $itemsSubtotal, $budgetAttributes['subtotal'] ?? $budget->subtotal);
 
             if ($previousStatus !== $budget->status) {
                 $this->recordStatusHistory(
@@ -319,6 +357,8 @@ class BudgetWorkflowService
                     $user->id
                 );
             }
+
+            $this->budgetOrderSyncService->syncFromBudget($budget, (int) $user->id);
 
             return $this->budgetDetail($this->loadBudgetOrFail((int) $budget->id));
         });
@@ -387,7 +427,11 @@ class BudgetWorkflowService
             'validade_data' => optional($budget->validade_data)->format('d/m/Y'),
             'subtotal' => round((float) ($budget->subtotal ?? 0), 2),
             'desconto' => round((float) ($budget->desconto ?? 0), 2),
+            'desconto_tipo' => $this->resolveAdjustmentMode($budget->desconto_tipo),
+            'desconto_percentual' => $budget->desconto_percentual !== null ? round((float) $budget->desconto_percentual, 4) : null,
             'acrescimo' => round((float) ($budget->acrescimo ?? 0), 2),
+            'acrescimo_tipo' => $this->resolveAdjustmentMode($budget->acrescimo_tipo),
+            'acrescimo_percentual' => $budget->acrescimo_percentual !== null ? round((float) $budget->acrescimo_percentual, 4) : null,
             'total' => round((float) ($budget->total ?? 0), 2),
             'total_formatado' => number_format((float) ($budget->total ?? 0), 2, ',', '.'),
             'updated_at' => optional($budget->updated_at)->format('d/m/Y H:i'),
@@ -424,9 +468,19 @@ class BudgetWorkflowService
             'email_contato' => (string) ($budget->email_contato ?? ''),
             'validade_dias' => (int) ($budget->validade_dias ?? 0),
             'validade_data' => optional($budget->validade_data)->format('d/m/Y'),
+            'token_publico' => (string) ($budget->token_publico ?? ''),
+            'token_expira_em' => optional($budget->token_expira_em)->format('d/m/Y H:i'),
+            'enviado_em' => optional($budget->enviado_em)->format('d/m/Y H:i'),
+            'aprovado_em' => optional($budget->aprovado_em)->format('d/m/Y H:i'),
+            'rejeitado_em' => optional($budget->rejeitado_em)->format('d/m/Y H:i'),
+            'motivo_rejeicao' => (string) ($budget->motivo_rejeicao ?? ''),
             'subtotal' => round((float) ($budget->subtotal ?? 0), 2),
             'desconto' => round((float) ($budget->desconto ?? 0), 2),
+            'desconto_tipo' => $this->resolveAdjustmentMode($budget->desconto_tipo),
+            'desconto_percentual' => $budget->desconto_percentual !== null ? round((float) $budget->desconto_percentual, 4) : null,
             'acrescimo' => round((float) ($budget->acrescimo ?? 0), 2),
+            'acrescimo_tipo' => $this->resolveAdjustmentMode($budget->acrescimo_tipo),
+            'acrescimo_percentual' => $budget->acrescimo_percentual !== null ? round((float) $budget->acrescimo_percentual, 4) : null,
             'total' => round((float) ($budget->total ?? 0), 2),
             'total_formatado' => number_format((float) ($budget->total ?? 0), 2, ',', '.'),
             'prazo_execucao' => (string) ($budget->prazo_execucao ?? ''),
@@ -457,7 +511,7 @@ class BudgetWorkflowService
                 'nome' => (string) ($budget->responsible->nome ?? ''),
                 'email' => (string) ($budget->responsible->email ?? ''),
             ] : null,
-            'itens' => $budget->items->sortBy('ordem')->values()->map(static fn (BudgetItem $item): array => [
+            'itens' => $budget->items->sortBy('ordem')->values()->map(fn (BudgetItem $item): array => [
                 'id' => (int) $item->id,
                 'tipo_item' => (string) ($item->tipo_item ?? 'servico'),
                 'referencia_id' => $item->referencia_id !== null ? (int) $item->referencia_id : null,
@@ -465,7 +519,11 @@ class BudgetWorkflowService
                 'quantidade' => (float) ($item->quantidade ?? 0),
                 'valor_unitario' => (float) ($item->valor_unitario ?? 0),
                 'desconto' => (float) ($item->desconto ?? 0),
+                'desconto_tipo' => $this->resolveAdjustmentMode($item->desconto_tipo),
+                'desconto_percentual' => $item->desconto_percentual !== null ? round((float) $item->desconto_percentual, 4) : null,
                 'acrescimo' => (float) ($item->acrescimo ?? 0),
+                'acrescimo_tipo' => $this->resolveAdjustmentMode($item->acrescimo_tipo),
+                'acrescimo_percentual' => $item->acrescimo_percentual !== null ? round((float) $item->acrescimo_percentual, 4) : null,
                 'total' => (float) ($item->total ?? 0),
                 'observacoes' => (string) ($item->observacoes ?? ''),
                 'preco_custo_referencia' => (float) ($item->preco_custo_referencia ?? 0),
@@ -513,6 +571,15 @@ class BudgetWorkflowService
             'origin_options' => Budget::originOptions(),
             'can_edit' => ! in_array($status, [Budget::STATUS_CONVERTED], true),
             'can_delete' => in_array($status, [Budget::STATUS_DRAFT, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
+            'can_send_approval' => in_array($status, [
+                Budget::STATUS_DRAFT,
+                Budget::STATUS_PENDING_SEND,
+                Budget::STATUS_SENT,
+                Budget::STATUS_WAITING_REPLY,
+                Budget::STATUS_PENDING,
+                Budget::STATUS_RESEND,
+            ], true),
+            'link_publico' => (string) ($budget->publicApprovalUrl() ?? ''),
             'created_at' => optional($budget->created_at)->format('d/m/Y H:i'),
             'updated_at' => optional($budget->updated_at)->format('d/m/Y H:i'),
         ];
@@ -726,7 +793,7 @@ class BudgetWorkflowService
         }
 
         $normalized = (string) $value;
-        $normalized = str_replace(['R$', ' '], '', $normalized);
+        $normalized = str_replace(['R$', '%', ' '], '', $normalized);
 
         if (str_contains($normalized, ',')) {
             $normalized = str_replace('.', '', $normalized);
@@ -734,6 +801,125 @@ class BudgetWorkflowService
         }
 
         return round((float) $normalized, 2);
+    }
+
+    private function resolveDecimal(mixed $value, int $scale = 4): float
+    {
+        if ($value === null || $value === '') {
+            return 0.0;
+        }
+
+        $normalized = preg_replace('/[^\d,.\-]/u', '', trim((string) $value)) ?? '';
+        if ($normalized === '' || $normalized === '-' || $normalized === '.' || $normalized === ',') {
+            return 0.0;
+        }
+
+        $lastComma = strrpos($normalized, ',');
+        $lastDot = strrpos($normalized, '.');
+
+        if ($lastComma !== false && $lastDot !== false) {
+            if ($lastComma > $lastDot) {
+                $normalized = str_replace('.', '', $normalized);
+                $normalized = str_replace(',', '.', $normalized);
+            } else {
+                $normalized = str_replace(',', '', $normalized);
+            }
+        } elseif ($lastComma !== false) {
+            $normalized = str_replace('.', '', $normalized);
+            $normalized = str_replace(',', '.', $normalized);
+        } elseif ($lastDot !== false) {
+            $parts = explode('.', $normalized);
+            $lastPart = (string) end($parts);
+
+            if (count($parts) > 2 || strlen($lastPart) === 3) {
+                $normalized = str_replace('.', '', $normalized);
+            }
+        }
+
+        return round((float) $normalized, $scale);
+    }
+
+    private function resolveAdjustmentMode(mixed $value, string $fallback = Budget::ADJUSTMENT_MODE_VALUE): string
+    {
+        $mode = strtolower(trim((string) $value));
+
+        return in_array($mode, [Budget::ADJUSTMENT_MODE_VALUE, Budget::ADJUSTMENT_MODE_PERCENT], true)
+            ? $mode
+            : $fallback;
+    }
+
+    /**
+     * @return array{mode:string,percent:?float,amount:float}
+     */
+    private function resolveAdjustment(float $base, mixed $type, mixed $percentual, mixed $amount): array
+    {
+        $mode = $this->resolveAdjustmentMode($type);
+        $percent = $mode === Budget::ADJUSTMENT_MODE_PERCENT
+            ? max(0, $this->resolveDecimal($percentual, 4))
+            : null;
+
+        if ($mode === Budget::ADJUSTMENT_MODE_PERCENT) {
+            return [
+                'mode' => $mode,
+                'percent' => $percent,
+                'amount' => round($base * (($percent ?? 0) / 100), 2),
+            ];
+        }
+
+        return [
+            'mode' => $mode,
+            'percent' => null,
+            'amount' => max(0, $this->resolveMoney($amount)),
+        ];
+    }
+
+    private function sumBudgetItems(int $budgetId): float
+    {
+        return round((float) BudgetItem::query()
+            ->where('orcamento_id', $budgetId)
+            ->sum('total'), 2);
+    }
+
+    private function budgetHasItems(int $budgetId): bool
+    {
+        return BudgetItem::query()
+            ->where('orcamento_id', $budgetId)
+            ->exists();
+    }
+
+    private function recalculateBudgetFinancials(Budget $budget, ?float $itemsSubtotal = null, mixed $subtotalFallback = null): void
+    {
+        $subtotal = $itemsSubtotal;
+
+        if ($subtotal === null) {
+            $subtotal = $this->budgetHasItems((int) $budget->id)
+                ? $this->sumBudgetItems((int) $budget->id)
+                : $this->resolveMoney($subtotalFallback ?? $budget->subtotal);
+        }
+
+        $discount = $this->resolveAdjustment(
+            $subtotal,
+            $budget->desconto_tipo,
+            $budget->desconto_percentual,
+            $budget->desconto
+        );
+        $addition = $this->resolveAdjustment(
+            $subtotal,
+            $budget->acrescimo_tipo,
+            $budget->acrescimo_percentual,
+            $budget->acrescimo
+        );
+
+        $budget->updateQuietly([
+            'subtotal' => round($subtotal, 2),
+            'desconto' => round($discount['amount'], 2),
+            'desconto_tipo' => $discount['mode'],
+            'desconto_percentual' => $discount['percent'],
+            'acrescimo' => round($addition['amount'], 2),
+            'acrescimo_tipo' => $addition['mode'],
+            'acrescimo_percentual' => $addition['percent'],
+            'total' => round(max(0, $subtotal - $discount['amount'] + $addition['amount']), 2),
+        ]);
     }
 
     /**
@@ -782,7 +968,7 @@ class BudgetWorkflowService
     /**
      * @param array<int, mixed> $items
      */
-    private function syncItems(Budget $budget, array $items): void
+    private function syncItems(Budget $budget, array $items): float
     {
         BudgetItem::query()->where('orcamento_id', $budget->id)->delete();
 
@@ -799,8 +985,6 @@ class BudgetWorkflowService
             $descricao = trim((string) ($item['descricao'] ?? ''));
             $quantidade = max(0, (float) ($item['quantidade'] ?? 1));
             $valorUnitario = max(0, (float) ($item['valor_unitario'] ?? 0));
-            $desconto = max(0, (float) ($item['desconto'] ?? 0));
-            $acrescimo = max(0, (float) ($item['acrescimo'] ?? 0));
             $observacoes = trim((string) ($item['observacoes'] ?? '')) ?: null;
 
             $referenceData = $this->resolveItemReferenceData($tipoItem, $referenciaId);
@@ -811,9 +995,20 @@ class BudgetWorkflowService
                 $valorUnitario = (float) $referenceData['valor_unitario'];
             }
 
-            $total = isset($item['total']) && $item['total'] !== null && $item['total'] !== ''
-                ? $this->resolveMoney($item['total'])
-                : round(($quantidade * $valorUnitario) - $desconto + $acrescimo, 2);
+            $base = round($quantidade * $valorUnitario, 2);
+            $discount = $this->resolveAdjustment(
+                $base,
+                $item['desconto_tipo'] ?? null,
+                $item['desconto_percentual'] ?? null,
+                $item['desconto'] ?? 0
+            );
+            $addition = $this->resolveAdjustment(
+                $base,
+                $item['acrescimo_tipo'] ?? null,
+                $item['acrescimo_percentual'] ?? null,
+                $item['acrescimo'] ?? 0
+            );
+            $total = round($base - $discount['amount'] + $addition['amount'], 2);
 
             $normalizedItems[] = [
                 'orcamento_id' => $budget->id,
@@ -822,8 +1017,12 @@ class BudgetWorkflowService
                 'descricao' => $descricao,
                 'quantidade' => $quantidade,
                 'valor_unitario' => round($valorUnitario, 2),
-                'desconto' => round($desconto, 2),
-                'acrescimo' => round($acrescimo, 2),
+                'desconto' => round($discount['amount'], 2),
+                'desconto_tipo' => $discount['mode'],
+                'desconto_percentual' => $discount['percent'],
+                'acrescimo' => round($addition['amount'], 2),
+                'acrescimo_tipo' => $addition['mode'],
+                'acrescimo_percentual' => $addition['percent'],
                 'total' => round($total, 2),
                 'ordem' => (int) ($item['ordem'] ?? $order),
                 'observacoes' => $observacoes,
@@ -835,7 +1034,7 @@ class BudgetWorkflowService
                 'percentual_margem' => (float) ($referenceData['percentual_margem'] ?? 0),
                 'valor_margem' => (float) ($referenceData['valor_margem'] ?? 0),
                 'valor_recomendado' => (float) ($referenceData['valor_recomendado'] ?? 0),
-                'modo_precificacao' => (string) ($referenceData['modo_precificacao'] ?? ''),
+                'modo_precificacao' => (string) ($referenceData['modo_precificacao'] ?? ($item['modo_precificacao'] ?? 'manual')),
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
@@ -844,21 +1043,12 @@ class BudgetWorkflowService
         }
 
         if ($normalizedItems === []) {
-            $budget->updateQuietly([
-                'subtotal' => 0,
-                'total' => 0,
-            ]);
-
-            return;
+            return 0.0;
         }
 
         BudgetItem::query()->insert($normalizedItems);
 
-        $sum = array_reduce($normalizedItems, static fn (float $carry, array $item): float => $carry + (float) ($item['total'] ?? 0), 0.0);
-        $budget->updateQuietly([
-            'subtotal' => round($sum, 2),
-            'total' => round(max(0, $sum - (float) $budget->desconto + (float) $budget->acrescimo), 2),
-        ]);
+        return round(array_reduce($normalizedItems, static fn (float $carry, array $item): float => $carry + (float) ($item['total'] ?? 0), 0.0), 2);
     }
 
     /**

@@ -12,7 +12,7 @@ class UpsertBudgetRequest extends BaseApiFormRequest
         $requiredOrSometimes = $this->isMethod('post') ? 'nullable' : 'sometimes';
 
         return [
-            'numero' => ['sometimes', 'string', 'max:40'],
+            'numero' => ['sometimes', 'nullable', 'string', 'max:40'],
             'versao' => ['sometimes', 'integer', 'min:1'],
             'tipo_orcamento' => ['nullable', 'string', 'max:30', Rule::in(array_column(Budget::typeOptions(), 'value'))],
             'status' => ['nullable', 'string', 'max:40', Rule::in(array_column(Budget::statusOptions(), 'value'))],
@@ -39,7 +39,11 @@ class UpsertBudgetRequest extends BaseApiFormRequest
             'validade_data' => ['nullable', 'date'],
             'subtotal' => ['nullable', 'numeric', 'min:0'],
             'desconto' => ['nullable', 'numeric', 'min:0'],
+            'desconto_tipo' => ['nullable', 'string', Rule::in([Budget::ADJUSTMENT_MODE_VALUE, Budget::ADJUSTMENT_MODE_PERCENT])],
+            'desconto_percentual' => ['nullable', 'numeric', 'min:0'],
             'acrescimo' => ['nullable', 'numeric', 'min:0'],
+            'acrescimo_tipo' => ['nullable', 'string', Rule::in([Budget::ADJUSTMENT_MODE_VALUE, Budget::ADJUSTMENT_MODE_PERCENT])],
+            'acrescimo_percentual' => ['nullable', 'numeric', 'min:0'],
             'total' => ['nullable', 'numeric', 'min:0'],
             'prazo_execucao' => ['nullable', 'string', 'max:120'],
             'observacoes' => ['nullable', 'string'],
@@ -60,7 +64,11 @@ class UpsertBudgetRequest extends BaseApiFormRequest
             'itens.*.quantidade' => ['nullable', 'numeric', 'min:0'],
             'itens.*.valor_unitario' => ['nullable', 'numeric', 'min:0'],
             'itens.*.desconto' => ['nullable', 'numeric', 'min:0'],
+            'itens.*.desconto_tipo' => ['nullable', 'string', Rule::in([Budget::ADJUSTMENT_MODE_VALUE, Budget::ADJUSTMENT_MODE_PERCENT])],
+            'itens.*.desconto_percentual' => ['nullable', 'numeric', 'min:0'],
             'itens.*.acrescimo' => ['nullable', 'numeric', 'min:0'],
+            'itens.*.acrescimo_tipo' => ['nullable', 'string', Rule::in([Budget::ADJUSTMENT_MODE_VALUE, Budget::ADJUSTMENT_MODE_PERCENT])],
+            'itens.*.acrescimo_percentual' => ['nullable', 'numeric', 'min:0'],
             'itens.*.total' => ['nullable', 'numeric', 'min:0'],
             'itens.*.ordem' => ['nullable', 'integer', 'min:0'],
             'itens.*.observacoes' => ['nullable', 'string'],

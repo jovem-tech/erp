@@ -149,6 +149,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::match(['put', 'patch'], '/orcamentos/{orcamento}', [OrcamentoController::class, 'update'])
         ->middleware('desktop.permission:orcamentos,editar')
         ->name('orcamentos.update');
+    Route::post('/orcamentos/{orcamento}/enviar-aprovacao', [OrcamentoController::class, 'sendApproval'])
+        ->middleware('desktop.permission:orcamentos,editar')
+        ->name('orcamentos.send_approval');
     Route::delete('/orcamentos/{orcamento}', [OrcamentoController::class, 'destroy'])
         ->middleware('desktop.permission:orcamentos,excluir')
         ->name('orcamentos.destroy');

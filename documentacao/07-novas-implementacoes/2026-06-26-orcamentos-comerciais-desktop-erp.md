@@ -17,6 +17,8 @@ O módulo de orçamentos do legado passou a existir também no `sistema-erp`, co
   - ajuda local dedicada do módulo.
 - cada item do formulário passou a usar um layout hierárquico em linhas, com `Tipo + Referência + Descrição` no topo, bloco financeiro (`Qtd`, `Valor unit.`, `Desconto`, `Acréscimo`, `Total`, `Ações`) no centro e `Observações` em largura total, melhorando leitura e conferência sem mudar o contrato do orçamento.
 - os breakpoints do grid dos itens foram recalibrados para preservar essa organização em desktop com zoom padrão, evitando empilhamento precoce dos campos financeiros.
+- quando o orçamento nasce de uma OS, o cabeçalho da tela passa a exibir `número da OS + cliente`, e a ação `Novo orçamento` sobe para a barra superior ao lado de `Ajuda` e `Voltar`, deixando o card interno focado apenas no bloqueio do cliente e no atalho para `Nova OS`.
+- o resumo financeiro passou a usar o mesmo padrão monetário dos itens (`R$`) para `subtotal`, `desconto geral`, `acréscimo geral` e `total`, permitindo atualização automática no navegador sem erros de parsing em campos numéricos.
 
 ## Observações técnicas
 

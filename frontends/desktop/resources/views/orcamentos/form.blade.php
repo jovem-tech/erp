@@ -23,6 +23,84 @@
         ['value' => 'cliente', 'label' => 'Cliente'],
     ];
 
+    $parseMoney = static function (mixed $value): float {
+        if ($value === null || $value === '') {
+            return 0.0;
+        }
+
+        $normalized = preg_replace('/[^\d,.\-]/u', '', trim((string) $value)) ?? '';
+        if ($normalized === '' || $normalized === '-' || $normalized === '.' || $normalized === ',') {
+            return 0.0;
+        }
+
+        $lastComma = strrpos($normalized, ',');
+        $lastDot = strrpos($normalized, '.');
+
+        if ($lastComma !== false && $lastDot !== false) {
+            if ($lastComma > $lastDot) {
+                $normalized = str_replace('.', '', $normalized);
+                $normalized = str_replace(',', '.', $normalized);
+            } else {
+                $normalized = str_replace(',', '', $normalized);
+            }
+        } elseif ($lastComma !== false) {
+            $normalized = str_replace('.', '', $normalized);
+            $normalized = str_replace(',', '.', $normalized);
+        } elseif ($lastDot !== false) {
+            $parts = explode('.', $normalized);
+            $lastPart = (string) end($parts);
+
+            if (count($parts) > 2 || strlen($lastPart) === 3) {
+                $normalized = str_replace('.', '', $normalized);
+            }
+        }
+
+        return round((float) $normalized, 2);
+    };
+
+    $formatMoney = static fn (mixed $value): string => 'R$ ' . number_format($parseMoney($value), 2, ',', '.');
+    $parseDecimal = static function (mixed $value, int $scale = 4): float {
+        if ($value === null || $value === '') {
+            return 0.0;
+        }
+
+        $normalized = preg_replace('/[^\d,.\-]/u', '', trim((string) $value)) ?? '';
+        if ($normalized === '' || $normalized === '-' || $normalized === '.' || $normalized === ',') {
+            return 0.0;
+        }
+
+        $lastComma = strrpos($normalized, ',');
+        $lastDot = strrpos($normalized, '.');
+
+        if ($lastComma !== false && $lastDot !== false) {
+            if ($lastComma > $lastDot) {
+                $normalized = str_replace('.', '', $normalized);
+                $normalized = str_replace(',', '.', $normalized);
+            } else {
+                $normalized = str_replace(',', '', $normalized);
+            }
+        } elseif ($lastComma !== false) {
+            $normalized = str_replace('.', '', $normalized);
+            $normalized = str_replace(',', '.', $normalized);
+        } elseif ($lastDot !== false) {
+            $parts = explode('.', $normalized);
+            $lastPart = (string) end($parts);
+
+            if (count($parts) > 2 || strlen($lastPart) === 3) {
+                $normalized = str_replace('.', '', $normalized);
+            }
+        }
+
+        return round((float) $normalized, $scale);
+    };
+    $formatDecimalValue = static fn (mixed $value, int $scale = 4): string => number_format($parseDecimal($value, $scale), $scale, '.', '');
+    $formatPercentDisplay = static fn (mixed $value): string => number_format($parseDecimal($value, 4), 2, ',', '.');
+    $resolveAdjustmentType = static function (mixed $value): string {
+        $normalized = trim((string) $value);
+
+        return in_array($normalized, ['valor', 'percentual'], true) ? $normalized : 'valor';
+    };
+
     $selectedItems = old('itens');
     if (! is_array($selectedItems)) {
         $selectedItems = $budget['itens'] ?? [];
@@ -35,7 +113,11 @@
             'quantidade' => 1,
             'valor_unitario' => 0,
             'desconto' => 0,
+            'desconto_tipo' => 'valor',
+            'desconto_percentual' => 0,
             'acrescimo' => 0,
+            'acrescimo_tipo' => 'valor',
+            'acrescimo_percentual' => 0,
             'observacoes' => '',
             'modo_precificacao' => 'manual',
         ]];
@@ -52,18 +134,33 @@
     $typeValue = old('tipo_orcamento', $budget['tipo_orcamento'] ?? ($fromOrderListing ? 'assistencia' : 'previo'));
     $originValue = old('origem', $budget['origem'] ?? ($fromOrderListing ? 'os' : 'manual'));
     $prazoExecucaoValue = old('prazo_execucao', $budget['prazo_execucao'] ?? ($fromOrderListing ? ($form['selected_order_deadline'] ?? '') : ''));
-    $clientLocked = ! $isEditMode && $selectedOrderId > 0 && $selectedClientId > 0;
-    $lockedOrderNumber = '';
-    $lockedClientName = '';
-    if ($clientLocked) {
+    $lockedOrderContext = is_array($lockedOrderContext ?? null) ? $lockedOrderContext : [];
+    $clientLocked = (bool) ($lockedOrderContext['locked'] ?? (! $isEditMode && $selectedOrderId > 0 && $selectedClientId > 0));
+    $lockedOrderNumber = trim((string) ($lockedOrderContext['order_number'] ?? ''));
+    $lockedClientName = trim((string) ($lockedOrderContext['client_name'] ?? ''));
+    if ($clientLocked && ($lockedOrderNumber === '' || $lockedClientName === '')) {
         foreach ($orders as $orderOption) {
             if ((int) ($orderOption['id'] ?? 0) === $selectedOrderId) {
-                $lockedOrderNumber = trim((string) ($orderOption['numero_os'] ?? ''));
-                $lockedClientName = trim((string) ($orderOption['cliente_nome'] ?? ''));
+                $lockedOrderNumber = $lockedOrderNumber !== '' ? $lockedOrderNumber : trim((string) ($orderOption['numero_os'] ?? ''));
+                $lockedClientName = $lockedClientName !== '' ? $lockedClientName : trim((string) ($orderOption['cliente_nome'] ?? ''));
                 break;
             }
         }
     }
+    $globalDiscountType = $resolveAdjustmentType(old('desconto_tipo', $budget['desconto_tipo'] ?? 'valor'));
+    $globalDiscountAmount = old('desconto', $budget['desconto'] ?? 0);
+    $globalDiscountPercent = old('desconto_percentual', $budget['desconto_percentual'] ?? 0);
+    $globalDiscountDisplay = $globalDiscountType === 'percentual'
+        ? $formatPercentDisplay($globalDiscountPercent)
+        : $formatMoney($globalDiscountAmount);
+    $globalDiscountPreviewVisible = $globalDiscountType === 'percentual';
+    $globalAdditionType = $resolveAdjustmentType(old('acrescimo_tipo', $budget['acrescimo_tipo'] ?? 'valor'));
+    $globalAdditionAmount = old('acrescimo', $budget['acrescimo'] ?? 0);
+    $globalAdditionPercent = old('acrescimo_percentual', $budget['acrescimo_percentual'] ?? 0);
+    $globalAdditionDisplay = $globalAdditionType === 'percentual'
+        ? $formatPercentDisplay($globalAdditionPercent)
+        : $formatMoney($globalAdditionAmount);
+    $globalAdditionPreviewVisible = $globalAdditionType === 'percentual';
 @endphp
 
 <section class="desktop-form-card">
@@ -109,6 +206,7 @@
         @if ($formMethod !== 'POST')
             @method($formMethod)
         @endif
+        <input type="hidden" name="submission_mode" value="save_only" data-budget-submission-mode>
 
         <input type="hidden" name="numero" value="{{ old('numero', $budget['numero'] ?? '') }}">
         <input type="hidden" name="versao" value="{{ old('versao', $budget['versao'] ?? 1) }}">
@@ -133,27 +231,6 @@
         </div>
 
         <div class="equipment-tab-panel is-active" data-budget-panel="cliente">
-            @if ($clientLocked)
-                <div class="alert alert-info d-flex flex-wrap align-items-center justify-content-between gap-3 mb-3" role="alert">
-                    <div class="d-flex align-items-center gap-2">
-                        <i class="bi bi-lock"></i>
-                        <div>
-                            Cliente definido pela OS {{ $lockedOrderNumber !== '' ? $lockedOrderNumber : '#' . $selectedOrderId }}{{ $lockedClientName !== '' ? ' — ' . $lockedClientName : '' }} e não pode ser alterado aqui.
-                            Para usar outro cliente, volte à listagem de OS e escolha a desejada.
-                        </div>
-                    </div>
-                    <div class="d-flex flex-wrap gap-2">
-                        <a href="{{ route('orders.create', ['cliente_id' => $selectedClientId]) }}" class="btn btn-outline-primary btn-sm">
-                            <i class="bi bi-plus-circle me-1"></i>
-                            Nova OS
-                        </a>
-                        <a href="{{ route('orcamentos.create') }}" class="btn btn-outline-secondary btn-sm">
-                            <i class="bi bi-file-earmark-plus me-1"></i>
-                            Novo orçamento
-                        </a>
-                    </div>
-                </div>
-            @endif
             <div class="desktop-grid desktop-grid-two">
                 <div>
                     <label for="orcamentoClienteId">Cliente cadastrado</label>
@@ -258,7 +335,20 @@
 
                 <div>
                     <label for="orcamentoValidadeData">Validade até</label>
-                    <input type="date" id="orcamentoValidadeData" name="validade_data" class="form-control" data-budget-validity-date value="{{ old('validade_data', ! empty($budget['validade_data']) ? \Illuminate\Support\Carbon::parse($budget['validade_data'])->format('Y-m-d') : '') }}">
+                    @php
+                        // O backend devolve validade_data em d/m/Y; o input date exige Y-m-d.
+                        $validadeDataValue = trim((string) old('validade_data', $budget['validade_data'] ?? ''));
+                        if ($validadeDataValue !== '') {
+                            try {
+                                $validadeDataValue = str_contains($validadeDataValue, '/')
+                                    ? \Illuminate\Support\Carbon::createFromFormat('d/m/Y', $validadeDataValue)->format('Y-m-d')
+                                    : \Illuminate\Support\Carbon::parse($validadeDataValue)->format('Y-m-d');
+                            } catch (\Throwable $exception) {
+                                $validadeDataValue = '';
+                            }
+                        }
+                    @endphp
+                    <input type="date" id="orcamentoValidadeData" name="validade_data" class="form-control" data-budget-validity-date value="{{ $validadeDataValue }}">
                 </div>
             </div>
         </div>
@@ -350,13 +440,16 @@
                 @include('orcamentos.partials.item-row', ['index' => '__INDEX__', 'item' => [], 'quickCatalogs' => $quickCatalogs])
             </template>
 
-            <div class="desktop-grid desktop-grid-four">
-                <div class="desktop-grid-span-2">
-                    <div class="surface-card-header align-items-start mb-2">
-                        <div>
-                            <h3 class="surface-title fs-5 mb-1">Resumo financeiro</h3>
-                            <p class="surface-subtitle mb-0">Os valores são recalculados automaticamente no navegador e validados pelo backend.</p>
-                        </div>
+            <section class="budget-summary-card" aria-labelledby="orcamentoResumoFinanceiro">
+                <div class="surface-card-header align-items-start budget-summary-card-header">
+                    <div>
+                        <p class="desktop-eyebrow mb-2">Fechamento</p>
+                        <h3 id="orcamentoResumoFinanceiro" class="surface-title fs-5 mb-1">Resumo financeiro</h3>
+                        <p class="surface-subtitle mb-0">Este card consolida o resultado final do orçamento com descontos, acréscimos e total validado.</p>
+                    </div>
+
+                    <div class="budget-summary-card-meta">
+                        <span class="budget-summary-result-pill">Resultado final</span>
                         <span class="desktop-chip" data-budget-items-count>
                             <i class="bi bi-list-check"></i>
                             0 itens
@@ -364,25 +457,106 @@
                     </div>
                 </div>
 
-                <div>
-                    <label for="orcamentoSubtotal">Subtotal</label>
-                    <input type="number" id="orcamentoSubtotal" name="subtotal" class="form-control" min="0" step="0.01" value="{{ old('subtotal', $budget['subtotal'] ?? 0) }}" readonly data-budget-subtotal>
-                </div>
+                <div class="desktop-grid desktop-grid-four budget-summary-grid">
+                    <div>
+                        <label for="orcamentoSubtotal">Subtotal</label>
+                        <input type="text" id="orcamentoSubtotal" name="subtotal" class="form-control" value="{{ old('subtotal', $budget['subtotal'] ?? 0) }}" readonly data-budget-subtotal data-budget-money inputmode="decimal" autocomplete="off">
+                    </div>
 
-                <div>
-                    <label for="orcamentoDesconto">Desconto geral</label>
-                    <input type="number" id="orcamentoDesconto" name="desconto" class="form-control" min="0" step="0.01" value="{{ old('desconto', $budget['desconto'] ?? 0) }}" data-budget-global-discount>
-                </div>
+                    <div>
+                        <label for="orcamentoDescontoDisplay">Desconto geral</label>
+                        <div class="budget-adjustment-group" data-budget-adjustment-group>
+                            <input
+                                type="text"
+                                id="orcamentoDescontoDisplay"
+                                class="form-control budget-adjustment-input"
+                                value="{{ $globalDiscountDisplay }}"
+                                inputmode="decimal"
+                                autocomplete="off"
+                                data-budget-global-discount-display
+                            >
+                            <div class="budget-adjustment-toggle" role="group" aria-label="Modo do desconto geral">
+                                <button
+                                    type="button"
+                                    class="budget-adjustment-toggle-btn {{ $globalDiscountType === 'valor' ? 'is-active' : '' }}"
+                                    data-budget-adjustment-option="valor"
+                                    aria-pressed="{{ $globalDiscountType === 'valor' ? 'true' : 'false' }}"
+                                >R$</button>
+                                <button
+                                    type="button"
+                                    class="budget-adjustment-toggle-btn {{ $globalDiscountType === 'percentual' ? 'is-active' : '' }}"
+                                    data-budget-adjustment-option="percentual"
+                                    aria-pressed="{{ $globalDiscountType === 'percentual' ? 'true' : 'false' }}"
+                                >%</button>
+                            </div>
+                        </div>
+                        <div class="budget-adjustment-preview" data-budget-global-discount-preview-wrapper @if (! $globalDiscountPreviewVisible) hidden @endif>
+                            <label class="budget-adjustment-preview-label" for="orcamentoDescontoPreview">Valor do desconto</label>
+                            <input
+                                type="text"
+                                id="orcamentoDescontoPreview"
+                                class="form-control budget-adjustment-preview-input"
+                                value="{{ $formatMoney($globalDiscountAmount) }}"
+                                readonly
+                                tabindex="-1"
+                                data-budget-global-discount-preview
+                            >
+                        </div>
+                        <input type="hidden" id="orcamentoDescontoTipo" name="desconto_tipo" value="{{ $globalDiscountType }}" data-budget-global-discount-type>
+                        <input type="hidden" name="desconto" value="{{ $formatDecimalValue($globalDiscountAmount, 2) }}" data-budget-global-discount>
+                        <input type="hidden" name="desconto_percentual" value="{{ $formatDecimalValue($globalDiscountPercent, 4) }}" data-budget-global-discount-percent>
+                    </div>
 
-                <div>
-                    <label for="orcamentoAcrescimo">Acréscimo geral</label>
-                    <input type="number" id="orcamentoAcrescimo" name="acrescimo" class="form-control" min="0" step="0.01" value="{{ old('acrescimo', $budget['acrescimo'] ?? 0) }}" data-budget-global-addition>
-                </div>
+                    <div>
+                        <label for="orcamentoAcrescimoDisplay">Acréscimo geral</label>
+                        <div class="budget-adjustment-group" data-budget-adjustment-group>
+                            <input
+                                type="text"
+                                id="orcamentoAcrescimoDisplay"
+                                class="form-control budget-adjustment-input"
+                                value="{{ $globalAdditionDisplay }}"
+                                inputmode="decimal"
+                                autocomplete="off"
+                                data-budget-global-addition-display
+                            >
+                            <div class="budget-adjustment-toggle" role="group" aria-label="Modo do acréscimo geral">
+                                <button
+                                    type="button"
+                                    class="budget-adjustment-toggle-btn {{ $globalAdditionType === 'valor' ? 'is-active' : '' }}"
+                                    data-budget-adjustment-option="valor"
+                                    aria-pressed="{{ $globalAdditionType === 'valor' ? 'true' : 'false' }}"
+                                >R$</button>
+                                <button
+                                    type="button"
+                                    class="budget-adjustment-toggle-btn {{ $globalAdditionType === 'percentual' ? 'is-active' : '' }}"
+                                    data-budget-adjustment-option="percentual"
+                                    aria-pressed="{{ $globalAdditionType === 'percentual' ? 'true' : 'false' }}"
+                                >%</button>
+                            </div>
+                        </div>
+                        <div class="budget-adjustment-preview" data-budget-global-addition-preview-wrapper @if (! $globalAdditionPreviewVisible) hidden @endif>
+                            <label class="budget-adjustment-preview-label" for="orcamentoAcrescimoPreview">Valor do acréscimo</label>
+                            <input
+                                type="text"
+                                id="orcamentoAcrescimoPreview"
+                                class="form-control budget-adjustment-preview-input"
+                                value="{{ $formatMoney($globalAdditionAmount) }}"
+                                readonly
+                                tabindex="-1"
+                                data-budget-global-addition-preview
+                            >
+                        </div>
+                        <input type="hidden" id="orcamentoAcrescimoTipo" name="acrescimo_tipo" value="{{ $globalAdditionType }}" data-budget-global-addition-type>
+                        <input type="hidden" name="acrescimo" value="{{ $formatDecimalValue($globalAdditionAmount, 2) }}" data-budget-global-addition>
+                        <input type="hidden" name="acrescimo_percentual" value="{{ $formatDecimalValue($globalAdditionPercent, 4) }}" data-budget-global-addition-percent>
+                    </div>
 
-                <div>
-                    <label for="orcamentoTotal">Total</label>
-                    <input type="number" id="orcamentoTotal" name="total" class="form-control" min="0" step="0.01" value="{{ old('total', $budget['total'] ?? 0) }}" readonly data-budget-total>
+                    <div class="budget-summary-total-field">
+                        <label for="orcamentoTotal">Total final</label>
+                        <input type="text" id="orcamentoTotal" name="total" class="form-control" value="{{ old('total', $budget['total'] ?? 0) }}" readonly data-budget-total data-budget-money inputmode="decimal" autocomplete="off">
+                    </div>
                 </div>
+            </section>
             </div>
         </div>
 
@@ -411,6 +585,87 @@
                             <p class="surface-subtitle mb-0">O sistema encontrou dados locais salvos para este orçamento.</p>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="orcamentoReviewModal" tabindex="-1" aria-labelledby="orcamentoReviewModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content modal-shell budget-review-modal">
+                <div class="modal-header border-0 pb-0">
+                    <div>
+                        <p class="desktop-eyebrow mb-2">Revisao final</p>
+                        <h4 id="orcamentoReviewModalLabel" class="surface-title fs-4 mb-1">Confirmar salvamento do orcamento</h4>
+                        <p class="surface-subtitle mb-0">Revise os dados, confira as pendencias e escolha entre salvar ou enviar para aprovacao.</p>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+
+                <div class="modal-body">
+                    <div class="budget-review-pendencies d-none" data-budget-review-pendencies-wrapper>
+                        <div class="budget-review-pendencies-head">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <div>
+                                <strong>Existem pendencias que bloqueiam o envio para aprovacao.</strong>
+                                <p class="mb-0">Voce ainda pode salvar sem enviar o PDF agora.</p>
+                            </div>
+                        </div>
+                        <ul class="mb-0" data-budget-review-pendencies></ul>
+                    </div>
+
+                    <div class="budget-review-grid">
+                        <section class="budget-review-card">
+                            <div class="budget-review-card-head">
+                                <h5>Cliente e contato</h5>
+                                <span class="desktop-chip">Comercial</span>
+                            </div>
+                            <div class="budget-review-list" data-budget-review-client></div>
+                        </section>
+
+                        <section class="budget-review-card">
+                            <div class="budget-review-card-head">
+                                <h5>Equipamento e contexto</h5>
+                                <span class="desktop-chip">Operacional</span>
+                            </div>
+                            <div class="budget-review-list" data-budget-review-context></div>
+                        </section>
+                    </div>
+
+                    <section class="budget-review-card">
+                        <div class="budget-review-card-head">
+                            <h5>Itens do orcamento</h5>
+                            <span class="desktop-chip" data-budget-review-items-count>0 itens</span>
+                        </div>
+                        <div class="budget-review-items" data-budget-review-items></div>
+                    </section>
+
+                    <div class="budget-review-grid budget-review-grid-bottom">
+                        <section class="budget-review-card">
+                            <div class="budget-review-card-head">
+                                <h5>Resultado financeiro</h5>
+                                <span class="budget-summary-result-pill">Resultado final</span>
+                            </div>
+                            <div class="budget-review-totals" data-budget-review-totals></div>
+                        </section>
+
+                        <section class="budget-review-card">
+                            <div class="budget-review-card-head">
+                                <h5>Observacoes e condicoes</h5>
+                                <span class="desktop-chip">Complementos</span>
+                            </div>
+                            <div class="budget-review-notes" data-budget-review-notes></div>
+                        </section>
+                    </div>
+                </div>
+
+                <div class="modal-footer border-0 pt-0">
+                    <div class="budget-review-footer-copy">
+                        Salvar sem envio mantem o orcamento interno. Enviar para aprovacao gera o PDF e a proposta do cliente.
+                    </div>
+                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Voltar e revisar</button>
+                    <button type="button" class="btn btn-outline-secondary" data-budget-review-submit="save_only">Salvar sem enviar</button>
+                    <button type="button" class="btn btn-primary" data-budget-review-submit="send_for_approval">Salvar e enviar para aprovacao</button>
                 </div>
             </div>
         </div>

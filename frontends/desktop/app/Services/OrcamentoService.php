@@ -69,6 +69,17 @@ class OrcamentoService
     }
 
     /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function sendForApproval(int $id, array $payload = []): array
+    {
+        $response = $this->apiClient->post('/orcamentos/' . $id . '/send-approval', $payload);
+
+        return $response['data']['dispatch'] ?? [];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function destroy(int $id): array

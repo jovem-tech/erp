@@ -571,8 +571,183 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('assets/js/orcamentos-form.js', false)
             ->assertSee('data-budget-item-reference', false)
             ->assertSee('desktop-grid-four', false)
+            ->assertSee('budget-summary-card', false)
+            ->assertSee('budget-summary-result-pill', false)
+            ->assertSee('Fechamento')
             ->assertSee('budget-item-layout', false)
+            ->assertSee('R$ 0,00', false)
+            ->assertSee('data-budget-subtotal data-budget-money', false)
+            ->assertSee('data-budget-global-discount-display', false)
+            ->assertSee('data-budget-global-discount-type', false)
+            ->assertSee('data-budget-global-discount-percent', false)
+            ->assertSee('data-budget-global-addition-display', false)
+            ->assertSee('data-budget-global-addition-type', false)
+            ->assertSee('data-budget-global-addition-percent', false)
+            ->assertSee('data-budget-item-discount-display', false)
+            ->assertSee('data-budget-item-discount-type', false)
+            ->assertSee('data-budget-item-discount-preview', false)
+            ->assertSee('data-budget-item-addition-display', false)
+            ->assertSee('data-budget-item-addition-type', false)
+            ->assertSee('data-budget-item-addition-preview', false)
+            ->assertSee('data-budget-global-discount-preview', false)
+            ->assertSee('data-budget-global-addition-preview', false)
+            ->assertSee('data-budget-total data-budget-money', false)
             ->assertDontSee('data-select2="false"', false);
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_create_page_renders_review_modal_for_save_decision(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/configuracoes/empresa*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'settings' => [
+                        'empresa_nome_fantasia' => 'Sistema ERP',
+                    ],
+                    'logo' => [
+                        'exists' => false,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orcamentos/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'clients' => [],
+                        'equipments' => [],
+                        'orders' => [],
+                        'services' => [],
+                        'parts' => [],
+                        'status_options' => [
+                            ['value' => 'rascunho', 'label' => 'Rascunho'],
+                        ],
+                        'type_options' => [
+                            ['value' => 'previo', 'label' => 'Orcamento previo'],
+                        ],
+                        'origin_options' => [
+                            ['value' => 'manual', 'label' => 'Manual'],
+                        ],
+                        'default_validity_days' => 10,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'orcamentos' => ['visualizar', 'criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/orcamentos/novo');
+
+        $response
+            ->assertOk()
+            ->assertSee('id="orcamentoReviewModal"', false)
+            ->assertSee('data-budget-submission-mode', false)
+            ->assertSee('data-budget-review-pendencies', false)
+            ->assertSee('data-budget-review-items', false)
+            ->assertSee('data-budget-review-submit="save_only"', false)
+            ->assertSee('data-budget-review-submit="send_for_approval"', false)
+            ->assertSee('Salvar sem enviar', false)
+            ->assertSee('Salvar e enviar para aprovacao', false);
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_create_page_moves_locked_order_context_to_header_actions(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/configuracoes/empresa*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'settings' => [
+                        'empresa_nome_fantasia' => 'Sistema ERP',
+                    ],
+                    'logo' => [
+                        'exists' => false,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orcamentos/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'clients' => [
+                            [
+                                'id' => 201,
+                                'nome_razao' => 'Cliente Alpha',
+                                'cpf_cnpj' => '11.111.111/0001-11',
+                                'telefone1' => '(21) 98888-1111',
+                            ],
+                        ],
+                        'equipments' => [],
+                        'orders' => [
+                            [
+                                'id' => 401,
+                                'numero_os' => 'OS401',
+                                'cliente_nome' => 'Cliente Alpha',
+                            ],
+                        ],
+                        'services' => [],
+                        'parts' => [],
+                        'selected_client_id' => 201,
+                        'selected_order_id' => 401,
+                        'status_options' => [
+                            ['value' => 'rascunho', 'label' => 'Rascunho'],
+                        ],
+                        'default_validity_days' => 10,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'orcamentos' => ['visualizar', 'criar'],
+                    'clientes' => ['visualizar'],
+                    'equipamentos' => ['visualizar'],
+                    'os' => ['visualizar', 'criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/orcamentos/novo?os_id=401');
+
+        $html = $response->getContent();
+        $helpButtonPosition = strpos($html, route('orcamentos.help'));
+        $newBudgetButtonPosition = strpos($html, route('orcamentos.create') . '" class="btn btn-outline-secondary"');
+        $backButtonPosition = strpos($html, route('orcamentos.index') . '" class="btn btn-outline-light"');
+
+        $response
+            ->assertOk()
+            ->assertSee('OS401', false)
+            ->assertSee('Cliente Alpha', false)
+            ->assertSee('Novo orçamento', false)
+            ->assertDontSee('Cliente definido pela OS', false);
+
+        $this->assertNotFalse($helpButtonPosition);
+        $this->assertNotFalse($newBudgetButtonPosition);
+        $this->assertNotFalse($backButtonPosition);
+        $this->assertTrue($helpButtonPosition < $newBudgetButtonPosition);
+        $this->assertTrue($newBudgetButtonPosition < $backButtonPosition);
 
         Http::allowStrayRequests();
     }
@@ -631,6 +806,7 @@ class DesktopFrontendTest extends TestCase
             ->assertOk()
             ->assertSee('data-budget-item-quick-create', false)
             ->assertSee('Novo serviço', false)
+            ->assertSee('R$ 0,00', false)
             ->assertSee('id="orcamentoQuickItemModal"', false)
             ->assertSee('id="orcamentoQuickItemForm"', false)
             ->assertSee(route('servicos.quick.store'), false)
@@ -701,6 +877,7 @@ class DesktopFrontendTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('Nova peça', false)
+            ->assertSee('R$ 0,00', false)
             ->assertSee('data-budget-item-quick-create-label', false);
 
         Http::allowStrayRequests();
@@ -738,9 +915,9 @@ class DesktopFrontendTest extends TestCase
                 'nome' => 'Limpeza interna',
                 'descricao' => 'Serviço rápido de limpeza',
                 'tipo_equipamento' => 'Notebook',
-                'valor' => 120,
-                'tempo_padrao_horas' => 1.5,
-                'custo_direto_padrao' => 20,
+                'valor' => 'R$ 120,00',
+                'tempo_padrao_horas' => '1,5',
+                'custo_direto_padrao' => 'R$ 20,00',
             ]);
 
         $response
@@ -753,7 +930,9 @@ class DesktopFrontendTest extends TestCase
         Http::assertSent(static function ($request): bool {
             return $request->url() === 'http://127.0.0.1:8000/api/v1/servicos'
                 && ($request['nome'] ?? null) === 'Limpeza interna'
-                && ($request['valor'] ?? null) == 120
+                && round((float) ($request['valor'] ?? 0), 2) === 120.00
+                && round((float) ($request['tempo_padrao_horas'] ?? 0), 2) === 1.50
+                && round((float) ($request['custo_direto_padrao'] ?? 0), 2) === 20.00
                 && ($request['tipo_equipamento'] ?? null) === 'Notebook';
         });
     }
@@ -791,8 +970,8 @@ class DesktopFrontendTest extends TestCase
                 'nome' => 'SSD 480GB',
                 'tipo_equipamento' => 'Notebook',
                 'categoria' => 'Armazenamento',
-                'preco_venda' => 300,
-                'preco_custo' => 220,
+                'preco_venda' => 'R$ 300,00',
+                'preco_custo' => 'R$ 220,00',
                 'quantidade_atual' => 4,
                 'estoque_minimo' => 1,
                 'observacoes' => 'Peça de teste',
@@ -809,8 +988,597 @@ class DesktopFrontendTest extends TestCase
             return $request->url() === 'http://127.0.0.1:8000/api/v1/estoque'
                 && ($request['codigo'] ?? null) === 'SSD-480'
                 && ($request['nome'] ?? null) === 'SSD 480GB'
-                && ($request['preco_venda'] ?? null) == 300
+                && round((float) ($request['preco_venda'] ?? 0), 2) === 300.00
+                && round((float) ($request['preco_custo'] ?? 0), 2) === 220.00
                 && ($request['categoria'] ?? null) === 'Armazenamento';
+        });
+    }
+
+    public function test_orcamentos_store_normalizes_brazilian_currency_values_before_forwarding_to_backend(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orcamentos' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'budget' => [
+                        'id' => 951,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->post('/orcamentos', [
+                'tipo_orcamento' => 'previo',
+                'status' => 'rascunho',
+                'origem' => 'manual',
+                'cliente_nome_avulso' => 'Cliente moeda BRL',
+                'titulo' => 'Orçamento moeda BRL',
+                'validade_dias' => 10,
+                'subtotal' => 'R$ 330,00',
+                'desconto' => 'R$ 20,00',
+                'acrescimo' => 'R$ 0,00',
+                'total' => 'R$ 310,00',
+                'itens' => [
+                    [
+                        'tipo_item' => 'servico',
+                        'descricao' => 'Troca de tela',
+                        'quantidade' => 1,
+                        'valor_unitario' => 'R$ 330,00',
+                        'desconto' => 'R$ 20,00',
+                        'acrescimo' => 'R$ 0,00',
+                        'observacoes' => 'Item com moeda formatada',
+                    ],
+                ],
+            ]);
+
+        $response
+            ->assertRedirect(route('orcamentos.show', 951))
+            ->assertSessionHas('success', 'Orçamento criado com sucesso.');
+
+        Http::assertSent(static function ($request): bool {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/orcamentos'
+                && ($request['subtotal'] ?? null) === '330.00'
+                && ($request['desconto'] ?? null) === '20.00'
+                && ($request['acrescimo'] ?? null) === '0.00'
+                && ($request['total'] ?? null) === '310.00'
+                && ($request['itens'][0]['valor_unitario'] ?? null) === '330.00'
+                && ($request['itens'][0]['desconto'] ?? null) === '20.00'
+                && ($request['itens'][0]['acrescimo'] ?? null) === '0.00';
+        });
+    }
+
+    public function test_orcamentos_store_ignores_default_placeholder_item_before_forwarding_to_backend(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orcamentos' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'budget' => [
+                        'id' => 953,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->post('/orcamentos', [
+                'tipo_orcamento' => 'previo',
+                'status' => 'rascunho',
+                'origem' => 'manual',
+                'cliente_nome_avulso' => 'Cliente sem itens',
+                'titulo' => 'Orcamento em rascunho',
+                'validade_dias' => 10,
+                'subtotal' => 'R$ 0,00',
+                'desconto' => 'R$ 0,00',
+                'acrescimo' => 'R$ 0,00',
+                'total' => 'R$ 0,00',
+                'itens' => [
+                    [
+                        'tipo_item' => 'servico',
+                        'referencia_id' => '',
+                        'descricao' => '',
+                        'quantidade' => 1,
+                        'valor_unitario' => 'R$ 0,00',
+                        'desconto' => 'R$ 0,00',
+                        'desconto_tipo' => 'valor',
+                        'desconto_percentual' => '0,00',
+                        'acrescimo' => 'R$ 0,00',
+                        'acrescimo_tipo' => 'valor',
+                        'acrescimo_percentual' => '0,00',
+                        'observacoes' => '',
+                        'modo_precificacao' => 'manual',
+                    ],
+                ],
+            ]);
+
+        $response
+            ->assertRedirect(route('orcamentos.show', 953))
+            ->assertSessionHas('success', 'Orçamento criado com sucesso.');
+
+        Http::assertSent(static function ($request): bool {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/orcamentos'
+                && isset($request['itens'])
+                && $request['itens'] === [];
+        });
+    }
+
+    public function test_orcamentos_store_with_send_for_approval_dispatches_second_backend_request(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orcamentos' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'budget' => [
+                        'id' => 990,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+            'http://127.0.0.1:8000/api/v1/orcamentos/990/send-approval' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'dispatch' => [
+                        'canal' => 'whatsapp',
+                        'status' => 'enviado',
+                        'destino' => '5511999999999',
+                        'public_url' => 'http://127.0.0.1:8000/orcamento/token-990',
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'criar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->post('/orcamentos', [
+                'submission_mode' => 'send_for_approval',
+                'tipo_orcamento' => 'previo',
+                'status' => 'rascunho',
+                'origem' => 'manual',
+                'cliente_nome_avulso' => 'Cliente aprovacao',
+                'telefone_contato' => '(11) 99999-9999',
+                'titulo' => 'Orcamento com envio',
+                'validade_dias' => 10,
+                'subtotal' => 'R$ 330,00',
+                'desconto' => 'R$ 0,00',
+                'acrescimo' => 'R$ 0,00',
+                'total' => 'R$ 330,00',
+                'itens' => [
+                    [
+                        'tipo_item' => 'servico',
+                        'descricao' => 'Troca de tela',
+                        'quantidade' => 1,
+                        'valor_unitario' => 'R$ 330,00',
+                        'desconto' => 'R$ 0,00',
+                        'acrescimo' => 'R$ 0,00',
+                    ],
+                ],
+            ]);
+
+        $response
+            ->assertRedirect(route('orcamentos.show', 990))
+            ->assertSessionHas('success', 'Orçamento criado e enviado para aprovação do cliente.');
+
+        Http::assertSentCount(2);
+        Http::assertSent(static function ($request): bool {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/orcamentos'
+                && ($request['submission_mode'] ?? null) === null
+                && ($request['total'] ?? null) === '330.00';
+        });
+        Http::assertSent(static function ($request): bool {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/orcamentos/990/send-approval'
+                && $request->method() === 'POST';
+        });
+    }
+
+    public function test_orcamentos_send_approval_route_dispatches_backend_request(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orcamentos/990/send-approval' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'dispatch' => [
+                        'canal' => 'whatsapp',
+                        'status' => 'enviado',
+                        'destino' => '5511999999999',
+                        'public_url' => 'http://127.0.0.1:8000/orcamento/token-990',
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->post('/orcamentos/990/enviar-aprovacao');
+
+        $response
+            ->assertRedirect(route('orcamentos.show', 990))
+            ->assertSessionHas('success', 'Orçamento enviado para aprovação do cliente.');
+
+        Http::assertSent(static function ($request): bool {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/orcamentos/990/send-approval'
+                && $request->method() === 'POST';
+        });
+    }
+
+    public function test_orcamentos_show_page_renders_copy_link_and_send_approval_actions(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orcamentos/990' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'budget' => [
+                        'id' => 990,
+                        'numero' => 'ORC-2607-000001',
+                        'versao' => 1,
+                        'tipo_orcamento' => 'assistencia',
+                        'tipo_label' => 'Orçamento com equipamento na assistência',
+                        'status' => 'pendente_envio',
+                        'status_label' => 'Pendente de envio',
+                        'status_color' => '#f59e0b',
+                        'origem' => 'os',
+                        'origem_label' => 'Ordem de serviço',
+                        'titulo' => '',
+                        'cliente_nome_avulso' => '',
+                        'telefone_contato' => '22992741003',
+                        'email_contato' => 'cliente@example.com',
+                        'validade_dias' => 10,
+                        'validade_data' => '13/07/2026',
+                        'numero_os' => 'OS26070014',
+                        'prazo_execucao' => '',
+                        'observacoes' => '',
+                        'condicoes' => '',
+                        'subtotal' => 230.0,
+                        'total' => 230.0,
+                        'total_formatado' => '230,00',
+                        'cliente' => ['id' => 5, 'nome_razao' => 'teste cliente 2', 'cpf_cnpj' => ''],
+                        'equipamento' => null,
+                        'os' => null,
+                        'responsavel' => ['id' => 1, 'nome' => 'Assistência Técnica'],
+                        'itens' => [],
+                        'historico' => [],
+                        'envios' => [],
+                        'aprovacoes' => [],
+                        'can_edit' => true,
+                        'can_delete' => false,
+                        'can_send_approval' => true,
+                        'link_publico' => 'http://127.0.0.1:8000/orcamento/token-abc',
+                        'created_at' => '03/07/2026 16:13',
+                        'updated_at' => '03/07/2026 16:13',
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/orcamentos/990');
+
+        $response
+            ->assertOk()
+            ->assertSee('data-copy-link="http://127.0.0.1:8000/orcamento/token-abc"', false)
+            ->assertSee('Copiar link')
+            ->assertSee('Enviar para aprovação')
+            ->assertSee(route('orcamentos.send_approval', 990), false);
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_edit_page_converts_brazilian_validity_date_for_date_input(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orcamentos/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'clients' => [],
+                        'equipments' => [],
+                        'orders' => [],
+                        'services' => [],
+                        'parts' => [],
+                        'status_options' => [
+                            ['value' => 'rascunho', 'label' => 'Rascunho'],
+                            ['value' => 'pendente_envio', 'label' => 'Pendente de envio'],
+                        ],
+                        'default_validity_days' => 10,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orcamentos/990' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'budget' => [
+                        'id' => 990,
+                        'numero' => 'ORC-2607-000001',
+                        'versao' => 1,
+                        'tipo_orcamento' => 'assistencia',
+                        'tipo_label' => 'Orçamento com equipamento na assistência',
+                        'status' => 'pendente_envio',
+                        'status_label' => 'Pendente de envio',
+                        'status_color' => '#f59e0b',
+                        'origem' => 'os',
+                        'origem_label' => 'Ordem de serviço',
+                        'titulo' => '',
+                        'cliente_nome_avulso' => '',
+                        'telefone_contato' => '22992741003',
+                        'email_contato' => 'cliente@example.com',
+                        'validade_dias' => 10,
+                        'validade_data' => '13/07/2026',
+                        'numero_os' => 'OS26070014',
+                        'prazo_execucao' => '',
+                        'observacoes' => '',
+                        'condicoes' => '',
+                        'subtotal' => 230.0,
+                        'desconto' => 0.0,
+                        'desconto_tipo' => 'valor',
+                        'desconto_percentual' => null,
+                        'acrescimo' => 0.0,
+                        'acrescimo_tipo' => 'valor',
+                        'acrescimo_percentual' => null,
+                        'total' => 230.0,
+                        'total_formatado' => '230,00',
+                        'cliente' => ['id' => 5, 'nome_razao' => 'teste cliente 2', 'cpf_cnpj' => ''],
+                        'equipamento' => null,
+                        'os' => null,
+                        'responsavel' => ['id' => 1, 'nome' => 'Assistência Técnica'],
+                        'itens' => [],
+                        'historico' => [],
+                        'envios' => [],
+                        'aprovacoes' => [],
+                        'can_edit' => true,
+                        'can_delete' => false,
+                        'can_send_approval' => true,
+                        'link_publico' => 'http://127.0.0.1:8000/orcamento/token-abc',
+                        'created_at' => '03/07/2026 16:13',
+                        'updated_at' => '03/07/2026 16:13',
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'criar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/orcamentos/990/editar');
+
+        $response
+            ->assertOk()
+            ->assertSee('id="orcamentoValidadeData"', false)
+            ->assertSee('value="2026-07-13"', false);
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_send_approval_route_reports_backend_pendencies(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orcamentos/991/send-approval' => Http::response([
+                'status' => 'error',
+                'data' => null,
+                'error' => [
+                    'code' => 'BUDGET_APPROVAL_VALIDATION',
+                    'message' => 'Existem pendências que impedem o envio para aprovação.',
+                    'details' => [
+                        'send_for_approval' => [
+                            'Informe um telefone de contato com WhatsApp válido para enviar o PDF de aprovação.',
+                        ],
+                    ],
+                ],
+                'meta' => [],
+            ], 422),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->post('/orcamentos/991/enviar-aprovacao');
+
+        $response->assertRedirect(route('orcamentos.show', 991));
+
+        $error = (string) session('error');
+        $this->assertStringContainsString('O envio para aprovação não foi concluído.', $error);
+        $this->assertStringContainsString('telefone de contato com WhatsApp válido', $error);
+    }
+
+    public function test_orcamentos_store_keeps_budget_saved_when_send_for_approval_returns_warning(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orcamentos' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'budget' => [
+                        'id' => 991,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+            'http://127.0.0.1:8000/api/v1/orcamentos/991/send-approval' => Http::response([
+                'status' => 'error',
+                'data' => null,
+                'error' => [
+                    'code' => 'BUDGET_APPROVAL_VALIDATION',
+                    'message' => 'Existem pendências que impedem o envio para aprovação.',
+                    'details' => [
+                        'send_for_approval' => [
+                            'Informe um telefone de contato com WhatsApp válido para enviar o PDF de aprovação.',
+                        ],
+                    ],
+                ],
+                'meta' => [],
+            ], 422),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'criar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->post('/orcamentos', [
+                'submission_mode' => 'send_for_approval',
+                'tipo_orcamento' => 'previo',
+                'status' => 'rascunho',
+                'origem' => 'manual',
+                'cliente_nome_avulso' => 'Cliente sem whatsapp',
+                'telefone_contato' => '',
+                'titulo' => 'Orcamento salvo com pendencia',
+                'validade_dias' => 10,
+                'subtotal' => 'R$ 120,00',
+                'desconto' => 'R$ 0,00',
+                'acrescimo' => 'R$ 0,00',
+                'total' => 'R$ 120,00',
+                'itens' => [
+                    [
+                        'tipo_item' => 'servico',
+                        'descricao' => 'Diagnostico',
+                        'quantidade' => 1,
+                        'valor_unitario' => 'R$ 120,00',
+                        'desconto' => 'R$ 0,00',
+                        'acrescimo' => 'R$ 0,00',
+                    ],
+                ],
+            ]);
+
+        $response
+            ->assertRedirect(route('orcamentos.show', 991))
+            ->assertSessionHas('success', 'Orçamento criado com sucesso.')
+            ->assertSessionHas('warning');
+
+        Http::assertSentCount(2);
+        Http::assertSent(static function ($request): bool {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/orcamentos/991/send-approval'
+                && $request->method() === 'POST';
+        });
+    }
+
+    public function test_orcamentos_store_forwards_percentual_adjustments_with_normalized_payload(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orcamentos' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'budget' => [
+                        'id' => 952,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->post('/orcamentos', [
+                'tipo_orcamento' => 'previo',
+                'status' => 'rascunho',
+                'origem' => 'manual',
+                'cliente_nome_avulso' => 'Cliente percentual',
+                'titulo' => 'Orçamento com ajuste percentual',
+                'validade_dias' => 10,
+                'subtotal' => 'R$ 100,00',
+                'desconto_tipo' => 'percentual',
+                'desconto' => '10.00',
+                'desconto_percentual' => '10,50',
+                'acrescimo_tipo' => 'valor',
+                'acrescimo' => 'R$ 5,00',
+                'acrescimo_percentual' => '0,00',
+                'total' => 'R$ 94,50',
+                'itens' => [
+                    [
+                        'tipo_item' => 'peca',
+                        'descricao' => 'Display iPhone 11',
+                        'quantidade' => 1,
+                        'valor_unitario' => 'R$ 100,00',
+                        'desconto_tipo' => 'percentual',
+                        'desconto' => '10.00',
+                        'desconto_percentual' => '10,00',
+                        'acrescimo_tipo' => 'valor',
+                        'acrescimo' => 'R$ 5,00',
+                        'acrescimo_percentual' => '0,00',
+                    ],
+                ],
+            ]);
+
+        $response
+            ->assertRedirect(route('orcamentos.show', 952))
+            ->assertSessionHas('success', 'Orçamento criado com sucesso.');
+
+        Http::assertSent(static function ($request): bool {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/orcamentos'
+                && ($request['subtotal'] ?? null) === '100.00'
+                && ($request['desconto_tipo'] ?? null) === 'percentual'
+                && ($request['desconto'] ?? null) === '10.00'
+                && ($request['desconto_percentual'] ?? null) === '10.5000'
+                && ($request['acrescimo_tipo'] ?? null) === 'valor'
+                && ($request['acrescimo'] ?? null) === '5.00'
+                && ($request['acrescimo_percentual'] ?? null) === '0.0000'
+                && ($request['itens'][0]['desconto_tipo'] ?? null) === 'percentual'
+                && ($request['itens'][0]['desconto'] ?? null) === '10.00'
+                && ($request['itens'][0]['desconto_percentual'] ?? null) === '10.0000'
+                && ($request['itens'][0]['acrescimo_tipo'] ?? null) === 'valor'
+                && ($request['itens'][0]['acrescimo'] ?? null) === '5.00'
+                && ($request['itens'][0]['acrescimo_percentual'] ?? null) === '0.0000';
         });
     }
 

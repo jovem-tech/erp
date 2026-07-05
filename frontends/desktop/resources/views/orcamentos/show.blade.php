@@ -12,6 +12,7 @@
         $sends = is_array($budget['envios'] ?? null) ? $budget['envios'] : [];
         $approvals = is_array($budget['aprovacoes'] ?? null) ? $budget['aprovacoes'] : [];
         $budgetId = (int) ($budget['id'] ?? 0);
+        $publicLink = trim((string) ($budget['link_publico'] ?? ''));
     @endphp
 
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
@@ -34,6 +35,21 @@
                 <i class="bi bi-arrow-left me-2"></i>
                 Voltar
             </a>
+            @if ($publicLink !== '')
+                <button type="button" class="btn btn-outline-light" data-copy-link="{{ $publicLink }}">
+                    <i class="bi bi-clipboard me-2"></i>
+                    Copiar link
+                </button>
+            @endif
+            @if (! empty($budget['can_send_approval']))
+                <form method="post" action="{{ route('orcamentos.send_approval', $budgetId) }}" data-confirm="O PDF da proposta será gerado e enviado ao cliente pelo WhatsApp. Deseja continuar?" data-confirm-title="{{ $sends !== [] ? 'Reenviar proposta' : 'Enviar proposta' }}" data-confirm-button="Sim, enviar">
+                    @csrf
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-send me-2"></i>
+                        {{ $sends !== [] ? 'Reenviar para aprovação' : 'Enviar para aprovação' }}
+                    </button>
+                </form>
+            @endif
             @if (! empty($budget['can_edit']))
                 <a href="{{ route('orcamentos.edit', $budgetId) }}" class="btn btn-primary">
                     <i class="bi bi-pencil me-2"></i>
@@ -210,6 +226,20 @@
             </div>
 
             <div class="detail-list">
+                @if ($publicLink !== '')
+                    <div class="detail-item">
+                        <strong>Link de aprovação</strong>
+                        <div class="d-flex flex-wrap align-items-center gap-2">
+                            <input type="text" class="form-control form-control-sm" value="{{ $publicLink }}" readonly style="max-width: 320px;">
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-copy-link="{{ $publicLink }}">
+                                <i class="bi bi-clipboard me-1"></i>
+                                Copiar
+                            </button>
+                        </div>
+                        <small class="text-secondary d-block mt-1">Use este link para envio avulso (WhatsApp, e-mail ou outro canal).</small>
+                    </div>
+                @endif
+
                 <div class="detail-item">
                     <strong>Envios recentes</strong>
                     @if ($sends !== [])
@@ -246,4 +276,52 @@
             </div>
         </article>
     </section>
+@endsection
+
+@section('scripts')
+    <script>
+        (function () {
+            'use strict';
+
+            function copyText(text) {
+                if (navigator.clipboard && window.isSecureContext) {
+                    return navigator.clipboard.writeText(text);
+                }
+
+                return new Promise(function (resolve, reject) {
+                    var helper = document.createElement('textarea');
+                    helper.value = text;
+                    helper.setAttribute('readonly', 'readonly');
+                    helper.style.position = 'fixed';
+                    helper.style.opacity = '0';
+                    document.body.appendChild(helper);
+                    helper.select();
+
+                    try {
+                        document.execCommand('copy') ? resolve() : reject(new Error('copy-failed'));
+                    } catch (error) {
+                        reject(error);
+                    } finally {
+                        document.body.removeChild(helper);
+                    }
+                });
+            }
+
+            document.querySelectorAll('[data-copy-link]').forEach(function (button) {
+                button.addEventListener('click', function () {
+                    var originalHtml = button.innerHTML;
+
+                    copyText(button.getAttribute('data-copy-link') || '').then(function () {
+                        button.innerHTML = '<i class="bi bi-check2 me-2"></i>Link copiado!';
+                    }).catch(function () {
+                        button.innerHTML = '<i class="bi bi-x-circle me-2"></i>Não foi possível copiar';
+                    }).finally(function () {
+                        window.setTimeout(function () {
+                            button.innerHTML = originalHtml;
+                        }, 2000);
+                    });
+                });
+            });
+        })();
+    </script>
 @endsection

@@ -27,19 +27,70 @@
     const draftKey = String(config.draftKey || 'orcamentos:create');
     const isEditMode = Boolean(config.isEditMode);
 
+    const moneyFormatter = new Intl.NumberFormat('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
+    const percentFormatter = new Intl.NumberFormat('pt-BR', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
+
     const toNumber = (value) => {
-        const normalized = String(value ?? '')
-            .replaceAll('R$', '')
-            .replaceAll('.', '')
-            .replaceAll(',', '.')
-            .replace(/[^\d.-]/g, '');
+        if (typeof value === 'number') {
+            return Number.isFinite(value) ? value : 0;
+        }
+
+        const raw = String(value ?? '').trim();
+
+        if (raw === '') {
+            return 0;
+        }
+
+        let normalized = raw.replace(/[^\d,.-]/g, '');
+
+        if (normalized === '' || normalized === '-' || normalized === '.' || normalized === ',') {
+            return 0;
+        }
+
+        const lastComma = normalized.lastIndexOf(',');
+        const lastDot = normalized.lastIndexOf('.');
+
+        if (lastComma !== -1 && lastDot !== -1) {
+            if (lastComma > lastDot) {
+                normalized = normalized.replace(/\./g, '').replace(',', '.');
+            } else {
+                normalized = normalized.replace(/,/g, '');
+            }
+        } else if (lastComma !== -1) {
+            normalized = normalized.replace(/\./g, '').replace(',', '.');
+        } else if (lastDot !== -1) {
+            const parts = normalized.split('.');
+            const lastPart = parts[parts.length - 1] || '';
+
+            if (parts.length > 2 || lastPart.length === 3) {
+                normalized = normalized.replace(/\./g, '');
+            }
+        }
 
         const parsed = Number.parseFloat(normalized);
 
         return Number.isFinite(parsed) ? parsed : 0;
     };
 
-    const formatNumber = (value) => Number(value || 0).toFixed(2);
+    const formatMoney = (value) => `R$ ${moneyFormatter.format(toNumber(value))}`;
+    const formatPercent = (value) => percentFormatter.format(toNumber(value));
+    const formatCanonicalNumber = (value, scale = 2) => {
+        const numeric = Number(toNumber(value));
+
+        if (!Number.isFinite(numeric)) {
+            return Number(0).toFixed(scale);
+        }
+
+        return numeric.toFixed(scale);
+    };
+    const roundCurrency = (value) => Number(formatCanonicalNumber(value, 2));
+    const roundPercent = (value) => Number(formatCanonicalNumber(value, 4));
 
     const normalizeText = (value) => String(value ?? '').trim();
 
@@ -49,6 +100,38 @@
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#039;');
+
+    const bindMoneyInput = (input) => {
+        if (!(input instanceof HTMLInputElement) || input.dataset.moneyBound === '1') {
+            return;
+        }
+
+        input.dataset.moneyBound = '1';
+        input.type = 'text';
+        input.inputMode = 'decimal';
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+
+        const sync = () => {
+            input.value = formatMoney(input.value);
+        };
+
+        input.addEventListener('focus', () => {
+            window.requestAnimationFrame(() => {
+                input.select();
+            });
+        });
+        input.addEventListener('blur', sync);
+        sync();
+    };
+
+    const bindMoneyInputs = (root = document) => {
+        if (!(root instanceof Document || root instanceof HTMLElement)) {
+            return;
+        }
+
+        root.querySelectorAll('[data-budget-money]').forEach((input) => bindMoneyInput(input));
+    };
 
     const getModal = (element) => {
         if (!(element instanceof HTMLElement) || typeof window.bootstrap === 'undefined' || !window.bootstrap?.Modal) {
@@ -193,8 +276,6 @@
         const template = document.getElementById('orcamentoItemTemplate');
         const addButton = document.querySelector('[data-budget-item-add]');
         const subtotalInput = document.querySelector('[data-budget-subtotal]');
-        const discountInput = document.querySelector('[data-budget-global-discount]');
-        const additionInput = document.querySelector('[data-budget-global-addition]');
         const totalInput = document.querySelector('[data-budget-total]');
         const banner = document.querySelector('[data-budget-draft-banner]');
         const restoreButton = document.querySelector('[data-budget-draft-restore]');
@@ -202,6 +283,19 @@
         const itemsCount = document.querySelector('[data-budget-items-count]');
         const validityDaysSelect = document.querySelector('[data-budget-validity-days]');
         const validityDateInput = document.querySelector('[data-budget-validity-date]');
+        const clientSelect = document.getElementById('orcamentoClienteId');
+        const clientFallbackInput = document.getElementById('orcamentoClienteAvulso');
+        const phoneInput = document.getElementById('orcamentoTelefoneContato');
+        const emailInput = document.getElementById('orcamentoEmailContato');
+        const orderSelect = document.getElementById('orcamentoOsId');
+        const equipmentSelect = document.getElementById('orcamentoEquipamentoId');
+        const titleInput = document.getElementById('orcamentoTitulo');
+        const typeSelect = document.getElementById('orcamentoTipo');
+        const originSelect = document.getElementById('orcamentoOrigem');
+        const statusSelect = document.getElementById('orcamentoStatus');
+        const executionDeadlineInput = document.getElementById('orcamentoPrazoExecucao');
+        const observationsInput = document.getElementById('orcamentoObservacoes');
+        const conditionsInput = document.getElementById('orcamentoCondicoes');
         const quickItemModal = document.getElementById('orcamentoQuickItemModal');
         const quickItemForm = document.getElementById('orcamentoQuickItemForm');
         const quickItemSubmit = document.getElementById('orcamentoQuickItemSubmit');
@@ -212,10 +306,24 @@
         const quickItemNameLabel = document.querySelector('[data-budget-quick-name-label]');
         const quickItemServiceGroup = document.querySelector('[data-budget-quick-group="servico"]');
         const quickItemPartGroup = document.querySelector('[data-budget-quick-group="peca"]');
+        const reviewModalElement = document.getElementById('orcamentoReviewModal');
+        const reviewPendenciesWrapper = document.querySelector('[data-budget-review-pendencies-wrapper]');
+        const reviewPendenciesList = document.querySelector('[data-budget-review-pendencies]');
+        const reviewClientContainer = document.querySelector('[data-budget-review-client]');
+        const reviewContextContainer = document.querySelector('[data-budget-review-context]');
+        const reviewItemsContainer = document.querySelector('[data-budget-review-items]');
+        const reviewItemsCount = document.querySelector('[data-budget-review-items-count]');
+        const reviewTotalsContainer = document.querySelector('[data-budget-review-totals]');
+        const reviewNotesContainer = document.querySelector('[data-budget-review-notes]');
+        const reviewSubmitButtons = Array.from(document.querySelectorAll('[data-budget-review-submit]'));
 
         if (!(form instanceof HTMLFormElement) || !(itemsBody instanceof HTMLElement) || !(template instanceof HTMLTemplateElement)) {
             return;
         }
+
+        const submissionModeInput = form.querySelector('[data-budget-submission-mode]');
+
+        bindMoneyInputs(document);
 
         const tabButtons = Array.from(document.querySelectorAll('[data-budget-tab]'));
         const tabPanels = Array.from(document.querySelectorAll('[data-budget-panel]'));
@@ -224,6 +332,7 @@
             quickItemRow: null,
             quickItemType: 'servico',
             quickItemSubmitting: false,
+            reviewConfirmed: false,
         };
 
         const getRowCatalog = (type) => {
@@ -473,14 +582,14 @@
             if ((type === 'peca' || quickItemType?.value === 'peca') && quickItemForm instanceof HTMLFormElement) {
                 const salePriceField = quickItemForm.querySelector('[name="preco_venda"]');
                 if (salePriceField instanceof HTMLInputElement) {
-                    salePriceField.value = formatNumber(toNumber(preferredPrice));
+                    salePriceField.value = formatMoney(preferredPrice);
                 }
             }
 
             if ((type === 'servico' || quickItemType?.value === 'servico') && quickItemForm instanceof HTMLFormElement) {
                 const serviceValueField = quickItemForm.querySelector('[name="valor"]');
                 if (serviceValueField instanceof HTMLInputElement) {
-                    serviceValueField.value = formatNumber(toNumber(preferredPrice));
+                    serviceValueField.value = formatMoney(preferredPrice);
                 }
             }
         };
@@ -566,6 +675,16 @@
 
             try {
                 const payload = Object.fromEntries(new FormData(quickItemForm).entries());
+                const moneyFields = type === 'peca'
+                    ? ['preco_venda', 'preco_custo']
+                    : ['valor', 'custo_direto_padrao'];
+
+                moneyFields.forEach((field) => {
+                    if (Object.prototype.hasOwnProperty.call(payload, field)) {
+                        payload[field] = toNumber(payload[field]);
+                    }
+                });
+
                 const response = await requestJson(storeUrl, {
                     method: 'POST',
                     body: payload,
@@ -600,24 +719,265 @@
             }
         };
 
+        const resolveAdjustmentMode = (value) => (String(value ?? '').trim() === 'percentual' ? 'percentual' : 'valor');
+
+        const clampNonNegative = (value) => Math.max(0, toNumber(value));
+
+        const calculatePercentAmount = (base, percent) => roundCurrency((Math.max(0, base) * Math.max(0, percent)) / 100);
+
+        const calculateAmountPercent = (base, amount) => {
+            if (base <= 0) {
+                return 0;
+            }
+
+            return roundPercent((Math.max(0, amount) / base) * 100);
+        };
+
+        const getAdjustmentControl = (root, selectors) => {
+            if (!(root instanceof Document || root instanceof HTMLElement)) {
+                return null;
+            }
+
+            const displayInput = root.querySelector(selectors.display);
+            const typeField = root.querySelector(selectors.type);
+            const amountInput = root.querySelector(selectors.amount);
+            const percentInput = root.querySelector(selectors.percent);
+            const previewInput = selectors.preview ? root.querySelector(selectors.preview) : null;
+            const previewWrapper = selectors.previewWrapper ? root.querySelector(selectors.previewWrapper) : null;
+            const group = displayInput instanceof HTMLInputElement
+                ? displayInput.closest('[data-budget-adjustment-group]')
+                : null;
+            const modeButtons = group instanceof HTMLElement
+                ? Array.from(group.querySelectorAll('[data-budget-adjustment-option]')).filter((button) => button instanceof HTMLButtonElement)
+                : [];
+
+            if (!(displayInput instanceof HTMLInputElement) || !((typeField instanceof HTMLInputElement) || (typeField instanceof HTMLSelectElement)) || !(amountInput instanceof HTMLInputElement) || !(percentInput instanceof HTMLInputElement)) {
+                return null;
+            }
+
+            return {
+                displayInput,
+                typeField,
+                amountInput,
+                percentInput,
+                previewInput: previewInput instanceof HTMLInputElement ? previewInput : null,
+                previewWrapper: previewWrapper instanceof HTMLElement ? previewWrapper : null,
+                modeButtons,
+            };
+        };
+
+        const syncAdjustmentModeButtons = (control) => {
+            if (control === null) {
+                return;
+            }
+
+            const mode = resolveAdjustmentMode(control.typeField.value);
+            control.modeButtons.forEach((button) => {
+                if (!(button instanceof HTMLButtonElement)) {
+                    return;
+                }
+
+                const active = button.dataset.budgetAdjustmentOption === mode;
+                button.classList.toggle('is-active', active);
+                button.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+        };
+
+        const syncAdjustmentPreview = (control, amount) => {
+            if (control === null) {
+                return;
+            }
+
+            if (control.previewInput instanceof HTMLInputElement) {
+                control.previewInput.value = formatMoney(amount);
+            }
+
+            if (control.previewWrapper instanceof HTMLElement) {
+                control.previewWrapper.hidden = resolveAdjustmentMode(control.typeField.value) !== 'percentual';
+            }
+        };
+
+        const renderAdjustmentDisplay = (control, amount, percent) => {
+            if (control === null) {
+                return;
+            }
+
+            control.displayInput.value = resolveAdjustmentMode(control.typeField.value) === 'percentual'
+                ? formatPercent(percent)
+                : formatMoney(amount);
+        };
+
+        const syncAdjustmentControl = (control, base, { readDisplay = true, formatDisplay = false } = {}) => {
+            if (control === null) {
+                return { mode: 'valor', amount: 0, percent: 0 };
+            }
+
+            const mode = resolveAdjustmentMode(control.typeField.value);
+            let amount = clampNonNegative(control.amountInput.value);
+            let percent = clampNonNegative(control.percentInput.value);
+
+            if (mode === 'percentual') {
+                if (readDisplay) {
+                    percent = roundPercent(clampNonNegative(control.displayInput.value));
+                }
+
+                amount = calculatePercentAmount(base, percent);
+            } else {
+                if (readDisplay) {
+                    amount = roundCurrency(clampNonNegative(control.displayInput.value));
+                } else {
+                    amount = roundCurrency(amount);
+                }
+
+                percent = calculateAmountPercent(base, amount);
+            }
+
+            control.amountInput.value = formatCanonicalNumber(amount, 2);
+            control.percentInput.value = formatCanonicalNumber(mode === 'percentual' ? percent : 0, 4);
+            syncAdjustmentModeButtons(control);
+            syncAdjustmentPreview(control, amount);
+
+            if (formatDisplay) {
+                renderAdjustmentDisplay(control, amount, mode === 'percentual' ? percent : calculateAmountPercent(base, amount));
+            }
+
+            return { mode, amount, percent };
+        };
+
+        const switchAdjustmentMode = (control, base) => {
+            if (control === null) {
+                return;
+            }
+
+            const mode = resolveAdjustmentMode(control.typeField.value);
+
+            if (mode === 'percentual') {
+                const amount = roundCurrency(clampNonNegative(control.amountInput.value));
+                const percent = calculateAmountPercent(base, amount);
+                control.percentInput.value = formatCanonicalNumber(percent, 4);
+            } else {
+                const percent = roundPercent(clampNonNegative(control.percentInput.value));
+                const amount = calculatePercentAmount(base, percent);
+                control.amountInput.value = formatCanonicalNumber(amount, 2);
+            }
+
+            syncAdjustmentControl(control, base, { readDisplay: false, formatDisplay: true });
+        };
+
+        const bindAdjustmentControl = (control, getBaseValue, onUpdate) => {
+            if (control === null || control.displayInput.dataset.adjustmentBound === '1') {
+                return;
+            }
+
+            control.displayInput.dataset.adjustmentBound = '1';
+            control.displayInput.type = 'text';
+            control.displayInput.inputMode = 'decimal';
+            control.displayInput.autocomplete = 'off';
+            control.displayInput.spellcheck = false;
+
+            control.displayInput.addEventListener('focus', () => {
+                window.requestAnimationFrame(() => {
+                    control.displayInput.select();
+                });
+            });
+
+            control.displayInput.addEventListener('blur', () => {
+                syncAdjustmentControl(control, getBaseValue(), { readDisplay: true, formatDisplay: true });
+                onUpdate();
+            });
+
+            if (control.typeField instanceof HTMLSelectElement) {
+                control.typeField.addEventListener('change', () => {
+                    switchAdjustmentMode(control, getBaseValue());
+                    onUpdate();
+                });
+            }
+
+            control.modeButtons.forEach((button) => {
+                if (!(button instanceof HTMLButtonElement)) {
+                    return;
+                }
+
+                button.addEventListener('click', () => {
+                    const nextMode = resolveAdjustmentMode(button.dataset.budgetAdjustmentOption);
+                    if (resolveAdjustmentMode(control.typeField.value) === nextMode) {
+                        syncAdjustmentModeButtons(control);
+                        return;
+                    }
+
+                    control.typeField.value = nextMode;
+                    switchAdjustmentMode(control, getBaseValue());
+                    onUpdate();
+                });
+            });
+
+            syncAdjustmentModeButtons(control);
+        };
+
+        const getRowBaseAmount = (row) => {
+            const quantityInput = row.querySelector('[data-budget-item-quantity]');
+            const unitPriceInput = row.querySelector('[data-budget-item-unit-price]');
+
+            if (!(quantityInput instanceof HTMLInputElement) || !(unitPriceInput instanceof HTMLInputElement)) {
+                return 0;
+            }
+
+            return roundCurrency(toNumber(quantityInput.value) * toNumber(unitPriceInput.value));
+        };
+
+        const getGlobalDiscountControl = () => getAdjustmentControl(document, {
+            display: '[data-budget-global-discount-display]',
+            type: '[data-budget-global-discount-type]',
+            amount: '[data-budget-global-discount]',
+            percent: '[data-budget-global-discount-percent]',
+            preview: '[data-budget-global-discount-preview]',
+            previewWrapper: '[data-budget-global-discount-preview-wrapper]',
+        });
+
+        const getGlobalAdditionControl = () => getAdjustmentControl(document, {
+            display: '[data-budget-global-addition-display]',
+            type: '[data-budget-global-addition-type]',
+            amount: '[data-budget-global-addition]',
+            percent: '[data-budget-global-addition-percent]',
+            preview: '[data-budget-global-addition-preview]',
+            previewWrapper: '[data-budget-global-addition-preview-wrapper]',
+        });
+
+        const getRowDiscountControl = (row) => getAdjustmentControl(row, {
+            display: '[data-budget-item-discount-display]',
+            type: '[data-budget-item-discount-type]',
+            amount: '[data-budget-item-discount]',
+            percent: '[data-budget-item-discount-percent]',
+            preview: '[data-budget-item-discount-preview]',
+            previewWrapper: '[data-budget-item-discount-preview-wrapper]',
+        });
+
+        const getRowAdditionControl = (row) => getAdjustmentControl(row, {
+            display: '[data-budget-item-addition-display]',
+            type: '[data-budget-item-addition-type]',
+            amount: '[data-budget-item-addition]',
+            percent: '[data-budget-item-addition-percent]',
+            preview: '[data-budget-item-addition-preview]',
+            previewWrapper: '[data-budget-item-addition-preview-wrapper]',
+        });
+
         const updateRowTotal = (row) => {
             const quantityInput = row.querySelector('[data-budget-item-quantity]');
             const unitPriceInput = row.querySelector('[data-budget-item-unit-price]');
-            const discountInput = row.querySelector('[data-budget-item-discount]');
-            const additionInput = row.querySelector('[data-budget-item-addition]');
             const totalInput = row.querySelector('[data-budget-item-total]');
 
-            if (!(quantityInput instanceof HTMLInputElement) || !(unitPriceInput instanceof HTMLInputElement) || !(discountInput instanceof HTMLInputElement) || !(additionInput instanceof HTMLInputElement) || !(totalInput instanceof HTMLInputElement)) {
+            if (!(quantityInput instanceof HTMLInputElement) || !(unitPriceInput instanceof HTMLInputElement) || !(totalInput instanceof HTMLInputElement)) {
                 return 0;
             }
 
             const quantity = toNumber(quantityInput.value);
             const unitPrice = toNumber(unitPriceInput.value);
-            const discount = toNumber(discountInput.value);
-            const addition = toNumber(additionInput.value);
+            const base = roundCurrency(quantity * unitPrice);
+            const discount = syncAdjustmentControl(getRowDiscountControl(row), base, { readDisplay: true }).amount;
+            const addition = syncAdjustmentControl(getRowAdditionControl(row), base, { readDisplay: true }).amount;
 
-            const total = (quantity * unitPrice) - discount + addition;
-            totalInput.value = formatNumber(total);
+            const total = roundCurrency(base - discount + addition);
+            totalInput.value = formatMoney(total);
 
             return total;
         };
@@ -630,19 +990,336 @@
             });
 
             if (subtotalInput instanceof HTMLInputElement) {
-                subtotalInput.value = formatNumber(subtotal);
+                subtotalInput.value = formatMoney(subtotal);
             }
 
-            const discount = discountInput instanceof HTMLInputElement ? toNumber(discountInput.value) : 0;
-            const addition = additionInput instanceof HTMLInputElement ? toNumber(additionInput.value) : 0;
-            const total = subtotal - discount + addition;
+            const discount = syncAdjustmentControl(getGlobalDiscountControl(), subtotal, { readDisplay: true }).amount;
+            const addition = syncAdjustmentControl(getGlobalAdditionControl(), subtotal, { readDisplay: true }).amount;
+            const total = roundCurrency(subtotal - discount + addition);
 
             if (totalInput instanceof HTMLInputElement) {
-                totalInput.value = formatNumber(total);
+                totalInput.value = formatMoney(total);
             }
 
             updateItemsCount();
             saveDraftDebounced();
+        };
+
+        const getSelectedOptionLabel = (select) => {
+            if (!(select instanceof HTMLSelectElement)) {
+                return '';
+            }
+
+            const option = select.selectedOptions[0];
+
+            return option instanceof HTMLOptionElement ? normalizeText(option.textContent) : '';
+        };
+
+        const formatAdjustmentSummary = ({ mode, amount, percent }) => {
+            if (mode === 'percentual') {
+                return `${formatPercent(percent)}% (${formatMoney(amount)})`;
+            }
+
+            return formatMoney(amount);
+        };
+
+        const rowHasMeaningfulContent = (row) => {
+            if (!(row instanceof HTMLElement)) {
+                return false;
+            }
+
+            const descriptionInput = row.querySelector('[data-budget-item-description]');
+            const referenceSelect = row.querySelector('[data-budget-item-reference]');
+            const quantityInput = row.querySelector('[data-budget-item-quantity]');
+            const unitPriceInput = row.querySelector('[data-budget-item-unit-price]');
+            const notesInput = row.querySelector('[data-budget-item-notes]');
+            const discountControl = getRowDiscountControl(row);
+            const additionControl = getRowAdditionControl(row);
+            const quantity = quantityInput instanceof HTMLInputElement ? toNumber(quantityInput.value) : 1;
+            const unitPrice = unitPriceInput instanceof HTMLInputElement ? toNumber(unitPriceInput.value) : 0;
+            const description = descriptionInput instanceof HTMLInputElement ? normalizeText(descriptionInput.value) : '';
+            const reference = referenceSelect instanceof HTMLSelectElement ? normalizeText(referenceSelect.value) : '';
+            const notes = notesInput instanceof HTMLTextAreaElement ? normalizeText(notesInput.value) : '';
+            const discountAmount = discountControl ? toNumber(discountControl.amountInput.value) : 0;
+            const discountPercent = discountControl ? toNumber(discountControl.percentInput.value) : 0;
+            const additionAmount = additionControl ? toNumber(additionControl.amountInput.value) : 0;
+            const additionPercent = additionControl ? toNumber(additionControl.percentInput.value) : 0;
+
+            return description !== ''
+                || reference !== ''
+                || notes !== ''
+                || Math.abs(quantity - 1) > 0.0001
+                || unitPrice > 0
+                || discountAmount > 0
+                || discountPercent > 0
+                || additionAmount > 0
+                || additionPercent > 0;
+        };
+
+        const removeEmptyRows = () => {
+            itemsBody.querySelectorAll('[data-budget-item-row]').forEach((row) => {
+                if (!rowHasMeaningfulContent(row)) {
+                    row.remove();
+                }
+            });
+        };
+
+        const collectReviewItems = () => {
+            const items = [];
+
+            itemsBody.querySelectorAll('[data-budget-item-row]').forEach((row, index) => {
+                const rowTypeSelect = row.querySelector('[data-budget-item-type]');
+                const referenceSelect = row.querySelector('[data-budget-item-reference]');
+                const descriptionInput = row.querySelector('[data-budget-item-description]');
+                const quantityInput = row.querySelector('[data-budget-item-quantity]');
+                const unitPriceInput = row.querySelector('[data-budget-item-unit-price]');
+                const notesInput = row.querySelector('[data-budget-item-notes]');
+                const base = getRowBaseAmount(row);
+                const discount = syncAdjustmentControl(getRowDiscountControl(row), base, { readDisplay: true, formatDisplay: true });
+                const addition = syncAdjustmentControl(getRowAdditionControl(row), base, { readDisplay: true, formatDisplay: true });
+                const total = updateRowTotal(row);
+                const description = descriptionInput instanceof HTMLInputElement ? normalizeText(descriptionInput.value) : '';
+                const referenceLabel = getSelectedOptionLabel(referenceSelect);
+                const quantity = quantityInput instanceof HTMLInputElement ? toNumber(quantityInput.value) : 0;
+                const unitPrice = unitPriceInput instanceof HTMLInputElement ? toNumber(unitPriceInput.value) : 0;
+                const notes = notesInput instanceof HTMLTextAreaElement ? normalizeText(notesInput.value) : '';
+                const type = rowTypeSelect instanceof HTMLSelectElement && rowTypeSelect.value === 'peca' ? 'peca' : 'servico';
+                const hasContent = rowHasMeaningfulContent(row);
+
+                if (!hasContent) {
+                    return;
+                }
+
+                items.push({
+                    index: index + 1,
+                    type,
+                    typeLabel: type === 'peca' ? 'Peca' : 'Servico',
+                    referenceLabel,
+                    description,
+                    quantity,
+                    unitPrice,
+                    discount,
+                    addition,
+                    total,
+                    notes,
+                });
+            });
+
+            return items;
+        };
+
+        const collectReviewSnapshot = () => {
+            updateSummary();
+
+            const globalDiscount = syncAdjustmentControl(getGlobalDiscountControl(), toNumber(subtotalInput?.value), { readDisplay: true, formatDisplay: true });
+            const globalAddition = syncAdjustmentControl(getGlobalAdditionControl(), toNumber(subtotalInput?.value), { readDisplay: true, formatDisplay: true });
+            const items = collectReviewItems();
+            const clientName = getSelectedOptionLabel(clientSelect) || normalizeText(clientFallbackInput?.value);
+            const phone = normalizeText(phoneInput?.value);
+            const digits = (phone.match(/\d/g) || []).join('');
+
+            return {
+                title: normalizeText(titleInput?.value),
+                clientName,
+                phone,
+                email: normalizeText(emailInput?.value),
+                orderLabel: getSelectedOptionLabel(orderSelect),
+                equipmentLabel: getSelectedOptionLabel(equipmentSelect),
+                typeLabel: getSelectedOptionLabel(typeSelect),
+                originLabel: getSelectedOptionLabel(originSelect),
+                statusLabel: getSelectedOptionLabel(statusSelect),
+                validityDays: normalizeText(validityDaysSelect?.value),
+                validityDate: normalizeText(validityDateInput?.value),
+                executionDeadline: normalizeText(executionDeadlineInput?.value),
+                observations: normalizeText(observationsInput?.value),
+                conditions: normalizeText(conditionsInput?.value),
+                subtotal: toNumber(subtotalInput?.value),
+                total: toNumber(totalInput?.value),
+                globalDiscount,
+                globalAddition,
+                items,
+                phoneDigits: digits,
+            };
+        };
+
+        const collectReviewPendencies = (snapshot) => {
+            const pendencies = [];
+
+            if (snapshot.clientName === '') {
+                pendencies.push('Informe um cliente cadastrado ou um nome de cliente eventual antes de enviar para aprovacao.');
+            }
+
+            if (snapshot.items.length === 0) {
+                pendencies.push('Adicione ao menos um item com conteudo no orcamento.');
+            }
+
+            snapshot.items.forEach((item) => {
+                if (item.description === '') {
+                    pendencies.push(`Item ${item.index}: informe a descricao antes de enviar para aprovacao.`);
+                }
+
+                if (item.quantity <= 0) {
+                    pendencies.push(`Item ${item.index}: a quantidade precisa ser maior que zero.`);
+                }
+
+                if (item.total <= 0) {
+                    pendencies.push(`Item ${item.index}: o total precisa ser maior que zero para envio.`);
+                }
+            });
+
+            if (snapshot.total <= 0) {
+                pendencies.push('O total final precisa ser maior que zero para gerar a proposta de aprovacao.');
+            }
+
+            if (snapshot.phoneDigits.length < 10) {
+                pendencies.push('Informe um telefone de contato com WhatsApp valido para enviar o PDF ao cliente.');
+            }
+
+            return pendencies;
+        };
+
+        const renderReviewEntries = (entries) => entries
+            .map(({ label, value }) => {
+                const resolvedValue = normalizeText(value) !== '' ? value : 'Nao informado';
+
+                return `
+                    <div class="budget-review-list-item">
+                        <span>${escapeHtml(label)}</span>
+                        <strong>${escapeHtml(resolvedValue)}</strong>
+                    </div>
+                `;
+            })
+            .join('');
+
+        const renderReviewItems = (items) => {
+            if (!Array.isArray(items) || items.length === 0) {
+                return '<div class="budget-review-empty">Nenhum item preenchido ate o momento.</div>';
+            }
+
+            return items.map((item) => `
+                <article class="budget-review-item">
+                    <div class="budget-review-item-head">
+                        <div>
+                            <strong>${escapeHtml(item.description !== '' ? item.description : 'Item sem descricao')}</strong>
+                            <span>${escapeHtml(item.typeLabel)}${item.referenceLabel !== '' ? ` • ${escapeHtml(item.referenceLabel)}` : ''}</span>
+                        </div>
+                        <strong>${escapeHtml(formatMoney(item.total))}</strong>
+                    </div>
+                    <div class="budget-review-item-meta">
+                        <span>Qtd: ${escapeHtml(numberFormatter(item.quantity))}</span>
+                        <span>Valor unit.: ${escapeHtml(formatMoney(item.unitPrice))}</span>
+                        <span>Desconto: ${escapeHtml(formatAdjustmentSummary(item.discount))}</span>
+                        <span>Acrescimo: ${escapeHtml(formatAdjustmentSummary(item.addition))}</span>
+                    </div>
+                    ${item.notes !== '' ? `<p class="budget-review-item-notes">${escapeHtml(item.notes)}</p>` : ''}
+                </article>
+            `).join('');
+        };
+
+        const renderReviewTotals = (snapshot) => renderReviewEntries([
+            { label: 'Subtotal', value: formatMoney(snapshot.subtotal) },
+            { label: 'Desconto geral', value: formatAdjustmentSummary(snapshot.globalDiscount) },
+            { label: 'Acrescimo geral', value: formatAdjustmentSummary(snapshot.globalAddition) },
+            { label: 'Total final', value: formatMoney(snapshot.total) },
+        ]);
+
+        const renderReviewNotes = (snapshot) => {
+            const blocks = [
+                {
+                    label: 'Titulo do orcamento',
+                    value: snapshot.title,
+                },
+                {
+                    label: 'Observacoes internas',
+                    value: snapshot.observations,
+                },
+                {
+                    label: 'Condicoes comerciais',
+                    value: snapshot.conditions,
+                },
+            ];
+
+            return blocks.map(({ label, value }) => `
+                <div class="budget-review-note-block">
+                    <span>${escapeHtml(label)}</span>
+                    <strong>${escapeHtml(normalizeText(value) !== '' ? value : 'Nao informado')}</strong>
+                </div>
+            `).join('');
+        };
+
+        const numberFormatter = (value) => new Intl.NumberFormat('pt-BR', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 2,
+        }).format(toNumber(value));
+
+        const renderReviewModal = () => {
+            if (!(reviewModalElement instanceof HTMLElement)) {
+                return { pendencies: [] };
+            }
+
+            const snapshot = collectReviewSnapshot();
+            const pendencies = collectReviewPendencies(snapshot);
+            const validityLabel = snapshot.validityDate !== ''
+                ? snapshot.validityDate
+                : (snapshot.validityDays !== '' ? `${snapshot.validityDays} dias` : '');
+
+            if (reviewClientContainer instanceof HTMLElement) {
+                reviewClientContainer.innerHTML = renderReviewEntries([
+                    { label: 'Cliente', value: snapshot.clientName },
+                    { label: 'Telefone', value: snapshot.phone },
+                    { label: 'E-mail', value: snapshot.email },
+                ]);
+            }
+
+            if (reviewContextContainer instanceof HTMLElement) {
+                reviewContextContainer.innerHTML = renderReviewEntries([
+                    { label: 'OS vinculada', value: snapshot.orderLabel },
+                    { label: 'Equipamento', value: snapshot.equipmentLabel },
+                    { label: 'Tipo', value: snapshot.typeLabel },
+                    { label: 'Origem', value: snapshot.originLabel },
+                    { label: 'Status', value: snapshot.statusLabel },
+                    { label: 'Validade', value: validityLabel },
+                    { label: 'Prazo de execucao', value: snapshot.executionDeadline },
+                ]);
+            }
+
+            if (reviewItemsContainer instanceof HTMLElement) {
+                reviewItemsContainer.innerHTML = renderReviewItems(snapshot.items);
+            }
+
+            if (reviewItemsCount instanceof HTMLElement) {
+                reviewItemsCount.textContent = `${snapshot.items.length} item${snapshot.items.length === 1 ? '' : 's'}`;
+            }
+
+            if (reviewTotalsContainer instanceof HTMLElement) {
+                reviewTotalsContainer.innerHTML = renderReviewTotals(snapshot);
+            }
+
+            if (reviewNotesContainer instanceof HTMLElement) {
+                reviewNotesContainer.innerHTML = renderReviewNotes(snapshot);
+            }
+
+            if (reviewPendenciesWrapper instanceof HTMLElement && reviewPendenciesList instanceof HTMLElement) {
+                if (pendencies.length > 0) {
+                    reviewPendenciesList.innerHTML = pendencies.map((message) => `<li>${escapeHtml(message)}</li>`).join('');
+                    reviewPendenciesWrapper.classList.remove('d-none');
+                } else {
+                    reviewPendenciesList.innerHTML = '';
+                    reviewPendenciesWrapper.classList.add('d-none');
+                }
+            }
+
+            reviewSubmitButtons.forEach((button) => {
+                if (!(button instanceof HTMLButtonElement)) {
+                    return;
+                }
+
+                const requiresReadyState = button.dataset.budgetReviewSubmit === 'send_for_approval';
+                button.disabled = requiresReadyState && pendencies.length > 0;
+                button.title = button.disabled ? 'Resolva as pendencias antes de enviar para aprovacao.' : '';
+            });
+
+            return { pendencies };
         };
 
         const updateRowFromReference = (row) => {
@@ -664,7 +1341,7 @@
                     descriptionInput.value = description;
                 }
 
-                unitPriceInput.value = formatNumber(toNumber(price));
+                unitPriceInput.value = formatMoney(price);
             }
 
             updateRowTotal(row);
@@ -675,14 +1352,19 @@
                 return;
             }
 
+            bindMoneyInputs(row);
+
             const typeSelect = row.querySelector('[data-budget-item-type]');
             const referenceSelect = row.querySelector('[data-budget-item-reference]');
             const quantityInput = row.querySelector('[data-budget-item-quantity]');
             const unitPriceInput = row.querySelector('[data-budget-item-unit-price]');
-            const discountField = row.querySelector('[data-budget-item-discount]');
-            const additionField = row.querySelector('[data-budget-item-addition]');
             const quickCreateButton = row.querySelector('[data-budget-item-quick-create]');
             const removeButton = row.querySelector('[data-budget-item-remove]');
+            const discountControl = getRowDiscountControl(row);
+            const additionControl = getRowAdditionControl(row);
+
+            bindAdjustmentControl(discountControl, () => getRowBaseAmount(row), updateSummary);
+            bindAdjustmentControl(additionControl, () => getRowBaseAmount(row), updateSummary);
 
             const handleTypeChange = () => {
                 if (referenceSelect instanceof HTMLSelectElement) {
@@ -714,7 +1396,7 @@
 
             quickCreateButton?.addEventListener('click', () => openQuickItemModal(row));
 
-            [quantityInput, unitPriceInput, discountField, additionField].forEach((input) => {
+            [quantityInput, unitPriceInput].forEach((input) => {
                 input?.addEventListener('input', () => updateSummary());
                 input?.addEventListener('change', () => updateSummary());
             });
@@ -758,7 +1440,11 @@
                 quantidade: 1,
                 valor_unitario: 0,
                 desconto: 0,
+                desconto_tipo: 'valor',
+                desconto_percentual: 0,
                 acrescimo: 0,
+                acrescimo_tipo: 'valor',
+                acrescimo_percentual: 0,
                 observacoes: '',
                 modo_precificacao: 'manual',
                 ...data,
@@ -769,10 +1455,18 @@
             const descriptionInput = row.querySelector('[data-budget-item-description]');
             const quantityInput = row.querySelector('[data-budget-item-quantity]');
             const unitPriceInput = row.querySelector('[data-budget-item-unit-price]');
+            const discountDisplayInput = row.querySelector('[data-budget-item-discount-display]');
+            const discountTypeSelect = row.querySelector('[data-budget-item-discount-type]');
             const discountInput = row.querySelector('[data-budget-item-discount]');
+            const discountPercentInput = row.querySelector('[data-budget-item-discount-percent]');
+            const additionDisplayInput = row.querySelector('[data-budget-item-addition-display]');
+            const additionTypeSelect = row.querySelector('[data-budget-item-addition-type]');
             const additionInput = row.querySelector('[data-budget-item-addition]');
+            const additionPercentInput = row.querySelector('[data-budget-item-addition-percent]');
             const notesInput = row.querySelector('[data-budget-item-notes]');
             const modeInput = row.querySelector('[data-budget-item-mode]');
+            const discountMode = resolveAdjustmentMode(fields.desconto_tipo);
+            const additionMode = resolveAdjustmentMode(fields.acrescimo_tipo);
 
             if (typeSelect instanceof HTMLSelectElement) {
                 typeSelect.value = String(fields.tipo_item || 'servico');
@@ -787,13 +1481,35 @@
                 quantityInput.value = String(fields.quantidade ?? 1);
             }
             if (unitPriceInput instanceof HTMLInputElement) {
-                unitPriceInput.value = formatNumber(fields.valor_unitario ?? 0);
+                unitPriceInput.value = formatMoney(fields.valor_unitario ?? 0);
+            }
+            if ((discountTypeSelect instanceof HTMLInputElement) || (discountTypeSelect instanceof HTMLSelectElement)) {
+                discountTypeSelect.value = discountMode;
             }
             if (discountInput instanceof HTMLInputElement) {
-                discountInput.value = formatNumber(fields.desconto ?? 0);
+                discountInput.value = formatCanonicalNumber(fields.desconto ?? 0, 2);
+            }
+            if (discountPercentInput instanceof HTMLInputElement) {
+                discountPercentInput.value = formatCanonicalNumber(fields.desconto_percentual ?? 0, 4);
+            }
+            if (discountDisplayInput instanceof HTMLInputElement) {
+                discountDisplayInput.value = discountMode === 'percentual'
+                    ? formatPercent(fields.desconto_percentual ?? 0)
+                    : formatMoney(fields.desconto ?? 0);
+            }
+            if ((additionTypeSelect instanceof HTMLInputElement) || (additionTypeSelect instanceof HTMLSelectElement)) {
+                additionTypeSelect.value = additionMode;
             }
             if (additionInput instanceof HTMLInputElement) {
-                additionInput.value = formatNumber(fields.acrescimo ?? 0);
+                additionInput.value = formatCanonicalNumber(fields.acrescimo ?? 0, 2);
+            }
+            if (additionPercentInput instanceof HTMLInputElement) {
+                additionPercentInput.value = formatCanonicalNumber(fields.acrescimo_percentual ?? 0, 4);
+            }
+            if (additionDisplayInput instanceof HTMLInputElement) {
+                additionDisplayInput.value = additionMode === 'percentual'
+                    ? formatPercent(fields.acrescimo_percentual ?? 0)
+                    : formatMoney(fields.acrescimo ?? 0);
             }
             if (notesInput instanceof HTMLTextAreaElement) {
                 notesInput.value = String(fields.observacoes || '');
@@ -833,8 +1549,12 @@
                 const descriptionInput = row.querySelector('[data-budget-item-description]');
                 const quantityInput = row.querySelector('[data-budget-item-quantity]');
                 const unitPriceInput = row.querySelector('[data-budget-item-unit-price]');
+                const discountTypeSelect = row.querySelector('[data-budget-item-discount-type]');
                 const discountInput = row.querySelector('[data-budget-item-discount]');
+                const discountPercentInput = row.querySelector('[data-budget-item-discount-percent]');
+                const additionTypeSelect = row.querySelector('[data-budget-item-addition-type]');
                 const additionInput = row.querySelector('[data-budget-item-addition]');
+                const additionPercentInput = row.querySelector('[data-budget-item-addition-percent]');
                 const notesInput = row.querySelector('[data-budget-item-notes]');
                 const modeInput = row.querySelector('[data-budget-item-mode]');
 
@@ -844,8 +1564,12 @@
                     descricao: descriptionInput instanceof HTMLInputElement ? descriptionInput.value : '',
                     quantidade: quantityInput instanceof HTMLInputElement ? quantityInput.value : '',
                     valor_unitario: unitPriceInput instanceof HTMLInputElement ? unitPriceInput.value : '',
+                    desconto_tipo: (discountTypeSelect instanceof HTMLInputElement) || (discountTypeSelect instanceof HTMLSelectElement) ? discountTypeSelect.value : 'valor',
                     desconto: discountInput instanceof HTMLInputElement ? discountInput.value : '',
+                    desconto_percentual: discountPercentInput instanceof HTMLInputElement ? discountPercentInput.value : '',
+                    acrescimo_tipo: (additionTypeSelect instanceof HTMLInputElement) || (additionTypeSelect instanceof HTMLSelectElement) ? additionTypeSelect.value : 'valor',
                     acrescimo: additionInput instanceof HTMLInputElement ? additionInput.value : '',
+                    acrescimo_percentual: additionPercentInput instanceof HTMLInputElement ? additionPercentInput.value : '',
                     observacoes: notesInput instanceof HTMLTextAreaElement ? notesInput.value : '',
                     modo_precificacao: modeInput instanceof HTMLInputElement ? modeInput.value : 'manual',
                 });
@@ -1045,25 +1769,75 @@
 
         itemsBody.querySelectorAll('[data-budget-item-row]').forEach((row) => bindRow(row));
 
+        bindAdjustmentControl(getGlobalDiscountControl(), () => toNumber(subtotalInput?.value), updateSummary);
+        bindAdjustmentControl(getGlobalAdditionControl(), () => toNumber(subtotalInput?.value), updateSummary);
+
         form.addEventListener('input', () => updateSummary());
         form.addEventListener('change', () => updateSummary());
-        form.addEventListener('submit', () => {
-            itemsBody.querySelectorAll('[data-budget-item-row]').forEach((row) => {
-                const description = row.querySelector('[data-budget-item-description]');
-                const reference = row.querySelector('[data-budget-item-reference]');
-                const quantity = row.querySelector('[data-budget-item-quantity]');
-                const unitPrice = row.querySelector('[data-budget-item-unit-price]');
+        form.addEventListener('submit', (event) => {
+            if (state.reviewConfirmed) {
+                removeEmptyRows();
+                updateSummary();
 
-                if (description instanceof HTMLInputElement && reference instanceof HTMLSelectElement && quantity instanceof HTMLInputElement && unitPrice instanceof HTMLInputElement) {
-                    const hasContent = description.value.trim() !== '' || reference.value.trim() !== '' || toNumber(quantity.value) > 0 || toNumber(unitPrice.value) > 0;
-
-                    if (!hasContent && itemsBody.querySelectorAll('[data-budget-item-row]').length > 1) {
-                        row.remove();
-                    }
+                try {
+                    localStorage.removeItem(draftKey);
+                } catch (error) {
+                    console.error('[OrcamentosForm] Falha ao limpar rascunho antes do envio.', error);
                 }
-            });
 
-            updateSummary();
+                return;
+            }
+
+            if (!(reviewModalElement instanceof HTMLElement)) {
+                return;
+            }
+
+            event.preventDefault();
+            renderReviewModal();
+            getModal(reviewModalElement)?.show();
+        });
+
+        reviewSubmitButtons.forEach((button) => {
+            if (!(button instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            button.addEventListener('click', () => {
+                const mode = button.dataset.budgetReviewSubmit === 'send_for_approval'
+                    ? 'send_for_approval'
+                    : 'save_only';
+
+                if (button.disabled) {
+                    showAlert('warning', 'Existem pendencias', 'Resolva as pendencias destacadas antes de enviar para aprovacao.');
+                    return;
+                }
+
+                if (typeof form.checkValidity === 'function' && !form.checkValidity()) {
+                    getModal(reviewModalElement)?.hide();
+                    form.reportValidity?.();
+                    return;
+                }
+
+                if (submissionModeInput instanceof HTMLInputElement) {
+                    submissionModeInput.value = mode;
+                }
+
+                state.reviewConfirmed = true;
+                getModal(reviewModalElement)?.hide();
+
+                if (typeof form.requestSubmit === 'function') {
+                    form.requestSubmit();
+                    return;
+                }
+
+                form.submit();
+            });
+        });
+
+        reviewModalElement?.addEventListener('hidden.bs.modal', () => {
+            if (!state.reviewConfirmed && submissionModeInput instanceof HTMLInputElement) {
+                submissionModeInput.value = 'save_only';
+            }
         });
 
         if (quickItemType instanceof HTMLSelectElement) {

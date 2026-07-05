@@ -56,6 +56,19 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Public Application URL
+    |--------------------------------------------------------------------------
+    |
+    | Base usada em links abertos por clientes fora da rede local (ex.: link
+    | de aprovação de orçamento enviado por WhatsApp). Deve apontar para o
+    | endereço público do backend. Sem valor definido, usa APP_URL.
+    |
+    */
+
+    'public_url' => env('APP_PUBLIC_URL', env('APP_URL', 'http://localhost')),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |
