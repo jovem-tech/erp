@@ -24,6 +24,7 @@ class FinanceiroController extends DesktopController
         $filters = [
             'tipo' => trim((string) $request->query('tipo', '')),
             'status' => trim((string) $request->query('status', '')),
+            'cliente_id' => (int) $request->query('cliente_id', 0),
             'page' => (int) $request->query('page', 1),
             'per_page' => (int) $request->query('per_page', 15),
         ];
@@ -209,6 +210,7 @@ class FinanceiroController extends DesktopController
             'os_id' => '',
             'cliente_id' => '',
             'fornecedor_id' => '',
+            'avulso' => false,
         ];
     }
 
@@ -230,6 +232,7 @@ class FinanceiroController extends DesktopController
             'os_id' => ['nullable', 'integer', 'min:1'],
             'cliente_id' => ['nullable', 'integer', 'min:1'],
             'fornecedor_id' => ['nullable', 'integer', 'min:1'],
+            'avulso' => ['nullable', 'boolean'],
         ], [], [
             'tipo' => 'tipo',
             'categoria' => 'categoria',
@@ -246,6 +249,8 @@ class FinanceiroController extends DesktopController
                 $validated[$field] = null;
             }
         }
+
+        $validated['avulso'] = $request->boolean('avulso');
 
         return $validated;
     }

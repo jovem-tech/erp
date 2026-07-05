@@ -249,6 +249,13 @@ class FinanceiroService
             throw new RuntimeException('Não é possível alterar o tipo de um título que já possui movimentações registradas.');
         }
 
+        if (
+            array_key_exists('avulso', $payload)
+            && filter_var($payload['avulso'], FILTER_VALIDATE_BOOL) !== (bool) $financeiro->avulso
+        ) {
+            throw new RuntimeException('Não é possível alterar o vínculo avulso de um título que já possui movimentações registradas.');
+        }
+
         if (array_key_exists('impacta_fluxo_caixa', $payload) && ! filter_var($payload['impacta_fluxo_caixa'], FILTER_VALIDATE_BOOL)) {
             throw new RuntimeException('Um título que já possui movimentos realizados deve continuar impactando o fluxo de caixa.');
         }
@@ -323,15 +330,34 @@ class FinanceiroService
         }
 
         $osId = (int) ($merged['os_id'] ?? 0);
+        $avulso = array_key_exists('avulso', $payload)
+            ? filter_var($payload['avulso'], FILTER_VALIDATE_BOOL)
+            : (bool) ($existing?->avulso ?? false);
+
+        if ($avulso && $osId > 0) {
+            throw new RuntimeException('Lançamentos avulsos não podem ser vinculados a uma ordem de serviço.');
+        }
+
+        $resolved['avulso'] = $avulso;
 
         if ($tipo === Financeiro::TIPO_RECEBER) {
             $clienteId = (int) ($payload['cliente_id'] ?? $existing?->cliente_id ?? 0);
 
-            if ($clienteId <= 0 && $osId > 0) {
-                $clienteId = (int) (Order::query()->where('id', $osId)->value('cliente_id') ?? 0);
+            if ($osId > 0) {
+                $clienteOsId = (int) (Order::query()->where('id', $osId)->value('cliente_id') ?? 0);
+
+                if ($clienteOsId <= 0) {
+                    throw new RuntimeException('A ordem de serviço informada não possui um cliente válido.');
+                }
+
+                if ($clienteId > 0 && $clienteId !== $clienteOsId) {
+                    throw new RuntimeException('O cliente informado não corresponde ao cliente da ordem de serviço.');
+                }
+
+                $clienteId = $clienteOsId;
             }
 
-            if ($clienteId <= 0 && $osId <= 0) {
+            if ($clienteId <= 0 && $osId <= 0 && ! $avulso) {
                 throw new RuntimeException('Selecione o cliente desta cobrança ou vincule uma OS antes de salvar.');
             }
 

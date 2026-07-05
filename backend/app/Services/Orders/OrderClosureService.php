@@ -430,6 +430,7 @@ class OrderClosureService
 
         Financeiro::query()->create([
             'os_id' => (int) $order->id,
+            'avulso' => false,
             'tipo' => Financeiro::TIPO_PAGAR,
             'categoria' => 'Taxa de cartão',
             'descricao' => sprintf(
@@ -541,6 +542,7 @@ class OrderClosureService
         return $this->financeiroService->create([
             'os_id' => (int) $order->id,
             'cliente_id' => (int) $order->cliente_id,
+            'avulso' => false,
             'tipo' => Financeiro::TIPO_RECEBER,
             'categoria' => 'Serviço',
             'descricao' => 'Cobrança da OS ' . $order->numero_os,

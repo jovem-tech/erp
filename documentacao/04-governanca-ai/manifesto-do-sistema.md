@@ -2,9 +2,9 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-05T23:04:36+02:00`
-- Versao do sistema: `3.7.3`
-- Versao da API: `1.1.0`
+- Gerado em: `2026-07-05T23:30:54+00:00`
+- Versao do sistema: `3.9.0`
+- Versao da API: `1.1.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Windows/XAMPP`
 
@@ -135,6 +135,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-04-deploy-producao-lan-documentacao-integrada-versionamento.md` - Deploy de producao em LAN, documentacao integrada ao desktop e protocolo de versionamento
 - `documentacao/07-novas-implementacoes/2026-07-04-orcamentos-modal-compactacao.md` - Compactacao do modal de revisao de orcamento
 - `documentacao/07-novas-implementacoes/2026-07-05-deploy-producao-contabo-subdominios-e-dados-reais.md` - Deploy de producao na VPS Contabo com subdominios e dados reais do legado
+- `documentacao/07-novas-implementacoes/2026-07-05-lancamentos-avulsos-financeiro-cliente.md` - Lançamentos avulsos com histórico financeiro do cliente
 - `documentacao/07-novas-implementacoes/2026-07-05-padronizacao-nome-telefone-cadastro-cliente-desktop.md` - Padronizacao de nome e telefone no cadastro de cliente (desktop)
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 
@@ -168,4 +169,5 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/017-cadastro-rapido-servicos-pecas-orcamento-desktop` - Feature Specification: Cadastro rápido de serviços e peças no orçamento desktop | artefatos: spec, plan, tasks
 - `specs/018-orcamentos-ajustes-percentuais-desktop` - Feature Specification: Orcamentos - Ajustes Monetarios ou Percentuais | artefatos: spec, plan, tasks
 - `specs/019-aprovacao-orcamento-desktop` - Feature Specification: Orcamentos - Revisao antes de salvar e envio para aprovacao | artefatos: spec, plan, tasks
+- `specs/020-lancamentos-avulsos-financeiro-cliente` - Feature Specification: Lançamentos avulsos com histórico financeiro do cliente | artefatos: spec, plan, tasks
 

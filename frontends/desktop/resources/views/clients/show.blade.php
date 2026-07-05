@@ -34,6 +34,9 @@
         $equipmentsTotal = (int) ($equipmentsPagination['total'] ?? 0);
         $canViewOrders = (bool) ($canViewOrders ?? false);
         $canViewEquipments = (bool) ($canViewEquipments ?? false);
+        $canViewFinanceiro = (bool) ($canViewFinanceiro ?? false);
+        $clientFinanceiro = $financeiro ?? [];
+        $financeiroTotal = (int) ($financeiroPagination['total'] ?? 0);
     @endphp
 
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
@@ -113,6 +116,89 @@
             @endif
         </div>
     </section>
+
+    @if ($canViewFinanceiro)
+        <section class="surface-card mb-4">
+            <div class="surface-card-header">
+                <div>
+                    <h2 class="surface-title">Financeiro do cliente</h2>
+                    <p class="surface-subtitle">
+                        Recebimentos e cobranças associados ao cliente, avulsos ou originados por ordem de serviço.
+                    </p>
+                </div>
+
+                <div class="d-flex align-items-center gap-2">
+                    <span class="desktop-chip">{{ number_format($financeiroTotal, 0, ',', '.') }} registros</span>
+                    <a href="{{ $financeiroIndexUrl }}" class="btn btn-outline-light btn-sm">Ver todos</a>
+                </div>
+            </div>
+
+            @if ($clientFinanceiro !== [])
+                <div class="table-responsive">
+                    <table class="table table-stack align-middle">
+                        <thead>
+                        <tr>
+                            <th>Descrição</th>
+                            <th>Origem</th>
+                            <th>Valor</th>
+                            <th>Vencimento</th>
+                            <th>Status</th>
+                            <th class="text-end">Ação</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach ($clientFinanceiro as $lancamento)
+                            @php
+                                $financeiroId = (int) ($lancamento['id'] ?? 0);
+                                $financeiroStatus = (string) ($lancamento['status'] ?? 'pendente');
+                                $financeiroStatusColors = [
+                                    'pendente' => '#f59e0b',
+                                    'parcial' => '#3b82f6',
+                                    'pago' => '#29c384',
+                                    'cancelado' => '#8b93a7',
+                                ];
+                            @endphp
+                            <tr>
+                                <td data-label="Descrição">
+                                    <div class="fw-semibold">{{ $lancamento['descricao'] ?? 'Sem descrição' }}</div>
+                                    <small class="text-secondary">{{ $lancamento['categoria'] ?? 'Sem categoria' }}</small>
+                                </td>
+                                <td data-label="Origem">
+                                    {{ ! empty($lancamento['os_id']) ? 'OS #' . $lancamento['os_id'] : 'Avulso' }}
+                                </td>
+                                <td data-label="Valor">R$ {{ number_format((float) ($lancamento['valor'] ?? 0), 2, ',', '.') }}</td>
+                                <td data-label="Vencimento">
+                                    {{ ! empty($lancamento['data_vencimento']) ? \Illuminate\Support\Carbon::parse($lancamento['data_vencimento'])->format('d/m/Y') : '-' }}
+                                </td>
+                                <td data-label="Status">
+                                    @include('layouts.partials.status-pill', [
+                                        'label' => ucfirst($financeiroStatus),
+                                        'color' => $financeiroStatusColors[$financeiroStatus] ?? '#8b93a7',
+                                        'small' => true,
+                                    ])
+                                </td>
+                                <td data-label="Ação" class="text-end">
+                                    @if (\App\Support\DesktopSession::can('financeiro', 'editar'))
+                                        <a href="{{ route('financeiro.edit', $financeiroId) }}" class="btn btn-sm btn-outline-light">
+                                            <i class="bi bi-eye me-1"></i>
+                                            Detalhe
+                                        </a>
+                                    @endif
+                                </td>
+                            </tr>
+                        @endforeach
+                        </tbody>
+                    </table>
+                </div>
+            @else
+                @include('layouts.partials.empty-state', [
+                    'icon' => 'bi-cash-coin',
+                    'title' => 'Nenhum lançamento financeiro',
+                    'message' => 'Os recebimentos vinculados a este cliente aparecerão aqui.',
+                ])
+            @endif
+        </section>
+    @endif
 
     <section class="desktop-grid desktop-grid-two mb-4">
         <article class="summary-card">

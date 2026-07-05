@@ -53,6 +53,51 @@ class FinanceiroTest extends TestCase
         $response->assertStatus(422)->assertJsonPath('error.code', 'FINANCEIRO_SAVE_FAILED');
     }
 
+    public function test_standalone_receivable_without_client_is_accepted_when_marked_as_avulso(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $response = $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'receber',
+            'categoria' => 'Receita avulsa',
+            'descricao' => 'Configuração remota simples',
+            'valor' => 75.00,
+            'data_vencimento' => now()->toDateString(),
+            'avulso' => true,
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.lancamento.avulso', true)
+            ->assertJsonPath('data.lancamento.cliente_id', null)
+            ->assertJsonPath('data.lancamento.os_id', null);
+    }
+
+    public function test_avulso_with_order_is_rejected(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        $clienteId = $this->createClientRecord();
+        $equipamentoId = $this->createEquipmentRecord($clienteId);
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clienteId,
+            'equipamento_id' => $equipamentoId,
+        ]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $response = $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'receber',
+            'categoria' => 'Serviço',
+            'descricao' => 'Vínculo inválido de teste',
+            'valor' => 100.00,
+            'data_vencimento' => now()->toDateString(),
+            'os_id' => $orderId,
+            'avulso' => true,
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'FINANCEIRO_SAVE_FAILED');
+    }
+
     public function test_lancamento_lifecycle_create_partial_and_full_settlement(): void
     {
         $admin = $this->createUserRecord(['grupo_id' => 1]);
@@ -64,12 +109,14 @@ class FinanceiroTest extends TestCase
             'categoria' => 'Serviço',
             'descricao' => 'OS de teste',
             'cliente_id' => $clienteId,
+            'avulso' => true,
             'valor' => 200.00,
             'data_vencimento' => now()->addDays(10)->toDateString(),
         ]);
 
         $store->assertCreated()
             ->assertJsonPath('data.lancamento.status', 'pendente')
+            ->assertJsonPath('data.lancamento.avulso', true)
             ->assertJsonPath('data.lancamento.grupo_dre', 'Receita Operacional')
             ->assertJsonPath('data.lancamento.subgrupo_dre', 'Serviços e peças de OS');
 
@@ -89,6 +136,11 @@ class FinanceiroTest extends TestCase
         ]);
         $blockedTypeChange->assertStatus(422);
 
+        $blockedAvulsoChange = $this->putJson("/api/v1/financeiro/{$financeiroId}", [
+            'avulso' => false,
+        ]);
+        $blockedAvulsoChange->assertStatus(422);
+
         $final = $this->postJson("/api/v1/financeiro/{$financeiroId}/baixar", [
             'valor_movimento' => 120.00,
             'forma_pagamento' => 'pix',
@@ -102,6 +154,41 @@ class FinanceiroTest extends TestCase
             'financeiro_id' => $financeiroId,
         ]);
         $this->assertDatabaseCount('financeiro_movimentos', 2);
+    }
+
+    public function test_index_can_be_filtered_by_cliente_id(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        $clienteId = $this->createClientRecord();
+        $outroClienteId = $this->createClientRecord(['nome_razao' => 'Outro cliente']);
+        Sanctum::actingAs($admin, ['*']);
+
+        $expected = $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'receber',
+            'categoria' => 'Receita avulsa',
+            'descricao' => 'Recebimento do cliente esperado',
+            'cliente_id' => $clienteId,
+            'avulso' => true,
+            'valor' => 120.00,
+            'data_vencimento' => now()->toDateString(),
+        ])->assertCreated();
+
+        $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'receber',
+            'categoria' => 'Receita avulsa',
+            'descricao' => 'Recebimento de outro cliente',
+            'cliente_id' => $outroClienteId,
+            'avulso' => true,
+            'valor' => 90.00,
+            'data_vencimento' => now()->toDateString(),
+        ])->assertCreated();
+
+        $response = $this->getJson("/api/v1/financeiro?cliente_id={$clienteId}&tipo=receber");
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data.lancamentos')
+            ->assertJsonPath('data.lancamentos.0.id', $expected->json('data.lancamento.id'))
+            ->assertJsonPath('data.lancamentos.0.cliente_id', $clienteId);
     }
 
     public function test_creating_with_status_pago_registers_full_settlement_automatically(): void

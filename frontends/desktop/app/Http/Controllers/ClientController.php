@@ -7,6 +7,7 @@ use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
 use App\Services\ClientService;
 use App\Services\EquipmentService;
+use App\Services\FinanceiroService;
 use App\Services\OrderService;
 use App\Support\DesktopSession;
 use Illuminate\Http\JsonResponse;
@@ -21,7 +22,8 @@ class ClientController extends DesktopController
     public function __construct(
         private readonly ClientService $clientService,
         private readonly OrderService $orderService,
-        private readonly EquipmentService $equipmentService
+        private readonly EquipmentService $equipmentService,
+        private readonly FinanceiroService $financeiroService
     ) {
     }
 
@@ -111,6 +113,7 @@ class ClientController extends DesktopController
 
         $canViewOrders = DesktopSession::can('os', 'visualizar');
         $canViewEquipments = DesktopSession::can('equipamentos', 'visualizar');
+        $canViewFinanceiro = DesktopSession::can('financeiro', 'visualizar');
 
         $orders = $canViewOrders ? $this->orderService->paginate([
             'client_id' => $client,
@@ -132,6 +135,17 @@ class ClientController extends DesktopController
             ],
         ];
 
+        $financeiro = $canViewFinanceiro ? $this->financeiroService->paginate([
+            'cliente_id' => $client,
+            'tipo' => 'receber',
+            'per_page' => 5,
+        ]) : [
+            'items' => [],
+            'pagination' => [
+                'total' => 0,
+            ],
+        ];
+
         return view('clients.show', [
             'pageTitle' => 'Detalhe do Cliente',
             'client' => $clientData,
@@ -141,9 +155,13 @@ class ClientController extends DesktopController
             'equipmentsPagination' => $equipments['pagination'],
             'canViewOrders' => $canViewOrders,
             'canViewEquipments' => $canViewEquipments,
+            'financeiro' => $financeiro['items'],
+            'financeiroPagination' => $financeiro['pagination'],
+            'canViewFinanceiro' => $canViewFinanceiro,
             'newOrderUrl' => route('orders.create', ['cliente_id' => $client]),
             'ordersIndexUrl' => route('orders.index', ['client_id' => $client]),
             'equipmentsIndexUrl' => route('equipments.index', ['client_id' => $client]),
+            'financeiroIndexUrl' => route('financeiro.index', ['cliente_id' => $client, 'tipo' => 'receber']),
             'editUrl' => route('clients.edit', $client),
         ]);
     }

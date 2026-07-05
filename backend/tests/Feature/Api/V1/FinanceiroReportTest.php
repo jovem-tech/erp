@@ -45,6 +45,7 @@ class FinanceiroReportTest extends TestCase
 
         Financeiro::create([
             'tipo' => Financeiro::TIPO_PAGAR,
+            'avulso' => true,
             'categoria' => 'Aluguel',
             'descricao' => 'Aluguel do mês',
             'valor' => 100,
@@ -61,13 +62,13 @@ class FinanceiroReportTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('data.dre.modo', 'competencia')
-            ->assertJsonPath('data.dre.receita.receita_bruta', 500)
-            ->assertJsonPath('data.dre.receita.descontos', 50)
-            ->assertJsonPath('data.dre.receita.receita_liquida', 450)
-            ->assertJsonPath('data.dre.despesas_operacionais.total', 100)
-            ->assertJsonPath('data.dre.despesas_operacionais.por_subgrupo.Aluguel', 100)
-            ->assertJsonPath('data.dre.lucro_bruto', 450)
-            ->assertJsonPath('data.dre.resultado_liquido', 350);
+            ->assertJsonPath('data.dre.receita.receita_bruta', 500.0)
+            ->assertJsonPath('data.dre.receita.descontos', 50.0)
+            ->assertJsonPath('data.dre.receita.receita_liquida', 450.0)
+            ->assertJsonPath('data.dre.despesas_operacionais.total', 100.0)
+            ->assertJsonPath('data.dre.despesas_operacionais.por_subgrupo.Aluguel', 100.0)
+            ->assertJsonPath('data.dre.lucro_bruto', 450.0)
+            ->assertJsonPath('data.dre.resultado_liquido', 350.0);
     }
 
     public function test_dre_caixa_reconhece_apenas_o_que_foi_baixado_no_periodo(): void
@@ -78,6 +79,7 @@ class FinanceiroReportTest extends TestCase
 
         $receitaAvulsa = Financeiro::create([
             'tipo' => Financeiro::TIPO_RECEBER,
+            'avulso' => true,
             'categoria' => 'Receita avulsa',
             'descricao' => 'Receita avulsa de teste',
             'cliente_id' => $clienteId,
@@ -100,6 +102,7 @@ class FinanceiroReportTest extends TestCase
 
         $despesaPendente = Financeiro::create([
             'tipo' => Financeiro::TIPO_PAGAR,
+            'avulso' => true,
             'categoria' => 'Energia',
             'descricao' => 'Conta de energia',
             'valor' => 80,
@@ -116,8 +119,8 @@ class FinanceiroReportTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('data.dre.modo', 'caixa')
-            ->assertJsonPath('data.dre.outras_receitas.total', 120)
-            ->assertJsonPath('data.dre.despesas_operacionais.total', 0);
+            ->assertJsonPath('data.dre.outras_receitas.total', 120.0)
+            ->assertJsonPath('data.dre.despesas_operacionais.total', 0.0);
 
         $this->assertDatabaseHas('financeiro', ['id' => $despesaPendente->id, 'status' => 'pendente']);
     }
@@ -130,6 +133,7 @@ class FinanceiroReportTest extends TestCase
 
         $recebido = Financeiro::create([
             'tipo' => Financeiro::TIPO_RECEBER,
+            'avulso' => true,
             'categoria' => 'Serviço',
             'descricao' => 'Serviço de teste',
             'cliente_id' => $clienteId,
@@ -152,6 +156,7 @@ class FinanceiroReportTest extends TestCase
 
         Financeiro::create([
             'tipo' => Financeiro::TIPO_PAGAR,
+            'avulso' => true,
             'categoria' => 'Internet',
             'descricao' => 'Conta de internet',
             'valor' => 90,
@@ -167,11 +172,11 @@ class FinanceiroReportTest extends TestCase
         $response = $this->getJson('/api/v1/financeiro/relatorios/fluxo-caixa?mes=' . now()->format('Y-m'));
 
         $response->assertOk()
-            ->assertJsonPath('data.fluxo.entradas_realizadas', 300)
-            ->assertJsonPath('data.fluxo.saidas_realizadas', 0)
-            ->assertJsonPath('data.fluxo.saidas_previstas', 90)
-            ->assertJsonPath('data.fluxo.saldo_final', 300)
-            ->assertJsonPath('data.fluxo.saldo_projetado', 210);
+            ->assertJsonPath('data.fluxo.entradas_realizadas', 300.0)
+            ->assertJsonPath('data.fluxo.saidas_realizadas', 0.0)
+            ->assertJsonPath('data.fluxo.saidas_previstas', 90.0)
+            ->assertJsonPath('data.fluxo.saldo_final', 300.0)
+            ->assertJsonPath('data.fluxo.saldo_projetado', 210.0);
 
         $this->assertNotEmpty($response->json('data.fluxo.linhas_diarias'));
     }

@@ -35,6 +35,7 @@ class Financeiro extends Model
         'data_pagamento' => 'date',
         'data_competencia' => 'date',
         'origem_id' => 'integer',
+        'avulso' => 'boolean',
         'impacta_dre' => 'boolean',
         'impacta_fluxo_caixa' => 'boolean',
         'dre_fixo_mensal' => 'boolean',
@@ -74,6 +75,11 @@ class Financeiro extends Model
         $status = trim((string) ($filters['status'] ?? ''));
         if ($status !== '' && $status !== 'todos') {
             $query->where('status', $status);
+        }
+
+        $clienteId = (int) ($filters['cliente_id'] ?? 0);
+        if ($clienteId > 0) {
+            $query->where('cliente_id', $clienteId);
         }
 
         if (array_key_exists('dre_fixo_mensal', $filters) && $filters['dre_fixo_mensal'] !== '' && $filters['dre_fixo_mensal'] !== null) {

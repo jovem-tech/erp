@@ -4,6 +4,7 @@
     $tipo = old('tipo', $lancamento['tipo'] ?? 'receber');
     $status = old('status', $lancamento['status'] ?? 'pendente');
     $hasMovements = (int) ($resumo['total_movimentos'] ?? 0) > 0;
+    $avulso = filter_var(old('avulso', $lancamento['avulso'] ?? false), FILTER_VALIDATE_BOOL);
 @endphp
 
 <section class="desktop-form-card">
@@ -106,16 +107,34 @@
                 <span>VÍNCULOS</span>
             </div>
 
+            <div class="form-check form-switch mb-3">
+                <input type="hidden" name="avulso" value="{{ $hasMovements && $avulso ? 1 : 0 }}">
+                <input
+                    type="checkbox"
+                    id="financeiroAvulso"
+                    name="avulso"
+                    class="form-check-input"
+                    value="1"
+                    @checked($avulso)
+                    @disabled($hasMovements)
+                >
+                <label class="form-check-label fw-semibold" for="financeiroAvulso">Lançamento avulso</label>
+                <small class="text-muted d-block">
+                    Permite registrar pagamentos ou recebimentos simples sem ordem de serviço. O cliente é opcional.
+                </small>
+            </div>
+
             <div class="desktop-grid desktop-grid-three">
                 <div>
                     <label for="financeiroOsId">OS vinculada (ID)</label>
                     <input type="number" id="financeiroOsId" name="os_id" class="form-control" min="1" value="{{ old('os_id', $lancamento['os_id'] ?? '') }}">
+                    <small id="financeiroOsHelp" class="text-muted d-block mt-1">Lançamentos vinculados à OS não podem ser avulsos.</small>
                 </div>
 
                 <div>
                     <label for="financeiroClienteId">Cliente (ID)</label>
                     <input type="number" id="financeiroClienteId" name="cliente_id" class="form-control" min="1" value="{{ old('cliente_id', $lancamento['cliente_id'] ?? '') }}">
-                    <small class="text-muted d-block mt-1">Obrigatório em títulos a receber sem OS vinculada.</small>
+                    <small class="text-muted d-block mt-1">Opcional no avulso. Quando informado, o recebimento aparece no histórico financeiro do cliente.</small>
                 </div>
 
                 <div>
@@ -140,3 +159,38 @@
         </div>
     </form>
 </section>
+
+<script>
+    (() => {
+        const avulsoInput = document.getElementById('financeiroAvulso');
+        const osInput = document.getElementById('financeiroOsId');
+        const osHelp = document.getElementById('financeiroOsHelp');
+
+        if (!avulsoInput || !osInput || !osHelp) {
+            return;
+        }
+
+        const syncAvulsoState = () => {
+            const isAvulso = avulsoInput.checked;
+
+            if (isAvulso) {
+                osInput.value = '';
+            }
+
+            osInput.disabled = isAvulso;
+            osHelp.textContent = isAvulso
+                ? 'OS desabilitada: lançamentos avulsos são sempre independentes de ordem de serviço.'
+                : 'Lançamentos vinculados à OS não podem ser avulsos.';
+        };
+
+        avulsoInput.addEventListener('change', syncAvulsoState);
+        osInput.addEventListener('input', () => {
+            if (osInput.value.trim() !== '') {
+                avulsoInput.checked = false;
+                syncAvulsoState();
+            }
+        });
+
+        syncAvulsoState();
+    })();
+</script>

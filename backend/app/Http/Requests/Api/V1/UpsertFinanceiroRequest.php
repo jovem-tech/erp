@@ -25,6 +25,7 @@ class UpsertFinanceiroRequest extends BaseApiFormRequest
             'os_id' => ['nullable', 'integer', 'min:1', Rule::exists('os', 'id')],
             'cliente_id' => ['nullable', 'integer', 'min:1', Rule::exists('clientes', 'id')],
             'fornecedor_id' => ['nullable', 'integer', 'min:1'],
+            'avulso' => ['nullable', 'boolean'],
             'grupo_dre' => ['nullable', 'string', 'max:60'],
             'subgrupo_dre' => ['nullable', 'string', 'max:80'],
             'impacta_dre' => ['nullable', 'boolean'],

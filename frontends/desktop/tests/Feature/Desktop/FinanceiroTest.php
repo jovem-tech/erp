@@ -2,11 +2,35 @@
 
 namespace Tests\Feature\Desktop;
 
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class FinanceiroTest extends TestCase
 {
+    use RefreshDatabase;
+
+    public function test_create_page_renders_avulso_control(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => ['categorias' => []],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar']]))
+            ->get('/financeiro/novo');
+
+        $response->assertOk()
+            ->assertSee('Lançamento avulso')
+            ->assertSee('financeiroAvulso', false);
+    }
+
     public function test_index_page_renders_lancamentos_from_api(): void
     {
         Http::fake([
@@ -64,14 +88,94 @@ class FinanceiroTest extends TestCase
                 'categoria' => 'Serviço',
                 'descricao' => 'Serviço de teste',
                 'cliente_id' => 1,
+                'avulso' => '1',
                 'valor' => 150.0,
                 'data_vencimento' => now()->addDays(5)->toDateString(),
             ]);
 
         $response->assertRedirect(route('financeiro.index'));
         Http::assertSent(static function ($request) {
-            return $request->url() === 'http://127.0.0.1:8000/api/v1/financeiro' && $request->method() === 'POST';
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/financeiro'
+                && $request->method() === 'POST'
+                && $request['avulso'] === true;
         });
+    }
+
+    public function test_client_detail_shows_financeiro_history_with_permission(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/clients/396' => Http::response([
+                'status' => 'success',
+                'data' => ['client' => ['id' => 396, 'nome_razao' => 'Cliente Financeiro']],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/financeiro*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'lancamentos' => [[
+                        'id' => 81,
+                        'tipo' => 'receber',
+                        'categoria' => 'Receita avulsa',
+                        'descricao' => 'Configuração simples por WhatsApp',
+                        'cliente_id' => 396,
+                        'avulso' => true,
+                        'valor' => 80,
+                        'status' => 'pago',
+                        'data_vencimento' => '2026-07-05',
+                    ]],
+                    'status_options' => [],
+                ],
+                'error' => null,
+                'meta' => ['pagination' => ['total' => 1]],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'clientes' => ['visualizar'],
+                'financeiro' => ['visualizar'],
+            ]))
+            ->get('/clientes/396');
+
+        $response->assertOk()
+            ->assertSee('Financeiro do cliente')
+            ->assertSee('Configuração simples por WhatsApp')
+            ->assertSee(route('financeiro.index', ['cliente_id' => 396, 'tipo' => 'receber']));
+
+        Http::assertSent(static function ($request): bool {
+            if (! str_starts_with($request->url(), 'http://127.0.0.1:8000/api/v1/financeiro?')) {
+                return false;
+            }
+
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            return ($query['cliente_id'] ?? null) === '396'
+                && ($query['tipo'] ?? null) === 'receber';
+        });
+    }
+
+    public function test_client_detail_hides_financeiro_history_without_permission(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/clients/396' => Http::response([
+                'status' => 'success',
+                'data' => ['client' => ['id' => 396, 'nome_razao' => 'Cliente sem acesso financeiro']],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['clientes' => ['visualizar']]))
+            ->get('/clientes/396');
+
+        $response->assertOk()
+            ->assertDontSee('Financeiro do cliente');
+
+        Http::assertNotSent(static fn ($request): bool => str_contains($request->url(), '/api/v1/financeiro'));
     }
 
     public function test_user_without_module_permission_is_redirected(): void

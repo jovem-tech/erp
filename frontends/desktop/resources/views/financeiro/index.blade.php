@@ -26,6 +26,10 @@
         </div>
 
         <form method="get" class="desktop-filter-grid">
+            @if ((int) ($filters['cliente_id'] ?? 0) > 0)
+                <input type="hidden" name="cliente_id" value="{{ (int) $filters['cliente_id'] }}">
+            @endif
+
             <div>
                 <label for="tipo">Tipo</label>
                 <select id="tipo" name="tipo" class="form-select">
@@ -75,10 +79,18 @@
                 </p>
             </div>
 
-            <span class="desktop-chip">
-                <i class="bi bi-cash-coin"></i>
-                {{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} registros
-            </span>
+            <div class="d-flex flex-wrap gap-2">
+                @if ((int) ($filters['cliente_id'] ?? 0) > 0)
+                    <span class="desktop-chip">
+                        <i class="bi bi-person"></i>
+                        Cliente #{{ (int) $filters['cliente_id'] }}
+                    </span>
+                @endif
+                <span class="desktop-chip">
+                    <i class="bi bi-cash-coin"></i>
+                    {{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} registros
+                </span>
+            </div>
         </div>
 
         @if ($lancamentos !== [])

@@ -1,7 +1,7 @@
 ﻿openapi: 3.0.3
 info:
   title: Sistema ERP API
-  version: 1.1.0
+  version: 1.1.1
   description: |
     Contrato técnico oficial da API v1 do backend central do Sistema ERP.
 
@@ -1569,6 +1569,120 @@ components:
       additionalProperties: true
       description: Resultado padronizado de ações operacionais de integrações e gateway.
 
+    FinanceiroLancamento:
+      type: object
+      properties:
+        id:
+          type: integer
+        os_id:
+          type: integer
+          nullable: true
+        cliente_id:
+          type: integer
+          nullable: true
+        fornecedor_id:
+          type: integer
+          nullable: true
+        avulso:
+          type: boolean
+          description: Indica lançamento independente de OS. Nunca pode ser verdadeiro quando `os_id` estiver preenchido.
+        tipo:
+          type: string
+          enum: [receber, pagar]
+        categoria:
+          type: string
+          maxLength: 50
+        descricao:
+          type: string
+          maxLength: 255
+        valor:
+          type: number
+          format: double
+        status:
+          type: string
+          enum: [pendente, parcial, pago, cancelado]
+        data_vencimento:
+          type: string
+          format: date
+        data_pagamento:
+          type: string
+          format: date
+          nullable: true
+
+    FinanceiroUpsertRequest:
+      type: object
+      properties:
+        tipo:
+          type: string
+          enum: [receber, pagar]
+        categoria:
+          type: string
+          maxLength: 50
+        descricao:
+          type: string
+          maxLength: 255
+        valor:
+          type: number
+          minimum: 0.01
+          maximum: 99999999.99
+        status:
+          type: string
+          nullable: true
+          enum: [pendente, parcial, pago, cancelado]
+        forma_pagamento:
+          type: string
+          nullable: true
+          enum: [dinheiro, cartao_credito, cartao_debito, pix, boleto, transferencia]
+        data_vencimento:
+          type: string
+          format: date
+        data_pagamento:
+          type: string
+          format: date
+          nullable: true
+        data_competencia:
+          type: string
+          format: date
+          nullable: true
+        observacoes:
+          type: string
+          nullable: true
+        os_id:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Incompatível com `avulso=true`.
+        cliente_id:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Opcional em lançamento avulso; quando presente, inclui o título no histórico financeiro do cliente.
+        fornecedor_id:
+          type: integer
+          minimum: 1
+          nullable: true
+        avulso:
+          type: boolean
+          default: false
+          description: Permite pagamento ou recebimento simples sem OS. Um recebível não avulso sem OS continua exigindo cliente.
+        grupo_dre:
+          type: string
+          maxLength: 60
+          nullable: true
+        subgrupo_dre:
+          type: string
+          maxLength: 80
+          nullable: true
+        impacta_dre:
+          type: boolean
+          nullable: true
+        impacta_fluxo_caixa:
+          type: boolean
+          nullable: true
+        dre_fixo_mensal:
+          type: boolean
+          nullable: true
+
     FinanceiroCartoesDataset:
       type: object
       additionalProperties: true
@@ -2458,6 +2572,133 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /financeiro:
+    get:
+      tags:
+        - Financeiro
+      summary: Listar lançamentos financeiros.
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: tipo
+          in: query
+          schema:
+            type: string
+            enum: [receber, pagar]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pendente, parcial, pago, cancelado]
+        - name: cliente_id
+          in: query
+          description: Restringe o histórico aos títulos vinculados ao cliente.
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Lista paginada de lançamentos.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          lancamentos:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/FinanceiroLancamento"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Financeiro
+      summary: Criar lançamento financeiro.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/FinanceiroUpsertRequest"
+                - type: object
+                  required: [tipo, categoria, descricao, valor, data_vencimento]
+      responses:
+        "201":
+          description: Lançamento criado.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          lancamento:
+                            $ref: "#/components/schemas/FinanceiroLancamento"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /financeiro/{financeiro}:
+    patch:
+      tags:
+        - Financeiro
+      summary: Atualizar lançamento financeiro.
+      description: O campo `avulso` não pode ser alterado depois que o título possuir movimentos.
+      parameters:
+        - name: financeiro
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinanceiroUpsertRequest"
+      responses:
+        "200":
+          description: Lançamento atualizado.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          lancamento:
+                            $ref: "#/components/schemas/FinanceiroLancamento"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
   /financeiro/precificacao:
     get:

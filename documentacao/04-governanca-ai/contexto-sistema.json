@@ -1,9 +1,9 @@
 {
-    "generated_at": "2026-07-05T23:04:36+02:00",
+    "generated_at": "2026-07-05T23:30:54+00:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "3.7.3",
-        "api_version": "1.1.0",
+        "app_version": "3.9.0",
+        "api_version": "1.1.1",
         "production_target": "Ubuntu VPS",
         "development_target": "Windows/XAMPP"
     },
@@ -370,6 +370,10 @@
                     "title": "Deploy de producao na VPS Contabo com subdominios e dados reais do legado"
                 },
                 {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-05-lancamentos-avulsos-financeiro-cliente.md",
+                    "title": "Lançamentos avulsos com histórico financeiro do cliente"
+                },
+                {
                     "file": "documentacao/07-novas-implementacoes/2026-07-05-padronizacao-nome-telefone-cadastro-cliente-desktop.md",
                     "title": "Padronizacao de nome e telefone no cadastro de cliente (desktop)"
                 },
@@ -694,6 +698,21 @@
         {
             "directory": "specs/019-aprovacao-orcamento-desktop",
             "title": "Feature Specification: Orcamentos - Revisao antes de salvar e envio para aprovacao",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/020-lancamentos-avulsos-financeiro-cliente",
+            "title": "Feature Specification: Lançamentos avulsos com histórico financeiro do cliente",
             "artifacts": {
                 "spec": true,
                 "plan": true,
