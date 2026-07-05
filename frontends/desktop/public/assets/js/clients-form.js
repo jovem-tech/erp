@@ -1,6 +1,85 @@
 (function () {
     const onlyDigits = (value) => String(value || '').replace(/\D/g, '');
 
+    const NAME_CONNECTORS = ['de', 'da', 'do', 'das', 'dos', 'e'];
+
+    // Title Case pt-BR: cada palavra com inicial maiuscula, conectores em minusculo
+    // (exceto quando sao a primeira palavra). Colapsa espacos multiplos.
+    const toTitleCaseName = (value) => {
+        const collapsed = String(value || '').trim().replace(/\s+/g, ' ');
+        if (collapsed === '') {
+            return '';
+        }
+
+        return collapsed
+            .split(' ')
+            .map((word, index) => {
+                const lower = word.toLocaleLowerCase('pt-BR');
+                if (index > 0 && NAME_CONNECTORS.includes(lower)) {
+                    return lower;
+                }
+                return lower.charAt(0).toLocaleUpperCase('pt-BR') + lower.slice(1);
+            })
+            .join(' ');
+    };
+
+    // Mascara de telefone brasileiro: celular (11) "(21) 98061-4757", fixo (10)
+    // "(22) 2627-4120". Remove codigo de pais "55" excedente. Mascara progressiva
+    // enquanto digita.
+    const formatBrazilPhone = (value) => {
+        let digits = onlyDigits(value);
+        if ((digits.length === 12 || digits.length === 13) && digits.startsWith('55')) {
+            digits = digits.slice(2);
+        }
+        digits = digits.slice(0, 11);
+
+        if (digits.length === 0) {
+            return '';
+        }
+        if (digits.length <= 2) {
+            return '(' + digits;
+        }
+        if (digits.length <= 6) {
+            return '(' + digits.slice(0, 2) + ') ' + digits.slice(2);
+        }
+        if (digits.length <= 10) {
+            return '(' + digits.slice(0, 2) + ') ' + digits.slice(2, 6) + '-' + digits.slice(6);
+        }
+        return '(' + digits.slice(0, 2) + ') ' + digits.slice(2, 7) + '-' + digits.slice(7, 11);
+    };
+
+    // Aplica mascara de telefone (ao digitar e ao sair) e Title Case de nome (ao sair).
+    // nomeRazao so recebe Title Case quando pessoa fisica (ou sem seletor = modal rapido).
+    const wireClientFormatting = (fields) => {
+        const { nomeRazao, nomeContato, tipoPessoa, phones } = fields;
+
+        (phones || []).forEach((input) => {
+            if (!(input instanceof HTMLInputElement)) {
+                return;
+            }
+            const apply = () => {
+                input.value = formatBrazilPhone(input.value);
+            };
+            input.addEventListener('input', apply);
+            input.addEventListener('blur', apply);
+        });
+
+        if (nomeContato instanceof HTMLInputElement) {
+            nomeContato.addEventListener('blur', () => {
+                nomeContato.value = toTitleCaseName(nomeContato.value);
+            });
+        }
+
+        if (nomeRazao instanceof HTMLInputElement) {
+            nomeRazao.addEventListener('blur', () => {
+                const isFisica = !(tipoPessoa instanceof HTMLSelectElement) || tipoPessoa.value === 'fisica';
+                if (isFisica) {
+                    nomeRazao.value = toTitleCaseName(nomeRazao.value);
+                }
+            });
+        }
+    };
+
     const notify = (icon, title) => {
         if (typeof Swal === 'undefined') {
             return;
@@ -149,5 +228,28 @@
         cpfCnpj: document.getElementById('quickClientCpfCnpj'),
         nomeRazao: document.getElementById('quickClientNomeRazao'),
         telefone1: document.getElementById('quickClientTelefone1'),
+    });
+
+    // Formulario completo de cliente
+    wireClientFormatting({
+        nomeRazao: document.getElementById('nomeRazao'),
+        nomeContato: document.getElementById('nomeContato'),
+        tipoPessoa: document.getElementById('tipoPessoa'),
+        phones: [
+            document.getElementById('telefone1'),
+            document.getElementById('telefone2'),
+            document.getElementById('telefoneContato'),
+        ],
+    });
+
+    // Modal de cadastro rapido (sempre pessoa fisica)
+    wireClientFormatting({
+        nomeRazao: document.getElementById('quickClientNomeRazao'),
+        nomeContato: document.getElementById('quickClientNomeContato'),
+        tipoPessoa: null,
+        phones: [
+            document.getElementById('quickClientTelefone1'),
+            document.getElementById('quickClientTelefoneContato'),
+        ],
     });
 })();

@@ -230,6 +230,16 @@ class ClientController extends DesktopController
             ? $payload['status_cadastro']
             : 'completo';
 
+        // Title Case do nome/razao social apenas para pessoa fisica; razao social de
+        // empresa (juridica) fica como digitada. Nome de contato e sempre pessoa.
+        if ($payload['tipo_pessoa'] === 'fisica') {
+            $payload['nome_razao'] = $this->formatPersonName($payload['nome_razao'] ?? null);
+        }
+        $payload['nome_contato'] = $this->formatPersonName($payload['nome_contato'] ?? null);
+        $payload['telefone1'] = $this->formatBrazilPhone($payload['telefone1'] ?? null);
+        $payload['telefone2'] = $this->formatBrazilPhone($payload['telefone2'] ?? null);
+        $payload['telefone_contato'] = $this->formatBrazilPhone($payload['telefone_contato'] ?? null);
+
         return $payload;
     }
 
@@ -272,6 +282,12 @@ class ClientController extends DesktopController
             $payload[$field] = $this->normalizeValue($value);
         }
 
+        // Cadastro rapido e sempre pessoa fisica: padroniza nome e telefones.
+        $payload['nome_razao'] = $this->formatPersonName($payload['nome_razao'] ?? null);
+        $payload['nome_contato'] = $this->formatPersonName($payload['nome_contato'] ?? null);
+        $payload['telefone1'] = $this->formatBrazilPhone($payload['telefone1'] ?? null);
+        $payload['telefone_contato'] = $this->formatBrazilPhone($payload['telefone_contato'] ?? null);
+
         $payload['tipo_pessoa'] = 'fisica';
         $payload['status_cadastro'] = 'completo';
 
@@ -311,6 +327,77 @@ class ClientController extends DesktopController
     {
         if (! is_string($value)) {
             return $value;
+        }
+
+        $trimmed = trim($value);
+
+        return $trimmed === '' ? null : $trimmed;
+    }
+
+    /**
+     * Conectores de nomes em portugues que permanecem em minusculo no Title Case,
+     * exceto quando sao a primeira palavra do nome.
+     */
+    private const NAME_CONNECTORS = ['de', 'da', 'do', 'das', 'dos', 'e'];
+
+    /**
+     * Padroniza nome de pessoa em Title Case pt-BR (ex.: "joao da silva" ->
+     * "Joao da Silva"), mantendo conectores em minusculo. Espacos multiplos sao
+     * colapsados. Usado apenas para pessoa fisica e para nome de contato.
+     */
+    private function formatPersonName(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $collapsed = trim((string) preg_replace('/\s+/u', ' ', $value));
+
+        if ($collapsed === '') {
+            return null;
+        }
+
+        $words = explode(' ', $collapsed);
+
+        $formatted = array_map(function (string $word, int $index): string {
+            $lower = mb_strtolower($word, 'UTF-8');
+
+            if ($index > 0 && in_array($lower, self::NAME_CONNECTORS, true)) {
+                return $lower;
+            }
+
+            $first = mb_strtoupper(mb_substr($lower, 0, 1, 'UTF-8'), 'UTF-8');
+
+            return $first . mb_substr($lower, 1, null, 'UTF-8');
+        }, $words, array_keys($words));
+
+        return implode(' ', $formatted);
+    }
+
+    /**
+     * Padroniza telefone brasileiro com mascara (DDD entre parenteses):
+     * celular (11 digitos) "(21) 98061-4757", fixo (10 digitos) "(22) 2627-4120".
+     * Remove um codigo de pais "55" excedente. Se nao bater 10/11 digitos, devolve
+     * o valor saneado (trim) sem mascara.
+     */
+    private function formatBrazilPhone(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $digits = preg_replace('/\D+/', '', $value) ?? '';
+
+        if ((strlen($digits) === 12 || strlen($digits) === 13) && str_starts_with($digits, '55')) {
+            $digits = substr($digits, 2);
+        }
+
+        if (strlen($digits) === 11) {
+            return sprintf('(%s) %s-%s', substr($digits, 0, 2), substr($digits, 2, 5), substr($digits, 7, 4));
+        }
+
+        if (strlen($digits) === 10) {
+            return sprintf('(%s) %s-%s', substr($digits, 0, 2), substr($digits, 2, 4), substr($digits, 6, 4));
         }
 
         $trimmed = trim($value);
