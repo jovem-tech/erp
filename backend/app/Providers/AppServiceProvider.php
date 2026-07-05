@@ -48,7 +48,12 @@ class AppServiceProvider extends ServiceProvider
         // HandleCors como middleware de rota nao intercepta o preflight OPTIONS
         // corretamente quando o verbo OPTIONS nao esta registrado na rota.
         Broadcast::routes(['middleware' => ['auth:sanctum']]);
-        $this->loadRoutesFrom(base_path('routes/channels.php'));
+        // Carregado com require (nao loadRoutesFrom) de proposito: loadRoutesFrom
+        // e' ignorado quando as rotas estao cacheadas (route:cache), o que deixaria
+        // os canais de broadcasting sem registro e faria /broadcasting/auth retornar
+        // 403 em producao. As definicoes de canal (Broadcast::channel) nao fazem
+        // parte do cache de rotas, entao precisam ser sempre executadas.
+        require base_path('routes/channels.php');
 
         $rbacAuthorizationService = app(RbacAuthorizationService::class);
 

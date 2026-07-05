@@ -807,4 +807,18 @@ class OrderController extends DesktopController
         return response($file['body'], $file['status'])
             ->withHeaders($file['headers']);
     }
+
+    /**
+     * Resposta JSON de erro padronizada (mesmo formato dos demais controllers
+     * do desktop, ex.: EquipmentController). Consumida pelos endpoints AJAX
+     * de busca (Select2) da Nova OS.
+     */
+    private function jsonFailure(string $message, int $status, ?array $errors = null): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $message,
+            'errors' => $errors,
+        ], $status);
+    }
 }
