@@ -899,17 +899,20 @@ class IntegrationSettingsService
             $resolvedFileName = basename($absoluteFilePath);
         }
 
+        $rawMedia = file_get_contents($absoluteFilePath);
+        if ($rawMedia === false) {
+            return $this->failureResponse('Não foi possível ler o arquivo de mídia para envio.');
+        }
+
+        // A Evolution API espera o arquivo em base64 no corpo JSON; envio multipart retorna erro 500.
         $response = $this->httpClient((int) ($settings['whatsapp_evolution_timeout'] ?? 20))
             ->withHeaders(['apikey' => $apiKey])
-            ->attach(
-                'media',
-                file_get_contents($absoluteFilePath) ?: '',
-                $resolvedFileName
-            )
             ->post(rtrim($baseUrl, '/') . '/message/sendMedia/' . rawurlencode($instance), array_filter([
                 'number' => $this->normalizePhone($phone),
                 'mediatype' => $mediaType,
+                'mimetype' => $this->detectMimeType($absoluteFilePath),
                 'caption' => trim((string) ($caption ?? '')),
+                'media' => base64_encode($rawMedia),
                 'fileName' => $resolvedFileName,
             ], static fn ($value): bool => $value !== ''));
 
@@ -1387,6 +1390,18 @@ class IntegrationSettingsService
         }
 
         return str_starts_with($digits, '55') ? $digits : ('55' . $digits);
+    }
+
+    private function detectMimeType(string $absoluteFilePath): string
+    {
+        if (function_exists('mime_content_type')) {
+            $detected = mime_content_type($absoluteFilePath);
+            if (is_string($detected) && trim($detected) !== '') {
+                return trim($detected);
+            }
+        }
+
+        return 'application/octet-stream';
     }
 
     private function normalizeMenuiaPhone(string $phone): string
