@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-05T23:30:54+00:00`
-- Versao do sistema: `3.9.0`
+- Gerado em: `2026-07-06T14:16:09+00:00`
+- Versao do sistema: `3.12.0`
 - Versao da API: `1.1.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Windows/XAMPP`
@@ -134,9 +134,13 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-04-ambiente-dev-linux-oficial-correcoes-auditoria.md` - Ambiente de desenvolvimento oficial em Linux e correcoes da auditoria de infraestrutura
 - `documentacao/07-novas-implementacoes/2026-07-04-deploy-producao-lan-documentacao-integrada-versionamento.md` - Deploy de producao em LAN, documentacao integrada ao desktop e protocolo de versionamento
 - `documentacao/07-novas-implementacoes/2026-07-04-orcamentos-modal-compactacao.md` - Compactacao do modal de revisao de orcamento
+- `documentacao/07-novas-implementacoes/2026-07-05-baixa-financeiro-cartao-valor-parcial.md` - Baixa de lancamento financeiro: valor total/parcial e forma de pagamento em cartao
 - `documentacao/07-novas-implementacoes/2026-07-05-deploy-producao-contabo-subdominios-e-dados-reais.md` - Deploy de producao na VPS Contabo com subdominios e dados reais do legado
 - `documentacao/07-novas-implementacoes/2026-07-05-lancamentos-avulsos-financeiro-cliente.md` - Lançamentos avulsos com histórico financeiro do cliente
 - `documentacao/07-novas-implementacoes/2026-07-05-padronizacao-nome-telefone-cadastro-cliente-desktop.md` - Padronizacao de nome e telefone no cadastro de cliente (desktop)
+- `documentacao/07-novas-implementacoes/2026-07-05-select2-colisao-financeiro-desktop.md` - Correcao de colisao do Select2 no formulario Financeiro (desktop)
+- `documentacao/07-novas-implementacoes/2026-07-06-cancelamento-lancamento-taxa-cartao.md` - Cancelamento de lançamento financeiro e taxa de cartão como despesa
+- `documentacao/07-novas-implementacoes/2026-07-06-fluxo-caixa-entrada-projetada-saldo-liquido.md` - Fluxo de caixa: entrada projetada, saldo líquido e detalhamento diário
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 
 ### `documentacao/10-deploy`

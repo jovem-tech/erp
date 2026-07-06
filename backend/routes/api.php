@@ -134,6 +134,7 @@ Route::prefix('v1')->group(function (): void {
                 Route::match(['put', 'patch'], '/{financeiro}', [FinanceiroController::class, 'update'])->name('update');
                 Route::delete('/{financeiro}', [FinanceiroController::class, 'destroy'])->name('destroy');
                 Route::post('/{financeiro}/baixar', [FinanceiroController::class, 'pay'])->name('pay');
+                Route::post('/{financeiro}/cancelar', [FinanceiroController::class, 'cancel'])->name('cancel');
             });
 
         Route::prefix('conversas')

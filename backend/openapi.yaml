@@ -2700,6 +2700,41 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
+  /financeiro/{financeiro}/cancelar:
+    post:
+      tags:
+        - Financeiro
+      summary: Cancelar um lançamento financeiro.
+      description: Marca o título como `cancelado` e estorna (remove) qualquer movimento de baixa já registrado, para que o valor pare de contar no fluxo de caixa realizado, no DRE de caixa e no DRE por competência.
+      parameters:
+        - name: financeiro
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Lançamento cancelado.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          lancamento:
+                            $ref: "#/components/schemas/FinanceiroLancamento"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
   /financeiro/precificacao:
     get:
       tags:

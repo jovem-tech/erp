@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
+use App\Services\ClientService;
 use App\Services\FinanceiroService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -15,8 +17,58 @@ use Throwable;
 class FinanceiroController extends DesktopController
 {
     public function __construct(
-        private readonly FinanceiroService $financeiroService
+        private readonly FinanceiroService $financeiroService,
+        private readonly ClientService $clientService,
     ) {
+    }
+
+    public function searchClients(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q'        => ['nullable', 'string', 'max:100'],
+            'page'     => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:20'],
+        ]);
+
+        $search  = trim((string) ($validated['q'] ?? ''));
+        $page    = max(1, (int) ($validated['page'] ?? 1));
+        $perPage = max(1, min(20, (int) ($validated['per_page'] ?? 10)));
+
+        try {
+            $result = $this->clientService->paginate(array_filter([
+                'search'   => $search,
+                'page'     => $page,
+                'per_page' => $perPage,
+            ], static fn ($v): bool => $v !== '' && $v !== 0));
+        } catch (ApiAuthenticationException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 401);
+        } catch (ApiAuthorizationException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 403);
+        } catch (ApiRequestException $e) {
+            $status = $e->statusCode() > 0 ? $e->statusCode() : 422;
+            return response()->json(['success' => false, 'message' => $e->getMessage()], $status);
+        }
+
+        $clients = array_map(static function (array $c): array {
+            $id    = (int) ($c['id'] ?? 0);
+            $label = trim((string) ($c['nome_razao'] ?? ''));
+            return [
+                'id'      => $id,
+                'text'    => $label !== '' ? $label : "Cliente #{$id}",
+                'name'    => $label,
+                'phone'   => trim((string) ($c['telefone1'] ?? '')),
+                'email'   => trim((string) ($c['email'] ?? '')),
+                'contact' => trim((string) ($c['nome_contato'] ?? '')),
+                'city'    => trim((string) ($c['cidade'] ?? '')),
+                'uf'      => trim((string) ($c['uf'] ?? '')),
+            ];
+        }, $result['items'] ?? []);
+
+        return response()->json([
+            'success'    => true,
+            'clients'    => $clients,
+            'pagination' => $result['pagination'] ?? [],
+        ]);
     }
 
     public function index(Request $request): View
@@ -40,6 +92,7 @@ class FinanceiroController extends DesktopController
             'pagination' => $result['pagination'],
             'statusOptions' => $result['status_options'],
             'filters' => $filters,
+            'cartaoDataset' => $this->financeiroService->catalogo()['cartao'],
         ]);
     }
 
@@ -49,6 +102,7 @@ class FinanceiroController extends DesktopController
             'pageTitle' => 'Novo lançamento',
             'lancamento' => $this->formDefaults(),
             'categorias' => $this->financeiroService->catalogo()['categorias'],
+            'canQuickClient' => \App\Support\DesktopSession::can('clientes', 'criar'),
         ]);
     }
 
@@ -110,6 +164,7 @@ class FinanceiroController extends DesktopController
             'lancamento' => $data['lancamento'],
             'resumo' => $data['resumo'] ?? [],
             'categorias' => $this->financeiroService->catalogo()['categorias'],
+            'canQuickClient' => \App\Support\DesktopSession::can('clientes', 'criar'),
         ]);
     }
 
@@ -163,6 +218,23 @@ class FinanceiroController extends DesktopController
             ->with('success', 'Lançamento excluído com sucesso.');
     }
 
+    public function cancel(int $financeiro): RedirectResponse
+    {
+        try {
+            $this->financeiroService->cancel($financeiro);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException $exception) {
+            return redirect()->route('financeiro.index')->with('error', $exception->getMessage());
+        } catch (ApiRequestException $exception) {
+            return redirect()->route('financeiro.index')->with('error', $exception->getMessage());
+        }
+
+        return redirect()
+            ->route('financeiro.index')
+            ->with('success', 'Lançamento cancelado com sucesso.');
+    }
+
     public function pay(Request $request, int $financeiro): RedirectResponse
     {
         $validated = $request->validate([
@@ -170,10 +242,18 @@ class FinanceiroController extends DesktopController
             'data_movimento' => ['nullable', 'date'],
             'forma_pagamento' => ['nullable', 'string', 'max:40'],
             'observacoes' => ['nullable', 'string'],
+            'operadora_id' => ['nullable', 'integer', 'min:1', 'required_if:forma_pagamento,cartao_credito,cartao_debito'],
+            'bandeira_id' => ['nullable', 'integer', 'min:1'],
+            'modalidade' => ['nullable', 'string', 'in:credito,debito'],
+            'parcelas' => ['nullable', 'integer', 'min:1', 'max:99'],
         ], [], [
             'valor_movimento' => 'valor da baixa',
             'data_movimento' => 'data do movimento',
             'forma_pagamento' => 'forma de pagamento',
+            'operadora_id' => 'operadora',
+            'bandeira_id' => 'bandeira',
+            'modalidade' => 'modalidade',
+            'parcelas' => 'parcelas',
         ]);
 
         try {

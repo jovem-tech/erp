@@ -99,8 +99,18 @@ class Financeiro extends Model
         return $this->belongsTo(Client::class, 'cliente_id', 'id');
     }
 
+    public function supplier(): BelongsTo
+    {
+        return $this->belongsTo(Supplier::class, 'fornecedor_id', 'id');
+    }
+
     public function movimentos(): HasMany
     {
         return $this->hasMany(FinanceiroMovimento::class, 'financeiro_id', 'id');
+    }
+
+    public function origemMovimento(): BelongsTo
+    {
+        return $this->belongsTo(FinanceiroMovimento::class, 'origem_id', 'id');
     }
 }

@@ -23,9 +23,18 @@ class FinanceiroController extends BaseApiController
 
         $paginator = $this->financeiroService->list($request->query());
 
+        $lancamentos = collect($paginator->items())
+            ->map(function (Financeiro $financeiro): array {
+                $data = $financeiro->toArray();
+                $data['valor_aberto'] = round((float) $this->financeiroService->movementSummary($financeiro)['valor_aberto'], 2);
+
+                return $data;
+            })
+            ->all();
+
         return $this->success(
             [
-                'lancamentos' => $paginator->items(),
+                'lancamentos' => $lancamentos,
                 'status_options' => Financeiro::statusOptions(),
             ],
             meta: $this->paginationMeta($paginator),
@@ -94,5 +103,18 @@ class FinanceiroController extends BaseApiController
         }
 
         return $this->success(['resumo' => $resumo, 'lancamento' => $financeiro->refresh()], request: $request);
+    }
+
+    public function cancel(Request $request, Financeiro $financeiro): JsonResponse
+    {
+        $this->authorize('financeiro:editar');
+
+        try {
+            $financeiro = $this->financeiroService->cancel($financeiro);
+        } catch (Throwable $exception) {
+            return $this->error($exception->getMessage(), 422, 'FINANCEIRO_CANCEL_FAILED', null, request: $request);
+        }
+
+        return $this->success(['lancamento' => $financeiro], request: $request);
     }
 }

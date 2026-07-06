@@ -62,6 +62,16 @@ class FinanceiroService
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    public function cancel(int $id): array
+    {
+        $response = $this->apiClient->post('/financeiro/' . $id . '/cancelar');
+
+        return $response['data']['lancamento'] ?? [];
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
@@ -73,7 +83,7 @@ class FinanceiroService
     }
 
     /**
-     * @return array{categorias: array<int, array<string, mixed>>, dre_grupos: array<int, array<string, mixed>>, dre_subgrupos: array<int, array<string, mixed>>, comissoes_tecnicos: array<int, array<string, mixed>>, comissao_percentual_padrao: float}
+     * @return array{categorias: array<int, array<string, mixed>>, dre_grupos: array<int, array<string, mixed>>, dre_subgrupos: array<int, array<string, mixed>>, comissoes_tecnicos: array<int, array<string, mixed>>, comissao_percentual_padrao: float, cartao: array{operadoras: array<int, array<string, mixed>>, bandeiras: array<int, array<string, mixed>>, taxas: array<int, array<string, mixed>>}}
      */
     public function catalogo(): array
     {
@@ -85,6 +95,11 @@ class FinanceiroService
             'dre_subgrupos' => $response['data']['dre_subgrupos'] ?? [],
             'comissoes_tecnicos' => $response['data']['comissoes_tecnicos'] ?? [],
             'comissao_percentual_padrao' => (float) ($response['data']['comissao_percentual_padrao'] ?? 0),
+            'cartao' => [
+                'operadoras' => $response['data']['cartao']['operadoras'] ?? [],
+                'bandeiras' => $response['data']['cartao']['bandeiras'] ?? [],
+                'taxas' => $response['data']['cartao']['taxas'] ?? [],
+            ],
         ];
     }
 
