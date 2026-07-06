@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v3.12.0.1 — 2026-07-06 12:04
+- **Tier:** hotfix
+- **Autor/Agente:** Claude
+- **Descrição:** Documenta na armadilha do runbook Contabo o erro 'untracked working tree files would be overwritten by merge' no passo [2/5] do deploy-producao.sh (arquivos nao versionados na VPS colidindo com o commit remoto) e como resolver movendo-os para backup antes de repetir o script
+- **Arquivos:** documentacao/10-deploy/deploy-producao-contabo-vps.md
+
 ## v3.12.0.0 — 2026-07-06 11:12
 - **Tier:** minor
 - **Autor/Agente:** Claude
