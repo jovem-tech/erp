@@ -5,12 +5,18 @@ namespace App\Services\Financeiro;
 use App\Models\Financeiro;
 use App\Models\FinanceiroCategoria;
 use App\Models\FinanceiroMovimento;
+use App\Models\FinanceiroMovimentoCartao;
 use App\Models\Order;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use RuntimeException;
 
 class FinanceiroService
 {
+    public function __construct(
+        private readonly FinanceiroCartaoService $financeiroCartaoService
+    ) {
+    }
+
     /**
      * @param array<string, mixed> $filters
      */
@@ -59,6 +65,53 @@ class FinanceiroService
     }
 
     /**
+     * Cancela um título e estorna (remove) qualquer baixa já registrada, para
+     * que o valor pare de contar no fluxo de caixa realizado e no DRE de
+     * caixa — ambos calculados a partir de financeiro_movimentos. O DRE por
+     * competência é filtrado por status=cancelado diretamente em
+     * FinanceiroReportService::groupByCompetencia().
+     *
+     * Se algum dos movimentos deste título gerou uma despesa de taxa de
+     * cartão (ver registerCardFeeExpense()), essa despesa é cancelada junto —
+     * senão ela ficaria órfã, continuando a pesar no fluxo de caixa e no DRE
+     * mesmo depois da receita que a gerou ter sido estornada.
+     */
+    public function cancel(Financeiro $financeiro): Financeiro
+    {
+        if ($financeiro->status === Financeiro::STATUS_CANCELADO) {
+            throw new RuntimeException('Este título já está cancelado.');
+        }
+
+        $movimentoIds = $financeiro->movimentos()->pluck('id');
+
+        if ($movimentoIds->isNotEmpty()) {
+            Financeiro::query()
+                ->where('origem_tipo', 'financeiro_movimento_cartao')
+                ->whereIn('origem_id', $movimentoIds)
+                ->where('status', '!=', Financeiro::STATUS_CANCELADO)
+                ->get()
+                ->each(function (Financeiro $taxaFinanceiro): void {
+                    $taxaFinanceiro->movimentos()->delete();
+                    $taxaFinanceiro->update([
+                        'status' => Financeiro::STATUS_CANCELADO,
+                        'data_pagamento' => null,
+                        'forma_pagamento' => null,
+                    ]);
+                });
+        }
+
+        $financeiro->movimentos()->delete();
+
+        $financeiro->update([
+            'status' => Financeiro::STATUS_CANCELADO,
+            'data_pagamento' => null,
+            'forma_pagamento' => null,
+        ]);
+
+        return $financeiro->refresh();
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
@@ -89,22 +142,146 @@ class FinanceiroService
         $observacoes = trim((string) ($payload['observacoes'] ?? ''));
         $documentoRef = trim((string) ($payload['documento_ref'] ?? ''));
 
+        $dataMovimento = $this->normalizeDate($payload['data_movimento'] ?? $payload['data_pagamento'] ?? null) ?? now()->toDateString();
+
         $movimento = FinanceiroMovimento::create([
             'financeiro_id' => $financeiro->id,
             'tipo_movimento' => $financeiro->tipo === Financeiro::TIPO_RECEBER
                 ? FinanceiroMovimento::TIPO_ENTRADA
                 : FinanceiroMovimento::TIPO_SAIDA,
-            'data_movimento' => $this->normalizeDate($payload['data_movimento'] ?? $payload['data_pagamento'] ?? null) ?? now()->toDateString(),
+            'data_movimento' => $dataMovimento,
             'valor_movimento' => $valorMovimento,
             'forma_pagamento' => $formaPagamento !== '' ? $formaPagamento : null,
             'documento_ref' => $documentoRef !== '' ? $documentoRef : null,
             'observacoes' => $observacoes !== '' ? $observacoes : null,
         ]);
 
+        // O guard extra por operadora_id (além do forma_pagamento) é proposital:
+        // outros chamadores de registerMovement() (ex.: OrderClosureService, no
+        // fechamento de OS) simulam a taxa e registram o próprio
+        // FinanceiroMovimentoCartao/despesa antes de chamar este método, sem
+        // repassar operadora_id aqui — sem esse guard, este bloco tentaria
+        // simular de novo sem operadora e derrubaria a baixa com exceção.
+        if (str_contains($formaPagamento, 'cartao') && ! empty($payload['operadora_id'])) {
+            $simulation = $this->registerCardMovementMeta($movimento, $payload, $valorMovimento, $dataMovimento, $observacoes);
+            $this->registerCardFeeExpense($financeiro, $simulation, $movimento);
+        }
+
         $summary = $this->syncFromMovements($financeiro);
         $summary['movement_id'] = $movimento->id;
 
         return $summary;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    private function registerCardMovementMeta(
+        FinanceiroMovimento $movimento,
+        array $payload,
+        float $valorMovimento,
+        string $dataMovimento,
+        string $observacoes
+    ): array {
+        $simulation = $this->financeiroCartaoService->simulate([
+            'valor_bruto' => $valorMovimento,
+            'operadora_id' => $payload['operadora_id'] ?? null,
+            'bandeira_id' => $payload['bandeira_id'] ?? null,
+            'modalidade' => $payload['modalidade'] ?? null,
+            'forma_pagamento' => $payload['forma_pagamento'] ?? null,
+            'parcelas' => $payload['parcelas'] ?? 1,
+        ]);
+
+        FinanceiroMovimentoCartao::query()->create([
+            'movimento_id' => $movimento->id,
+            'operadora_id' => $simulation['operadora_id'] ?? null,
+            'bandeira_id' => $simulation['bandeira_id'] ?? null,
+            'taxa_id' => $simulation['taxa_id'] ?? null,
+            'modalidade' => (string) ($simulation['modalidade'] ?? 'credito'),
+            'parcelas' => (int) ($simulation['parcelas'] ?? 1),
+            'valor_bruto' => round((float) ($simulation['valor_bruto'] ?? 0), 2),
+            'taxa_percentual' => round((float) ($simulation['taxa_percentual'] ?? 0), 4),
+            'taxa_fixa' => round((float) ($simulation['taxa_fixa'] ?? 0), 2),
+            'valor_taxa' => round((float) ($simulation['valor_taxa'] ?? 0), 2),
+            'valor_liquido' => round((float) ($simulation['valor_liquido'] ?? 0), 2),
+            'prazo_recebimento_dias' => (int) ($simulation['prazo_recebimento_dias'] ?? 0),
+            'data_competencia' => $dataMovimento,
+            'data_prevista_repasse' => $simulation['data_prevista_repasse'] ?? null,
+            'data_prevista_recebimento' => $simulation['data_prevista_recebimento'] ?? null,
+            'data_credito_efetivo' => $simulation['data_credito_efetivo'] ?? null,
+            'observacoes' => $observacoes !== '' ? $observacoes : null,
+        ]);
+
+        return $simulation;
+    }
+
+    /**
+     * Registra a taxa da operadora como uma despesa própria (tipo=pagar), para
+     * que o custo real da maquininha deixe de ser invisível no fluxo de caixa e
+     * no DRE — sem isso, o título a receber ficava com o valor bruto do cartão
+     * como se a assistência tivesse recebido o valor integral, sem controlar
+     * quanto a operadora reteve. A baixa original do título permanece com o
+     * valor bruto (é o que o cliente de fato pagou e o que quita o título);
+     * a taxa é registrada como uma saída separada, já realizada (paga), com
+     * seu próprio movimento para contar em todos os relatórios (competência e
+     * caixa) — mesma classificação DRE ("Despesas Operacionais" / "Taxas e
+     * impostos") já usada para outras taxas do sistema.
+     *
+     * A taxa é datada no mesmo dia do pagamento (data_movimento), não na data
+     * prevista de repasse da operadora — a receita bruta do título também é
+     * reconhecida no dia do pagamento, então a taxa precisa seguir a mesma
+     * competência/caixa para o fluxo de caixa e o DRE baterem no mesmo dia
+     * (a data prevista de repasse continua registrada em
+     * financeiro_movimentos_cartao.data_prevista_repasse, só não é usada aqui).
+     *
+     * @param array<string, mixed> $simulation
+     */
+    private function registerCardFeeExpense(Financeiro $financeiro, array $simulation, FinanceiroMovimento $movimento): void
+    {
+        $valorTaxa = round((float) ($simulation['valor_taxa'] ?? 0), 2);
+        if ($valorTaxa <= 0) {
+            return;
+        }
+
+        $dataMovimento = $movimento->data_movimento->toDateString();
+        $parcelas = (int) ($simulation['parcelas'] ?? 1);
+
+        $taxaFinanceiro = Financeiro::create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'avulso' => true,
+            'categoria' => 'Taxa de cartão',
+            'descricao' => sprintf(
+                'Taxa %s - Lançamento #%d (%s%s)',
+                (string) ($simulation['operadora_nome'] ?? ''),
+                $financeiro->id,
+                (string) ($simulation['modalidade_label'] ?? ''),
+                $parcelas > 1 ? ' em ' . $parcelas . 'x' : ''
+            ),
+            'valor' => $valorTaxa,
+            'status' => Financeiro::STATUS_PAGO,
+            'origem_tipo' => 'financeiro_movimento_cartao',
+            'origem_id' => $movimento->id,
+            'grupo_dre' => 'Despesas Operacionais',
+            'subgrupo_dre' => 'Taxas e impostos',
+            'data_vencimento' => $dataMovimento,
+            'data_pagamento' => $dataMovimento,
+            'data_competencia' => $dataMovimento,
+            'forma_pagamento' => ($simulation['modalidade'] ?? '') === 'debito' ? 'cartao_debito' : 'cartao_credito',
+            'observacoes' => 'Despesa criada automaticamente na baixa em cartão deste lançamento, para registrar o custo da operadora.',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+            'dre_fixo_mensal' => false,
+        ]);
+
+        FinanceiroMovimento::create([
+            'financeiro_id' => $taxaFinanceiro->id,
+            'tipo_movimento' => FinanceiroMovimento::TIPO_SAIDA,
+            'data_movimento' => $dataMovimento,
+            'valor_movimento' => $valorTaxa,
+            'forma_pagamento' => $taxaFinanceiro->forma_pagamento,
+            'observacoes' => 'Taxa da operadora referente ao movimento #' . $movimento->id . '.',
+        ]);
     }
 
     /**

@@ -416,8 +416,7 @@
             if (event.target instanceof HTMLElement) recalcTotals();
         });
 
-        receiptsList.addEventListener('change', (event) => {
-            const target = event.target;
+        const handleReceiptChange = (target) => {
             if (!(target instanceof HTMLElement)) return;
 
             if (target.matches('[data-field="forma_pagamento"]')) {
@@ -425,7 +424,20 @@
             }
 
             recalcTotals();
-        });
+        };
+
+        receiptsList.addEventListener('change', (event) => handleReceiptChange(event.target));
+
+        // Select2 (aplicado por padrao em todo `select.form-select` pelo init
+        // global de desktop.js) dispara `change` apenas via
+        // `jQuery(el).trigger('change')` ao selecionar uma opcao pela sua UI —
+        // isso nao gera um evento nativo que propague ate o addEventListener
+        // acima. Sem este binding paralelo via jQuery, escolher operadora,
+        // bandeira, modalidade ou forma de pagamento pelo Select2 nao
+        // atualizava os campos de cartao nem o preview de taxa.
+        if (window.jQuery) {
+            window.jQuery(receiptsList).on('change', (event) => handleReceiptChange(event.target));
+        }
 
         document.querySelector('[data-action="adicionar-recebimento"]')?.addEventListener('click', () => {
             addRow();

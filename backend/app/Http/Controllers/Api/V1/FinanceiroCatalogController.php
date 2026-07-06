@@ -11,11 +11,17 @@ use App\Models\Configuration;
 use App\Models\FinanceiroCategoria;
 use App\Models\FinanceiroDreGrupo;
 use App\Models\FinanceiroDreSubgrupo;
+use App\Services\Financeiro\FinanceiroCartaoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class FinanceiroCatalogController extends BaseApiController
 {
+    public function __construct(
+        private readonly FinanceiroCartaoService $financeiroCartaoService
+    ) {
+    }
+
     public function index(Request $request): JsonResponse
     {
         $this->authorize('financeiro:visualizar');
@@ -43,6 +49,7 @@ class FinanceiroCatalogController extends BaseApiController
                 'comissao_percentual_padrao' => (float) (Configuration::query()
                     ->where('chave', 'comissao_tecnico_percentual_padrao')
                     ->value('valor') ?? 0),
+                'cartao' => $this->financeiroCartaoService->buildActiveDataset(),
             ],
             request: $request
         );

@@ -258,6 +258,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/financeiro', [FinanceiroController::class, 'index'])
         ->middleware('desktop.permission:financeiro,visualizar')
         ->name('financeiro.index');
+    Route::get('/financeiro/clientes/buscar', [FinanceiroController::class, 'searchClients'])
+        ->middleware('desktop.permission:financeiro,criar|editar')
+        ->name('financeiro.clients.search');
     Route::get('/financeiro/novo', [FinanceiroController::class, 'create'])
         ->middleware('desktop.permission:financeiro,criar')
         ->name('financeiro.create');
@@ -363,6 +366,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/financeiro/{financeiro}/baixar', [FinanceiroController::class, 'pay'])
         ->middleware('desktop.permission:financeiro,editar')
         ->name('financeiro.pay');
+    Route::post('/financeiro/{financeiro}/cancelar', [FinanceiroController::class, 'cancel'])
+        ->middleware('desktop.permission:financeiro,editar')
+        ->name('financeiro.cancel');
 
     Route::get('/conhecimento/defeitos-relatados', [ReportedDefectController::class, 'index'])
         ->middleware('desktop.permission:conhecimento,visualizar')

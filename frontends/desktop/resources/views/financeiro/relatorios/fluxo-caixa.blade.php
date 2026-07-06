@@ -12,6 +12,24 @@
         $calendarUrl = route('financeiro.relatorios.fluxo-caixa', ['mes' => $mes, 'view' => 'calendar']);
         $previousMonthUrl = route('financeiro.relatorios.fluxo-caixa', ['mes' => $mesAnterior ?? $mes, 'view' => 'calendar']);
         $nextMonthUrl = route('financeiro.relatorios.fluxo-caixa', ['mes' => $mesProximo ?? $mes, 'view' => 'calendar']);
+
+        // Deduplicado por movimento_id: o mesmo movimento pode aparecer duas
+        // vezes (na tabela "pago/recebido" do dia da venda e em "previsto
+        // para hoje" no dia do repasse), mas o detalhe do cartão é o mesmo —
+        // um único modal por movimento evita ids duplicados no HTML.
+        $cardDetailsByMovimento = [];
+        foreach ($linhas as $linha) {
+            foreach (($linha['detalhes']['movimentos'] ?? []) as $mov) {
+                if (! empty($mov['cartao']) && ! isset($cardDetailsByMovimento[$mov['movimento_id']])) {
+                    $cardDetailsByMovimento[$mov['movimento_id']] = $mov['cartao'];
+                }
+            }
+            foreach (($linha['detalhes']['previstos_para_hoje'] ?? []) as $prev) {
+                if (! empty($prev['cartao']) && ! isset($cardDetailsByMovimento[$prev['movimento_id']])) {
+                    $cardDetailsByMovimento[$prev['movimento_id']] = $prev['cartao'];
+                }
+            }
+        }
     @endphp
 
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
@@ -55,7 +73,7 @@
         </form>
     </section>
 
-    <div class="desktop-grid desktop-grid-three mb-4">
+    <div class="desktop-grid desktop-grid-four mb-4">
         <div class="desktop-form-card text-center">
             <p class="surface-subtitle mb-1">Saldo inicial</p>
             <h3 class="surface-title mb-0">{{ $fmt($fluxo['saldo_inicial'] ?? 0) }}</h3>
@@ -67,6 +85,13 @@
         <div class="desktop-form-card text-center">
             <p class="surface-subtitle mb-1">Saldo projetado</p>
             <h3 class="surface-title mb-0">{{ $fmt($fluxo['saldo_projetado'] ?? 0) }}</h3>
+        </div>
+        <div class="desktop-form-card text-center">
+            <p class="surface-subtitle mb-1">
+                Saldo líquido em conta
+                <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip" title="O que de fato está (ou vai estar) disponível no banco: soma o valor já líquido de taxa, no dia em que o dinheiro efetivamente pousa na conta — diferente do saldo realizado, que soma o bruto no dia da venda."></i>
+            </p>
+            <h3 class="surface-title mb-0 cashflow-list-amount is-projected">{{ $fmt($fluxo['saldo_liquido_final'] ?? 0) }}</h3>
         </div>
     </div>
 
@@ -218,7 +243,21 @@
                 <div class="table-responsive">
                     <table class="table table-stack align-middle">
                         <thead>
-                        <tr><th>Data</th><th class="text-end">Entradas</th><th class="text-end">Saídas</th><th class="text-end">Saldo realizado</th></tr>
+                        <tr>
+                            <th>Data</th>
+                            <th class="text-end">Entradas</th>
+                            <th class="text-end">
+                                Entrada projetada
+                                <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip" title="Quando o dinheiro efetivamente cai na conta. Vendas em cartão aparecem aqui na data do repasse/crédito, que pode ser dias ou semanas depois da venda — diferente de &quot;Entradas&quot;, que mostra o dia da venda."></i>
+                            </th>
+                            <th class="text-end">Saídas</th>
+                            <th class="text-end">Saldo realizado</th>
+                            <th class="text-end">
+                                Saldo líquido
+                                <i class="bi bi-info-circle ms-1" data-bs-toggle="tooltip" title="O que de fato está disponível no banco nesse dia — já líquido de taxa, acumulado pelo dia em que o dinheiro efetivamente pousa na conta. Diferente do saldo realizado, que soma o bruto no dia da venda."></i>
+                            </th>
+                            <th class="text-end">Ações</th>
+                        </tr>
                         </thead>
                         <tbody>
                         @foreach ($linhas as $linha)
@@ -228,16 +267,200 @@
                                     <span class="cashflow-list-amount is-positive">{{ $fmt($linha['entradas_realizadas'] ?? 0) }}</span>
                                 </td>
                                 <td class="text-end">
+                                    <span class="cashflow-list-amount is-projected">{{ $fmt($linha['entrada_projetada'] ?? 0) }}</span>
+                                </td>
+                                <td class="text-end">
                                     <span class="cashflow-list-amount is-negative">{{ $fmt($linha['saidas_realizadas'] ?? 0) }}</span>
                                 </td>
                                 <td class="text-end">
                                     <span class="cashflow-list-amount is-summary">{{ $fmt($linha['saldo_realizado'] ?? 0) }}</span>
+                                </td>
+                                <td class="text-end">
+                                    <span class="cashflow-list-amount is-projected">{{ $fmt($linha['saldo_liquido'] ?? 0) }}</span>
+                                </td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#dayDetailModal{{ str_replace('-', '', $linha['data']) }}">
+                                        <i class="bi bi-list-check me-1"></i>
+                                        Detalhes
+                                    </button>
                                 </td>
                             </tr>
                         @endforeach
                         </tbody>
                     </table>
                 </div>
+
+                {{--
+                    Modais renderizados FORA da tabela, num loop separado —
+                    mesmo padrão usado em financeiro/index.blade.php: um
+                    <div class="modal"> dentro de <tbody> é HTML inválido e o
+                    navegador aplica "foster parenting" (move o conteúdo para
+                    antes da <table>), quebrando a estrutura interna do modal.
+                --}}
+                @foreach ($linhas as $linha)
+                    @php
+                        $diaId = str_replace('-', '', $linha['data']);
+                        $diaFormatado = \Illuminate\Support\Carbon::parse($linha['data'])->format('d/m/Y');
+                        $movimentosDia = $linha['detalhes']['movimentos'] ?? [];
+                        $previstosHojeDia = $linha['detalhes']['previstos_para_hoje'] ?? [];
+                    @endphp
+                    <div class="modal fade" id="dayDetailModal{{ $diaId }}" tabindex="-1" aria-hidden="true">
+                        <div class="modal-dialog modal-dialog-centered modal-lg">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">Lançamentos de {{ $diaFormatado }}</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <h6 class="surface-title fs-6">Pago/recebido neste dia</h6>
+                                    @if ($movimentosDia !== [])
+                                        <div class="table-responsive mb-4">
+                                            <table class="table table-sm align-middle">
+                                                <thead>
+                                                <tr>
+                                                    <th>Tipo</th>
+                                                    <th>Origem</th>
+                                                    <th>Categoria</th>
+                                                    <th>Cliente/Fornecedor</th>
+                                                    <th>Forma</th>
+                                                    <th class="text-end">Valor</th>
+                                                    <th>Cai na conta</th>
+                                                </tr>
+                                                </thead>
+                                                <tbody>
+                                                @foreach ($movimentosDia as $mov)
+                                                    <tr>
+                                                        <td>
+                                                            <span class="badge {{ $mov['tipo'] === 'receber' ? 'text-bg-success' : 'text-bg-secondary' }}">
+                                                                {{ $mov['tipo'] === 'receber' ? 'Recebido' : 'Pago' }}
+                                                            </span>
+                                                        </td>
+                                                        <td>{{ $mov['origem'] }}</td>
+                                                        <td>{{ $mov['categoria'] ?? '-' }}</td>
+                                                        <td>{{ $mov['contraparte'] ?? '-' }}</td>
+                                                        <td>
+                                                            {{ $mov['forma_pagamento'] ?? '-' }}
+                                                            @if (! empty($mov['cartao']))
+                                                                <button type="button" class="btn btn-sm btn-link p-0 ms-1 align-baseline" data-bs-toggle="modal" data-bs-target="#cardDetailModal{{ $mov['movimento_id'] }}" title="Detalhes do cartão">
+                                                                    <i class="bi bi-credit-card-2-front"></i>
+                                                                </button>
+                                                            @endif
+                                                        </td>
+                                                        <td class="text-end">{{ $fmt($mov['valor']) }}</td>
+                                                        <td>{{ $mov['data_prevista_caixa'] ? \Illuminate\Support\Carbon::parse($mov['data_prevista_caixa'])->format('d/m/Y') : 'Imediato' }}</td>
+                                                    </tr>
+                                                @endforeach
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    @else
+                                        <p class="text-secondary">Nenhum lançamento neste dia.</p>
+                                    @endif
+
+                                    <h6 class="surface-title fs-6 mt-4">
+                                        Entradas de cartão previstas para cair hoje
+                                    </h6>
+                                    <p class="small text-secondary mb-2">
+                                        Vendas feitas em outros dias cujo repasse/crédito está previsto para cair na conta justamente hoje — informativo, não conta no saldo realizado.
+                                    </p>
+                                    @if ($previstosHojeDia !== [])
+                                        <div class="table-responsive">
+                                            <table class="table table-sm align-middle">
+                                                <thead>
+                                                <tr>
+                                                    <th>Origem</th>
+                                                    <th>Categoria</th>
+                                                    <th>Cliente</th>
+                                                    <th>Forma</th>
+                                                    <th class="text-end">Valor</th>
+                                                    <th>Vendido em</th>
+                                                </tr>
+                                                </thead>
+                                                <tbody>
+                                                @foreach ($previstosHojeDia as $prev)
+                                                    <tr>
+                                                        <td>{{ $prev['origem'] }}</td>
+                                                        <td>{{ $prev['categoria'] ?? '-' }}</td>
+                                                        <td>{{ $prev['contraparte'] ?? '-' }}</td>
+                                                        <td>
+                                                            {{ $prev['forma_pagamento'] ?? '-' }}
+                                                            @if (! empty($prev['cartao']))
+                                                                <button type="button" class="btn btn-sm btn-link p-0 ms-1 align-baseline" data-bs-toggle="modal" data-bs-target="#cardDetailModal{{ $prev['movimento_id'] }}" title="Detalhes do cartão">
+                                                                    <i class="bi bi-credit-card-2-front"></i>
+                                                                </button>
+                                                            @endif
+                                                        </td>
+                                                        <td class="text-end">{{ $fmt($prev['valor']) }}</td>
+                                                        <td>{{ \Illuminate\Support\Carbon::parse($prev['data_venda'])->format('d/m/Y') }}</td>
+                                                    </tr>
+                                                @endforeach
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    @else
+                                        <p class="text-secondary mb-0">Nenhuma entrada de cartão prevista para cair hoje.</p>
+                                    @endif
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Fechar</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                @endforeach
+
+                {{--
+                    Modais de detalhe de cartão, um por movimento_id (não por
+                    dia) — ficam fora dos modais de dia para não duplicar o
+                    mesmo id quando o movimento aparece tanto em
+                    "pago/recebido" quanto em "previsto para hoje". Abrir um
+                    destes a partir de um modal de dia já aberto empilha dois
+                    `.modal` do Bootstrap ao mesmo tempo; o ajuste de
+                    z-index/backdrop para esse caso já é feito de forma
+                    genérica em assets/js/desktop.js.
+                --}}
+                @foreach ($cardDetailsByMovimento as $movimentoId => $detalheCartao)
+                    <div class="modal fade" id="cardDetailModal{{ $movimentoId }}" tabindex="-1" aria-hidden="true">
+                        <div class="modal-dialog modal-dialog-centered">
+                            <div class="modal-content">
+                                <div class="modal-header">
+                                    <h5 class="modal-title">Detalhes do cartão</h5>
+                                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                                </div>
+                                <div class="modal-body">
+                                    <dl class="row mb-0">
+                                        <dt class="col-6">Operadora</dt>
+                                        <dd class="col-6">{{ $detalheCartao['operadora'] ?? '-' }}</dd>
+
+                                        <dt class="col-6">Bandeira</dt>
+                                        <dd class="col-6">{{ $detalheCartao['bandeira'] ?? 'Genérica (qualquer bandeira)' }}</dd>
+
+                                        <dt class="col-6">Modalidade</dt>
+                                        <dd class="col-6">{{ $detalheCartao['modalidade'] === 'debito' ? 'Débito' : 'Crédito' }}</dd>
+
+                                        <dt class="col-6">Parcelas</dt>
+                                        <dd class="col-6">{{ $detalheCartao['parcelas'] }}x</dd>
+
+                                        <dt class="col-6">Taxa da operadora</dt>
+                                        <dd class="col-6">{{ number_format($detalheCartao['taxa_percentual'], 2, ',', '.') }}% + {{ $fmt($detalheCartao['taxa_fixa']) }}</dd>
+
+                                        <dt class="col-6">Valor da taxa</dt>
+                                        <dd class="col-6">{{ $fmt($detalheCartao['valor_taxa']) }}</dd>
+
+                                        <dt class="col-6">Valor líquido</dt>
+                                        <dd class="col-6">{{ $fmt($detalheCartao['valor_liquido']) }}</dd>
+
+                                        <dt class="col-6">Prazo de recebimento</dt>
+                                        <dd class="col-6">{{ $detalheCartao['prazo_recebimento_dias'] }} dia(s)</dd>
+                                    </dl>
+                                </div>
+                                <div class="modal-footer">
+                                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Fechar</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                @endforeach
             @else
                 @include('layouts.partials.empty-state', [
                     'icon' => 'bi-calendar3-week',

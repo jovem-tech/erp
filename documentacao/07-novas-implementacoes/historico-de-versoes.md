@@ -1,5 +1,36 @@
 # Historico de versoes
 
+## v3.12.0.0 - 2026-07-06
+
+- nota tecnica criada em `documentacao/07-novas-implementacoes/2026-07-06-fluxo-caixa-entrada-projetada-saldo-liquido.md`
+- coluna "Entrada projetada" no fluxo de caixa: agrega pelo dia em que o dinheiro efetivamente cai na conta (imediato no dia da venda; cartao na data de credito/repasse, podendo cruzar de mes), valor bruto;
+- coluna "Saldo liquido em conta": saldo acumulado de verdade em caixa, ja liquido de taxa para vendas em cartao, sem contar a taxa duas vezes;
+- corrigido bug pre-existente: "Saldo inicial" so somava o dia anterior ao periodo, nao o historico completo — "Saldo realizado"/"Saldo final" agora refletem a conta real;
+- botao "Detalhes" por dia com modal de lancamentos (pago/recebido e previsto para cair no dia) e submodal de detalhes do cartao (operadora, bandeira, modalidade, parcelas, taxa, prazo);
+- corrigido bug generico de modal empilhado no Bootstrap 5 (perda de scroll-lock do modal externo ao fechar o interno), reutilizavel por qualquer modal-em-modal futuro.
+
+## v3.11.0.0 - 2026-07-06
+
+- nota tecnica criada em `documentacao/07-novas-implementacoes/2026-07-06-cancelamento-lancamento-taxa-cartao.md`
+- botao "Cancelar" no dropdown de Acoes de Lancamentos: estorna os movimentos do titulo (e da despesa de taxa de cartao vinculada, se houver) sem apagar o registro;
+- taxa da operadora passa a ser registrada como despesa separada (Despesas Operacionais / Taxas e impostos) no dia do pagamento, em vez de ficar invisivel no fluxo de caixa e no DRE;
+- DRE por competencia passa a excluir titulos cancelados;
+- corrigida mensagem crua de validacao (`validation.required_if`) no desktop por falta de arquivo de traducao.
+
+## v3.10.0.0 - 2026-07-05
+
+- baixa de lancamento financeiro (`Financeiro > Lancamentos > Registrar baixa`) ganhou botao `Valor total` (preenche o saldo em aberto real do titulo) e botao `Valor parcial` (limpa e foca o campo para digitacao manual, mantendo o titulo como `Parcial` com valor pago e saldo pendente calculados automaticamente);
+- `Forma de pagamento` passou de texto livre para select com os mesmos campos de cartao da baixa de OS (operadora, bandeira, modalidade, parcelas) e estimativa de taxa ao vivo, reaproveitando o catalogo de `Cartoes e Taxas`;
+- backend: `/financeiro` (lista) passa a expor `valor_aberto` por lancamento e `/financeiro/catalogo` passa a expor o dataset de cartao; a baixa em cartao agora persiste `FinanceiroMovimentoCartao` (taxa, valor liquido, prazo) do mesmo jeito que a baixa de OS;
+- corrigido bug critico pre-existente (ja estava assim antes desta entrega): o modal de baixa era um `<div>` filho direto de `<tbody>`, HTML invalido que faz o navegador mover ("foster parenting") o conteudo para fora da tabela e esvaziar o `<form>` — na pratica, `Confirmar baixa` submetia o formulario sem nenhum campo preenchido. Os modais passaram a ser renderizados num loop separado, fora de `<table>`/`<tbody>`;
+- nota em `documentacao/07-novas-implementacoes/2026-07-05-baixa-financeiro-cartao-valor-parcial.md`.
+
+## v3.9.1.0 - 2026-07-05
+
+- corrige `TypeError: r.GetData(...).destroy is not a function` no Select2 dos campos `Categoria` e `Cliente` da tela `Financeiro > Lancamentos > Novo`: `data-select2="false"` colidia com a chave interna do plugin (jQuery expoe `data-*` via `.data()`) e foi trocado por `data-native-select="true"`, mesmo padrao ja usado em Nova OS e Base de Conhecimento;
+- mesma causa raiz documentada em `2026-06-29-select2-manual-init-collision-desktop.md`, agora reincidente no formulario de Financeiro;
+- nota em `documentacao/07-novas-implementacoes/2026-07-05-select2-colisao-financeiro-desktop.md`.
+
 ## v3.7.3 - 2026-07-05
 
 - cadastro de cliente do desktop (rapido e completo) passou a padronizar **nome** em Title Case pt-BR (conectores `de/da/do/dos/das/e` em minusculo, so pessoa fisica) e **telefone** com mascara `(DDD) numero` — celular `(21) 98061-4757`, fixo `(22) 2627-4120`;

@@ -5,6 +5,16 @@
     $status = old('status', $lancamento['status'] ?? 'pendente');
     $hasMovements = (int) ($resumo['total_movimentos'] ?? 0) > 0;
     $avulso = filter_var(old('avulso', $lancamento['avulso'] ?? false), FILTER_VALIDATE_BOOL);
+    $canQuickClient = $canQuickClient ?? false;
+    $selectedClienteId = (int) old('cliente_id', $lancamento['cliente_id'] ?? 0);
+    $selectedClienteNome = trim((string) ($lancamento['client']['nome_razao'] ?? ''));
+    $selectedClienteLabel = $selectedClienteNome !== ''
+        ? $selectedClienteNome
+        : ($selectedClienteId > 0 ? 'Cliente #' . $selectedClienteId : '');
+    $currentCategoria = old('categoria', (string) ($lancamento['categoria'] ?? ''));
+    $catalogNomes = array_filter(array_map(fn($c) => (string) ($c['nome'] ?? ''), $categorias ?? []));
+    $valorRaw = old('valor', (string) ($lancamento['valor'] ?? ''));
+    $defaultDataVencimento = old('data_vencimento') ?: ($lancamento['data_vencimento'] ?: date('Y-m-d'));
 @endphp
 
 <section class="desktop-form-card">
@@ -40,18 +50,43 @@
 
             <div>
                 <label for="financeiroCategoria">Categoria *</label>
-                <input type="text" id="financeiroCategoria" name="categoria" class="form-control" list="financeiroCategoriaOptions" maxlength="50" value="{{ old('categoria', $lancamento['categoria'] ?? '') }}" placeholder="Ex.: Serviço, Aluguel, Energia" required>
-                <datalist id="financeiroCategoriaOptions">
-                    @foreach (($categorias ?? []) as $categoriaOption)
-                        <option value="{{ $categoriaOption['nome'] ?? '' }}"></option>
+                <select
+                    id="financeiroCategoria"
+                    name="categoria"
+                    class="form-select @error('categoria') is-invalid @enderror"
+                    data-native-select="true"
+                    data-select2-placeholder="Ex.: Serviço, Aluguel, Energia..."
+                    required
+                >
+                    <option value=""></option>
+                    @if ($currentCategoria !== '' && !in_array($currentCategoria, $catalogNomes, true))
+                        <option value="{{ $currentCategoria }}" selected>{{ $currentCategoria }}</option>
+                    @endif
+                    @foreach (($categorias ?? []) as $catOpt)
+                        @php $catNome = (string) ($catOpt['nome'] ?? ''); @endphp
+                        @if ($catNome !== '')
+                            <option value="{{ $catNome }}" @selected($currentCategoria === $catNome)>{{ $catNome }}</option>
+                        @endif
                     @endforeach
-                </datalist>
+                </select>
+                @error('categoria')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
                 <small class="text-muted d-block mt-1">A categoria define automaticamente o grupo e subgrupo do DRE (máx. 50 caracteres).</small>
             </div>
 
             <div>
-                <label for="financeiroValor">Valor *</label>
-                <input type="number" id="financeiroValor" name="valor" class="form-control" step="0.01" min="0.01" value="{{ old('valor', $lancamento['valor'] ?? '') }}" required>
+                <label for="financeiroValorDisplay">Valor *</label>
+                <input
+                    type="text"
+                    id="financeiroValorDisplay"
+                    class="form-control @error('valor') is-invalid @enderror"
+                    placeholder="R$ 0,00"
+                    inputmode="numeric"
+                    autocomplete="off"
+                    aria-describedby="financeiroValorHidden"
+                    required
+                >
+                <input type="hidden" id="financeiroValorHidden" name="valor" value="{{ $valorRaw }}">
+                @error('valor')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
             </div>
         </div>
 
@@ -71,7 +106,7 @@
             <div class="desktop-grid desktop-grid-three">
                 <div>
                     <label for="financeiroDataVencimento">Data de vencimento *</label>
-                    <input type="date" id="financeiroDataVencimento" name="data_vencimento" class="form-control" value="{{ old('data_vencimento', $lancamento['data_vencimento'] ?? '') }}" required>
+                    <input type="date" id="financeiroDataVencimento" name="data_vencimento" class="form-control" value="{{ $defaultDataVencimento }}" @if(empty($lancamento['id'])) data-set-today="1" @endif required>
                 </div>
 
                 <div>
@@ -132,12 +167,39 @@
                 </div>
 
                 <div>
-                    <label for="financeiroClienteId">Cliente (ID)</label>
-                    <input type="number" id="financeiroClienteId" name="cliente_id" class="form-control" min="1" value="{{ old('cliente_id', $lancamento['cliente_id'] ?? '') }}">
+                    <label for="financeiroClienteId">Cliente</label>
+                    <div class="d-flex gap-2 align-items-start">
+                        <select
+                            id="financeiroClienteId"
+                            name="cliente_id"
+                            class="form-select @error('cliente_id') is-invalid @enderror"
+                            data-native-select="true"
+                            data-select2-placeholder="Buscar cliente pelo nome..."
+                        >
+                            <option value=""></option>
+                            @if ($selectedClienteId > 0)
+                                <option value="{{ $selectedClienteId }}" selected>
+                                    {{ $selectedClienteLabel !== '' ? $selectedClienteLabel : 'Cliente #' . $selectedClienteId }}
+                                </option>
+                            @endif
+                        </select>
+                        @if ($canQuickClient)
+                            <button
+                                type="button"
+                                id="btnNovoClienteFinanceiro"
+                                class="btn btn-soft flex-shrink-0"
+                                title="Cadastrar novo cliente"
+                                aria-label="Cadastrar novo cliente"
+                            >
+                                <i class="bi bi-person-plus"></i>
+                            </button>
+                        @endif
+                    </div>
+                    @error('cliente_id')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
                     <small class="text-muted d-block mt-1">Opcional no avulso. Quando informado, o recebimento aparece no histórico financeiro do cliente.</small>
                 </div>
 
-                <div>
+                <div id="financeiroFornecedorWrapper" @class(['d-none' => $tipo === 'receber'])>
                     <label for="financeiroFornecedorId">Fornecedor (ID)</label>
                     <input type="number" id="financeiroFornecedorId" name="fornecedor_id" class="form-control" min="1" value="{{ old('fornecedor_id', $lancamento['fornecedor_id'] ?? '') }}">
                 </div>
@@ -165,6 +227,36 @@
         const avulsoInput = document.getElementById('financeiroAvulso');
         const osInput = document.getElementById('financeiroOsId');
         const osHelp = document.getElementById('financeiroOsHelp');
+        const tipoSelect = document.getElementById('financeiroTipo');
+        const fornecedorWrapper = document.getElementById('financeiroFornecedorWrapper');
+        const fornecedorInput = document.getElementById('financeiroFornecedorId');
+        const dateInput = document.getElementById('financeiroDataVencimento');
+
+        if (dateInput && dateInput.dataset.setToday === '1') {
+            const now = new Date();
+            const yyyy = now.getFullYear();
+            const mm = String(now.getMonth() + 1).padStart(2, '0');
+            const dd = String(now.getDate()).padStart(2, '0');
+            dateInput.value = `${yyyy}-${mm}-${dd}`;
+        }
+
+        const syncFornecedorVisibility = () => {
+            if (!fornecedorWrapper || !tipoSelect) {
+                return;
+            }
+
+            const isReceber = tipoSelect.value === 'receber';
+            fornecedorWrapper.classList.toggle('d-none', isReceber);
+
+            if (isReceber && fornecedorInput) {
+                fornecedorInput.value = '';
+            }
+        };
+
+        if (tipoSelect) {
+            tipoSelect.addEventListener('change', syncFornecedorVisibility);
+            syncFornecedorVisibility();
+        }
 
         if (!avulsoInput || !osInput || !osHelp) {
             return;
@@ -194,3 +286,9 @@
         syncAvulsoState();
     })();
 </script>
+
+@if ($canQuickClient)
+    @push('modals')
+        @include('clients.quick-modal')
+    @endpush
+@endif

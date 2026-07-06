@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-07-05T23:30:54+00:00",
+    "generated_at": "2026-07-06T14:16:09+00:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "3.9.0",
+        "app_version": "3.12.0",
         "api_version": "1.1.1",
         "production_target": "Ubuntu VPS",
         "development_target": "Windows/XAMPP"
@@ -366,6 +366,10 @@
                     "title": "Compactacao do modal de revisao de orcamento"
                 },
                 {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-05-baixa-financeiro-cartao-valor-parcial.md",
+                    "title": "Baixa de lancamento financeiro: valor total/parcial e forma de pagamento em cartao"
+                },
+                {
                     "file": "documentacao/07-novas-implementacoes/2026-07-05-deploy-producao-contabo-subdominios-e-dados-reais.md",
                     "title": "Deploy de producao na VPS Contabo com subdominios e dados reais do legado"
                 },
@@ -376,6 +380,18 @@
                 {
                     "file": "documentacao/07-novas-implementacoes/2026-07-05-padronizacao-nome-telefone-cadastro-cliente-desktop.md",
                     "title": "Padronizacao de nome e telefone no cadastro de cliente (desktop)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-05-select2-colisao-financeiro-desktop.md",
+                    "title": "Correcao de colisao do Select2 no formulario Financeiro (desktop)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-06-cancelamento-lancamento-taxa-cartao.md",
+                    "title": "Cancelamento de lançamento financeiro e taxa de cartão como despesa"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-06-fluxo-caixa-entrada-projetada-saldo-liquido.md",
+                    "title": "Fluxo de caixa: entrada projetada, saldo líquido e detalhamento diário"
                 },
                 {
                     "file": "documentacao/07-novas-implementacoes/historico-de-versoes.md",

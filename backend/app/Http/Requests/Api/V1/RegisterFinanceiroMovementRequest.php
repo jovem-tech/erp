@@ -12,6 +12,10 @@ class RegisterFinanceiroMovementRequest extends BaseApiFormRequest
             'forma_pagamento' => ['nullable', 'string', 'max:40'],
             'documento_ref' => ['nullable', 'string', 'max:100'],
             'observacoes' => ['nullable', 'string'],
+            'operadora_id' => ['nullable', 'integer', 'min:1', 'required_if:forma_pagamento,cartao_credito,cartao_debito'],
+            'bandeira_id' => ['nullable', 'integer', 'min:1'],
+            'modalidade' => ['nullable', 'string', 'in:credito,debito'],
+            'parcelas' => ['nullable', 'integer', 'min:1', 'max:99'],
         ];
     }
 }

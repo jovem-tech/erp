@@ -158,4 +158,18 @@ via cards visuais, preferência em sessão Laravel, CSS escopo-isolado por
 Feature `specs/010-inbox-whatsapp-tempo-real/` em andamento por outra
 linha de trabalho — consultar o proprio plan.md dela para o estado atual
 antes de presumir o que ja foi entregue.
+Entregue em 2026-07-05/06 (v3.10.0.0–3.12.0.0), modulo Financeiro
+(Lancamentos, sem specs/ formal — ver notas em
+`documentacao/07-novas-implementacoes/2026-07-05*` e `2026-07-06*`): baixa
+em cartao com taxa (operadora/bandeira/parcelas) espelhando o padrao da
+baixa de OS; cancelamento de lancamento com estorno dos movimentos e da
+despesa "Taxa de cartao" vinculada; taxa da operadora passa a ser
+registrada como despesa propria (Despesas Operacionais / Taxas e
+impostos) no dia do pagamento; DRE por competencia exclui titulos
+cancelados; relatorio de Fluxo de Caixa ganhou colunas "Entrada
+projetada" e "Saldo liquido em conta" (pela data real em que o dinheiro
+cai na conta, ja liquidas de taxa) com modal de detalhamento diario e
+submodal de detalhes do cartao; corrigido bug pre-existente do saldo
+inicial (so somava o dia anterior ao periodo) e bug generico de modal
+empilhado no Bootstrap 5 em `desktop.js`.
 <!-- SPECKIT END -->

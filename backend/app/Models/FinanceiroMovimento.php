@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class FinanceiroMovimento extends Model
 {
@@ -27,5 +28,10 @@ class FinanceiroMovimento extends Model
     public function financeiro(): BelongsTo
     {
         return $this->belongsTo(Financeiro::class, 'financeiro_id', 'id');
+    }
+
+    public function cartao(): HasOne
+    {
+        return $this->hasOne(FinanceiroMovimentoCartao::class, 'movimento_id', 'id');
     }
 }

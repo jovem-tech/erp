@@ -914,6 +914,34 @@ const DesktopUi = (() => {
         if (event.target instanceof HTMLElement) {
             refreshSelect2(event.target);
         }
+
+        // Bootstrap 5 não dá suporte oficial a modais empilhados: com dois
+        // `.modal` abertos ao mesmo tempo, ambos e seus backdrops nascem com
+        // o mesmo z-index fixo (definido no CSS do Bootstrap), então o
+        // segundo modal pode ficar visualmente atrás do backdrop do
+        // primeiro. Sem isso, um botão dentro de um modal já aberto que
+        // abre um segundo modal (ex.: "ver detalhes" dentro de um modal de
+        // detalhamento) renderiza errado.
+        const openModals = document.querySelectorAll('.modal.show');
+        if (openModals.length > 1 && event.target instanceof HTMLElement) {
+            const zIndexBase = 1055 + (openModals.length - 1) * 20;
+            event.target.style.zIndex = String(zIndexBase);
+
+            const backdrops = document.querySelectorAll('.modal-backdrop');
+            const lastBackdrop = backdrops[backdrops.length - 1];
+            if (lastBackdrop instanceof HTMLElement) {
+                lastBackdrop.style.zIndex = String(zIndexBase - 5);
+            }
+        }
+    });
+
+    document.addEventListener('hidden.bs.modal', () => {
+        // Fechar o modal de cima remove `modal-open` do <body> mesmo que um
+        // modal mais externo continue aberto — sem isso, a página por trás
+        // volta a rolar enquanto o modal de baixo ainda está visível.
+        if (document.querySelector('.modal.show')) {
+            document.body.classList.add('modal-open');
+        }
     });
 
     document.addEventListener('shown.bs.offcanvas', (event) => {

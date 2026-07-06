@@ -68,13 +68,17 @@ $historyEntry = $historyHeader . PHP_EOL . PHP_EOL .
 
 $historyContent = file_exists($historyFile)
     ? (string) file_get_contents($historyFile)
-    : '# Histórico de versões' . PHP_EOL . PHP_EOL;
+    : '# Historico de versoes' . PHP_EOL . PHP_EOL;
 
 if (!str_contains($historyContent, $historyHeader)) {
-    $prefix = '# Histórico de versões' . PHP_EOL;
-    if (str_starts_with($historyContent, $prefix)) {
-        $rest = ltrim(substr($historyContent, strlen($prefix)));
-        $historyContent = $prefix . PHP_EOL . $historyEntry . $rest;
+    // Insere logo apos a primeira linha (o titulo "# ..."), qualquer que seja
+    // o texto exato dele (acentuado ou nao) — nao assumir um prefixo fixo aqui,
+    // pois o titulo real do arquivo pode ter sido digitado sem acentos.
+    $firstLineEnd = strpos($historyContent, PHP_EOL);
+    if ($firstLineEnd !== false && str_starts_with(ltrim($historyContent), '#')) {
+        $titleLine = substr($historyContent, 0, $firstLineEnd);
+        $rest = ltrim(substr($historyContent, $firstLineEnd + strlen(PHP_EOL)));
+        $historyContent = $titleLine . PHP_EOL . PHP_EOL . $historyEntry . $rest;
     } else {
         $historyContent = rtrim($historyContent) . PHP_EOL . PHP_EOL . $historyEntry;
     }

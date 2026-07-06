@@ -4079,6 +4079,10 @@ a {
     color: #2563eb;
 }
 
+.cashflow-list-amount.is-projected {
+    color: var(--desktop-info);
+}
+
 .detail-list {
     display: grid;
     gap: 0.9rem;
