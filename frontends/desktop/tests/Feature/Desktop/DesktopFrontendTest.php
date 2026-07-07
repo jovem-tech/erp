@@ -3786,6 +3786,94 @@ class DesktopFrontendTest extends TestCase
             ->assertDontSee('Fluxo inicial');
     }
 
+
+    public function test_orders_closure_page_disables_receber_saldo_total_when_no_open_balance(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/3614' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'order' => [
+                        'id' => 3614,
+                        'numero_os' => 'OS26070002',
+                        'status' => 'triagem',
+                        'status_nome' => 'Triagem',
+                        'estado_fluxo' => 'em_atendimento',
+                        'valor_final' => 0,
+                        'cliente_id' => 1168,
+                        'cliente_nome' => 'Cliente Sem Saldo',
+                        'equipamento_id' => 3603,
+                        'equipamento_nome' => 'Notebook Zero',
+                        'equipamento_tipo_nome' => 'Notebook',
+                        'equipamento_numero_serie' => 'SN-0000',
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/orders/3614/closure' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'order' => [
+                        'id' => 3614,
+                        'numero_os' => 'OS26070002',
+                        'status' => 'triagem',
+                        'estado_fluxo' => 'em_atendimento',
+                        'valor_final' => 0,
+                    ],
+                    'cliente_telefone' => '',
+                    'opcoes_encerramento' => [
+                        ['codigo' => 'reparo_concluido', 'nome' => 'Reparo Conclu?do'],
+                        ['codigo' => 'devolvido_sem_reparo', 'nome' => 'Devolvido sem reparo'],
+                    ],
+                    'financeiro' => [
+                        'valor_titulo' => 0,
+                        'valor_movimentado' => 0,
+                        'valor_aberto' => 0,
+                        'total_movimentos' => 0,
+                        'status_resolvido' => null,
+                        'percentual_quitado' => 0,
+                    ],
+                    'custo_summary' => [
+                        'pecas' => 0,
+                        'servicos' => 0,
+                        'total' => 0,
+                    ],
+                    'retorno_padrao' => now()->addDays(180)->toDateString(),
+                    'cartao' => [
+                        'operadoras' => [],
+                        'bandeiras' => [],
+                        'taxas' => [],
+                    ],
+                    'status_pagamento_pendente' => [
+                        'codigo' => 'entregue_pagamento_pendente',
+                        'nome' => 'Entregue - Pend?ncia Financeira',
+                    ],
+                    'status_sem_reparo' => ['devolvido_sem_reparo', 'descartado'],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]));
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'dashboard' => ['visualizar'],
+                'os' => ['visualizar', 'editar'],
+            ]))
+            ->get('/os/3614/baixa');
+
+        $response
+            ->assertOk()
+            ->assertSee('Recebimentos e adiantamentos');
+
+        $this->assertMatchesRegularExpression('/data-action="receber-saldo-total"[^>]*disabled/', $response->getContent());
+
+        Http::allowStrayRequests();
+    }
+
     public function test_orders_update_with_photos_uses_multipart_and_redirects_to_detail(): void
     {
         Http::fake([

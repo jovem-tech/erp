@@ -1210,6 +1210,67 @@ const DesktopUi = (() => {
         });
     };
 
+    const initDropdowns = (container = document) => {
+        if (typeof bootstrap === 'undefined' || typeof bootstrap.Dropdown !== 'function') {
+            return;
+        }
+
+        const scope = container instanceof Document || container instanceof Element ? container : document;
+
+        scope.querySelectorAll('[data-bs-toggle="dropdown"]').forEach((toggle) => {
+            if (toggle.dataset.dropdownPortalBound === '1') {
+                return;
+            }
+            toggle.dataset.dropdownPortalBound = '1';
+
+            // `.table-responsive` precisa de `overflow-x: auto` para rolagem
+            // horizontal, mas isso força `overflow-y` a virar `auto` também
+            // (regra do CSS: um eixo non-visible "contamina" o outro), e como
+            // a tabela costuma ter só a altura do conteúdo, o dropdown do
+            // Bootstrap ficava: (a) abrindo para cima, sobre a própria linha
+            // (Popper achava que não havia espaço abaixo) e, mesmo depois de
+            // corrigido para abrir para baixo, (b) cortado visualmente pelo
+            // `overflow-y` do container quando a tabela é curta (poucas
+            // linhas), porque o menu continua sendo filho do DOM dessa div
+            // mesmo posicionado "por cima" via CSS. A correção definitiva é
+            // mover o `.dropdown-menu` para o final do <body> enquanto ele
+            // está aberto (deixando um marcador no lugar original para
+            // devolver depois) — assim ele nunca é filho de um ancestral com
+            // overflow clipado, e o `flip`/`preventOverflow` do Popper também
+            // deixam de considerar essa div como boundary.
+            const menu = toggle.parentElement?.querySelector(':scope > .dropdown-menu');
+            if (!(menu instanceof HTMLElement)) {
+                return;
+            }
+
+            let placeholder = null;
+
+            toggle.addEventListener('show.bs.dropdown', () => {
+                placeholder = document.createComment('dropdown-menu-placeholder');
+                menu.before(placeholder);
+                document.body.appendChild(menu);
+            });
+
+            toggle.addEventListener('hidden.bs.dropdown', () => {
+                if (placeholder instanceof Comment) {
+                    placeholder.replaceWith(menu);
+                }
+                placeholder = null;
+            });
+
+            bootstrap.Dropdown.getOrCreateInstance(toggle, {
+                popperConfig: (defaultConfig) => ({
+                    ...defaultConfig,
+                    modifiers: [
+                        ...defaultConfig.modifiers,
+                        { name: 'preventOverflow', options: { boundary: document.body } },
+                        { name: 'flip', options: { boundary: document.body } },
+                    ],
+                }),
+            });
+        });
+    };
+
     const init = () => {
         initSidebar();
         initSidebarGroups();
@@ -1224,9 +1285,10 @@ const DesktopUi = (() => {
         initOsPreviewModals();
         initSearchAutocomplete();
         initPhotoFallbacks();
+        initDropdowns();
     };
 
-    return { init, refreshSelect2, logError, sanitizeForLog };
+    return { init, refreshSelect2, refreshDropdowns: initDropdowns, logError, sanitizeForLog };
 })();
 
 window.DesktopUi = DesktopUi;

@@ -11,11 +11,14 @@ use App\Models\Order;
 use App\Models\OrderDocument;
 use App\Models\OrderPhoto;
 use App\Models\OrderStatus;
+use App\Models\OrderProcedureHistory;
 use App\Models\OrderStatusHistory;
 use App\Models\OrderStatusTransition;
 use App\Models\User;
 use App\Notifications\MobileNotification;
+use App\Services\Channels\Whatsapp\WhatsappMessagingService;
 use App\Services\Financeiro\OsMargemService;
+use App\Services\Integrations\IntegrationSettingsService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
@@ -30,7 +33,9 @@ class OrderWorkflowService
 {
     public function __construct(
         private readonly OrderNumberService $orderNumberService,
-        private readonly OsMargemService $osMargemService
+        private readonly OsMargemService $osMargemService,
+        private readonly WhatsappMessagingService $whatsappMessagingService,
+        private readonly IntegrationSettingsService $integrationSettingsService
     ) {
     }
 
@@ -547,8 +552,15 @@ class OrderWorkflowService
         return $createdPhotoIds;
     }
 
-    public function updateStatus(int $orderId, User $actor, string $newStatus, ?string $observacao = null): array
-    {
+    public function updateStatus(
+        int $orderId,
+        User $actor,
+        ?string $newStatus = null,
+        ?string $observacao = null,
+        ?string $diagnosticoTecnico = null,
+        ?string $solucaoAplicada = null,
+        bool $comunicarCliente = false
+    ): array {
         $order = Order::query()->find($orderId);
 
         if (! $order instanceof Order) {
@@ -564,6 +576,12 @@ class OrderWorkflowService
             ];
         }
 
+        $previousStatus = trim((string) ($order->status ?? ''));
+
+        // Sem status de destino informado: mantém a etapa atual (usado quando o
+        // técnico só quer salvar diagnóstico/solução, sem avançar o fluxo).
+        $newStatus = $newStatus !== null && trim($newStatus) !== '' ? trim($newStatus) : $previousStatus;
+
         $statusRow = OrderStatus::activeByCode($newStatus);
         if (! $statusRow instanceof OrderStatus) {
             return [
@@ -572,11 +590,11 @@ class OrderWorkflowService
         }
 
         $now = Carbon::now();
-        $previousStatus = trim((string) ($order->status ?? ''));
+        $statusChanged = $previousStatus !== '' && $newStatus !== $previousStatus;
 
         // Só permite mover para uma etapa de destino prevista no catálogo de transições.
         // Se a origem não possui transições cadastradas, mantém o comportamento permissivo.
-        if ($previousStatus !== '' && $newStatus !== $previousStatus) {
+        if ($statusChanged) {
             $allowed = $this->allowedTransitionCodes($previousStatus);
             if ($allowed !== [] && ! in_array($newStatus, $allowed, true)) {
                 return [
@@ -589,20 +607,42 @@ class OrderWorkflowService
 
         $estadoFluxo = trim((string) ($statusRow->estado_fluxo_padrao ?? '')) ?: 'em_atendimento';
 
-        DB::transaction(function () use ($orderId, $previousStatus, $newStatus, $estadoFluxo, $actor, $observacao, $now): void {
-            Order::query()
-                ->whereKey($orderId)
-                ->update([
-                    'status' => $newStatus,
-                    'estado_fluxo' => $estadoFluxo,
-                    'status_atualizado_em' => $now,
-                    'updated_at' => $now,
-                ]);
+        DB::transaction(function () use (
+            $orderId,
+            $previousStatus,
+            $newStatus,
+            $statusChanged,
+            $estadoFluxo,
+            $actor,
+            $observacao,
+            $diagnosticoTecnico,
+            $solucaoAplicada,
+            $now
+        ): void {
+            $updateData = ['updated_at' => $now];
 
-            $this->createStatusHistory($orderId, $previousStatus, $newStatus, $estadoFluxo, $actor, $observacao, $now);
+            if ($statusChanged) {
+                $updateData['status'] = $newStatus;
+                $updateData['estado_fluxo'] = $estadoFluxo;
+                $updateData['status_atualizado_em'] = $now;
+            }
+
+            if ($diagnosticoTecnico !== null) {
+                $updateData['diagnostico_tecnico'] = trim($diagnosticoTecnico);
+            }
+
+            if ($solucaoAplicada !== null) {
+                $updateData['solucao_aplicada'] = trim($solucaoAplicada);
+            }
+
+            Order::query()->whereKey($orderId)->update($updateData);
+
+            if ($statusChanged) {
+                $this->createStatusHistory($orderId, $previousStatus, $newStatus, $estadoFluxo, $actor, $observacao, $now);
+            }
         });
 
-        if ((bool) ($statusRow->status_final ?? false)) {
+        if ($statusChanged && (bool) ($statusRow->status_final ?? false)) {
             try {
                 $this->osMargemService->calcularParaOs($orderId);
             } catch (Throwable $exception) {
@@ -615,7 +655,7 @@ class OrderWorkflowService
 
         $updatedOrder = $this->detailQuery()->find($orderId);
 
-        if ($updatedOrder instanceof Order) {
+        if ($statusChanged && $updatedOrder instanceof Order) {
             $this->sendOrderNotification(
                 $updatedOrder,
                 $actor,
@@ -632,6 +672,10 @@ class OrderWorkflowService
             );
         }
 
+        if ($statusChanged && $comunicarCliente && $updatedOrder instanceof Order) {
+            $this->sendStatusChangeClientNotification($updatedOrder, $newStatus, $observacao);
+        }
+
         logger()->info('[API V1][ORDERS] Status alterado', [
             'order_id' => $orderId,
             'user_id' => $actor->id,
@@ -646,6 +690,43 @@ class OrderWorkflowService
             'status_anterior' => $previousStatus,
             'status_novo' => $newStatus,
             'estado_fluxo' => $estadoFluxo,
+        ];
+    }
+
+    public function addProcedureEntry(int $orderId, User $actor, string $descricao): array
+    {
+        $order = Order::query()->find($orderId);
+
+        if (! $order instanceof Order) {
+            return ['result' => 'not_found'];
+        }
+
+        if (! $this->canAccessOrder($actor, $order)) {
+            return ['result' => 'forbidden'];
+        }
+
+        $descricao = trim($descricao);
+        if ($descricao === '') {
+            return ['result' => 'empty_description'];
+        }
+
+        OrderProcedureHistory::query()->create([
+            'os_id' => $orderId,
+            'descricao' => $descricao,
+            'usuario_id' => (int) $actor->id,
+            'created_at' => Carbon::now(),
+        ]);
+
+        logger()->info('[API V1][ORDERS] Procedimento registrado', [
+            'order_id' => $orderId,
+            'user_id' => $actor->id,
+        ]);
+
+        $updatedOrder = $this->detailQuery()->find($orderId);
+
+        return [
+            'result' => 'ok',
+            'order' => $updatedOrder instanceof Order ? $this->mapDetail($updatedOrder) : null,
         ];
     }
 
@@ -854,6 +935,9 @@ class OrderWorkflowService
         return Order::query()->with([
             'client',
             'equipment',
+            'equipment.type',
+            'equipment.brand',
+            'equipment.model',
             'technician',
             'statusCatalog',
             'statusHistory' => static function ($query): void {
@@ -862,6 +946,13 @@ class OrderWorkflowService
                     ->orderByDesc('created_at')
                     ->orderByDesc('id')
                     ->limit(5);
+            },
+            'procedureHistory' => static function ($query): void {
+                $query
+                    ->with('user')
+                    ->orderByDesc('created_at')
+                    ->orderByDesc('id')
+                    ->limit(20);
             },
             'photos' => static function ($query): void {
                 $query->orderBy('id');
@@ -1111,6 +1202,13 @@ class OrderWorkflowService
             'equipamento_id' => (int) ($order->equipamento_id ?? 0),
             'equipamento_resumo_tecnico' => (string) ($order->equipment?->resumo_tecnico ?? ''),
             'equipamento_numero_serie' => (string) ($order->equipment?->numero_serie ?? ''),
+            'equipamento_tipo_nome' => (string) ($order->equipment?->type?->nome ?? ''),
+            'equipamento_resumo_curto' => $this->resolveEquipmentShortSummary(
+                $order->equipment?->type?->nome,
+                $order->equipment?->brand?->nome,
+                $order->equipment?->model?->nome,
+                $order->equipment?->resumo_tecnico
+            ),
             'equipamento' => $this->mapEquipment($order->equipment),
             'tecnico_id' => (int) ($order->tecnico_id ?? 0),
             'tecnico' => $this->mapTechnician($order->technician),
@@ -1147,6 +1245,7 @@ class OrderWorkflowService
             'observacoes_internas' => (string) ($order->observacoes_internas ?? ''),
             'observacoes_cliente' => (string) ($order->observacoes_cliente ?? ''),
             'historico' => $this->mapHistoryCollection($order->statusHistory),
+            'procedimentos_historico' => $this->mapProcedureHistoryCollection($order->procedureHistory),
             'status_disponiveis' => $this->mapStatusOptions(),
             'proximas_etapas' => $this->mapNextStatusOptions((string) ($order->status ?? '')),
             'fotos' => $this->mapPhotoCollection($order->photos, (int) ($order->id ?? 0)),
@@ -1411,8 +1510,11 @@ class OrderWorkflowService
             'id' => (int) ($equipment->id ?? 0),
             'cliente_id' => (int) ($equipment->cliente_id ?? 0),
             'tipo_id' => (int) ($equipment->tipo_id ?? 0),
+            'tipo_nome' => (string) ($equipment->type?->nome ?? ''),
             'marca_id' => (int) ($equipment->marca_id ?? 0),
+            'marca_nome' => (string) ($equipment->brand?->nome ?? ''),
             'modelo_id' => (int) ($equipment->modelo_id ?? 0),
+            'modelo_nome' => (string) ($equipment->model?->nome ?? ''),
             'cor' => (string) ($equipment->cor ?? ''),
             'numero_serie' => (string) ($equipment->numero_serie ?? ''),
             'imei' => (string) ($equipment->imei ?? ''),
@@ -1466,6 +1568,31 @@ class OrderWorkflowService
                 'created_at' => $this->formatDateTime($historyItem->created_at ?? null),
                 'usuario_id' => (int) ($historyItem->usuario_id ?? 0),
                 'usuario' => $this->mapTechnician($historyItem->user),
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
+     * @param iterable<OrderProcedureHistory> $procedureItems
+     * @return array<int, array<string, mixed>>
+     */
+    private function mapProcedureHistoryCollection(iterable $procedureItems): array
+    {
+        $items = [];
+
+        foreach ($procedureItems as $procedureItem) {
+            if (! $procedureItem instanceof OrderProcedureHistory) {
+                continue;
+            }
+
+            $items[] = [
+                'id' => (int) ($procedureItem->id ?? 0),
+                'descricao' => (string) ($procedureItem->descricao ?? ''),
+                'created_at' => $this->formatDateTime($procedureItem->created_at ?? null),
+                'usuario_id' => (int) ($procedureItem->usuario_id ?? 0),
+                'usuario' => $this->mapTechnician($procedureItem->user),
             ];
         }
 
@@ -2050,6 +2177,80 @@ class OrderWorkflowService
 
         foreach ($recipients as $recipient) {
             $recipient->notify(new MobileNotification($payload));
+        }
+    }
+
+    private function sendStatusChangeClientNotification(Order $order, string $newStatus, ?string $observacao): void
+    {
+        $order->loadMissing('client');
+        $telefone = trim((string) ($order->client?->telefone1 ?? ''));
+
+        if ($telefone === '') {
+            logger()->warning('[API V1][ORDERS] Cliente sem telefone cadastrado, notificação de status não enviada', [
+                'order_id' => $order->id,
+            ]);
+
+            return;
+        }
+
+        $statusNome = (string) (
+            OrderStatus::query()->where('codigo', $newStatus)->value('nome') ?? $newStatus
+        );
+
+        $texto = 'Olá! O status da sua OS ' . $order->numero_os . ' foi atualizado para: "' . $statusNome . '".';
+        if (trim((string) $observacao) !== '') {
+            $texto .= ' ' . trim((string) $observacao);
+        }
+
+        // Caminho preferencial: registra a mensagem na Central de Atendimento
+        // (inbox) e dispara o envio pelo provedor configurado. Depende do banco
+        // 'chat' estar provisionado/acessível.
+        try {
+            $resultado = $this->whatsappMessagingService->sendSystemMessage(
+                $telefone,
+                $texto,
+                [],
+                trim((string) ($order->client?->nome_razao ?? '')) ?: null,
+                (int) ($order->cliente_id ?? 0) > 0 ? (int) $order->cliente_id : null,
+                [
+                    'origem' => 'order_status_update',
+                    'order_id' => (int) $order->id,
+                    'status_novo' => $newStatus,
+                ]
+            );
+
+            if ((bool) ($resultado['ok'] ?? false)) {
+                return;
+            }
+
+            logger()->warning('[API V1][ORDERS] Envio via inbox retornou falha; tentando envio direto', [
+                'order_id' => $order->id,
+                'message' => (string) ($resultado['message'] ?? ''),
+            ]);
+        } catch (Throwable $exception) {
+            logger()->warning('[API V1][ORDERS] Inbox indisponível para notificar cliente; tentando envio direto', [
+                'order_id' => $order->id,
+                'message' => $exception->getMessage(),
+            ]);
+        }
+
+        // Fallback: envia direto pelo provedor (Evolution/gateway) sem passar
+        // pela Central de Atendimento — garante entrega mesmo quando o banco
+        // 'chat' não está disponível neste ambiente.
+        try {
+            $direto = $this->integrationSettingsService->sendDirectMessage($telefone, $texto);
+
+            if (! (bool) ($direto['ok'] ?? false)) {
+                logger()->warning('[API V1][ORDERS] Falha ao notificar cliente sobre mudança de status (envio direto)', [
+                    'order_id' => $order->id,
+                    'message' => (string) ($direto['message'] ?? ''),
+                ]);
+            }
+        } catch (Throwable $exception) {
+            logger()->warning('[API V1][ORDERS] Falha ao notificar cliente sobre mudança de status (envio direto)', [
+                'order_id' => $order->id,
+                'message' => $exception->getMessage(),
+            ]);
         }
     }
 

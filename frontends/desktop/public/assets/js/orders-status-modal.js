@@ -2,10 +2,12 @@
     const config = window.__DESKTOP_STATUS_MODAL || {};
     const statusContextUrlTemplate = String(config.statusContextUrlTemplate || '');
     const statusUpdateUrlTemplate = String(config.statusUpdateUrlTemplate || '');
+    const proceduresUrlTemplate = String(config.proceduresUrlTemplate || '');
     const csrfToken = String(config.csrfToken || '');
 
     const buildContextUrl = (orderId) => statusContextUrlTemplate.replaceAll('__ORDER__', String(orderId));
     const buildUpdateUrl = (orderId) => statusUpdateUrlTemplate.replaceAll('__ORDER__', String(orderId));
+    const buildProceduresUrl = (orderId) => proceduresUrlTemplate.replaceAll('__ORDER__', String(orderId));
 
     const modalEl = document.getElementById('orderStatusModal');
     if (!modalEl) return;
@@ -19,8 +21,13 @@
     const selectEl = document.getElementById('orderStatusModalSelect');
     const nextBtn = document.getElementById('orderStatusModalQuickNext');
     const cancelBtn = document.getElementById('orderStatusModalQuickCancel');
+    const proceduresEl = document.getElementById('orderStatusModalProcedures');
+    const diagnosisEl = document.getElementById('orderStatusModalDiagnosis');
+    const solutionEl = document.getElementById('orderStatusModalSolution');
+    const proceduresSaveBtn = document.getElementById('orderStatusModalProceduresSave');
 
     let currentOrderId = null;
+    let statusLabelsByCode = {};
 
     const setText = (id, text) => {
         const el = document.getElementById(id);
@@ -48,11 +55,57 @@
         }
     };
 
+    const statusLabel = (code) => {
+        const trimmed = String(code || '').trim();
+        if (trimmed === '') return '';
+        return statusLabelsByCode[trimmed] || trimmed;
+    };
+
+    const formatHistoryDate = (value) => {
+        const raw = String(value || '').trim();
+        if (raw === '') return '';
+
+        const parsed = new Date(raw);
+        if (Number.isNaN(parsed.getTime())) return raw;
+
+        return parsed.toLocaleString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+    };
+
+    const buildProcedureHistoryItem = (item) => {
+        const data = formatHistoryDate(item.created_at);
+        const descricao = String(item.descricao || '');
+        const autor = item.usuario?.nome ? String(item.usuario.nome) : '';
+
+        return `
+            <div class="os-status-history-item">
+                ${data !== '' ? `<div class="os-status-history-item-date mb-1">${data}</div>` : ''}
+                <div class="os-status-history-item-obs">${descricao}</div>
+                ${autor !== '' ? `<div class="os-status-history-item-author">por ${autor}</div>` : ''}
+            </div>
+        `;
+    };
+
+    const renderProceduresHistory = (procedimentos) => {
+        const historyEl = document.getElementById('orderStatusModalProceduresHistory');
+        if (!historyEl) return;
+
+        const items = Array.isArray(procedimentos) ? procedimentos : [];
+        historyEl.innerHTML = items.length > 0
+            ? items.map(buildProcedureHistoryItem).join('')
+            : '<p class="text-muted small mb-0">Nenhum procedimento registrado ainda.</p>';
+    };
+
     const buildHistoryItem = (item) => {
-        const anterior = String(item.status_anterior || '');
-        const novo = String(item.status_novo || '');
+        const anterior = statusLabel(item.status_anterior);
+        const novo = statusLabel(item.status_novo);
         const transicao = anterior && novo ? `${anterior} → ${novo}` : (novo || anterior || 'Movimentação');
-        const data = String(item.created_at || '');
+        const data = formatHistoryDate(item.created_at);
         const obs = String(item.observacao || '');
         const autor = item.usuario?.nome ? String(item.usuario.nome) : '';
 
@@ -72,6 +125,17 @@
         const numeroOs = String(data.numero_os || '');
         setText('orderStatusModalNumero', numeroOs);
 
+        // Catálogo de status (código → nome), usado pra traduzir o histórico
+        // e evitar mostrar códigos crus tipo "aguardando_reparo" na tela.
+        statusLabelsByCode = {};
+        const statusCatalog = Array.isArray(data.status_disponiveis) ? data.status_disponiveis : [];
+        statusCatalog.forEach((status) => {
+            const code = String(status?.codigo || '').trim();
+            if (code !== '') {
+                statusLabelsByCode[code] = String(status?.nome || code);
+            }
+        });
+
         // Cliente
         setText('orderStatusModalClientName', data.cliente_nome || '-');
         setText('orderStatusModalClientPhone', data.cliente_telefone ? `Telefone: ${data.cliente_telefone}` : 'Telefone: -');
@@ -81,6 +145,14 @@
         setText('orderStatusModalEquipName', data.equipamento_nome || '-');
         setText('orderStatusModalEquipType', data.equipamento_tipo_nome ? `Tipo: ${data.equipamento_tipo_nome}` : 'Tipo: -');
         setText('orderStatusModalEquipSerial', data.equipamento_numero_serie ? `Nº de série: ${data.equipamento_numero_serie}` : 'Nº de série: -');
+
+        // Diagnóstico e solução (salvos junto com o status); o campo de
+        // procedimentos sempre começa vazio, pois cada envio cria uma nova
+        // entrada no histórico em vez de sobrescrever um valor único.
+        if (proceduresEl) proceduresEl.value = '';
+        if (diagnosisEl) diagnosisEl.value = String(data.diagnostico_tecnico || '');
+        if (solutionEl) solutionEl.value = String(data.solucao_aplicada || '');
+        renderProceduresHistory(data.procedimentos_historico);
 
         // Status atual
         const statusAtual = String(data.status_nome || '');
@@ -133,7 +205,9 @@
         }
 
         setText('orderStatusModalTargetHint', 'Selecione um fluxo para continuar.');
-        if (submitBtn) submitBtn.disabled = true;
+        // "Salvar status" fica sempre liberado: também é usado para salvar
+        // diagnóstico/solução sem necessariamente trocar o status da OS.
+        if (submitBtn) submitBtn.disabled = false;
 
         // Histórico
         const historyEl = document.getElementById('orderStatusModalHistory');
@@ -196,6 +270,11 @@
         showState('loading');
         if (submitBtn) submitBtn.disabled = true;
         setText('orderStatusModalNumero', '-');
+
+        const statusTabBtn = document.getElementById('orderStatusModalTabStatusBtn');
+        if (statusTabBtn && typeof bootstrap !== 'undefined') {
+            bootstrap.Tab.getOrCreateInstance(statusTabBtn).show();
+        }
     });
 
     // Botão "Próxima etapa"
@@ -216,21 +295,64 @@
         }
     });
 
-    // Ao mudar o select
+    // Ao mudar o select (o botão "Salvar status" já fica sempre liberado)
     selectEl?.addEventListener('change', () => {
         const selectedName = selectEl.selectedOptions[0]?.text || '';
-        if (submitBtn) submitBtn.disabled = !selectEl.value;
         setText(
             'orderStatusModalTargetHint',
             selectEl.value ? `Fluxo selecionado: ${selectedName}.` : 'Selecione um fluxo para continuar.'
         );
     });
 
+    // Salvar um novo procedimento executado (aba "Procedimentos"): cada clique
+    // cria uma entrada nova no histórico, com data e técnico responsável.
+    proceduresSaveBtn?.addEventListener('click', async () => {
+        if (!currentOrderId) return;
+
+        const descricao = proceduresEl?.value.trim() || '';
+        if (descricao === '') {
+            showToast('Descreva o procedimento executado antes de salvar.', 'error');
+            return;
+        }
+
+        const originalHtml = proceduresSaveBtn.innerHTML;
+        proceduresSaveBtn.disabled = true;
+        proceduresSaveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Salvando...';
+
+        try {
+            const res = await fetch(buildProceduresUrl(currentOrderId), {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': csrfToken,
+                },
+                body: JSON.stringify({ descricao }),
+            });
+
+            const result = await res.json();
+
+            if (!res.ok || result.error) {
+                throw new Error(result.error || result.message || 'Erro ao salvar o procedimento.');
+            }
+
+            if (proceduresEl) proceduresEl.value = '';
+            renderProceduresHistory(result.procedimentos_historico);
+            showToast(result.message || 'Procedimento registrado com sucesso.', 'success');
+        } catch (err) {
+            showToast(err.message || 'Não foi possível salvar o procedimento. Tente novamente.', 'error');
+        } finally {
+            proceduresSaveBtn.disabled = false;
+            proceduresSaveBtn.innerHTML = originalHtml;
+        }
+    });
+
     // Submissão via AJAX
     form?.addEventListener('submit', async (e) => {
         e.preventDefault();
 
-        if (!currentOrderId || !selectEl?.value) return;
+        if (!currentOrderId) return;
 
         if (submitBtn) {
             submitBtn.disabled = true;

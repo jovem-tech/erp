@@ -443,6 +443,7 @@
         $cartaoDataset = $closure['cartao'] ?? ['operadoras' => [], 'bandeiras' => [], 'taxas' => []];
         $valorFinal = (float) ($order['valor_final'] ?? 0);
         $valorAberto = (float) ($financeiro['valor_aberto'] ?? $valorFinal);
+        $temSaldoAberto = $valorAberto > 0.0;
         $valorMovimentado = (float) ($financeiro['valor_movimentado'] ?? 0);
         $clienteTelefone = trim((string) ($closure['cliente_telefone'] ?? ''));
         $clienteEmail = trim((string) ($closure['cliente_email'] ?? ($order['cliente_email'] ?? '')));
@@ -646,7 +647,7 @@
                         <div class="closure-pdv-panel">
                             <div class="closure-panel-title">Recebimentos e adiantamentos</div>
                             <div class="closure-payment-actions">
-                                <button type="button" class="btn btn-outline-primary btn-sm" data-action="receber-saldo-total">
+                                <button type="button" class="btn btn-outline-primary btn-sm" data-action="receber-saldo-total" @disabled(! $temSaldoAberto) aria-disabled="{{ $temSaldoAberto ? 'false' : 'true' }}" title="{{ $temSaldoAberto ? 'Preencher o saldo em aberto' : 'Nao ha saldo em aberto para receber' }}">
                                     <i class="bi bi-cash-coin me-1"></i>Receber saldo total
                                 </button>
                                 <button type="button" class="btn btn-primary btn-sm" data-action="adicionar-recebimento">

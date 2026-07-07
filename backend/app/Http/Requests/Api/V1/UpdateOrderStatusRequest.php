@@ -19,7 +19,7 @@ class UpdateOrderStatusRequest extends BaseApiFormRequest
     {
         return [
             'status' => [
-                'required',
+                'nullable',
                 'string',
                 'max:80',
                 Rule::in(OrderStatus::activeCodes()),
@@ -28,6 +28,18 @@ class UpdateOrderStatusRequest extends BaseApiFormRequest
                 'nullable',
                 'string',
                 'max:2000',
+            ],
+            'diagnostico_tecnico' => [
+                'nullable',
+                'string',
+            ],
+            'solucao_aplicada' => [
+                'nullable',
+                'string',
+            ],
+            'comunicar_cliente' => [
+                'nullable',
+                'boolean',
             ],
         ];
     }

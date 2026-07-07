@@ -2200,6 +2200,17 @@ a {
     font-size: 0.9rem;
 }
 
+/* Bloco de busca da listagem de OS: cresce para dar espaco ao campo, com o
+   botao "Filtrar" logo ao lado (input-group). */
+.os-search-block {
+    flex: 1 1 420px;
+    max-width: 560px;
+}
+
+.os-search-block .input-group .btn {
+    white-space: nowrap;
+}
+
 .desktop-config-tabs-shell {
     padding: 1rem 1rem 1.05rem;
 }
@@ -3032,10 +3043,17 @@ a {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 1rem;
     margin-bottom: 1rem;
+    align-items: start;
 }
 
 .budget-review-grid-bottom {
     margin-bottom: 0;
+}
+
+.budget-review-col {
+    display: grid;
+    gap: 1rem;
+    align-content: start;
 }
 
 .budget-review-card {
@@ -3045,6 +3063,7 @@ a {
     border-radius: 20px;
     border: 1px solid rgba(148, 163, 184, 0.18);
     background: rgba(248, 250, 252, 0.9);
+    align-content: start;
 }
 
 .budget-review-card-head {
@@ -3534,6 +3553,20 @@ a {
     margin-top: 0.35rem;
     color: var(--desktop-text-soft);
     font-size: 0.9rem;
+}
+
+.summary-card.is-highlight {
+    border-color: rgba(111, 90, 252, 0.32);
+    background: linear-gradient(160deg, rgba(111, 90, 252, 0.12), var(--desktop-surface) 65%);
+}
+
+.summary-card.is-highlight .summary-card-eyebrow {
+    color: var(--desktop-primary);
+}
+
+.summary-card.is-highlight .summary-card-value {
+    font-size: 1.35rem;
+    color: var(--desktop-primary);
 }
 
 .order-create-layout {
@@ -4142,14 +4175,19 @@ a {
     font-size: 1.7rem;
 }
 
-.detail-item strong {
+.detail-item > strong {
     display: inline-block;
     margin-bottom: 0.25rem;
+    margin-right: 0.4rem;
     color: var(--desktop-text-soft);
     font-size: 0.78rem;
     font-weight: 800;
     letter-spacing: 0.07em;
     text-transform: uppercase;
+}
+
+.detail-item > strong::after {
+    content: ':';
 }
 
 .detail-item span,
@@ -4825,6 +4863,21 @@ a {
 .modal.show .modal-dialog {
     transform: translateY(0) scale(1);
     opacity: 1;
+}
+
+/* `.modal-dialog-scrollable` depende de `.modal-body` ser filho direto (flex
+   item) de `.modal-content` (flex: 1 1 auto + overflow-y:auto). Quando um
+   `<form>` embrulha header/body/footer direto dentro de modal-content (para
+   o submit funcionar), o form (display:block) quebra essa cadeia — modal-body
+   vira neto, não filho, do flex container, e o `flex`/`overflow-y` dele
+   deixam de ter efeito: ele renderiza na altura natural do conteúdo e só é
+   cortado por fora pelo overflow:hidden do modal-content, sem scrollbar
+   funcional. Corrige tornando o form também um flex container em coluna. */
+.modal-dialog-scrollable .modal-content > form {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .modal-backdrop.fade {

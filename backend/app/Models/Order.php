@@ -59,6 +59,11 @@ class Order extends Model
         return $this->hasMany(OrderStatusHistory::class, 'os_id', 'id');
     }
 
+    public function procedureHistory(): HasMany
+    {
+        return $this->hasMany(OrderProcedureHistory::class, 'os_id', 'id');
+    }
+
     public function photos(): HasMany
     {
         return $this->hasMany(OrderPhoto::class, 'os_id', 'id');

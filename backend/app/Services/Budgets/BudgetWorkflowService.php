@@ -220,6 +220,7 @@ class BudgetWorkflowService
             'orders' => $orders,
             'services' => $services,
             'parts' => $parts,
+            'tipos_equipamento' => Servico::tiposEquipamentoAtivos(),
             'status_options' => Budget::statusOptions(),
             'type_options' => Budget::typeOptions(),
             'origin_options' => Budget::originOptions(),

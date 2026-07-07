@@ -569,7 +569,10 @@
 
 @push('modals')
     @if ($canQuickCatalog)
-        @include('orcamentos.partials.quick-item-modal', ['quickCatalogs' => $quickCatalogs])
+        @include('orcamentos.partials.quick-item-modal', [
+            'quickCatalogs' => $quickCatalogs,
+            'tiposEquipamento' => data_get($form, 'tipos_equipamento', []),
+        ])
     @endif
 
     <div class="modal fade" id="orcamentoDraftModal" tabindex="-1" aria-hidden="true">
@@ -615,13 +618,23 @@
                     </div>
 
                     <div class="budget-review-grid">
-                        <section class="budget-review-card">
-                            <div class="budget-review-card-head">
-                                <h5>Cliente e contato</h5>
-                                <span class="desktop-chip">Comercial</span>
-                            </div>
-                            <div class="budget-review-list" data-budget-review-client></div>
-                        </section>
+                        <div class="budget-review-col">
+                            <section class="budget-review-card">
+                                <div class="budget-review-card-head">
+                                    <h5>Cliente e contato</h5>
+                                    <span class="desktop-chip">Comercial</span>
+                                </div>
+                                <div class="budget-review-list" data-budget-review-client></div>
+                            </section>
+
+                            <section class="budget-review-card">
+                                <div class="budget-review-card-head">
+                                    <h5>Observacoes e condicoes</h5>
+                                    <span class="desktop-chip">Complementos</span>
+                                </div>
+                                <div class="budget-review-notes" data-budget-review-notes></div>
+                            </section>
+                        </div>
 
                         <section class="budget-review-card">
                             <div class="budget-review-card-head">
@@ -640,23 +653,13 @@
                         <div class="budget-review-items" data-budget-review-items></div>
                     </section>
 
-                    <div class="budget-review-grid budget-review-grid-bottom">
-                        <section class="budget-review-card">
-                            <div class="budget-review-card-head">
-                                <h5>Resultado financeiro</h5>
-                                <span class="budget-summary-result-pill">Resultado final</span>
-                            </div>
-                            <div class="budget-review-totals" data-budget-review-totals></div>
-                        </section>
-
-                        <section class="budget-review-card">
-                            <div class="budget-review-card-head">
-                                <h5>Observacoes e condicoes</h5>
-                                <span class="desktop-chip">Complementos</span>
-                            </div>
-                            <div class="budget-review-notes" data-budget-review-notes></div>
-                        </section>
-                    </div>
+                    <section class="budget-review-card budget-review-grid-bottom">
+                        <div class="budget-review-card-head">
+                            <h5>Resultado financeiro</h5>
+                            <span class="budget-summary-result-pill">Resultado final</span>
+                        </div>
+                        <div class="budget-review-totals" data-budget-review-totals></div>
+                    </section>
                 </div>
 
                 <div class="modal-footer border-0 pt-0">

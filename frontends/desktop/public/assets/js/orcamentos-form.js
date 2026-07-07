@@ -245,6 +245,70 @@
         }
     };
 
+    const initEquipmentTypeSelect = (select) => {
+        if (!(select instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        if (typeof window.jQuery === 'undefined' || !window.jQuery.fn || typeof window.jQuery.fn.select2 !== 'function') {
+            return;
+        }
+
+        const $ = window.jQuery;
+        if ($(select).data('select2')) {
+            return;
+        }
+
+        // Select2 precisa de dropdownParent apontando para o modal: sem isso, o
+        // dropdown (com o campo de busca) e anexado ao <body>, fora da area em
+        // que o focus trap do Bootstrap Modal permite foco, e a digitacao no
+        // campo de busca simplesmente nao registra nenhuma tecla.
+        const modal = select.closest('.modal');
+        const dropdownParent = modal ? $(modal) : $(document.body);
+
+        $(select).select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: select.dataset.select2Placeholder || 'Selecione ou digite um tipo de equipamento',
+            allowClear: true,
+            dropdownParent,
+            tags: true,
+            createTag: (params) => {
+                const term = normalizeText(params.term);
+                if (term === '' || term.length > 120) {
+                    return null;
+                }
+
+                return { id: term, text: term, newTag: true };
+            },
+            language: {
+                noResults: () => 'Nenhum tipo de equipamento. Pressione Enter para criar.',
+                searching: () => 'Buscando...',
+            },
+        });
+    };
+
+    const setEquipmentTypeValue = (select, value) => {
+        if (!(select instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        const normalized = normalizeText(value);
+
+        if (normalized !== '' && !Array.from(select.options).some((option) => option.value === normalized)) {
+            select.appendChild(new Option(normalized, normalized, true, true));
+        }
+
+        select.value = normalized;
+
+        if (typeof window.jQuery !== 'undefined' && window.jQuery.fn && Boolean(window.jQuery(select).data('select2'))) {
+            window.jQuery(select).trigger('change');
+            return;
+        }
+
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
     const onSelectEvent = (select, eventName, handler) => {
         if (!(select instanceof HTMLSelectElement)) {
             return;
@@ -300,6 +364,9 @@
         const quickItemForm = document.getElementById('orcamentoQuickItemForm');
         const quickItemSubmit = document.getElementById('orcamentoQuickItemSubmit');
         const quickItemType = document.getElementById('orcamentoQuickItemType');
+        const quickItemEquipmentType = document.getElementById('orcamentoQuickItemEquipmentType');
+
+        initEquipmentTypeSelect(quickItemEquipmentType);
         const quickItemTitle = document.querySelector('[data-budget-quick-title]');
         const quickItemNote = document.querySelector('[data-budget-quick-note]');
         const quickItemErrors = document.getElementById('orcamentoQuickItemErrors');
@@ -543,6 +610,7 @@
             }
 
             quickItemForm.reset();
+            setEquipmentTypeValue(quickItemForm.querySelector('[name="tipo_equipamento"]'), '');
             clearQuickItemErrors();
             updateQuickItemSubmitState(false);
         };
@@ -574,10 +642,7 @@
                 nameField.value = preferredName;
             }
 
-            const equipmentTypeField = quickItemForm.querySelector('[name="tipo_equipamento"]');
-            if (equipmentTypeField instanceof HTMLInputElement) {
-                equipmentTypeField.value = '';
-            }
+            setEquipmentTypeValue(quickItemForm.querySelector('[name="tipo_equipamento"]'), '');
 
             if ((type === 'peca' || quickItemType?.value === 'peca') && quickItemForm instanceof HTMLFormElement) {
                 const salePriceField = quickItemForm.querySelector('[name="preco_venda"]');
@@ -1180,7 +1245,7 @@
 
         const renderReviewEntries = (entries) => entries
             .map(({ label, value }) => {
-                const resolvedValue = normalizeText(value) !== '' ? value : 'Nao informado';
+                const resolvedValue = normalizeText(value) !== '' ? value : '—';
 
                 return `
                     <div class="budget-review-list-item">

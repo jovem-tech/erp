@@ -133,11 +133,15 @@
         color: var(--desktop-text-muted);
         margin-top: 0.25rem;
     }
+
+    .os-status-modal-footer-notify {
+        margin-right: auto;
+    }
 </style>
 
 <div class="modal fade" id="orderStatusModal" tabindex="-1" aria-hidden="true" aria-labelledby="orderStatusModalTitleEl">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content">
+        <div class="modal-content modal-shell">
             <form id="orderStatusModalForm" novalidate>
                 <div class="modal-header">
                     <h5 class="modal-title" id="orderStatusModalTitleEl">
@@ -184,70 +188,137 @@
                             </div>
                         </div>
 
-                        <div class="row g-4">
-                            {{-- Coluna esquerda: formulário de mudança --}}
-                            <div class="col-12 col-xl-7">
-                                <div class="os-status-modal-panel">
-                                    {{-- Ações rápidas --}}
-                                    <div class="os-status-modal-section">
-                                        <div class="os-status-modal-section-title">Ações rápidas</div>
-                                        <div class="os-status-modal-quick-actions">
-                                            <button type="button" class="btn btn-primary btn-sm" id="orderStatusModalQuickNext" disabled>
-                                                <i class="bi bi-arrow-right-circle me-1"></i>Próxima etapa
-                                            </button>
-                                            <button type="button" class="btn btn-outline-danger btn-sm" id="orderStatusModalQuickCancel" disabled>
-                                                <i class="bi bi-x-circle me-1"></i>Cancelar
-                                            </button>
-                                        </div>
-                                        <div class="os-status-modal-flow-hints">
-                                            <div class="small text-muted" id="orderStatusModalCurrentHint">Status atual da OS: aguardando contexto.</div>
-                                            <div class="small text-muted" id="orderStatusModalFlowHint">Fluxo normal sugerido: aguardando contexto.</div>
-                                            <div class="small text-muted" id="orderStatusModalTargetHint">Selecione um fluxo para continuar.</div>
+                        <ul class="nav nav-tabs mb-3" id="orderStatusModalTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="orderStatusModalTabStatusBtn" data-bs-toggle="tab"
+                                    data-bs-target="#orderStatusModalTabStatus" type="button" role="tab"
+                                    aria-controls="orderStatusModalTabStatus" aria-selected="true">
+                                    Status
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="orderStatusModalTabProceduresBtn" data-bs-toggle="tab"
+                                    data-bs-target="#orderStatusModalTabProcedures" type="button" role="tab"
+                                    aria-controls="orderStatusModalTabProcedures" aria-selected="false">
+                                    Procedimentos
+                                </button>
+                            </li>
+                        </ul>
+
+                        <div class="tab-content" id="orderStatusModalTabsContent">
+                            <div class="tab-pane fade show active" id="orderStatusModalTabStatus" role="tabpanel" aria-labelledby="orderStatusModalTabStatusBtn">
+                                <div class="row g-4">
+                                    {{-- Coluna esquerda: formulário de mudança --}}
+                                    <div class="col-12 col-xl-7">
+                                        <div class="os-status-modal-panel">
+                                            {{-- Ações rápidas --}}
+                                            <div class="os-status-modal-section">
+                                                <div class="os-status-modal-section-title">Ações rápidas</div>
+                                                <div class="os-status-modal-quick-actions">
+                                                    <button type="button" class="btn btn-primary btn-sm" id="orderStatusModalQuickNext" disabled>
+                                                        <i class="bi bi-arrow-right-circle me-1"></i>Próxima etapa
+                                                    </button>
+                                                    <button type="button" class="btn btn-outline-danger btn-sm" id="orderStatusModalQuickCancel" disabled>
+                                                        <i class="bi bi-x-circle me-1"></i>Cancelar OS
+                                                    </button>
+                                                </div>
+                                                <div class="os-status-modal-flow-hints">
+                                                    <div class="small text-muted" id="orderStatusModalCurrentHint">Status atual da OS: aguardando contexto.</div>
+                                                    <div class="small text-muted" id="orderStatusModalFlowHint">Fluxo normal sugerido: aguardando contexto.</div>
+                                                    <div class="small text-muted" id="orderStatusModalTargetHint">Selecione um fluxo para continuar.</div>
+                                                </div>
+                                            </div>
+
+                                            {{-- Status de destino --}}
+                                            <div class="os-status-modal-section">
+                                                <label class="form-label" for="orderStatusModalSelect">Status de destino</label>
+                                                <select id="orderStatusModalSelect" name="status" class="form-select" required>
+                                                    <option value="">Selecione um status</option>
+                                                </select>
+                                                <div class="form-text">A lista respeita o fluxo de trabalho configurado para avançar, retornar etapas ou cancelar o atendimento.</div>
+                                            </div>
+
+                                            {{-- Observações --}}
+                                            <div class="os-status-modal-section">
+                                                <label class="form-label" for="orderStatusModalObservacao">Observações</label>
+                                                <textarea
+                                                    id="orderStatusModalObservacao"
+                                                    name="observacao"
+                                                    class="form-control"
+                                                    rows="4"
+                                                    placeholder="Registre contexto da mudança, combinados com o cliente ou justificativa do cancelamento."
+                                                ></textarea>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    {{-- Status de destino --}}
-                                    <div class="os-status-modal-section">
-                                        <label class="form-label" for="orderStatusModalSelect">Status de destino</label>
-                                        <select id="orderStatusModalSelect" name="status" class="form-select" required>
-                                            <option value="">Selecione um status</option>
-                                        </select>
-                                        <div class="form-text">A lista respeita o fluxo de trabalho configurado para avançar, retornar etapas ou cancelar o atendimento.</div>
-                                    </div>
-
-                                    {{-- Observações --}}
-                                    <div class="os-status-modal-section">
-                                        <label class="form-label" for="orderStatusModalObservacao">Observações</label>
-                                        <textarea
-                                            id="orderStatusModalObservacao"
-                                            name="observacao"
-                                            class="form-control"
-                                            rows="4"
-                                            placeholder="Registre contexto da mudança, combinados com o cliente ou justificativa do cancelamento."
-                                        ></textarea>
-                                    </div>
-
-                                    {{-- Notificar cliente --}}
-                                    <div class="os-status-modal-section">
-                                        <div class="form-check form-switch">
-                                            <input class="form-check-input" type="checkbox" role="switch"
-                                                id="orderStatusModalNotify" name="comunicar_cliente" value="1">
-                                            <label class="form-check-label" for="orderStatusModalNotify">
-                                                Notificar o cliente sobre esta mudança
-                                            </label>
+                                    {{-- Coluna direita: histórico --}}
+                                    <div class="col-12 col-xl-5">
+                                        <div class="os-status-modal-panel os-status-modal-workflow">
+                                            <div class="os-status-modal-section-title">Histórico e progresso</div>
+                                            <p class="small text-muted mb-3">Etapas percorridas e últimas movimentações desta OS.</p>
+                                            <div id="orderStatusModalHistory" class="os-status-modal-history-list">
+                                                <p class="text-muted small mb-0">Sem histórico recente.</p>
+                                            </div>
                                         </div>
-                                        <div class="form-text">O cliente será comunicado apenas se você mantiver esta opção ativa.</div>
                                     </div>
                                 </div>
                             </div>
 
-                            {{-- Coluna direita: histórico --}}
-                            <div class="col-12 col-xl-5">
-                                <div class="os-status-modal-panel os-status-modal-workflow">
-                                    <div class="os-status-modal-section-title">Histórico e progresso</div>
-                                    <p class="small text-muted mb-3">Etapas percorridas e últimas movimentações desta OS.</p>
-                                    <div id="orderStatusModalHistory" class="os-status-modal-history-list">
-                                        <p class="text-muted small mb-0">Sem histórico recente.</p>
+                            <div class="tab-pane fade" id="orderStatusModalTabProcedures" role="tabpanel" aria-labelledby="orderStatusModalTabProceduresBtn">
+                                <div class="row g-4">
+                                    {{-- Coluna esquerda: registrar procedimento + diagnóstico/solução --}}
+                                    <div class="col-12 col-xl-7">
+                                        <div class="os-status-modal-panel">
+                                            <div class="os-status-modal-section">
+                                                <label class="form-label" for="orderStatusModalProcedures">Procedimentos executados</label>
+                                                <textarea
+                                                    id="orderStatusModalProcedures"
+                                                    class="form-control"
+                                                    rows="3"
+                                                    placeholder="Descreva um procedimento executado para registrar no histórico."
+                                                ></textarea>
+                                                <div class="text-end mt-2">
+                                                    <button type="button" class="btn btn-primary btn-sm" id="orderStatusModalProceduresSave">
+                                                        <i class="bi bi-check2-circle me-1"></i>Salvar procedimento
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div class="os-status-modal-section">
+                                                <label class="form-label" for="orderStatusModalDiagnosis">Diagnóstico do problema</label>
+                                                <textarea
+                                                    id="orderStatusModalDiagnosis"
+                                                    name="diagnostico_tecnico"
+                                                    class="form-control"
+                                                    rows="3"
+                                                    placeholder="Descreva o diagnóstico técnico do problema."
+                                                ></textarea>
+                                            </div>
+
+                                            <div class="os-status-modal-section">
+                                                <label class="form-label" for="orderStatusModalSolution">Solução aplicada</label>
+                                                <textarea
+                                                    id="orderStatusModalSolution"
+                                                    name="solucao_aplicada"
+                                                    class="form-control"
+                                                    rows="3"
+                                                    placeholder="Descreva a solução aplicada para resolver o problema."
+                                                ></textarea>
+                                                <div class="form-text">Diagnóstico e solução são salvos junto com "Salvar status", no rodapé.</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {{-- Coluna direita: histórico de procedimentos --}}
+                                    <div class="col-12 col-xl-5">
+                                        <div class="os-status-modal-panel os-status-modal-workflow">
+                                            <div class="os-status-modal-section-title">Histórico de procedimentos</div>
+                                            <p class="small text-muted mb-3">Procedimentos registrados pelos técnicos nesta OS.</p>
+                                            <div id="orderStatusModalProceduresHistory" class="os-status-modal-history-list">
+                                                <p class="text-muted small mb-0">Nenhum procedimento registrado ainda.</p>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -256,6 +327,13 @@
                 </div>
 
                 <div class="modal-footer">
+                    <div class="form-check form-switch os-status-modal-footer-notify">
+                        <input class="form-check-input" type="checkbox" role="switch"
+                            id="orderStatusModalNotify" name="comunicar_cliente" value="1">
+                        <label class="form-check-label" for="orderStatusModalNotify">
+                            Notificar o cliente sobre esta mudança
+                        </label>
+                    </div>
                     <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancelar</button>
                     <button type="submit" class="btn btn-primary" id="orderStatusModalSubmit" disabled>
                         <i class="bi bi-check2-circle me-1"></i>Salvar status
