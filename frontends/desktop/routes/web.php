@@ -198,6 +198,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/os/{order}/status', [OrderController::class, 'updateStatus'])
         ->middleware('desktop.permission:os,editar')
         ->name('orders.status.update');
+    Route::post('/os/{order}/procedimentos', [OrderController::class, 'storeProcedure'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('orders.procedures.store');
     Route::get('/os/{order}/fotos/{photo}', [OrderController::class, 'photo'])
         ->middleware('desktop.permission:os,visualizar')
         ->name('orders.photos.show');

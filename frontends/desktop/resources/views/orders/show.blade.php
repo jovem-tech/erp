@@ -490,6 +490,7 @@
         window.__DESKTOP_STATUS_MODAL = {
             statusContextUrlTemplate: '{{ route('orders.status.context', ['order' => '__ORDER__']) }}',
             statusUpdateUrlTemplate: '{{ route('orders.status.update', ['order' => '__ORDER__']) }}',
+            proceduresUrlTemplate: '{{ route('orders.procedures.store', ['order' => '__ORDER__']) }}',
             csrfToken: '{{ csrf_token() }}',
         };
     </script>

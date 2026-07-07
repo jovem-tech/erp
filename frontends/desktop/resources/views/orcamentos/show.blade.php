@@ -13,9 +13,27 @@
         $approvals = is_array($budget['aprovacoes'] ?? null) ? $budget['aprovacoes'] : [];
         $budgetId = (int) ($budget['id'] ?? 0);
         $publicLink = trim((string) ($budget['link_publico'] ?? ''));
+        $itemsDescontoTotal = array_sum(array_map(static fn ($item) => (float) ($item['desconto'] ?? 0), $items));
+        $itemsAcrescimoTotal = array_sum(array_map(static fn ($item) => (float) ($item['acrescimo'] ?? 0), $items));
+        $itemsTotalGeral = array_sum(array_map(static fn ($item) => (float) ($item['total'] ?? 0), $items));
+
+        // `??` só cai no fallback quando o valor é null — campos vindos da API que
+        // existem mas estão salvos como string vazia (ex.: equipamento sem
+        // "resumo técnico" preenchido) passavam direto e renderizavam o card em
+        // branco. Os candidatos são avaliados em ordem e o primeiro não-vazio vence.
+        $firstNonEmpty = static function (array $candidates, string $fallback): string {
+            foreach ($candidates as $candidate) {
+                $value = trim((string) ($candidate ?? ''));
+                if ($value !== '') {
+                    return $value;
+                }
+            }
+
+            return $fallback;
+        };
     @endphp
 
-    <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
         <div>
             <p class="desktop-eyebrow">Orçamento</p>
             <h2 class="surface-title fs-3 mb-2">{{ $budget['numero'] !== '' ? $budget['numero'] : ('#' . $budgetId) }}</h2>
@@ -30,7 +48,7 @@
             </div>
         </div>
 
-        <div class="d-flex flex-wrap gap-2">
+        <div class="d-flex flex-wrap align-items-center gap-2">
             <a href="{{ route('orcamentos.index') }}" class="btn btn-outline-light">
                 <i class="bi bi-arrow-left me-2"></i>
                 Voltar
@@ -72,23 +90,23 @@
     <section class="desktop-grid desktop-grid-four mb-4">
         <article class="summary-card">
             <span class="summary-card-eyebrow">Cliente</span>
-            <div class="summary-card-value">{{ $client['nome_razao'] ?? ($budget['cliente_nome_avulso'] ?? 'Não informado') }}</div>
-            <div class="summary-card-meta">{{ $client['cpf_cnpj'] ?? ($budget['telefone_contato'] ?? 'Sem documento') }}</div>
+            <div class="summary-card-value">{{ $firstNonEmpty([$client['nome_razao'] ?? null, $budget['cliente_nome_avulso'] ?? null], 'Não informado') }}</div>
+            <div class="summary-card-meta">{{ $firstNonEmpty([$client['cpf_cnpj'] ?? null, $budget['telefone_contato'] ?? null], 'Sem documento') }}</div>
         </article>
 
         <article class="summary-card">
             <span class="summary-card-eyebrow">Equipamento / OS</span>
-            <div class="summary-card-value">{{ $equipment['resumo_tecnico'] ?? ($numeroOs !== '' ? $numeroOs : 'Sem vínculo') }}</div>
-            <div class="summary-card-meta">{{ $equipment['numero_serie'] ?? ($order['status'] ?? 'Sem série informada') }}</div>
+            <div class="summary-card-value">{{ $firstNonEmpty([$equipment['resumo_tecnico'] ?? null, $numeroOs], 'Sem vínculo') }}</div>
+            <div class="summary-card-meta">{{ $firstNonEmpty([$equipment['numero_serie'] ?? null, $order['status'] ?? null], 'Sem série informada') }}</div>
         </article>
 
         <article class="summary-card">
             <span class="summary-card-eyebrow">Validade</span>
-            <div class="summary-card-value">{{ $budget['validade_data'] !== '' ? $budget['validade_data'] : 'Sem data' }}</div>
+            <div class="summary-card-value">{{ $firstNonEmpty([$budget['validade_data'] ?? null], 'Sem data') }}</div>
             <div class="summary-card-meta">{{ (int) ($budget['validade_dias'] ?? 0) > 0 ? (int) ($budget['validade_dias'] ?? 0) . ' dias' : 'Prazo não definido' }}</div>
         </article>
 
-        <article class="summary-card">
+        <article class="summary-card is-highlight">
             <span class="summary-card-eyebrow">Total</span>
             <div class="summary-card-value">R$ {{ $budget['total_formatado'] ?? number_format((float) ($budget['total'] ?? 0), 2, ',', '.') }}</div>
             <div class="summary-card-meta">Subtotal: R$ {{ number_format((float) ($budget['subtotal'] ?? 0), 2, ',', '.') }}</div>
@@ -175,6 +193,14 @@
                         </tr>
                     @endforeach
                     </tbody>
+                    <tfoot class="table-group-divider">
+                    <tr class="fw-semibold">
+                        <td colspan="4" class="text-end">Totais dos itens</td>
+                        <td data-label="Desconto">R$ {{ number_format($itemsDescontoTotal, 2, ',', '.') }}</td>
+                        <td data-label="Acréscimo">R$ {{ number_format($itemsAcrescimoTotal, 2, ',', '.') }}</td>
+                        <td data-label="Total" class="fw-bold">R$ {{ number_format($itemsTotalGeral, 2, ',', '.') }}</td>
+                    </tr>
+                    </tfoot>
                 </table>
             </div>
         @else
@@ -243,15 +269,17 @@
                 <div class="detail-item">
                     <strong>Envios recentes</strong>
                     @if ($sends !== [])
-                        <ul class="list-unstyled mb-0">
+                        <div class="timeline">
                             @foreach ($sends as $send)
-                                <li class="mb-3">
-                                    <div class="fw-semibold">{{ $send['canal'] !== '' ? $send['canal'] : 'Canal não informado' }}</div>
-                                    <small class="text-secondary d-block">{{ $send['destino'] !== '' ? $send['destino'] : 'Destino não informado' }}</small>
-                                    <small class="text-secondary d-block">{{ $send['status'] !== '' ? $send['status'] : 'Status não informado' }}</small>
-                                </li>
+                                <article class="timeline-item">
+                                    <div class="d-flex flex-wrap justify-content-between gap-2">
+                                        <strong>{{ $send['canal'] !== '' ? ucfirst($send['canal']) : 'Canal não informado' }}</strong>
+                                        <small>{{ $send['status'] !== '' ? $send['status'] : 'Status não informado' }}</small>
+                                    </div>
+                                    <div class="mt-2">{{ $send['destino'] !== '' ? $send['destino'] : 'Destino não informado' }}</div>
+                                </article>
                             @endforeach
-                        </ul>
+                        </div>
                     @else
                         <span>Sem envios registrados.</span>
                     @endif
@@ -260,15 +288,17 @@
                 <div class="detail-item">
                     <strong>Aprovações recentes</strong>
                     @if ($approvals !== [])
-                        <ul class="list-unstyled mb-0">
+                        <div class="timeline">
                             @foreach ($approvals as $approval)
-                                <li class="mb-3">
-                                    <div class="fw-semibold">{{ $approval['acao'] !== '' ? $approval['acao'] : 'Ação' }}</div>
-                                    <small class="text-secondary d-block">{{ $approval['usuario_nome'] !== '' ? $approval['usuario_nome'] : 'Usuário não identificado' }}</small>
-                                    <small class="text-secondary d-block">{{ $approval['resposta_cliente'] !== '' ? $approval['resposta_cliente'] : 'Sem resposta' }}</small>
-                                </li>
+                                <article class="timeline-item">
+                                    <div class="d-flex flex-wrap justify-content-between gap-2">
+                                        <strong>{{ $approval['acao'] !== '' ? ucfirst($approval['acao']) : 'Ação' }}</strong>
+                                        <small>{{ $approval['usuario_nome'] !== '' ? $approval['usuario_nome'] : 'Usuário não identificado' }}</small>
+                                    </div>
+                                    <div class="mt-2">{{ $approval['resposta_cliente'] !== '' ? $approval['resposta_cliente'] : 'Sem resposta' }}</div>
+                                </article>
                             @endforeach
-                        </ul>
+                        </div>
                     @else
                         <span>Sem aprovações registradas.</span>
                     @endif

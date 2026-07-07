@@ -720,35 +720,76 @@ class OrderController extends DesktopController
             'status_nome'              => (string) ($data['status_nome'] ?? ''),
             'status_cor'               => (string) ($data['status_cor'] ?? '#64748b'),
             'cliente_nome'             => (string) ($data['cliente_nome'] ?? ''),
-            'cliente_telefone'         => (string) ($data['cliente_telefone'] ?? ''),
-            'cliente_email'            => (string) ($data['cliente_email'] ?? ''),
-            'equipamento_nome'         => (string) ($data['equipamento_nome'] ?? ''),
+            'cliente_telefone'         => (string) ($data['cliente']['telefone1'] ?? ''),
+            'cliente_email'            => (string) ($data['cliente']['email'] ?? ''),
+            'equipamento_nome'         => (string) ($data['equipamento_resumo_curto'] ?? ($data['equipamento_resumo_tecnico'] ?? '')),
             'equipamento_tipo_nome'    => (string) ($data['equipamento_tipo_nome'] ?? ''),
             'equipamento_numero_serie' => (string) ($data['equipamento_numero_serie'] ?? ''),
+            'diagnostico_tecnico'      => (string) ($data['diagnostico_tecnico'] ?? ''),
+            'solucao_aplicada'         => (string) ($data['solucao_aplicada'] ?? ''),
             'proximas_etapas'          => is_array($data['proximas_etapas'] ?? null) ? $data['proximas_etapas'] : [],
+            'status_disponiveis'       => is_array($data['status_disponiveis'] ?? null) ? $data['status_disponiveis'] : [],
             'historico'                => array_slice(
                 is_array($data['historico'] ?? null) ? $data['historico'] : [],
                 0,
                 8
             ),
+            'procedimentos_historico'  => is_array($data['procedimentos_historico'] ?? null) ? $data['procedimentos_historico'] : [],
+        ]);
+    }
+
+    public function storeProcedure(Request $request, int $order): JsonResponse
+    {
+        $validated = $request->validate([
+            'descricao' => ['required', 'string'],
+        ], [], [
+            'descricao' => 'procedimento executado',
+        ]);
+
+        try {
+            $updated = $this->orderService->addProcedure($order, $validated['descricao']);
+        } catch (ApiAuthenticationException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 401);
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json(['error' => 'Não foi possível salvar o procedimento executado.'], 500);
+        }
+
+        return response()->json([
+            'message' => 'Procedimento registrado com sucesso.',
+            'procedimentos_historico' => is_array($updated['procedimentos_historico'] ?? null)
+                ? $updated['procedimentos_historico']
+                : [],
         ]);
     }
 
     public function updateStatus(Request $request, int $order): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([
-            'status' => ['required', 'string'],
+            'status' => ['nullable', 'string'],
             'observacao' => ['nullable', 'string'],
+            'diagnostico_tecnico' => ['nullable', 'string'],
+            'solucao_aplicada' => ['nullable', 'string'],
+            'comunicar_cliente' => ['nullable', 'boolean'],
         ], [], [
             'status' => 'status',
             'observacao' => 'observação',
+            'diagnostico_tecnico' => 'diagnóstico',
+            'solucao_aplicada' => 'solução aplicada',
+            'comunicar_cliente' => 'notificar cliente',
         ]);
 
         try {
             $updatedOrder = $this->orderService->updateStatus(
                 $order,
-                $validated['status'],
-                $validated['observacao'] ?? null
+                $validated['status'] ?? null,
+                $validated['observacao'] ?? null,
+                $validated['diagnostico_tecnico'] ?? null,
+                $validated['solucao_aplicada'] ?? null,
+                filter_var($validated['comunicar_cliente'] ?? false, FILTER_VALIDATE_BOOL)
             );
         } catch (ApiAuthenticationException $exception) {
             if ($request->wantsJson()) {
@@ -777,11 +818,14 @@ class OrderController extends DesktopController
         }
 
         $statusNome = $updatedOrder['status_nome'] ?? 'o novo estado';
+        $message = ($validated['status'] ?? null) !== null
+            ? 'Status da OS atualizado para ' . $statusNome . '.'
+            : 'Informações da OS salvas com sucesso.';
 
         if ($request->wantsJson()) {
             return response()->json([
                 'success'     => true,
-                'message'     => 'Status da OS atualizado para ' . $statusNome . '.',
+                'message'     => $message,
                 'status_nome' => $statusNome,
                 'status_cor'  => (string) ($updatedOrder['status_cor'] ?? '#64748b'),
             ]);
@@ -789,7 +833,7 @@ class OrderController extends DesktopController
 
         return redirect()
             ->route('orders.show', $order)
-            ->with('success', 'Status da OS atualizado para ' . $statusNome . '.');
+            ->with('success', $message);
     }
 
     public function photo(int $order, int $photo): Response

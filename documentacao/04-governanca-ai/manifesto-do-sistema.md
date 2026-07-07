@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-06T14:16:09+00:00`
-- Versao do sistema: `3.12.0`
+- Gerado em: `2026-07-07T15:55:05+00:00`
+- Versao do sistema: `3.14.1`
 - Versao da API: `1.1.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Windows/XAMPP`
@@ -141,6 +141,9 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-05-select2-colisao-financeiro-desktop.md` - Correcao de colisao do Select2 no formulario Financeiro (desktop)
 - `documentacao/07-novas-implementacoes/2026-07-06-cancelamento-lancamento-taxa-cartao.md` - Cancelamento de lançamento financeiro e taxa de cartão como despesa
 - `documentacao/07-novas-implementacoes/2026-07-06-fluxo-caixa-entrada-projetada-saldo-liquido.md` - Fluxo de caixa: entrada projetada, saldo líquido e detalhamento diário
+- `documentacao/07-novas-implementacoes/2026-07-06-schema-drift-ajustes-percentuais-orcamento.md` - Correcao de drift de schema: colunas de ajuste percentual ausentes em orcamentos
+- `documentacao/07-novas-implementacoes/2026-07-06-tipo-equipamento-select2-e-dropdown-tabela.md` - Tipo de equipamento em Select2 com tags e correcao de dropdown em tabela responsiva
+- `documentacao/07-novas-implementacoes/2026-07-07-modal-status-os-procedimentos-notificacao-cliente.md` - Overhaul do modal Alterar status da OS: procedimentos, diagnostico/solucao e notificacao ao cliente
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 
 ### `documentacao/10-deploy`

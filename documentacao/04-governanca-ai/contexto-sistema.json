@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-07-06T14:16:09+00:00",
+    "generated_at": "2026-07-07T15:55:05+00:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "3.12.0",
+        "app_version": "3.14.1",
         "api_version": "1.1.1",
         "production_target": "Ubuntu VPS",
         "development_target": "Windows/XAMPP"
@@ -392,6 +392,18 @@
                 {
                     "file": "documentacao/07-novas-implementacoes/2026-07-06-fluxo-caixa-entrada-projetada-saldo-liquido.md",
                     "title": "Fluxo de caixa: entrada projetada, saldo líquido e detalhamento diário"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-06-schema-drift-ajustes-percentuais-orcamento.md",
+                    "title": "Correcao de drift de schema: colunas de ajuste percentual ausentes em orcamentos"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-06-tipo-equipamento-select2-e-dropdown-tabela.md",
+                    "title": "Tipo de equipamento em Select2 com tags e correcao de dropdown em tabela responsiva"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-07-modal-status-os-procedimentos-notificacao-cliente.md",
+                    "title": "Overhaul do modal Alterar status da OS: procedimentos, diagnostico/solucao e notificacao ao cliente"
                 },
                 {
                     "file": "documentacao/07-novas-implementacoes/historico-de-versoes.md",

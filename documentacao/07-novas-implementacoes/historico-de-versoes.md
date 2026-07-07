@@ -1,5 +1,37 @@
 # Historico de versoes
 
+## v3.14.1.0 - 2026-07-07
+
+- listagem de OS (`orders/index.blade.php`): botao "Filtrar" adicionado ao lado do campo de busca no cabecalho (input-group);
+- correcao de bug latente: o campo de busca estava **fora** do `<form>` de filtros (linhas do form comecam depois do cabecalho), entao nao era enviado ao filtrar — a busca so "funcionava" via URL. Agora o input e o botao usam o atributo HTML5 `form="osFilterPanel"`, submetendo o form de filtros junto (status, itens por pagina e filtros avancados, mesmo com o painel recolhido);
+- sem migration, sem novo endpoint; ajuste de blade + CSS (`.os-search-block`).
+
+## v3.14.0.0 - 2026-07-07
+
+- overhaul do modal "Alterar status da OS":
+- card de equipamento passa a exibir `tipo + marca + modelo` (eager-load de `equipment.type/brand/model`, campo `equipamento_resumo_curto`);
+- switch "Notificar o cliente" movido para o rodape do modal;
+- nova aba "Procedimentos" em 2 colunas: "Procedimentos executados" append-only com historico datado por tecnico (nova tabela `os_procedimentos_historico`, novo endpoint `POST /api/v1/orders/{order}/procedures`) na direita; "Diagnostico" e "Solucao" (campos unicos da OS) salvos junto com o botao "Salvar status";
+- botao "Salvar status" sempre habilitado — permite salvar diagnostico/solucao sem trocar o status; um save sem troca de status nao gera historico/notificacao nem recalcula margem;
+- notificacao WhatsApp ao cliente na mudanca de status (o checkbox `comunicar_cliente` era so visual e nunca era lido — conectado ponta a ponta), com fallback de envio direto pela Evolution API (`sendDirectMessage`) quando a Central de Atendimento (banco `chat`) esta indisponivel;
+- corrigido fundo transparente do modal (faltava a classe `modal-shell`);
+- contrato de `PATCH /api/v1/orders/{order}/status` mudou de forma retrocompativel (`status` virou `nullable`; aceita `diagnostico_tecnico`, `solucao_aplicada`, `comunicar_cliente`);
+- deploy: exige `php artisan route:clear` (rota nova) + `migrate` da tabela `os_procedimentos_historico`;
+- nota em `documentacao/07-novas-implementacoes/2026-07-07-modal-status-os-procedimentos-notificacao-cliente.md`.
+
+## v3.13.1.0 - 2026-07-06
+
+- corrigido "Ocorreu um erro inesperado" ao salvar orçamento (`Salvar e enviar para aprovação`): `INSERT` falhava com `SQLSTATE 42S22 Unknown column 'desconto_tipo'`;
+- causa: a migration `2026_07_03_000001_add_adjustment_modes_to_orcamentos_tables` estava marcada como executada em `laravel_migrations`, mas as 4 colunas de ajuste percentual (`desconto_tipo`, `desconto_percentual`, `acrescimo_tipo`, `acrescimo_percentual`) nunca existiram de fato em `orcamentos`/`orcamento_itens` neste banco — mesmo drift de schema já documentado no deploy Contabo (18 colunas aditivas);
+- corrigido com `ALTER` aditivo direto no banco de dev (192.168.1.100), sem alterar nenhum arquivo de código;
+- nota em `documentacao/07-novas-implementacoes/2026-07-06-schema-drift-ajustes-percentuais-orcamento.md`.
+
+## v3.13.0.0 - 2026-07-06
+
+- cadastro rapido de servico/peca no orcamento: campo "Tipo de equipamento" deixou de ser texto livre e virou Select2 com tags (escolhe um tipo ja cadastrado ou digita um novo), reaproveitando o mesmo catalogo de tipos de equipamento ja usado em Servicos e Estoque;
+- corrigido bug generico de dropdown do Bootstrap dentro de `.table-responsive`: o menu de "Acoes" abria para cima, sobre a propria linha (Popper achava que nao havia espaco abaixo), e mesmo corrigido para abrir para baixo continuava cortado quando a tabela tinha poucas linhas — corrigido reparentando o `.dropdown-menu` para o final do `<body>` enquanto aberto, restaurando a posicao original ao fechar. Corrige "Acoes" em qualquer listagem com esse padrao (OS, equipamentos, financeiro etc.);
+- nota em `documentacao/07-novas-implementacoes/2026-07-06-tipo-equipamento-select2-e-dropdown-tabela.md`.
+
 ## v3.12.0.0 - 2026-07-06
 
 - nota tecnica criada em `documentacao/07-novas-implementacoes/2026-07-06-fluxo-caixa-entrada-projetada-saldo-liquido.md`

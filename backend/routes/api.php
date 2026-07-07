@@ -160,6 +160,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('orders/{order}/photos/{photo}', [OrderController::class, 'photo'])->name('api.v1.orders.photos.show');
         Route::get('orders/{order}/documents/{document}', [OrderController::class, 'document'])->name('api.v1.orders.documents.show');
         Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus'])->name('api.v1.orders.status.update');
+        Route::post('orders/{order}/procedures', [OrderController::class, 'storeProcedure'])->name('api.v1.orders.procedures.store');
         Route::get('orders/{order}/closure', [OrderController::class, 'closureMetadata'])->name('api.v1.orders.closure.metadata');
         Route::post('orders/{order}/closure', [OrderController::class, 'close'])->name('api.v1.orders.closure.store');
 

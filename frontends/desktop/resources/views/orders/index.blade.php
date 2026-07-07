@@ -40,11 +40,17 @@
 
     <section class="desktop-form-card mb-4">
         <div class="surface-card-header">
-            <div>
-                <h2 class="surface-title">Filtro operacional de OS</h2>
-                @unless ($usesOpenQueueScope)
-                    <p class="surface-subtitle">Listagem administrativa ou técnica conforme as permissões efetivas do usuário.</p>
-                @endunless
+            <div class="os-search-block">
+                <label for="search">Busca</label>
+                {{-- Busca + botao Filtrar vivem no cabecalho, mas usam o atributo
+                     form="osFilterPanel" para submeter o form de filtros junto
+                     (status, itens por pagina e filtros avancados, mesmo recolhidos). --}}
+                <div class="input-group">
+                    <input type="text" id="search" name="search" form="osFilterPanel" class="form-control" value="{{ $filters['search'] ?? '' }}" placeholder="OS, cliente, série ou resumo técnico">
+                    <button type="submit" form="osFilterPanel" class="btn btn-primary">
+                        <i class="bi bi-search me-1"></i>Filtrar
+                    </button>
+                </div>
             </div>
             <div class="d-flex align-items-center gap-2">
                 <span class="desktop-chip">{{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} resultados</span>
@@ -63,11 +69,6 @@
             @if ((int) ($filters['equipment_id'] ?? 0) > 0)
                 <input type="hidden" name="equipment_id" value="{{ $filters['equipment_id'] }}">
             @endif
-
-            <div>
-                <label for="search">Busca</label>
-                <input type="text" id="search" name="search" class="form-control" value="{{ $filters['search'] ?? '' }}" placeholder="OS, cliente, série ou resumo técnico">
-            </div>
 
             <div>
                 <label for="status">Status</label>
@@ -434,6 +435,7 @@
         window.__DESKTOP_STATUS_MODAL = {
             statusContextUrlTemplate: '{{ route('orders.status.context', ['order' => '__ORDER__']) }}',
             statusUpdateUrlTemplate: '{{ route('orders.status.update', ['order' => '__ORDER__']) }}',
+            proceduresUrlTemplate: '{{ route('orders.procedures.store', ['order' => '__ORDER__']) }}',
             csrfToken: '{{ csrf_token() }}',
         };
     </script>

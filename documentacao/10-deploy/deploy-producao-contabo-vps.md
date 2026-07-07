@@ -87,6 +87,24 @@ Para cada subdominio (`erp`, `api-erp`):
   acesso fisico — a rede de seguranca e' o console web da Contabo).
 - **VERSION:** ao deployar so arquivos de codigo, enviar `VERSION`/`CHANGELOG` junto,
   senao o rodape mostra versao defasada. Ideal: publicar no GitHub e deployar por `git pull`.
+- **`git pull --ff-only` abortando por "untracked working tree files would be
+  overwritten by merge":** acontece quando ha arquivos **nao versionados** na VPS
+  (copiados manualmente, sobra de teste direto no servidor, ou de um deploy antigo
+  anterior ao git) no mesmo caminho de um arquivo que o commit remoto esta trazendo —
+  o `deploy-producao.sh` aborta no passo `[2/5]` **antes** de tocar em codigo/banco
+  (o backup do passo `[1/5]` ja foi feito e fica valido). Resolver movendo os arquivos
+  conflitantes para fora do caminho (nunca apagar direto, sao untracked e nao tem
+  copia em nenhum lugar alem do disco):
+  ```bash
+  mkdir -p /root/pre-deploy-untracked-backup
+  mv <caminho/do/arquivo/conflitante> /root/pre-deploy-untracked-backup/
+  # repetir para cada arquivo listado no erro
+  ```
+  Depois rodar `./scripts/bash/deploy-producao.sh` de novo desde o inicio — e
+  idempotente, o unico efeito colateral de repetir e' mais um backup do banco (nao
+  ha problema nisso). Se o mesmo erro aparecer para um arquivo fora desse padrao
+  (nao e' obviamente uma sobra de teste), parar e investigar o conteudo antes de
+  mover, pode ser algo relevante que nunca foi versionado.
 
 ## Checklist pos-deploy
 

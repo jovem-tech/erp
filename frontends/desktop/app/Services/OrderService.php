@@ -97,14 +97,39 @@ class OrderService
     /**
      * @return array<string, mixed>
      */
-    public function updateStatus(int $id, string $status, ?string $observacao = null): array
-    {
-        $payload = ['status' => $status];
+    public function updateStatus(
+        int $id,
+        ?string $status = null,
+        ?string $observacao = null,
+        ?string $diagnosticoTecnico = null,
+        ?string $solucaoAplicada = null,
+        bool $comunicarCliente = false
+    ): array {
+        $payload = ['comunicar_cliente' => $comunicarCliente];
+        if ($status !== null && $status !== '') {
+            $payload['status'] = $status;
+        }
         if ($observacao !== null && $observacao !== '') {
             $payload['observacao'] = $observacao;
         }
+        if ($diagnosticoTecnico !== null) {
+            $payload['diagnostico_tecnico'] = $diagnosticoTecnico;
+        }
+        if ($solucaoAplicada !== null) {
+            $payload['solucao_aplicada'] = $solucaoAplicada;
+        }
 
         $response = $this->apiClient->patch('/orders/' . $id . '/status', $payload);
+
+        return $response['data']['order'] ?? [];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function addProcedure(int $id, string $descricao): array
+    {
+        $response = $this->apiClient->post('/orders/' . $id . '/procedures', ['descricao' => $descricao]);
 
         return $response['data']['order'] ?? [];
     }

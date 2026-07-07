@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\Api\V1\CloseOrderRequest;
+use App\Http\Requests\Api\V1\StoreOrderProcedureRequest;
 use App\Http\Requests\Api\V1\UpdateOrderStatusRequest;
 use App\Http\Requests\Api\V1\UpsertOrderRequest;
 use App\Services\Orders\OrderClosureService;
@@ -235,11 +236,16 @@ class OrderController extends BaseApiController
             return $this->unauthenticatedResponse($request);
         }
 
+        $validated = $request->validated();
+
         $result = $this->orderWorkflowService->updateStatus(
             $order,
             $user,
-            (string) $request->validated()['status'],
-            isset($request->validated()['observacao']) ? (string) $request->validated()['observacao'] : null
+            isset($validated['status']) && $validated['status'] !== '' ? (string) $validated['status'] : null,
+            isset($validated['observacao']) ? (string) $validated['observacao'] : null,
+            isset($validated['diagnostico_tecnico']) ? (string) $validated['diagnostico_tecnico'] : null,
+            isset($validated['solucao_aplicada']) ? (string) $validated['solucao_aplicada'] : null,
+            filter_var($validated['comunicar_cliente'] ?? false, FILTER_VALIDATE_BOOL)
         );
 
         return match ($result['result'] ?? 'error') {
@@ -284,6 +290,54 @@ class OrderController extends BaseApiController
                 'Falha ao atualizar o status da OS.',
                 500,
                 'ORDER_STATUS_UPDATE_FAILED',
+                null,
+                request: $request
+            ),
+        };
+    }
+
+    public function storeProcedure(StoreOrderProcedureRequest $request, int $order): JsonResponse
+    {
+        $this->authorize('os:editar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $result = $this->orderWorkflowService->addProcedureEntry(
+            $order,
+            $user,
+            (string) $request->validated()['descricao']
+        );
+
+        return match ($result['result'] ?? 'error') {
+            'ok' => $this->success(['order' => $result['order'] ?? null], request: $request),
+            'forbidden' => $this->error(
+                'Você não tem permissão para alterar esta OS.',
+                403,
+                'ORDER_FORBIDDEN',
+                null,
+                request: $request
+            ),
+            'not_found' => $this->error(
+                'OS não encontrada.',
+                404,
+                'ORDER_NOT_FOUND',
+                null,
+                request: $request
+            ),
+            'empty_description' => $this->error(
+                'Descreva o procedimento executado antes de salvar.',
+                422,
+                'ORDER_PROCEDURE_DESCRIPTION_REQUIRED',
+                null,
+                request: $request
+            ),
+            default => $this->error(
+                'Falha ao salvar o procedimento executado.',
+                500,
+                'ORDER_PROCEDURE_STORE_FAILED',
                 null,
                 request: $request
             ),

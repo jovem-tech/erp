@@ -1,5 +1,6 @@
 @php
     $quickCatalogs = is_array($quickCatalogs ?? null) ? $quickCatalogs : [];
+    $tiposEquipamento = is_array($tiposEquipamento ?? null) ? $tiposEquipamento : [];
     $serviceQuick = is_array($quickCatalogs['service'] ?? null) ? $quickCatalogs['service'] : [];
     $partQuick = is_array($quickCatalogs['part'] ?? null) ? $quickCatalogs['part'] : [];
 
@@ -50,14 +51,19 @@
 
                     <div>
                         <label for="orcamentoQuickItemEquipmentType">Tipo de equipamento</label>
-                        <input
-                            type="text"
+                        <select
                             id="orcamentoQuickItemEquipmentType"
                             name="tipo_equipamento"
-                            class="form-control"
-                            placeholder="Ex.: Notebook, smartphone, desktop..."
+                            class="form-select"
+                            data-native-select="true"
+                            data-select2-placeholder="Ex.: Notebook, smartphone, desktop..."
                             data-budget-quick-field="tipo_equipamento"
                         >
+                            <option value=""></option>
+                            @foreach ($tiposEquipamento as $tipo)
+                                <option value="{{ $tipo }}">{{ $tipo }}</option>
+                            @endforeach
+                        </select>
                     </div>
 
                     <div class="desktop-grid-span-2">

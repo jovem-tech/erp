@@ -71,6 +71,7 @@
         const submitButton = document.getElementById('closureSubmitButton');
         const footerPrevBtn = document.getElementById('closureFooterPrevBtn');
         const footerNextBtn = document.getElementById('closureFooterNextBtn');
+        const receiveAllBalanceBtn = document.querySelector('[data-action="receber-saldo-total"]');
         const currentStepInput = document.getElementById('closureCurrentStepInput');
         const stepErrorBox = document.getElementById('closureStepError');
 
@@ -114,6 +115,20 @@
 
             const advanceBtn = document.querySelector('[data-action="adicionar-adiantamento"]');
             if (advanceBtn instanceof HTMLElement) advanceBtn.classList.toggle('d-none', hide);
+        };
+
+        const updateReceiveAllBalanceButtonState = (saldoRestante) => {
+            if (!(receiveAllBalanceBtn instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            const hasOpenBalance = saldoRestante > 0.009;
+            receiveAllBalanceBtn.disabled = !hasOpenBalance;
+            receiveAllBalanceBtn.classList.toggle('disabled', !hasOpenBalance);
+            receiveAllBalanceBtn.setAttribute('aria-disabled', String(!hasOpenBalance));
+            receiveAllBalanceBtn.title = hasOpenBalance
+                ? 'Preencher o saldo em aberto'
+                : 'Nao ha saldo em aberto para receber';
         };
 
         const toggleCardFields = (row) => {
@@ -185,6 +200,8 @@
             if (collectionsAlert) {
                 collectionsAlert.classList.toggle('d-none', saldoRestante <= 0 || rows().length === 0);
             }
+
+            updateReceiveAllBalanceButtonState(saldoRestante);
 
             return { totalRecebido, totalTaxas, saldoRestante, liquido, lucro };
         };
@@ -447,9 +464,15 @@
             addRow({ classificacao_recebimento: 'adiantamento' });
         });
 
-        document.querySelector('[data-action="receber-saldo-total"]')?.addEventListener('click', () => {
+        receiveAllBalanceBtn?.addEventListener('click', () => {
             const { saldoRestante } = recalcTotals();
-            if (saldoRestante > 0) addRow({ valor: saldoRestante.toFixed(2) });
+            if (saldoRestante <= 0.009) {
+                showStepError('Nao ha saldo em aberto para receber nesta OS.');
+                return;
+            }
+
+            clearStepError();
+            addRow({ valor: saldoRestante.toFixed(2) });
         });
 
         encerrarComoSelect?.addEventListener('change', () => {
