@@ -117,7 +117,9 @@ As skills versionadas do proprio ERP ficam em `.agents/skills/`:
 - `$sistema-erp-entrega-especificada`: fluxo de entrega orientado a especificacoes;
 - `$sistema-erp-documentacao-viva`: sincronizacao de manifests, AGENTS, historico e artefatos documentais gerados;
 - `$sistema-erp-auditoria-independente`: processo de verificacao para auditorias e para qualquer alegacao de "corrigido"/"concluido" — nunca aceitar sem checar contra o codigo real;
-- `$sistema-erp-deploy-producao`: runbook, problemas conhecidos e checklist do deploy em servidor Ubuntu (LAN/VPS) — usar antes de instalar, atualizar ou diagnosticar producao.
+- `$sistema-erp-deploy-producao`: runbook, problemas conhecidos e checklist do deploy em servidor Ubuntu (LAN/VPS) — usar antes de instalar, atualizar ou diagnosticar producao;
+- `$sistema-erp-os-fluxo-fechamento`: regra de negocio sobre quais status encerram uma OS e por que so a baixa (`OrderClosureService::close()`) pode aplica-los — usar antes de mexer em status de OS, na tela de baixa, ou em relatorios financeiros que leem dados de OS;
+- `$sistema-erp-autenticacao-step-up`: padrao de reautenticacao com credenciais de administrador para acoes sensiveis visiveis a usuarios sem perfil admin (ex.: "Cancelar baixa" de OS) — usar antes de implementar qualquer nova acao que exija confirmacao de admin sem depender do perfil de quem esta logado.
 
 ## Automacao documental e versionamento
 

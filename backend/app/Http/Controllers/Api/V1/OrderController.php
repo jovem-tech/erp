@@ -2,15 +2,19 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Requests\Api\V1\CancelOrderClosureRequest;
 use App\Http\Requests\Api\V1\CloseOrderRequest;
 use App\Http\Requests\Api\V1\StoreOrderProcedureRequest;
 use App\Http\Requests\Api\V1\UpdateOrderStatusRequest;
 use App\Http\Requests\Api\V1\UpsertOrderRequest;
+use App\Models\User;
 use App\Services\Orders\OrderClosureService;
 use App\Services\Orders\OrderWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class OrderController extends BaseApiController
@@ -35,6 +39,21 @@ class OrderController extends BaseApiController
         return $this->success(
             ['orders' => $paginator->items()],
             meta: $this->paginationMeta($paginator),
+            request: $request
+        );
+    }
+
+    public function statusCatalog(Request $request): JsonResponse
+    {
+        $this->authorize('os:visualizar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        return $this->success(
+            ['statuses' => $this->orderWorkflowService->statusCatalogOptions()],
             request: $request
         );
     }
@@ -173,6 +192,20 @@ class OrderController extends BaseApiController
                 null,
                 request: $request
             ),
+            'closure_status_requires_baixa_flow' => $this->error(
+                'Este status só pode ser aplicado pela tela de baixa da OS (Encerramento), não pela edição da OS.',
+                422,
+                'ORDER_STATUS_CLOSURE_REQUIRES_BAIXA_FLOW',
+                null,
+                request: $request
+            ),
+            'order_is_closed' => $this->error(
+                'Esta OS está encerrada. Para alterar o status, cancele a baixa da OS primeiro.',
+                422,
+                'ORDER_IS_CLOSED',
+                null,
+                request: $request
+            ),
             default => $this->error(
                 'Falha ao atualizar a OS.',
                 500,
@@ -284,6 +317,20 @@ class OrderController extends BaseApiController
                 422,
                 'ORDER_STATUS_TRANSITION_INVALID',
                 ['proximas_etapas' => $result['proximas_etapas'] ?? []],
+                request: $request
+            ),
+            'closure_status_requires_baixa_flow' => $this->error(
+                'Este status só pode ser aplicado pela tela de baixa da OS (Encerramento), não por aqui.',
+                422,
+                'ORDER_STATUS_CLOSURE_REQUIRES_BAIXA_FLOW',
+                null,
+                request: $request
+            ),
+            'order_is_closed' => $this->error(
+                'Esta OS está encerrada. Para alterá-la, cancele a baixa da OS primeiro.',
+                422,
+                'ORDER_IS_CLOSED',
+                null,
                 request: $request
             ),
             default => $this->error(
@@ -452,6 +499,115 @@ class OrderController extends BaseApiController
                 'Falha ao concluir a baixa da OS.',
                 500,
                 'ORDER_CLOSURE_FAILED',
+                null,
+                request: $request
+            ),
+        };
+    }
+
+    public function cancelClosure(CancelOrderClosureRequest $request, int $order): JsonResponse
+    {
+        // Regra de negócio (skill sistema-erp-os-fluxo-fechamento): o botão fica
+        // visível para qualquer usuário com acesso ao painel da OS, mas a ação só
+        // se concretiza com credenciais de um usuário administrador (perfil=admin)
+        // — o gate real de autorização é essa verificação, não a permissão do
+        // usuário logado. Por isso aqui exige-se apenas 'os:visualizar'.
+        $this->authorize('os:visualizar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $validated = $request->validated();
+        $adminEmail = mb_strtolower(trim((string) $validated['admin_email']));
+        $adminPassword = (string) $validated['admin_password'];
+
+        $throttleKey = 'os-closure-cancel-admin-auth:' . $adminEmail . '|' . $request->ip();
+        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            return $this->error(
+                'Muitas tentativas de verificação de administrador. Aguarde um pouco e tente novamente.',
+                429,
+                'ORDER_CLOSURE_CANCEL_ADMIN_AUTH_RATE_LIMITED',
+                ['retry_after' => RateLimiter::availableIn($throttleKey)],
+                request: $request
+            );
+        }
+
+        $admin = User::query()->where('email', $adminEmail)->first();
+
+        if (
+            ! $admin instanceof User
+            || ! (bool) $admin->ativo
+            || mb_strtolower(trim((string) ($admin->perfil ?? ''))) !== 'admin'
+            || ! Hash::check($adminPassword, (string) $admin->senha)
+        ) {
+            RateLimiter::hit($throttleKey, 60);
+
+            logger()->warning('[API V1][ORDERS][CLOSURE] Credenciais de administrador inválidas ao cancelar baixa', [
+                'order_id' => $order,
+                'user_id' => $user->id,
+                'admin_email' => $adminEmail,
+                'ip' => $request->ip(),
+            ]);
+
+            // 422, nao 401: o desktop trata QUALQUER 401 como "sessao do usuario
+            // atual expirou" e forca logout (ApiClient::parseResponse). Isso e'
+            // uma verificacao de credenciais de um usuario DIFERENTE (admin),
+            // nao a sessao de quem esta clicando — nunca pode disparar esse logout.
+            return $this->error(
+                'Credenciais de administrador inválidas.',
+                422,
+                'ORDER_CLOSURE_CANCEL_ADMIN_AUTH_INVALID',
+                null,
+                request: $request
+            );
+        }
+
+        RateLimiter::clear($throttleKey);
+
+        $result = $this->orderClosureService->cancelClosure($order, $user, $admin);
+
+        return match ($result['result'] ?? 'error') {
+            'ok' => $this->success(
+                [
+                    'order' => $result['order'] ?? null,
+                    'status_revertido' => $result['status_revertido'] ?? null,
+                ],
+                request: $request
+            ),
+            'forbidden' => $this->error(
+                'Você não tem permissão para alterar esta OS.',
+                403,
+                'ORDER_FORBIDDEN',
+                null,
+                request: $request
+            ),
+            'not_found' => $this->error(
+                'OS não encontrada.',
+                404,
+                'ORDER_NOT_FOUND',
+                null,
+                request: $request
+            ),
+            'not_closed' => $this->error(
+                'Esta OS não está encerrada — não há baixa para cancelar.',
+                422,
+                'ORDER_CLOSURE_NOT_CLOSED',
+                null,
+                request: $request
+            ),
+            'cannot_resolve_previous_status' => $this->error(
+                'Não foi possível identificar o status anterior à baixa desta OS. Cancele manualmente pelo modal "Alterar status".',
+                422,
+                'ORDER_CLOSURE_CANCEL_PREVIOUS_STATUS_UNKNOWN',
+                null,
+                request: $request
+            ),
+            default => $this->error(
+                'Falha ao cancelar a baixa da OS.',
+                500,
+                'ORDER_CLOSURE_CANCEL_FAILED',
                 null,
                 request: $request
             ),

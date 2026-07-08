@@ -46,6 +46,11 @@
             array_unshift($selectableStatuses, $currentOption);
         }
 
+        // OS encerrada (skill sistema-erp-os-fluxo-fechamento): equipamento não
+        // está mais de posse da assistência — mudança de status fica bloqueada,
+        // só "Cancelar baixa" pode tirar a OS desse estado.
+        $isEncerrada = (bool) ($order['is_encerrada'] ?? false);
+
         $orcamento = $order['orcamento'] ?? null;
         $hasOrcamento = $orcamento !== null;
         $checklist = $order['checklist'] ?? null;
@@ -95,7 +100,7 @@
                 <a href="{{ route('orders.edit', $order['id']) }}" class="btn btn-soft">
                     <i class="bi bi-pencil me-2"></i>Editar
                 </a>
-                @if (($selectableStatuses ?? []) !== [])
+                @if (! $isEncerrada && ($selectableStatuses ?? []) !== [])
                     <button type="button" class="btn btn-soft"
                         data-bs-toggle="modal"
                         data-bs-target="#orderStatusModal"
@@ -104,6 +109,18 @@
                         <i class="bi bi-arrow-left-right me-2"></i>Alterar status
                     </button>
                 @endif
+            @endif
+            @if ($isEncerrada)
+                {{-- Visível para qualquer usuário com acesso ao painel da OS — a
+                     autorização real é a verificação de credenciais de
+                     administrador feita no submit do modal. --}}
+                <button type="button" class="btn btn-outline-danger"
+                    data-bs-toggle="modal"
+                    data-bs-target="#cancelClosureModal"
+                    data-order-id="{{ $order['id'] }}"
+                    data-order-numero="{{ $order['numero_os'] ?? ('#' . $order['id']) }}">
+                    <i class="bi bi-arrow-counterclockwise me-2"></i>Cancelar baixa
+                </button>
             @endif
             @if (! $hasOrcamento && \App\Support\DesktopSession::can('orcamentos', 'criar'))
                 <a href="{{ route('orcamentos.create', ['os_id' => $order['id']]) }}" class="btn btn-soft">
@@ -244,32 +261,41 @@
                     @if (\App\Support\DesktopSession::can('os', 'editar'))
                         <div class="os-panel-block">
                             <h3 class="os-panel-title"><i class="bi bi-arrow-repeat me-1"></i>Atualizar status</h3>
-                            <p class="surface-subtitle">Ação enviada ao backend central com validação RBAC e catálogo de status.</p>
-                            <form method="post" action="{{ route('orders.status.update', $order['id']) }}" class="d-grid gap-3">
-                                @csrf
-                                <div>
-                                    <label for="status">Novo status</label>
-                                    <select name="status" id="status" class="form-select" required>
-                                        @foreach ($selectableStatuses as $status)
-                                            <option value="{{ $status['codigo'] }}" @selected(($order['status'] ?? '') === $status['codigo'])>
-                                                {{ $status['nome'] }}{{ ($order['status'] ?? '') === $status['codigo'] ? ' (atual)' : '' }}
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                    @if (count($selectableStatuses) <= 1)
-                                        <small class="os-hint">Não há transições de status disponíveis a partir da etapa atual.</small>
-                                    @endif
-                                </div>
-                                <div>
-                                    <label for="observacao">Observação da mudança</label>
-                                    <textarea name="observacao" id="observacao" class="form-control" rows="3" placeholder="Registre o motivo ou contexto da alteração">{{ old('observacao') }}</textarea>
-                                </div>
-                                <div class="d-flex justify-content-end">
-                                    <button type="submit" class="btn btn-primary">
-                                        <i class="bi bi-check2-circle me-2"></i>Salvar novo status
-                                    </button>
-                                </div>
-                            </form>
+                            @if ($isEncerrada)
+                                <p class="surface-subtitle mb-0">
+                                    Esta OS está encerrada — o equipamento não está mais de posse da assistência, então a
+                                    mudança de status fica bloqueada aqui. Se a baixa foi feita por engano, use
+                                    "Cancelar baixa" no topo da página. Se o equipamento realmente retornou, abra uma
+                                    nova OS.
+                                </p>
+                            @else
+                                <p class="surface-subtitle">Ação enviada ao backend central com validação RBAC e catálogo de status.</p>
+                                <form method="post" action="{{ route('orders.status.update', $order['id']) }}" class="d-grid gap-3">
+                                    @csrf
+                                    <div>
+                                        <label for="status">Novo status</label>
+                                        <select name="status" id="status" class="form-select" required>
+                                            @foreach ($selectableStatuses as $status)
+                                                <option value="{{ $status['codigo'] }}" @selected(($order['status'] ?? '') === $status['codigo'])>
+                                                    {{ $status['nome'] }}{{ ($order['status'] ?? '') === $status['codigo'] ? ' (atual)' : '' }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        @if (count($selectableStatuses) <= 1)
+                                            <small class="os-hint">Não há transições de status disponíveis a partir da etapa atual.</small>
+                                        @endif
+                                    </div>
+                                    <div>
+                                        <label for="observacao">Observação da mudança</label>
+                                        <textarea name="observacao" id="observacao" class="form-control" rows="3" placeholder="Registre o motivo ou contexto da alteração">{{ old('observacao') }}</textarea>
+                                    </div>
+                                    <div class="d-flex justify-content-end">
+                                        <button type="submit" class="btn btn-primary">
+                                            <i class="bi bi-check2-circle me-2"></i>Salvar novo status
+                                        </button>
+                                    </div>
+                                </form>
+                            @endif
                         </div>
                     @endif
 
@@ -483,6 +509,7 @@
 
 @push('modals')
     @include('orders._status_modal')
+    @include('orders._cancel_closure_modal')
 @endpush
 
 @section('scripts')
@@ -493,8 +520,13 @@
             proceduresUrlTemplate: '{{ route('orders.procedures.store', ['order' => '__ORDER__']) }}',
             csrfToken: '{{ csrf_token() }}',
         };
+        window.__DESKTOP_CANCEL_CLOSURE_MODAL = {
+            cancelUrlTemplate: '{{ route('orders.closure.cancel', ['order' => '__ORDER__']) }}',
+            csrfToken: '{{ csrf_token() }}',
+        };
     </script>
     <script src="{{ asset('assets/js/orders-status-modal.js') }}"></script>
+    <script src="{{ asset('assets/js/orders-cancel-closure-modal.js') }}"></script>
     <script>
         (function () {
             const root = document.querySelector('[data-os-tabs]');

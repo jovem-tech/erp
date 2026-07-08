@@ -1,7 +1,7 @@
 ﻿openapi: 3.0.3
 info:
   title: Sistema ERP API
-  version: 1.1.1
+  version: 1.1.2
   description: |
     Contrato técnico oficial da API v1 do backend central do Sistema ERP.
 
@@ -3886,7 +3886,7 @@ paths:
         - $ref: "#/components/parameters/SearchParam"
         - name: status_scope
           in: query
-          description: Escopo opcional da fila operacional. Use `open` para ocultar OS com `estado_fluxo=encerrado`; use `all` para remover esse recorte.
+          description: Escopo opcional da fila operacional. Use `open` para ocultar OS encerradas pelos códigos canônicos (`entregue_reparado`, `devolvido_sem_reparo`, `descartado`) e entregas com cobrança pendente já vinculadas a um encerramento; use `all` para remover esse recorte.
           schema:
             type: string
             enum:
@@ -3982,6 +3982,37 @@ paths:
           $ref: "#/components/responses/ValidationError"
         "500":
           $ref: "#/components/responses/ServerError"
+
+  /orders/status-catalog:
+    get:
+      tags:
+        - Ordens
+      summary: Listar status ativos de OS para filtros e selects operacionais.
+      description: |
+        Retorna apenas o catálogo ativo de status de OS necessário para telas operacionais
+        como a listagem `/os`. Exige `os:visualizar` e não expõe a configuração completa
+        de transições do módulo de conhecimento.
+      responses:
+        "200":
+          description: Catálogo de status ativos.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          statuses:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/OrderWorkflowStatusOption"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /orders/{order}:
     get:

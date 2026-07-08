@@ -6,6 +6,7 @@ use App\Models\Financeiro;
 use App\Models\FinanceiroMovimento;
 use App\Models\FinanceiroMovimentoCartao;
 use App\Models\Order;
+use App\Models\OrderStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
@@ -22,9 +23,14 @@ class FinanceiroReportService
     {
         [$inicio, $fim, $label] = $this->resolveMonthRange($mes);
 
+        // `os_status.status_final=true` sozinho e amplo demais: inclui tanto
+        // encerramentos que geram receita (Equipamento Entregue) quanto os que
+        // nao geram nenhuma cobranca (Devolvido Sem Reparo, Descartado) e ate
+        // etapas intermediarias do sub-fluxo de reparo. Reconhece receita
+        // apenas para OrderStatus::REVENUE_CLOSURE_CODE — ver skill
+        // sistema-erp-os-fluxo-fechamento.
         $os = Order::query()
-            ->join('os_status', 'os_status.codigo', '=', 'os.status')
-            ->where('os_status.status_final', true)
+            ->where('os.status', OrderStatus::REVENUE_CLOSURE_CODE)
             ->whereBetween('os.data_entrega', [$inicio->startOfDay(), $fim->endOfDay()])
             ->selectRaw('COUNT(*) as total_os, COALESCE(SUM(os.valor_total), 0) as receita_bruta, COALESCE(SUM(os.desconto), 0) as descontos, COALESCE(SUM(os.valor_final), 0) as receita_liquida')
             ->first();

@@ -110,7 +110,31 @@ class OrderFlowTest extends TestCase
         $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $firstOrder));
     }
 
-    public function test_index_open_status_scope_excludes_orders_with_encerrado_flow_state(): void
+    public function test_status_catalog_is_available_to_order_viewers_for_listing_filters(): void
+    {
+        [$manager] = $this->seedAdminOrderActors();
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->getJson('/api/v1/orders/status-catalog');
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.statuses.0.codigo', 'triagem')
+            ->assertJsonPath('data.statuses.0.nome', 'Triagem')
+            ->assertJsonPath('data.statuses.0.grupo_macro', 'recepcao');
+
+        $this->assertContains(
+            'encerrado',
+            collect($response->json('data.statuses', []))
+                ->pluck('grupo_macro')
+                ->unique()
+                ->values()
+                ->all()
+        );
+    }
+
+    public function test_index_open_status_scope_excludes_closure_and_delivered_pending_payment_orders(): void
     {
         [$manager, $techA, $techB, $clientA, $clientB, $equipmentA, $equipmentB] = $this->seedAdminOrderActors();
 
@@ -123,21 +147,49 @@ class OrderFlowTest extends TestCase
             'estado_fluxo' => 'em_atendimento',
         ]);
 
-        $pendingPaymentOrder = $this->createOrderRecord([
+        $pausedOperationalOrder = $this->createOrderRecord([
             'numero_os' => 'OS26060014',
+            'cliente_id' => $clientB,
+            'equipamento_id' => $equipmentB,
+            'tecnico_id' => $techB->id,
+            'status' => 'aguardando_peca',
+            'estado_fluxo' => 'pausado',
+        ]);
+
+        $deliveredPendingPaymentOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060015',
             'cliente_id' => $clientB,
             'equipamento_id' => $equipmentB,
             'tecnico_id' => $techB->id,
             'status' => 'entregue_pagamento_pendente',
             'estado_fluxo' => 'pausado',
+            'status_final_pendente_pagamento' => 'entregue_reparado',
         ]);
 
-        $closedOrder = $this->createOrderRecord([
-            'numero_os' => 'OS26060015',
+        $deliveredOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060016',
             'cliente_id' => $clientB,
             'equipamento_id' => $equipmentB,
             'tecnico_id' => $techB->id,
             'status' => 'entregue_reparado',
+            'estado_fluxo' => 'encerrado',
+        ]);
+
+        $noRepairOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060017',
+            'cliente_id' => $clientB,
+            'equipamento_id' => $equipmentB,
+            'tecnico_id' => $techB->id,
+            'status' => 'devolvido_sem_reparo',
+            'estado_fluxo' => 'encerrado',
+        ]);
+
+        $discardedOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060018',
+            'cliente_id' => $clientB,
+            'equipamento_id' => $equipmentB,
+            'tecnico_id' => $techB->id,
+            'status' => 'descartado',
             'estado_fluxo' => 'encerrado',
         ]);
 
@@ -152,8 +204,11 @@ class OrderFlowTest extends TestCase
         $orders = collect($response->json('data.orders', []));
 
         $this->assertTrue($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $openOrder));
-        $this->assertTrue($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $pendingPaymentOrder));
-        $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $closedOrder));
+        $this->assertTrue($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $pausedOperationalOrder));
+        $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $deliveredPendingPaymentOrder));
+        $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $deliveredOrder));
+        $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $noRepairOrder));
+        $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $discardedOrder));
     }
 
     public function test_index_summary_exposes_photo_whatsapp_deadline_budget_and_receivable_breakdown(): void
@@ -467,7 +522,7 @@ class OrderFlowTest extends TestCase
             ->assertJsonPath('data.order.equipamento.numero_serie', 'ABC123')
             ->assertJsonPath('data.order.historico.0.status_novo', 'status_6')
             ->assertJsonPath('data.order.status_disponiveis.0.codigo', 'triagem')
-            ->assertJsonPath('data.order.status_disponiveis.1.codigo', 'aguardando_reparo')
+            ->assertJsonPath('data.order.status_disponiveis.1.codigo', 'aguardando_orcamento')
             ->assertJsonPath('data.order.fotos.0.url', "/api/v1/orders/{$assignedOrder}/photos/{$photoId}")
             ->assertJsonPath('data.order.documentos.0.url', "/api/v1/orders/{$assignedOrder}/documents/{$documentId}");
 
@@ -593,10 +648,13 @@ class OrderFlowTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        // Destino fora das transições permitidas é recusado.
+        // Destino fora das transições permitidas é recusado. Usa um status
+        // que nao seja um dos 3 closureCodes() (ex.: entregue_reparado) para
+        // isolar a rejeicao de catalogo de transicoes da regra separada de
+        // "closure_status_requires_baixa_flow" (ver OrderWorkflowService::updateStatus()).
         $blocked = $this->withHeader('Authorization', 'Bearer ' . $token)
             ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
-                'status' => 'entregue_reparado',
+                'status' => 'aguardando_orcamento',
             ]);
 
         $blocked->assertUnprocessable()

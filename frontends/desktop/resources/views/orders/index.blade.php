@@ -4,16 +4,33 @@
     @php
         $usesOpenQueueScope = trim((string) ($filters['status_scope'] ?? '')) === 'open';
         $hasAdvancedFilters = (int) ($filters['technician_id'] ?? 0) > 0
-            || trim((string) ($filters['grupo_macro'] ?? '')) !== ''
             || trim((string) ($filters['data_abertura_de'] ?? '')) !== ''
             || trim((string) ($filters['data_abertura_ate'] ?? '')) !== ''
             || trim((string) ($filters['valor_min'] ?? '')) !== ''
             || trim((string) ($filters['valor_max'] ?? '')) !== '';
         $hasBasicFilters = trim((string) ($filters['search'] ?? '')) !== ''
-            || trim((string) ($filters['status'] ?? '')) !== '';
+            || trim((string) ($filters['status'] ?? '')) !== ''
+            || trim((string) ($filters['grupo_macro'] ?? '')) !== '';
         $hasAnyFilters = $hasBasicFilters || $hasAdvancedFilters;
+        $activeFilterCount = count(array_filter([
+            trim((string) ($filters['search'] ?? '')) !== '',
+            trim((string) ($filters['status'] ?? '')) !== '',
+            trim((string) ($filters['grupo_macro'] ?? '')) !== '',
+            (int) ($filters['technician_id'] ?? 0) > 0,
+            trim((string) ($filters['data_abertura_de'] ?? '')) !== '',
+            trim((string) ($filters['data_abertura_ate'] ?? '')) !== '',
+            trim((string) ($filters['valor_min'] ?? '')) !== '',
+            trim((string) ($filters['valor_max'] ?? '')) !== '',
+        ]));
+        $activeAdvancedFilterCount = count(array_filter([
+            (int) ($filters['technician_id'] ?? 0) > 0,
+            trim((string) ($filters['data_abertura_de'] ?? '')) !== '',
+            trim((string) ($filters['data_abertura_ate'] ?? '')) !== '',
+            trim((string) ($filters['valor_min'] ?? '')) !== '',
+            trim((string) ($filters['valor_max'] ?? '')) !== '',
+        ]));
 
-        $statusPlaceholder = $usesOpenQueueScope ? 'Padrão: OS abertas' : 'Todos os status';
+        $statusPlaceholder = $usesOpenQueueScope ? 'Padrão: em posse da assistência' : 'Todos os status';
 
         $deadlineColors = [
             'atrasado' => '#dc2626',
@@ -52,11 +69,27 @@
                     </button>
                 </div>
             </div>
-            <div class="d-flex align-items-center gap-2">
+            <div class="os-filter-summary-actions">
                 <span class="desktop-chip">{{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} resultados</span>
-                <button type="button" class="btn btn-sm btn-outline-light" data-bs-toggle="collapse" data-bs-target="#osFilterPanel" aria-expanded="{{ $hasAnyFilters ? 'true' : 'false' }}" aria-controls="osFilterPanel">
+                <button
+                    type="button"
+                    class="btn btn-outline-light os-filter-toggle {{ $hasAnyFilters ? 'is-active' : '' }}"
+                    @unless($hasAnyFilters)
+                        data-bs-toggle="collapse"
+                        data-bs-target="#osFilterPanel"
+                    @endunless
+                    aria-expanded="{{ $hasAnyFilters ? 'true' : 'false' }}"
+                    aria-controls="osFilterPanel"
+                    @if($hasAnyFilters)
+                        aria-disabled="true"
+                        title="Existem filtros ativos. Use Limpar para resetar os filtros."
+                    @endif
+                >
                     <i class="bi bi-funnel me-2"></i>
-                    Filtros
+                    <span>{{ $hasAnyFilters ? 'Filtros ativos' : 'Filtros' }}</span>
+                    @if ($hasAnyFilters)
+                        <span class="os-filter-active-count" aria-label="{{ $activeFilterCount }} filtros ativos">{{ $activeFilterCount }}</span>
+                    @endif
                 </button>
             </div>
         </div>
@@ -73,16 +106,32 @@
             <div>
                 <label for="status">Status</label>
                 @if (! empty($statusOptions))
-                    <select id="status" name="status" class="form-select">
+                    <select id="status" name="status" class="form-select" data-select2-placeholder="{{ $statusPlaceholder }}" data-select2-allow-clear="true">
                         <option value="">{{ $statusPlaceholder }}</option>
                         @foreach ($statusOptions as $statusOption)
-                            <option value="{{ $statusOption['codigo'] ?? '' }}" @selected(($filters['status'] ?? '') === ($statusOption['codigo'] ?? ''))>
+                            <option value="{{ $statusOption['codigo'] ?? '' }}" data-macro="{{ $statusOption['grupo_macro'] ?? '' }}" @selected(($filters['status'] ?? '') === ($statusOption['codigo'] ?? ''))>
                                 {{ $statusOption['nome'] ?? ($statusOption['codigo'] ?? '') }}
                             </option>
                         @endforeach
                     </select>
                 @else
                     <input type="text" id="status" name="status" class="form-control" value="{{ $filters['status'] ?? '' }}" placeholder="Ex.: em_diagnostico">
+                @endif
+            </div>
+
+            <div>
+                <label for="grupo_macro">Macrofase</label>
+                @if (! empty($macroGroupOptions))
+                    <select id="grupo_macro" name="grupo_macro" class="form-select" data-select2-placeholder="Todas as macrofases" data-select2-allow-clear="true">
+                        <option value="">Todas as macrofases</option>
+                        @foreach ($macroGroupOptions as $macroGroup)
+                            <option value="{{ $macroGroup }}" @selected(($filters['grupo_macro'] ?? '') === $macroGroup)>
+                                {{ ucfirst(str_replace('_', ' ', $macroGroup)) }}
+                            </option>
+                        @endforeach
+                    </select>
+                @else
+                    <input type="text" id="grupo_macro" name="grupo_macro" class="form-control" value="{{ $filters['grupo_macro'] ?? '' }}" placeholder="Ex.: execucao">
                 @endif
             </div>
 
@@ -100,13 +149,29 @@
                     <i class="bi bi-search me-2"></i>
                     Filtrar
                 </button>
-                <a href="{{ route('orders.index') }}" class="btn btn-outline-light">Limpar</a>
+                <button type="button" class="btn btn-outline-light" id="osFilterClearButton" data-reset-url="{{ route('orders.index') }}">Limpar</button>
             </div>
 
             <div class="desktop-filter-advanced-toggle">
-                <button type="button" class="btn btn-sm btn-outline-light" data-bs-toggle="collapse" data-bs-target="#osAdvancedFilters" aria-expanded="{{ $hasAdvancedFilters ? 'true' : 'false' }}" aria-controls="osAdvancedFilters">
+                <button
+                    type="button"
+                    class="btn btn-sm btn-outline-light {{ $hasAdvancedFilters ? 'is-active' : '' }}"
+                    @unless($hasAdvancedFilters)
+                        data-bs-toggle="collapse"
+                        data-bs-target="#osAdvancedFilters"
+                    @endunless
+                    aria-expanded="{{ $hasAdvancedFilters ? 'true' : 'false' }}"
+                    aria-controls="osAdvancedFilters"
+                    @if($hasAdvancedFilters)
+                        aria-disabled="true"
+                        title="Existem filtros avançados ativos. Use Limpar para resetar os filtros."
+                    @endif
+                >
                     <i class="bi bi-sliders me-2"></i>
-                    Filtros avançados
+                    <span>{{ $hasAdvancedFilters ? 'Filtros avançados ativos' : 'Filtros avançados' }}</span>
+                    @if ($hasAdvancedFilters)
+                        <span class="os-filter-active-count" aria-label="{{ $activeAdvancedFilterCount }} filtros avançados ativos">{{ $activeAdvancedFilterCount }}</span>
+                    @endif
                 </button>
             </div>
 
@@ -127,22 +192,6 @@
                             <select id="technician_id" name="technician_id" class="form-select" disabled>
                                 <option value="">Sem técnicos disponíveis</option>
                             </select>
-                        @endif
-                    </div>
-
-                    <div>
-                        <label for="grupo_macro">Macrofase</label>
-                        @if (! empty($macroGroupOptions))
-                            <select id="grupo_macro" name="grupo_macro" class="form-select">
-                                <option value="">Todas as macrofases</option>
-                                @foreach ($macroGroupOptions as $macroGroup)
-                                    <option value="{{ $macroGroup }}" @selected(($filters['grupo_macro'] ?? '') === $macroGroup)>
-                                        {{ ucfirst(str_replace('_', ' ', $macroGroup)) }}
-                                    </option>
-                                @endforeach
-                            </select>
-                        @else
-                            <input type="text" id="grupo_macro" name="grupo_macro" class="form-control" value="{{ $filters['grupo_macro'] ?? '' }}" placeholder="Ex.: execucao">
                         @endif
                     </div>
 
@@ -225,9 +274,13 @@
                             $valorRecebido = $order['valor_recebido'] ?? null;
                             $saldo = $order['saldo'] ?? null;
 
-                            $estadoFluxo = trim((string) ($order['estado_fluxo'] ?? ''));
+                            // Bug corrigido em 2026-07-08: usava estado_fluxo='encerrado' pra
+                            // esconder "Baixa" — mas Irreparável/Reparo Recusado tambem usam
+                            // esse estado_fluxo_padrao sem serem de fato um dos 3 status que
+                            // encerram a OS. is_encerrada (grupo_macro='encerrado') e a fonte certa.
+                            $isEncerrada = (bool) ($order['is_encerrada'] ?? false);
                             $canEditOrder = \App\Support\DesktopSession::can('os', 'editar');
-                            $canCloseOrder = $canEditOrder && ! in_array($estadoFluxo, ['encerrado', 'cancelado'], true);
+                            $canCloseOrder = $canEditOrder && ! $isEncerrada;
                             $canCreateBudget = \App\Support\DesktopSession::can('orcamentos', 'criar');
                             $canViewBudget = \App\Support\DesktopSession::can('orcamentos', 'visualizar');
                             $nextStatusOptions = is_array($order['proximas_etapas'] ?? null) ? $order['proximas_etapas'] : [];
@@ -378,7 +431,7 @@
                                             </li>
                                         @endif
 
-                                        @if ($canEditOrder && $nextStatusOptions !== [])
+                                        @if ($canEditOrder && ! $isEncerrada && $nextStatusOptions !== [])
                                             <li><hr class="dropdown-divider"></li>
                                             <li>
                                                 <button type="button" class="dropdown-item"
@@ -388,6 +441,23 @@
                                                     data-order-numero="{{ $order['numero_os'] ?? ('#' . $orderId) }}">
                                                     <i class="bi bi-arrow-left-right me-2"></i>
                                                     Alterar status
+                                                </button>
+                                            </li>
+                                        @endif
+
+                                        @if ($isEncerrada)
+                                            <li><hr class="dropdown-divider"></li>
+                                            <li>
+                                                {{-- Visível para qualquer usuário com acesso ao painel da OS — a
+                                                     autorização real é a verificação de credenciais de
+                                                     administrador feita no submit do modal. --}}
+                                                <button type="button" class="dropdown-item text-danger"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#cancelClosureModal"
+                                                    data-order-id="{{ $orderId }}"
+                                                    data-order-numero="{{ $order['numero_os'] ?? ('#' . $orderId) }}">
+                                                    <i class="bi bi-arrow-counterclockwise me-2"></i>
+                                                    Cancelar baixa
                                                 </button>
                                             </li>
                                         @endif
@@ -438,13 +508,197 @@
             proceduresUrlTemplate: '{{ route('orders.procedures.store', ['order' => '__ORDER__']) }}',
             csrfToken: '{{ csrf_token() }}',
         };
+        window.__DESKTOP_CANCEL_CLOSURE_MODAL = {
+            cancelUrlTemplate: '{{ route('orders.closure.cancel', ['order' => '__ORDER__']) }}',
+            csrfToken: '{{ csrf_token() }}',
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const form = document.getElementById('osFilterPanel');
+            const statusSelect = document.getElementById('status');
+            const macroSelect = document.getElementById('grupo_macro');
+            const clearButton = document.getElementById('osFilterClearButton');
+
+            if (!(form instanceof HTMLFormElement)
+                || !(statusSelect instanceof HTMLSelectElement)
+                || !(macroSelect instanceof HTMLSelectElement)) {
+                return;
+            }
+
+            const statusPlaceholder = statusSelect.querySelector('option[value=""]')?.textContent?.trim() || 'Todos os status';
+            const macroPlaceholder = macroSelect.querySelector('option[value=""]')?.textContent?.trim() || 'Todas as macrofases';
+
+            const statuses = Array.from(statusSelect.options)
+                .filter((option) => option.value !== '')
+                .map((option) => ({
+                    value: option.value,
+                    label: option.textContent?.trim() || option.value,
+                    macro: option.dataset.macro || '',
+                }));
+
+            const macros = Array.from(macroSelect.options)
+                .filter((option) => option.value !== '')
+                .map((option) => ({
+                    value: option.value,
+                    label: option.textContent?.trim() || option.value,
+                }));
+
+            if (statuses.length === 0 || macros.length === 0) {
+                return;
+            }
+
+            let isSyncing = false;
+            let lastStatusValue = statusSelect.value;
+            let lastMacroValue = macroSelect.value;
+
+            const rebuildSelect = (select, placeholder, items, selectedValue) => {
+                select.replaceChildren(new Option(placeholder, ''));
+
+                items.forEach((item) => {
+                    const option = new Option(item.label, item.value);
+                    if (item.macro) {
+                        option.dataset.macro = item.macro;
+                    }
+                    select.appendChild(option);
+                });
+
+                select.value = items.some((item) => item.value === selectedValue) ? selectedValue : '';
+            };
+
+            const refreshSelect2 = () => {
+                if (window.DesktopUi && typeof window.DesktopUi.refreshSelect2 === 'function') {
+                    window.DesktopUi.refreshSelect2(form);
+                    return;
+                }
+
+                statusSelect.dispatchEvent(new Event('change.select2'));
+                macroSelect.dispatchEvent(new Event('change.select2'));
+            };
+
+            const readCurrentValues = () => {
+                if (window.jQuery) {
+                    const $ = window.jQuery;
+                    return {
+                        status: String($(statusSelect).val() || ''),
+                        macro: String($(macroSelect).val() || ''),
+                    };
+                }
+
+                return {
+                    status: statusSelect.value,
+                    macro: macroSelect.value,
+                };
+            };
+
+            const macroForStatus = (statusValue) => statuses.find((status) => status.value === statusValue)?.macro || '';
+            const statusesForMacro = (macroValue) => macroValue === ''
+                ? statuses
+                : statuses.filter((status) => status.macro === macroValue);
+            const macrosForStatus = (statusValue) => {
+                const macroValue = macroForStatus(statusValue);
+                return macroValue === '' ? macros : macros.filter((macro) => macro.value === macroValue);
+            };
+
+            const syncFilters = (source) => {
+                if (isSyncing) {
+                    return;
+                }
+
+                isSyncing = true;
+
+                const currentValues = readCurrentValues();
+                let statusValue = currentValues.status;
+                let macroValue = currentValues.macro;
+
+                if (source === 'status') {
+                    const statusMacro = macroForStatus(statusValue);
+                    if (statusValue !== '') {
+                        macroValue = statusMacro;
+                    } else if (macroValue !== '') {
+                        macroValue = macroSelect.value;
+                    }
+                }
+
+                if (source === 'macro') {
+                    if (macroValue === '') {
+                        statusValue = '';
+                    } else if (statusValue !== '' && macroForStatus(statusValue) !== macroValue) {
+                        statusValue = '';
+                    }
+                }
+
+                if (source === 'initial' && statusValue !== '') {
+                    macroValue = macroForStatus(statusValue);
+                }
+
+                const nextStatusItems = statusesForMacro(macroValue);
+                if (statusValue !== '' && !nextStatusItems.some((status) => status.value === statusValue)) {
+                    statusValue = '';
+                }
+
+                const nextMacroItems = statusValue !== '' ? macrosForStatus(statusValue) : macros;
+                if (statusValue !== '') {
+                    macroValue = macroForStatus(statusValue);
+                } else if (macroValue !== '' && !nextMacroItems.some((macro) => macro.value === macroValue)) {
+                    macroValue = '';
+                }
+
+                rebuildSelect(statusSelect, statusPlaceholder, nextStatusItems, statusValue);
+                rebuildSelect(macroSelect, macroPlaceholder, nextMacroItems, macroValue);
+
+                refreshSelect2();
+                lastStatusValue = statusSelect.value;
+                lastMacroValue = macroSelect.value;
+                isSyncing = false;
+            };
+
+            const inferNativeSource = () => {
+                const currentValues = readCurrentValues();
+                if (currentValues.status !== lastStatusValue) {
+                    return 'status';
+                }
+
+                if (currentValues.macro !== lastMacroValue) {
+                    return 'macro';
+                }
+
+                return 'initial';
+            };
+
+            const resetBasicFilters = () => {
+                const resetUrl = clearButton instanceof HTMLElement ? (clearButton.dataset.resetUrl || '') : '';
+                if (resetUrl !== '') {
+                    window.location.assign(resetUrl);
+                    return;
+                }
+
+                window.location.assign(window.location.pathname);
+            };
+
+            statusSelect.addEventListener('change', () => syncFilters(inferNativeSource()));
+            macroSelect.addEventListener('change', () => syncFilters(inferNativeSource()));
+
+            if (window.jQuery) {
+                const $ = window.jQuery;
+                $(statusSelect).on('select2:select.osFilters select2:clear.osFilters', () => syncFilters('status'));
+                $(macroSelect).on('select2:select.osFilters select2:clear.osFilters', () => syncFilters('macro'));
+            }
+
+            if (clearButton instanceof HTMLButtonElement) {
+                clearButton.addEventListener('click', resetBasicFilters);
+            }
+
+            syncFilters('initial');
+        });
     </script>
     @if (file_exists(public_path('assets/js/orders-list.js')))
         <script src="{{ asset('assets/js/orders-list.js') }}?v={{ filemtime(public_path('assets/js/orders-list.js')) }}"></script>
     @endif
     <script src="{{ asset('assets/js/orders-status-modal.js') }}"></script>
+    <script src="{{ asset('assets/js/orders-cancel-closure-modal.js') }}"></script>
 @endsection
 
 @push('modals')
     @include('orders._status_modal')
+    @include('orders._cancel_closure_modal')
 @endpush

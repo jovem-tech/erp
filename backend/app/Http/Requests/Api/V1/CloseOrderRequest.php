@@ -95,13 +95,6 @@ class CloseOrderRequest extends BaseApiFormRequest
      */
     private function closureStatusCodes(): array
     {
-        return OrderStatus::query()
-            ->active()
-            ->where('status_final', true)
-            ->pluck('codigo')
-            ->map(static fn ($code): string => trim((string) $code))
-            ->filter(static fn (string $code): bool => $code !== '')
-            ->values()
-            ->all();
+        return OrderStatus::closureCodes();
     }
 }

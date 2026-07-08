@@ -1,5 +1,65 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v3.16.0.1 — 2026-07-08 19:42
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige Baixa sumindo para Irreparavel/Reparo Recusado na listagem (is_encerrada ausente em mapSummary) e evita N+1 em OrderStatus::closureCodes()
+- **Arquivos:** backend/app/Services/Orders/OrderWorkflowService.php,frontends/desktop/resources/views/orders/index.blade.php,backend/tests/Feature/Api/V1/OrderFlowTest.php
+
+## v3.16.0.0 — 2026-07-08 19:42
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Bloqueia mudanca de status em OS encerrada e adiciona Cancelar baixa com gate de administrador (step-up auth)
+- **Arquivos:** backend/app/Models/OrderStatus.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/app/Services/Orders/OrderClosureService.php,backend/app/Http/Controllers/Api/V1/OrderController.php,backend/app/Http/Requests/Api/V1/CancelOrderClosureRequest.php,backend/app/Services/Financeiro/FinanceiroReportService.php,backend/app/Services/Financeiro/OsMargemService.php,backend/routes/api.php,backend/bootstrap/app.php,frontends/desktop/app/Services/OrderService.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/routes/web.php,frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/resources/views/orders/index.blade.php,frontends/desktop/resources/views/orders/_wizard.blade.php,frontends/desktop/resources/views/orders/_cancel_closure_modal.blade.php,frontends/desktop/public/assets/js/orders-cancel-closure-modal.js
+
+## v3.15.2.4 — 2026-07-08 12:32
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige botao Limpar da listagem de OS para remover filtros via rota limpa
+- **Arquivos:** frontends/desktop/resources/views/orders/index.blade.php
+
+## v3.15.2.3 — 2026-07-08 12:27
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Indica filtros ativos e trava recolhimento do painel de filtros da listagem de OS
+- **Arquivos:** frontends/desktop/resources/views/orders/index.blade.php,frontends/desktop/public/assets/css/desktop.css
+
+## v3.15.2.2 — 2026-07-08 11:58
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Ajusta altura do badge de resultados e botao Filtros na listagem de OS
+- **Arquivos:** frontends/desktop/resources/views/orders/index.blade.php,frontends/desktop/public/assets/css/desktop.css
+
+## v3.15.2.1 — 2026-07-08 11:53
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Alinha contador de resultados e botao Filtros ao campo de busca na listagem de OS
+- **Arquivos:** frontends/desktop/resources/views/orders/index.blade.php,frontends/desktop/public/assets/css/desktop.css
+
+## v3.15.2.0 — 2026-07-08 11:46
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Filtros da listagem de OS: sincronizacao instantanea Status/Macrofase com Select2 e limpeza sem recarregar pagina
+- **Arquivos:** frontends/desktop/resources/views/orders/index.blade.php,documentacao/03-arquitetura-tecnica/catalogo-status-os.md
+
+## v3.15.1.0 — 2026-07-08 11:32
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Filtros da listagem de OS: Macrofase movida para filtros principais e sincronizada bidirecionalmente com Status
+- **Arquivos:** frontends/desktop/resources/views/orders/index.blade.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/03-arquitetura-tecnica/catalogo-status-os.md
+
+## v3.15.0.0 — 2026-07-08 11:15
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Filtros da listagem de OS passam a usar catalogo proprio de status autorizado por os:visualizar, restaurando Select2 de status e macrofase
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/OrderController.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/routes/api.php,backend/openapi.yaml,backend/tests/Feature/Api/V1/OrderFlowTest.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/app/Services/DesktopOrderStatusFlowService.php,frontends/desktop/resources/views/orders/index.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/03-arquitetura-tecnica/catalogo-status-os.md
+
+## v3.14.2.0 — 2026-07-08 10:50
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Listagem inicial de OS passa a ocultar encerramentos canonicos e entregas com cobranca pendente, mantendo filtros explicitos para historico
+- **Arquivos:** backend/app/Services/Orders/OrderWorkflowService.php,backend/tests/Feature/Api/V1/OrderFlowTest.php,frontends/desktop/resources/views/orders/index.blade.php,documentacao/03-arquitetura-tecnica/catalogo-status-os.md
+
 ## v3.14.1.0 — 2026-07-07 12:54
 - **Tier:** patch
 - **Autor/Agente:** Codex

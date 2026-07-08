@@ -87,8 +87,18 @@
     $existingPhotos = $isEditing ? (array) data_get($order, 'fotos', []) : [];
     $existingPhotosCount = count($existingPhotos);
     $statusDisponiveis = $isEditing ? (array) data_get($order, 'status_disponiveis', []) : [];
+    // Regra de projeto (skill sistema-erp-os-fluxo-fechamento): os status de
+    // encerramento (grupo_macro = 'encerrado') so podem ser aplicados pela tela
+    // de baixa da OS, nunca por este modal de "Atualizar status".
+    $statusDisponiveis = array_values(array_filter(
+        $statusDisponiveis,
+        static fn ($statusOption): bool => trim((string) ($statusOption['grupo_macro'] ?? '')) !== 'encerrado'
+    ));
     $currentStatusCode = trim((string) data_get($order, 'status', ''));
-    $canChangeStatus = $isEditing && \App\Support\DesktopSession::can('os', 'editar') && $statusDisponiveis !== [];
+    // OS encerrada: mudança de status bloqueada por completo aqui (só
+    // "Cancelar baixa", na tela de detalhe, pode tirá-la desse estado).
+    $isEncerrada = (bool) data_get($order, 'is_encerrada', false);
+    $canChangeStatus = $isEditing && \App\Support\DesktopSession::can('os', 'editar') && $statusDisponiveis !== [] && ! $isEncerrada;
 @endphp
 
 <section class="desktop-form-card order-create-shell">
@@ -476,7 +486,11 @@
                                 @endif
                             </div>
                             <span class="status-pill status-pill-sm">{{ $statusLabel }}</span>
-                            <p class="mb-0">A mudanca de status e enviada direto ao backend central, separada da gravacao dos demais campos desta tela.</p>
+                            @if ($isEncerrada)
+                                <p class="mb-0">Esta OS está encerrada — a mudança de status fica bloqueada. Use "Cancelar baixa" na tela de detalhe se a baixa foi feita por engano.</p>
+                            @else
+                                <p class="mb-0">A mudanca de status e enviada direto ao backend central, separada da gravacao dos demais campos desta tela.</p>
+                            @endif
                         </div>
                     @else
                         <div class="order-create-panel-note">
