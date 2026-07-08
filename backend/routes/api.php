@@ -154,6 +154,7 @@ Route::prefix('v1')->group(function (): void {
             });
 
         Route::get('orders', [OrderController::class, 'index'])->name('api.v1.orders.index');
+        Route::get('orders/status-catalog', [OrderController::class, 'statusCatalog'])->name('api.v1.orders.status_catalog');
         Route::get('orders/{order}', [OrderController::class, 'show'])->name('api.v1.orders.show');
         Route::post('orders', [OrderController::class, 'store'])->name('api.v1.orders.store');
         Route::match(['put', 'patch'], 'orders/{order}', [OrderController::class, 'update'])->name('api.v1.orders.update');
@@ -163,6 +164,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('orders/{order}/procedures', [OrderController::class, 'storeProcedure'])->name('api.v1.orders.procedures.store');
         Route::get('orders/{order}/closure', [OrderController::class, 'closureMetadata'])->name('api.v1.orders.closure.metadata');
         Route::post('orders/{order}/closure', [OrderController::class, 'close'])->name('api.v1.orders.closure.store');
+        Route::post('orders/{order}/closure/cancel', [OrderController::class, 'cancelClosure'])->name('api.v1.orders.closure.cancel');
 
         Route::get('clients', [ClientController::class, 'index'])->name('api.v1.clients.index');
         Route::post('clients', [ClientController::class, 'store'])->name('api.v1.clients.store');

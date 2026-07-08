@@ -6,6 +6,7 @@ use App\Models\ComissaoTecnico;
 use App\Models\Configuration;
 use App\Models\Movimentacao;
 use App\Models\Order;
+use App\Models\OrderStatus;
 use App\Models\OsMargem;
 use Carbon\CarbonImmutable;
 use RuntimeException;
@@ -24,6 +25,17 @@ class OsMargemService
 
         if (! $order instanceof Order) {
             throw new RuntimeException('Ordem de serviço não encontrada.');
+        }
+
+        // Regra de projeto (skill sistema-erp-os-fluxo-fechamento): a analise de
+        // margem so considera OS que geraram receita real, ou seja, encerradas
+        // como OrderStatus::REVENUE_CLOSURE_CODE. Qualquer outro status
+        // (incluindo devolvido sem reparo / descartado) nao entra no relatorio;
+        // se existir um registro stale de um recalculo antigo, e removido aqui.
+        if (trim((string) $order->status) !== OrderStatus::REVENUE_CLOSURE_CODE) {
+            OsMargem::query()->where('os_id', $osId)->delete();
+
+            return [];
         }
 
         $receitaLiquida = round((float) $order->valor_final, 2);
@@ -53,9 +65,21 @@ class OsMargemService
      */
     public function recalcularEmLote(?CarbonImmutable $desde = null): int
     {
+        // Invariante (skill sistema-erp-os-fluxo-fechamento): a tabela cache
+        // os_margem so contem OS que geraram receita real (REVENUE_CLOSURE_CODE).
+        // Remove aqui qualquer registro stale de OS que nao seja (ou deixou de
+        // ser) uma entrega com receita — inclui devolvido/descartado/cancelado
+        // e etapas intermediarias que nunca deveriam ter entrado no relatorio.
+        OsMargem::query()
+            ->whereNotIn('os_id', function ($sub): void {
+                $sub->select('id')
+                    ->from('os')
+                    ->where('status', OrderStatus::REVENUE_CLOSURE_CODE);
+            })
+            ->delete();
+
         $query = Order::query()
-            ->join('os_status', 'os_status.codigo', '=', 'os.status')
-            ->where('os_status.status_final', true);
+            ->where('os.status', OrderStatus::REVENUE_CLOSURE_CODE);
 
         if ($desde !== null) {
             $query->where('os.data_entrega', '>=', $desde->toDateString());

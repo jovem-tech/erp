@@ -192,6 +192,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/os/{order}/baixa', [OrderController::class, 'closureStore'])
         ->middleware('desktop.permission:os,editar')
         ->name('orders.closure.store');
+    Route::post('/os/{order}/baixa/cancelar', [OrderController::class, 'closureCancel'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('orders.closure.cancel');
     Route::get('/os/{order}/status-context', [OrderController::class, 'statusContext'])
         ->middleware('desktop.permission:os,visualizar')
         ->name('orders.status.context');

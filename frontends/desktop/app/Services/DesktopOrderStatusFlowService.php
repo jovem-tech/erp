@@ -20,6 +20,14 @@ class DesktopOrderStatusFlowService
         ];
     }
 
+    /** @return array<int, array<string, mixed>> */
+    public function statusCatalog(): array
+    {
+        $response = $this->apiClient->get('/orders/status-catalog');
+
+        return $response['data']['statuses'] ?? [];
+    }
+
     /** @param array<string, mixed> $payload @return array<string, mixed> */
     public function createStatus(array $payload): array
     {

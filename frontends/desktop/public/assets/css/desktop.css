@@ -2211,6 +2211,71 @@ a {
     white-space: nowrap;
 }
 
+.os-filter-summary-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding-top: calc(0.86rem * 1.2 + 0.38rem);
+}
+
+.os-filter-summary-actions .desktop-chip,
+.os-filter-summary-actions .btn {
+    min-height: 46px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.os-filter-summary-actions .desktop-chip {
+    padding-right: 0.9rem;
+    padding-left: 0.9rem;
+}
+
+.os-filter-summary-actions .btn {
+    padding-right: 1rem;
+    padding-left: 1rem;
+}
+
+.os-filter-summary-actions .os-filter-toggle.is-active,
+.desktop-filter-advanced-toggle .btn.is-active {
+    color: var(--desktop-primary);
+    background: linear-gradient(135deg, rgba(111, 90, 252, 0.14), rgba(56, 104, 176, 0.1));
+    border-color: rgba(111, 90, 252, 0.34);
+    box-shadow: 0 0.55rem 1.2rem rgba(56, 104, 176, 0.1);
+    cursor: default;
+}
+
+.os-filter-summary-actions .os-filter-toggle.is-active:hover,
+.desktop-filter-advanced-toggle .btn.is-active:hover {
+    color: var(--desktop-primary);
+    background: linear-gradient(135deg, rgba(111, 90, 252, 0.18), rgba(56, 104, 176, 0.13));
+    border-color: rgba(111, 90, 252, 0.42);
+}
+
+.os-filter-active-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.35rem;
+    height: 1.35rem;
+    margin-left: 0.15rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    color: #fff;
+    background: var(--desktop-primary);
+    font-size: 0.72rem;
+    font-weight: 900;
+    line-height: 1;
+}
+
+@media (max-width: 768px) {
+    .os-filter-summary-actions {
+        padding-top: 0;
+    }
+}
+
 .desktop-config-tabs-shell {
     padding: 1rem 1rem 1.05rem;
 }

@@ -74,6 +74,7 @@
         const receiveAllBalanceBtn = document.querySelector('[data-action="receber-saldo-total"]');
         const currentStepInput = document.getElementById('closureCurrentStepInput');
         const stepErrorBox = document.getElementById('closureStepError');
+        const financeiroTabIndicator = document.querySelector('[data-step-indicator="2"]');
 
         if (!(form instanceof HTMLFormElement) || !(receiptsList instanceof HTMLElement) || !(receiptTemplate instanceof HTMLTemplateElement)) {
             return;
@@ -98,6 +99,20 @@
 
         const isNoRepairClosure = () => noRepairStatuses.includes(encerrarComoSelect?.value || '');
 
+        // Devolvido sem reparo / descartado não geram cobrança pela OS: a aba
+        // Financeiro fica desabilitada (não navegável) e o fluxo Continuar/Voltar
+        // pula direto entre Encerramento e Confirmação.
+        const updateFinanceiroTabAvailability = () => {
+            const disable = isNoRepairClosure();
+            if (financeiroTabIndicator instanceof HTMLButtonElement) {
+                financeiroTabIndicator.disabled = disable;
+                financeiroTabIndicator.classList.toggle('is-disabled', disable);
+                financeiroTabIndicator.title = disable
+                    ? 'Não aplicável para devolução sem reparo ou descarte.'
+                    : '';
+            }
+        };
+
         const rows = () => Array.from(receiptsList.querySelectorAll('[data-receipt-row]'));
 
         const updateEmptyHint = () => {
@@ -115,6 +130,26 @@
 
             const advanceBtn = document.querySelector('[data-action="adicionar-adiantamento"]');
             if (advanceBtn instanceof HTMLElement) advanceBtn.classList.toggle('d-none', hide);
+        };
+
+        // Devolvido sem reparo / descartado não geram lançamento financeiro:
+        // esconde os botões de lançar recebimento e remove qualquer linha já
+        // adicionada (inclusive a pré-preenchida automaticamente no load
+        // quando a OS tinha saldo em aberto) — senão ela continuaria no
+        // formulário, oculta pela aba desabilitada, mas ainda seria enviada
+        // no submit.
+        const updateReceiptEntryAvailability = () => {
+            const hide = isNoRepairClosure();
+
+            const addReceiptBtn = document.querySelector('[data-action="adicionar-recebimento"]');
+            if (addReceiptBtn instanceof HTMLElement) addReceiptBtn.classList.toggle('d-none', hide);
+            if (receiveAllBalanceBtn instanceof HTMLElement) receiveAllBalanceBtn.classList.toggle('d-none', hide);
+
+            if (hide && rows().length > 0) {
+                rows().forEach((row) => row.remove());
+                updateEmptyHint();
+                recalcTotals();
+            }
         };
 
         const updateReceiveAllBalanceButtonState = (saldoRestante) => {
@@ -281,12 +316,21 @@
             setText('closureConfirmProfit', `R$ ${formatMoney(lucro)}`);
             setText('closureConfirmNet', `Líquido previsto: R$ ${formatMoney(liquido)}`);
 
-            const paymentState = saldoRestante <= 0 ? 'Pagamento quitado' : `Pendência: R$ ${formatMoney(saldoRestante)}`;
+            // Devolvido sem reparo / descartado nunca geram pendencia financeira
+            // nem cobranca agendada (o backend ja forca isso independente do
+            // saldo em aberto da OS) — o preview precisa refletir a mesma regra,
+            // senao mostra uma pendencia/cobranca que nunca vai de fato ocorrer.
+            const paymentState = isNoRepairClosure()
+                ? 'Sem pendência financeira'
+                : (saldoRestante <= 0 ? 'Pagamento quitado' : `Pendência: R$ ${formatMoney(saldoRestante)}`);
             setText('closureConfirmPaymentState', `Situação financeira: ${paymentState}`);
 
             const confirmWarning = document.getElementById('closureConfirmWarning');
             if (confirmWarning) {
-                if (saldoRestante <= 0) {
+                if (isNoRepairClosure()) {
+                    confirmWarning.className = 'alert alert-success';
+                    confirmWarning.textContent = 'A OS será concluída sem lançamento financeiro nesta ação.';
+                } else if (saldoRestante <= 0) {
                     confirmWarning.className = 'alert alert-success';
                     confirmWarning.textContent = 'A OS será concluída com o financeiro quitado nesta ação.';
                 } else {
@@ -349,7 +393,7 @@
             indicators.forEach((indicator) => {
                 const indicatorStep = Number(indicator.getAttribute('data-step-indicator'));
                 indicator.classList.toggle('is-active', indicatorStep === step);
-                indicator.classList.toggle('is-done', indicatorStep < step);
+                indicator.classList.toggle('is-done', indicatorStep < step && !indicator.disabled);
             });
 
             // Botões do rodapé
@@ -366,6 +410,13 @@
         // Valida as etapas entre a atual e o destino antes de trocar (usado pelo
         // rodapé Continuar/Voltar e pelo clique direto nas abas de indicador).
         const attemptGoToStep = (targetStep) => {
+            // Devolvido sem reparo / descartado: a etapa Financeiro é pulada,
+            // independentemente de quem pediu a navegação (rodapé, aba ou
+            // redirecionamento de erro de validação).
+            if (targetStep === 2 && isNoRepairClosure()) {
+                targetStep = targetStep > currentStep ? 3 : 1;
+            }
+
             if (targetStep === currentStep) return;
 
             if (targetStep > currentStep) {
@@ -379,7 +430,7 @@
                     const result = validateFinancialStep();
                     if (!result.ok) {
                         showStepError(result.errors);
-                        goToStep(2);
+                        goToStep(isNoRepairClosure() ? 1 : 2);
                         return;
                     }
                 }
@@ -477,7 +528,15 @@
 
         encerrarComoSelect?.addEventListener('change', () => {
             updateClassificationVisibility();
+            updateReceiptEntryAvailability();
             updateFinancialSummary();
+            updateFinanceiroTabAvailability();
+
+            // Se o usuário estava na etapa Financeiro e mudou para um status
+            // sem reparo, sai imediatamente dessa etapa (agora desabilitada).
+            if (currentStep === 2 && isNoRepairClosure()) {
+                goToStep(1);
+            }
         });
 
         // Toggle de notificação
@@ -521,6 +580,8 @@
         }
 
         updateClassificationVisibility();
+        updateReceiptEntryAvailability();
+        updateFinanceiroTabAvailability();
         retornoDataWrapper?.classList.toggle('d-none', !agendarRetornoCheckbox?.checked);
 
         // Reidratação de erros de recebimentos vindos do backend (após redirect por falha de validação)
@@ -552,7 +613,13 @@
         if (hasOperationalFieldError) {
             currentStep = 1;
         } else if (recebimentoErrorMessages.length > 0) {
-            currentStep = 2;
+            currentStep = isNoRepairClosure() ? 1 : 2;
+        }
+
+        // Estado restaurado (ex.: old('current_step')) pode apontar para a
+        // etapa Financeiro mesmo com um status sem reparo já selecionado.
+        if (currentStep === 2 && isNoRepairClosure()) {
+            currentStep = 1;
         }
 
         goToStep(currentStep);

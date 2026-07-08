@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sistema ERP Fluxo de Fechamento da OS"
+  short_description: "Regra: so a baixa pode encerrar uma OS."
+  default_prompt: "Use $sistema-erp-os-fluxo-fechamento antes de mexer em status de OS, na tela de baixa, ou em relatorios financeiros que leem dados de OS."

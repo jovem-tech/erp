@@ -34,6 +34,11 @@ return Application::configure(basePath: $basePath)
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Evita que a senha de admin (confirmação de "Cancelar baixa") fique
+        // gravada em session('_old_input') se a validação nativa do
+        // Request::validate() falhar antes mesmo de chegar na API.
+        $exceptions->dontFlash('admin_password');
+
         $exceptions->render(function (ApiAuthenticationException $exception, Request $request) {
             if ($request->hasSession()) {
                 $request->session()->invalidate();
@@ -57,7 +62,7 @@ return Application::configure(basePath: $basePath)
             }
 
             return $redirect
-                ->withInput($request->except('password'))
+                ->withInput($request->except(['password', 'admin_password']))
                 ->with('error', $exception->getMessage())
                 ->with('api_error_details', $exception->details() ?? []);
         });

@@ -8,7 +8,9 @@ use App\Models\FinanceiroMovimentoCartao;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderStatus;
+use App\Models\OrderStatusHistory;
 use App\Models\OsCobrancaAgendamento;
+use App\Models\OsMargem;
 use App\Models\User;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
 use App\Services\Financeiro\FinanceiroCartaoService;
@@ -110,10 +112,14 @@ class OrderClosureService
         }
 
         $isNoRepairClosure = in_array($encerrarComo, self::NO_REPAIR_STATUSES, true);
-        $recebimentos = $this->normalizeReceipts(
-            is_array($payload['recebimentos'] ?? null) ? $payload['recebimentos'] : [],
-            $isNoRepairClosure
-        );
+
+        // Devolvido sem reparo / descartado nunca geram lancamento financeiro:
+        // ignora qualquer recebimento enviado (defesa em profundidade — o
+        // frontend ja bloqueia essa etapa, mas a regra de negocio precisa
+        // valer no backend independente do que o cliente HTTP mandar).
+        $recebimentos = $isNoRepairClosure
+            ? []
+            : $this->normalizeReceipts(is_array($payload['recebimentos'] ?? null) ? $payload['recebimentos'] : []);
 
         // Simula os recebimentos em cartao ANTES da transacao: falha rapido sem
         // efeito colateral nenhum se a combinacao operadora/bandeira/parcelas
@@ -180,7 +186,8 @@ class OrderClosureService
                     (int) $order->id,
                     $actor,
                     $statusAplicado,
-                    $observacao !== '' ? $observacao : null
+                    $observacao !== '' ? $observacao : null,
+                    viaClosureFlow: true
                 );
 
                 if (($statusResult['result'] ?? 'error') !== 'ok') {
@@ -246,6 +253,153 @@ class OrderClosureService
             'order' => $updatedOrder instanceof Order ? $this->mapOrderSummary($updatedOrder) : null,
             'notificacao_enviada' => $notificacaoEnviada,
         ];
+    }
+
+    /**
+     * Cancela a baixa de uma OS feita por engano: reverte o status para o
+     * estado pre-baixa e EXCLUI completamente todos os artefatos financeiros
+     * criados na ocasiao da baixa (titulo a receber, movimentos, meta de cartao
+     * e despesas de taxa) — eles somem de Lancamentos, Fluxo de Caixa, DREs e
+     * Margem. Ver skill sistema-erp-os-fluxo-fechamento.
+     *
+     * Regra de negocio: cancelar a baixa e' apenas para engano. Se o equipamento
+     * realmente foi entregue/descartado e depois retornar, abre-se uma NOVA OS.
+     *
+     * @return array<string, mixed>
+     */
+    public function cancelClosure(int $orderId, User $actor, ?User $verifiedAdmin = null): array
+    {
+        $order = Order::query()->find($orderId);
+
+        if (! $order instanceof Order) {
+            return ['result' => 'not_found'];
+        }
+
+        if (! $this->orderWorkflowService->canAccessOrder($actor, $order)) {
+            return ['result' => 'forbidden'];
+        }
+
+        $currentStatus = trim((string) ($order->status ?? ''));
+        if (! in_array($currentStatus, OrderStatus::closureCodes(), true)) {
+            return ['result' => 'not_closed'];
+        }
+
+        // Status pre-baixa = origem da ultima transicao que levou a OS ao status
+        // fechado atual (o bloqueio de mudanca de status garante que a baixa foi
+        // a ultima movimentacao de status desta OS).
+        $closureHistory = OrderStatusHistory::query()
+            ->where('os_id', $orderId)
+            ->where('status_novo', $currentStatus)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->first();
+
+        $previousStatus = trim((string) ($closureHistory->status_anterior ?? ''));
+        $previousStatusRow = $previousStatus !== '' ? OrderStatus::activeByCode($previousStatus) : null;
+
+        if (! $previousStatusRow instanceof OrderStatus) {
+            return ['result' => 'cannot_resolve_previous_status'];
+        }
+
+        $observacao = 'Baixa da OS cancelada: status revertido e lançamentos da baixa excluídos.';
+        if ($verifiedAdmin instanceof User) {
+            $observacao .= ' Autorizado por administrador: ' . trim((string) ($verifiedAdmin->nome ?? '')) . ' <' . trim((string) ($verifiedAdmin->email ?? '')) . '>.';
+        }
+
+        try {
+            DB::transaction(function () use ($order, $orderId, $actor, $currentStatus, $previousStatus, $previousStatusRow, $observacao): void {
+                // 1) Exclui os lancamentos/movimentos/taxas criados na baixa.
+                $this->deleteClosureFinancials($orderId);
+
+                // 2) Remove margem, cobrancas agendadas e followup de retorno.
+                OsMargem::query()->where('os_id', $orderId)->delete();
+                $this->cancelPendingCollections($orderId);
+                CrmFollowup::query()
+                    ->where('os_id', $orderId)
+                    ->where('status', CrmFollowup::STATUS_PENDENTE)
+                    ->where('origem_evento', 'like', 'os_retorno_agendado_%')
+                    ->delete();
+
+                // 3) Reverte a OS ao estado pre-baixa.
+                $now = Carbon::now();
+                $estadoFluxo = trim((string) ($previousStatusRow->estado_fluxo_padrao ?? '')) ?: 'em_atendimento';
+                Order::query()->whereKey($orderId)->update([
+                    'status' => $previousStatus,
+                    'estado_fluxo' => $estadoFluxo,
+                    'data_entrega' => null,
+                    'baixa_tecnica_em' => null,
+                    'baixa_tecnica_por' => null,
+                    'status_final_pendente_pagamento' => null,
+                    'status_atualizado_em' => $now,
+                    'updated_at' => $now,
+                ]);
+
+                // 4) Registra a reversao no historico da OS (trilha de auditoria).
+                OrderStatusHistory::query()->create([
+                    'os_id' => $orderId,
+                    'status_anterior' => $currentStatus,
+                    'status_novo' => $previousStatus,
+                    'estado_fluxo' => $estadoFluxo,
+                    'usuario_id' => (int) $actor->id,
+                    'observacao' => $observacao,
+                    'created_at' => $now,
+                ]);
+            });
+        } catch (Throwable $exception) {
+            logger()->error('[API V1][ORDERS][CLOSURE] Falha ao cancelar a baixa', [
+                'order_id' => $orderId,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return ['result' => 'cancel_failed'];
+        }
+
+        logger()->info('[API V1][ORDERS][CLOSURE] Baixa cancelada', [
+            'order_id' => $orderId,
+            'user_id' => (int) $actor->id,
+            'admin_verificado_id' => $verifiedAdmin instanceof User ? (int) $verifiedAdmin->id : null,
+            'status_anterior' => $currentStatus,
+            'status_revertido' => $previousStatus,
+        ]);
+
+        $updatedOrder = Order::query()->with(['client', 'statusCatalog'])->find($orderId);
+
+        return [
+            'result' => 'ok',
+            'order' => $updatedOrder instanceof Order ? $this->mapOrderSummary($updatedOrder) : null,
+            'status_revertido' => $previousStatus,
+        ];
+    }
+
+    /**
+     * Exclui (hard delete) os artefatos financeiros criados no fechamento da OS:
+     * o(s) titulo(s) a receber e seus movimentos + meta de cartao, e as despesas
+     * de taxa de cartao geradas na baixa (marcador origem_tipo).
+     */
+    private function deleteClosureFinancials(int $orderId): void
+    {
+        // Titulos a receber da OS (criados na baixa via ensureReceivableTitle,
+        // unico criador) — apaga meta de cartao dos movimentos, os movimentos e
+        // o proprio titulo.
+        $titulosReceber = Financeiro::query()
+            ->where('os_id', $orderId)
+            ->where('tipo', Financeiro::TIPO_RECEBER)
+            ->get();
+
+        // Despesas de taxa de cartao registradas na baixa (registerCardFeeExpense).
+        $despesasTaxa = Financeiro::query()
+            ->where('os_id', $orderId)
+            ->where('origem_tipo', 'os_recebimento_cartao')
+            ->get();
+
+        foreach ($titulosReceber->merge($despesasTaxa) as $titulo) {
+            $movimentoIds = $titulo->movimentos()->pluck('id');
+            if ($movimentoIds->isNotEmpty()) {
+                FinanceiroMovimentoCartao::query()->whereIn('movimento_id', $movimentoIds)->delete();
+            }
+            $titulo->movimentos()->delete();
+            $titulo->delete();
+        }
     }
 
     /**
@@ -349,7 +503,7 @@ class OrderClosureService
      * @param array<int, mixed> $rawReceipts
      * @return array<int, array<string, mixed>>
      */
-    private function normalizeReceipts(array $rawReceipts, bool $isNoRepairClosure): array
+    private function normalizeReceipts(array $rawReceipts): array
     {
         $normalized = [];
 
@@ -364,7 +518,7 @@ class OrderClosureService
             }
 
             $classificacao = trim((string) ($raw['classificacao_recebimento'] ?? 'baixa'));
-            if ($isNoRepairClosure || ! in_array($classificacao, ['baixa', 'adiantamento', 'sinal'], true)) {
+            if (! in_array($classificacao, ['baixa', 'adiantamento', 'sinal'], true)) {
                 $classificacao = 'baixa';
             }
 
@@ -641,9 +795,14 @@ class OrderClosureService
      */
     private function closureOptions(): array
     {
+        // `status_final=true` sozinho é amplo demais: também marca estados
+        // intermediários do sub-fluxo de reparo (ex.: "Reparo Concluído",
+        // "Irreparável", "Reparo Recusado") que antecedem a baixa, mas não são
+        // o encerramento em si. A baixa da OS só deve oferecer os codigos
+        // canonicos de OrderStatus::closureCodes() (grupo_macro = 'encerrado').
         return OrderStatus::query()
             ->active()
-            ->where('status_final', true)
+            ->whereIn('codigo', OrderStatus::closureCodes())
             ->orderBy('ordem_fluxo')
             ->get(['codigo', 'nome'])
             ->map(static fn (OrderStatus $status): array => [

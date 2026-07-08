@@ -2,35 +2,6 @@
 
 @section('styles')
     <style>
-        /* Cards de resumo compactos (sobrescreve o .summary-card padrão, que é
-           dimensionado para telas com mais conteúdo, só nesta página) */
-        .closure-summary-card {
-            min-height: 0;
-            padding: 0.75rem 1rem;
-        }
-
-        .closure-summary-card .summary-card-eyebrow {
-            font-size: 0.7rem;
-        }
-
-        .closure-summary-card .summary-card-value {
-            margin-top: 0.3rem;
-            font-size: 1.05rem;
-        }
-
-        .closure-client-strip {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 1rem;
-            font-size: 0.85rem;
-            color: var(--desktop-text-soft);
-            margin-top: 0.25rem;
-        }
-
-        .closure-client-strip .fw-semibold {
-            color: var(--desktop-text);
-        }
-
         /* Tabs row */
         .closure-tabs-row {
             display: flex;
@@ -86,6 +57,12 @@
             border-color: var(--desktop-border-strong);
         }
 
+        .closure-tab-btn.is-disabled,
+        .closure-tab-btn:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
         .closure-tab-step {
             width: 20px;
             height: 20px;
@@ -103,15 +80,78 @@
             background: var(--desktop-border);
         }
 
-        /* Equipment card beside tabs */
-        .closure-equipment-card {
+        /* Cards de contexto: cliente + equipamento (abaixo da barra de etapas) */
+        .closure-context-card {
             background: var(--desktop-surface-soft);
             border: 1px solid var(--desktop-border);
             border-radius: var(--desktop-radius-md);
-            padding: 0.65rem 1rem;
+            padding: 0.85rem 1rem;
             font-size: 0.8rem;
+            height: 100%;
+        }
+
+        .closure-equipment-context-body {
+            display: flex;
+            gap: 0.85rem;
+            align-items: flex-start;
+        }
+
+        .closure-equipment-photo-frame {
+            width: 72px;
+            height: 72px;
+            border-radius: var(--desktop-radius-sm);
+            overflow: hidden;
+            background: var(--desktop-surface);
+            border: 1px solid var(--desktop-border);
             flex-shrink: 0;
-            min-width: 180px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .closure-equipment-photo-frame img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .closure-equipment-photo-empty {
+            color: var(--desktop-text-muted);
+            font-size: 1.4rem;
+        }
+
+        .closure-equipment-serial {
+            margin-top: 0.35rem;
+            width: 72px;
+            font-size: 0.68rem;
+            color: var(--desktop-text-muted);
+            text-align: center;
+            line-height: 1.3;
+        }
+
+        .closure-equipment-lines {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            min-width: 0;
+            flex: 1 1 auto;
+        }
+
+        .closure-equipment-line strong {
+            display: block;
+            color: var(--desktop-text);
+            font-weight: 700;
+            line-height: 1.3;
+        }
+
+        .closure-equipment-line-split {
+            display: flex;
+            gap: 1.25rem;
+        }
+
+        .closure-equipment-line-split > div {
+            flex: 1 1 0;
+            min-width: 0;
         }
 
         .closure-equipment-label {
@@ -454,59 +494,78 @@
         $equipamentoNome = trim((string) ($order['equipamento_nome'] ?? ($order['equipamento']['nome'] ?? '')));
         $equipamentoTipo = trim((string) ($order['equipamento_tipo_nome'] ?? ($order['equipamento']['tipo_nome'] ?? ($order['equipamento']['tipo']['nome'] ?? ''))));
         $equipamentoSerie = trim((string) ($order['equipamento_numero_serie'] ?? ($order['equipamento']['numero_serie'] ?? '')));
+        $equipamentoMarca = trim((string) ($order['equipamento']['marca_nome'] ?? ''));
+        $equipamentoModelo = trim((string) ($order['equipamento']['modelo_nome'] ?? ''));
+        $equipamentoFoto = $order['equipamento_foto'] ?? null;
     @endphp
 
     {{-- Cabeçalho --}}
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
-        <div>
-            <p class="desktop-eyebrow">Baixa da OS</p>
-            <h2 class="surface-title fs-3 mb-1">{{ $order['numero_os'] ?? ('#' . $orderId) }}</h2>
-            <div class="closure-client-strip">
-                <span class="fw-semibold">{{ $order['cliente_nome'] ?? 'Cliente não informado' }}</span>
-                @if ($clienteTelefone !== '')
-                    <span>Telefone: {{ $clienteTelefone }}</span>
-                @endif
-                @if ($clienteEmail !== '')
-                    <span>E-mail: <a href="mailto:{{ $clienteEmail }}" class="text-primary text-decoration-none">{{ $clienteEmail }}</a></span>
-                @endif
-            </div>
-            <div class="d-flex flex-wrap gap-2 mt-2">
-                @include('layouts.partials.status-pill', [
-                    'label' => $order['status_nome'] ?? 'Sem status',
-                    'color' => $order['status_cor'] ?? '#64748b',
-                ])
-            </div>
-        </div>
+
         <div class="align-self-start">
-            <a href="{{ route('orders.show', $orderId) }}" class="btn btn-outline-light">Voltar para a OS</a>
+            <a href="{{ route('orders.show', $orderId) }}" class="btn btn-outline-light">ir para a {{ $order['numero_os'] ?? ('#' . $orderId) }}</a>
         </div>
     </div>
 
-    {{-- Cards de resumo financeiro --}}
-    <section class="desktop-grid desktop-grid-three mb-3">
-        <article class="summary-card closure-summary-card">
-            <span class="summary-card-eyebrow">Valor total da OS</span>
-            <div class="summary-card-value">R$ {{ number_format($valorFinal, 2, ',', '.') }}</div>
-        </article>
-        <article class="summary-card closure-summary-card">
-            <span class="summary-card-eyebrow">Já recebido</span>
-            <div class="summary-card-value">R$ {{ number_format($valorMovimentado, 2, ',', '.') }}</div>
-        </article>
-        <article class="summary-card closure-summary-card">
-            <span class="summary-card-eyebrow">Saldo em aberto</span>
-            <div class="summary-card-value">R$ {{ number_format($valorAberto, 2, ',', '.') }}</div>
-        </article>
-    </section>
+    {{-- Cards de contexto: cliente + equipamento --}}
+    <div class="row g-3 mb-4">
+        <div class="col-12 col-lg-6">
+            <div class="closure-context-card">
+                <div class="closure-panel-title">Cliente</div>
+                <div class="closure-equipment-name">{{ $order['cliente_nome'] ?? 'Cliente não informado' }}</div>
+                <div class="closure-equipment-meta">Telefone: {{ $clienteTelefone !== '' ? $clienteTelefone : '—' }}</div>
+                <div class="closure-equipment-meta">E-mail: {{ $clienteEmail !== '' ? $clienteEmail : '—' }}</div>
+            </div>
+        </div>
+        <div class="col-12 col-lg-6">
+            <div class="closure-context-card">
+                <div class="closure-panel-title">Equipamento</div>
+                <div class="closure-equipment-context-body">
+                    <div>
+                        <div class="closure-equipment-photo-frame">
+                            @if ($equipamentoFoto && ($equipamentoFoto['id'] ?? 0) > 0)
+                                <img src="{{ route('equipments.photos.show', [$equipamentoFoto['equipamento_id'], $equipamentoFoto['id']]) }}" alt="Foto do equipamento">
+                            @else
+                                <div class="closure-equipment-photo-empty">
+                                    <i class="bi bi-camera"></i>
+                                </div>
+                            @endif
+                        </div>
+                        <div class="closure-equipment-serial">
+                            <i class="bi bi-upc-scan"></i>
+                            SN: {{ $equipamentoSerie !== '' ? $equipamentoSerie : '—' }}
+                        </div>
+                    </div>
+                    <div class="closure-equipment-lines">
+                        <div class="closure-equipment-line">
+                            <span class="closure-equipment-label mb-0">Tipo de equipamento</span>
+                            <strong>{{ $equipamentoTipo !== '' ? $equipamentoTipo : '—' }}</strong>
+                        </div>
+                        <div class="closure-equipment-line closure-equipment-line-split">
+                            <div>
+                                <span class="closure-equipment-label mb-0">Marca</span>
+                                <strong>{{ $equipamentoMarca !== '' ? $equipamentoMarca : '—' }}</strong>
+                            </div>
+                            <div>
+                                <span class="closure-equipment-label mb-0">Modelo</span>
+                                <strong>{{ $equipamentoModelo !== '' ? $equipamentoModelo : '—' }}</strong>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <section class="desktop-form-card">
         <div class="surface-card-header mb-3">
             <div>
-                <h2 class="surface-title">Encerramento da OS</h2>
-                <p class="surface-subtitle">Siga as 3 etapas para concluir a baixa.</p>
+                <h1 class="surface-title">Encerramento da {{ $order['numero_os'] ?? ('#' . $orderId) }}</h1>
+                <p class="surface-subtitle"></p>
             </div>
         </div>
 
-        {{-- Barra de etapas + card do equipamento --}}
+        {{-- Barra de etapas --}}
         <div class="closure-tabs-row">
             <ul class="closure-tabs">
                 <li>
@@ -531,17 +590,6 @@
                     </button>
                 </li>
             </ul>
-
-            @if ($equipamentoNome !== '')
-                <div class="closure-equipment-card">
-                    <div class="closure-equipment-label">Equipamento</div>
-                    <div class="closure-equipment-name">{{ $equipamentoNome }}</div>
-                    @if ($equipamentoTipo !== '')
-                        <div class="closure-equipment-meta">Tipo: {{ $equipamentoTipo }}</div>
-                    @endif
-                    <div class="closure-equipment-meta">Nº de série: {{ $equipamentoSerie !== '' ? $equipamentoSerie : '—' }}</div>
-                </div>
-            @endif
         </div>
 
         <form method="post" action="{{ route('orders.closure.store', $orderId) }}" id="closureForm" novalidate>
@@ -556,6 +604,13 @@
                     <div class="col-12 col-lg-7">
                         <div class="closure-pdv-panel">
                             <div class="closure-panel-title">Fechamento operacional</div>
+                            <div class="d-flex align-items-center gap-2 mb-2">
+                                <span class="closure-equipment-label mb-0">Status atual</span>
+                                @include('layouts.partials.status-pill', [
+                                    'label' => $order['status_nome'] ?? 'Sem status',
+                                    'color' => $order['status_cor'] ?? '#64748b',
+                                ])
+                            </div>
                             <p class="form-text mb-3">Defina como a OS será encerrada, a data da entrega e o contexto operacional que precisa ficar registrado.</p>
                             <div class="row g-3">
                                 <div class="col-12 col-md-6">
@@ -580,10 +635,6 @@
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
                                 </div>
-                            </div>
-                            <div class="closure-decision-note">
-                                <i class="bi bi-info-circle"></i>
-                                <div>A conclusão operacional não depende de recebimento imediato. Se houver saldo restante, a OS poderá ser concluída com pagamento pendente sem perder a baixa técnica. Quando houver cartão, o repasse previsto é mostrado no lançamento e o caixa só é reconhecido na data informada pela operadora.</div>
                             </div>
                         </div>
                     </div>

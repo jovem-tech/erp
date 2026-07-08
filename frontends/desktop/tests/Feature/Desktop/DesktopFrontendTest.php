@@ -385,6 +385,37 @@ class DesktopFrontendTest extends TestCase
     public function test_orders_index_starts_with_hidden_sidebar_for_workspace_wide_table(): void
     {
         Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/status-catalog' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'statuses' => [
+                        [
+                            'codigo' => 'triagem',
+                            'nome' => 'Triagem',
+                            'grupo_macro' => 'recepcao',
+                            'cor' => '#64748b',
+                            'icone' => '',
+                            'ordem_fluxo' => 10,
+                            'status_final' => false,
+                            'status_pausa' => false,
+                            'estado_fluxo_padrao' => 'em_atendimento',
+                        ],
+                        [
+                            'codigo' => 'aguardando_reparo',
+                            'nome' => 'Aguardando Reparo',
+                            'grupo_macro' => 'execucao',
+                            'cor' => '#16a34a',
+                            'icone' => 'bi-tools',
+                            'ordem_fluxo' => 40,
+                            'status_final' => false,
+                            'status_pausa' => false,
+                            'estado_fluxo_padrao' => 'em_execucao',
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
             'http://127.0.0.1:8000/api/v1/orders*' => Http::response([
                 'status' => 'success',
                 'data' => [
@@ -467,6 +498,17 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Gerar orçamento')
             ->assertSee('Alterar status')
             ->assertSee('Aguardando Reparo')
+            ->assertSee('<select id="status" name="status"', false)
+            ->assertSee('<option value="triagem"', false)
+            ->assertSee('<select id="grupo_macro" name="grupo_macro"', false)
+            ->assertSee('<option value="recepcao"', false)
+            ->assertSeeInOrder([
+                '<label for="status">Status</label>',
+                '<label for="grupo_macro">Macrofase</label>',
+                '<label for="per_page">Itens por página</label>',
+                '<button type="button" class="btn btn-sm btn-outline-light" data-bs-toggle="collapse" data-bs-target="#osAdvancedFilters"',
+                '<label for="technician_id">Técnico</label>',
+            ], false)
             ->assertSee(route('orcamentos.create', ['os_id' => 3578]), false)
             ->assertSee(route('orders.status.update', 3578), false);
 
@@ -3825,7 +3867,7 @@ class DesktopFrontendTest extends TestCase
                     ],
                     'cliente_telefone' => '',
                     'opcoes_encerramento' => [
-                        ['codigo' => 'reparo_concluido', 'nome' => 'Reparo Conclu?do'],
+                        ['codigo' => 'reparo_concluido', 'nome' => 'Reparo Concluído'],
                         ['codigo' => 'devolvido_sem_reparo', 'nome' => 'Devolvido sem reparo'],
                     ],
                     'financeiro' => [

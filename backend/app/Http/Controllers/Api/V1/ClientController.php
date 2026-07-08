@@ -6,6 +6,7 @@ use App\Models\Client;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\ValidationException;
 
 class ClientController extends BaseApiController
 {
@@ -126,7 +127,7 @@ class ClientController extends BaseApiController
             );
         }
 
-        $payload = $this->validatedClientPayload($request);
+        $payload = $this->validatedClientPayload($request, $client);
         $payload['updated_at'] = now();
 
         $clientModel->fill($payload);
@@ -195,7 +196,7 @@ class ClientController extends BaseApiController
     /**
      * @return array<string, mixed>
      */
-    private function validatedClientPayload(Request $request): array
+    private function validatedClientPayload(Request $request, ?int $ignoreId = null): array
     {
         $validated = $request->validate([
             'tipo_pessoa' => ['required', 'string', 'max:20'],
@@ -253,6 +254,28 @@ class ClientController extends BaseApiController
         $payload['status_cadastro'] = $payload['status_cadastro'] !== null && $payload['status_cadastro'] !== ''
             ? $payload['status_cadastro']
             : 'completo';
+
+        // Armazena CPF/CNPJ apenas com digitos para manter consistencia com a
+        // coluna unica e evitar duplicidade por conta da mascara.
+        if (array_key_exists('cpf_cnpj', $payload) && $payload['cpf_cnpj'] !== null) {
+            $digits = preg_replace('/\D+/', '', (string) $payload['cpf_cnpj']);
+            $payload['cpf_cnpj'] = $digits === '' ? null : $digits;
+        }
+
+        // Uniqueness manual: a coluna cpf_cnpj possui indice unico. Sem esta
+        // verificacao a violacao de integridade estoura como erro 500.
+        if (! empty($payload['cpf_cnpj'])) {
+            $exists = Client::query()
+                ->where('cpf_cnpj', $payload['cpf_cnpj'])
+                ->when($ignoreId !== null, static fn ($query) => $query->where('id', '!=', $ignoreId))
+                ->exists();
+
+            if ($exists) {
+                throw ValidationException::withMessages([
+                    'cpf_cnpj' => 'Este CPF/CNPJ já está cadastrado para outro cliente.',
+                ]);
+            }
+        }
 
         return $payload;
     }

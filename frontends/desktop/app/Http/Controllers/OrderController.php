@@ -54,8 +54,9 @@ class OrderController extends DesktopController
             $filters['status_scope'] = 'open';
         }
 
-        $result = $this->orderService->paginate(array_filter($filters, static fn ($value) => $value !== '' && $value !== 0));
         $statuses = $this->resolveStatusCatalog();
+        $filters = $this->syncStatusMacroFilters($filters, $statuses);
+        $result = $this->orderService->paginate(array_filter($filters, static fn ($value) => $value !== '' && $value !== 0));
 
         return view('orders.index', [
             'pageTitle' => 'Ordens de Serviço',
@@ -84,6 +85,34 @@ class OrderController extends DesktopController
             && trim((string) ($filters['data_abertura_ate'] ?? '')) === ''
             && trim((string) ($filters['valor_min'] ?? '')) === ''
             && trim((string) ($filters['valor_max'] ?? '')) === '';
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     * @param array<int, array<string, mixed>> $statuses
+     * @return array<string, mixed>
+     */
+    private function syncStatusMacroFilters(array $filters, array $statuses): array
+    {
+        $status = trim((string) ($filters['status'] ?? ''));
+        if ($status === '' || $statuses === []) {
+            return $filters;
+        }
+
+        foreach ($statuses as $statusOption) {
+            if (trim((string) ($statusOption['codigo'] ?? '')) !== $status) {
+                continue;
+            }
+
+            $macroGroup = trim((string) ($statusOption['grupo_macro'] ?? ''));
+            if ($macroGroup !== '') {
+                $filters['grupo_macro'] = $macroGroup;
+            }
+
+            return $filters;
+        }
+
+        return $filters;
     }
 
     /**
@@ -121,15 +150,17 @@ class OrderController extends DesktopController
     {
         try {
             // Mesmo raciocinio de cache curto do resolveTechnicianOptions(): catalogo de
-            // status e dado de referencia, nao muda a cada request.
+            // status e dado de referencia, nao muda a cada request. A listagem de OS
+            // nao deve depender da permissao administrativa de "conhecimento": usa um
+            // endpoint de catalogo protegido por os:visualizar.
             return Cache::remember(
                 'desktop:order_filters:status_catalog',
                 60,
-                fn (): array => $this->statusFlowService->index()['statuses']
+                fn (): array => $this->statusFlowService->statusCatalog()
             );
         } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
-            // Sem o catalogo (ex.: usuario sem permissao de conhecimento), os filtros de
-            // status e macrofase caem para campo de texto livre em vez de quebrar a tela.
+            // Sem o catalogo (ex.: API indisponivel), os filtros de status e macrofase
+            // caem para campo de texto livre em vez de quebrar a tela.
             return [];
         }
     }
@@ -689,6 +720,58 @@ class OrderController extends DesktopController
         return redirect()
             ->route('orders.show', $order)
             ->with('success', $message);
+    }
+
+    public function closureCancel(Request $request, int $order): RedirectResponse|JsonResponse
+    {
+        $validated = $request->validate([
+            'admin_email' => ['required', 'string', 'email'],
+            'admin_password' => ['required', 'string'],
+        ], [], [
+            'admin_email' => 'e-mail do administrador',
+            'admin_password' => 'senha do administrador',
+        ]);
+
+        try {
+            $this->orderService->cancelClosure($order, $validated['admin_email'], $validated['admin_password']);
+        } catch (ApiAuthenticationException $exception) {
+            if ($request->wantsJson()) {
+                return response()->json(['error' => $exception->getMessage()], 401);
+            }
+
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            if ($request->wantsJson()) {
+                return response()->json(['error' => $exception->getMessage()], 422);
+            }
+
+            // Sem withInput() de proposito: nunca refletir a senha do
+            // administrador de volta para a sessao/old-input.
+            return redirect()
+                ->route('orders.show', $order)
+                ->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            if ($request->wantsJson()) {
+                return response()->json(['error' => 'Não foi possível cancelar a baixa da OS agora. Tente novamente.'], 500);
+            }
+
+            return redirect()
+                ->route('orders.show', $order)
+                ->with('error', 'Não foi possível cancelar a baixa da OS agora. Tente novamente.');
+        }
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Baixa cancelada: o status foi revertido e os lançamentos financeiros criados na baixa foram excluídos.',
+            ]);
+        }
+
+        return redirect()
+            ->route('orders.show', $order)
+            ->with('success', 'Baixa cancelada: o status foi revertido e os lançamentos financeiros criados na baixa foram excluídos.');
     }
 
     public function preview(int $order): View

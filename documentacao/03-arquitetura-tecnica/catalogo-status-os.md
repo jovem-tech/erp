@@ -1,6 +1,6 @@
 # Catálogo de status das Ordens de Serviço
 
-Atualizado em: `2026-06-29`
+Atualizado em: `2026-07-08`
 
 Fonte de verdade: catálogo ativo `os_status` do backend central.
 
@@ -40,6 +40,20 @@ Fonte de verdade: catálogo ativo `os_status` do backend central.
 - `status_pausa = Sim` indica bloqueio ou espera fora da bancada produtiva.
 - `grupo_macro` organiza a leitura do fluxo, mas o catálogo real deve continuar sendo validado pelo backend.
 - `aguardando_orcamento` fica entre `aguardando_avaliacao` e `aguardando_autorizacao` no fluxo natural da assistência técnica.
+- A listagem inicial de OS (`/os`, `status_scope=open`) mostra a fila operacional
+  em posse/pendente da assistência: por padrão exclui os três encerramentos
+  canônicos (`entregue_reparado`, `devolvido_sem_reparo`, `descartado`) e também
+  OS em `entregue_pagamento_pendente` quando `status_final_pendente_pagamento`
+  aponta para um desses encerramentos, pois o equipamento já foi entregue e resta
+  apenas cobrança financeira.
+- Os selects de filtro de status/macrofase da listagem consomem
+  `GET /api/v1/orders/status-catalog`, autorizado por `os:visualizar`; a edição
+  do fluxo completo continua restrita ao módulo de conhecimento.
+- Na UI da listagem, Status e Macrofase são filtros sincronizados: escolher um
+  status força a macrofase correspondente, e escolher uma macrofase restringe a
+  lista de status aos códigos daquele grupo, evitando combinações impossíveis.
+  Essa sincronização é instantânea no navegador (eventos nativos + Select2), e o
+  botão "Limpar" reseta os campos/URL sem recarregar a página.
 
 ## Fluxo real do andamento
 

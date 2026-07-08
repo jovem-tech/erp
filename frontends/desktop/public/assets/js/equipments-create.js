@@ -342,7 +342,7 @@
     };
 
     const select2Language = {
-        errorLoading: () => 'Os resultados nÃ£o puderam ser carregados.',
+        errorLoading: () => 'Os resultados não puderam ser carregados.',
         inputTooLong: (args) => {
             const overChars = args.input.length - args.maximum;
             const suffix = overChars === 1 ? 'caractere' : 'caracteres';
@@ -353,13 +353,13 @@
             const suffix = remaining === 1 ? 'caractere' : 'caracteres';
             return `Digite mais ${remaining} ${suffix}`;
         },
-        loadingMore: () => 'Carregando mais resultadosâ€¦',
+        loadingMore: () => 'Carregando mais resultados…',
         maximumSelected: (args) => {
             const suffix = args.maximum === 1 ? 'item' : 'itens';
-            return `VocÃª sÃ³ pode selecionar ${args.maximum} ${suffix}`;
+            return `Você só pode selecionar ${args.maximum} ${suffix}`;
         },
         noResults: () => 'Nenhum resultado encontrado',
-        searching: () => 'Buscandoâ€¦',
+        searching: () => 'Buscando…',
         removeAllItems: () => 'Remover todos os itens',
     };
 
@@ -472,7 +472,7 @@
         const payload = await response.json().catch(() => ({}));
 
         if (!response.ok || payload.success === false) {
-            const error = new Error(payload.message || 'Falha ao processar a solicitaÃ§Ã£o.');
+            const error = new Error(payload.message || 'Falha ao processar a solicitação.');
             error.status = response.status;
             error.details = payload.errors || null;
 
@@ -508,7 +508,7 @@
         const payload = await response.json().catch(() => ({}));
 
         if (!response.ok || payload.success === false) {
-            const error = new Error(payload.message || 'Falha ao processar a solicitaÃ§Ã£o.');
+            const error = new Error(payload.message || 'Falha ao processar a solicitação.');
             error.status = response.status;
             error.details = payload.errors || null;
 
@@ -841,7 +841,7 @@
 
         if (els.passwordPatternLabel instanceof HTMLElement) {
             els.passwordPatternLabel.textContent = sequence.length > 0
-                ? `Desenho definido: ${sequence.join(' â†’ ')}`
+                ? `Desenho definido: ${sequence.join(' → ')}`
                 : 'Nenhum desenho definido.';
         }
     };
@@ -1118,7 +1118,7 @@
         }
 
         if (state.photos.length >= maxPhotos) {
-            showAlert('warning', 'Limite atingido', `O cadastro aceita no mÃ¡ximo ${maxPhotos} fotos.`);
+            showAlert('warning', 'Limite atingido', `O cadastro aceita no máximo ${maxPhotos} fotos.`);
             return;
         }
 
@@ -1184,7 +1184,7 @@
         }
 
         if (!navigator.mediaDevices?.getUserMedia) {
-            showAlert('error', 'CÃ¢mera indisponÃ­vel', 'Este navegador nÃ£o oferece suporte a captura de cÃ¢mera.');
+            showAlert('error', 'Câmera indisponível', 'Este navegador não oferece suporte a captura de câmera.');
             return;
         }
 
@@ -1196,8 +1196,8 @@
             els.cameraVideo.srcObject = state.activeStream;
             getModal(els.cameraModal)?.show();
         } catch (error) {
-            console.error('[equipments-create] Falha ao iniciar cÃ¢mera', error);
-            showAlert('error', 'NÃ£o foi possÃ­vel abrir a cÃ¢mera', 'VocÃª ainda pode usar a galeria para enviar a foto.');
+            console.error('[equipments-create] Falha ao iniciar câmera', error);
+            showAlert('error', 'Não foi possível abrir a câmera', 'Você ainda pode usar a galeria para enviar a foto.');
         }
     };
 
@@ -1217,7 +1217,7 @@
         context.drawImage(els.cameraVideo, 0, 0, canvas.width, canvas.height);
         canvas.toBlob((blob) => {
             if (!blob) {
-                showAlert('error', 'Falha ao capturar', 'NÃ£o foi possÃ­vel gerar a imagem da cÃ¢mera.');
+                showAlert('error', 'Falha ao capturar', 'Não foi possível gerar a imagem da câmera.');
                 return;
             }
 
@@ -1235,7 +1235,7 @@
 
         state.cropper.getCroppedCanvas({ width: 1600, height: 1200 }).toBlob((blob) => {
             if (!blob) {
-                showAlert('error', 'Falha ao recortar', 'NÃ£o foi possÃ­vel preparar a foto.');
+                showAlert('error', 'Falha ao recortar', 'Não foi possível preparar a foto.');
                 return;
             }
 
@@ -1761,7 +1761,7 @@
             const typeText = els.type instanceof HTMLSelectElement ? els.type.selectedOptions[0]?.textContent?.trim() || '' : '';
 
             if (nome.length < 2) {
-                showAlert('warning', 'Informe um nome base', 'Digite pelo menos duas letras para buscar sugestÃµes.');
+                showAlert('warning', 'Informe um nome base', 'Digite pelo menos duas letras para buscar sugestões.');
                 return;
             }
 
@@ -1770,7 +1770,7 @@
                 const suggestions = response.suggestions || [];
 
                 if (!Array.isArray(suggestions) || suggestions.length === 0) {
-                    els.quickModelSuggestions.innerHTML = '<div class="equipment-search-empty">Nenhuma sugestÃ£o encontrada agora.</div>';
+                    els.quickModelSuggestions.innerHTML = '<div class="equipment-search-empty">Nenhuma sugestão encontrada agora.</div>';
                     return;
                 }
 
@@ -1789,7 +1789,7 @@
                     });
                 });
             } catch (error) {
-                els.quickModelSuggestions.innerHTML = '<div class="equipment-search-empty">Falha ao consultar sugestÃµes externas.</div>';
+                els.quickModelSuggestions.innerHTML = '<div class="equipment-search-empty">Falha ao consultar sugestões externas.</div>';
             }
         });
 
@@ -1805,7 +1805,7 @@
             const nome = els.quickModelName instanceof HTMLInputElement ? els.quickModelName.value.trim() : '';
 
             if (!marcaId || nome === '') {
-                showAlert('warning', 'Campos obrigatÃ³rios', 'Selecione a marca e informe o nome do modelo.');
+                showAlert('warning', 'Campos obrigatórios', 'Selecione a marca e informe o nome do modelo.');
                 return;
             }
 
@@ -1908,7 +1908,7 @@
                 return true;
             }
 
-            showAlert('warning', 'Tipo incompatÃ­vel', 'Selecione um equipamento do tipo Desktop ou Notebook antes de buscar os dados do agente.');
+            showAlert('warning', 'Tipo incompatível', 'Selecione um equipamento do tipo Desktop ou Notebook antes de buscar os dados do agente.');
             return false;
         };
 

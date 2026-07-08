@@ -2,9 +2,9 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-07T15:55:05+00:00`
-- Versao do sistema: `3.14.1`
-- Versao da API: `1.1.1`
+- Gerado em: `2026-07-08T15:32:55+00:00`
+- Versao do sistema: `3.15.2`
+- Versao da API: `1.1.2`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Windows/XAMPP`
 

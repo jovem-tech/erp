@@ -97,6 +97,19 @@ class OrderService
     /**
      * @return array<string, mixed>
      */
+    public function cancelClosure(int $id, string $adminEmail, string $adminPassword): array
+    {
+        $response = $this->apiClient->post('/orders/' . $id . '/closure/cancel', [
+            'admin_email' => $adminEmail,
+            'admin_password' => $adminPassword,
+        ]);
+
+        return $response['data'] ?? [];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function updateStatus(
         int $id,
         ?string $status = null,

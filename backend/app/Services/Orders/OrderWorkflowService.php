@@ -117,6 +117,10 @@ class OrderWorkflowService
                 ->values()
                 ->all()
         );
+        // Calculado uma unica vez fora do loop: OrderStatus::closureCodes() e'
+        // uma query, e mapSummary() e' chamado por OS da pagina — chamar dentro
+        // do map() vira N+1 (pego pelo teste de contagem de queries da listagem).
+        $closureCodes = OrderStatus::closureCodes();
 
         $paginator->setCollection(
             $orders->map(
@@ -124,7 +128,8 @@ class OrderWorkflowService
                     $order,
                     $budgetByOrderId[(int) $order->id] ?? null,
                     $receivableByOrderId[(int) $order->id] ?? null,
-                    $nextStepsByStatusCode[trim((string) ($order->status ?? ''))] ?? []
+                    $nextStepsByStatusCode[trim((string) ($order->status ?? ''))] ?? [],
+                    $closureCodes
                 )
             )
         );
@@ -143,11 +148,26 @@ class OrderWorkflowService
         }
 
         if ($statusScope === 'open') {
-            $query->where(static function (Builder $scopeQuery): void {
-                $scopeQuery
-                    ->whereNull('os.estado_fluxo')
-                    ->orWhere('os.estado_fluxo', '!=', 'encerrado');
-            });
+            $closureCodes = OrderStatus::closureCodes();
+
+            if ($closureCodes === []) {
+                return;
+            }
+
+            // A listagem operacional inicial deve mostrar tudo que ainda pode
+            // exigir acao da assistencia, mas esconder OS que ja sairam da
+            // posse da loja. A fonte canonica dos encerramentos reais e'
+            // OrderStatus::closureCodes(); alem do status aplicado diretamente,
+            // a baixa com saldo em aberto usa um status intermediario de
+            // cobranca e preserva o encerramento desejado em
+            // os.status_final_pendente_pagamento.
+            $query
+                ->whereNotIn('os.status', $closureCodes)
+                ->where(static function (Builder $scopeQuery) use ($closureCodes): void {
+                    $scopeQuery
+                        ->whereNull('os.status_final_pendente_pagamento')
+                        ->orWhereNotIn('os.status_final_pendente_pagamento', $closureCodes);
+                });
         }
     }
 
@@ -559,7 +579,8 @@ class OrderWorkflowService
         ?string $observacao = null,
         ?string $diagnosticoTecnico = null,
         ?string $solucaoAplicada = null,
-        bool $comunicarCliente = false
+        bool $comunicarCliente = false,
+        bool $viaClosureFlow = false
     ): array {
         $order = Order::query()->find($orderId);
 
@@ -592,9 +613,39 @@ class OrderWorkflowService
         $now = Carbon::now();
         $statusChanged = $previousStatus !== '' && $newStatus !== $previousStatus;
 
+        // Regra de projeto (ver skill sistema-erp-os-fluxo-fechamento): os 3
+        // status que de fato encerram a OS (OrderStatus::closureCodes()) só
+        // podem ser aplicados pelo fluxo de baixa (OrderClosureService::close(),
+        // que chama este método com viaClosureFlow=true). Isso garante que toda
+        // OS "fechada" passou pela reconciliacao financeira (titulo/movimento)
+        // e pelo calculo correto de pendencia — nunca via "Alterar status" ou
+        // edicao direta da OS.
+        if ($statusChanged && ! $viaClosureFlow && in_array($newStatus, OrderStatus::closureCodes(), true)) {
+            return [
+                'result' => 'closure_status_requires_baixa_flow',
+                'status_atual' => $previousStatus,
+            ];
+        }
+
+        // Regra de projeto (mesma skill): uma OS que JÁ está fechada (status em
+        // closureCodes(): equipamento nao esta mais de posse da assistencia) nao
+        // pode ter o status alterado de forma facilitada — isso indicaria
+        // erroneamente que o equipamento voltou. A unica forma de tirar a OS
+        // desse estado e' cancelar a baixa (OrderClosureService::cancelClosure(),
+        // que reverte o status diretamente, sem passar por este método).
+        if ($statusChanged && ! $viaClosureFlow && in_array($previousStatus, OrderStatus::closureCodes(), true)) {
+            return [
+                'result' => 'order_is_closed',
+                'status_atual' => $previousStatus,
+            ];
+        }
+
         // Só permite mover para uma etapa de destino prevista no catálogo de transições.
         // Se a origem não possui transições cadastradas, mantém o comportamento permissivo.
-        if ($statusChanged) {
+        // Exceção: a baixa da OS já restringe o destino aos únicos 3 status de
+        // OrderStatus::closureCodes() e precisa poder fechar a OS a partir de
+        // qualquer etapa aberta — por isso pede para pular esta validação.
+        if ($statusChanged && ! $viaClosureFlow) {
             $allowed = $this->allowedTransitionCodes($previousStatus);
             if ($allowed !== [] && ! in_array($newStatus, $allowed, true)) {
                 return [
@@ -871,6 +922,25 @@ class OrderWorkflowService
                 ];
             }
 
+            // Regra de projeto (ver skill sistema-erp-os-fluxo-fechamento): a
+            // edição genérica da OS nunca pode encerrar o atendimento — os 3
+            // status de OrderStatus::closureCodes() só são aplicáveis pelo
+            // fluxo de baixa (OrderClosureService::close()).
+            if (in_array((string) $payload['status'], OrderStatus::closureCodes(), true)) {
+                return [
+                    'result' => 'closure_status_requires_baixa_flow',
+                ];
+            }
+
+            // Idem: uma OS ja fechada nao pode ter o status alterado por aqui —
+            // so cancelando a baixa (OrderClosureService::cancelClosure()).
+            if ($previousStatus !== (string) $payload['status']
+                && in_array($previousStatus, OrderStatus::closureCodes(), true)) {
+                return [
+                    'result' => 'order_is_closed',
+                ];
+            }
+
             if (! array_key_exists('estado_fluxo', $payload)) {
                 $payload['estado_fluxo'] = trim((string) ($statusRow->estado_fluxo_padrao ?? 'em_atendimento'));
             }
@@ -1031,13 +1101,15 @@ class OrderWorkflowService
      * @param array<string, mixed>|null $budget
      * @param array<string, mixed>|null $receivable
      * @param array<int, array<string, mixed>>|null $nextStatusOptions
+     * @param array<int, string>|null $closureCodes
      * @return array<string, mixed>
      */
     private function mapSummary(
         Order $order,
         ?array $budget = null,
         ?array $receivable = null,
-        ?array $nextStatusOptions = null
+        ?array $nextStatusOptions = null,
+        ?array $closureCodes = null
     ): array
     {
         $valorFinal = (float) ($order->valor_final ?? 0);
@@ -1069,6 +1141,11 @@ class OrderWorkflowService
             'status_nome' => (string) ($order->status_nome ?? ''),
             'status_cor' => (string) ($order->status_cor ?? ''),
             'status_grupo_macro' => (string) ($order->status_grupo_macro ?? ''),
+            // Bug corrigido em 2026-07-08: "Baixa" nao deve sumir das Ações so
+            // porque estado_fluxo='encerrado' (Irreparável/Reparo Recusado tambem
+            // usam esse estado_fluxo_padrao sem serem status de fechamento de
+            // verdade) — usar is_encerrada (grupo_macro='encerrado', os 3 reais).
+            'is_encerrada' => in_array((string) ($order->status ?? ''), $closureCodes ?? OrderStatus::closureCodes(), true),
             'prioridade' => (string) ($order->prioridade ?? ''),
             'estado_fluxo' => (string) ($order->estado_fluxo ?? ''),
             'status_atualizado_em' => $this->formatDateTime($order->status_atualizado_em ?? null),
@@ -1216,6 +1293,10 @@ class OrderWorkflowService
             'status_nome' => (string) ($statusRow?->nome ?? ''),
             'status_cor' => (string) ($statusRow?->cor ?? ''),
             'status_grupo_macro' => (string) ($statusRow?->grupo_macro ?? ''),
+            // OS encerrada = status num dos 3 codigos de fechamento
+            // (skill sistema-erp-os-fluxo-fechamento). A UI usa para bloquear
+            // "Alterar status" e oferecer "Cancelar baixa".
+            'is_encerrada' => in_array((string) ($order->status ?? ''), OrderStatus::closureCodes(), true),
             'estado_fluxo' => (string) ($order->estado_fluxo ?? ''),
             'prioridade' => (string) ($order->prioridade ?? ''),
             'status_atualizado_em' => $this->formatDateTime($order->status_atualizado_em ?? null),
@@ -1667,6 +1748,14 @@ class OrderWorkflowService
     /**
      * @return array<int, array<string, mixed>>
      */
+    public function statusCatalogOptions(): array
+    {
+        return $this->mapStatusOptions();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
     private function mapStatusOptions(): array
     {
         return OrderStatus::query()
@@ -1806,6 +1895,15 @@ class OrderWorkflowService
                 $targetStatus = $statusById[$targetId] ?? null;
 
                 if (! is_array($targetStatus) || ! (bool) ($targetStatus['ativo'] ?? false)) {
+                    return null;
+                }
+
+                // Regra de projeto (skill sistema-erp-os-fluxo-fechamento): os
+                // status de encerramento (grupo_macro = 'encerrado') nunca
+                // aparecem como "próxima etapa" nos dropdowns de status (modal
+                // "Alterar status", quick-status da listagem) — só podem ser
+                // aplicados pela tela de baixa. Filtrados aqui, na fonte comum.
+                if ((string) ($targetStatus['grupo_macro'] ?? '') === OrderStatus::CLOSURE_MACRO_GROUP) {
                     return null;
                 }
 
