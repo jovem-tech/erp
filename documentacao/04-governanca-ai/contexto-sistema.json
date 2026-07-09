@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-07-09T00:53:41+00:00",
+    "generated_at": "2026-07-09T01:53:37+00:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "3.17.2",
+        "app_version": "3.17.3",
         "api_version": "1.1.2",
         "production_target": "Ubuntu VPS",
         "development_target": "Windows/XAMPP"
@@ -429,6 +429,10 @@
                 {
                     "file": "documentacao/10-deploy/manual-inicializacao-local-windows-xampp.md",
                     "title": "Manual de Inicializacao Local no Windows com XAMPP"
+                },
+                {
+                    "file": "documentacao/10-deploy/manual-versionamento-e-deploy.md",
+                    "title": "Manual de Publicação — Versionar e Deploy"
                 },
                 {
                     "file": "documentacao/10-deploy/workflow-git-multiambiente.md",
