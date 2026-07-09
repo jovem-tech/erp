@@ -532,6 +532,83 @@ class OrderFlowTest extends TestCase
         $this->assertSame('status_2', (string) ($historico->last()['status_novo'] ?? ''));
     }
 
+    public function test_show_resolves_payment_from_financial_movements_and_flags_budget_parts_without_stock_out(): void
+    {
+        [$user, $assignedOrder] = $this->seedTechnicianOrders();
+        $token = $this->loginAndGetToken($user->email);
+        $clientId = (int) DB::table('os')->where('id', $assignedOrder)->value('cliente_id');
+
+        DB::table('os')->where('id', $assignedOrder)->update([
+            'valor_pecas' => 80.00,
+            'valor_total' => 80.00,
+            'valor_final' => 80.00,
+            'forma_pagamento' => null,
+            'updated_at' => now(),
+        ]);
+
+        $tituloId = (int) DB::table('financeiro')->insertGetId([
+            'os_id' => $assignedOrder,
+            'cliente_id' => $clientId,
+            'tipo' => 'receber',
+            'categoria' => 'Serviço',
+            'descricao' => 'Cobrança da OS OS26060001',
+            'valor' => 80.00,
+            'status' => 'pago',
+            'data_vencimento' => now()->toDateString(),
+            'data_pagamento' => now()->toDateString(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('financeiro_movimentos')->insert([
+            'financeiro_id' => $tituloId,
+            'tipo_movimento' => 'entrada',
+            'data_movimento' => now()->toDateString(),
+            'valor_movimento' => 80.00,
+            'forma_pagamento' => 'pix',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $budgetId = (int) DB::table('orcamentos')->insertGetId([
+            'numero' => 'ORC-TESTE-0001',
+            'status' => 'aprovado',
+            'cliente_id' => $clientId,
+            'os_id' => $assignedOrder,
+            'subtotal' => 80.00,
+            'total' => 80.00,
+            'aprovado_em' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('orcamento_itens')->insert([
+            'orcamento_id' => $budgetId,
+            'tipo_item' => 'peca',
+            'descricao' => 'Peça de teste',
+            'quantidade' => 2,
+            'valor_unitario' => 40.00,
+            'total' => 80.00,
+            'preco_custo_referencia' => 15.00,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->getJson("/api/v1/orders/{$assignedOrder}");
+
+        $response->assertOk()
+            ->assertJsonPath('data.order.forma_pagamento_resolvida', 'Pix')
+            ->assertJsonPath('data.order.financeiro_resumo.titulo_id', $tituloId)
+            ->assertJsonPath('data.order.financeiro_resumo.valor_recebido', 80.0)
+            ->assertJsonPath('data.order.financeiro_resumo.saldo_aberto', 0.0)
+            ->assertJsonPath('data.order.custo_auditoria.orcamento_id', $budgetId)
+            ->assertJsonPath('data.order.custo_auditoria.valor_pecas_orcado', 80.0)
+            ->assertJsonPath('data.order.custo_auditoria.custo_pecas_previsto', 30.0)
+            ->assertJsonPath('data.order.custo_auditoria.custo_pecas_real', 0.0)
+            ->assertJsonPath('data.order.custo_auditoria.pendencia_baixa_estoque', true);
+    }
+
     public function test_show_returns_403_when_order_is_not_assigned_to_technician(): void
     {
         [$user, , $unassignedOrder] = $this->seedTechnicianOrders();

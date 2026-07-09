@@ -1268,9 +1268,15 @@ class OrderWorkflowService
     private function mapDetail(Order $order): array
     {
         $statusRow = $order->statusCatalog;
+        $orderId = (int) ($order->id ?? 0);
+        $financeiroResumo = $this->resolveDetailFinancialSummary(
+            $orderId,
+            (string) ($order->forma_pagamento ?? '')
+        );
+        $custoAuditoria = $this->resolveDetailCostAudit($orderId);
 
         return [
-            'id' => (int) ($order->id ?? 0),
+            'id' => $orderId,
             'numero_os' => (string) ($order->numero_os ?? ''),
             'numero_os_legado' => (string) ($order->numero_os_legado ?? ''),
             'cliente_id' => (int) ($order->cliente_id ?? 0),
@@ -1306,6 +1312,8 @@ class OrderWorkflowService
             'procedimentos_executados' => (string) ($order->procedimentos_executados ?? ''),
             'acessorios' => (string) ($order->acessorios ?? ''),
             'forma_pagamento' => (string) ($order->forma_pagamento ?? ''),
+            'forma_pagamento_resolvida' => (string) ($financeiroResumo['forma_pagamento_label'] ?? ''),
+            'financeiro_resumo' => $financeiroResumo,
             'data_abertura' => $this->formatDateTime($order->data_abertura ?? null),
             'data_entrada' => $this->formatDateTime($order->data_entrada ?? null),
             'data_previsao' => $this->formatDate($order->data_previsao ?? null),
@@ -1333,8 +1341,203 @@ class OrderWorkflowService
             'equipamento_foto' => $this->mapEquipmentPrincipalPhoto($order->equipment),
             'documentos' => $this->mapDocumentCollection($order->documents, (int) ($order->id ?? 0)),
             'orcamento' => $this->mapLinkedBudget((int) ($order->id ?? 0)),
+            'custo_auditoria' => $custoAuditoria,
             'checklist' => $this->mapEntryChecklist((int) ($order->id ?? 0)),
         ];
+    }
+
+    /**
+     * Resumo financeiro autoritativo para a aba Valores da OS.
+     *
+     * A coluna legada `os.forma_pagamento` pode ficar vazia porque a baixa
+     * moderna aceita múltiplos recebimentos. A forma exibida deve vir dos
+     * movimentos financeiros efetivamente registrados, que são a fonte de
+     * verdade para fluxo de caixa, DRE de caixa e auditoria.
+     *
+     * @return array<string, mixed>
+     */
+    private function resolveDetailFinancialSummary(int $orderId, string $legacyPaymentMethod): array
+    {
+        $empty = [
+            'titulo_id' => null,
+            'valor_titulo' => 0.0,
+            'valor_recebido' => 0.0,
+            'saldo_aberto' => 0.0,
+            'status' => null,
+            'total_movimentos' => 0,
+            'forma_pagamento' => trim($legacyPaymentMethod),
+            'forma_pagamento_label' => $this->paymentMethodLabel($legacyPaymentMethod),
+            'formas_pagamento' => [],
+        ];
+
+        if ($orderId <= 0) {
+            return $empty;
+        }
+
+        $titulo = Financeiro::query()
+            ->where('os_id', $orderId)
+            ->where('tipo', Financeiro::TIPO_RECEBER)
+            ->where('status', '!=', Financeiro::STATUS_CANCELADO)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->first(['id', 'valor', 'status', 'forma_pagamento']);
+
+        if (! $titulo instanceof Financeiro) {
+            return $empty;
+        }
+
+        $movimentos = FinanceiroMovimento::query()
+            ->where('financeiro_id', (int) $titulo->id)
+            ->orderBy('id')
+            ->get(['valor_movimento', 'forma_pagamento']);
+
+        $valorTitulo = round((float) ($titulo->valor ?? 0), 2);
+        $valorRecebido = round((float) $movimentos->sum('valor_movimento'), 2);
+        $formas = $movimentos
+            ->pluck('forma_pagamento')
+            ->map(static fn ($forma): string => trim((string) $forma))
+            ->filter(static fn (string $forma): bool => $forma !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        $fallbackForma = trim((string) ($titulo->forma_pagamento ?? '')) !== ''
+            ? (string) $titulo->forma_pagamento
+            : trim($legacyPaymentMethod);
+
+        $formaPagamento = count($formas) === 1 ? $formas[0] : (count($formas) > 1 ? 'multiplo' : $fallbackForma);
+        $formaPagamentoLabel = $this->paymentMethodLabel($formaPagamento, $formas);
+
+        return [
+            'titulo_id' => (int) $titulo->id,
+            'valor_titulo' => $valorTitulo,
+            'valor_recebido' => $valorRecebido,
+            'saldo_aberto' => max(0.0, round($valorTitulo - $valorRecebido, 2)),
+            'status' => (string) ($titulo->status ?? ''),
+            'total_movimentos' => $movimentos->count(),
+            'forma_pagamento' => $formaPagamento,
+            'forma_pagamento_label' => $formaPagamentoLabel,
+            'formas_pagamento' => array_map(fn (string $forma): array => [
+                'codigo' => $forma,
+                'label' => $this->paymentMethodLabel($forma),
+            ], $formas),
+        ];
+    }
+
+    /**
+     * Auditoria de custo da OS para diferenciar margem real (estoque) de custo
+     * previsto no orçamento. O custo real continua vindo somente de saída de
+     * estoque vinculada à OS; itens orçados sem movimentação viram alerta
+     * operacional, não custo contábil inventado.
+     *
+     * @return array<string, mixed>
+     */
+    private function resolveDetailCostAudit(int $orderId): array
+    {
+        $empty = [
+            'orcamento_id' => null,
+            'orcamento_numero' => '',
+            'orcamento_status' => '',
+            'valor_pecas_orcado' => 0.0,
+            'custo_pecas_previsto' => 0.0,
+            'custo_pecas_real' => 0.0,
+            'pecas_orcadas' => 0,
+            'saidas_estoque' => 0,
+            'pendencia_baixa_estoque' => false,
+            'mensagem' => '',
+        ];
+
+        if ($orderId <= 0 || ! Schema::hasTable('orcamentos') || ! Schema::hasTable('orcamento_itens')) {
+            return $empty;
+        }
+
+        $budget = Budget::query()
+            ->where('os_id', $orderId)
+            ->where(static function (Builder $query): void {
+                $query
+                    ->whereIn('status', [Budget::STATUS_APPROVED, Budget::STATUS_CONVERTED])
+                    ->orWhereNotNull('aprovado_em');
+            })
+            ->orderByDesc('id')
+            ->first(['id', 'numero', 'status']);
+
+        if (! $budget instanceof Budget) {
+            return $empty;
+        }
+
+        $budgetPieces = DB::table('orcamento_itens')
+            ->where('orcamento_id', (int) $budget->id)
+            ->where('tipo_item', 'peca')
+            ->selectRaw('COUNT(*) as total_itens')
+            ->selectRaw('COALESCE(SUM(total), 0) as valor_total')
+            ->selectRaw('COALESCE(SUM(COALESCE(preco_custo_referencia, 0) * COALESCE(quantidade, 1)), 0) as custo_previsto')
+            ->first();
+
+        $valorPecasOrcado = round((float) ($budgetPieces->valor_total ?? 0), 2);
+        $custoPecasPrevisto = round((float) ($budgetPieces->custo_previsto ?? 0), 2);
+        $pecasOrcadas = (int) ($budgetPieces->total_itens ?? 0);
+
+        $custoPecasReal = 0.0;
+        $saidasEstoque = 0;
+
+        if (Schema::hasTable('movimentacoes') && Schema::hasTable('pecas')) {
+            $stockOut = DB::table('movimentacoes')
+                ->join('pecas', 'pecas.id', '=', 'movimentacoes.peca_id')
+                ->where('movimentacoes.os_id', $orderId)
+                ->where('movimentacoes.tipo', 'saida')
+                ->selectRaw('COUNT(*) as total_saidas')
+                ->selectRaw('COALESCE(SUM(movimentacoes.quantidade * pecas.preco_custo), 0) as custo_real')
+                ->first();
+
+            $custoPecasReal = round((float) ($stockOut->custo_real ?? 0), 2);
+            $saidasEstoque = (int) ($stockOut->total_saidas ?? 0);
+        }
+
+        $pendenciaBaixaEstoque = $pecasOrcadas > 0 && $valorPecasOrcado > 0 && $saidasEstoque === 0;
+
+        return [
+            'orcamento_id' => (int) $budget->id,
+            'orcamento_numero' => (string) ($budget->numero ?? ''),
+            'orcamento_status' => (string) ($budget->status ?? ''),
+            'valor_pecas_orcado' => $valorPecasOrcado,
+            'custo_pecas_previsto' => $custoPecasPrevisto,
+            'custo_pecas_real' => $custoPecasReal,
+            'pecas_orcadas' => $pecasOrcadas,
+            'saidas_estoque' => $saidasEstoque,
+            'pendencia_baixa_estoque' => $pendenciaBaixaEstoque,
+            'mensagem' => $pendenciaBaixaEstoque
+                ? 'Há peça aprovada no orçamento, mas nenhuma saída de estoque vinculada a esta OS. Se a peça saiu do estoque da assistência, registre a movimentação para a margem real ficar correta.'
+                : '',
+        ];
+    }
+
+    /**
+     * @param array<int, string> $formas
+     */
+    private function paymentMethodLabel(?string $formaPagamento, array $formas = []): string
+    {
+        $formaPagamento = trim((string) ($formaPagamento ?? ''));
+        if ($formaPagamento === '') {
+            return '';
+        }
+
+        $labels = collect(Financeiro::formaPagamentoOptions())
+            ->mapWithKeys(static fn (array $option): array => [(string) $option['value'] => (string) $option['label']])
+            ->all();
+
+        if ($formaPagamento === 'multiplo') {
+            $labelList = collect($formas)
+                ->map(static fn (string $forma): string => $labels[$forma] ?? ucfirst(str_replace('_', ' ', $forma)))
+                ->filter()
+                ->values()
+                ->all();
+
+            return $labelList !== []
+                ? 'Múltiplas formas (' . implode(', ', $labelList) . ')'
+                : 'Múltiplas formas';
+        }
+
+        return $labels[$formaPagamento] ?? ucfirst(str_replace('_', ' ', $formaPagamento));
     }
 
     /**

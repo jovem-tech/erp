@@ -156,6 +156,11 @@ class BudgetApprovalService
         ];
     }
 
+    public function ensurePublicApprovalUrl(Budget $budget): string
+    {
+        return $this->publicUrl($this->ensurePublicToken($budget));
+    }
+
     /**
      * @return array<string, mixed>
      */

@@ -173,6 +173,7 @@ class BudgetFlowTest extends TestCase
             ->assertJsonPath('data.budget.itens.1.descricao', 'Tela LCD');
 
         $budgetId = (int) $createResponse->json('data.budget.id');
+        $this->assertNotEmpty((string) $createResponse->json('data.budget.link_publico'));
 
         $this->assertDatabaseHas('orcamentos', [
             'id' => $budgetId,
@@ -181,10 +182,18 @@ class BudgetFlowTest extends TestCase
             'os_id' => $orderId,
             'tipo_orcamento' => 'assistencia',
         ]);
+        $this->assertNotEmpty((string) \Illuminate\Support\Facades\DB::table('orcamentos')->where('id', $budgetId)->value('token_publico'));
 
         $this->assertDatabaseHas('orcamento_itens', [
             'orcamento_id' => $budgetId,
             'descricao' => 'Limpeza interna',
+        ]);
+        $this->assertDatabaseHas('os', [
+            'id' => $orderId,
+            'valor_mao_obra' => 120.50,
+            'valor_pecas' => 450.00,
+            'valor_total' => 570.50,
+            'valor_final' => 570.50,
         ]);
 
         $this->withHeader('Authorization', 'Bearer ' . $token)
@@ -286,8 +295,10 @@ class BudgetFlowTest extends TestCase
 
         $budgetId = $this->createBudgetRecord([
             'numero' => 'ORC-2606-000099',
-            'status' => 'aprovado',
+            'status' => 'pendente_envio',
             'origem' => 'manual',
+            'token_publico' => null,
+            'token_expira_em' => null,
         ]);
         $this->createBudgetItemRecord($budgetId, [
             'descricao' => 'Limpeza interna',
@@ -312,6 +323,9 @@ class BudgetFlowTest extends TestCase
             ->assertJsonPath('data.budget.numero', 'ORC-2606-000099')
             ->assertJsonPath('data.budget.itens.0.descricao', 'Limpeza interna')
             ->assertJsonPath('data.budget.historico.0.status_novo', 'enviado');
+
+        $this->assertNotEmpty((string) $response->json('data.budget.link_publico'));
+        $this->assertNotEmpty((string) \Illuminate\Support\Facades\DB::table('orcamentos')->where('id', $budgetId)->value('token_publico'));
 
         $historico = collect($response->json('data.budget.historico', []));
         $this->assertNotEmpty($historico);
@@ -707,9 +721,12 @@ class BudgetFlowTest extends TestCase
 
         $statusTransitions = [
             ['enviado', 'aguardando_autorizacao', 'pausado'],
+            ['aguardando_resposta', 'aguardando_autorizacao', 'pausado'],
+            ['aguardando_pacote', 'aguardando_autorizacao', 'pausado'],
             ['reenviar_orcamento', 'aguardando_orcamento', 'em_atendimento'],
-            ['pendente', 'aguardando_autorizacao', 'pausado'],
+            ['pendente', 'aguardando_orcamento', 'em_atendimento'],
             ['aprovado', 'aguardando_reparo', 'em_execucao'],
+            ['rejeitado', 'cancelado', 'cancelado'],
             ['cancelado', 'cancelado', 'cancelado'],
         ];
 
@@ -742,6 +759,69 @@ class BudgetFlowTest extends TestCase
             'id' => $orderId,
             'status' => 'aguardando_orcamento',
             'estado_fluxo' => 'em_atendimento',
+        ]);
+    }
+
+    public function test_budget_creation_syncs_status_and_financial_value_from_existing_order_status(): void
+    {
+        $admin = $this->createUserRecord([
+            'nome' => 'Administrador',
+            'email' => 'admin.budgets.protected-status@example.com',
+            'perfil' => 'admin',
+            'grupo_id' => 1,
+        ]);
+
+        $clientId = $this->createClientRecord([
+            'nome_razao' => 'Cliente Irreparavel',
+        ]);
+        $equipmentId = $this->createEquipmentRecord($clientId, [
+            'resumo_tecnico' => 'Smartphone protegido',
+        ]);
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'numero_os' => 'OS26070123',
+            'status' => 'irreparavel',
+            'estado_fluxo' => 'em_atendimento',
+            'valor_final' => 0,
+        ]);
+
+        $token = $this->loginAndGetToken($admin->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson('/api/v1/orcamentos', [
+                'tipo_orcamento' => 'assistencia',
+                'status' => 'pendente_envio',
+                'origem' => 'os',
+                'cliente_id' => $clientId,
+                'os_id' => $orderId,
+                'equipamento_id' => $equipmentId,
+                'titulo' => 'Orçamento em OS irreparável',
+                'validade_dias' => 10,
+                'itens' => [
+                    [
+                        'tipo_item' => 'servico',
+                        'descricao' => 'Diagnóstico e taxa técnica',
+                        'quantidade' => 1,
+                        'valor_unitario' => 200,
+                        'desconto' => 0,
+                        'acrescimo' => 0,
+                    ],
+                ],
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.budget.total', 200.0);
+
+        $this->assertNotEmpty((string) $response->json('data.budget.link_publico'));
+        $this->assertDatabaseHas('os', [
+            'id' => $orderId,
+            'status' => 'aguardando_orcamento',
+            'estado_fluxo' => 'em_atendimento',
+            'valor_mao_obra' => 200.00,
+            'valor_pecas' => 0.00,
+            'valor_total' => 200.00,
+            'valor_final' => 200.00,
         ]);
     }
 

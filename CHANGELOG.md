@@ -1,5 +1,29 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v3.18.2.0 — 2026-07-09 02:41
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** ajuste e correção no processo de baixa da os
+- **Arquivos:** backend/app/Services/Budgets/BudgetApprovalService.php,backend/app/Services/Budgets/BudgetOrderSyncService.php,backend/app/Services/Budgets/BudgetWorkflowService.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/tests/Feature/Api/V1/BudgetFlowTest.php,backend/tests/Feature/Api/V1/OrderFlowTest.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/resources/views/orders/show.blade.php
+
+## v3.18.1.3 — 2026-07-09 02:36
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Aba Valores da OS passa a exibir forma de pagamento resolvida pelos movimentos financeiros e alerta de peca orcada sem baixa de estoque vinculada.
+- **Arquivos:** backend/app/Services/Orders/OrderWorkflowService.php,frontends/desktop/resources/views/orders/show.blade.php,backend/tests/Feature/Api/V1/OrderFlowTest.php
+
+## v3.18.1.2 — 2026-07-09 01:42
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Ajusta status da OS conforme status do orçamento
+- **Arquivos:** backend/app/Services/Budgets/BudgetOrderSyncService.php,backend/tests/Feature/Api/V1/BudgetFlowTest.php
+
+## v3.18.1.1 — 2026-07-09 01:29
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Garante link publico copiavel e valor da OS em orcamentos
+- **Arquivos:** backend/app/Services/Budgets/BudgetWorkflowService.php,backend/app/Services/Budgets/BudgetApprovalService.php,backend/app/Services/Budgets/BudgetOrderSyncService.php,backend/tests/Feature/Api/V1/BudgetFlowTest.php
+
 ## v3.18.1.0 — 2026-07-09 01:06
 - **Tier:** patch
 - **Autor/Agente:** Codex
