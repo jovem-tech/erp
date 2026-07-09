@@ -208,9 +208,12 @@
 
                 <article class="summary-card">
                     <span class="summary-card-eyebrow">Equipamento</span>
-                    <div class="summary-card-value">{{ ($order['equipamento_resumo_tecnico'] ?? '') !== '' ? $order['equipamento_resumo_tecnico'] : 'Sem resumo técnico' }}</div>
+                    <div class="summary-card-value">{{ ($order['equipamento_resumo_curto'] ?? '') !== '' ? $order['equipamento_resumo_curto'] : 'Sem equipamento informado' }}</div>
                     <div class="summary-card-meta">
                         {{ ($order['equipamento_numero_serie'] ?? '') !== '' ? 'S/N ' . $order['equipamento_numero_serie'] : 'Série não informada' }}
+                        @if(($order['equipamento_resumo_tecnico'] ?? '') !== '')
+                            · {{ $order['equipamento_resumo_tecnico'] }}
+                        @endif
                     </div>
                 </article>
 
@@ -258,47 +261,16 @@
                         </div>
                     @endif
 
-                    @if (\App\Support\DesktopSession::can('os', 'editar'))
-                        <div class="os-panel-block">
-                            <h3 class="os-panel-title"><i class="bi bi-arrow-repeat me-1"></i>Atualizar status</h3>
-                            @if ($isEncerrada)
-                                <p class="surface-subtitle mb-0">
-                                    Esta OS está encerrada — o equipamento não está mais de posse da assistência, então a
-                                    mudança de status fica bloqueada aqui. Se a baixa foi feita por engano, use
-                                    "Cancelar baixa" no topo da página. Se o equipamento realmente retornou, abra uma
-                                    nova OS.
-                                </p>
-                            @else
-                                <p class="surface-subtitle">Ação enviada ao backend central com validação RBAC e catálogo de status.</p>
-                                <form method="post" action="{{ route('orders.status.update', $order['id']) }}" class="d-grid gap-3">
-                                    @csrf
-                                    <div>
-                                        <label for="status">Novo status</label>
-                                        <select name="status" id="status" class="form-select" required>
-                                            @foreach ($selectableStatuses as $status)
-                                                <option value="{{ $status['codigo'] }}" @selected(($order['status'] ?? '') === $status['codigo'])>
-                                                    {{ $status['nome'] }}{{ ($order['status'] ?? '') === $status['codigo'] ? ' (atual)' : '' }}
-                                                </option>
-                                            @endforeach
-                                        </select>
-                                        @if (count($selectableStatuses) <= 1)
-                                            <small class="os-hint">Não há transições de status disponíveis a partir da etapa atual.</small>
-                                        @endif
-                                    </div>
-                                    <div>
-                                        <label for="observacao">Observação da mudança</label>
-                                        <textarea name="observacao" id="observacao" class="form-control" rows="3" placeholder="Registre o motivo ou contexto da alteração">{{ old('observacao') }}</textarea>
-                                    </div>
-                                    <div class="d-flex justify-content-end">
-                                        <button type="submit" class="btn btn-primary">
-                                            <i class="bi bi-check2-circle me-2"></i>Salvar novo status
-                                        </button>
-                                    </div>
-                                </form>
-                            @endif
+                    <div class="os-panel-block">
+                        <h3 class="os-panel-title"><i class="bi bi-arrow-repeat me-1"></i>Status atual</h3>
+                        <p class="surface-subtitle">A mudança de status deve ser feita pelo fluxo apropriado da OS.</p>
+                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                            @include('layouts.partials.status-pill', [
+                                'label' => ($order['status_nome'] ?? '') !== '' ? $order['status_nome'] : 'Sem status',
+                                'color' => $order['status_cor'] ?? '#64748b',
+                            ])
                         </div>
-                    @endif
-
+                    </div>
                     <div class="os-panel-block">
                         <h3 class="os-panel-title"><i class="bi bi-chat-left-text me-1"></i>Relato do cliente</h3>
                         <p class="mb-0">{{ ($order['relato_cliente'] ?? '') !== '' ? $order['relato_cliente'] : 'Nenhum relato registrado.' }}</p>
@@ -371,6 +343,10 @@
                 {{-- Aba: Diagnóstico --}}
                 <div class="equipment-tab-panel" data-os-panel="diagnostico">
                     <div class="detail-list">
+                        <div class="detail-item">
+                            <strong>Defeito relatado pelo cliente</strong>
+                            <p>{{ ($order['relato_cliente'] ?? '') !== '' ? $order['relato_cliente'] : 'Nenhum relato registrado.' }}</p>
+                        </div>
                         <div class="detail-item">
                             <strong>Diagnóstico técnico</strong>
                             <p>{{ ($order['diagnostico_tecnico'] ?? '') !== '' ? $order['diagnostico_tecnico'] : 'Não informado' }}</p>

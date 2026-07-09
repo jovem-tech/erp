@@ -12,6 +12,7 @@
     const clientSearchUrl = String(config.clientSearchUrl || '').trim();
     const equipmentSearchUrl = String(config.equipmentSearchUrl || '').trim();
     const reportedDefectsSearchUrl = String(config.reportedDefectsSearchUrl || '').trim();
+    const entryChecklistModelUrlTemplate = String(config.entryChecklistModelUrlTemplate || '').trim();
 
     const summarySelectors = config.summarySelectors || {};
 
@@ -48,6 +49,16 @@
         summaryRelatoIcon: document.querySelector('[data-order-create-summary-relato-icon]'),
         summaryPhotos: document.querySelector(summarySelectors.photos || '[data-order-create-summary-photos]'),
         summaryPhotosIcon: document.querySelector('[data-order-create-summary-photos-icon]'),
+        summaryChecklist: document.querySelector(summarySelectors.checklist || '[data-order-create-summary-checklist]'),
+        summaryChecklistIcon: document.querySelector('[data-order-create-summary-checklist-icon]'),
+        entryChecklistRoot: document.querySelector('[data-order-entry-checklist]'),
+        entryChecklistContent: document.querySelector('[data-order-entry-checklist-content]'),
+        entryChecklistEmpty: document.querySelector('[data-order-entry-checklist-empty]'),
+        entryChecklistTitle: document.querySelector('[data-order-entry-checklist-title]'),
+        entryChecklistDescription: document.querySelector('[data-order-entry-checklist-description]'),
+        entryChecklistCount: document.querySelector('[data-order-entry-checklist-count]'),
+        entryChecklistItems: document.querySelector('[data-order-entry-checklist-items]'),
+        entryChecklistNotes: document.querySelector('[data-order-entry-checklist-notes]'),
         clientEditButton: document.querySelector('[data-order-create-client-edit-link]'),
         equipmentEditButton: document.querySelector('[data-order-create-equipment-edit-link]'),
         quickClientModal: document.getElementById('quickClientModal'),
@@ -58,11 +69,26 @@
         quickEquipmentFrame: document.querySelector('[data-order-create-equipment-frame]'),
     };
 
+    const parseJsonDataset = (value, fallback) => {
+        const raw = String(value || '').trim();
+        if (raw === '') {
+            return fallback;
+        }
+
+        try {
+            return JSON.parse(raw);
+        } catch (error) {
+            return fallback;
+        }
+    };
+
     const state = {
         clientCache: new Map(),
         equipmentCache: new Map(),
         photoEntries: [],
         existingPhotosCount: Math.max(0, Number(config.existingPhotosCount || 0)),
+        entryChecklistModel: parseJsonDataset(els.entryChecklistRoot?.dataset.checklistModel || '', null),
+        entryChecklistResponses: parseJsonDataset(els.entryChecklistRoot?.dataset.checklistResponses || '', []),
     };
 
     const select2Language = {
@@ -516,6 +542,140 @@
         iconEl.classList.toggle('bi-x-circle-fill', !isComplete);
     };
 
+    const checklistStatusLabels = {
+        ok: 'OK',
+        discrepancia: 'Discrepância',
+        nao_verificado: 'Não verificado',
+    };
+
+    const getChecklistResponseMap = () => {
+        const responses = Array.isArray(state.entryChecklistResponses) ? state.entryChecklistResponses : [];
+        const map = new Map();
+
+        responses.forEach((response) => {
+            const itemId = Number(response?.checklist_item_id || 0) || 0;
+            if (itemId > 0) {
+                map.set(itemId, {
+                    status: normalizeText(response?.status || 'ok') || 'ok',
+                    observacao: normalizeText(response?.observacao || ''),
+                });
+            }
+        });
+
+        return map;
+    };
+
+    const getChecklistSummary = () => {
+        const root = els.entryChecklistRoot;
+        const rows = root instanceof HTMLElement
+            ? Array.from(root.querySelectorAll('[data-order-entry-checklist-item]'))
+            : [];
+
+        if (rows.length === 0) {
+            return { total: 0, discrepancies: 0, unchecked: 0 };
+        }
+
+        let discrepancies = 0;
+        let unchecked = 0;
+
+        rows.forEach((row) => {
+            const select = row.querySelector('[data-order-entry-checklist-status]');
+            const status = select instanceof HTMLSelectElement ? select.value : '';
+            if (status === 'discrepancia') {
+                discrepancies++;
+            }
+            if (status === 'nao_verificado') {
+                unchecked++;
+            }
+        });
+
+        return { total: rows.length, discrepancies, unchecked };
+    };
+
+    const renderEntryChecklist = (model, responses = [], { resetNotes = false } = {}) => {
+        const items = Array.isArray(model?.itens) ? model.itens : [];
+        state.entryChecklistModel = items.length > 0 ? model : null;
+        state.entryChecklistResponses = Array.isArray(responses) ? responses : [];
+
+        if (!(els.entryChecklistRoot instanceof HTMLElement)
+            || !(els.entryChecklistContent instanceof HTMLElement)
+            || !(els.entryChecklistEmpty instanceof HTMLElement)
+            || !(els.entryChecklistItems instanceof HTMLElement)
+        ) {
+            updateSummary();
+            return;
+        }
+
+        if (items.length === 0) {
+            els.entryChecklistContent.classList.add('d-none');
+            els.entryChecklistEmpty.classList.remove('d-none');
+            els.entryChecklistItems.innerHTML = '';
+            if (resetNotes && els.entryChecklistNotes instanceof HTMLTextAreaElement) {
+                els.entryChecklistNotes.value = '';
+            }
+            updateSummary();
+            return;
+        }
+
+        const responseMap = getChecklistResponseMap();
+
+        setText(els.entryChecklistTitle, normalizeText(model?.nome || '') || 'Checklist de entrada');
+        setText(els.entryChecklistDescription, normalizeText(model?.descricao || '') || 'Conferência inicial do equipamento recebido.');
+        setText(els.entryChecklistCount, `${items.length} ${items.length === 1 ? 'item' : 'itens'}`);
+
+        els.entryChecklistItems.innerHTML = items.map((item, index) => {
+            const itemId = Number(item?.id || 0) || 0;
+            const response = responseMap.get(itemId) || {};
+            const selectedStatus = normalizeText(response.status || 'ok') || 'ok';
+            const observation = normalizeText(response.observacao || '');
+            const description = normalizeText(item?.descricao || `Item ${index + 1}`);
+
+            const options = Object.entries(checklistStatusLabels)
+                .map(([value, label]) => `<option value="${value}"${selectedStatus === value ? ' selected' : ''}>${escapeHtml(label)}</option>`)
+                .join('');
+
+            return `
+                <article class="order-entry-checklist-item" data-order-entry-checklist-item>
+                    <input type="hidden" name="checklist_entrada[respostas][${index}][checklist_item_id]" value="${itemId}">
+                    <div class="order-entry-checklist-item-body">
+                        <strong>${escapeHtml(description)}</strong>
+                        <small>Item ${index + 1}</small>
+                    </div>
+                    <div class="order-entry-checklist-item-controls">
+                        <select class="form-select form-select-sm" name="checklist_entrada[respostas][${index}][status]" data-order-entry-checklist-status>
+                            ${options}
+                        </select>
+                        <input
+                            type="text"
+                            class="form-control form-control-sm"
+                            name="checklist_entrada[respostas][${index}][observacao]"
+                            value="${escapeHtml(observation)}"
+                            maxlength="1000"
+                            placeholder="Observação do item"
+                            data-order-entry-checklist-observation
+                        >
+                    </div>
+                </article>
+            `;
+        }).join('');
+
+        els.entryChecklistContent.classList.remove('d-none');
+        els.entryChecklistEmpty.classList.add('d-none');
+
+        if (resetNotes && els.entryChecklistNotes instanceof HTMLTextAreaElement) {
+            els.entryChecklistNotes.value = '';
+        }
+
+        els.entryChecklistItems
+            .querySelectorAll('[data-order-entry-checklist-status], [data-order-entry-checklist-observation]')
+            .forEach((input) => {
+                input.addEventListener('input', updateSummary);
+                input.addEventListener('change', updateSummary);
+            });
+
+        updateSummary();
+    };
+
     const setRowTitle = (textEl, title) => {
         const row = textEl instanceof HTMLElement ? textEl.closest('.order-create-summary-row') : null;
 
@@ -797,6 +957,7 @@
         const observacoes = normalizeText(els.observacoesField instanceof HTMLTextAreaElement ? els.observacoesField.value : '');
         const previsao = normalizeText(els.previsaoField instanceof HTMLInputElement ? els.previsaoField.value : '');
         const photoCount = state.existingPhotosCount + state.photoEntries.length;
+        const checklist = getChecklistSummary();
         const isReady = client.id > 0 && equipment.id > 0 && relato.length >= 5;
 
         if (!config.lockStatus) {
@@ -820,6 +981,16 @@
         setSummaryIcon(els.summaryRelatoIcon, relato !== '');
         setText(els.summaryPhotos, String(photoCount));
         setSummaryIcon(els.summaryPhotosIcon, photoCount > 0);
+        if (checklist.total > 0) {
+            const checklistLabel = checklist.discrepancies > 0
+                ? `${checklist.total} itens · ${checklist.discrepancies} discrep.`
+                : `${checklist.total} itens`;
+            setText(els.summaryChecklist, checklistLabel);
+            setSummaryIcon(els.summaryChecklistIcon, checklist.unchecked === 0);
+        } else {
+            setText(els.summaryChecklist, 'Nao definido');
+            setSummaryIcon(els.summaryChecklistIcon, false);
+        }
         updateEquipmentEditAction(equipment);
         updateClientEditAction(client);
 
@@ -868,6 +1039,31 @@
         clearEquipmentSelection();
     };
 
+    const buildEntryChecklistModelUrl = (tipoId) => {
+        const numericTipoId = Number(tipoId || 0) || 0;
+        if (numericTipoId <= 0 || entryChecklistModelUrlTemplate === '') {
+            return '';
+        }
+
+        return entryChecklistModelUrlTemplate.replace('__TIPO_EQUIPAMENTO__', encodeURIComponent(String(numericTipoId)));
+    };
+
+    const loadEntryChecklistModel = async (tipoId) => {
+        const url = buildEntryChecklistModelUrl(tipoId);
+        if (url === '') {
+            renderEntryChecklist(null, [], { resetNotes: true });
+            return;
+        }
+
+        try {
+            const payload = await requestJson(url);
+            renderEntryChecklist(payload?.modelo || null, [], { resetNotes: true });
+        } catch (error) {
+            renderEntryChecklist(null, [], { resetNotes: true });
+            showToast('warning', 'Nao foi possivel carregar o checklist de entrada para este equipamento.');
+        }
+    };
+
     const syncClientSelectionFromSelect2 = (event) => {
         const payload = event?.params?.data || null;
         if (!payload || payload.loading) {
@@ -887,7 +1083,7 @@
         updateSummary();
     };
 
-    const handleEquipmentChange = () => {
+    const handleEquipmentChange = (options = {}) => {
         if (!(els.equipmentSelect instanceof HTMLSelectElement)) {
             return;
         }
@@ -911,6 +1107,14 @@
         setMainPhoto(currentEquipment.photoUrl || '', currentEquipment.name || 'Foto do equipamento selecionado');
         updateSummary();
         loadDefectSuggestions(currentEquipment.tipoId || 0);
+
+        const currentModelTypeId = Number(state.entryChecklistModel?.tipo_equipamento_id || 0) || 0;
+        if (options.preserveChecklist === true && currentModelTypeId === (currentEquipment.tipoId || 0)) {
+            renderEntryChecklist(state.entryChecklistModel, state.entryChecklistResponses);
+            return;
+        }
+
+        loadEntryChecklistModel(currentEquipment.tipoId || 0);
     };
 
     const groupDefectsByCategory = (defects) => {
@@ -1542,10 +1746,11 @@
             onSelectEvent(els.technicianSelect, 'change', updateSummary);
         }
 
+        renderEntryChecklist(state.entryChecklistModel, state.entryChecklistResponses);
         updateSummary();
 
         if (els.equipmentSelect instanceof HTMLSelectElement && els.equipmentSelect.value !== '') {
-            handleEquipmentChange();
+            handleEquipmentChange({ preserveChecklist: true });
         }
     };
 

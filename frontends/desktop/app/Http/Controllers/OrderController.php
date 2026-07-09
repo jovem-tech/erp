@@ -201,6 +201,7 @@ class OrderController extends DesktopController
         $technicians = $this->resolveTechnicianOptions();
         $selectedTechnician = $this->resolveSelectedTechnician($technicians, $selectedTechnicianId);
         $technicians = $this->ensureSelectedItemPresent($technicians, $selectedTechnicianId, $selectedTechnician);
+        $entryChecklistModel = $this->resolveEntryChecklistModelForEquipment($selectedEquipment);
 
         return view('orders.create', [
             'pageTitle' => 'Nova OS',
@@ -211,6 +212,7 @@ class OrderController extends DesktopController
             'selectedClient' => $selectedClient,
             'selectedEquipment' => $selectedEquipment,
             'selectedTechnician' => $selectedTechnician,
+            'entryChecklistModel' => $entryChecklistModel,
         ]);
     }
 
@@ -400,6 +402,28 @@ class OrderController extends DesktopController
         ]);
     }
 
+    public function entryChecklistModel(int $tipoEquipamento): JsonResponse
+    {
+        try {
+            $modelo = $this->orderService->entryChecklistModel($tipoEquipamento);
+        } catch (ApiAuthenticationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 401);
+        } catch (ApiAuthorizationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 403);
+        } catch (ApiRequestException $exception) {
+            return $this->jsonFailure(
+                $exception->getMessage(),
+                $exception->statusCode() > 0 ? $exception->statusCode() : 422,
+                $exception->details()
+            );
+        }
+
+        return response()->json([
+            'success' => true,
+            'modelo' => $modelo,
+        ]);
+    }
+
     public function searchClients(Request $request): JsonResponse
     {
         $validated = $request->validate([
@@ -500,6 +524,65 @@ class OrderController extends DesktopController
         return 0;
     }
 
+    /**
+     * @param array<string, mixed> $equipment
+     * @return array<string, mixed>
+     */
+    private function resolveEntryChecklistModelForEquipment(array $equipment): array
+    {
+        $tipoEquipamentoId = (int) ($equipment['tipo_id'] ?? data_get($equipment, 'type.id', 0));
+        if ($tipoEquipamentoId <= 0) {
+            return [];
+        }
+
+        try {
+            $modelo = $this->orderService->entryChecklistModel($tipoEquipamentoId);
+        } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
+            return [];
+        }
+
+        return is_array($modelo) ? $modelo : [];
+    }
+
+    /**
+     * @param array<string, mixed> $validated
+     * @return array<string, mixed>
+     */
+    private function buildEntryChecklistPayload(array $validated): array
+    {
+        $checklist = $validated['checklist_entrada'] ?? null;
+        if (! is_array($checklist)) {
+            return [];
+        }
+
+        $responses = [];
+        foreach ((array) ($checklist['respostas'] ?? []) as $response) {
+            if (! is_array($response)) {
+                continue;
+            }
+
+            $itemId = (int) ($response['checklist_item_id'] ?? 0);
+            if ($itemId <= 0) {
+                continue;
+            }
+
+            $responses[] = [
+                'checklist_item_id' => $itemId,
+                'status' => trim((string) ($response['status'] ?? 'nao_verificado')),
+                'observacao' => trim((string) ($response['observacao'] ?? '')),
+            ];
+        }
+
+        if ($responses === []) {
+            return [];
+        }
+
+        return [
+            'observacoes_estado' => trim((string) ($checklist['observacoes_estado'] ?? '')),
+            'respostas' => $responses,
+        ];
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
@@ -510,6 +593,12 @@ class OrderController extends DesktopController
             'tecnico_id' => ['nullable', 'integer', 'min:1'],
             'data_previsao' => ['nullable', 'date'],
             'observacoes_internas' => ['nullable', 'string'],
+            'checklist_entrada' => ['nullable', 'array'],
+            'checklist_entrada.observacoes_estado' => ['nullable', 'string', 'max:2000'],
+            'checklist_entrada.respostas' => ['nullable', 'array', 'max:100'],
+            'checklist_entrada.respostas.*.checklist_item_id' => ['required', 'integer', 'min:1'],
+            'checklist_entrada.respostas.*.status' => ['required', 'string', 'in:ok,discrepancia,nao_verificado'],
+            'checklist_entrada.respostas.*.observacao' => ['nullable', 'string', 'max:1000'],
             'fotos' => ['nullable', 'array', 'max:4'],
             'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
         ], [], [
@@ -531,6 +620,11 @@ class OrderController extends DesktopController
             'data_previsao' => $validated['data_previsao'] ?? null,
             'observacoes_internas' => trim((string) ($validated['observacoes_internas'] ?? '')),
         ], static fn ($value): bool => $value !== null && $value !== '');
+
+        $entryChecklistPayload = $this->buildEntryChecklistPayload($validated);
+        if ($entryChecklistPayload !== []) {
+            $payload['checklist_entrada'] = $entryChecklistPayload;
+        }
 
         $order = $this->orderService->create(
             $payload,
@@ -607,6 +701,10 @@ class OrderController extends DesktopController
         $technicians = $this->resolveTechnicianOptions();
         $selectedTechnician = $this->resolveSelectedTechnician($technicians, $selectedTechnicianId);
         $technicians = $this->ensureSelectedItemPresent($technicians, $selectedTechnicianId, $selectedTechnician);
+        $entryChecklistModel = data_get($orderData, 'checklist_modelo_entrada', []);
+        if (! is_array($entryChecklistModel) || $entryChecklistModel === []) {
+            $entryChecklistModel = $this->resolveEntryChecklistModelForEquipment($selectedEquipment);
+        }
 
         return view('orders.edit', [
             'pageTitle' => 'Editar OS',
@@ -618,6 +716,7 @@ class OrderController extends DesktopController
             'selectedClient' => $selectedClient,
             'selectedEquipment' => $selectedEquipment,
             'selectedTechnician' => $selectedTechnician,
+            'entryChecklistModel' => $entryChecklistModel,
         ]);
     }
 
@@ -631,6 +730,12 @@ class OrderController extends DesktopController
             'tecnico_id' => ['nullable', 'integer', 'min:1'],
             'data_previsao' => ['nullable', 'date'],
             'observacoes_internas' => ['nullable', 'string'],
+            'checklist_entrada' => ['nullable', 'array'],
+            'checklist_entrada.observacoes_estado' => ['nullable', 'string', 'max:2000'],
+            'checklist_entrada.respostas' => ['nullable', 'array', 'max:100'],
+            'checklist_entrada.respostas.*.checklist_item_id' => ['required', 'integer', 'min:1'],
+            'checklist_entrada.respostas.*.status' => ['required', 'string', 'in:ok,discrepancia,nao_verificado'],
+            'checklist_entrada.respostas.*.observacao' => ['nullable', 'string', 'max:1000'],
             'fotos' => ['nullable', 'array', 'max:4'],
             'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
         ], [], [
@@ -652,6 +757,11 @@ class OrderController extends DesktopController
             'data_previsao' => $validated['data_previsao'] ?? null,
             'observacoes_internas' => trim((string) ($validated['observacoes_internas'] ?? '')),
         ];
+
+        $entryChecklistPayload = $this->buildEntryChecklistPayload($validated);
+        if ($entryChecklistPayload !== []) {
+            $payload['checklist_entrada'] = $entryChecklistPayload;
+        }
 
         $this->orderService->update(
             $order,

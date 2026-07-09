@@ -36,6 +36,21 @@ class OrderService
     }
 
     /**
+     * @return array<string, mixed>|null
+     */
+    public function entryChecklistModel(int $tipoEquipamentoId): ?array
+    {
+        if ($tipoEquipamentoId <= 0) {
+            return null;
+        }
+
+        $response = $this->apiClient->get('/orders/checklists/entrada/modelos/' . $tipoEquipamentoId);
+        $modelo = $response['data']['modelo'] ?? null;
+
+        return is_array($modelo) ? $modelo : null;
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @param array<int, UploadedFile> $photos
      * @return array<string, mixed>

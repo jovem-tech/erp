@@ -134,6 +134,64 @@ class OrderFlowTest extends TestCase
         );
     }
 
+    public function test_create_order_persists_entry_checklist_and_detail_returns_responses(): void
+    {
+        [$manager, , , $clientId, , $equipmentId] = $this->seedAdminOrderActors();
+        [$modelId, $screenItemId, $chargerItemId] = $this->seedEntryChecklistModel(1);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $modelResponse = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->getJson('/api/v1/orders/checklists/entrada/modelos/1');
+
+        $modelResponse->assertOk()
+            ->assertJsonPath('data.modelo.id', $modelId)
+            ->assertJsonPath('data.modelo.itens.0.id', $screenItemId);
+
+        $createResponse = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'relato_cliente' => 'Notebook liga sem apresentar imagem.',
+                'garantia_dias' => 90,
+                'checklist_entrada' => [
+                    'observacoes_estado' => 'Fonte original acompanha o equipamento.',
+                    'respostas' => [
+                        [
+                            'checklist_item_id' => $screenItemId,
+                            'status' => 'ok',
+                            'observacao' => '',
+                        ],
+                        [
+                            'checklist_item_id' => $chargerItemId,
+                            'status' => 'discrepancia',
+                            'observacao' => 'Carregador com cabo exposto.',
+                        ],
+                    ],
+                ],
+            ]);
+
+        $createResponse->assertCreated()
+            ->assertJsonPath('data.order.checklist.total_itens', 2)
+            ->assertJsonPath('data.order.checklist.total_discrepancias', 1)
+            ->assertJsonPath('data.order.checklist.respostas.1.status', 'discrepancia')
+            ->assertJsonPath('data.order.checklist_modelo_entrada.id', $modelId);
+
+        $orderId = (int) $createResponse->json('data.order.id');
+
+        $this->assertDatabaseHas('checklist_execucoes', [
+            'os_id' => $orderId,
+            'checklist_modelo_id' => $modelId,
+            'total_itens' => 2,
+            'total_discrepancias' => 1,
+        ]);
+
+        $this->assertDatabaseHas('checklist_respostas', [
+            'checklist_item_id' => $chargerItemId,
+            'status' => 'discrepancia',
+            'observacao' => 'Carregador com cabo exposto.',
+        ]);
+    }
+
     public function test_index_open_status_scope_excludes_closure_and_delivered_pending_payment_orders(): void
     {
         [$manager, $techA, $techB, $clientA, $clientB, $equipmentA, $equipmentB] = $this->seedAdminOrderActors();
@@ -1436,6 +1494,52 @@ class OrderFlowTest extends TestCase
         ]);
 
         return [$manager, $techA, $techB, $clientA, $clientB, $equipmentA, $equipmentB];
+    }
+
+    /**
+     * @return array{0:int,1:int,2:int}
+     */
+    private function seedEntryChecklistModel(int $equipmentTypeId): array
+    {
+        $typeId = (int) DB::table('checklist_tipos')->insertGetId([
+            'codigo' => 'entrada',
+            'nome' => 'Checklist de Entrada',
+            'descricao' => 'Conferência de recepção.',
+            'ativo' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $modelId = (int) DB::table('checklist_modelos')->insertGetId([
+            'checklist_tipo_id' => $typeId,
+            'tipo_equipamento_id' => $equipmentTypeId,
+            'nome' => 'Checklist notebook',
+            'descricao' => 'Modelo de teste.',
+            'ordem' => 1,
+            'ativo' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $screenItemId = (int) DB::table('checklist_itens')->insertGetId([
+            'checklist_modelo_id' => $modelId,
+            'descricao' => 'Tela sem trincas aparentes',
+            'ordem' => 1,
+            'ativo' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $chargerItemId = (int) DB::table('checklist_itens')->insertGetId([
+            'checklist_modelo_id' => $modelId,
+            'descricao' => 'Carregador acompanha equipamento',
+            'ordem' => 2,
+            'ativo' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return [$modelId, $screenItemId, $chargerItemId];
     }
 
     /**

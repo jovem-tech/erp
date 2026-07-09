@@ -58,6 +58,21 @@ class OrderController extends BaseApiController
         );
     }
 
+    public function entryChecklistModel(Request $request, int $tipoEquipamento): JsonResponse
+    {
+        $this->authorize('os:visualizar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        return $this->success(
+            ['modelo' => $this->orderWorkflowService->entryChecklistModelForEquipmentType($tipoEquipamento)],
+            request: $request
+        );
+    }
+
     public function show(Request $request, int $order): JsonResponse
     {
         $this->authorize('os:visualizar');
@@ -133,6 +148,27 @@ class OrderController extends BaseApiController
                 null,
                 request: $request
             ),
+            'entry_checklist_model_not_found' => $this->error(
+                'Nao existe modelo ativo de checklist de entrada para o tipo de equipamento informado.',
+                422,
+                'ORDER_ENTRY_CHECKLIST_MODEL_NOT_FOUND',
+                null,
+                request: $request
+            ),
+            'entry_checklist_model_empty' => $this->error(
+                'O modelo de checklist de entrada nao possui itens ativos.',
+                422,
+                'ORDER_ENTRY_CHECKLIST_MODEL_EMPTY',
+                null,
+                request: $request
+            ),
+            'entry_checklist_invalid_items', 'entry_checklist_invalid_payload' => $this->error(
+                'O checklist de entrada contem itens invalidos para o modelo vigente.',
+                422,
+                'ORDER_ENTRY_CHECKLIST_INVALID',
+                null,
+                request: $request
+            ),
             default => $this->error(
                 'Falha ao criar a OS.',
                 500,
@@ -189,6 +225,27 @@ class OrderController extends BaseApiController
                 'O status informado não é válido para o catálogo atual.',
                 422,
                 'ORDER_STATUS_INVALID',
+                null,
+                request: $request
+            ),
+            'entry_checklist_model_not_found' => $this->error(
+                'Nao existe modelo ativo de checklist de entrada para o tipo de equipamento informado.',
+                422,
+                'ORDER_ENTRY_CHECKLIST_MODEL_NOT_FOUND',
+                null,
+                request: $request
+            ),
+            'entry_checklist_model_empty' => $this->error(
+                'O modelo de checklist de entrada nao possui itens ativos.',
+                422,
+                'ORDER_ENTRY_CHECKLIST_MODEL_EMPTY',
+                null,
+                request: $request
+            ),
+            'entry_checklist_invalid_items', 'entry_checklist_invalid_payload' => $this->error(
+                'O checklist de entrada contem itens invalidos para o modelo vigente.',
+                422,
+                'ORDER_ENTRY_CHECKLIST_INVALID',
                 null,
                 request: $request
             ),

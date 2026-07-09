@@ -3,6 +3,8 @@
 namespace App\Services\Orders;
 
 use App\Models\Budget;
+use App\Models\ChecklistModelo;
+use App\Models\ChecklistTipo;
 use App\Models\Client;
 use App\Models\Equipment;
 use App\Models\Financeiro;
@@ -31,6 +33,17 @@ use Throwable;
 
 class OrderWorkflowService
 {
+    private const ENTRY_CHECKLIST_TYPE_CODE = 'entrada';
+
+    /**
+     * @var array<int, string>
+     */
+    private const ENTRY_CHECKLIST_RESPONSE_STATUSES = [
+        'ok',
+        'discrepancia',
+        'nao_verificado',
+    ];
+
     public function __construct(
         private readonly OrderNumberService $orderNumberService,
         private readonly OsMargemService $osMargemService,
@@ -818,7 +831,17 @@ class OrderWorkflowService
         $payload['data_abertura'] = $this->normalizeDateTimeValue($attributes['data_abertura'] ?? null) ?? $now->copy()->toDateTimeString();
         $payload['data_entrada'] = $this->normalizeDateTimeValue($attributes['data_entrada'] ?? null) ?? $now->copy()->toDateTimeString();
 
-        $order = DB::transaction(function () use ($payload, $actor, $statusCode, $estadoFluxo, $now): Order {
+        $entryChecklistPlan = null;
+        if ($this->hasEntryChecklistPayload($attributes)) {
+            $entryChecklistPlan = $this->buildEntryChecklistSyncPlan($equipmentId, (array) $attributes['checklist_entrada']);
+            if (($entryChecklistPlan['result'] ?? 'error') !== 'ok') {
+                return [
+                    'result' => (string) ($entryChecklistPlan['result'] ?? 'entry_checklist_invalid'),
+                ];
+            }
+        }
+
+        $order = DB::transaction(function () use ($payload, $actor, $statusCode, $estadoFluxo, $now, $entryChecklistPlan): Order {
             /** @var Order $order */
             $order = Order::query()->create($payload);
 
@@ -831,6 +854,10 @@ class OrderWorkflowService
                 'OS criada pelo backend central.',
                 $now
             );
+
+            if (is_array($entryChecklistPlan)) {
+                $this->applyEntryChecklistSyncPlan((int) $order->id, $entryChecklistPlan, $now);
+            }
 
             return $order;
         });
@@ -913,6 +940,16 @@ class OrderWorkflowService
         $statusChanged = array_key_exists('status', $payload);
         $previousStatus = trim((string) ($order->status ?? ''));
         $estadoFluxo = trim((string) ($order->estado_fluxo ?? ''));
+        $entryChecklistPlan = null;
+
+        if ($this->hasEntryChecklistPayload($attributes)) {
+            $entryChecklistPlan = $this->buildEntryChecklistSyncPlan($equipmentId, (array) $attributes['checklist_entrada']);
+            if (($entryChecklistPlan['result'] ?? 'error') !== 'ok') {
+                return [
+                    'result' => (string) ($entryChecklistPlan['result'] ?? 'entry_checklist_invalid'),
+                ];
+            }
+        }
 
         if ($statusChanged) {
             $statusRow = OrderStatus::activeByCode((string) $payload['status']);
@@ -949,11 +986,13 @@ class OrderWorkflowService
             $estadoFluxo = (string) ($payload['estado_fluxo'] ?? $estadoFluxo);
         }
 
-        if ($payload !== []) {
-            DB::transaction(function () use ($orderId, $payload, $statusChanged, $previousStatus, $actor, $estadoFluxo): void {
+        if ($payload !== [] || is_array($entryChecklistPlan)) {
+            DB::transaction(function () use ($orderId, $payload, $statusChanged, $previousStatus, $actor, $estadoFluxo, $entryChecklistPlan): void {
+                $now = Carbon::now();
+
                 Order::query()
                     ->whereKey($orderId)
-                    ->update(array_merge($payload, ['updated_at' => Carbon::now()]));
+                    ->update(array_merge($payload, ['updated_at' => $now]));
 
                 if ($statusChanged) {
                     $this->createStatusHistory(
@@ -963,8 +1002,12 @@ class OrderWorkflowService
                         $estadoFluxo,
                         $actor,
                         'OS atualizada pelo backend central.',
-                        Carbon::now()
+                        $now
                     );
+                }
+
+                if (is_array($entryChecklistPlan)) {
+                    $this->applyEntryChecklistSyncPlan($orderId, $entryChecklistPlan, $now);
                 }
             });
         }
@@ -1343,6 +1386,7 @@ class OrderWorkflowService
             'orcamento' => $this->mapLinkedBudget((int) ($order->id ?? 0)),
             'custo_auditoria' => $custoAuditoria,
             'checklist' => $this->mapEntryChecklist((int) ($order->id ?? 0)),
+            'checklist_modelo_entrada' => $this->entryChecklistModelForEquipmentType((int) ($order->equipment?->tipo_id ?? 0)),
         ];
     }
 
@@ -1696,6 +1740,22 @@ class OrderWorkflowService
     }
 
     /**
+     * Modelo operacional do checklist de entrada por tipo de equipamento.
+     *
+     * Este método é deliberadamente protegido pelo módulo de OS nos controllers:
+     * o usuário operacional precisa consultar o checklist vigente para abrir/editar
+     * uma OS, mas não recebe permissão para configurar o modelo em Conhecimento.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function entryChecklistModelForEquipmentType(int $equipmentTypeId): ?array
+    {
+        $modelo = $this->resolveEntryChecklistModelForEquipmentType($equipmentTypeId);
+
+        return $modelo instanceof ChecklistModelo ? $this->mapEntryChecklistModel($modelo) : null;
+    }
+
+    /**
      * Checklist de entrada (execução mais recente) da OS.
      *
      * @return array<string, mixed>|null
@@ -1717,12 +1777,99 @@ class OrderWorkflowService
 
         return [
             'id' => (int) $execution->id,
+            'checklist_tipo_id' => (int) ($execution->checklist_tipo_id ?? 0),
+            'checklist_modelo_id' => (int) ($execution->checklist_modelo_id ?? 0),
+            'tipo_equipamento_id' => (int) ($execution->tipo_equipamento_id ?? 0),
             'status' => (string) ($execution->status ?? ''),
             'total_itens' => (int) ($execution->total_itens ?? 0),
             'total_discrepancias' => (int) ($execution->total_discrepancias ?? 0),
             'resumo_texto' => trim((string) ($execution->resumo_texto ?? '')),
+            'observacoes_estado' => trim((string) ($execution->observacoes_estado ?? '')),
             'concluido_em' => $this->formatDateTime($execution->concluido_em ?? null),
+            'respostas' => $this->mapEntryChecklistResponses((int) $execution->id),
         ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function mapEntryChecklistResponses(int $executionId): array
+    {
+        if ($executionId <= 0 || ! Schema::hasTable('checklist_respostas')) {
+            return [];
+        }
+
+        return DB::table('checklist_respostas')
+            ->where('checklist_execucao_id', $executionId)
+            ->orderBy('ordem')
+            ->orderBy('id')
+            ->get()
+            ->map(static fn (object $response): array => [
+                'id' => (int) ($response->id ?? 0),
+                'checklist_item_id' => (int) ($response->checklist_item_id ?? 0),
+                'descricao_item' => trim((string) ($response->descricao_item ?? '')),
+                'ordem' => (int) ($response->ordem ?? 0),
+                'status' => trim((string) ($response->status ?? '')),
+                'observacao' => trim((string) ($response->observacao ?? '')),
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function mapEntryChecklistModel(ChecklistModelo $modelo): array
+    {
+        return [
+            'id' => (int) ($modelo->id ?? 0),
+            'checklist_tipo_id' => (int) ($modelo->checklist_tipo_id ?? 0),
+            'tipo_equipamento_id' => (int) ($modelo->tipo_equipamento_id ?? 0),
+            'nome' => trim((string) ($modelo->nome ?? '')),
+            'descricao' => trim((string) ($modelo->descricao ?? '')),
+            'itens' => $modelo->itens
+                ->filter(static fn ($item): bool => (bool) ($item->ativo ?? true))
+                ->map(static fn ($item): array => [
+                    'id' => (int) ($item->id ?? 0),
+                    'descricao' => trim((string) ($item->descricao ?? '')),
+                    'ordem' => (int) ($item->ordem ?? 0),
+                ])
+                ->values()
+                ->all(),
+        ];
+    }
+
+    private function resolveEntryChecklistModelForEquipmentType(int $equipmentTypeId): ?ChecklistModelo
+    {
+        if ($equipmentTypeId <= 0
+            || ! Schema::hasTable('checklist_tipos')
+            || ! Schema::hasTable('checklist_modelos')
+            || ! Schema::hasTable('checklist_itens')
+        ) {
+            return null;
+        }
+
+        $checklistType = ChecklistTipo::query()
+            ->where('codigo', self::ENTRY_CHECKLIST_TYPE_CODE)
+            ->where('ativo', 1)
+            ->first();
+
+        if (! $checklistType instanceof ChecklistTipo) {
+            return null;
+        }
+
+        return ChecklistModelo::query()
+            ->with(['itens' => static function ($query): void {
+                $query
+                    ->where('ativo', 1)
+                    ->orderBy('ordem')
+                    ->orderBy('id');
+            }])
+            ->where('checklist_tipo_id', (int) $checklistType->id)
+            ->where('tipo_equipamento_id', $equipmentTypeId)
+            ->where('ativo', 1)
+            ->orderBy('ordem')
+            ->orderBy('id')
+            ->first();
     }
 
     private function humanizeBudgetStatus(string $status): string
@@ -2321,6 +2468,188 @@ class OrderWorkflowService
             'txt' => 'text/plain',
             default => 'application/octet-stream',
         };
+    }
+
+    /**
+     * @param array<string, mixed> $attributes
+     */
+    private function hasEntryChecklistPayload(array $attributes): bool
+    {
+        return array_key_exists('checklist_entrada', $attributes)
+            && is_array($attributes['checklist_entrada']);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    private function buildEntryChecklistSyncPlan(int $equipmentId, array $payload): array
+    {
+        $equipmentTypeId = $equipmentId > 0
+            ? (int) Equipment::query()->whereKey($equipmentId)->value('tipo_id')
+            : 0;
+
+        $modelo = $this->resolveEntryChecklistModelForEquipmentType($equipmentTypeId);
+        if (! $modelo instanceof ChecklistModelo) {
+            return ['result' => 'entry_checklist_model_not_found'];
+        }
+
+        $items = $modelo->itens
+            ->filter(static fn ($item): bool => (bool) ($item->ativo ?? true) && trim((string) ($item->descricao ?? '')) !== '')
+            ->values();
+
+        if ($items->isEmpty()) {
+            return ['result' => 'entry_checklist_model_empty'];
+        }
+
+        $responsesByItemId = [];
+        foreach ((array) ($payload['respostas'] ?? []) as $response) {
+            if (! is_array($response)) {
+                return ['result' => 'entry_checklist_invalid_payload'];
+            }
+
+            $itemId = (int) ($response['checklist_item_id'] ?? 0);
+            $status = trim((string) ($response['status'] ?? 'nao_verificado'));
+
+            if ($itemId <= 0 || ! in_array($status, self::ENTRY_CHECKLIST_RESPONSE_STATUSES, true)) {
+                return ['result' => 'entry_checklist_invalid_payload'];
+            }
+
+            $responsesByItemId[$itemId] = [
+                'status' => $status,
+                'observacao' => trim((string) ($response['observacao'] ?? '')),
+            ];
+        }
+
+        $rows = [];
+        $totalDiscrepancias = 0;
+
+        foreach ($items as $item) {
+            $itemId = (int) ($item->id ?? 0);
+            $incoming = $responsesByItemId[$itemId] ?? null;
+
+            if ($incoming === null && array_key_exists($itemId, $responsesByItemId) === false) {
+                $incoming = [
+                    'status' => 'nao_verificado',
+                    'observacao' => '',
+                ];
+            }
+
+            if (! array_key_exists($itemId, $responsesByItemId) && $responsesByItemId !== []) {
+                // Item ausente no payload: mantém o checklist completo, mas
+                // marca explicitamente que não houve conferência do item.
+                $incoming = [
+                    'status' => 'nao_verificado',
+                    'observacao' => '',
+                ];
+            }
+
+            $status = (string) ($incoming['status'] ?? 'nao_verificado');
+            if (! in_array($status, self::ENTRY_CHECKLIST_RESPONSE_STATUSES, true)) {
+                return ['result' => 'entry_checklist_invalid_payload'];
+            }
+
+            if ($status === 'discrepancia') {
+                $totalDiscrepancias++;
+            }
+
+            $rows[] = [
+                'checklist_item_id' => $itemId,
+                'descricao_item' => trim((string) ($item->descricao ?? '')),
+                'ordem' => (int) ($item->ordem ?? 0),
+                'status' => $status,
+                'observacao' => mb_substr((string) ($incoming['observacao'] ?? ''), 0, 1000),
+            ];
+        }
+
+        $invalidItemIds = array_diff(
+            array_keys($responsesByItemId),
+            $items->map(static fn ($item): int => (int) ($item->id ?? 0))->all()
+        );
+
+        if ($invalidItemIds !== []) {
+            return ['result' => 'entry_checklist_invalid_items'];
+        }
+
+        return [
+            'result' => 'ok',
+            'checklist_tipo_id' => (int) ($modelo->checklist_tipo_id ?? 0),
+            'checklist_modelo_id' => (int) ($modelo->id ?? 0),
+            'tipo_equipamento_id' => $equipmentTypeId,
+            'status' => 'preenchido',
+            'total_itens' => count($rows),
+            'total_discrepancias' => $totalDiscrepancias,
+            'resumo_texto' => $totalDiscrepancias > 0
+                ? $totalDiscrepancias . ' discrepância(s) registrada(s).'
+                : 'Nenhuma discrepancia registrada.',
+            'observacoes_estado' => mb_substr(trim((string) ($payload['observacoes_estado'] ?? '')), 0, 2000),
+            'respostas' => $rows,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $plan
+     */
+    private function applyEntryChecklistSyncPlan(int $orderId, array $plan, Carbon $now): void
+    {
+        if ($orderId <= 0 || ! Schema::hasTable('checklist_execucoes') || ! Schema::hasTable('checklist_respostas')) {
+            return;
+        }
+
+        $executionData = [
+            'os_id' => $orderId,
+            'checklist_tipo_id' => (int) $plan['checklist_tipo_id'],
+            'checklist_modelo_id' => (int) $plan['checklist_modelo_id'],
+            'tipo_equipamento_id' => (int) $plan['tipo_equipamento_id'],
+            'status' => (string) $plan['status'],
+            'total_itens' => (int) $plan['total_itens'],
+            'total_discrepancias' => (int) $plan['total_discrepancias'],
+            'resumo_texto' => (string) $plan['resumo_texto'],
+            'observacoes_estado' => (string) $plan['observacoes_estado'],
+            'concluido_em' => $now,
+            'updated_at' => $now,
+        ];
+
+        $executionId = (int) DB::table('checklist_execucoes')
+            ->where('os_id', $orderId)
+            ->where('checklist_tipo_id', (int) $plan['checklist_tipo_id'])
+            ->orderByDesc('id')
+            ->value('id');
+
+        if ($executionId > 0) {
+            DB::table('checklist_execucoes')
+                ->where('id', $executionId)
+                ->update($executionData);
+        } else {
+            $executionData['created_at'] = $now;
+            $executionId = (int) DB::table('checklist_execucoes')->insertGetId($executionData);
+        }
+
+        DB::table('checklist_respostas')
+            ->where('checklist_execucao_id', $executionId)
+            ->delete();
+
+        $responses = [];
+        foreach ((array) $plan['respostas'] as $response) {
+            if (! is_array($response)) {
+                continue;
+            }
+
+            $responses[] = [
+                'checklist_execucao_id' => $executionId,
+                'checklist_item_id' => (int) $response['checklist_item_id'],
+                'descricao_item' => (string) $response['descricao_item'],
+                'ordem' => (int) $response['ordem'],
+                'status' => (string) $response['status'],
+                'observacao' => (string) $response['observacao'],
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        if ($responses !== []) {
+            DB::table('checklist_respostas')->insert($responses);
+        }
     }
 
     /**

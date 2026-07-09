@@ -25,6 +25,11 @@ trait BuildsLegacyErpSchema
             'usuarios',
             'grupos',
             'mobile_notifications',
+            'checklist_respostas',
+            'checklist_execucoes',
+            'checklist_itens',
+            'checklist_modelos',
+            'checklist_tipos',
             'os_documentos',
             'os_fotos',
             'os_status_historico',
@@ -88,6 +93,7 @@ trait BuildsLegacyErpSchema
         $this->createOrderPhotosTable();
         $this->createOrderDocumentsTable();
         $this->createOrderItemsTable();
+        $this->createChecklistTables();
         $this->createBudgetTables();
         $this->seedEquipmentCatalog();
         $this->seedPrecificacaoCatalog();
@@ -123,6 +129,7 @@ trait BuildsLegacyErpSchema
             ['id' => 11, 'nome' => 'Financeiro', 'slug' => 'financeiro', 'icone' => 'bi-cash-coin', 'ordem_menu' => 45, 'ativo' => 1],
             ['id' => 12, 'nome' => 'Atendimento WhatsApp', 'slug' => 'atendimento_whatsapp', 'icone' => 'bi-chat-dots', 'ordem_menu' => 70, 'ativo' => 1],
             ['id' => 13, 'nome' => 'Precificação', 'slug' => 'precificacao', 'icone' => 'bi-calculator', 'ordem_menu' => 46, 'ativo' => 1],
+            ['id' => 14, 'nome' => 'Conhecimento', 'slug' => 'conhecimento', 'icone' => 'bi-journal-bookmark-fill', 'ordem_menu' => 75, 'ativo' => 1],
         ]);
 
         DB::table('permissoes')->insert([
@@ -1173,6 +1180,81 @@ trait BuildsLegacyErpSchema
             $table->index('os_id');
             $table->unique(['legacy_origem', 'legacy_tabela', 'legacy_id'], 'ux_os_itens_legacy_ref');
             $table->foreign('os_id')->references('id')->on('os')->cascadeOnDelete();
+        });
+    }
+
+    private function createChecklistTables(): void
+    {
+        Schema::create('checklist_tipos', function (Blueprint $table): void {
+            $table->id();
+            $table->string('codigo', 60)->unique();
+            $table->string('nome', 120);
+            $table->text('descricao')->nullable();
+            $table->boolean('ativo')->default(true);
+            $table->timestamps();
+        });
+
+        Schema::create('checklist_modelos', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('checklist_tipo_id');
+            $table->unsignedBigInteger('tipo_equipamento_id');
+            $table->string('nome', 160);
+            $table->text('descricao')->nullable();
+            $table->integer('ordem')->default(0);
+            $table->boolean('ativo')->default(true);
+            $table->timestamps();
+
+            $table->index(['checklist_tipo_id', 'tipo_equipamento_id', 'ativo'], 'idx_checklist_modelos_lookup');
+            $table->foreign('checklist_tipo_id')->references('id')->on('checklist_tipos')->cascadeOnDelete();
+            $table->foreign('tipo_equipamento_id')->references('id')->on('equipamentos_tipos')->cascadeOnDelete();
+        });
+
+        Schema::create('checklist_itens', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('checklist_modelo_id');
+            $table->string('descricao', 255);
+            $table->integer('ordem')->default(0);
+            $table->boolean('ativo')->default(true);
+            $table->timestamps();
+
+            $table->index(['checklist_modelo_id', 'ativo', 'ordem'], 'idx_checklist_itens_modelo');
+            $table->foreign('checklist_modelo_id')->references('id')->on('checklist_modelos')->cascadeOnDelete();
+        });
+
+        Schema::create('checklist_execucoes', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('os_id');
+            $table->unsignedBigInteger('checklist_tipo_id');
+            $table->unsignedBigInteger('checklist_modelo_id');
+            $table->unsignedBigInteger('tipo_equipamento_id');
+            $table->string('status', 40)->default('rascunho');
+            $table->integer('total_itens')->default(0);
+            $table->integer('total_discrepancias')->default(0);
+            $table->text('resumo_texto')->nullable();
+            $table->text('observacoes_estado')->nullable();
+            $table->dateTime('concluido_em')->nullable();
+            $table->timestamps();
+
+            $table->index(['os_id', 'checklist_tipo_id'], 'idx_checklist_execucoes_os_tipo');
+            $table->foreign('os_id')->references('id')->on('os')->cascadeOnDelete();
+            $table->foreign('checklist_tipo_id')->references('id')->on('checklist_tipos')->cascadeOnDelete();
+            $table->foreign('checklist_modelo_id')->references('id')->on('checklist_modelos')->cascadeOnDelete();
+            $table->foreign('tipo_equipamento_id')->references('id')->on('equipamentos_tipos')->cascadeOnDelete();
+        });
+
+        Schema::create('checklist_respostas', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('checklist_execucao_id');
+            $table->unsignedBigInteger('checklist_item_id');
+            $table->string('descricao_item', 255);
+            $table->integer('ordem')->default(0);
+            $table->string('status', 40)->default('nao_verificado');
+            $table->text('observacao')->nullable();
+            $table->timestamps();
+
+            $table->index(['checklist_execucao_id', 'ordem'], 'idx_checklist_respostas_execucao');
+            $table->foreign('checklist_execucao_id')->references('id')->on('checklist_execucoes')->cascadeOnDelete();
+            $table->foreign('checklist_item_id')->references('id')->on('checklist_itens')->cascadeOnDelete();
         });
     }
 
