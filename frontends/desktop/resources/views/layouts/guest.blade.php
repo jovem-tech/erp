@@ -1,4 +1,5 @@
 @php
+    $guestBrandingName = trim((string) ($branding['name'] ?? 'Sistema ERP'));
     $desktopFlash = [
         'success' => session('success'),
         'error' => session('error'),
@@ -12,7 +13,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>{{ $pageTitle ?? 'Acesso' }} | Sistema ERP</title>
+    <title>{{ $pageTitle ?? 'Acesso' }} | {{ $guestBrandingName !== '' ? $guestBrandingName : 'Sistema ERP' }}</title>
     <link href="{{ asset('assets/fonts/plus-jakarta-sans/plus-jakarta-sans.css') }}" rel="stylesheet">
     <link href="{{ asset('assets/libs/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ asset('assets/libs/bootstrap-icons/bootstrap-icons.css') }}" rel="stylesheet">

@@ -34,6 +34,14 @@ class ConfigurationController extends BaseApiController
         );
     }
 
+    public function publicCompanyBranding(Request $request): JsonResponse
+    {
+        return $this->success(
+            $this->companyProfileService->publicBranding(),
+            request: $request
+        );
+    }
+
     public function updateCompanyProfile(UpdateCompanyProfileRequest $request): JsonResponse
     {
         $this->authorize('configuracoes:editar');
@@ -56,6 +64,25 @@ class ConfigurationController extends BaseApiController
             return $this->unauthenticatedResponse($request);
         }
 
+        $file = $this->companyProfileService->resolveLogoFile();
+        if ($file === null) {
+            return $this->error(
+                'Logo da empresa nao configurada.',
+                404,
+                'COMPANY_LOGO_NOT_FOUND',
+                null,
+                request: $request
+            );
+        }
+
+        return response()->file($file['absolute_path'], [
+            'Content-Type' => $file['mime_type'],
+            'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
+        ]);
+    }
+
+    public function publicCompanyLogo(Request $request): Response|JsonResponse
+    {
         $file = $this->companyProfileService->resolveLogoFile();
         if ($file === null) {
             return $this->error(

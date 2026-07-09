@@ -1,5 +1,23 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v3.20.0.0 — 2026-07-09 08:22
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** modernizaçao e alinhamento do painel de login
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/ConfigurationController.php,backend/app/Http/Requests/Api/V1/UpdateCompanyProfileRequest.php,backend/app/Services/Company/CompanyProfileService.php,backend/routes/api.php,backend/tests/Feature/Api/V1/ConfigurationIntegrationsTest.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/app/Http/Controllers/AuthController.php,frontends/desktop/app/Http/Controllers/ConfigurationController.php,frontends/desktop/app/Services/ApiClient.php,frontends/desktop/app/Services/CompanyProfileService.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/resources/views/auth/login.blade.php,frontends/desktop/resources/views/configurations/system.blade.php,frontends/desktop/resources/views/layouts/guest.blade.php,frontends/desktop/routes/web.php
+
+## v3.19.1.2 — 2026-07-09 07:46
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Ajusta login para azul institucional e layout mobile enxuto
+- **Arquivos:** frontends/desktop/resources/views/auth/login.blade.php,frontends/desktop/public/assets/css/desktop.css
+
+## v3.19.1.1 — 2026-07-09 07:36
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Moderniza tela de login com branding da assistência técnica
+- **Arquivos:** backend/app/Services/Company/CompanyProfileService.php,backend/app/Http/Controllers/Api/V1/ConfigurationController.php,backend/app/Http/Requests/Api/V1/UpdateCompanyProfileRequest.php,backend/routes/api.php,backend/tests/Feature/Api/V1/ConfigurationIntegrationsTest.php,frontends/desktop/app/Http/Controllers/AuthController.php,frontends/desktop/app/Http/Controllers/ConfigurationController.php,frontends/desktop/app/Services/ApiClient.php,frontends/desktop/app/Services/CompanyProfileService.php,frontends/desktop/resources/views/auth/login.blade.php,frontends/desktop/resources/views/layouts/guest.blade.php,frontends/desktop/resources/views/configurations/system.blade.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/routes/web.php
+
 ## v3.19.1.0 — 2026-07-09 04:23
 - **Tier:** patch
 - **Autor/Agente:** Codex

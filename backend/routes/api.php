@@ -45,6 +45,12 @@ Route::prefix('v1')->group(function (): void {
     Route::post('auth/password/reset', [AuthController::class, 'resetPassword'])->middleware('throttle:10,1');
     Route::post('collector/snapshots', [EquipmentCollectorController::class, 'storeSnapshot'])
         ->middleware('throttle:20,1');
+    Route::get('configuracoes/empresa/publico', [ConfigurationController::class, 'publicCompanyBranding'])
+        ->middleware('throttle:60,1')
+        ->name('api.v1.configuracoes.empresa.publico');
+    Route::get('configuracoes/empresa/logo-publica', [ConfigurationController::class, 'publicCompanyLogo'])
+        ->middleware('throttle:60,1')
+        ->name('api.v1.configuracoes.empresa.logo_publica');
 
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('auth/me', [AuthController::class, 'me']);

@@ -42,6 +42,9 @@ Route::get('/', function () {
     return redirect()->route(DesktopNavigation::firstAllowedRouteName());
 });
 
+Route::get('/branding/empresa/logo', [ConfigurationController::class, 'publicCompanyLogo'])
+    ->name('branding.company.logo');
+
 Route::middleware('guest')->group(function (): void {
     Route::get('/login', [AuthController::class, 'create'])->name('login');
     Route::post('/login', [AuthController::class, 'store'])->name('login.store');

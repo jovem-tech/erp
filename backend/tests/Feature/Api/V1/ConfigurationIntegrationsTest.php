@@ -28,6 +28,33 @@ class ConfigurationIntegrationsTest extends TestCase
         ]);
     }
 
+    public function test_public_company_branding_can_be_loaded_without_authentication(): void
+    {
+        DB::table('configuracoes')->insert([
+            [
+                'chave' => 'sistema_nome',
+                'valor' => 'Jovem Tech Assistência',
+                'tipo' => 'texto',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'chave' => 'empresa_email',
+                'valor' => 'financeiro@example.com',
+                'tipo' => 'texto',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $response = $this->getJson('/api/v1/configuracoes/empresa/publico');
+
+        $response->assertOk()
+            ->assertJsonPath('data.sistema_nome', 'Jovem Tech Assistência')
+            ->assertJsonPath('data.logo.exists', false)
+            ->assertJsonMissingPath('data.settings.empresa_email');
+    }
+
     public function test_integrations_payload_can_be_loaded_and_saved(): void
     {
         $admin = $this->createUserRecord([
