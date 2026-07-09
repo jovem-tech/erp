@@ -88,3 +88,26 @@ Uso:
 ```
 
 O script não decide sozinho — ele **sugere**. A decisão final e o registro em `CHANGELOG.md` continuam sendo responsabilidade do agente/dev no momento do commit.
+
+---
+
+## 5. Versionar sem IA (uso direto pelo usuário)
+
+`scripts/versionar.sh` (2026-07-08) é a forma recomendada de rodar este fluxo **sem
+depender de nenhum agente de IA**: reaproveita a mesma heurística de
+`scripts/classify-change.sh` para sugerir o tier, pergunta a descrição, monta a lista de
+arquivos sozinho e chama `scripts/bump-version.sh` por baixo — mesmo resultado da seção 2,
+com um menu interativo em vez de precisar montar os flags na mão.
+
+```bash
+./scripts/versionar.sh
+```
+
+Também aceita os mesmos flags de `bump-version.sh` para uso direto/automatizado:
+`./scripts/versionar.sh --tier=minor --desc="descrição" [--files="a,b"]`.
+
+Só grava `VERSION`/`CHANGELOG.md`/`shared/version.php` — não dá `commit`/`push`. Publicar
+no GitHub (e promover `develop` → `main`) é o trabalho de
+`scripts/bash/deploy-completo.sh` (ver `documentacao/10-deploy/workflow-git-multiambiente.md`),
+que inclusive lê a última entrada do `CHANGELOG.md` para montar a mensagem do commit —
+por isso a ordem recomendada é sempre `versionar.sh` primeiro, `deploy-completo.sh` depois.
