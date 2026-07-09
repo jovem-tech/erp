@@ -106,6 +106,34 @@ class FinanceiroController extends DesktopController
         ]);
     }
 
+    public function show(int $financeiro): View|RedirectResponse
+    {
+        try {
+            $data = $this->financeiroService->find($financeiro);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException $exception) {
+            return redirect()->route('financeiro.index')->with('error', $exception->getMessage());
+        } catch (ApiRequestException $exception) {
+            if ($exception->statusCode() === 404) {
+                abort(404);
+            }
+
+            return redirect()->route('financeiro.index')->with('error', $exception->getMessage());
+        }
+
+        if (($data['lancamento'] ?? null) === null) {
+            abort(404);
+        }
+
+        return view('financeiro.show', [
+            'pageTitle' => 'Detalhes do lançamento',
+            'lancamento' => $data['lancamento'],
+            'resumo' => $data['resumo'] ?? [],
+            'detalhes' => $data['detalhes'] ?? [],
+        ]);
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $payload = $this->validatedPayload($request);

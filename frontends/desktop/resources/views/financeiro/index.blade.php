@@ -143,6 +143,13 @@
                             </td>
                             <td data-label="Ações" class="text-end">
                                 <x-list-actions>
+                                    <li>
+                                        <a href="{{ route('financeiro.show', $id) }}" class="dropdown-item">
+                                            <i class="bi bi-eye me-2"></i>
+                                            Detalhes
+                                        </a>
+                                    </li>
+
                                     @if (\App\Support\DesktopSession::can('financeiro', 'editar'))
                                         <li>
                                             <a href="{{ route('financeiro.edit', $id) }}" class="dropdown-item">

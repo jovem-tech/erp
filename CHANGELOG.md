@@ -1,5 +1,17 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v3.19.1.0 — 2026-07-09 04:23
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** implantação de botão de detalhes em um lançamanto
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/FinanceiroController.php,backend/app/Services/Financeiro/FinanceiroService.php,backend/tests/Feature/Api/V1/FinanceiroTest.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/app/Http/Controllers/FinanceiroController.php,frontends/desktop/resources/views/financeiro/index.blade.php,frontends/desktop/resources/views/financeiro/show.blade.php,frontends/desktop/routes/web.php
+
+## v3.19.0.1 — 2026-07-09 04:19
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Adiciona detalhe operacional dos lancamentos financeiros
+- **Arquivos:** backend/app/Services/Financeiro/FinanceiroService.php,backend/app/Http/Controllers/Api/V1/FinanceiroController.php,backend/tests/Feature/Api/V1/FinanceiroTest.php,frontends/desktop/app/Http/Controllers/FinanceiroController.php,frontends/desktop/resources/views/financeiro/index.blade.php,frontends/desktop/resources/views/financeiro/show.blade.php,frontends/desktop/routes/web.php
+
 ## v3.19.0.0 — 2026-07-09 03:56
 - **Tier:** minor
 - **Autor/Agente:** Codex

@@ -65,6 +65,65 @@ class FinanceiroService
     }
 
     /**
+     * Monta o contexto operacional completo de um lançamento financeiro.
+     *
+     * A listagem precisa continuar leve e paginada; por isso este método é usado
+     * apenas no detalhe do lançamento. Ele carrega, sob demanda, as relações que
+     * ajudam a responder "quem pagou/recebeu", "qual OS/equipamento originou o
+     * valor", "quais formas de pagamento foram usadas" e "quais taxas de cartão
+     * foram aplicadas", sem duplicar regra de negócio na camada desktop.
+     *
+     * @return array<string, mixed>
+     */
+    public function detailContext(Financeiro $financeiro): array
+    {
+        $financeiro->loadMissing([
+            'client',
+            'supplier',
+            'order.client',
+            'order.equipment.type',
+            'order.equipment.brand',
+            'order.equipment.model',
+            'order.statusCatalog',
+            'movimentos.cartao.operadora',
+            'movimentos.cartao.bandeira',
+            'origemMovimento.financeiro.client',
+            'origemMovimento.financeiro.order.equipment.type',
+            'origemMovimento.financeiro.order.equipment.brand',
+            'origemMovimento.financeiro.order.equipment.model',
+        ]);
+
+        return [
+            'tipo_label' => $this->financeiroTipoLabel((string) $financeiro->tipo),
+            'status_label' => $this->financeiroStatusLabel((string) $financeiro->status),
+            'forma_pagamento_label' => $this->paymentMethodLabel($financeiro->forma_pagamento),
+            'contraparte' => $this->counterpartyDetail($financeiro),
+            'origem' => $this->originDetail($financeiro),
+            'os' => $this->orderDetail($financeiro->order),
+            'movimentos' => $financeiro->movimentos
+                ->sortBy([
+                    ['data_movimento', 'asc'],
+                    ['id', 'asc'],
+                ])
+                ->values()
+                ->map(fn (FinanceiroMovimento $movimento): array => $this->movementDetail($movimento))
+                ->all(),
+            'impactos' => [
+                'impacta_dre' => (bool) $financeiro->impacta_dre,
+                'impacta_fluxo_caixa' => (bool) $financeiro->impacta_fluxo_caixa,
+                'dre_fixo_mensal' => (bool) $financeiro->dre_fixo_mensal,
+                'grupo_dre' => $financeiro->grupo_dre,
+                'subgrupo_dre' => $financeiro->subgrupo_dre,
+                'data_competencia' => $this->dateForDetail($financeiro->data_competencia),
+            ],
+            'auditoria' => [
+                'criado_em' => $this->dateTimeForDetail($financeiro->created_at),
+                'atualizado_em' => $this->dateTimeForDetail($financeiro->updated_at),
+            ],
+        ];
+    }
+
+    /**
      * Cancela um título e estorna (remove) qualquer baixa já registrada, para
      * que o valor pare de contar no fluxo de caixa realizado e no DRE de
      * caixa — ambos calculados a partir de financeiro_movimentos. O DRE por
@@ -319,6 +378,249 @@ class FinanceiroService
             'status_resolvido' => $this->resolveStatus($financeiro->status, $valorTitulo, $valorMovimentado),
             'percentual_quitado' => $valorTitulo > 0 ? min(100, round(($valorMovimentado / $valorTitulo) * 100, 2)) : 0.0,
         ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function counterpartyDetail(Financeiro $financeiro): array
+    {
+        if ($financeiro->tipo === Financeiro::TIPO_RECEBER) {
+            $client = $financeiro->client ?? $financeiro->order?->client;
+
+            return [
+                'tipo' => 'cliente',
+                'titulo' => 'Quem pagou',
+                'nome' => $client?->nome_razao ?: null,
+                'documento' => $client?->cpf_cnpj ?: null,
+                'telefone' => $client?->telefone1 ?: $client?->telefone2 ?: null,
+                'email' => $client?->email ?: null,
+                'observacoes' => $client?->observacoes ?: null,
+            ];
+        }
+
+        $supplier = $financeiro->supplier;
+
+        return [
+            'tipo' => 'fornecedor',
+            'titulo' => 'Para quem pagou',
+            'nome' => $supplier?->nome_fantasia ?: $supplier?->razao_social ?: null,
+            'documento' => $supplier?->cnpj_cpf ?: null,
+            'telefone' => $supplier?->telefone1 ?: $supplier?->telefone2 ?: null,
+            'email' => $supplier?->email ?: null,
+            'observacoes' => $supplier?->observacoes ?: null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function originDetail(Financeiro $financeiro): array
+    {
+        if ((string) $financeiro->origem_tipo === 'financeiro_movimento_cartao') {
+            $originMovement = $financeiro->origemMovimento;
+            $originFinanceiro = $originMovement?->financeiro;
+
+            return [
+                'tipo' => 'taxa_cartao',
+                'titulo' => 'Taxa de cartão',
+                'descricao' => 'Despesa gerada automaticamente pela baixa em cartão de outro lançamento.',
+                'lancamento_origem_id' => $originFinanceiro?->id,
+                'movimento_origem_id' => $originMovement?->id,
+                'lancamento_origem_descricao' => $originFinanceiro?->descricao,
+            ];
+        }
+
+        if ((int) $financeiro->os_id > 0) {
+            return [
+                'tipo' => 'os',
+                'titulo' => 'Ordem de serviço',
+                'descricao' => 'Lançamento vinculado ao fluxo financeiro de uma OS.',
+                'os_id' => (int) $financeiro->os_id,
+            ];
+        }
+
+        if ((bool) $financeiro->avulso) {
+            return [
+                'tipo' => 'avulso',
+                'titulo' => 'Lançamento avulso',
+                'descricao' => (int) $financeiro->cliente_id > 0
+                    ? 'Lançamento avulso com cliente vinculado, sem ordem de serviço.'
+                    : 'Lançamento avulso puro, sem ordem de serviço e sem cliente vinculado.',
+            ];
+        }
+
+        return [
+            'tipo' => 'manual',
+            'titulo' => 'Lançamento manual',
+            'descricao' => 'Lançamento financeiro sem origem operacional específica registrada.',
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function orderDetail(?Order $order): ?array
+    {
+        if (! $order instanceof Order) {
+            return null;
+        }
+
+        $equipment = $order->equipment;
+        $equipmentParts = array_values(array_filter([
+            $equipment?->type?->nome,
+            $equipment?->brand?->nome,
+            $equipment?->model?->nome,
+        ], static fn ($value): bool => trim((string) $value) !== ''));
+
+        return [
+            'id' => (int) $order->id,
+            'numero_os' => $order->numero_os,
+            'status' => $order->status,
+            'status_nome' => $order->statusCatalog?->nome ?: $order->status,
+            'datas' => [
+                'abertura' => $this->dateTimeForDetail($order->data_abertura),
+                'entrada' => $this->dateTimeForDetail($order->data_entrada),
+                'previsao' => $this->dateForDetail($order->data_previsao),
+                'conclusao' => $this->dateTimeForDetail($order->data_conclusao),
+                'entrega' => $this->dateTimeForDetail($order->data_entrega),
+                'baixa_tecnica' => $this->dateTimeForDetail($order->baixa_tecnica_em),
+            ],
+            'valores' => [
+                'mao_obra' => $order->valor_mao_obra !== null ? round((float) $order->valor_mao_obra, 2) : null,
+                'pecas' => $order->valor_pecas !== null ? round((float) $order->valor_pecas, 2) : null,
+                'total' => $order->valor_total !== null ? round((float) $order->valor_total, 2) : null,
+                'desconto' => $order->desconto !== null ? round((float) $order->desconto, 2) : null,
+                'final' => $order->valor_final !== null ? round((float) $order->valor_final, 2) : null,
+            ],
+            'cliente' => [
+                'id' => $order->client?->id,
+                'nome' => $order->client?->nome_razao,
+                'telefone' => $order->client?->telefone1 ?: $order->client?->telefone2,
+            ],
+            'equipamento' => [
+                'id' => $equipment?->id,
+                'label' => $equipmentParts !== [] ? implode(' ', $equipmentParts) : ($equipment?->resumo_tecnico ?: null),
+                'tipo' => $equipment?->type?->nome,
+                'marca' => $equipment?->brand?->nome,
+                'modelo' => $equipment?->model?->nome,
+                'serie' => $equipment?->numero_serie,
+                'imei' => $equipment?->imei,
+                'resumo_tecnico' => $equipment?->resumo_tecnico,
+                'estado_fisico' => $equipment?->estado_fisico,
+            ],
+            'defeito' => [
+                'relato_cliente' => $order->relato_cliente,
+                'diagnostico_tecnico' => $order->diagnostico_tecnico,
+                'solucao_aplicada' => $order->solucao_aplicada,
+                'procedimentos_executados' => $order->procedimentos_executados,
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function movementDetail(FinanceiroMovimento $movimento): array
+    {
+        $cartao = $movimento->cartao;
+
+        return [
+            'id' => (int) $movimento->id,
+            'tipo' => $movimento->tipo_movimento,
+            'tipo_label' => $this->movementTypeLabel((string) $movimento->tipo_movimento),
+            'data_movimento' => $this->dateForDetail($movimento->data_movimento),
+            'valor' => round((float) $movimento->valor_movimento, 2),
+            'forma_pagamento' => $movimento->forma_pagamento,
+            'forma_pagamento_label' => $this->paymentMethodLabel($movimento->forma_pagamento),
+            'documento_ref' => $movimento->documento_ref,
+            'observacoes' => $movimento->observacoes,
+            'cartao' => $cartao instanceof FinanceiroMovimentoCartao ? [
+                'operadora' => $cartao->operadora?->nome,
+                'bandeira' => $cartao->bandeira?->nome,
+                'modalidade' => $cartao->modalidade,
+                'parcelas' => (int) $cartao->parcelas,
+                'valor_bruto' => round((float) $cartao->valor_bruto, 2),
+                'taxa_percentual' => round((float) $cartao->taxa_percentual, 4),
+                'taxa_fixa' => round((float) $cartao->taxa_fixa, 2),
+                'valor_taxa' => round((float) $cartao->valor_taxa, 2),
+                'valor_liquido' => round((float) $cartao->valor_liquido, 2),
+                'prazo_recebimento_dias' => (int) $cartao->prazo_recebimento_dias,
+                'data_competencia' => $this->dateForDetail($cartao->data_competencia),
+                'data_prevista_repasse' => $this->dateForDetail($cartao->data_prevista_repasse),
+                'data_prevista_recebimento' => $this->dateForDetail($cartao->data_prevista_recebimento),
+                'data_credito_efetivo' => $this->dateForDetail($cartao->data_credito_efetivo),
+            ] : null,
+        ];
+    }
+
+    private function financeiroTipoLabel(string $tipo): string
+    {
+        return $tipo === Financeiro::TIPO_RECEBER ? 'A receber' : 'A pagar';
+    }
+
+    private function financeiroStatusLabel(string $status): string
+    {
+        return match ($status) {
+            Financeiro::STATUS_PAGO => 'Pago',
+            Financeiro::STATUS_PARCIAL => 'Parcial',
+            Financeiro::STATUS_CANCELADO => 'Cancelado',
+            default => 'Pendente',
+        };
+    }
+
+    private function movementTypeLabel(string $tipo): string
+    {
+        return match ($tipo) {
+            FinanceiroMovimento::TIPO_ENTRADA => 'Entrada',
+            FinanceiroMovimento::TIPO_SAIDA => 'Saída',
+            FinanceiroMovimento::TIPO_ESTORNO => 'Estorno',
+            FinanceiroMovimento::TIPO_TRANSFERENCIA => 'Transferência',
+            default => ucfirst($tipo),
+        };
+    }
+
+    private function paymentMethodLabel(mixed $value): ?string
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        return match ($value) {
+            'dinheiro' => 'Dinheiro',
+            'cartao_credito' => 'Cartão de crédito',
+            'cartao_debito' => 'Cartão de débito',
+            'pix' => 'Pix',
+            'boleto' => 'Boleto',
+            'transferencia' => 'Transferência',
+            default => ucfirst(str_replace('_', ' ', $value)),
+        };
+    }
+
+    private function dateForDetail(mixed $value): ?string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        return $this->normalizeDate($value);
+    }
+
+    private function dateTimeForDetail(mixed $value): ?string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d H:i:s');
+        }
+
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+
+        $timestamp = strtotime($value);
+
+        return $timestamp !== false ? date('Y-m-d H:i:s', $timestamp) : null;
     }
 
     /**

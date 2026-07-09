@@ -219,6 +219,86 @@ class FinanceiroTest extends TestCase
         ]);
     }
 
+    public function test_show_returns_operational_details_for_order_receivable_with_card_fee(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        $clienteId = $this->createClientRecord(['nome_razao' => 'Cliente Detalhado']);
+        $equipamentoId = $this->createEquipmentRecord($clienteId, [
+            'tipo_id' => 2,
+            'marca_id' => 1,
+            'modelo_id' => 1,
+            'numero_serie' => 'SN-DET-001',
+            'resumo_tecnico' => 'Notebook Dell Inspiron 15',
+        ]);
+        $osId = $this->createOrderRecord([
+            'numero_os' => 'OS26070099',
+            'cliente_id' => $clienteId,
+            'equipamento_id' => $equipamentoId,
+            'relato_cliente' => 'Tela sem imagem',
+            'diagnostico_tecnico' => 'Flat desconectado',
+            'data_entrega' => now(),
+            'valor_final' => 100.00,
+        ]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $operadoraId = (int) DB::table('financeiro_cartao_operadoras')->insertGetId([
+            'nome' => 'Stone',
+            'ordem_exibicao' => 1,
+            'prazo_padrao_dias' => 0,
+            'ativo' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('financeiro_cartao_taxas')->insert([
+            'operadora_id' => $operadoraId,
+            'bandeira_id' => null,
+            'modalidade' => 'debito',
+            'parcelas_inicial' => 1,
+            'parcelas_final' => 1,
+            'taxa_percentual' => 1.99,
+            'taxa_fixa' => 0.00,
+            'prazo_recebimento_dias' => 0,
+            'ativo' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $store = $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'receber',
+            'categoria' => 'Serviço',
+            'descricao' => 'Cobrança da OS OS26070099',
+            'os_id' => $osId,
+            'valor' => 100.00,
+            'data_vencimento' => now()->toDateString(),
+        ])->assertCreated();
+        $financeiroId = (int) $store->json('data.lancamento.id');
+
+        $this->postJson("/api/v1/financeiro/{$financeiroId}/baixar", [
+            'valor_movimento' => 100.00,
+            'forma_pagamento' => 'cartao_debito',
+            'operadora_id' => $operadoraId,
+            'modalidade' => 'debito',
+            'parcelas' => 1,
+        ])->assertOk();
+
+        $response = $this->getJson("/api/v1/financeiro/{$financeiroId}");
+
+        $response->assertOk()
+            ->assertJsonPath('data.detalhes.contraparte.nome', 'Cliente Detalhado')
+            ->assertJsonPath('data.detalhes.origem.tipo', 'os')
+            ->assertJsonPath('data.detalhes.os.numero_os', 'OS26070099')
+            ->assertJsonPath('data.detalhes.os.equipamento.tipo', 'Notebook')
+            ->assertJsonPath('data.detalhes.os.equipamento.marca', 'Dell')
+            ->assertJsonPath('data.detalhes.os.equipamento.modelo', 'Inspiron 15')
+            ->assertJsonPath('data.detalhes.os.equipamento.serie', 'SN-DET-001')
+            ->assertJsonPath('data.detalhes.os.defeito.relato_cliente', 'Tela sem imagem')
+            ->assertJsonPath('data.detalhes.os.defeito.diagnostico_tecnico', 'Flat desconectado')
+            ->assertJsonPath('data.detalhes.movimentos.0.forma_pagamento_label', 'Cartão de débito')
+            ->assertJsonPath('data.detalhes.movimentos.0.cartao.operadora', 'Stone')
+            ->assertJsonPath('data.detalhes.movimentos.0.cartao.valor_taxa', 1.99);
+    }
+
     public function test_dre_catalog_crud_for_grupo_subgrupo_and_categoria(): void
     {
         $admin = $this->createUserRecord(['grupo_id' => 1]);
