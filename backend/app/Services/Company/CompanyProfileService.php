@@ -21,6 +21,7 @@ class CompanyProfileService
      * @var array<string, string>
      */
     private const DEFAULTS = [
+        'sistema_nome' => '',
         'empresa_razao_social' => '',
         'empresa_nome_fantasia' => '',
         'empresa_cnpj' => '',
@@ -37,6 +38,29 @@ class CompanyProfileService
     {
         return [
             'settings' => $this->loadSettings(),
+            'logo' => $this->logoMeta(),
+        ];
+    }
+
+    /**
+     * Dados mínimos e não sensíveis para telas públicas, como o login.
+     *
+     * @return array<string, mixed>
+     */
+    public function publicBranding(): array
+    {
+        $settings = $this->loadSettings();
+
+        $systemName = trim((string) ($settings['sistema_nome'] ?? ''));
+        if ($systemName === '') {
+            $systemName = trim((string) ($settings['empresa_nome_fantasia'] ?? ''));
+        }
+        if ($systemName === '') {
+            $systemName = trim((string) ($settings['empresa_razao_social'] ?? ''));
+        }
+
+        return [
+            'sistema_nome' => $systemName !== '' ? $systemName : 'Sistema ERP',
             'logo' => $this->logoMeta(),
         ];
     }

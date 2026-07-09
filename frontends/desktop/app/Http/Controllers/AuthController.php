@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiRequestException;
 use App\Services\ApiClient;
+use App\Services\CompanyProfileService;
 use App\Support\DesktopNavigation;
 use App\Support\DesktopSession;
 use Illuminate\Http\RedirectResponse;
@@ -14,7 +15,8 @@ use Illuminate\View\View;
 class AuthController extends DesktopController
 {
     public function __construct(
-        private readonly ApiClient $apiClient
+        private readonly ApiClient $apiClient,
+        private readonly CompanyProfileService $companyProfileService
     ) {
     }
 
@@ -24,7 +26,10 @@ class AuthController extends DesktopController
             return redirect()->route(DesktopNavigation::firstAllowedRouteName());
         }
 
-        return view('auth.login');
+        return view('auth.login', [
+            'branding' => $this->companyProfileService->branding(),
+            'systemVersion' => $this->systemVersion(),
+        ]);
     }
 
     public function store(Request $request): RedirectResponse
@@ -109,5 +114,15 @@ class AuthController extends DesktopController
         return redirect()
             ->route('login')
             ->with('success', $message);
+    }
+
+    private function systemVersion(): string
+    {
+        $versionFile = dirname(base_path(), 2) . DIRECTORY_SEPARATOR . 'VERSION';
+        if (! is_file($versionFile)) {
+            return '';
+        }
+
+        return trim((string) file_get_contents($versionFile));
     }
 }

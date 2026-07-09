@@ -184,6 +184,11 @@
                         </div>
 
                         <div class="row g-3 mt-1">
+                            <div class="col-12">
+                                <label class="form-label" for="sistema_nome">Nome do sistema</label>
+                                <input type="text" class="form-control" id="sistema_nome" name="sistema_nome" maxlength="120" value="{{ old('sistema_nome', $companySettings['sistema_nome'] ?? '') }}" placeholder="Ex.: Jovem Tech Assistência">
+                                <small class="text-muted d-block mt-1">Nome exibido na tela de login e usado como identidade do painel.</small>
+                            </div>
                             <div class="col-md-6">
                                 <label class="form-label" for="empresa_razao_social">Razão social</label>
                                 <input type="text" class="form-control" id="empresa_razao_social" name="empresa_razao_social" maxlength="255" value="{{ old('empresa_razao_social', $companySettings['empresa_razao_social'] ?? '') }}">
@@ -219,7 +224,7 @@
                         <div class="surface-card-header">
                             <div>
                                 <h3 class="surface-title mb-1">Logo da Empresa</h3>
-                                <p class="surface-subtitle mb-0">Usada no menu lateral do sistema e como identidade institucional.</p>
+                                <p class="surface-subtitle mb-0">Usada no login, no menu lateral do sistema e como identidade institucional.</p>
                             </div>
                         </div>
 

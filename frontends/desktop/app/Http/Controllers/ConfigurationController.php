@@ -77,6 +77,7 @@ class ConfigurationController extends DesktopController
     public function updateCompany(Request $request): RedirectResponse
     {
         $payload = [
+            'sistema_nome' => trim((string) $request->input('sistema_nome', '')),
             'empresa_razao_social' => trim((string) $request->input('empresa_razao_social', '')),
             'empresa_nome_fantasia' => trim((string) $request->input('empresa_nome_fantasia', '')),
             'empresa_cnpj' => trim((string) $request->input('empresa_cnpj', '')),
@@ -122,6 +123,17 @@ class ConfigurationController extends DesktopController
             abort(401, $exception->getMessage());
         } catch (ApiAuthorizationException $exception) {
             abort(403, $exception->getMessage());
+        } catch (ApiRequestException $exception) {
+            abort($exception->statusCode() > 0 ? $exception->statusCode() : 404, $exception->getMessage());
+        }
+
+        return response($download['body'], $download['status'], $download['headers']);
+    }
+
+    public function publicCompanyLogo(): \Illuminate\Http\Response
+    {
+        try {
+            $download = $this->companyProfileService->downloadPublicLogo();
         } catch (ApiRequestException $exception) {
             abort($exception->statusCode() > 0 ? $exception->statusCode() : 404, $exception->getMessage());
         }

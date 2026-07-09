@@ -89,6 +89,17 @@ class ApiClient
         );
     }
 
+    /**
+     * @param array<string, mixed> $query
+     */
+    public function guestGet(string $uri, array $query = []): array
+    {
+        return $this->parseResponse(
+            $this->retryRequest(fn() => $this->guestRequest('get', $uri, [], $query)),
+            false
+        );
+    }
+
     public function post(string $uri, array $payload = []): array
     {
         return $this->parseResponse(
@@ -150,6 +161,27 @@ class ApiClient
     }
 
     /**
+     * @return array{body: string, headers: array<string, string>, status: int}
+     */
+    public function guestDownload(string $uri): array
+    {
+        $response = $this->guestRequest('get', $uri);
+
+        if ($response->failed()) {
+            $this->parseResponse($response, false);
+        }
+
+        return [
+            'body' => $response->body(),
+            'headers' => [
+                'Content-Type' => (string) $response->header('Content-Type', 'application/octet-stream'),
+                'Content-Disposition' => (string) $response->header('Content-Disposition', 'inline'),
+            ],
+            'status' => $response->status(),
+        ];
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @param array<string, mixed> $query
      */
@@ -198,12 +230,13 @@ class ApiClient
     /**
      * @param array<string, mixed> $payload
      */
-    private function guestRequest(string $method, string $uri, array $payload = []): Response
+    private function guestRequest(string $method, string $uri, array $payload = [], array $query = []): Response
     {
         try {
             return $this->baseRequest()
                 ->send(strtoupper($method), $this->url($uri), [
                     'json' => $payload,
+                    'query' => $query,
                 ]);
         } catch (ConnectionException) {
             throw new ApiRequestException('Nao foi possivel conectar ao backend central.');

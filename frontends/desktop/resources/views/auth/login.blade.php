@@ -1,37 +1,60 @@
 @extends('layouts.guest')
 
 @section('content')
+    @php
+        $brandingName = trim((string) ($branding['name'] ?? 'Sistema ERP'));
+        $hasLogo = (bool) ($branding['has_logo'] ?? false);
+        $version = trim((string) ($systemVersion ?? ''));
+    @endphp
+
     <div class="desktop-login-wrapper">
         <section class="desktop-login-copy">
             <div class="desktop-login-copy-card">
-                <span class="desktop-chip mb-3">Fase 7 · Frontend desktop Laravel</span>
-                <h1>O legado continua como referência visual, mas o acesso agora passa pelo backend central.</h1>
+                <span class="desktop-chip mb-3">
+                    <i class="bi bi-tools me-1"></i>
+                    Assistência técnica Jovem Tech
+                </span>
+                <h1>Atendimento técnico, OS e financeiro em uma central de trabalho.</h1>
                 <p>
-                    Esta aplicação preserva a estrutura do <code>sistema-hml</code>, porém toda regra de negócio,
-                    autenticação e autorização agora vêm exclusivamente da API Laravel em <code>backend/</code>.
+                    Organize diagnósticos, orçamentos, reparos, entregas e recebimentos com rastreabilidade
+                    desde a entrada do equipamento até a baixa final da ordem de serviço.
                 </p>
 
-                <div class="desktop-kpis-inline mt-4">
-                    <span class="desktop-chip">Sessão server-side</span>
-                    <span class="desktop-chip">RBAC pelo <code>auth/me</code></span>
-                    <span class="desktop-chip">Sem acesso direto ao banco</span>
+                <div class="desktop-login-feature-grid mt-4">
+                    <div>
+                        <i class="bi bi-clipboard-check"></i>
+                        <strong>OS com histórico</strong>
+                        <span>Status, checklist, fotos e documentos sempre no mesmo fluxo.</span>
+                    </div>
+                    <div>
+                        <i class="bi bi-cpu"></i>
+                        <strong>Equipamentos rastreados</strong>
+                        <span>Tipo, marca, modelo, defeito e solução técnica com contexto.</span>
+                    </div>
+                    <div>
+                        <i class="bi bi-cash-coin"></i>
+                        <strong>Financeiro integrado</strong>
+                        <span>Recebimentos, despesas, DRE e fluxo de caixa conectados à operação.</span>
+                    </div>
                 </div>
-
-                <ul>
-                    <li>O navegador nunca recebe o token Bearer diretamente.</li>
-                    <li>Os módulos do desktop respeitam as permissões efetivas do usuário.</li>
-                    <li>A mesma API pode ser reutilizada por mobile, desktop, TV ou novos canais.</li>
-                </ul>
             </div>
         </section>
 
         <section class="desktop-login-panel-wrap">
             <div class="desktop-login-panel">
-                <div class="desktop-login-icon">
-                    <i class="bi bi-shield-lock"></i>
+                <div class="desktop-login-brand">
+                    <div class="desktop-login-logo">
+                        @if ($hasLogo)
+                            <img src="{{ route('branding.company.logo') }}" alt="Logo {{ $brandingName }}">
+                        @else
+                            <i class="bi bi-tools"></i>
+                        @endif
+                    </div>
+                    <div>
+                        <span>Bem-vindo ao</span>
+                        <strong>{{ $brandingName }}</strong>
+                    </div>
                 </div>
-                <h2>Acesso ao desktop</h2>
-                <p>Use as mesmas credenciais válidas no backend central do novo ERP.</p>
 
                 <form method="post" action="{{ route('login.store') }}" class="d-grid gap-3">
                     @csrf
@@ -44,7 +67,7 @@
                             id="email"
                             name="email"
                             value="{{ old('email') }}"
-                            placeholder="voce@empresa.com"
+                            placeholder="usuario@jovemtech.com"
                             autocomplete="email"
                             required
                         >
@@ -80,6 +103,13 @@
                         <span class="small text-muted">O link será enviado para o e-mail cadastrado.</span>
                     </div>
                 </form>
+
+                <div class="desktop-login-footer">
+                    <span>{{ $brandingName }}</span>
+                    @if ($version !== '')
+                        <span>v{{ $version }}</span>
+                    @endif
+                </div>
             </div>
         </section>
     </div>

@@ -56,22 +56,27 @@ class CompanyProfileService
     }
 
     /**
+     * @return array{body: string, headers: array<string, string>, status: int}
+     */
+    public function downloadPublicLogo(): array
+    {
+        return $this->apiClient->guestDownload('/configuracoes/empresa/logo-publica');
+    }
+
+    /**
      * @return array{name: string, has_logo: bool}
      */
     public function branding(): array
     {
         return Cache::remember(self::BRANDING_CACHE_KEY, now()->addSeconds(self::BRANDING_CACHE_SECONDS), function (): array {
             try {
-                $data = $this->find();
+                $response = $this->apiClient->guestGet('/configuracoes/empresa/publico');
+                $data = $response['data'] ?? [];
             } catch (Throwable) {
                 return $this->fallbackBranding();
             }
 
-            $settings = $data['settings'] ?? [];
-            $name = trim((string) ($settings['empresa_nome_fantasia'] ?? ''));
-            if ($name === '') {
-                $name = trim((string) ($settings['empresa_razao_social'] ?? ''));
-            }
+            $name = trim((string) ($data['sistema_nome'] ?? ''));
 
             return [
                 'name' => $name !== '' ? $name : 'Sistema ERP',

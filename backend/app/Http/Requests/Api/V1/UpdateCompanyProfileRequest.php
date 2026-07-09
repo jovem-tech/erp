@@ -17,6 +17,7 @@ class UpdateCompanyProfileRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'sistema_nome' => ['nullable', 'string', 'max:120'],
             'empresa_razao_social' => ['nullable', 'string', 'max:255'],
             'empresa_nome_fantasia' => ['nullable', 'string', 'max:255'],
             'empresa_cnpj' => ['nullable', 'string', 'max:32'],
