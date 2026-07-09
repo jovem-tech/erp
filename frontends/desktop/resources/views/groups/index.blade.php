@@ -42,43 +42,59 @@
                                 ])
                             </td>
                             <td data-label="Ações" class="text-end">
-                                <div class="d-flex flex-wrap gap-2 justify-content-end">
-                                    <a href="{{ route('groups.permissions.edit', $group['id']) }}" class="btn btn-sm btn-outline-light">
-                                        Permissões
-                                    </a>
+                                <x-list-actions>
+                                    <li>
+                                        <a href="{{ route('groups.permissions.edit', $group['id']) }}" class="dropdown-item">
+                                            <i class="bi bi-shield-lock me-2"></i>
+                                            Permissões
+                                        </a>
+                                    </li>
 
                                     @if (!empty($group['sistema']))
-                                        <button type="button" class="btn btn-sm btn-outline-light" disabled>Protegido</button>
+                                        <li>
+                                            <span class="dropdown-item disabled">
+                                                <i class="bi bi-lock me-2"></i>
+                                                Protegido (grupo do sistema)
+                                            </span>
+                                        </li>
                                     @else
                                         @if (\App\Support\DesktopSession::can('grupos', 'editar'))
-                                            <button
-                                                type="button"
-                                                class="btn btn-sm btn-outline-light"
-                                                data-bs-toggle="modal"
-                                                data-bs-target="#groupEditModal"
-                                                data-modal-fill="#groupEditModal"
-                                                data-form-action="{{ route('groups.update', $group['id']) }}"
-                                                data-field-nome="{{ $group['nome'] }}"
-                                                data-field-descricao="{{ $group['descricao'] }}"
-                                            >
-                                                Editar
-                                            </button>
+                                            <li>
+                                                <button
+                                                    type="button"
+                                                    class="dropdown-item"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#groupEditModal"
+                                                    data-modal-fill="#groupEditModal"
+                                                    data-form-action="{{ route('groups.update', $group['id']) }}"
+                                                    data-field-nome="{{ $group['nome'] }}"
+                                                    data-field-descricao="{{ $group['descricao'] }}"
+                                                >
+                                                    <i class="bi bi-pencil me-2"></i>
+                                                    Editar
+                                                </button>
+                                            </li>
                                         @endif
 
                                         @if (\App\Support\DesktopSession::can('grupos', 'excluir'))
-                                            <form
-                                                method="post"
-                                                action="{{ route('groups.destroy', $group['id']) }}"
-                                                data-confirm="Esta ação remove o grupo e revoga o vínculo dos usuários afetados. Deseja continuar?"
-                                                data-confirm-title="Excluir grupo"
-                                                data-confirm-button="Sim, excluir"
-                                            >
-                                                @csrf
-                                                <button type="submit" class="btn btn-sm btn-outline-light">Excluir</button>
-                                            </form>
+                                            <li>
+                                                <form
+                                                    method="post"
+                                                    action="{{ route('groups.destroy', $group['id']) }}"
+                                                    data-confirm="Esta ação remove o grupo e revoga o vínculo dos usuários afetados. Deseja continuar?"
+                                                    data-confirm-title="Excluir grupo"
+                                                    data-confirm-button="Sim, excluir"
+                                                >
+                                                    @csrf
+                                                    <button type="submit" class="dropdown-item text-danger">
+                                                        <i class="bi bi-trash me-2"></i>
+                                                        Excluir
+                                                    </button>
+                                                </form>
+                                            </li>
                                         @endif
                                     @endif
-                                </div>
+                                </x-list-actions>
                             </td>
                         </tr>
                     @endforeach

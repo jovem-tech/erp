@@ -1,70 +1,61 @@
 @extends('layouts.app')
 
 @section('content')
-    <section class="desktop-form-card mb-4">
-        <div class="surface-card-header">
-            <div>
-                <h2 class="surface-title">Fornecedores</h2>
-                <p class="surface-subtitle">
-                    Cadastro operacional espelhado do legado, com consulta por CNPJ, controle de status e vínculos para o fluxo comercial.
-                </p>
-            </div>
+    @php
+        $hasActiveFilters = trim((string) ($filters['search'] ?? '')) !== ''
+            || trim((string) ($filters['active'] ?? '')) !== '';
+        $activeFilterCount = count(array_filter([
+            trim((string) ($filters['search'] ?? '')) !== '',
+            trim((string) ($filters['active'] ?? '')) !== '',
+        ]));
+    @endphp
 
-            <div class="d-flex flex-wrap gap-2">
-                <a href="{{ route('suppliers.help') }}" class="btn btn-outline-info">
-                    <i class="bi bi-question-circle me-2"></i>
-                    Ajuda
+    <x-list-filters
+        form-id="suppliersFilterPanel"
+        search-name="search"
+        :search-value="$filters['search'] ?? ''"
+        search-placeholder="Nome, documento, telefone, cidade ou observações"
+        :results-count="$pagination['total'] ?? 0"
+        results-label="fornecedores"
+        :clear-url="route('suppliers.index')"
+        :has-active-filters="$hasActiveFilters"
+        :active-filter-count="$activeFilterCount"
+    >
+        <x-slot:actions>
+            @if (\App\Support\DesktopSession::can('fornecedores', 'criar'))
+                <a href="{{ route('suppliers.create') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-lg me-2"></i>
+                    Novo fornecedor
                 </a>
+            @endif
 
-                @if (\App\Support\DesktopSession::can('fornecedores', 'criar'))
-                    <a href="{{ route('suppliers.create') }}" class="btn btn-primary">
-                        <i class="bi bi-plus-lg me-2"></i>
-                        Novo fornecedor
+            <x-list-actions label="Mais ações" size="">
+                <li>
+                    <a href="{{ route('suppliers.help') }}" class="dropdown-item">
+                        <i class="bi bi-question-circle me-2"></i>Ajuda
                     </a>
-                @endif
-            </div>
+                </li>
+            </x-list-actions>
+        </x-slot:actions>
+
+        <div>
+            <label for="active">Status</label>
+            <select id="active" name="active" class="form-select">
+                <option value="" @selected(($filters['active'] ?? '') === '' )>Todos</option>
+                <option value="1" @selected((string) ($filters['active'] ?? '') === '1')>Ativo</option>
+                <option value="0" @selected((string) ($filters['active'] ?? '') === '0')>Inativo</option>
+            </select>
         </div>
 
-        <form method="get" class="desktop-filter-grid">
-            <div>
-                <label for="search">Busca</label>
-                <input
-                    type="text"
-                    id="search"
-                    name="search"
-                    class="form-control"
-                    value="{{ $filters['search'] ?? '' }}"
-                    placeholder="Nome, documento, telefone, cidade ou observações"
-                >
-            </div>
-
-            <div>
-                <label for="active">Status</label>
-                <select id="active" name="active" class="form-select">
-                    <option value="" @selected(($filters['active'] ?? '') === '' )>Todos</option>
-                    <option value="1" @selected((string) ($filters['active'] ?? '') === '1')>Ativo</option>
-                    <option value="0" @selected((string) ($filters['active'] ?? '') === '0')>Inativo</option>
-                </select>
-            </div>
-
-            <div>
-                <label for="per_page">Itens por página</label>
-                <select id="per_page" name="per_page" class="form-select">
-                    @foreach ([15, 30, 50] as $size)
-                        <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 15) === $size)>{{ $size }}</option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div class="field-actions" style="grid-column: span 2;">
-                <button type="submit" class="btn btn-primary flex-fill">
-                    <i class="bi bi-search me-2"></i>
-                    Filtrar
-                </button>
-                <a href="{{ route('suppliers.index') }}" class="btn btn-outline-light">Limpar</a>
-            </div>
-        </form>
-    </section>
+        <div>
+            <label for="per_page">Itens por página</label>
+            <select id="per_page" name="per_page" class="form-select">
+                @foreach ([15, 30, 50] as $size)
+                    <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 15) === $size)>{{ $size }}</option>
+                @endforeach
+            </select>
+        </div>
+    </x-list-filters>
 
     <section class="surface-table">
         <div class="surface-table-header">
@@ -152,66 +143,54 @@
                                 ])
                             </td>
                             <td data-label="Ações" class="text-end">
-                                <div class="dropdown supplier-actions-dropdown">
-                                    <button
-                                        type="button"
-                                        class="btn btn-sm btn-outline-light dropdown-toggle supplier-actions-toggle"
-                                        data-bs-toggle="dropdown"
-                                        aria-expanded="false"
-                                    >
-                                        <span>Ações</span>
-                                        <i class="bi bi-chevron-down"></i>
-                                    </button>
+                                <x-list-actions>
+                                    @if (\App\Support\DesktopSession::can('fornecedores', 'editar'))
+                                        <li>
+                                            <a href="{{ route('suppliers.edit', $supplierId) }}" class="dropdown-item">
+                                                <i class="bi bi-pencil me-2"></i>
+                                                Editar
+                                            </a>
+                                        </li>
+                                    @endif
 
-                                    <ul class="dropdown-menu dropdown-menu-end supplier-actions-menu">
-                                        @if (\App\Support\DesktopSession::can('fornecedores', 'editar'))
-                                            <li>
-                                                <a href="{{ route('suppliers.edit', $supplierId) }}" class="dropdown-item">
-                                                    <i class="bi bi-pencil me-2"></i>
-                                                    Editar
-                                                </a>
-                                            </li>
-                                        @endif
+                                    @if ($active && \App\Support\DesktopSession::can('fornecedores', 'encerrar'))
+                                        <li>
+                                            <form
+                                                method="post"
+                                                action="{{ route('suppliers.close', $supplierId) }}"
+                                                data-confirm="Deseja encerrar este fornecedor?"
+                                                data-confirm-title="Encerrar fornecedor"
+                                                data-confirm-button="Sim, encerrar"
+                                            >
+                                                @csrf
+                                                @method('PATCH')
+                                                <button type="submit" class="dropdown-item text-warning">
+                                                    <i class="bi bi-archive me-2"></i>
+                                                    Encerrar
+                                                </button>
+                                            </form>
+                                        </li>
+                                    @endif
 
-                                        @if ($active && \App\Support\DesktopSession::can('fornecedores', 'encerrar'))
-                                            <li>
-                                                <form
-                                                    method="post"
-                                                    action="{{ route('suppliers.close', $supplierId) }}"
-                                                    data-confirm="Deseja encerrar este fornecedor?"
-                                                    data-confirm-title="Encerrar fornecedor"
-                                                    data-confirm-button="Sim, encerrar"
-                                                >
-                                                    @csrf
-                                                    @method('PATCH')
-                                                    <button type="submit" class="dropdown-item text-warning">
-                                                        <i class="bi bi-archive me-2"></i>
-                                                        Encerrar
-                                                    </button>
-                                                </form>
-                                            </li>
-                                        @endif
-
-                                        @if (\App\Support\DesktopSession::can('fornecedores', 'excluir'))
-                                            <li>
-                                                <form
-                                                    method="post"
-                                                    action="{{ route('suppliers.destroy', $supplierId) }}"
-                                                    data-confirm="Deseja excluir este fornecedor? Esta ação não pode ser desfeita."
-                                                    data-confirm-title="Excluir fornecedor"
-                                                    data-confirm-button="Sim, excluir"
-                                                >
-                                                    @csrf
-                                                    @method('DELETE')
-                                                    <button type="submit" class="dropdown-item text-danger">
-                                                        <i class="bi bi-trash me-2"></i>
-                                                        Excluir
-                                                    </button>
-                                                </form>
-                                            </li>
-                                        @endif
-                                    </ul>
-                                </div>
+                                    @if (\App\Support\DesktopSession::can('fornecedores', 'excluir'))
+                                        <li>
+                                            <form
+                                                method="post"
+                                                action="{{ route('suppliers.destroy', $supplierId) }}"
+                                                data-confirm="Deseja excluir este fornecedor? Esta ação não pode ser desfeita."
+                                                data-confirm-title="Excluir fornecedor"
+                                                data-confirm-button="Sim, excluir"
+                                            >
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="dropdown-item text-danger">
+                                                    <i class="bi bi-trash me-2"></i>
+                                                    Excluir
+                                                </button>
+                                            </form>
+                                        </li>
+                                    @endif
+                                </x-list-actions>
                             </td>
                         </tr>
                     @endforeach
