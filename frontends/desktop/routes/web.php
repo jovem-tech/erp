@@ -364,6 +364,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/financeiro/relatorios/margem', [FinanceiroMargemController::class, 'index'])
         ->middleware('desktop.permission:financeiro,visualizar')
         ->name('financeiro.relatorios.margem');
+    Route::get('/financeiro/{financeiro}', [FinanceiroController::class, 'show'])
+        ->middleware('desktop.permission:financeiro,visualizar')
+        ->name('financeiro.show');
     Route::get('/financeiro/{financeiro}/editar', [FinanceiroController::class, 'edit'])
         ->middleware('desktop.permission:financeiro,editar')
         ->name('financeiro.edit');

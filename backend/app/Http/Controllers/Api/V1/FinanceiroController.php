@@ -46,12 +46,19 @@ class FinanceiroController extends BaseApiController
     {
         $this->authorize('financeiro:visualizar');
 
-        $financeiro->load(['order', 'client', 'movimentos']);
+        $financeiro->load([
+            'order',
+            'client',
+            'supplier',
+            'movimentos.cartao.operadora',
+            'movimentos.cartao.bandeira',
+        ]);
 
         return $this->success(
             [
                 'lancamento' => $financeiro,
                 'resumo' => $this->financeiroService->movementSummary($financeiro),
+                'detalhes' => $this->financeiroService->detailContext($financeiro),
             ],
             request: $request
         );
