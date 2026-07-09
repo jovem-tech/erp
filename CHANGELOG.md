@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v3.17.0.0 — 2026-07-08 21:15
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Adiciona scripts/versionar.sh e scripts/bash/deploy-completo.sh para versionar e publicar (dev->main) sem depender de IA
+- **Arquivos:** AGENTS.md,.agents/skills/sistema-erp-deploy-producao/SKILL.md,documentacao/10-deploy/workflow-git-multiambiente.md,scripts/bash/deploy-completo.sh,scripts/versionar.sh,VERSIONING.md
+
 ## v3.16.0.1 — 2026-07-08 19:42
 - **Tier:** hotfix
 - **Autor/Agente:** Codex

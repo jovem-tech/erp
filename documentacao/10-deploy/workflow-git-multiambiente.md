@@ -37,35 +37,67 @@ condensado para **2 estagios** enquanto nao houver uma VM de homologacao dedicad
 | Quem roda em cliente real? | VPS `161.97.93.120` |
 | Quando faz backup da VPS? | **sempre antes** de atualizar |
 
+## Versionar antes de publicar (2026-07-08)
+
+Sempre que a mudança merecer uma entrada em `CHANGELOG.md` (ver critérios em
+`VERSIONING.md`), rodar **antes** de publicar (passos 1-2 abaixo):
+
+```bash
+./scripts/versionar.sh
+```
+
+Script interativo, pensado para ser rodado direto pelo usuário — **não depende de IA**.
+Sugere o tier (major/minor/patch/hotfix) com base num diff heurístico (mesmo critério de
+`scripts/classify-change.sh`), pergunta a descrição, e grava em `VERSION`/`CHANGELOG.md`/
+`shared/version.php`. Não commita nem dá push — só isso é feito pelo script de deploy
+abaixo. Também aceita uso direto/não-interativo:
+`./scripts/versionar.sh --tier=minor --desc="..." [--files="a,b"]` (equivalente a chamar
+`scripts/bump-version.sh` na mão).
+
 ## Comandos por ambiente
 
-### 1. Desenvolvimento (`192.168.1.100`, branch `develop`)
+### 1-2. Desenvolvimento → GitHub (`develop` e promoção para `main`)
+
+**Forma recomendada** — um único script, rodado no dev (`192.168.1.100`), que sincroniza
+`develop`, commita o que estiver pendente (usando a última entrada do `CHANGELOG.md` como
+mensagem), publica `develop` e promove para `main`:
 
 ```bash
 ssh administrador@192.168.1.100
 cd /var/www/sistema-erp
+./scripts/bash/deploy-completo.sh
+```
+
+O script mostra um resumo (`git status`/`git diff --stat`) e **pede confirmação** antes de
+commitar e promover para `main` — nada é feito silenciosamente. Ao final, ele já avisa:
+"rode `deploy-producao.sh` na VPS" (passo 3 abaixo).
+
+O que o script faz por baixo (equivalente manual, caso precise rodar passo a passo ou
+diagnosticar um problema):
+
+```bash
 git checkout develop
 git pull --ff-only origin develop
 # ... editar, testar ...
-git add .
+git add -A
 git commit -m "mensagem"
 git push origin develop
-```
 
-### 2. Promover develop → main (produção)
-
-Revisão feita **antes** de mesclar (idealmente via Pull Request no GitHub, comparando
-`develop` com `main`):
-
-```bash
 git checkout main
 git pull --ff-only origin main
-git merge --ff-only develop   # ou merge de PR pela interface do GitHub
+git merge --no-ff develop -m "merge: promove develop para main (vX.Y.Z.W — ...)"
 git push origin main
 ```
 
-Se `develop` e `main` divergiram (main recebeu hotfix direto), resolver o conflito
-localmente ou via PR antes de forçar o merge — nunca com `git push --force` em `main`.
+**Nota sobre `--no-ff`**: promoções anteriores deste repositório já usaram merge commit
+explícito (não fast-forward) para levar `develop` a `main` — um `git merge --ff-only`
+falha nesse histórico mesmo sem conflito de conteúdo real, por divergência de grafo. Por
+isso o script (e o comando manual acima) usam `--no-ff`, criando um commit de merge
+rastreável a cada promoção.
+
+Se `develop` e `main` divergiram de um jeito que gera conflito de verdade (main recebeu
+hotfix direto tocando as mesmas linhas), o `git merge` para sozinho — resolver o conflito
+localmente ou via PR antes de continuar, nunca com `git push --force` em `main`.
 
 ### 3. Atualizar a VPS (produção)
 

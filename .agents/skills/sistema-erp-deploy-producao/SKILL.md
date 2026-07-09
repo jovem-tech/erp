@@ -39,12 +39,18 @@ Desde 2026-07-05 a VPS e' um clone git real de `https://github.com/jovem-tech/er
 (branch `main`), autenticado por deploy key **somente leitura**. O fluxo
 tar+scp usado ate' entao esta descontinuado.
 
-1. Promover o codigo validado de `develop` para `main` (ver workflow-git-multiambiente.md).
-2. Na VPS: `cd /var/www/sistema-erp && ./scripts/bash/deploy-producao.sh`.
-3. O script ja faz, nesta ordem: backup do banco -> `git fetch`+`checkout main`+
+Desde 2026-07-08, atualizar a VPS e' **2 scripts, nenhuma IA envolvida**:
+
+1. No dev (`192.168.1.100`): `./scripts/versionar.sh` (se a mudanca merecer entrada no
+   CHANGELOG — ver VERSIONING.md) e depois `./scripts/bash/deploy-completo.sh` — sincroniza
+   `develop`, commita o pendente (mensagem tirada do topo do CHANGELOG.md), publica
+   `develop` e promove para `main` (pede confirmacao antes). Ver
+   workflow-git-multiambiente.md para o passo a passo manual equivalente.
+2. Na VPS: `cd /var/www/sistema-erp && ./scripts/bash/deploy-producao.sh` (sem mudancas).
+   O script ja faz, nesta ordem: backup do banco -> `git fetch`+`checkout main`+
    `pull --ff-only` -> `composer install` -> `migrate --force` -> rebuild de caches
    (backend e desktop) -> `systemctl reload php8.3-fpm` -> `supervisorctl restart all`.
-4. Rodar o checklist pos-deploy do runbook Contabo.
+3. Rodar o checklist pos-deploy do runbook Contabo.
 
 Se precisar atualizar so o servidor de dev (`192.168.1.100`, branch `develop`):
 `./scripts/bash/atualizar-dev.sh` (mais leve, sem backup obrigatorio).
