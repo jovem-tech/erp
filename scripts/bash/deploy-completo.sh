@@ -97,11 +97,17 @@ echo ">>> [3/6] Publicando develop no GitHub"
 git push origin develop
 
 echo ">>> [4/6] Promovendo develop para main"
+
+# Lidos de `develop` (via git show), não do working tree depois do checkout —
+# depois do "git checkout main" o working tree ainda é o de main até o merge
+# de fato acontecer, então ler VERSION/CHANGELOG.md direto do disco aqui
+# pegaria a versão ANTIGA de main, não a nova que está vindo de develop.
+MERGE_VERSION=$(git show develop:VERSION 2>/dev/null || echo "")
+MERGE_DESC=$(git show develop:CHANGELOG.md 2>/dev/null | awk '/^## v/{n++} n==1' | grep -m1 -oP '(?<=\*\*Descrição:\*\* ).*' || true)
+
 git checkout main
 git pull --ff-only origin main
 
-MERGE_VERSION=$(cat VERSION 2>/dev/null || echo "")
-MERGE_DESC=$(awk '/^## v/{n++} n==1' CHANGELOG.md 2>/dev/null | grep -m1 -oP '(?<=\*\*Descrição:\*\* ).*' || true)
 MERGE_MSG="merge: promove develop para main"
 if [[ -n "$MERGE_VERSION" ]]; then
   MERGE_MSG="merge: promove develop para main (v$MERGE_VERSION${MERGE_DESC:+ — $MERGE_DESC})"
