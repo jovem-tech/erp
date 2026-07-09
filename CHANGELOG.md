@@ -1,5 +1,23 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v3.17.3.0 — 2026-07-08 22:00
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** ajustes no dashboard
+- **Arquivos:** frontends/desktop/app/Services/DocumentationService.php,frontends/desktop/resources/views/configurations/system.blade.php
+
+## v3.17.2.1 — 2026-07-08 21:53
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Alinha KPI de OS abertas do dashboard ao escopo operacional da listagem de OS
+- **Arquivos:** backend/app/Services/Dashboard/DashboardSummaryService.php,backend/tests/Feature/Api/V1/DashboardSummaryTest.php,frontends/desktop/resources/views/dashboard/help.blade.php
+
+## v3.17.2.0 — 2026-07-08 21:48
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** mostrar versionamento na documentaçãodo sistema nas configurações
+- **Arquivos:** frontends/desktop/app/Services/DocumentationService.php
+
 ## v3.17.1.0 — 2026-07-08 21:20
 - **Tier:** patch
 - **Autor/Agente:** Codex

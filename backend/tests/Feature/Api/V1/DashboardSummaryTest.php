@@ -60,6 +60,22 @@ class DashboardSummaryTest extends TestCase
                 'imei' => 'IMEI-12345',
             ]);
 
+            DB::table('os_status')->insert([
+                'codigo' => 'irreparavel',
+                'nome' => 'Irreparável',
+                'grupo_macro' => 'finalizado_sem_reparo',
+                'icone' => null,
+                'cor' => 'danger',
+                'ordem_fluxo' => 40,
+                'status_final' => 1,
+                'status_pausa' => 0,
+                'gera_evento_crm' => 1,
+                'estado_fluxo_padrao' => 'em_atendimento',
+                'ativo' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
             $this->createOrderRecord([
                 'numero_os' => 'OS25120099',
                 'cliente_id' => $clientId,
@@ -72,6 +88,21 @@ class DashboardSummaryTest extends TestCase
                 'data_entrega' => Carbon::parse('2025-12-06 13:00:00'),
                 'relato_cliente' => 'Pré-histórico para comparativo.',
                 'valor_final' => 350,
+            ]);
+
+            $this->createOrderRecord([
+                'numero_os' => 'OS25120100',
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'status' => 'irreparavel',
+                'estado_fluxo' => 'em_atendimento',
+                'data_abertura' => Carbon::parse('2025-12-07 09:00:00'),
+                'data_entrada' => Carbon::parse('2025-12-07 09:05:00'),
+                'status_atualizado_em' => Carbon::parse('2025-12-07 10:00:00'),
+                'created_at' => Carbon::parse('2025-12-07 09:00:00'),
+                'updated_at' => Carbon::parse('2025-12-07 10:00:00'),
+                'relato_cliente' => 'Equipamento avaliado como irreparável, ainda em posse da assistência.',
+                'valor_final' => 0,
             ]);
 
             $this->createOrderRecord([
@@ -120,13 +151,13 @@ class DashboardSummaryTest extends TestCase
                 ->assertJsonPath('data.access.profile', 'gerente')
                 ->assertJsonPath('data.access.has_financial_access', true)
                 ->assertJsonPath('data.access.is_technician', false)
-                ->assertJsonPath('data.stats.orders', 1)
-                ->assertJsonPath('data.stats.total_abertas', 1)
+                ->assertJsonPath('data.stats.orders', 2)
+                ->assertJsonPath('data.stats.total_abertas', 2)
                 ->assertJsonPath('data.stats.clients', 1)
                 ->assertJsonPath('data.stats.equipments', 1)
                 ->assertJsonPath('data.stats.users', 1)
                 ->assertJsonPath('data.stats.groups', 4)
-                ->assertJsonPath('data.stats.total_os', 3)
+                ->assertJsonPath('data.stats.total_os', 4)
                 ->assertJsonPath('data.stats.equipamento_entregue_total', 2)
                 ->assertJsonPath('data.stats.equipamento_entregue_mes_atual', 1)
                 ->assertJsonPath('data.stats.faturamento_mes', 660.0)
@@ -145,13 +176,13 @@ class DashboardSummaryTest extends TestCase
                 ->assertJsonPath('data.charts.monthly.points.0.entregues_reparadas', 1)
                 ->assertJsonPath('data.charts.monthly.series.0.key', 'abertas')
                 ->assertJsonPath('data.charts.monthly.series.1.key', 'entregues_reparadas')
-                ->assertJsonPath('data.charts.status.total', 1)
+                ->assertJsonPath('data.charts.status.total', 2)
                 ->assertJsonPath('data.charts.status.items.0.cor', '#6b7280')
                 ->assertJsonPath('data.charts.equipment_types.period.mes', 1)
                 ->assertJsonPath('data.charts.equipment_types.period.ano', 2026)
                 ->assertJsonPath('data.charts.equipment_types.items.0.tipo_nome', 'Desktop')
                 ->assertJsonPath('data.charts.equipment_types.items.0.total', 2)
-                ->assertJsonPath('data.alerts.os_paradas', 0)
+                ->assertJsonPath('data.alerts.os_paradas', 1)
                 ->assertJsonPath('data.alerts.orcamentos_pendentes', 1)
                 ->assertJsonPath('data.alerts.prontos_retirada', 0)
                 ->assertJsonPath('data.charts.financial.previous_month_revenue', 350.0)
