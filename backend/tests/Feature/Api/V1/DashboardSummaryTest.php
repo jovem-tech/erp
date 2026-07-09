@@ -121,6 +121,23 @@ class DashboardSummaryTest extends TestCase
             ]);
 
             $this->createOrderRecord([
+                'numero_os' => 'OS26010099',
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'status' => 'entregue_reparado',
+                'estado_fluxo' => 'encerrado',
+                'data_abertura' => Carbon::parse('2025-12-10 09:00:00'),
+                'data_entrada' => Carbon::parse('2025-12-10 09:10:00'),
+                'data_conclusao' => null,
+                'data_entrega' => null,
+                'status_atualizado_em' => Carbon::parse('2026-01-13 10:00:00'),
+                'created_at' => Carbon::parse('2026-01-13 10:00:00'),
+                'updated_at' => Carbon::parse('2026-01-13 10:00:00'),
+                'relato_cliente' => 'Entregue importada do legado sem data real de entrega.',
+                'valor_final' => 999,
+            ]);
+
+            $this->createOrderRecord([
                 'numero_os' => 'OS26010002',
                 'cliente_id' => $clientId,
                 'equipamento_id' => $equipmentId,
@@ -157,8 +174,8 @@ class DashboardSummaryTest extends TestCase
                 ->assertJsonPath('data.stats.equipments', 1)
                 ->assertJsonPath('data.stats.users', 1)
                 ->assertJsonPath('data.stats.groups', 4)
-                ->assertJsonPath('data.stats.total_os', 4)
-                ->assertJsonPath('data.stats.equipamento_entregue_total', 2)
+                ->assertJsonPath('data.stats.total_os', 5)
+                ->assertJsonPath('data.stats.equipamento_entregue_total', 3)
                 ->assertJsonPath('data.stats.equipamento_entregue_mes_atual', 1)
                 ->assertJsonPath('data.stats.faturamento_mes', 660.0)
                 ->assertJsonPath('data.stats.faturamento_mes_anterior', 350.0)

@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-09T00:53:41+00:00`
-- Versao do sistema: `3.17.2`
+- Gerado em: `2026-07-09T01:53:37+00:00`
+- Versao do sistema: `3.17.3`
 - Versao da API: `1.1.2`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Windows/XAMPP`
@@ -152,6 +152,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/10-deploy/deploy-producao-contabo-vps.md` - Runbook de Producao — VPS Contabo (subdominios + dados reais)
 - `documentacao/10-deploy/deploy-producao-lan-ubuntu.md` - Deploy de Produção — Ubuntu Server (LAN ou VPS)
 - `documentacao/10-deploy/manual-inicializacao-local-windows-xampp.md` - Manual de Inicializacao Local no Windows com XAMPP
+- `documentacao/10-deploy/manual-versionamento-e-deploy.md` - Manual de Publicação — Versionar e Deploy
 - `documentacao/10-deploy/workflow-git-multiambiente.md` - Fluxo Git Multiambiente — Sistema ERP
 
 ## Inventario de specs

@@ -27,7 +27,7 @@
         <article class="dashboard-panel">
             <div class="dashboard-help-item">
                 <strong>Gráfico mensal</strong>
-                <p>Comparativo entre OS abertas e entregues reparadas por mês. O filtro de ano atualiza apenas esse bloco.</p>
+                <p>Comparativo entre OS abertas e entregues reparadas por mês. As entregas reparadas consideram apenas OS com status Equipamento Entregue e data real de entrega ou conclusão, evitando distorções por importações do legado.</p>
             </div>
             <div class="dashboard-help-item">
                 <strong>OS por status</strong>

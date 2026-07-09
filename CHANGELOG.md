@@ -1,5 +1,17 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v3.17.4.0 — 2026-07-08 22:57
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** ajuste no grafico de os entregues reparadas mes de março 2026
+- **Arquivos:** backend/app/Services/Dashboard/DashboardSummaryService.php,backend/tests/Feature/Api/V1/DashboardSummaryTest.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/resources/views/dashboard/help.blade.php
+
+## v3.17.3.1 — 2026-07-08 22:53
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige serie mensal de entregas reparadas do dashboard para ignorar atualizacoes de importacao legado
+- **Arquivos:** backend/app/Services/Dashboard/DashboardSummaryService.php,backend/tests/Feature/Api/V1/DashboardSummaryTest.php,frontends/desktop/resources/views/dashboard/help.blade.php
+
 ## v3.17.3.0 — 2026-07-08 22:00
 - **Tier:** patch
 - **Autor/Agente:** Codex

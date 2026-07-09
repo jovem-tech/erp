@@ -62,22 +62,16 @@ class DashboardSummaryService
     private const OPEN_DATE_SQL = 'os.data_abertura_efetiva';
 
     /**
-     * Coluna gerada/indexada equivalente a COALESCE(os.data_entrega,
-     * os.data_conclusao, os.status_atualizado_em, os.updated_at, os.created_at).
+     * Data operacional de entrega reparada. Intencionalmente nao usa
+     * status_atualizado_em/updated_at/created_at: esses campos refletem
+     * importacoes ou edicoes em lote e distorcem o grafico mensal de entregas.
      */
-    private const DELIVERY_DATE_SQL = 'os.data_entrega_efetiva';
+    private const REPAIRED_DELIVERY_DATE_SQL = 'COALESCE(os.data_entrega, os.data_conclusao)';
 
     /**
      * Expressão SQL para a data de referência usada no alerta de "OS parada".
      */
     private const STALE_REFERENCE_SQL = 'COALESCE(os.status_atualizado_em, os.updated_at, os.created_at)';
-
-    /**
-     * Expressão SQL equivalente à regra de negócio isDelivered(): true quando o
-     * status catalogado é final, ou o código de status contém "entregue", ou é
-     * um dos códigos legados concluido/finalizado/encerrado.
-     */
-    private const DELIVERED_SQL = "(os_status.status_final = 1 OR os.status LIKE '%entregue%' OR os.status IN ('concluido', 'finalizado', 'encerrado'))";
 
     /**
      * TTL curto: o painel tolera ate 1 minuto de atraso em troca de evitar
@@ -218,12 +212,19 @@ class DashboardSummaryService
 
     private function deliveredTechnicalOrdersQuery(User $user): Builder
     {
-        return $this->baseOrdersQuery($user)
-            ->where(static function (Builder $query): void {
-                $query
-                    ->where('os.status', OrderStatus::REVENUE_CLOSURE_CODE)
-                    ->orWhere('os.status_final_pendente_pagamento', OrderStatus::REVENUE_CLOSURE_CODE);
-            });
+        $query = $this->baseOrdersQuery($user);
+        $this->applyRepairedDeliveryScope($query);
+
+        return $query;
+    }
+
+    private function applyRepairedDeliveryScope(Builder $query): void
+    {
+        $query->where(static function (Builder $scopeQuery): void {
+            $scopeQuery
+                ->where('os.status', OrderStatus::REVENUE_CLOSURE_CODE)
+                ->orWhere('os.status_final_pendente_pagamento', OrderStatus::REVENUE_CLOSURE_CODE);
+        });
     }
 
     private function applyOperationalOpenScope(Builder $query): void
@@ -492,7 +493,7 @@ class DashboardSummaryService
     {
         [$yearStart, $yearEnd] = $this->periodBounds($year);
         $monthExpression = $this->datePartExpression(self::OPEN_DATE_SQL, 'month');
-        $deliveryMonthExpression = $this->datePartExpression(self::DELIVERY_DATE_SQL, 'month');
+        $deliveryMonthExpression = $this->datePartExpression(self::REPAIRED_DELIVERY_DATE_SQL, 'month');
 
         $opened = $this->baseOrdersQuery($user)
             ->selectRaw($monthExpression . ' as mes, COUNT(*) as total')
@@ -500,10 +501,10 @@ class DashboardSummaryService
             ->groupByRaw($monthExpression)
             ->pluck('total', 'mes');
 
-        $delivered = $this->baseOrdersQuery($user)
+        $delivered = $this->deliveredTechnicalOrdersQuery($user)
             ->selectRaw($deliveryMonthExpression . ' as mes, COUNT(*) as total')
             ->whereRaw(
-                self::DELIVERY_DATE_SQL . ' >= ? AND ' . self::DELIVERY_DATE_SQL . ' < ? AND ' . self::DELIVERED_SQL,
+                self::REPAIRED_DELIVERY_DATE_SQL . ' >= ? AND ' . self::REPAIRED_DELIVERY_DATE_SQL . ' < ?',
                 [$yearStart, $yearEnd]
             )
             ->groupByRaw($deliveryMonthExpression)
@@ -749,18 +750,18 @@ class DashboardSummaryService
         [$currentPeriodStart, $currentPeriodEnd] = $this->periodBounds($currentYear, $currentMonth);
         [$previousPeriodStart, $previousPeriodEnd] = $this->periodBounds($previousYear, $previousMonth);
 
-        $currentMonthRow = $this->baseOrdersQuery($user)
+        $currentMonthRow = $this->deliveredTechnicalOrdersQuery($user)
             ->selectRaw('COALESCE(SUM(os.valor_final), 0) as total, COUNT(*) as cnt')
             ->whereRaw(
-                self::DELIVERED_SQL . ' AND ' . self::DELIVERY_DATE_SQL . ' >= ? AND ' . self::DELIVERY_DATE_SQL . ' < ?',
+                self::REPAIRED_DELIVERY_DATE_SQL . ' >= ? AND ' . self::REPAIRED_DELIVERY_DATE_SQL . ' < ?',
                 [$currentPeriodStart, $currentPeriodEnd]
             )
             ->first();
 
-        $previousMonthRow = $this->baseOrdersQuery($user)
+        $previousMonthRow = $this->deliveredTechnicalOrdersQuery($user)
             ->selectRaw('COALESCE(SUM(os.valor_final), 0) as total')
             ->whereRaw(
-                self::DELIVERED_SQL . ' AND ' . self::DELIVERY_DATE_SQL . ' >= ? AND ' . self::DELIVERY_DATE_SQL . ' < ?',
+                self::REPAIRED_DELIVERY_DATE_SQL . ' >= ? AND ' . self::REPAIRED_DELIVERY_DATE_SQL . ' < ?',
                 [$previousPeriodStart, $previousPeriodEnd]
             )
             ->first();
@@ -845,10 +846,10 @@ class DashboardSummaryService
         if ($access['is_technician']) {
             [$periodStart, $periodEnd] = $this->periodBounds($currentYear, $currentMonth);
 
-            $commissionRow = $this->baseOrdersQuery($user)
+            $commissionRow = $this->deliveredTechnicalOrdersQuery($user)
                 ->selectRaw('COALESCE(SUM(os.valor_final * 0.1), 0) as total')
                 ->whereRaw(
-                    self::DELIVERED_SQL . ' AND os.tecnico_id = ? AND ' . self::DELIVERY_DATE_SQL . ' >= ? AND ' . self::DELIVERY_DATE_SQL . ' < ?',
+                    'os.tecnico_id = ? AND ' . self::REPAIRED_DELIVERY_DATE_SQL . ' >= ? AND ' . self::REPAIRED_DELIVERY_DATE_SQL . ' < ?',
                     [(int) $user->id, $periodStart, $periodEnd]
                 )
                 ->first();
