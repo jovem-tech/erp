@@ -79,6 +79,60 @@ class DashboardSummaryService
      */
     private const CACHE_TTL_SECONDS = 60;
 
+    /**
+     * Paleta própria do gráfico de status. Não usa diretamente a cor do
+     * catálogo porque vários status compartilham a mesma classe visual
+     * ("primary", "danger" etc.), o que prejudica a leitura do doughnut.
+     *
+     * @var array<int, string>
+     */
+    private const STATUS_CHART_COLORS = [
+        '#ef4444',
+        '#64748b',
+        '#0ea5e9',
+        '#6f5afc',
+        '#22c55e',
+        '#f97316',
+        '#14b8a6',
+        '#a855f7',
+        '#eab308',
+        '#ec4899',
+        '#2563eb',
+        '#84cc16',
+        '#f43f5e',
+        '#0891b2',
+        '#8b5cf6',
+        '#10b981',
+        '#fb923c',
+        '#6366f1',
+        '#06b6d4',
+        '#d946ef',
+        '#65a30d',
+        '#dc2626',
+        '#0284c7',
+        '#7c3aed',
+    ];
+
+    /**
+     * @var array<int, string>
+     */
+    private const EQUIPMENT_CHART_COLORS = [
+        '#2563eb',
+        '#7c3aed',
+        '#059669',
+        '#f97316',
+        '#dc2626',
+        '#0891b2',
+        '#ca8a04',
+        '#db2777',
+        '#4f46e5',
+        '#16a34a',
+        '#ea580c',
+        '#9333ea',
+    ];
+
+    private const EQUIPMENT_CHART_MAX_TYPES = 12;
+
     public function __construct(
         private readonly OrderWorkflowService $orderWorkflowService,
         private readonly RbacAuthorizationService $rbacAuthorizationService
@@ -124,7 +178,7 @@ class DashboardSummaryService
         $monthlyChart = $canViewOrders ? $this->buildMonthlyChart($user, $selectedYear) : $this->emptyMonthlyChart($selectedYear);
         $statusChart = $canViewOrders ? $this->buildStatusChart($user) : $this->emptyStatusChart();
         $equipmentTypesChart = $canViewOrders
-            ? $this->buildEquipmentTypesChart($user, $equipmentPeriod['mes'], $equipmentPeriod['ano'])
+            ? $this->buildEquipmentTypesChart($user, $equipmentPeriod['ano'])
             : $this->emptyEquipmentTypesChart($equipmentPeriod);
         $financialSummary = $canViewOrders
             ? $this->buildFinancialSummary($user, $access)
@@ -592,10 +646,10 @@ class DashboardSummaryService
         $colors = [];
         $totalOpen = 0;
 
-        foreach ($rows as $row) {
+        foreach ($rows as $index => $row) {
             $total = (int) $row->total;
             $totalOpen += $total;
-            $color = $this->statusColor($row->cor);
+            $color = $this->chartColor(self::STATUS_CHART_COLORS, (int) $index);
 
             $items[] = [
                 'codigo' => (string) $row->status_code,
@@ -646,9 +700,10 @@ class DashboardSummaryService
     /**
      * @return array<string, mixed>
      */
-    private function buildEquipmentTypesChart(User $user, int $month, int $year): array
+    private function buildEquipmentTypesChart(User $user, int $year): array
     {
         $hasTiposTable = Schema::hasTable('equipamentos_tipos');
+        $monthExpression = $this->datePartExpression(self::OPEN_DATE_SQL, 'month');
 
         $query = $this->baseOrdersQuery($user)
             ->leftJoin('equipamentos', 'equipamentos.id', '=', 'os.equipamento_id');
@@ -661,51 +716,117 @@ class DashboardSummaryService
             $groupByRaw = 'equipamentos_tipos.nome, equipamentos.desktop_modalidade';
         }
 
-        [$periodStart, $periodEnd] = $this->periodBounds($year, $month);
+        [$periodStart, $periodEnd] = $this->periodBounds($year);
 
         $rows = $query
-            ->selectRaw("{$labelExpr} as raw_label, COUNT(*) as total, COUNT(DISTINCT os.equipamento_id) as equip_unicos")
+            ->selectRaw("{$monthExpression} as mes, {$labelExpr} as raw_label, COUNT(*) as total")
             ->whereRaw(self::OPEN_DATE_SQL . ' >= ? AND ' . self::OPEN_DATE_SQL . ' < ?', [$periodStart, $periodEnd])
-            ->groupByRaw($groupByRaw)
+            ->groupByRaw($monthExpression . ', ' . $groupByRaw)
+            ->orderByRaw($monthExpression . ' ASC')
             ->get();
 
-        $items = [];
+        $monthlyByLabel = [];
+        $totalsByLabel = [];
         foreach ($rows as $row) {
+            $month = (int) $row->mes;
+            if ($month < 1 || $month > 12) {
+                continue;
+            }
+
             $label = $this->normalizeEquipmentLabel((string) $row->raw_label);
             if ($label === '') {
                 $label = 'Não informado';
             }
 
-            if (! isset($items[$label])) {
-                $items[$label] = ['tipo_nome' => $label, 'total' => 0, 'equipamentos_unicos' => 0];
+            if (! isset($monthlyByLabel[$label])) {
+                $monthlyByLabel[$label] = array_fill(1, 12, 0);
+                $totalsByLabel[$label] = 0;
             }
 
-            $items[$label]['total'] += (int) $row->total;
-            $items[$label]['equipamentos_unicos'] += (int) $row->equip_unicos;
+            $total = (int) $row->total;
+            $monthlyByLabel[$label][$month] += $total;
+            $totalsByLabel[$label] += $total;
         }
 
-        $list = array_values($items);
-        usort($list, static fn (array $left, array $right): int => $right['total'] <=> $left['total']);
-        $list = array_slice($list, 0, 6);
+        $labels = array_keys($totalsByLabel);
+        usort($labels, static function (string $left, string $right) use ($totalsByLabel): int {
+            $byTotal = $totalsByLabel[$right] <=> $totalsByLabel[$left];
+
+            return $byTotal !== 0 ? $byTotal : strcasecmp($left, $right);
+        });
+
+        $topLabels = array_slice($labels, 0, self::EQUIPMENT_CHART_MAX_TYPES);
+        $overflowLabels = array_slice($labels, self::EQUIPMENT_CHART_MAX_TYPES);
+        $series = [];
+        $items = [];
+        $totalsByMonth = array_fill(1, 12, 0);
+
+        foreach ($topLabels as $index => $label) {
+            $data = array_values($monthlyByLabel[$label] ?? array_fill(1, 12, 0));
+            $color = $this->chartColor(self::EQUIPMENT_CHART_COLORS, (int) $index);
+
+            $series[] = [
+                'key' => 'tipo_' . ($index + 1),
+                'label' => $label,
+                'data' => $data,
+                'backgroundColor' => $color,
+                'color' => $color,
+                'total' => (int) ($totalsByLabel[$label] ?? 0),
+            ];
+
+            $items[] = [
+                'tipo_nome' => $label,
+                'total' => (int) ($totalsByLabel[$label] ?? 0),
+                'cor' => $color,
+                'data' => $data,
+            ];
+
+            for ($month = 1; $month <= 12; $month++) {
+                $totalsByMonth[$month] += (int) ($monthlyByLabel[$label][$month] ?? 0);
+            }
+        }
+
+        if ($overflowLabels !== []) {
+            $otherMonthly = array_fill(1, 12, 0);
+            $otherTotal = 0;
+
+            foreach ($overflowLabels as $label) {
+                $otherTotal += (int) ($totalsByLabel[$label] ?? 0);
+                for ($month = 1; $month <= 12; $month++) {
+                    $otherMonthly[$month] += (int) ($monthlyByLabel[$label][$month] ?? 0);
+                    $totalsByMonth[$month] += (int) ($monthlyByLabel[$label][$month] ?? 0);
+                }
+            }
+
+            $otherColor = $this->chartColor(self::EQUIPMENT_CHART_COLORS, count($series));
+            $otherData = array_values($otherMonthly);
+            $series[] = [
+                'key' => 'outros',
+                'label' => 'Outros',
+                'data' => $otherData,
+                'backgroundColor' => $otherColor,
+                'color' => $otherColor,
+                'total' => $otherTotal,
+            ];
+            $items[] = [
+                'tipo_nome' => 'Outros',
+                'total' => $otherTotal,
+                'cor' => $otherColor,
+                'data' => $otherData,
+            ];
+        }
 
         return [
+            'type' => 'stacked_monthly',
             'period' => [
-                'mes' => $month,
                 'ano' => $year,
-                'mes_label' => self::MONTH_NAMES[$month] ?? sprintf('%02d', $month),
-                'periodo_label' => ($this->monthName($month) ?? sprintf('%02d', $month)) . '/' . $year,
+                'periodo_label' => (string) $year,
                 'years' => $this->availableOrderYears($user),
             ],
-            'labels' => array_map(static fn (array $item): string => (string) $item['tipo_nome'], $list),
-            'series' => [
-                [
-                    'key' => 'equipamentos',
-                    'label' => 'OS por tipo',
-                    'data' => array_map(static fn (array $item): int => (int) $item['total'], $list),
-                    'backgroundColor' => ['#3b82f6', '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#64748b'],
-                ],
-            ],
-            'items' => $list,
+            'labels' => array_values(self::MONTH_LABELS),
+            'totals_by_month' => array_values($totalsByMonth),
+            'series' => $series,
+            'items' => $items,
         ];
     }
 
@@ -716,22 +837,15 @@ class DashboardSummaryService
     private function emptyEquipmentTypesChart(array $equipmentPeriod): array
     {
         return [
+            'type' => 'stacked_monthly',
             'period' => [
-                'mes' => $equipmentPeriod['mes'],
                 'ano' => $equipmentPeriod['ano'],
-                'mes_label' => self::MONTH_NAMES[$equipmentPeriod['mes']] ?? sprintf('%02d', $equipmentPeriod['mes']),
-                'periodo_label' => ($this->monthName($equipmentPeriod['mes']) ?? sprintf('%02d', $equipmentPeriod['mes'])) . '/' . $equipmentPeriod['ano'],
+                'periodo_label' => (string) $equipmentPeriod['ano'],
                 'years' => $equipmentPeriod['years'],
             ],
-            'labels' => [],
-            'series' => [
-                [
-                    'key' => 'equipamentos',
-                    'label' => 'OS por tipo',
-                    'data' => [],
-                    'backgroundColor' => ['#3b82f6', '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#64748b'],
-                ],
-            ],
+            'labels' => array_values(self::MONTH_LABELS),
+            'totals_by_month' => array_fill(0, 12, 0),
+            'series' => [],
             'items' => [],
         ];
     }
@@ -1000,26 +1114,22 @@ class DashboardSummaryService
         return mb_strtolower(trim((string) ($user->perfil ?? ''))) === 'tecnico';
     }
 
-    private function statusColor(?string $color): string
+    /**
+     * Retorna uma cor única para a posição do gráfico. Quando a quantidade de
+     * categorias ultrapassa a paleta fixa, usa saltos no círculo HSL para
+     * reduzir colisões visuais sem depender de bibliotecas externas.
+     *
+     * @param array<int, string> $palette
+     */
+    private function chartColor(array $palette, int $index): string
     {
-        $color = trim((string) $color);
-        if ($color === '') {
-            return '#6b7280';
+        if (isset($palette[$index])) {
+            return $palette[$index];
         }
 
-        $normalized = mb_strtolower($color);
+        $hue = (17 + ($index * 137)) % 360;
 
-        return match ($normalized) {
-            'primary', 'indigo', 'purple' => '#6f5afc',
-            'secondary' => '#6b7280',
-            'success' => '#22c55e',
-            'warning', 'orange' => '#f59e0b',
-            'danger' => '#ef4444',
-            'info' => '#0ea5e9',
-            'dark' => '#111827',
-            'light' => '#e5e7eb',
-            default => $this->isValidColorValue($color) ? $color : '#6b7280',
-        };
+        return sprintf('hsl(%d, 72%%, 48%%)', $hue);
     }
 
     private function normalizeEquipmentLabel(string $value): string
@@ -1032,11 +1142,6 @@ class DashboardSummaryService
         $value = str_replace(['-', '_'], ' ', $value);
 
         return ucwords(mb_strtolower($value));
-    }
-
-    private function monthName(int $month): ?string
-    {
-        return self::MONTH_NAMES[$month] ?? null;
     }
 
     private function parseOrderDate(mixed $value): ?Carbon
@@ -1059,41 +1164,6 @@ class DashboardSummaryService
         }
 
         return null;
-    }
-
-    private function isValidColorValue(string $color): bool
-    {
-        $color = trim($color);
-
-        if ($color === '') {
-            return false;
-        }
-
-        if (preg_match('/^#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?$/', $color) === 1) {
-            return true;
-        }
-
-        if (preg_match('/^(rgb|rgba|hsl|hsla)\([^)]+\)$/i', $color) === 1) {
-            return true;
-        }
-
-        return in_array(mb_strtolower($color), [
-            'black',
-            'white',
-            'gray',
-            'grey',
-            'red',
-            'green',
-            'blue',
-            'yellow',
-            'orange',
-            'purple',
-            'pink',
-            'teal',
-            'cyan',
-            'lime',
-            'indigo',
-        ], true);
     }
 
     private function calculateOrderAgeDays(?Carbon $date): int
