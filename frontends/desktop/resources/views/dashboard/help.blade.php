@@ -12,7 +12,7 @@
         <article class="dashboard-panel">
             <div class="dashboard-help-item">
                 <strong>OS abertas</strong>
-                <p>Mostra o volume de ordens ainda em andamento que pertencem ao usuário ou ao perfil com acesso à listagem.</p>
+                <p>Mostra as ordens ainda em posse da assistência, usando o mesmo critério da listagem: exclui apenas Equipamento entregue, Devolvido sem reparo e Equipamento descartado.</p>
             </div>
             <div class="dashboard-help-item">
                 <strong>Card principal</strong>

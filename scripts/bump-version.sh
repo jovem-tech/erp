@@ -76,6 +76,11 @@ else
     echo ""
     tail -n +3 "$CHANGELOG_FILE"
   } > "$TMP"
+  # mktemp cria o arquivo com 600 (so o dono le); sem este chmod, o `mv` troca
+  # o inode do CHANGELOG.md por esse temporario e a permissao restritiva "vaza"
+  # para o arquivo final — quebrando qualquer leitor que nao seja o dono (ex.:
+  # www-data lendo CHANGELOG.md pela aba Documentacao do desktop).
+  chmod 644 "$TMP"
   mv "$TMP" "$CHANGELOG_FILE"
 fi
 

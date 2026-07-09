@@ -286,11 +286,12 @@
                             </h4>
                             @foreach ($docsTree as $group)
                                 @php
-                                    $groupOpen = $docsDoc !== null && (
-                                        $group['key'] === 'indice'
-                                            ? $docsDoc['path'] === 'README.md'
-                                            : str_starts_with($docsDoc['path'], $group['key'] . '/')
-                                    );
+                                    // Confere contra os itens de fato do grupo (nao um prefixo de
+                                    // caminho) — vale tanto para grupos de uma pasta (key/arquivo.md)
+                                    // quanto para grupos de item unico com caminho "raiz/..." (Indice
+                                    // geral, Historico de versoes).
+                                    $groupOpen = $docsDoc !== null && collect($group['items'])
+                                        ->contains(fn (array $item): bool => $item['path'] === $docsDoc['path']);
                                 @endphp
                                 <details class="docs-nav-group" {{ $groupOpen ? 'open' : '' }}>
                                     <summary>{{ $group['label'] }} <span class="docs-count">{{ count($group['items']) }}</span></summary>

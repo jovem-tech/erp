@@ -69,8 +69,15 @@ class DocumentationService
     {
         $groups = [];
 
+        // CHANGELOG.md tem topico proprio (abaixo) em vez de ficar misturado com
+        // README/VERSIONING/AGENTS em "Raiz do repositorio" — e o unico arquivo
+        // que resume "o que mudou em cada versao", entao merece destaque proprio.
         $rootItems = [];
         foreach (self::ROOT_FILES as $file => $fallbackTitle) {
+            if ($file === 'CHANGELOG.md') {
+                continue;
+            }
+
             $absolute = $this->repositoryRoot() . DIRECTORY_SEPARATOR . $file;
             if (is_file($absolute)) {
                 $rootItems[] = [
@@ -86,12 +93,8 @@ class DocumentationService
 
         $docsRoot = $this->docsRoot();
 
-        if (! is_dir($docsRoot)) {
-            return $groups;
-        }
-
         $readme = $docsRoot . DIRECTORY_SEPARATOR . 'README.md';
-        if (is_file($readme)) {
+        if (is_dir($docsRoot) && is_file($readme)) {
             $groups[] = [
                 'key' => 'indice',
                 'label' => 'Indice geral',
@@ -100,6 +103,22 @@ class DocumentationService
                     'title' => $this->extractTitle($readme) ?? 'Indice da documentacao',
                 ]],
             ];
+        }
+
+        $changelog = $this->repositoryRoot() . DIRECTORY_SEPARATOR . 'CHANGELOG.md';
+        if (is_file($changelog)) {
+            $groups[] = [
+                'key' => 'changelog',
+                'label' => 'Historico de versoes',
+                'items' => [[
+                    'path' => 'raiz/CHANGELOG.md',
+                    'title' => 'O que mudou em cada versao',
+                ]],
+            ];
+        }
+
+        if (! is_dir($docsRoot)) {
+            return $groups;
         }
 
         $directories = glob($docsRoot . DIRECTORY_SEPARATOR . '*', GLOB_ONLYDIR) ?: [];

@@ -4,6 +4,7 @@ namespace App\Services\Dashboard;
 
 use App\Models\Client;
 use App\Models\Equipment;
+use App\Models\OrderStatus;
 use App\Models\User;
 use App\Services\Auth\RbacAuthorizationService;
 use App\Services\Orders\OrderWorkflowService;
@@ -203,6 +204,46 @@ class DashboardSummaryService
     }
 
     /**
+     * Query base das OS que ainda estão na posse da assistência. Este escopo
+     * precisa permanecer alinhado com OrderWorkflowService::status_scope=open,
+     * usado na listagem operacional de OS.
+     */
+    private function openOperationalOrdersQuery(User $user): Builder
+    {
+        $query = $this->baseOrdersQuery($user);
+        $this->applyOperationalOpenScope($query);
+
+        return $query;
+    }
+
+    private function deliveredTechnicalOrdersQuery(User $user): Builder
+    {
+        return $this->baseOrdersQuery($user)
+            ->where(static function (Builder $query): void {
+                $query
+                    ->where('os.status', OrderStatus::REVENUE_CLOSURE_CODE)
+                    ->orWhere('os.status_final_pendente_pagamento', OrderStatus::REVENUE_CLOSURE_CODE);
+            });
+    }
+
+    private function applyOperationalOpenScope(Builder $query): void
+    {
+        $closureCodes = OrderStatus::closureCodes();
+
+        if ($closureCodes === []) {
+            return;
+        }
+
+        $query
+            ->whereNotIn('os.status', $closureCodes)
+            ->where(static function (Builder $scopeQuery) use ($closureCodes): void {
+                $scopeQuery
+                    ->whereNull('os.status_final_pendente_pagamento')
+                    ->orWhereNotIn('os.status_final_pendente_pagamento', $closureCodes);
+            });
+    }
+
+    /**
      * @return array<int, int>
      */
     private function availableOrderYears(User $user): array
@@ -325,17 +366,17 @@ class DashboardSummaryService
 
         $totalOrders = 0;
         $deliveredOrders = 0;
+        $openOrders = 0;
 
         if ($access['can_view_orders']) {
             $row = $this->baseOrdersQuery($user)
-                ->selectRaw('COUNT(*) as total, SUM(CASE WHEN ' . self::DELIVERED_SQL . ' THEN 1 ELSE 0 END) as delivered')
+                ->selectRaw('COUNT(*) as total')
                 ->first();
 
             $totalOrders = (int) ($row->total ?? 0);
-            $deliveredOrders = (int) ($row->delivered ?? 0);
+            $deliveredOrders = $this->deliveredTechnicalOrdersQuery($user)->count();
+            $openOrders = $this->openOperationalOrdersQuery($user)->count();
         }
-
-        $openOrders = $totalOrders - $deliveredOrders;
 
         return [
             'orders' => $openOrders,
@@ -533,7 +574,7 @@ class DashboardSummaryService
      */
     private function buildStatusChart(User $user): array
     {
-        $rows = $this->baseOrdersQuery($user)
+        $rows = $this->openOperationalOrdersQuery($user)
             ->selectRaw("
                 CASE WHEN os.status IS NULL OR TRIM(os.status) = '' THEN 'sem_status' ELSE os.status END as status_code,
                 COALESCE(NULLIF(TRIM(os_status.nome), ''), CASE WHEN os.status IS NULL OR TRIM(os.status) = '' THEN 'Sem status' ELSE os.status END) as nome,
@@ -541,7 +582,6 @@ class DashboardSummaryService
                 COALESCE(NULLIF(TRIM(os_status.grupo_macro), ''), 'outros') as grupo_macro,
                 COUNT(*) as total
             ")
-            ->whereRaw('NOT ' . self::DELIVERED_SQL)
             ->groupByRaw('os.status, os_status.nome, os_status.cor, os_status.grupo_macro')
             ->orderByDesc('total')
             ->orderByRaw('MAX(os.id) DESC')
@@ -725,17 +765,13 @@ class DashboardSummaryService
             )
             ->first();
 
-        $despesasRow = $this->baseOrdersQuery($user)
+        $despesasRow = $this->openOperationalOrdersQuery($user)
             ->selectRaw('COALESCE(SUM(os.valor_mao_obra + os.valor_pecas), 0) as total')
-            ->whereRaw(
-                'NOT ' . self::DELIVERED_SQL . ' AND ' . self::OPEN_DATE_SQL . ' >= ? AND ' . self::OPEN_DATE_SQL . ' < ?',
-                [$currentPeriodStart, $currentPeriodEnd]
-            )
+            ->whereRaw(self::OPEN_DATE_SQL . ' >= ? AND ' . self::OPEN_DATE_SQL . ' < ?', [$currentPeriodStart, $currentPeriodEnd])
             ->first();
 
-        $pendentesRow = $this->baseOrdersQuery($user)
+        $pendentesRow = $this->openOperationalOrdersQuery($user)
             ->selectRaw('COALESCE(SUM(os.valor_final), 0) as total')
-            ->whereRaw('NOT ' . self::DELIVERED_SQL)
             ->first();
 
         $receitas = (float) ($currentMonthRow->total ?? 0);
@@ -780,10 +816,9 @@ class DashboardSummaryService
         $currentMonth = (int) now()->month;
         $currentYear = (int) now()->year;
 
-        $rows = $this->baseOrdersQuery($user)
+        $rows = $this->openOperationalOrdersQuery($user)
             ->leftJoin('usuarios', 'usuarios.id', '=', 'os.tecnico_id')
             ->selectRaw("os.tecnico_id as tecnico_id, usuarios.nome as tecnico_nome, COUNT(*) as total")
-            ->whereRaw('NOT ' . self::DELIVERED_SQL)
             ->groupBy('os.tecnico_id', 'usuarios.nome')
             ->orderByDesc('total')
             ->get();
@@ -857,10 +892,10 @@ class DashboardSummaryService
     {
         $staleThreshold = now()->copy()->subDays(15);
 
-        $row = $this->baseOrdersQuery($user)
+        $row = $this->openOperationalOrdersQuery($user)
             ->selectRaw("
-                SUM(CASE WHEN NOT " . self::DELIVERED_SQL . " AND " . self::STALE_REFERENCE_SQL . " < ? THEN 1 ELSE 0 END) as os_paradas,
-                SUM(CASE WHEN NOT " . self::DELIVERED_SQL . " AND (os.orcamento_aprovado IS NULL OR os.orcamento_aprovado = 0) AND os.valor_total > 0 THEN 1 ELSE 0 END) as orcamentos_pendentes,
+                SUM(CASE WHEN " . self::STALE_REFERENCE_SQL . " < ? THEN 1 ELSE 0 END) as os_paradas,
+                SUM(CASE WHEN (os.orcamento_aprovado IS NULL OR os.orcamento_aprovado = 0) AND os.valor_total > 0 THEN 1 ELSE 0 END) as orcamentos_pendentes,
                 SUM(CASE
                     WHEN LOWER(TRIM(os.estado_fluxo)) = 'pronto' THEN 1
                     WHEN (os.estado_fluxo IS NULL OR TRIM(os.estado_fluxo) = '') AND LOWER(TRIM(os.status)) IN ('pronto', 'concluido', 'aguardando_retirada') THEN 1

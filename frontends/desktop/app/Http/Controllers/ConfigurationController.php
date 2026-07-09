@@ -60,7 +60,8 @@ class ConfigurationController extends DesktopController
             if ($requestedDoc !== '') {
                 $documentationDoc = $this->documentationService->read($requestedDoc);
             }
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
+            report($exception);
             $documentationTree = [];
             $documentationDoc = null;
         }

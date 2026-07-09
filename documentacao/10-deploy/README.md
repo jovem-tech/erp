@@ -6,6 +6,8 @@ Este diretorio concentra os guias operacionais para subir, validar e publicar o 
 
 - [Runbook de producao na VPS Contabo (subdominios + dados reais)](deploy-producao-contabo-vps.md) — **producao atual** (`erp.` desktop + `api-erp.` backend), em paralelo ao legado.
 - [Deploy de producao em Ubuntu Server (LAN ou VPS)](deploy-producao-lan-ubuntu.md) — fundamentos e tabela geral de problemas do primeiro deploy (2026-07-03/04).
+- [Fluxo Git Multiambiente](workflow-git-multiambiente.md) — como o codigo viaja de `develop` ate a VPS (`main`), scripts de versionamento e promocao.
+- [Manual de Publicacao — Versionar e Deploy](manual-versionamento-e-deploy.md) — passo a passo, pensado para ser seguido sem IA, dos 3 scripts (`versionar.sh`, `deploy-completo.sh`, `deploy-producao.sh`).
 - [Manual de inicializacao local no Windows com XAMPP](manual-inicializacao-local-windows-xampp.md) — *historico/descontinuado para desenvolvimento*.
 
 ## Escopo desta pasta
