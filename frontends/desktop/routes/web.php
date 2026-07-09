@@ -168,6 +168,10 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/os/defeitos-relatados/buscar', [OrderController::class, 'searchReportedDefects'])
         ->middleware('desktop.permission:os,criar|editar')
         ->name('orders.reported-defects.search');
+    Route::get('/os/checklists/entrada/modelos/{tipoEquipamento}', [OrderController::class, 'entryChecklistModel'])
+        ->whereNumber('tipoEquipamento')
+        ->middleware('desktop.permission:os,criar|editar')
+        ->name('orders.entry-checklist.model');
     Route::post('/os', [OrderController::class, 'store'])
         ->middleware('desktop.permission:os,criar')
         ->name('orders.store');

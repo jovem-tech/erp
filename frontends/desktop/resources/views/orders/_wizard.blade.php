@@ -86,6 +86,11 @@
         : now()->format('d/m/Y, H:i');
     $existingPhotos = $isEditing ? (array) data_get($order, 'fotos', []) : [];
     $existingPhotosCount = count($existingPhotos);
+    $entryChecklist = is_array(data_get($order, 'checklist')) ? (array) data_get($order, 'checklist') : [];
+    $entryChecklistModel = is_array($entryChecklistModel ?? null) ? $entryChecklistModel : [];
+    $entryChecklistResponses = (array) data_get($entryChecklist, 'respostas', []);
+    $entryChecklistDiscrepancies = (int) data_get($entryChecklist, 'total_discrepancias', 0);
+    $entryChecklistItemsCount = count((array) data_get($entryChecklistModel, 'itens', []));
     $statusDisponiveis = $isEditing ? (array) data_get($order, 'status_disponiveis', []) : [];
     // Regra de projeto (skill sistema-erp-os-fluxo-fechamento): os status de
     // encerramento (grupo_macro = 'encerrado') so podem ser aplicados pela tela
@@ -223,6 +228,16 @@
                             <i class="bi {{ $existingPhotosCount > 0 ? 'bi-check-circle-fill is-complete' : 'bi-x-circle-fill is-pending' }} order-create-summary-row-icon" data-order-create-summary-photos-icon></i>
                         </span>
                     </li>
+
+                    <li class="order-create-summary-row">
+                        <span class="order-create-summary-row-label">Checklist</span>
+                        <span class="order-create-summary-row-value">
+                            <span class="order-create-summary-row-text" data-order-create-summary-checklist>
+                                {{ $entryChecklistItemsCount > 0 ? ($entryChecklistItemsCount . ' itens') : 'Nao definido' }}
+                            </span>
+                            <i class="bi {{ $entryChecklistItemsCount > 0 ? 'bi-check-circle-fill is-complete' : 'bi-x-circle-fill is-pending' }} order-create-summary-row-icon" data-order-create-summary-checklist-icon></i>
+                        </span>
+                    </li>
                 </ul>
             </article>
 
@@ -256,6 +271,7 @@
                 <button type="button" class="equipment-tab is-active" data-order-tab="cliente">Cliente</button>
                 <button type="button" class="equipment-tab" data-order-tab="equipamento">Equipamento</button>
                 <button type="button" class="equipment-tab" data-order-tab="defeito">Defeito</button>
+                <button type="button" class="equipment-tab" data-order-tab="checklist">Checklist de entrada</button>
                 <button type="button" class="equipment-tab" data-order-tab="operacionais">Dados Operacionais</button>
                 <button type="button" class="equipment-tab" data-order-tab="fotos">Fotos</button>
             </div>
@@ -395,6 +411,46 @@
                             data-order-create-relato
                         >{{ $selectedRelato }}</textarea>
                         @error('relato_cliente')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                    </div>
+                </div>
+            </section>
+
+            <section class="equipment-tab-panel" data-order-tab-panel="checklist">
+                <div
+                    class="order-entry-checklist"
+                    data-order-entry-checklist
+                    data-checklist-model='@json($entryChecklistModel, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)'
+                    data-checklist-responses='@json($entryChecklistResponses, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)'
+                    data-checklist-discrepancies="{{ $entryChecklistDiscrepancies }}"
+                >
+                    <div class="order-create-panel-note" data-order-entry-checklist-empty>
+                        <strong>Checklist de entrada</strong>
+                        <p>Selecione um equipamento para carregar o modelo de checklist configurado para o tipo do equipamento.</p>
+                    </div>
+
+                    <div class="order-entry-checklist-content d-none" data-order-entry-checklist-content>
+                        <div class="order-entry-checklist-header">
+                            <div>
+                                <h3 class="surface-title mb-1" data-order-entry-checklist-title>Checklist de entrada</h3>
+                                <p class="surface-subtitle mb-0" data-order-entry-checklist-description>Conferência inicial do equipamento recebido.</p>
+                            </div>
+                            <span class="desktop-chip" data-order-entry-checklist-count>0 itens</span>
+                        </div>
+
+                        <div class="order-entry-checklist-items" data-order-entry-checklist-items></div>
+
+                        <div class="order-create-field mt-3">
+                            <label for="checklistEntradaObservacoes">Observações gerais do estado de entrada</label>
+                            <textarea
+                                id="checklistEntradaObservacoes"
+                                name="checklist_entrada[observacoes_estado]"
+                                class="form-control @error('checklist_entrada.observacoes_estado') is-invalid @enderror"
+                                rows="3"
+                                placeholder="Ex.: riscos, marcas, acessórios, condição física observada"
+                                data-order-entry-checklist-notes
+                            >{{ old('checklist_entrada.observacoes_estado', data_get($entryChecklist, 'observacoes_estado', '')) }}</textarea>
+                            @error('checklist_entrada.observacoes_estado')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                        </div>
                     </div>
                 </div>
             </section>

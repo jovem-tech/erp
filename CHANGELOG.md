@@ -1,5 +1,29 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v3.19.0.0 — 2026-07-09 03:56
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** recuperação da base de conhecimento, ajustes na visualização da os
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/OrderController.php,backend/app/Http/Requests/Api/V1/UpsertOrderRequest.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/database/migrations/2026_07_09_000001_seed_conhecimento_module.php,backend/routes/api.php,backend/tests/Concerns/BuildsLegacyErpSchema.php,backend/tests/Feature/Api/V1/OrderFlowTest.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/app/Services/OrderService.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/public/assets/js/orders-create.js,frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/resources/views/orders/_wizard.blade.php,frontends/desktop/resources/views/orders/_wizard_scripts.blade.php,frontends/desktop/routes/web.php
+
+## v3.18.2.3 — 2026-07-09 03:36
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Restaura modulo de conhecimento e implementa checklist de entrada operacional na OS
+- **Arquivos:** backend/app/Services/Orders/OrderWorkflowService.php,backend/app/Http/Controllers/Api/V1/OrderController.php,backend/app/Http/Requests/Api/V1/UpsertOrderRequest.php,backend/routes/api.php,backend/database/migrations/2026_07_09_000001_seed_conhecimento_module.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/app/Services/OrderService.php,frontends/desktop/routes/web.php,frontends/desktop/resources/views/orders/_wizard.blade.php,frontends/desktop/resources/views/orders/_wizard_scripts.blade.php,frontends/desktop/public/assets/js/orders-create.js,frontends/desktop/public/assets/css/desktop.css
+
+## v3.18.2.2 — 2026-07-09 03:24
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** ajusta status e diagnostico na tela de detalhe da os
+- **Arquivos:** frontends/desktop/resources/views/orders/show.blade.php
+
+## v3.18.2.1 — 2026-07-09 02:59
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Detalhe da OS passa a exibir tipo, marca e modelo no card Equipamento, mantendo serie e resumo tecnico como complemento.
+- **Arquivos:** frontends/desktop/resources/views/orders/show.blade.php
+
 ## v3.18.2.0 — 2026-07-09 02:41
 - **Tier:** patch
 - **Autor/Agente:** Codex

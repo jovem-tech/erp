@@ -45,6 +45,12 @@ class UpsertOrderRequest extends BaseApiFormRequest
             'garantia_validade' => ['nullable', 'date'],
             'observacoes_internas' => ['nullable', 'string'],
             'observacoes_cliente' => ['nullable', 'string'],
+            'checklist_entrada' => ['nullable', 'array'],
+            'checklist_entrada.observacoes_estado' => ['nullable', 'string', 'max:2000'],
+            'checklist_entrada.respostas' => ['nullable', 'array', 'max:100'],
+            'checklist_entrada.respostas.*.checklist_item_id' => ['required', 'integer', 'min:1'],
+            'checklist_entrada.respostas.*.status' => ['required', 'string', Rule::in(['ok', 'discrepancia', 'nao_verificado'])],
+            'checklist_entrada.respostas.*.observacao' => ['nullable', 'string', 'max:1000'],
         ];
     }
 }
