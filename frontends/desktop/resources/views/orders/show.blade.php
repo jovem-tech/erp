@@ -447,6 +447,14 @@
 
                 {{-- Aba: Valores --}}
                 <div class="equipment-tab-panel" data-os-panel="valores">
+                    @php
+                        $financeiroResumo = is_array($order['financeiro_resumo'] ?? null) ? $order['financeiro_resumo'] : [];
+                        $formaPagamentoResolvida = trim((string) ($order['forma_pagamento_resolvida'] ?? ''));
+                        $formaPagamentoLegada = trim((string) ($order['forma_pagamento'] ?? ''));
+                        $formaPagamentoExibicao = $formaPagamentoResolvida !== '' ? $formaPagamentoResolvida : $formaPagamentoLegada;
+                        $custoAuditoria = is_array($order['custo_auditoria'] ?? null) ? $order['custo_auditoria'] : [];
+                        $formatMoney = static fn ($value): string => 'R$ ' . number_format((float) ($value ?? 0), 2, ',', '.');
+                    @endphp
                     <div class="desktop-grid desktop-grid-two">
                         <div>
                             <h3 class="os-panel-title"><i class="bi bi-cash-stack me-1"></i>Resumo financeiro</h3>
@@ -456,8 +464,31 @@
                                 <div class="detail-item"><strong>Total</strong><span>{{ ($order['valor_total'] ?? '') !== '' ? 'R$ ' . $order['valor_total'] : 'R$ 0,00' }}</span></div>
                                 <div class="detail-item"><strong>Desconto</strong><span>{{ ($order['desconto'] ?? '') !== '' ? 'R$ ' . $order['desconto'] : 'R$ 0,00' }}</span></div>
                                 <div class="detail-item"><strong>Valor final</strong><span>{{ ($order['valor_final'] ?? '') !== '' ? 'R$ ' . $order['valor_final'] : 'Não calculado' }}</span></div>
-                                <div class="detail-item"><strong>Forma de pagamento</strong><span>{{ ($order['forma_pagamento'] ?? '') !== '' ? $order['forma_pagamento'] : 'Não informada' }}</span></div>
+                                <div class="detail-item"><strong>Forma de pagamento</strong><span>{{ $formaPagamentoExibicao !== '' ? $formaPagamentoExibicao : 'Não informada' }}</span></div>
                             </div>
+
+                            @if(($financeiroResumo['titulo_id'] ?? null) !== null)
+                                <div class="text-muted small mt-2">
+                                    Título financeiro #{{ $financeiroResumo['titulo_id'] }} ·
+                                    recebido {{ $formatMoney($financeiroResumo['valor_recebido'] ?? 0) }} de {{ $formatMoney($financeiroResumo['valor_titulo'] ?? 0) }} ·
+                                    saldo {{ $formatMoney($financeiroResumo['saldo_aberto'] ?? 0) }}
+                                </div>
+                            @endif
+
+                            @if(($custoAuditoria['orcamento_id'] ?? null) !== null && (int) ($custoAuditoria['pecas_orcadas'] ?? 0) > 0)
+                                <div class="alert {{ ($custoAuditoria['pendencia_baixa_estoque'] ?? false) ? 'alert-warning' : 'alert-light' }} border mt-3 mb-0">
+                                    <strong>Auditoria de peças</strong>
+                                    <div class="small mt-1">
+                                        Orçamento {{ $custoAuditoria['orcamento_numero'] ?? ('#' . $custoAuditoria['orcamento_id']) }} ·
+                                        peças orçadas {{ $formatMoney($custoAuditoria['valor_pecas_orcado'] ?? 0) }} ·
+                                        custo previsto {{ $formatMoney($custoAuditoria['custo_pecas_previsto'] ?? 0) }} ·
+                                        custo real em estoque {{ $formatMoney($custoAuditoria['custo_pecas_real'] ?? 0) }}
+                                    </div>
+                                    @if(($custoAuditoria['pendencia_baixa_estoque'] ?? false) && ($custoAuditoria['mensagem'] ?? '') !== '')
+                                        <div class="small mt-2">{{ $custoAuditoria['mensagem'] }}</div>
+                                    @endif
+                                </div>
+                            @endif
                         </div>
                         <div>
                             <h3 class="os-panel-title"><i class="bi bi-calendar-event me-1"></i>Datas e garantia</h3>

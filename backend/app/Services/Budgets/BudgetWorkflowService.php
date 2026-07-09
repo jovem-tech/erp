@@ -22,7 +22,8 @@ use Illuminate\Support\Str;
 class BudgetWorkflowService
 {
     public function __construct(
-        private readonly BudgetOrderSyncService $budgetOrderSyncService
+        private readonly BudgetOrderSyncService $budgetOrderSyncService,
+        private readonly BudgetApprovalService $budgetApprovalService
     ) {
     }
 
@@ -451,6 +452,17 @@ class BudgetWorkflowService
         $equipment = $budget->equipment;
         $order = $budget->order;
         $status = (string) ($budget->status ?? Budget::STATUS_DRAFT);
+        $canSendApproval = in_array($status, [
+            Budget::STATUS_DRAFT,
+            Budget::STATUS_PENDING_SEND,
+            Budget::STATUS_SENT,
+            Budget::STATUS_WAITING_REPLY,
+            Budget::STATUS_PENDING,
+            Budget::STATUS_RESEND,
+        ], true);
+        $publicLink = $canSendApproval || trim((string) ($budget->token_publico ?? '')) !== ''
+            ? $this->budgetApprovalService->ensurePublicApprovalUrl($budget)
+            : '';
 
         return [
             'id' => (int) $budget->id,
@@ -572,15 +584,8 @@ class BudgetWorkflowService
             'origin_options' => Budget::originOptions(),
             'can_edit' => ! in_array($status, [Budget::STATUS_CONVERTED], true),
             'can_delete' => in_array($status, [Budget::STATUS_DRAFT, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
-            'can_send_approval' => in_array($status, [
-                Budget::STATUS_DRAFT,
-                Budget::STATUS_PENDING_SEND,
-                Budget::STATUS_SENT,
-                Budget::STATUS_WAITING_REPLY,
-                Budget::STATUS_PENDING,
-                Budget::STATUS_RESEND,
-            ], true),
-            'link_publico' => (string) ($budget->publicApprovalUrl() ?? ''),
+            'can_send_approval' => $canSendApproval,
+            'link_publico' => $publicLink,
             'created_at' => optional($budget->created_at)->format('d/m/Y H:i'),
             'updated_at' => optional($budget->updated_at)->format('d/m/Y H:i'),
         ];

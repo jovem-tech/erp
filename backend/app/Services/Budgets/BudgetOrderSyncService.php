@@ -12,26 +12,6 @@ use Illuminate\Support\Facades\Schema;
 class BudgetOrderSyncService
 {
     /**
-     * Status de OS que nunca devem ser alterados pela sincronização automática
-     * (fluxos já concluídos ou encerrados operacionalmente).
-     */
-    private const PROTECTED_ORDER_STATUSES = [
-        'reparo_concluido',
-        'reparado_disponivel_loja',
-        'garantia_concluida',
-        'entregue_reparado',
-        'entregue_pagamento_pendente',
-        'devolvido_sem_reparo',
-        'descartado',
-        'entregue',
-        'reparo_recusado',
-        'irreparavel',
-        'irreparavel_disponivel_loja',
-    ];
-
-    private const PROTECTED_FLOW_STATES = ['pronto', 'encerrado'];
-
-    /**
      * Atualiza status e valores da OS vinculada de acordo com o orçamento.
      */
     public function syncFromBudget(Budget $budget, ?int $userId = null): void
@@ -46,17 +26,10 @@ class BudgetOrderSyncService
             return;
         }
 
+        $this->syncOrderFinancials($budget, $orderId);
+
         $currentStatus = strtolower(trim((string) ($order->status ?? '')));
         $currentFlowState = strtolower(trim((string) ($order->estado_fluxo ?? '')));
-
-        if (
-            in_array($currentFlowState, self::PROTECTED_FLOW_STATES, true)
-            || in_array($currentStatus, self::PROTECTED_ORDER_STATUSES, true)
-        ) {
-            return;
-        }
-
-        $this->syncOrderFinancials($budget, $orderId);
 
         $targetStatus = $this->targetOrderStatus((string) ($budget->status ?? ''));
         if ($targetStatus === null || $currentStatus === $targetStatus) {
@@ -139,11 +112,12 @@ class BudgetOrderSyncService
         return match (trim($budgetStatus)) {
             Budget::STATUS_DRAFT,
             Budget::STATUS_PENDING_SEND,
+            Budget::STATUS_PENDING,
             Budget::STATUS_RESEND,
             Budget::STATUS_EXPIRED => 'aguardando_orcamento',
             Budget::STATUS_SENT,
             Budget::STATUS_WAITING_REPLY,
-            Budget::STATUS_PENDING => 'aguardando_autorizacao',
+            Budget::STATUS_WAITING_PACKAGE => 'aguardando_autorizacao',
             Budget::STATUS_APPROVED,
             Budget::STATUS_CONVERTED => 'aguardando_reparo',
             Budget::STATUS_REJECTED,
