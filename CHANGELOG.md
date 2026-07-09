@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v3.17.1.0 — 2026-07-08 21:20
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige permissao de execucao dos scripts (core.fileMode=false ignorava chmod +x) via git update-index --chmod, e corrige deploy-completo.sh lendo VERSION/CHANGELOG de develop (nao do main antigo) para a mensagem do merge
+- **Arquivos:** scripts/bash/atualizar-dev.sh,scripts/bash/deploy-completo.sh,scripts/bash/deploy-producao.sh,scripts/bump-version.sh,scripts/classify-change.sh,scripts/versionar.sh
+
 ## v3.17.0.0 — 2026-07-08 21:15
 - **Tier:** minor
 - **Autor/Agente:** Codex
