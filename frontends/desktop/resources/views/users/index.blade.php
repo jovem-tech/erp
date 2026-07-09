@@ -1,51 +1,53 @@
 @extends('layouts.app')
 
 @section('content')
-    <section class="desktop-form-card mb-4">
-        <div class="surface-card-header">
-            <div>
-                <h2 class="surface-title">Usuários e acesso</h2>
-                <p class="surface-subtitle">Administração do desktop feita apenas por services e API do backend central.</p>
-            </div>
+    @php
+        $hasActiveFilters = trim((string) ($filters['search'] ?? '')) !== ''
+            || trim((string) ($filters['active'] ?? '')) !== '';
+        $activeFilterCount = count(array_filter([
+            trim((string) ($filters['search'] ?? '')) !== '',
+            trim((string) ($filters['active'] ?? '')) !== '',
+        ]));
+    @endphp
 
+    <x-list-filters
+        form-id="usersFilterPanel"
+        search-name="search"
+        :search-value="$filters['search'] ?? ''"
+        search-placeholder="Nome ou e-mail"
+        :results-count="$pagination['total'] ?? 0"
+        results-label="usuários"
+        :clear-url="route('users.index')"
+        :has-active-filters="$hasActiveFilters"
+        :active-filter-count="$activeFilterCount"
+    >
+        <x-slot:actions>
             @if (\App\Support\DesktopSession::can('usuarios', 'criar'))
                 <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#userCreateModal">
                     <i class="bi bi-plus-lg me-2"></i>
                     Novo usuário
                 </button>
             @endif
+        </x-slot:actions>
+
+        <div>
+            <label for="active">Status</label>
+            <select id="active" name="active" class="form-select">
+                <option value="">Todos</option>
+                <option value="1" @selected(($filters['active'] ?? '') === '1')>Ativos</option>
+                <option value="0" @selected(($filters['active'] ?? '') === '0')>Inativos</option>
+            </select>
         </div>
 
-        <form method="get" class="desktop-filter-grid">
-            <div>
-                <label for="search">Busca</label>
-                <input type="text" id="search" name="search" class="form-control" value="{{ $filters['search'] ?? '' }}" placeholder="Nome ou e-mail">
-            </div>
-
-            <div>
-                <label for="active">Status</label>
-                <select id="active" name="active" class="form-select">
-                    <option value="">Todos</option>
-                    <option value="1" @selected(($filters['active'] ?? '') === '1')>Ativos</option>
-                    <option value="0" @selected(($filters['active'] ?? '') === '0')>Inativos</option>
-                </select>
-            </div>
-
-            <div>
-                <label for="per_page">Itens por página</label>
-                <select id="per_page" name="per_page" class="form-select">
-                    @foreach ([15, 30, 50] as $size)
-                        <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 15) === $size)>{{ $size }}</option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div class="field-actions">
-                <button type="submit" class="btn btn-primary flex-fill">Filtrar</button>
-                <a href="{{ route('users.index') }}" class="btn btn-outline-light">Limpar</a>
-            </div>
-        </form>
-    </section>
+        <div>
+            <label for="per_page">Itens por página</label>
+            <select id="per_page" name="per_page" class="form-select">
+                @foreach ([15, 30, 50] as $size)
+                    <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 15) === $size)>{{ $size }}</option>
+                @endforeach
+            </select>
+        </div>
+    </x-list-filters>
 
     <section class="surface-table">
         <div class="surface-table-header">
@@ -71,6 +73,9 @@
                     </thead>
                     <tbody>
                     @foreach ($users as $user)
+                        @php
+                            $isActive = !empty($user['ativo']);
+                        @endphp
                         <tr>
                             <td data-label="Nome">
                                 <div class="fw-semibold">{{ $user['nome'] !== '' ? $user['nome'] : 'Sem nome' }}</div>
@@ -81,46 +86,52 @@
                             <td data-label="Contato">{{ $user['telefone'] !== '' ? $user['telefone'] : 'Não informado' }}</td>
                             <td data-label="Status">
                                 @include('layouts.partials.status-pill', [
-                                    'label' => !empty($user['ativo']) ? 'Ativo' : 'Inativo',
-                                    'color' => !empty($user['ativo']) ? '#29c384' : '#ff6c7a',
+                                    'label' => $isActive ? 'Ativo' : 'Inativo',
+                                    'color' => $isActive ? '#29c384' : '#ff6c7a',
                                     'small' => true,
                                 ])
                             </td>
                             <td data-label="Último acesso">{{ $user['ultimo_acesso'] ?? 'Nunca registrado' }}</td>
                             <td data-label="Ações" class="text-end">
-                                <div class="d-flex flex-wrap gap-2 justify-content-end">
+                                <x-list-actions>
                                     @if (\App\Support\DesktopSession::can('usuarios', 'editar'))
-                                        <button
-                                            type="button"
-                                            class="btn btn-sm btn-outline-light"
-                                            data-bs-toggle="modal"
-                                            data-bs-target="#userEditModal"
-                                            data-modal-fill="#userEditModal"
-                                            data-form-action="{{ route('users.update', $user['id']) }}"
-                                            data-field-nome="{{ $user['nome'] }}"
-                                            data-field-email="{{ $user['email'] }}"
-                                            data-field-telefone="{{ $user['telefone'] }}"
-                                            data-field-perfil="{{ $user['perfil'] }}"
-                                            data-field-grupo-id="{{ $user['grupo_id'] ?: '' }}"
-                                            data-field-ativo="{{ !empty($user['ativo']) ? '1' : '0' }}"
-                                        >
-                                            Editar
-                                        </button>
-
-                                        <form
-                                            method="post"
-                                            action="{{ route('users.active.update', $user['id']) }}"
-                                            data-confirm="Deseja alterar o status deste usuário?"
-                                            data-confirm-title="Atualizar status do usuário"
-                                        >
-                                            @csrf
-                                            <input type="hidden" name="active" value="{{ !empty($user['ativo']) ? '0' : '1' }}">
-                                            <button type="submit" class="btn btn-sm {{ !empty($user['ativo']) ? 'btn-outline-light' : 'btn-primary' }}">
-                                                {{ !empty($user['ativo']) ? 'Desativar' : 'Ativar' }}
+                                        <li>
+                                            <button
+                                                type="button"
+                                                class="dropdown-item"
+                                                data-bs-toggle="modal"
+                                                data-bs-target="#userEditModal"
+                                                data-modal-fill="#userEditModal"
+                                                data-form-action="{{ route('users.update', $user['id']) }}"
+                                                data-field-nome="{{ $user['nome'] }}"
+                                                data-field-email="{{ $user['email'] }}"
+                                                data-field-telefone="{{ $user['telefone'] }}"
+                                                data-field-perfil="{{ $user['perfil'] }}"
+                                                data-field-grupo-id="{{ $user['grupo_id'] ?: '' }}"
+                                                data-field-ativo="{{ $isActive ? '1' : '0' }}"
+                                            >
+                                                <i class="bi bi-pencil me-2"></i>
+                                                Editar
                                             </button>
-                                        </form>
+                                        </li>
+
+                                        <li>
+                                            <form
+                                                method="post"
+                                                action="{{ route('users.active.update', $user['id']) }}"
+                                                data-confirm="Deseja alterar o status deste usuário?"
+                                                data-confirm-title="Atualizar status do usuário"
+                                            >
+                                                @csrf
+                                                <input type="hidden" name="active" value="{{ $isActive ? '0' : '1' }}">
+                                                <button type="submit" class="dropdown-item {{ $isActive ? 'text-warning' : '' }}">
+                                                    <i class="bi {{ $isActive ? 'bi-person-dash' : 'bi-person-check' }} me-2"></i>
+                                                    {{ $isActive ? 'Desativar' : 'Ativar' }}
+                                                </button>
+                                            </form>
+                                        </li>
                                     @endif
-                                </div>
+                                </x-list-actions>
                             </td>
                         </tr>
                     @endforeach

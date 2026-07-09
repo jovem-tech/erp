@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v3.18.1.0 — 2026-07-09 01:06
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** ajuste de layout de elementos de paginas de listagem
+- **Arquivos:** frontends/desktop/app/Http/Controllers/ServicoController.php,frontends/desktop/app/Http/Controllers/StockController.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/resources/views/clients/index.blade.php,frontends/desktop/resources/views/components/,frontends/desktop/resources/views/equipments/index.blade.php,frontends/desktop/resources/views/estoque/index.blade.php,frontends/desktop/resources/views/financeiro/index.blade.php,frontends/desktop/resources/views/groups/index.blade.php,frontends/desktop/resources/views/orcamentos/index.blade.php,frontends/desktop/resources/views/servicos/index.blade.php,frontends/desktop/resources/views/suppliers/index.blade.php,frontends/desktop/resources/views/users/index.blade.php
+
 ## v3.18.0.0 — 2026-07-09 00:11
 - **Tier:** minor
 - **Autor/Agente:** Codex

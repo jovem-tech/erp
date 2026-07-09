@@ -9,6 +9,7 @@ use App\Services\ServicoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Throwable;
@@ -40,7 +41,27 @@ class ServicoController extends DesktopController
             'services' => $result['items'],
             'pagination' => $result['pagination'],
             'filters' => $filters,
+            'equipmentTypes' => $this->resolveEquipmentTypeOptions(),
         ]);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function resolveEquipmentTypeOptions(): array
+    {
+        try {
+            // Cacheado por ser catalogo de referencia (tipos de equipamento ativos),
+            // igual para qualquer usuario; evita repetir a chamada de form-data a cada
+            // carregamento da listagem so' para preencher o filtro.
+            return Cache::remember(
+                'desktop:servico_filters:tipos_equipamento',
+                300,
+                fn (): array => $this->servicoService->formData()['tipos_equipamento'] ?? []
+            );
+        } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
+            return [];
+        }
     }
 
     public function help(): View

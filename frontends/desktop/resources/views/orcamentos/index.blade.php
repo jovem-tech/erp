@@ -19,91 +19,88 @@
             ['value' => 'cliente', 'label' => 'Cliente'],
         ];
         $totalValue = (float) ($summary['total_value'] ?? 0);
+
+        $hasActiveFilters = trim((string) ($filters['search'] ?? '')) !== ''
+            || trim((string) ($filters['status'] ?? '')) !== ''
+            || trim((string) ($filters['tipo'] ?? '')) !== ''
+            || trim((string) ($filters['origem'] ?? '')) !== '';
+        $activeFilterCount = count(array_filter([
+            trim((string) ($filters['search'] ?? '')) !== '',
+            trim((string) ($filters['status'] ?? '')) !== '',
+            trim((string) ($filters['tipo'] ?? '')) !== '',
+            trim((string) ($filters['origem'] ?? '')) !== '',
+        ]));
     @endphp
 
-    <section class="desktop-form-card mb-4">
-        <div class="surface-card-header align-items-start">
-            <div>
-                <h2 class="surface-title">Orçamentos</h2>
-                <p class="surface-subtitle">Listagem comercial com catálogo, origem, vínculos e status operacionais vindos da API central.</p>
-            </div>
+    <x-list-filters
+        form-id="orcamentosFilterPanel"
+        search-name="search"
+        :search-value="$filters['search'] ?? ''"
+        search-placeholder="Número, cliente, equipamento, OS ou observações"
+        :results-count="$summary['total'] ?? 0"
+        results-label="registros"
+        :clear-url="route('orcamentos.index')"
+        :has-active-filters="$hasActiveFilters"
+        :active-filter-count="$activeFilterCount"
+    >
+        <x-slot:actions>
+            
 
-            <div class="d-flex flex-wrap gap-2 align-items-start">
-                <span class="desktop-chip">
-                    <i class="bi bi-list-ol"></i>
-                    {{ number_format((int) ($summary['total'] ?? 0), 0, ',', '.') }} registros
-                </span>
-                <span class="desktop-chip">
-                    <i class="bi bi-currency-dollar"></i>
-                    R$ {{ number_format($totalValue, 2, ',', '.') }}
-                </span>
-                <a href="{{ route('orcamentos.help') }}" class="btn btn-outline-info btn-sm">
-                    <i class="bi bi-question-circle me-2"></i>
-                    Ajuda
+            @if (\App\Support\DesktopSession::can('orcamentos', 'criar'))
+                <a href="{{ route('orcamentos.create') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-lg me-2"></i>
+                    Novo
                 </a>
-                @if (\App\Support\DesktopSession::can('orcamentos', 'criar'))
-                    <a href="{{ route('orcamentos.create') }}" class="btn btn-primary btn-sm">
-                        <i class="bi bi-plus-lg me-2"></i>
-                        Novo orçamento
+            @endif
+
+            <x-list-actions label="Mais ações" size="">
+                <li>
+                    <a href="{{ route('orcamentos.help') }}" class="dropdown-item">
+                        <i class="bi bi-question-circle me-2"></i>Ajuda
                     </a>
-                @endif
-            </div>
+                </li>
+            </x-list-actions>
+        </x-slot:actions>
+
+        <div>
+            <label for="status">Status</label>
+            <select id="status" name="status" class="form-select">
+                <option value="">Todos os status</option>
+                @foreach ($statusOptions as $statusOption)
+                    <option value="{{ $statusOption['value'] ?? '' }}" @selected(($filters['status'] ?? '') === ($statusOption['value'] ?? ''))>
+                        {{ $statusOption['label'] ?? 'Status' }}
+                    </option>
+                @endforeach
+            </select>
         </div>
 
-        <form method="get" class="desktop-filter-grid">
-            <div class="desktop-grid-span-2">
-                <label for="search">Busca</label>
-                <input type="text" id="search" name="search" class="form-control" value="{{ $filters['search'] ?? '' }}" placeholder="Número, cliente, equipamento, OS ou observações">
-            </div>
+        <div>
+            <label for="tipo">Tipo</label>
+            <select id="tipo" name="tipo" class="form-select">
+                @foreach ($typeOptions as $typeOption)
+                    <option value="{{ $typeOption['value'] }}" @selected(($filters['tipo'] ?? '') === $typeOption['value'])>{{ $typeOption['label'] }}</option>
+                @endforeach
+            </select>
+        </div>
 
-            <div>
-                <label for="status">Status</label>
-                <select id="status" name="status" class="form-select">
-                    <option value="">Todos os status</option>
-                    @foreach ($statusOptions as $statusOption)
-                        <option value="{{ $statusOption['value'] ?? '' }}" @selected(($filters['status'] ?? '') === ($statusOption['value'] ?? ''))>
-                            {{ $statusOption['label'] ?? 'Status' }}
-                        </option>
-                    @endforeach
-                </select>
-            </div>
+        <div>
+            <label for="origem">Origem</label>
+            <select id="origem" name="origem" class="form-select">
+                @foreach ($originOptions as $originOption)
+                    <option value="{{ $originOption['value'] }}" @selected(($filters['origem'] ?? '') === $originOption['value'])>{{ $originOption['label'] }}</option>
+                @endforeach
+            </select>
+        </div>
 
-            <div>
-                <label for="tipo">Tipo</label>
-                <select id="tipo" name="tipo" class="form-select">
-                    @foreach ($typeOptions as $typeOption)
-                        <option value="{{ $typeOption['value'] }}" @selected(($filters['tipo'] ?? '') === $typeOption['value'])>{{ $typeOption['label'] }}</option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div>
-                <label for="origem">Origem</label>
-                <select id="origem" name="origem" class="form-select">
-                    @foreach ($originOptions as $originOption)
-                        <option value="{{ $originOption['value'] }}" @selected(($filters['origem'] ?? '') === $originOption['value'])>{{ $originOption['label'] }}</option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div>
-                <label for="per_page">Itens por página</label>
-                <select id="per_page" name="per_page" class="form-select">
-                    @foreach ([10, 15, 30, 50] as $size)
-                        <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 15) === $size)>{{ $size }}</option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div class="field-actions">
-                <button type="submit" class="btn btn-primary flex-fill">
-                    <i class="bi bi-search me-2"></i>
-                    Filtrar
-                </button>
-                <a href="{{ route('orcamentos.index') }}" class="btn btn-outline-light">Limpar</a>
-            </div>
-        </form>
-    </section>
+        <div>
+            <label for="per_page">Itens por página</label>
+            <select id="per_page" name="per_page" class="form-select">
+                @foreach ([10, 15, 30, 50] as $size)
+                    <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 15) === $size)>{{ $size }}</option>
+                @endforeach
+            </select>
+        </div>
+    </x-list-filters>
 
     <section class="surface-table">
         <div class="surface-table-header">
@@ -186,40 +183,34 @@
                                 <div class="fw-bold">R$ {{ $budget['total_formatado'] ?? number_format((float) ($budget['total'] ?? 0), 2, ',', '.') }}</div>
                             </td>
                             <td data-label="Ações" class="text-end">
-                                <div class="dropdown">
-                                    <button type="button" class="btn btn-sm btn-outline-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-                                        <span>Ações</span>
-                                        <i class="bi bi-chevron-down ms-1"></i>
-                                    </button>
-                                    <ul class="dropdown-menu dropdown-menu-end">
+                                <x-list-actions>
+                                    <li>
+                                        <a href="{{ route('orcamentos.show', $budgetId) }}" class="dropdown-item">
+                                            <i class="bi bi-eye me-2"></i>
+                                            Abrir
+                                        </a>
+                                    </li>
+                                    @if (! empty($budget['can_edit']))
                                         <li>
-                                            <a href="{{ route('orcamentos.show', $budgetId) }}" class="dropdown-item">
-                                                <i class="bi bi-eye me-2"></i>
-                                                Abrir
+                                            <a href="{{ route('orcamentos.edit', $budgetId) }}" class="dropdown-item">
+                                                <i class="bi bi-pencil me-2"></i>
+                                                Editar
                                             </a>
                                         </li>
-                                        @if (! empty($budget['can_edit']))
-                                            <li>
-                                                <a href="{{ route('orcamentos.edit', $budgetId) }}" class="dropdown-item">
-                                                    <i class="bi bi-pencil me-2"></i>
-                                                    Editar
-                                                </a>
-                                            </li>
-                                        @endif
-                                        @if (! empty($budget['can_delete']))
-                                            <li>
-                                                <form method="post" action="{{ route('orcamentos.destroy', $budgetId) }}" data-confirm="Deseja excluir este orçamento? Esta ação não poderá ser desfeita." data-confirm-title="Excluir orçamento" data-confirm-button="Sim, excluir">
-                                                    @csrf
-                                                    @method('DELETE')
-                                                    <button type="submit" class="dropdown-item text-danger">
-                                                        <i class="bi bi-trash me-2"></i>
-                                                        Excluir
-                                                    </button>
-                                                </form>
-                                            </li>
-                                        @endif
-                                    </ul>
-                                </div>
+                                    @endif
+                                    @if (! empty($budget['can_delete']))
+                                        <li>
+                                            <form method="post" action="{{ route('orcamentos.destroy', $budgetId) }}" data-confirm="Deseja excluir este orçamento? Esta ação não poderá ser desfeita." data-confirm-title="Excluir orçamento" data-confirm-button="Sim, excluir">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="dropdown-item text-danger">
+                                                    <i class="bi bi-trash me-2"></i>
+                                                    Excluir
+                                                </button>
+                                            </form>
+                                        </li>
+                                    @endif
+                                </x-list-actions>
                             </td>
                         </tr>
                     @endforeach

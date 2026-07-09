@@ -1,76 +1,66 @@
 @extends('layouts.app')
 
 @section('content')
-    <section class="desktop-form-card mb-4">
-        <div class="surface-card-header">
-            <div>
-                <h2 class="surface-title">Clientes</h2>
-                <p class="surface-subtitle">
-                    Organização operacional espelhada do legado: cliente como hub de contexto para OS, equipamentos e contato.
-                </p>
-            </div>
+    @php
+        $hasActiveFilters = trim((string) ($filters['search'] ?? '')) !== ''
+            || trim((string) ($filters['status'] ?? '')) !== '';
+        $activeFilterCount = count(array_filter([
+            trim((string) ($filters['search'] ?? '')) !== '',
+            trim((string) ($filters['status'] ?? '')) !== '',
+        ]));
+    @endphp
 
+    <x-list-filters
+        form-id="clientsFilterPanel"
+        search-name="search"
+        :search-value="$filters['search'] ?? ''"
+        search-placeholder="Nome, documento, telefone ou e-mail"
+        :results-count="$pagination['total'] ?? 0"
+        results-label="clientes"
+        :clear-url="route('clients.index')"
+        :has-active-filters="$hasActiveFilters"
+        :active-filter-count="$activeFilterCount"
+    >
+        <x-slot:actions>
             @if (\App\Support\DesktopSession::can('clientes', 'criar'))
                 <a href="{{ route('clients.create') }}" class="btn btn-primary">
                     <i class="bi bi-plus-lg me-2"></i>
                     Novo cliente
                 </a>
             @endif
+        </x-slot:actions>
+
+        <div>
+            <label for="status">Situação</label>
+            <input
+                type="text"
+                id="status"
+                name="status"
+                class="form-control"
+                value="{{ $filters['status'] ?? '' }}"
+                placeholder="Ex.: completo, inativo"
+            >
         </div>
 
-        <form method="get" class="desktop-filter-grid">
-            <div>
-                <label for="search">Busca</label>
-                <input
-                    type="text"
-                    id="search"
-                    name="search"
-                    class="form-control"
-                    value="{{ $filters['search'] ?? '' }}"
-                    placeholder="Nome, documento, telefone ou e-mail"
-                >
-            </div>
+        <div>
+            <label for="sort">Ordenar por</label>
+            <select id="sort" name="sort" class="form-select">
+                <option value="nome" @selected(($filters['sort'] ?? 'nome') === 'nome')>Nome A-Z</option>
+                <option value="nome_desc" @selected(($filters['sort'] ?? '') === 'nome_desc')>Nome Z-A</option>
+                <option value="recentes" @selected(($filters['sort'] ?? '') === 'recentes')>Mais recentes</option>
+                <option value="recentes_asc" @selected(($filters['sort'] ?? '') === 'recentes_asc')>Mais antigos</option>
+            </select>
+        </div>
 
-            <div>
-                <label for="status">Situação</label>
-                <input
-                    type="text"
-                    id="status"
-                    name="status"
-                    class="form-control"
-                    value="{{ $filters['status'] ?? '' }}"
-                    placeholder="Ex.: completo, inativo"
-                >
-            </div>
-
-            <div>
-                <label for="sort">Ordenar por</label>
-                <select id="sort" name="sort" class="form-select">
-                    <option value="nome" @selected(($filters['sort'] ?? 'nome') === 'nome')>Nome A-Z</option>
-                    <option value="nome_desc" @selected(($filters['sort'] ?? '') === 'nome_desc')>Nome Z-A</option>
-                    <option value="recentes" @selected(($filters['sort'] ?? '') === 'recentes')>Mais recentes</option>
-                    <option value="recentes_asc" @selected(($filters['sort'] ?? '') === 'recentes_asc')>Mais antigos</option>
-                </select>
-            </div>
-
-            <div>
-                <label for="per_page">Itens por página</label>
-                <select id="per_page" name="per_page" class="form-select">
-                    @foreach ([15, 30, 50] as $size)
-                        <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 15) === $size)>{{ $size }}</option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div class="field-actions" style="grid-column: span 2;">
-                <button type="submit" class="btn btn-primary flex-fill">
-                    <i class="bi bi-search me-2"></i>
-                    Filtrar
-                </button>
-                <a href="{{ route('clients.index') }}" class="btn btn-outline-light">Limpar</a>
-            </div>
-        </form>
-    </section>
+        <div>
+            <label for="per_page">Itens por página</label>
+            <select id="per_page" name="per_page" class="form-select">
+                @foreach ([15, 30, 50] as $size)
+                    <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 15) === $size)>{{ $size }}</option>
+                @endforeach
+            </select>
+        </div>
+    </x-list-filters>
 
     <section class="surface-table">
         <div class="surface-table-header">
@@ -182,84 +172,73 @@
                                 ])
                             </td>
                             <td data-label="Ações" class="text-end">
-                                <div class="dropdown client-actions-dropdown">
-                                    <button
-                                        type="button"
-                                        class="btn btn-sm btn-outline-light dropdown-toggle client-actions-toggle"
-                                        data-bs-toggle="dropdown"
-                                        aria-expanded="false"
-                                    >
-                                        <span>Ações</span>
-                                        <i class="bi bi-chevron-down"></i>
-                                    </button>
-                                    <ul class="dropdown-menu dropdown-menu-end client-actions-menu">
+                                <x-list-actions>
+                                    <li>
+                                        <a href="{{ route('clients.show', $clientId) }}" class="dropdown-item">
+                                            <i class="bi bi-eye me-2"></i>
+                                            Detalhe
+                                        </a>
+                                    </li>
+
+                                    @if (\App\Support\DesktopSession::can('clientes', 'editar'))
                                         <li>
-                                            <a href="{{ route('clients.show', $clientId) }}" class="dropdown-item">
-                                                <i class="bi bi-eye me-2"></i>
-                                                Detalhe
+                                            <a href="{{ route('clients.edit', $clientId) }}" class="dropdown-item">
+                                                <i class="bi bi-pencil me-2"></i>
+                                                Editar
                                             </a>
                                         </li>
+                                    @endif
 
-                                        @if (\App\Support\DesktopSession::can('clientes', 'editar'))
-                                            <li>
-                                                <a href="{{ route('clients.edit', $clientId) }}" class="dropdown-item">
-                                                    <i class="bi bi-pencil me-2"></i>
-                                                    Editar
-                                                </a>
-                                            </li>
-                                        @endif
+                                    @if (\App\Support\DesktopSession::can('os', 'visualizar'))
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li>
+                                            <a href="{{ route('orders.index', ['client_id' => $clientId]) }}" class="dropdown-item">
+                                                <i class="bi bi-clipboard2-check me-2"></i>
+                                                Abrir OS
+                                            </a>
+                                        </li>
+                                    @endif
 
-                                        @if (\App\Support\DesktopSession::can('os', 'visualizar'))
-                                            <li><hr class="dropdown-divider"></li>
-                                            <li>
-                                                <a href="{{ route('orders.index', ['client_id' => $clientId]) }}" class="dropdown-item">
-                                                    <i class="bi bi-clipboard2-check me-2"></i>
-                                                    Abrir OS
-                                                </a>
-                                            </li>
-                                        @endif
+                                    @if (\App\Support\DesktopSession::can('equipamentos', 'visualizar'))
+                                        <li>
+                                            <a href="{{ route('equipments.index', ['client_id' => $clientId]) }}" class="dropdown-item">
+                                                <i class="bi bi-laptop me-2"></i>
+                                                Abrir equipamentos
+                                            </a>
+                                        </li>
+                                    @endif
 
-                                        @if (\App\Support\DesktopSession::can('equipamentos', 'visualizar'))
-                                            <li>
-                                                <a href="{{ route('equipments.index', ['client_id' => $clientId]) }}" class="dropdown-item">
-                                                    <i class="bi bi-laptop me-2"></i>
-                                                    Abrir equipamentos
-                                                </a>
-                                            </li>
-                                        @endif
+                                    @if ($phone !== '' || $email !== '')
+                                        <li><hr class="dropdown-divider"></li>
+                                    @endif
 
-                                        @if ($phone !== '' || $email !== '')
-                                            <li><hr class="dropdown-divider"></li>
-                                        @endif
+                                    @if ($phone !== '')
+                                        <li>
+                                            <a href="tel:{{ $phoneDigits }}" class="dropdown-item">
+                                                <i class="bi bi-telephone me-2"></i>
+                                                Ligar
+                                            </a>
+                                        </li>
+                                    @endif
 
-                                        @if ($phone !== '')
-                                            <li>
-                                                <a href="tel:{{ $phoneDigits }}" class="dropdown-item">
-                                                    <i class="bi bi-telephone me-2"></i>
-                                                    Ligar
-                                                </a>
-                                            </li>
-                                        @endif
+                                    @if ($whatsappUrl !== '')
+                                        <li>
+                                            <a href="{{ $whatsappUrl }}" target="_blank" rel="noreferrer" class="dropdown-item">
+                                                <i class="bi bi-whatsapp me-2"></i>
+                                                WhatsApp
+                                            </a>
+                                        </li>
+                                    @endif
 
-                                        @if ($whatsappUrl !== '')
-                                            <li>
-                                                <a href="{{ $whatsappUrl }}" target="_blank" rel="noreferrer" class="dropdown-item">
-                                                    <i class="bi bi-whatsapp me-2"></i>
-                                                    WhatsApp
-                                                </a>
-                                            </li>
-                                        @endif
-
-                                        @if ($email !== '')
-                                            <li>
-                                                <a href="mailto:{{ $email }}" class="dropdown-item">
-                                                    <i class="bi bi-envelope me-2"></i>
-                                                    E-mail
-                                                </a>
-                                            </li>
-                                        @endif
-                                    </ul>
-                                </div>
+                                    @if ($email !== '')
+                                        <li>
+                                            <a href="mailto:{{ $email }}" class="dropdown-item">
+                                                <i class="bi bi-envelope me-2"></i>
+                                                E-mail
+                                            </a>
+                                        </li>
+                                    @endif
+                                </x-list-actions>
                             </td>
                         </tr>
                     @endforeach

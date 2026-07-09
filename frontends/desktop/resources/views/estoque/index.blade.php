@@ -1,138 +1,117 @@
 @extends('layouts.app')
 
 @section('content')
-    <section class="desktop-form-card mb-4">
-        <div class="surface-card-header">
-            <div>
-                <h2 class="surface-title">Estoque de Peças</h2>
-                <p class="surface-subtitle">
-                    Cadastro operacional de peças, com exportação, importação, movimentações e controle de estoque mínimo.
-                </p>
-            </div>
+    @php
+        $hasActiveFilters = trim((string) ($filters['search'] ?? '')) !== ''
+            || trim((string) ($filters['active'] ?? '')) !== ''
+            || trim((string) ($filters['categoria'] ?? '')) !== ''
+            || trim((string) ($filters['tipo_equipamento'] ?? '')) !== ''
+            || trim((string) ($filters['status'] ?? '')) !== '';
+        $activeFilterCount = count(array_filter([
+            trim((string) ($filters['search'] ?? '')) !== '',
+            trim((string) ($filters['active'] ?? '')) !== '',
+            trim((string) ($filters['categoria'] ?? '')) !== '',
+            trim((string) ($filters['tipo_equipamento'] ?? '')) !== '',
+            trim((string) ($filters['status'] ?? '')) !== '',
+        ]));
+    @endphp
 
-            <div class="d-flex flex-wrap gap-2">
-                <a href="{{ route('estoque.help') }}" class="btn btn-outline-info">
-                    <i class="bi bi-question-circle me-2"></i>
-                    Ajuda
+    <x-list-filters
+        form-id="estoqueFilterPanel"
+        search-name="search"
+        :search-value="$filters['search'] ?? ''"
+        search-placeholder="Código, nome, categoria, fornecedor ou localização"
+        :results-count="$pagination['total'] ?? 0"
+        results-label="peças"
+        :clear-url="route('estoque.index')"
+        :has-active-filters="$hasActiveFilters"
+        :active-filter-count="$activeFilterCount"
+    >
+        <x-slot:actions>
+            @if (\App\Support\DesktopSession::can('estoque', 'criar'))
+                <a href="{{ route('estoque.create') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-lg me-2"></i>
+                    Nova peça
                 </a>
+            @endif
 
-                <a href="{{ route('estoque.export.csv') }}" class="btn btn-outline-primary">
-                    <i class="bi bi-download me-2"></i>
-                    Exportar CSV
-                </a>
-
-                <a href="{{ route('estoque.download-template') }}" class="btn btn-outline-primary">
-                    <i class="bi bi-filetype-csv me-2"></i>
-                    Modelo CSV
-                </a>
-
-                @if (\App\Support\DesktopSession::can('estoque', 'criar'))
-                    <a href="{{ route('estoque.create') }}" class="btn btn-primary">
-                        <i class="bi bi-plus-lg me-2"></i>
-                        Nova peça
+            <x-list-actions label="Mais ações" size="">
+                <li>
+                    <a href="{{ route('estoque.help') }}" class="dropdown-item">
+                        <i class="bi bi-question-circle me-2"></i>Ajuda
                     </a>
-                @endif
-            </div>
+                </li>
+                <li>
+                    <a href="{{ route('estoque.export.csv') }}" class="dropdown-item">
+                        <i class="bi bi-download me-2"></i>Exportar CSV
+                    </a>
+                </li>
+                <li>
+                    <a href="{{ route('estoque.download-template') }}" class="dropdown-item">
+                        <i class="bi bi-filetype-csv me-2"></i>Modelo CSV
+                    </a>
+                </li>
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                    <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#estoqueImportModal">
+                        <i class="bi bi-upload me-2"></i>Importar em lote
+                    </button>
+                </li>
+            </x-list-actions>
+        </x-slot:actions>
+
+        <div>
+            <label for="active">Status operacional</label>
+            <select id="active" name="active" class="form-select">
+                <option value="" @selected(($filters['active'] ?? '') === '')>Todos</option>
+                <option value="1" @selected((string) ($filters['active'] ?? '') === '1')>Ativo</option>
+                <option value="0" @selected((string) ($filters['active'] ?? '') === '0')>Inativo</option>
+            </select>
         </div>
 
-        <form method="get" class="desktop-filter-grid">
-            <div>
-                <label for="search">Busca</label>
-                <input
-                    type="text"
-                    id="search"
-                    name="search"
-                    class="form-control"
-                    value="{{ $filters['search'] ?? '' }}"
-                    placeholder="Código, nome, categoria, fornecedor ou localização"
-                >
-            </div>
-
-            <div>
-                <label for="active">Status operacional</label>
-                <select id="active" name="active" class="form-select">
-                    <option value="" @selected(($filters['active'] ?? '') === '')>Todos</option>
-                    <option value="1" @selected((string) ($filters['active'] ?? '') === '1')>Ativo</option>
-                    <option value="0" @selected((string) ($filters['active'] ?? '') === '0')>Inativo</option>
-                </select>
-            </div>
-
-            <div>
-                <label for="categoria">Categoria</label>
-                <input
-                    type="text"
-                    id="categoria"
-                    name="categoria"
-                    class="form-control"
-                    value="{{ $filters['categoria'] ?? '' }}"
-                    placeholder="Insumos, componentes, periféricos..."
-                >
-            </div>
-
-            <div>
-                <label for="tipo_equipamento">Tipo de equipamento</label>
-                <input
-                    type="text"
-                    id="tipo_equipamento"
-                    name="tipo_equipamento"
-                    class="form-control"
-                    value="{{ $filters['tipo_equipamento'] ?? '' }}"
-                    placeholder="Notebook, Desktop, Smartphone..."
-                >
-            </div>
-
-            <div>
-                <label for="status">Status</label>
-                <select id="status" name="status" class="form-select">
-                    <option value="" @selected(($filters['status'] ?? '') === '')>Todos</option>
-                    <option value="ativo" @selected((string) ($filters['status'] ?? '') === 'ativo')>Ativo</option>
-                    <option value="encerrado" @selected((string) ($filters['status'] ?? '') === 'encerrado')>Encerrado</option>
-                    <option value="inativo" @selected((string) ($filters['status'] ?? '') === 'inativo')>Inativo</option>
-                </select>
-            </div>
-
-            <div>
-                <label for="per_page">Itens por página</label>
-                <select id="per_page" name="per_page" class="form-select">
-                    @foreach ([15, 30, 50] as $size)
-                        <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 15) === $size)>{{ $size }}</option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div class="field-actions" style="grid-column: span 2;">
-                <button type="submit" class="btn btn-primary flex-fill">
-                    <i class="bi bi-search me-2"></i>
-                    Filtrar
-                </button>
-                <a href="{{ route('estoque.index') }}" class="btn btn-outline-light">Limpar</a>
-            </div>
-        </form>
-    </section>
-
-    <section class="desktop-form-card mb-4">
-        <div class="surface-card-header">
-            <div>
-                <h3 class="surface-title">Importação em lote</h3>
-                <p class="surface-subtitle">Envie um CSV com a mesma estrutura do modelo para cadastrar várias peças de uma vez.</p>
-            </div>
+        <div>
+            <label for="categoria">Categoria</label>
+            <input
+                type="text"
+                id="categoria"
+                name="categoria"
+                class="form-control"
+                value="{{ $filters['categoria'] ?? '' }}"
+                placeholder="Insumos, componentes, periféricos..."
+            >
         </div>
 
-        <form method="post" action="{{ route('estoque.import') }}" enctype="multipart/form-data" class="desktop-filter-grid">
-            @csrf
-            <div class="col-span-full">
-                <label for="arquivo">Arquivo CSV</label>
-                <input type="file" id="arquivo" name="arquivo" class="form-control" accept=".csv,.txt">
-            </div>
+        <div>
+            <label for="tipo_equipamento">Tipo de equipamento</label>
+            <select id="tipo_equipamento" name="tipo_equipamento" class="form-select" data-select2-placeholder="Todos os tipos">
+                <option value="">Todos os tipos</option>
+                @foreach (($equipmentTypes ?? []) as $equipmentType)
+                    <option value="{{ $equipmentType }}" @selected(($filters['tipo_equipamento'] ?? '') === $equipmentType)>
+                        {{ $equipmentType }}
+                    </option>
+                @endforeach
+            </select>
+        </div>
 
-            <div class="field-actions" style="grid-column: span 2;">
-                <button type="submit" class="btn btn-primary flex-fill">
-                    <i class="bi bi-upload me-2"></i>
-                    Importar lote
-                </button>
-            </div>
-        </form>
-    </section>
+        <div>
+            <label for="status">Status</label>
+            <select id="status" name="status" class="form-select">
+                <option value="" @selected(($filters['status'] ?? '') === '')>Todos</option>
+                <option value="ativo" @selected((string) ($filters['status'] ?? '') === 'ativo')>Ativo</option>
+                <option value="encerrado" @selected((string) ($filters['status'] ?? '') === 'encerrado')>Encerrado</option>
+                <option value="inativo" @selected((string) ($filters['status'] ?? '') === 'inativo')>Inativo</option>
+            </select>
+        </div>
+
+        <div>
+            <label for="per_page">Itens por página</label>
+            <select id="per_page" name="per_page" class="form-select">
+                @foreach ([15, 30, 50] as $size)
+                    <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 15) === $size)>{{ $size }}</option>
+                @endforeach
+            </select>
+        </div>
+    </x-list-filters>
 
     <section class="surface-table">
         <div class="surface-table-header">
@@ -208,52 +187,47 @@
                                 ])
                             </td>
                             <td data-label="Ações" class="text-end">
-                                <div class="dropdown">
-                                    <button type="button" class="btn btn-sm btn-outline-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-                                        Ações
-                                    </button>
-                                    <ul class="dropdown-menu dropdown-menu-end">
-                                        @if (\App\Support\DesktopSession::can('estoque', 'editar'))
-                                            <li>
-                                                <a href="{{ route('estoque.edit', $partId) }}" class="dropdown-item">
-                                                    <i class="bi bi-pencil me-2"></i>Editar
-                                                </a>
-                                            </li>
-                                        @endif
+                                <x-list-actions>
+                                    @if (\App\Support\DesktopSession::can('estoque', 'editar'))
+                                        <li>
+                                            <a href="{{ route('estoque.edit', $partId) }}" class="dropdown-item">
+                                                <i class="bi bi-pencil me-2"></i>Editar
+                                            </a>
+                                        </li>
+                                    @endif
 
-                                        @if (\App\Support\DesktopSession::can('estoque', 'visualizar'))
-                                            <li>
-                                                <a href="{{ route('estoque.movements', $partId) }}" class="dropdown-item">
-                                                    <i class="bi bi-arrow-left-right me-2"></i>Movimentações
-                                                </a>
-                                            </li>
-                                        @endif
+                                    @if (\App\Support\DesktopSession::can('estoque', 'visualizar'))
+                                        <li>
+                                            <a href="{{ route('estoque.movements', $partId) }}" class="dropdown-item">
+                                                <i class="bi bi-arrow-left-right me-2"></i>Movimentações
+                                            </a>
+                                        </li>
+                                    @endif
 
-                                        @if ($isActive && \App\Support\DesktopSession::can('estoque', 'encerrar'))
-                                            <li>
-                                                <form method="post" action="{{ route('estoque.close', $partId) }}" data-confirm="Deseja encerrar esta peça?" data-confirm-title="Encerrar peça" data-confirm-button="Sim, encerrar">
-                                                    @csrf
-                                                    @method('PATCH')
-                                                    <button type="submit" class="dropdown-item text-warning">
-                                                        <i class="bi bi-archive me-2"></i>Encerrar
-                                                    </button>
-                                                </form>
-                                            </li>
-                                        @endif
+                                    @if ($isActive && \App\Support\DesktopSession::can('estoque', 'encerrar'))
+                                        <li>
+                                            <form method="post" action="{{ route('estoque.close', $partId) }}" data-confirm="Deseja encerrar esta peça?" data-confirm-title="Encerrar peça" data-confirm-button="Sim, encerrar">
+                                                @csrf
+                                                @method('PATCH')
+                                                <button type="submit" class="dropdown-item text-warning">
+                                                    <i class="bi bi-archive me-2"></i>Encerrar
+                                                </button>
+                                            </form>
+                                        </li>
+                                    @endif
 
-                                        @if (\App\Support\DesktopSession::can('estoque', 'excluir'))
-                                            <li>
-                                                <form method="post" action="{{ route('estoque.destroy', $partId) }}" data-confirm="Deseja desativar esta peça? Esta ação não pode ser desfeita." data-confirm-title="Desativar peça" data-confirm-button="Sim, desativar">
-                                                    @csrf
-                                                    @method('DELETE')
-                                                    <button type="submit" class="dropdown-item text-danger">
-                                                        <i class="bi bi-trash me-2"></i>Desativar
-                                                    </button>
-                                                </form>
-                                            </li>
-                                        @endif
-                                    </ul>
-                                </div>
+                                    @if (\App\Support\DesktopSession::can('estoque', 'excluir'))
+                                        <li>
+                                            <form method="post" action="{{ route('estoque.destroy', $partId) }}" data-confirm="Deseja desativar esta peça? Esta ação não pode ser desfeita." data-confirm-title="Desativar peça" data-confirm-button="Sim, desativar">
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="dropdown-item text-danger">
+                                                    <i class="bi bi-trash me-2"></i>Desativar
+                                                </button>
+                                            </form>
+                                        </li>
+                                    @endif
+                                </x-list-actions>
                             </td>
                         </tr>
                     @endforeach
@@ -271,3 +245,12 @@
         @endif
     </section>
 @endsection
+
+@push('modals')
+    <x-bulk-import-modal
+        id="estoqueImportModal"
+        title="Importação em lote de peças"
+        :action="route('estoque.import')"
+        description="Envie um CSV com a mesma estrutura do modelo para cadastrar várias peças de uma vez."
+    />
+@endpush

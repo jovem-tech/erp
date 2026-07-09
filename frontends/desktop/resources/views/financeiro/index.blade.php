@@ -1,74 +1,79 @@
 @extends('layouts.app')
 
 @section('content')
-    <section class="desktop-form-card mb-4">
-        <div class="surface-card-header">
-            <div>
-                <h2 class="surface-title">Financeiro</h2>
-                <p class="surface-subtitle">
-                    Títulos a receber e a pagar, com baixa parcial ou total e classificação automática de DRE pela categoria.
-                </p>
-            </div>
+    @php
+        $hasActiveFilters = trim((string) ($filters['tipo'] ?? '')) !== ''
+            || trim((string) ($filters['status'] ?? '')) !== '';
+        $activeFilterCount = count(array_filter([
+            trim((string) ($filters['tipo'] ?? '')) !== '',
+            trim((string) ($filters['status'] ?? '')) !== '',
+        ]));
+    @endphp
 
-            <div class="d-flex flex-wrap gap-2">
-                <a href="{{ route('financeiro.configuracoes') }}" class="btn btn-outline-info">
-                    <i class="bi bi-bar-chart-line me-2"></i>
-                    Configurações financeiras
-                </a>
-
-                @if (\App\Support\DesktopSession::can('financeiro', 'criar'))
-                    <a href="{{ route('financeiro.create') }}" class="btn btn-primary">
-                        <i class="bi bi-plus-lg me-2"></i>
-                        Novo lançamento
-                    </a>
-                @endif
-            </div>
-        </div>
-
-        <form method="get" class="desktop-filter-grid">
+    <x-list-filters
+        form-id="financeiroFilterPanel"
+        :show-search="false"
+        :results-count="$pagination['total'] ?? 0"
+        results-label="lançamentos"
+        :clear-url="route('financeiro.index')"
+        :has-active-filters="$hasActiveFilters"
+        :active-filter-count="$activeFilterCount"
+    >
+        <x-slot:actions>
             @if ((int) ($filters['cliente_id'] ?? 0) > 0)
-                <input type="hidden" name="cliente_id" value="{{ (int) $filters['cliente_id'] }}">
+                <span class="desktop-chip">
+                    <i class="bi bi-person"></i>
+                    Cliente #{{ (int) $filters['cliente_id'] }}
+                </span>
             @endif
 
-            <div>
-                <label for="tipo">Tipo</label>
-                <select id="tipo" name="tipo" class="form-select">
-                    <option value="" @selected(($filters['tipo'] ?? '') === '')>Todos</option>
-                    <option value="receber" @selected(($filters['tipo'] ?? '') === 'receber')>A receber</option>
-                    <option value="pagar" @selected(($filters['tipo'] ?? '') === 'pagar')>A pagar</option>
-                </select>
-            </div>
+            <a href="{{ route('financeiro.configuracoes') }}" class="btn btn-outline-info">
+                <i class="bi bi-bar-chart-line me-2"></i>
+                Configurações financeiras
+            </a>
 
-            <div>
-                <label for="status">Status</label>
-                <select id="status" name="status" class="form-select">
-                    <option value="" @selected(($filters['status'] ?? '') === '')>Todos</option>
-                    @foreach ($statusOptions as $option)
-                        <option value="{{ $option['value'] ?? '' }}" @selected(($filters['status'] ?? '') === ($option['value'] ?? ''))>
-                            {{ $option['label'] ?? $option['value'] }}
-                        </option>
-                    @endforeach
-                </select>
-            </div>
+            @if (\App\Support\DesktopSession::can('financeiro', 'criar'))
+                <a href="{{ route('financeiro.create') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-lg me-2"></i>
+                    Novo lançamento
+                </a>
+            @endif
+        </x-slot:actions>
 
-            <div>
-                <label for="per_page">Itens por página</label>
-                <select id="per_page" name="per_page" class="form-select">
-                    @foreach ([15, 30, 50] as $size)
-                        <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 15) === $size)>{{ $size }}</option>
-                    @endforeach
-                </select>
-            </div>
+        @if ((int) ($filters['cliente_id'] ?? 0) > 0)
+            <input type="hidden" name="cliente_id" value="{{ (int) $filters['cliente_id'] }}">
+        @endif
 
-            <div class="field-actions" style="grid-column: span 2;">
-                <button type="submit" class="btn btn-primary flex-fill">
-                    <i class="bi bi-search me-2"></i>
-                    Filtrar
-                </button>
-                <a href="{{ route('financeiro.index') }}" class="btn btn-outline-light">Limpar</a>
-            </div>
-        </form>
-    </section>
+        <div>
+            <label for="tipo">Tipo</label>
+            <select id="tipo" name="tipo" class="form-select">
+                <option value="" @selected(($filters['tipo'] ?? '') === '')>Todos</option>
+                <option value="receber" @selected(($filters['tipo'] ?? '') === 'receber')>A receber</option>
+                <option value="pagar" @selected(($filters['tipo'] ?? '') === 'pagar')>A pagar</option>
+            </select>
+        </div>
+
+        <div>
+            <label for="status">Status</label>
+            <select id="status" name="status" class="form-select">
+                <option value="" @selected(($filters['status'] ?? '') === '')>Todos</option>
+                @foreach ($statusOptions as $option)
+                    <option value="{{ $option['value'] ?? '' }}" @selected(($filters['status'] ?? '') === ($option['value'] ?? ''))>
+                        {{ $option['label'] ?? $option['value'] }}
+                    </option>
+                @endforeach
+            </select>
+        </div>
+
+        <div>
+            <label for="per_page">Itens por página</label>
+            <select id="per_page" name="per_page" class="form-select">
+                @foreach ([15, 30, 50] as $size)
+                    <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 15) === $size)>{{ $size }}</option>
+                @endforeach
+            </select>
+        </div>
+    </x-list-filters>
 
     <section class="surface-table">
         <div class="surface-table-header">
@@ -79,18 +84,10 @@
                 </p>
             </div>
 
-            <div class="d-flex flex-wrap gap-2">
-                @if ((int) ($filters['cliente_id'] ?? 0) > 0)
-                    <span class="desktop-chip">
-                        <i class="bi bi-person"></i>
-                        Cliente #{{ (int) $filters['cliente_id'] }}
-                    </span>
-                @endif
-                <span class="desktop-chip">
-                    <i class="bi bi-cash-coin"></i>
-                    {{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} registros
-                </span>
-            </div>
+            <span class="desktop-chip">
+                <i class="bi bi-cash-coin"></i>
+                {{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} registros
+            </span>
         </div>
 
         @if ($lancamentos !== [])
@@ -145,75 +142,68 @@
                                 ])
                             </td>
                             <td data-label="Ações" class="text-end">
-                                <div class="dropdown">
-                                    <button type="button" class="btn btn-sm btn-outline-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-                                        <span>Ações</span>
-                                        <i class="bi bi-chevron-down"></i>
-                                    </button>
+                                <x-list-actions>
+                                    @if (\App\Support\DesktopSession::can('financeiro', 'editar'))
+                                        <li>
+                                            <a href="{{ route('financeiro.edit', $id) }}" class="dropdown-item">
+                                                <i class="bi bi-pencil me-2"></i>
+                                                Editar
+                                            </a>
+                                        </li>
+                                    @endif
 
-                                    <ul class="dropdown-menu dropdown-menu-end">
-                                        @if (\App\Support\DesktopSession::can('financeiro', 'editar'))
-                                            <li>
-                                                <a href="{{ route('financeiro.edit', $id) }}" class="dropdown-item">
-                                                    <i class="bi bi-pencil me-2"></i>
-                                                    Editar
-                                                </a>
-                                            </li>
-                                        @endif
+                                    @if ($canPay && \App\Support\DesktopSession::can('financeiro', 'editar'))
+                                        <li>
+                                            <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#payModal{{ $id }}">
+                                                <i class="bi bi-cash-stack me-2"></i>
+                                                Registrar baixa
+                                            </button>
+                                        </li>
+                                    @endif
 
-                                        @if ($canPay && \App\Support\DesktopSession::can('financeiro', 'editar'))
-                                            <li>
-                                                <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#payModal{{ $id }}">
-                                                    <i class="bi bi-cash-stack me-2"></i>
-                                                    Registrar baixa
+                                    @if ($status !== 'cancelado' && \App\Support\DesktopSession::can('financeiro', 'editar'))
+                                        @php
+                                            $hasMovements = in_array($status, ['parcial', 'pago'], true);
+                                            $cancelConfirmMessage = $hasMovements
+                                                ? 'Este lançamento já possui baixa registrada. Cancelar vai estornar (remover) os valores já lançados no fluxo de caixa e no DRE. Esta ação não pode ser desfeita. Deseja continuar?'
+                                                : 'Deseja cancelar este lançamento? Ele deixará de contar no fluxo de caixa e no DRE, mas o registro é mantido.';
+                                        @endphp
+                                        <li>
+                                            <form
+                                                method="post"
+                                                action="{{ route('financeiro.cancel', $id) }}"
+                                                data-confirm="{{ $cancelConfirmMessage }}"
+                                                data-confirm-title="Cancelar lançamento"
+                                                data-confirm-button="Sim, cancelar"
+                                            >
+                                                @csrf
+                                                <button type="submit" class="dropdown-item text-warning">
+                                                    <i class="bi bi-x-circle me-2"></i>
+                                                    Cancelar
                                                 </button>
-                                            </li>
-                                        @endif
+                                            </form>
+                                        </li>
+                                    @endif
 
-                                        @if ($status !== 'cancelado' && \App\Support\DesktopSession::can('financeiro', 'editar'))
-                                            @php
-                                                $hasMovements = in_array($status, ['parcial', 'pago'], true);
-                                                $cancelConfirmMessage = $hasMovements
-                                                    ? 'Este lançamento já possui baixa registrada. Cancelar vai estornar (remover) os valores já lançados no fluxo de caixa e no DRE. Esta ação não pode ser desfeita. Deseja continuar?'
-                                                    : 'Deseja cancelar este lançamento? Ele deixará de contar no fluxo de caixa e no DRE, mas o registro é mantido.';
-                                            @endphp
-                                            <li>
-                                                <form
-                                                    method="post"
-                                                    action="{{ route('financeiro.cancel', $id) }}"
-                                                    data-confirm="{{ $cancelConfirmMessage }}"
-                                                    data-confirm-title="Cancelar lançamento"
-                                                    data-confirm-button="Sim, cancelar"
-                                                >
-                                                    @csrf
-                                                    <button type="submit" class="dropdown-item text-warning">
-                                                        <i class="bi bi-x-circle me-2"></i>
-                                                        Cancelar
-                                                    </button>
-                                                </form>
-                                            </li>
-                                        @endif
-
-                                        @if (\App\Support\DesktopSession::can('financeiro', 'excluir'))
-                                            <li>
-                                                <form
-                                                    method="post"
-                                                    action="{{ route('financeiro.destroy', $id) }}"
-                                                    data-confirm="Deseja excluir este lançamento? Esta ação não pode ser desfeita."
-                                                    data-confirm-title="Excluir lançamento"
-                                                    data-confirm-button="Sim, excluir"
-                                                >
-                                                    @csrf
-                                                    @method('DELETE')
-                                                    <button type="submit" class="dropdown-item text-danger">
-                                                        <i class="bi bi-trash me-2"></i>
-                                                        Excluir
-                                                    </button>
-                                                </form>
-                                            </li>
-                                        @endif
-                                    </ul>
-                                </div>
+                                    @if (\App\Support\DesktopSession::can('financeiro', 'excluir'))
+                                        <li>
+                                            <form
+                                                method="post"
+                                                action="{{ route('financeiro.destroy', $id) }}"
+                                                data-confirm="Deseja excluir este lançamento? Esta ação não pode ser desfeita."
+                                                data-confirm-title="Excluir lançamento"
+                                                data-confirm-button="Sim, excluir"
+                                            >
+                                                @csrf
+                                                @method('DELETE')
+                                                <button type="submit" class="dropdown-item text-danger">
+                                                    <i class="bi bi-trash me-2"></i>
+                                                    Excluir
+                                                </button>
+                                            </form>
+                                        </li>
+                                    @endif
+                                </x-list-actions>
                             </td>
                         </tr>
                     @endforeach

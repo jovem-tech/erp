@@ -1,58 +1,46 @@
 @extends('layouts.app')
 
 @section('content')
-    <section class="desktop-form-card mb-4">
-        <div class="surface-card-header">
-            <div>
-                <h2 class="surface-title">Aparelhos / Equipamentos</h2>
-                <p class="surface-subtitle">
-                    Listagem operacional espelhada do legado, com o equipamento como ponto de contexto para cliente e OS.
-                </p>
-            </div>
+    @php
+        $hasActiveFilters = trim((string) ($filters['search'] ?? '')) !== '';
+        $activeFilterCount = count(array_filter([
+            trim((string) ($filters['search'] ?? '')) !== '',
+        ]));
+    @endphp
 
+    <x-list-filters
+        form-id="equipmentsFilterPanel"
+        search-name="search"
+        :search-value="$filters['search'] ?? ''"
+        search-placeholder="Resumo tecnico, serie, IMEI ou cliente"
+        :results-count="$pagination['total'] ?? 0"
+        results-label="equipamentos"
+        :clear-url="route('equipments.index')"
+        :has-active-filters="$hasActiveFilters"
+        :active-filter-count="$activeFilterCount"
+    >
+        <x-slot:actions>
             @if (\App\Support\DesktopSession::can('equipamentos', 'criar'))
                 <a href="{{ route('equipments.create') }}" class="btn btn-primary">
                     <i class="bi bi-plus-lg me-2"></i>
                     Novo equipamento
                 </a>
             @endif
+        </x-slot:actions>
+
+        @if ((int) ($filters['client_id'] ?? 0) > 0)
+            <input type="hidden" name="client_id" value="{{ $filters['client_id'] }}">
+        @endif
+
+        <div>
+            <label for="per_page">Itens por página</label>
+            <select id="per_page" name="per_page" class="form-select">
+                @foreach ([15, 30, 50] as $size)
+                    <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 15) === $size)>{{ $size }}</option>
+                @endforeach
+            </select>
         </div>
-
-        <form method="get" class="desktop-filter-grid">
-            @if ((int) ($filters['client_id'] ?? 0) > 0)
-                <input type="hidden" name="client_id" value="{{ $filters['client_id'] }}">
-            @endif
-
-            <div>
-                <label for="search">Busca</label>
-                <input
-                    type="text"
-                    id="search"
-                    name="search"
-                    class="form-control"
-                    value="{{ $filters['search'] ?? '' }}"
-                    placeholder="Resumo tecnico, serie, IMEI ou cliente"
-                >
-            </div>
-
-            <div>
-                <label for="per_page">Itens por pagina</label>
-                <select id="per_page" name="per_page" class="form-select">
-                    @foreach ([15, 30, 50] as $size)
-                        <option value="{{ $size }}" @selected((int) ($filters['per_page'] ?? 15) === $size)>{{ $size }}</option>
-                    @endforeach
-                </select>
-            </div>
-
-            <div class="field-actions" style="grid-column: span 2;">
-                <button type="submit" class="btn btn-primary flex-fill">
-                    <i class="bi bi-search me-2"></i>
-                    Filtrar
-                </button>
-                <a href="{{ route('equipments.index') }}" class="btn btn-outline-light">Limpar</a>
-            </div>
-        </form>
-    </section>
+    </x-list-filters>
 
     <section class="surface-table">
         <div class="surface-table-header">
@@ -166,62 +154,51 @@
                                 ])
                             </td>
                             <td data-label="Ações" class="text-end">
-                                <div class="dropdown equipment-actions-dropdown">
-                                    <button
-                                        type="button"
-                                        class="btn btn-sm btn-outline-light dropdown-toggle equipment-actions-toggle"
-                                        data-bs-toggle="dropdown"
-                                        aria-expanded="false"
-                                    >
-                                        <span>Ações</span>
-                                        <i class="bi bi-chevron-down"></i>
-                                    </button>
-                                    <ul class="dropdown-menu dropdown-menu-end equipment-actions-menu">
+                                <x-list-actions>
+                                    <li>
+                                        <a href="{{ route('equipments.show', $equipmentId) }}" class="dropdown-item">
+                                            <i class="bi bi-eye me-2"></i>
+                                            Detalhe
+                                        </a>
+                                    </li>
+
+                                    @if (\App\Support\DesktopSession::can('equipamentos', 'editar'))
                                         <li>
-                                            <a href="{{ route('equipments.show', $equipmentId) }}" class="dropdown-item">
-                                                <i class="bi bi-eye me-2"></i>
-                                                Detalhe
+                                            <a href="{{ route('equipments.edit', $equipmentId) }}" class="dropdown-item">
+                                                <i class="bi bi-pencil-square me-2"></i>
+                                                Editar
                                             </a>
                                         </li>
+                                    @endif
 
-                                        @if (\App\Support\DesktopSession::can('equipamentos', 'editar'))
-                                            <li>
-                                                <a href="{{ route('equipments.edit', $equipmentId) }}" class="dropdown-item">
-                                                    <i class="bi bi-pencil-square me-2"></i>
-                                                    Editar
-                                                </a>
-                                            </li>
-                                        @endif
+                                    @if ($clientId > 0 && \App\Support\DesktopSession::can('clientes', 'visualizar'))
+                                        <li>
+                                            <a href="{{ route('clients.show', $clientId) }}" class="dropdown-item">
+                                                <i class="bi bi-person-badge me-2"></i>
+                                                Abrir cliente
+                                            </a>
+                                        </li>
+                                    @endif
 
-                                        @if ($clientId > 0 && \App\Support\DesktopSession::can('clientes', 'visualizar'))
-                                            <li>
-                                                <a href="{{ route('clients.show', $clientId) }}" class="dropdown-item">
-                                                    <i class="bi bi-person-badge me-2"></i>
-                                                    Abrir cliente
-                                                </a>
-                                            </li>
-                                        @endif
+                                    @if (\App\Support\DesktopSession::can('os', 'visualizar'))
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li>
+                                            <a href="{{ route('orders.index', ['equipment_id' => $equipmentId]) }}" class="dropdown-item">
+                                                <i class="bi bi-clipboard2-check me-2"></i>
+                                                Ver OS
+                                            </a>
+                                        </li>
+                                    @endif
 
-                                        @if (\App\Support\DesktopSession::can('os', 'visualizar'))
-                                            <li><hr class="dropdown-divider"></li>
-                                            <li>
-                                                <a href="{{ route('orders.index', ['equipment_id' => $equipmentId]) }}" class="dropdown-item">
-                                                    <i class="bi bi-clipboard2-check me-2"></i>
-                                                    Ver OS
-                                                </a>
-                                            </li>
-                                        @endif
-
-                                        @if (\App\Support\DesktopSession::can('os', 'criar') && $clientId > 0)
-                                            <li>
-                                                <a href="{{ route('orders.create', ['cliente_id' => $clientId, 'equipamento_id' => $equipmentId]) }}" class="dropdown-item">
-                                                    <i class="bi bi-plus-circle me-2"></i>
-                                                    Nova OS
-                                                </a>
-                                            </li>
-                                        @endif
-                                    </ul>
-                                </div>
+                                    @if (\App\Support\DesktopSession::can('os', 'criar') && $clientId > 0)
+                                        <li>
+                                            <a href="{{ route('orders.create', ['cliente_id' => $clientId, 'equipamento_id' => $equipmentId]) }}" class="dropdown-item">
+                                                <i class="bi bi-plus-circle me-2"></i>
+                                                Nova OS
+                                            </a>
+                                        </li>
+                                    @endif
+                                </x-list-actions>
                             </td>
                         </tr>
                     @endforeach
