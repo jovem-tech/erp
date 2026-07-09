@@ -1,5 +1,29 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v3.18.0.0 — 2026-07-09 00:11
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** ajuste e correção de layout de graficos do dashboard
+- **Arquivos:** backend/app/Services/Dashboard/DashboardSummaryService.php,backend/tests/Feature/Api/V1/DashboardSummaryTest.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/public/assets/js/dashboard.js,frontends/desktop/resources/views/dashboard/index.blade.php
+
+## v3.17.4.3 — 2026-07-09 00:05
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Protege graficos do dashboard no mobile
+- **Arquivos:** frontends/desktop/public/assets/css/desktop.css
+
+## v3.17.4.2 — 2026-07-09 00:02
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Ajusta densidade visual dos graficos do dashboard
+- **Arquivos:** frontends/desktop/public/assets/css/desktop.css
+
+## v3.17.4.1 — 2026-07-08 23:54
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Reorganiza graficos do dashboard
+- **Arquivos:** backend/app/Services/Dashboard/DashboardSummaryService.php,backend/tests/Feature/Api/V1/DashboardSummaryTest.php,frontends/desktop/resources/views/dashboard/index.blade.php,frontends/desktop/public/assets/js/dashboard.js,frontends/desktop/public/assets/css/desktop.css
+
 ## v3.17.4.0 — 2026-07-08 22:57
 - **Tier:** patch
 - **Autor/Agente:** Codex

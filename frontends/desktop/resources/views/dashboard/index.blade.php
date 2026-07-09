@@ -137,6 +137,47 @@
         </div>
     </section>
 
+    <section class="dashboard-panel dashboard-panel-lg dashboard-equipment-stacked-panel mb-4" data-dashboard-equipment-panel>
+        <div class="dashboard-panel-head">
+            <div>
+                <h2>Tipos de Equipamento</h2>
+                <p>Entradas mensais por tipo no ano selecionado, com colunas empilhadas para evidenciar volume e composição.</p>
+            </div>
+
+            <div class="dashboard-filter-inline">
+                <label for="dashboardEquipmentYear">Ano</label>
+                <select
+                    id="dashboardEquipmentYear"
+                    class="form-select form-select-sm"
+                    data-dashboard-equipment-year-filter
+                >
+                    @foreach ($equipmentYears as $year)
+                        <option value="{{ $year }}" @selected((int) $year === (int) ($filters['equipmentYear'] ?? $year))>
+                            {{ $year }}
+                        </option>
+                    @endforeach
+                </select>
+            </div>
+        </div>
+
+        <div class="dashboard-chart-wrap dashboard-chart-wrap-stacked">
+            <canvas
+                id="dashboardEquipmentChart"
+                aria-label="Entradas mensais por tipo de equipamento"
+                role="img"
+            ></canvas>
+        </div>
+
+        <div class="dashboard-equipment-legend" data-dashboard-equipment-legend>
+            @foreach (($equipmentChart['items'] ?? []) as $item)
+                <span class="dashboard-equipment-legend-item" style="--legend-color: {{ $item['cor'] ?? '#3b82f6' }};">
+                    <span></span>
+                    {{ $item['tipo_nome'] ?? 'Sem tipo' }} · {{ $formatNumber($item['total'] ?? 0) }} OS
+                </span>
+            @endforeach
+        </div>
+    </section>
+
     <section class="dashboard-secondary-grid mb-4">
         <article class="dashboard-panel" data-dashboard-status-panel>
             <div class="dashboard-panel-head">
@@ -146,73 +187,26 @@
                 </div>
             </div>
 
-            <div class="dashboard-chart-wrap dashboard-chart-wrap-donut">
-                <canvas
-                    id="dashboardStatusChart"
-                    aria-label="Distribuição de OS por status"
-                    role="img"
-                ></canvas>
-            </div>
+            <div class="dashboard-status-chart-layout">
+                <div class="dashboard-chart-wrap dashboard-chart-wrap-donut">
+                    <canvas
+                        id="dashboardStatusChart"
+                        aria-label="Distribuição de OS por status"
+                        role="img"
+                    ></canvas>
+                </div>
 
-            <div class="dashboard-status-legend" data-dashboard-status-legend>
-                @foreach (($statusChart['items'] ?? []) as $item)
-                    <div class="dashboard-status-legend-item">
-                        <span class="dashboard-status-dot" style="--dashboard-dot-color: {{ $item['cor'] ?? '#6f5afc' }};"></span>
-                        <div>
-                            <strong>{{ $item['nome'] ?? 'Sem status' }}</strong>
-                            <small>{{ $formatNumber($item['total'] ?? 0) }} OS</small>
+                <div class="dashboard-status-legend" data-dashboard-status-legend>
+                    @foreach (($statusChart['items'] ?? []) as $item)
+                        <div class="dashboard-status-legend-item">
+                            <span class="dashboard-status-dot" style="--dashboard-dot-color: {{ $item['cor'] ?? '#6f5afc' }};"></span>
+                            <div>
+                                <strong>{{ $item['nome'] ?? 'Sem status' }}</strong>
+                                <small>{{ $formatNumber($item['total'] ?? 0) }} OS</small>
+                            </div>
                         </div>
-                    </div>
-                @endforeach
-            </div>
-        </article>
-
-        <article class="dashboard-panel" data-dashboard-equipment-panel>
-            <div class="dashboard-panel-head">
-                <div>
-                    <h2>Tipos de Equipamento</h2>
-                    <p>OS por tipo no período selecionado.</p>
+                    @endforeach
                 </div>
-
-                <div class="dashboard-filter-stack">
-                    <div class="dashboard-filter-inline">
-                        <label for="dashboardEquipmentMonth">Mês</label>
-                        <select
-                            id="dashboardEquipmentMonth"
-                            class="form-select form-select-sm"
-                            data-dashboard-equipment-month-filter
-                        >
-                            @foreach ($monthLabels as $monthNumber => $monthLabel)
-                                <option value="{{ $monthNumber }}" @selected((int) $monthNumber === (int) ($filters['equipmentMonth'] ?? $monthNumber))>
-                                    {{ $monthLabel }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
-
-                    <div class="dashboard-filter-inline">
-                        <label for="dashboardEquipmentYear">Ano</label>
-                        <select
-                            id="dashboardEquipmentYear"
-                            class="form-select form-select-sm"
-                            data-dashboard-equipment-year-filter
-                        >
-                            @foreach ($equipmentYears as $year)
-                                <option value="{{ $year }}" @selected((int) $year === (int) ($filters['equipmentYear'] ?? $year))>
-                                    {{ $year }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            <div class="dashboard-chart-wrap dashboard-chart-wrap-bars">
-                <canvas
-                    id="dashboardEquipmentChart"
-                    aria-label="OS por tipo de equipamento"
-                    role="img"
-                ></canvas>
             </div>
         </article>
 

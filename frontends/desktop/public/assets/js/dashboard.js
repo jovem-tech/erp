@@ -12,6 +12,7 @@
     const equipmentYearFilter = document.querySelector('[data-dashboard-equipment-year-filter]');
     const monthlyLegend = document.querySelector('[data-dashboard-monthly-legend]');
     const statusLegend = document.querySelector('[data-dashboard-status-legend]');
+    const equipmentLegend = document.querySelector('[data-dashboard-equipment-legend]');
     const contextLegend = document.querySelector('[data-dashboard-context-legend]');
     const monthlyChartWrap = document.querySelector('[data-dashboard-monthly-chart-wrap]');
     const openOrdersCard = document.querySelector('[data-dashboard-open-orders-card]');
@@ -249,6 +250,74 @@
                             },
                         },
                     },
+            },
+        });
+    };
+
+    const createStackedBarChart = (canvas, summary) => {
+        if (!canvas || typeof Chart === 'undefined') {
+            return;
+        }
+
+        const labels = Array.isArray(summary?.labels) ? summary.labels : [];
+        const series = Array.isArray(summary?.series) ? summary.series : [];
+
+        destroyChart('equipment');
+        chartInstances.equipment = new Chart(canvas, {
+            type: 'bar',
+            data: {
+                labels,
+                datasets: series.map((item) => ({
+                    label: item.label || 'Sem tipo',
+                    data: Array.isArray(item.data) ? item.data.map((value) => Number(value ?? 0)) : [],
+                    backgroundColor: item.backgroundColor || item.color || '#3b82f6',
+                    borderColor: '#ffffff',
+                    borderWidth: 1,
+                    borderRadius: 8,
+                    borderSkipped: false,
+                    maxBarThickness: 54,
+                    stack: 'equipment',
+                })),
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                plugins: {
+                    legend: {
+                        display: false,
+                    },
+                    tooltip: {
+                        backgroundColor: '#1f2937',
+                        titleColor: '#fff',
+                        bodyColor: '#fff',
+                    },
+                },
+                scales: {
+                    x: {
+                        stacked: true,
+                        grid: {
+                            display: false,
+                        },
+                        ticks: {
+                            color: '#94a3b8',
+                        },
+                    },
+                    y: {
+                        stacked: true,
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(148, 163, 184, 0.14)',
+                        },
+                        ticks: {
+                            color: '#94a3b8',
+                            precision: 0,
+                        },
+                    },
+                },
             },
         });
     };
@@ -645,6 +714,31 @@
         `).join('');
     };
 
+    const renderEquipmentLegend = (summary) => {
+        if (!equipmentLegend) {
+            return;
+        }
+
+        const items = Array.isArray(summary?.items) && summary.items.length > 0
+            ? summary.items
+            : (Array.isArray(summary?.series) ? summary.series : []);
+
+        equipmentLegend.innerHTML = items.map((item) => {
+            const label = item.tipo_nome || item.label || 'Sem tipo';
+            const color = item.cor || item.color || item.backgroundColor || '#3b82f6';
+            const total = item.total ?? (Array.isArray(item.data)
+                ? item.data.reduce((sum, value) => sum + Number(value ?? 0), 0)
+                : 0);
+
+            return `
+                <span class="dashboard-equipment-legend-item" style="--legend-color: ${escapeHtml(color)}">
+                    <span></span>
+                    ${escapeHtml(label)} · ${formatNumber(total)} OS
+                </span>
+            `;
+        }).join('');
+    };
+
     const applySummary = (summary) => {
         renderKpiCards(summary);
         renderContextCard(summary);
@@ -653,13 +747,7 @@
         renderLowStock(summary);
         createLineChart(monthlyCanvas, summary?.charts?.monthly);
         createDoughnutChart(statusCanvas, summary?.charts?.status);
-        createBarChart(equipmentCanvas, summary?.charts?.equipmentTypes, {
-            key: 'equipment',
-            label: 'OS por tipo',
-            color: ['#3b82f6', '#6366f1', '#10b981', '#f59e0b', '#ef4444', '#64748b'],
-            indexAxis: 'y',
-            maxBarThickness: 42,
-        });
+        createStackedBarChart(equipmentCanvas, summary?.charts?.equipmentTypes);
         const contextColors = Array.isArray(summary?.contextCard?.legend)
             ? summary.contextCard.legend.map((item) => item.color || '#22c55e')
             : '#22c55e';
@@ -673,12 +761,12 @@
 
         renderMonthlyLegend(summary?.charts?.monthly);
         renderStatusLegend(summary?.charts?.status);
+        renderEquipmentLegend(summary?.charts?.equipmentTypes);
         setMonthlyLoadingState(false);
     };
 
     const readFilters = () => ({
         ano: yearFilter instanceof HTMLSelectElement ? yearFilter.value : '',
-        equip_mes: equipmentMonthFilter instanceof HTMLSelectElement ? equipmentMonthFilter.value : '',
         equip_ano: equipmentYearFilter instanceof HTMLSelectElement ? equipmentYearFilter.value : '',
     });
 
