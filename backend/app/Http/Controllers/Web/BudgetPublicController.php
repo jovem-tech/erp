@@ -21,6 +21,10 @@ class BudgetPublicController extends Controller
     {
         $result = $this->budgetApprovalService->publicViewData($token);
 
+        if (($result['result'] ?? 'not_found') === 'expired') {
+            abort(410, 'Este link de orçamento expirou. Solicite um novo envio à assistência.');
+        }
+
         if (($result['result'] ?? 'not_found') !== 'ok') {
             abort(404);
         }
@@ -63,6 +67,10 @@ class BudgetPublicController extends Controller
     public function pdf(string $token): StreamedResponse|RedirectResponse
     {
         $result = $this->budgetApprovalService->regeneratePdfByToken($token);
+
+        if (($result['result'] ?? '') === 'expired') {
+            abort(410, 'Este link de orçamento expirou. Solicite um novo envio à assistência.');
+        }
 
         if (! ($result['ok'] ?? false)) {
             return redirect()

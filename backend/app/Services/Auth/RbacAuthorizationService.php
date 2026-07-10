@@ -338,7 +338,8 @@ class RbacAuthorizationService
 
     private function shouldUseLegacyAdminFallback(User $user): bool
     {
-        return (int) ($user->grupo_id ?? 0) <= 0
+        return (bool) config('services.rbac.legacy_admin_fallback', false)
+            && (int) ($user->grupo_id ?? 0) <= 0
             && mb_strtolower(trim((string) ($user->perfil ?? ''))) === 'admin';
     }
 

@@ -91,7 +91,7 @@ class ConfigurationService
      */
     public function gatewayStatus(array $payload): array
     {
-        $response = $this->apiClient->get('/configuracoes/integracoes/gateway/status', $payload);
+        $response = $this->apiClient->post('/configuracoes/integracoes/gateway/status', $payload);
 
         return $this->arrayValue($response['data']['gateway'] ?? []);
     }
@@ -102,7 +102,7 @@ class ConfigurationService
      */
     public function gatewayQr(array $payload): array
     {
-        $response = $this->apiClient->get('/configuracoes/integracoes/gateway/qr', $payload);
+        $response = $this->apiClient->post('/configuracoes/integracoes/gateway/qr', $payload);
 
         return $this->arrayValue($response['data']['gateway'] ?? []);
     }

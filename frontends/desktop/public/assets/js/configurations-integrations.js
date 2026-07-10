@@ -637,14 +637,16 @@
 
                 if (actionKey === 'status') {
                     runAction(button, 'status', {
-                        method: 'GET',
+                        method: 'POST',
+                        body: buildFormBody(),
                     });
                     return;
                 }
 
                 if (actionKey === 'qr') {
                     runAction(button, 'qr', {
-                        method: 'GET',
+                        method: 'POST',
+                        body: buildFormBody(),
                     });
                     return;
                 }

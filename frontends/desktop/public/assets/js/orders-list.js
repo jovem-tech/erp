@@ -4,7 +4,6 @@
     const pusherKey = String(config.pusherKey || '').trim();
     const channelName = String(config.channelName || 'orders').trim();
     const authUrl = String(config.broadcastAuthUrl || '').trim();
-    const apiToken = String(config.apiToken || '').trim();
     const hasFilters = Boolean(config.hasFilters);
     const showUrlBase = String(config.ordersShowUrlBase || '/os/').trim();
     const csrfToken = String(config.csrfToken || '').trim();
@@ -15,7 +14,7 @@
     const orderClosureUrlTemplate = String(config.ordersClosureUrlTemplate || '/os/__ORDER__/baixa').trim();
     const orderStatusUrlTemplate = String(config.ordersStatusUpdateUrlTemplate || '/os/__ORDER__/status').trim();
 
-    if (pusherKey === '' || authUrl === '' || apiToken === '' || typeof Pusher === 'undefined') {
+    if (pusherKey === '' || authUrl === '' || csrfToken === '' || typeof Pusher === 'undefined') {
         return;
     }
 
@@ -227,7 +226,7 @@
         authEndpoint: authUrl,
         auth: {
             headers: {
-                Authorization: 'Bearer ' + apiToken,
+                'X-CSRF-TOKEN': csrfToken,
                 'X-Requested-With': 'XMLHttpRequest',
             },
         },

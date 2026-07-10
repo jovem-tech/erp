@@ -36,6 +36,20 @@ class EquipmentService
     }
 
     /**
+     * Revela a senha de acesso do equipamento mediante step-up de
+     * administrador (ver skill sistema-erp-autenticacao-step-up).
+     */
+    public function revealPassword(int $id, string $adminEmail, string $adminPassword): string
+    {
+        $response = $this->apiClient->post('/equipments/' . $id . '/reveal-password', [
+            'admin_email' => $adminEmail,
+            'admin_password' => $adminPassword,
+        ]);
+
+        return (string) ($response['data']['senha_acesso'] ?? '');
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function formData(): array

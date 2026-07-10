@@ -438,6 +438,43 @@ class EquipmentController extends DesktopController
     }
 
     /**
+     * Revela a senha de acesso do equipamento mediante confirmação de
+     * credenciais de administrador (step-up, padrão do "Cancelar baixa" —
+     * skill sistema-erp-autenticacao-step-up). Sempre consumido via fetch
+     * (JSON) pelo modal da tela de detalhe.
+     */
+    public function revealPassword(Request $request, int $equipment): JsonResponse
+    {
+        $validated = $request->validate([
+            'admin_email' => ['required', 'string', 'email'],
+            'admin_password' => ['required', 'string'],
+        ], [], [
+            'admin_email' => 'e-mail do administrador',
+            'admin_password' => 'senha do administrador',
+        ]);
+
+        try {
+            $senha = $this->equipmentService->revealPassword(
+                $equipment,
+                $validated['admin_email'],
+                $validated['admin_password']
+            );
+        } catch (ApiAuthenticationException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 401);
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            // 422 tambem para credenciais de admin invalidas — nunca 401, que
+            // deslogaria a sessao de quem clicou (ver skill de step-up).
+            return response()->json(['error' => $exception->getMessage()], 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json(['error' => 'Não foi possível revelar a senha agora. Tente novamente.'], 500);
+        }
+
+        return response()->json(['senha_acesso' => $senha]);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function equipmentFormDefaults(): array

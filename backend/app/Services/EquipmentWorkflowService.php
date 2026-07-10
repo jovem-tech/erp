@@ -499,11 +499,16 @@ class EquipmentWorkflowService
             }
         }
 
+        $shouldUpdatePassword = $this->shouldUpdatePassword($payload);
         $normalizedPayload = $this->normalizePayload($payload);
         $normalizedPayload = $this->applyDesktopDefaults($normalizedPayload);
         $normalizedPayload = $this->normalizePasswordPayload($normalizedPayload);
         $normalizedPayload['resumo_tecnico'] = $this->buildTechnicalSummary($normalizedPayload);
         $normalizedPayload['updated_at'] = now();
+
+        if (! $shouldUpdatePassword) {
+            unset($normalizedPayload['senha_acesso']);
+        }
 
         unset(
             $normalizedPayload['foto_principal_index'],
@@ -730,6 +735,15 @@ class EquipmentWorkflowService
         $payload['senha_acesso'] = $passwordValue !== '' ? $passwordValue : null;
 
         return $payload;
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    private function shouldUpdatePassword(array $payload): bool
+    {
+        return trim((string) ($payload['senha_acesso'] ?? '')) !== ''
+            || trim((string) ($payload['senha_desenho'] ?? '')) !== '';
     }
 
     /**

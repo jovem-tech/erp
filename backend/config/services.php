@@ -54,4 +54,13 @@ return [
         'published_root' => env('COLLECTOR_PUBLISHED_ROOT'),
     ],
 
+    'rbac' => [
+        // Botao de emergencia do RBAC: quando true, usuario ativo com
+        // perfil=admin e SEM grupo (grupo_id nulo/0) recebe todas as
+        // permissoes (comportamento legado, anterior a v4.0.0.0). Default
+        // desligado — so ligar (RBAC_LEGACY_ADMIN_FALLBACK=true) se um deploy
+        // revelar admins legados sem grupo que perderam acesso.
+        'legacy_admin_fallback' => (bool) env('RBAC_LEGACY_ADMIN_FALLBACK', false),
+    ],
+
 ];
