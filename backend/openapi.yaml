@@ -2449,10 +2449,18 @@ paths:
           $ref: "#/components/responses/ValidationError"
 
   /configuracoes/integracoes/gateway/status:
-    get:
+    post:
       tags:
         - Configurações
       summary: Consultar o estado do gateway configurado.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: Configurações transitórias do gateway. Segredos devem trafegar no corpo da requisição, nunca na query string.
       responses:
         "200":
           description: Estado atual do gateway.
@@ -2474,10 +2482,18 @@ paths:
           $ref: "#/components/responses/Forbidden"
 
   /configuracoes/integracoes/gateway/qr:
-    get:
+    post:
       tags:
         - Configurações
       summary: Obter o QR code do gateway configurado.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              description: Configurações transitórias do gateway. Segredos devem trafegar no corpo da requisição, nunca na query string.
       responses:
         "200":
           description: QR code atual do gateway.
@@ -4934,6 +4950,7 @@ paths:
                 senha_acesso:
                   type: string
                   nullable: true
+                  description: Segredo de acesso do equipamento. Em atualizações, valor vazio preserva o segredo já armazenado.
                 senha_desenho:
                   type: string
                   nullable: true
@@ -5014,6 +5031,51 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
+  /equipments/{equipment}/reveal-password:
+    post:
+      tags:
+        - Equipamentos
+      summary: Revelar a senha de acesso do equipamento com confirmação de administrador.
+      description: |
+        Step-up authentication: qualquer usuário com acesso à visualização de
+        equipamentos pode chamar, mas a senha só é retornada mediante
+        `admin_email`/`admin_password` válidos de um usuário administrador
+        ativo. Falha de credenciais retorna 422 (nunca 401 — ver padrão
+        step-up do projeto) e é limitada a 5 tentativas por minuto por
+        e-mail+IP. Cada revelação bem-sucedida é registrada em log de
+        auditoria. Este é o ÚNICO caminho que expõe `senha_acesso` — o detalhe
+        do equipamento sempre retorna o campo vazio.
+      parameters:
+        - $ref: "#/components/parameters/EquipmentId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - admin_email
+                - admin_password
+              properties:
+                admin_email:
+                  type: string
+                  format: email
+                admin_password:
+                  type: string
+      responses:
+        "200":
+          description: Senha de acesso em texto claro (`data.senha_acesso`).
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          description: Muitas tentativas de verificação de administrador.
+
   /equipments/{equipment}:
     get:
       tags:
@@ -5070,6 +5132,7 @@ paths:
                 senha_acesso:
                   type: string
                   nullable: true
+                  description: Segredo de acesso do equipamento. Em atualizações, valor vazio preserva o segredo já armazenado.
                 senha_desenho:
                   type: string
                   nullable: true
@@ -5205,6 +5268,7 @@ paths:
                 senha_acesso:
                   type: string
                   nullable: true
+                  description: Segredo de acesso do equipamento. Em atualizações, valor vazio preserva o segredo já armazenado.
                 senha_desenho:
                   type: string
                   nullable: true

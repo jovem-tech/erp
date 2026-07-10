@@ -105,6 +105,7 @@ class AuthController extends DesktopController
             ]);
         }
 
+        $request->session()->invalidate();
         $request->session()->regenerateToken();
 
         $message = $forgetRememberedState

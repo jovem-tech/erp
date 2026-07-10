@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\ChecklistController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\DashboardController;
@@ -68,6 +69,10 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/notificacoes/{notification}/abrir', [NotificationController::class, 'open'])->name('notifications.open');
     Route::post('/notificacoes/lidas', [NotificationController::class, 'markAllRead'])->name('notifications.mark-all');
 
+    Route::post('/broadcasting/auth', BroadcastAuthController::class)
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('desktop.broadcasting.auth');
+
     Route::get('/perfil', [ProfileController::class, 'show'])->name('profile.show');
     Route::get('/perfil/configuracoes', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/perfil', [ProfileController::class, 'update'])->name('profile.update');
@@ -107,10 +112,10 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/configuracoes/integracoes/email/enviar-teste', [ConfigurationController::class, 'sendEmailTest'])
         ->middleware('desktop.permission:configuracoes,editar')
         ->name('configurations.integrations.email.send-test');
-    Route::get('/configuracoes/integracoes/gateway/status', [ConfigurationController::class, 'gatewayStatus'])
+    Route::post('/configuracoes/integracoes/gateway/status', [ConfigurationController::class, 'gatewayStatus'])
         ->middleware('desktop.permission:configuracoes,visualizar')
         ->name('configurations.integrations.gateway-status');
-    Route::get('/configuracoes/integracoes/gateway/qr', [ConfigurationController::class, 'gatewayQr'])
+    Route::post('/configuracoes/integracoes/gateway/qr', [ConfigurationController::class, 'gatewayQr'])
         ->middleware('desktop.permission:configuracoes,visualizar')
         ->name('configurations.integrations.gateway-qr');
     Route::post('/configuracoes/integracoes/gateway/restart', [ConfigurationController::class, 'gatewayRestart'])
@@ -660,6 +665,11 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::match(['put', 'patch'], '/equipamentos/{equipment}', [EquipmentController::class, 'update'])
         ->middleware('desktop.permission:equipamentos,editar')
         ->name('equipments.update');
+    // Visivel a quem visualiza equipamentos — o gate real e' a verificacao de
+    // credenciais de administrador no backend (step-up).
+    Route::post('/equipamentos/{equipment}/revelar-senha', [EquipmentController::class, 'revealPassword'])
+        ->middleware('desktop.permission:equipamentos,visualizar')
+        ->name('equipments.reveal-password');
     Route::get('/equipamentos/clientes/buscar', [EquipmentController::class, 'searchClients'])
         ->middleware('desktop.permission:equipamentos,criar|editar')
         ->name('equipments.clients.search');

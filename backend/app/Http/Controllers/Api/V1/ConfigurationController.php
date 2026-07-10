@@ -235,7 +235,7 @@ class ConfigurationController extends BaseApiController
 
         return $this->success(
             [
-                'gateway' => $this->integrationSettingsService->gatewayStatus($request->all(), (string) $request->query('provider', '')),
+                'gateway' => $this->integrationSettingsService->gatewayStatus($request->all(), (string) $request->input('provider', '')),
             ],
             request: $request
         );
@@ -247,7 +247,7 @@ class ConfigurationController extends BaseApiController
 
         return $this->success(
             [
-                'gateway' => $this->integrationSettingsService->gatewayQr($request->all(), (string) $request->query('provider', '')),
+                'gateway' => $this->integrationSettingsService->gatewayQr($request->all(), (string) $request->input('provider', '')),
             ],
             request: $request
         );
@@ -261,7 +261,7 @@ class ConfigurationController extends BaseApiController
             [
                 'gateway' => $this->integrationSettingsService->gatewayRestart(
                     $request->all(),
-                    (string) ($request->input('provider') ?? $request->query('provider', '')),
+                    (string) $request->input('provider', ''),
                     filter_var($request->input('clean', false), FILTER_VALIDATE_BOOL)
                 ),
             ],
@@ -277,7 +277,7 @@ class ConfigurationController extends BaseApiController
             [
                 'gateway' => $this->integrationSettingsService->gatewayLogout(
                     $request->all(),
-                    (string) ($request->input('provider') ?? $request->query('provider', ''))
+                    (string) $request->input('provider', '')
                 ),
             ],
             request: $request
@@ -292,7 +292,7 @@ class ConfigurationController extends BaseApiController
             [
                 'gateway' => $this->integrationSettingsService->gatewayStart(
                     $request->all(),
-                    (string) ($request->input('provider') ?? $request->query('provider', ''))
+                    (string) $request->input('provider', '')
                 ),
             ],
             request: $request

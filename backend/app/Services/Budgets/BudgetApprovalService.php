@@ -223,6 +223,10 @@ class BudgetApprovalService
             return ['result' => 'not_found'];
         }
 
+        if ($this->tokenExpired($budget)) {
+            return ['result' => 'expired'];
+        }
+
         return [
             'result' => 'ok',
             'budget' => $this->publicBudgetPayload($budget),
@@ -435,6 +439,14 @@ class BudgetApprovalService
             return [
                 'ok' => false,
                 'message' => 'Proposta não encontrada.',
+            ];
+        }
+
+        if ($this->tokenExpired($budget)) {
+            return [
+                'ok' => false,
+                'result' => 'expired',
+                'message' => 'O link desta proposta expirou. Solicite um novo envio à equipe responsável.',
             ];
         }
 

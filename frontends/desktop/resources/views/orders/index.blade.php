@@ -404,15 +404,6 @@
                                             </a>
                                         </li>
 
-                                        @if ($budgetActionUrl !== '')
-                                            <li>
-                                                <a href="{{ $budgetActionUrl }}" class="dropdown-item">
-                                                    <i class="bi bi-receipt me-2"></i>
-                                                    {{ $budgetActionLabel }}
-                                                </a>
-                                            </li>
-                                        @endif
-
                                         @if ($canEditOrder)
                                             <li>
                                                 <a href="{{ route('orders.edit', $orderId) }}" class="dropdown-item">
@@ -422,11 +413,11 @@
                                             </li>
                                         @endif
 
-                                        @if ($canCloseOrder)
+                                        @if ($budgetActionUrl !== '')
                                             <li>
-                                                <a href="{{ route('orders.closure.show', $orderId) }}" class="dropdown-item">
-                                                    <i class="bi bi-box-seam me-2"></i>
-                                                    Baixa
+                                                <a href="{{ $budgetActionUrl }}" class="dropdown-item">
+                                                    <i class="bi bi-receipt me-2"></i>
+                                                    {{ $budgetActionLabel }}
                                                 </a>
                                             </li>
                                         @endif
@@ -442,6 +433,15 @@
                                                     <i class="bi bi-arrow-left-right me-2"></i>
                                                     Alterar status
                                                 </button>
+                                            </li>
+                                        @endif
+
+                                        @if ($canCloseOrder)
+                                            <li>
+                                                <a href="{{ route('orders.closure.show', $orderId) }}" class="dropdown-item">
+                                                    <i class="bi bi-cash-coin me-2"></i>
+                                                    Baixa / Adiantamento
+                                                </a>
                                             </li>
                                         @endif
 
@@ -485,12 +485,11 @@
     <script>
         window.__DESKTOP_ORDER_LIST = {!! json_encode([
             'channelName'        => 'orders',
-            'broadcastAuthUrl'   => env('DESKTOP_BROADCAST_AUTH_URL', ''),
+            'broadcastAuthUrl'   => route('desktop.broadcasting.auth'),
             'pusherKey'          => env('REVERB_APP_KEY', ''),
             'pusherHost'         => env('REVERB_HOST', 'localhost'),
             'pusherPort'         => (int) env('REVERB_PORT', 8090),
             'pusherScheme'       => env('REVERB_SCHEME', 'http'),
-            'apiToken'           => \App\Support\DesktopSession::token() ?? '',
             'csrfToken'          => csrf_token(),
             'hasFilters'         => $hasAnyFilters,
             'ordersShowUrlBase'  => rtrim(route('orders.show', ['order' => 0]), '0'),

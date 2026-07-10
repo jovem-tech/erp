@@ -1,5 +1,17 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.0.1.0 — 2026-07-10 15:30
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** ajuste de segurança
+- **Arquivos:** .agents/skills/sistema-erp-autenticacao-step-up/SKILL.md,backend/app/Http/Controllers/Api/V1/AuthController.php,backend/app/Http/Controllers/Api/V1/ConfigurationController.php,backend/app/Http/Controllers/Api/V1/EquipmentController.php,backend/app/Http/Controllers/Web/BudgetPublicController.php,backend/app/Http/Requests/Api/V1/RevealEquipmentPasswordRequest.php,backend/app/Services/Auth/RbacAuthorizationService.php,backend/app/Services/Budgets/BudgetApprovalService.php,backend/app/Services/EquipmentWorkflowService.php,backend/config/services.php,backend/openapi.yaml,backend/phpunit.xml,backend/routes/api.php,backend/tests/Feature/Api/V1/RbacAdministrationTest.php,frontends/desktop/app/Http/Controllers/AuthController.php,frontends/desktop/app/Http/Controllers/BroadcastAuthController.php,frontends/desktop/app/Http/Controllers/ConfigurationController.php,frontends/desktop/app/Http/Controllers/EquipmentController.php,frontends/desktop/app/Services/ConfigurationService.php,frontends/desktop/app/Services/EquipmentService.php,frontends/desktop/config/session.php,frontends/desktop/public/assets/js/configurations-integrations.js,frontends/desktop/public/assets/js/equipments-reveal-password-modal.js,frontends/desktop/public/assets/js/orders-list.js,frontends/desktop/resources/views/equipments/_reveal_password_modal.blade.php,frontends/desktop/resources/views/equipments/show.blade.php,frontends/desktop/resources/views/orders/index.blade.php,frontends/desktop/routes/web.php
+
+## v4.0.0.0 — 2026-07-10 03:38
+- **Tier:** major
+- **Autor/Agente:** Codex
+- **Descrição:** Hardening de seguranca: remove token do frontend, protege secrets de integracoes, mascara senhas de equipamentos, expira orcamentos publicos e endurece sessao/RBAC
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/AuthController.php,backend/app/Http/Controllers/Api/V1/ConfigurationController.php,backend/app/Http/Controllers/Api/V1/EquipmentController.php,backend/app/Http/Controllers/Web/BudgetPublicController.php,backend/app/Services/Auth/RbacAuthorizationService.php,backend/app/Services/Budgets/BudgetApprovalService.php,backend/app/Services/EquipmentWorkflowService.php,backend/openapi.yaml,backend/routes/api.php,frontends/desktop/app/Http/Controllers/AuthController.php,frontends/desktop/app/Http/Controllers/BroadcastAuthController.php,frontends/desktop/app/Http/Controllers/ConfigurationController.php,frontends/desktop/app/Services/ConfigurationService.php,frontends/desktop/config/session.php,frontends/desktop/public/assets/js/configurations-integrations.js,frontends/desktop/public/assets/js/orders-list.js,frontends/desktop/resources/views/orders/index.blade.php,frontends/desktop/routes/web.php
+
 ## v3.21.0.0 — 2026-07-10 00:50
 - **Tier:** minor
 - **Autor/Agente:** Codex

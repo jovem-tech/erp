@@ -235,6 +235,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('equipments', [EquipmentController::class, 'index'])->name('api.v1.equipments.index');
         Route::post('equipments', [EquipmentController::class, 'store'])->name('api.v1.equipments.store');
         Route::match(['put', 'patch'], 'equipments/{equipment}', [EquipmentController::class, 'update'])->name('api.v1.equipments.update');
+        Route::post('equipments/{equipment}/reveal-password', [EquipmentController::class, 'revealPassword'])->name('api.v1.equipments.reveal_password');
         Route::get('equipments/{equipment}/photos/{photo}', [EquipmentController::class, 'photo'])->name('api.v1.equipments.photos.show');
         Route::get('equipments/{equipment}', [EquipmentController::class, 'show'])->name('api.v1.equipments.show');
 
@@ -347,8 +348,8 @@ Route::prefix('v1')->group(function (): void {
                 Route::prefix('gateway')
                     ->name('gateway.')
                     ->group(function (): void {
-                        Route::get('/status', [ConfigurationController::class, 'gatewayStatus'])->name('status');
-                        Route::get('/qr', [ConfigurationController::class, 'gatewayQr'])->name('qr');
+                        Route::post('/status', [ConfigurationController::class, 'gatewayStatus'])->name('status');
+                        Route::post('/qr', [ConfigurationController::class, 'gatewayQr'])->name('qr');
                         Route::post('/restart', [ConfigurationController::class, 'gatewayRestart'])->name('restart');
                         Route::post('/logout', [ConfigurationController::class, 'gatewayLogout'])->name('logout');
                         Route::post('/start', [ConfigurationController::class, 'gatewayStart'])->name('start');

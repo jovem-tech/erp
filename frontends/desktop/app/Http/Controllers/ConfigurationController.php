@@ -274,7 +274,7 @@ class ConfigurationController extends DesktopController
     {
         return $this->jsonAction(function () use ($request): array {
             return $this->configurationService->gatewayStatus($this->integrationPayload($request) + [
-                'provider' => (string) $request->query('provider', $request->input('provider', '')),
+                'provider' => (string) $request->input('provider', ''),
             ]);
         });
     }
@@ -283,7 +283,7 @@ class ConfigurationController extends DesktopController
     {
         return $this->jsonAction(function () use ($request): array {
             return $this->configurationService->gatewayQr($this->integrationPayload($request) + [
-                'provider' => (string) $request->query('provider', $request->input('provider', '')),
+                'provider' => (string) $request->input('provider', ''),
             ]);
         });
     }
@@ -292,7 +292,7 @@ class ConfigurationController extends DesktopController
     {
         return $this->jsonAction(function () use ($request): array {
             return $this->configurationService->gatewayRestart($this->integrationPayload($request) + [
-                'provider' => (string) $request->input('provider', $request->query('provider', '')),
+                'provider' => (string) $request->input('provider', ''),
                 'clean' => $request->boolean('clean'),
             ]);
         });
@@ -302,7 +302,7 @@ class ConfigurationController extends DesktopController
     {
         return $this->jsonAction(function () use ($request): array {
             return $this->configurationService->gatewayLogout($this->integrationPayload($request) + [
-                'provider' => (string) $request->input('provider', $request->query('provider', '')),
+                'provider' => (string) $request->input('provider', ''),
             ]);
         });
     }
@@ -311,7 +311,7 @@ class ConfigurationController extends DesktopController
     {
         return $this->jsonAction(function () use ($request): array {
             return $this->configurationService->gatewayStart($this->integrationPayload($request) + [
-                'provider' => (string) $request->input('provider', $request->query('provider', '')),
+                'provider' => (string) $request->input('provider', ''),
             ]);
         });
     }

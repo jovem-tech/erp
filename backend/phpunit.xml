@@ -19,6 +19,10 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <!-- APP_URL fixo: sem isto os testes herdam a URL real do .env e o
+             self-check de integracoes faz chamada HTTP REAL ao servidor dev
+             (fora do Http::fake, que so cobre 127.0.0.1:8000). -->
+        <env name="APP_URL" value="http://127.0.0.1:8000"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>

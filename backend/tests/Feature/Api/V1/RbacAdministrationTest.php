@@ -36,8 +36,35 @@ class RbacAdministrationTest extends TestCase
         ]);
     }
 
-    public function test_legacy_admin_fallback_is_logged_and_returns_effective_permissions(): void
+    public function test_legacy_admin_fallback_is_disabled_by_default(): void
     {
+        // Hardening v4.0.0.0: admin legado (perfil=admin, sem grupo) NAO ganha
+        // mais permissoes automaticamente — o fallback fica atras de
+        // services.rbac.legacy_admin_fallback (default false).
+        $legacyAdmin = $this->createUserRecord([
+            'nome' => 'Admin Legado',
+            'email' => 'admin.legado@example.com',
+            'perfil' => 'admin',
+            'grupo_id' => null,
+        ]);
+
+        $token = $this->loginAndGetToken($legacyAdmin->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->getJson('/api/v1/auth/me');
+
+        $response->assertOk()
+            ->assertJsonPath('data.group', null);
+
+        $this->assertSame([], $response->json('data.modules', []));
+        $this->assertSame([], $response->json('data.permissions', []));
+    }
+
+    public function test_legacy_admin_fallback_can_be_enabled_via_config(): void
+    {
+        // Botao de emergencia (RBAC_LEGACY_ADMIN_FALLBACK=true): restaura o
+        // comportamento legado com log de warning para auditoria.
+        config()->set('services.rbac.legacy_admin_fallback', true);
         Log::spy();
 
         $legacyAdmin = $this->createUserRecord([

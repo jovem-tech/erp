@@ -74,7 +74,7 @@ class AuthController extends BaseApiController
         RateLimiter::clear($loginThrottleKey);
         RateLimiter::clear($ipThrottleKey);
 
-        $token = $user->createToken($deviceName, ['*'], $expiresAt);
+        $token = $user->createToken($deviceName, $this->tokenAbilitiesFor($user), $expiresAt);
 
         // Set HttpOnly cookie for token storage
         $tokenCookie = Cookie::make(
@@ -270,7 +270,7 @@ class AuthController extends BaseApiController
         $currentToken->delete();
         $expiresAt = $this->tokenExpiresAt();
 
-        $newToken = $user->createToken($deviceName, ['*'], $expiresAt);
+        $newToken = $user->createToken($deviceName, $this->tokenAbilitiesFor($user), $expiresAt);
 
         // Set HttpOnly cookie with new token
         $tokenCookie = Cookie::make(
@@ -439,6 +439,32 @@ class AuthController extends BaseApiController
         $expirationMinutes = max(1, (int) config('sanctum.expiration', 10080));
 
         return now()->addMinutes($expirationMinutes);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function tokenAbilitiesFor(User $user): array
+    {
+        $rbac = $this->rbacAuthorizationService->resolveForUser($user);
+        $permissions = is_array($rbac['permissions'] ?? null) ? $rbac['permissions'] : [];
+        $abilities = [];
+
+        foreach ($permissions as $module => $actions) {
+            if (! is_string($module) || ! is_array($actions)) {
+                continue;
+            }
+
+            foreach ($actions as $action) {
+                if (is_string($action) && trim($action) !== '') {
+                    $abilities[] = $module . ':' . trim($action);
+                }
+            }
+        }
+
+        $abilities = array_values(array_unique($abilities));
+
+        return $abilities !== [] ? $abilities : ['authenticated'];
     }
 
     /**

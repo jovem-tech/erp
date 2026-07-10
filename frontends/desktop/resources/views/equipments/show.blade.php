@@ -70,6 +70,19 @@
                 <div class="detail-item"><strong>IMEI</strong><span>{{ $imei !== '' ? $imei : 'Nao informado' }}</span></div>
                 <div class="detail-item"><strong>Cor</strong><span>{{ trim((string) ($equipment['cor'] ?? '')) !== '' ? $equipment['cor'] : 'Não informada' }}</span></div>
                 <div class="detail-item"><strong>Status interno</strong><span>{{ trim((string) ($equipment['status'] ?? '')) !== '' ? $equipment['status'] : 'Não informado' }}</span></div>
+                <div class="detail-item">
+                    <strong>Senha de acesso</strong>
+                    <span>
+                        @if ((bool) ($equipment['senha_acesso_configurada'] ?? false))
+                            ••••••
+                            <button type="button" class="btn btn-outline-light btn-sm ms-2" data-bs-toggle="modal" data-bs-target="#revealPasswordModal">
+                                <i class="bi bi-eye me-1"></i>Revelar
+                            </button>
+                        @else
+                            Não cadastrada
+                        @endif
+                    </span>
+                </div>
                 <div class="detail-item"><strong>Fotos do ciclo</strong><span>{{ number_format($photosCount, 0, ',', '.') }} {{ $photosCount === 1 ? 'foto' : 'fotos' }}</span></div>
                 <div class="detail-item"><strong>Cadastro</strong><span>{{ trim((string) ($equipment['created_at'] ?? '')) !== '' ? $equipment['created_at'] : 'Não informado' }}</span></div>
                 <div class="detail-item"><strong>Última atualização</strong><span>{{ trim((string) ($equipment['updated_at'] ?? '')) !== '' ? $equipment['updated_at'] : 'Não informada' }}</span></div>
@@ -227,4 +240,18 @@
 
         <p class="mb-0">{{ $equipment['observacoes'] !== '' ? $equipment['observacoes'] : 'Nenhuma observação registrada para este equipamento.' }}</p>
     </section>
+@endsection
+
+@push('modals')
+    @include('equipments._reveal_password_modal')
+@endpush
+
+@section('scripts')
+    <script>
+        window.__DESKTOP_REVEAL_PASSWORD_MODAL = {
+            revealUrl: '{{ route('equipments.reveal-password', (int) ($equipment['id'] ?? 0)) }}',
+            csrfToken: '{{ csrf_token() }}',
+        };
+    </script>
+    <script src="{{ asset('assets/js/equipments-reveal-password-modal.js') }}?v={{ filemtime(public_path('assets/js/equipments-reveal-password-modal.js')) }}"></script>
 @endsection

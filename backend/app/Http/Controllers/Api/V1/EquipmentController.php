@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Requests\Api\V1\RevealEquipmentPasswordRequest;
 use App\Http\Requests\Api\V1\StoreEquipmentBrandRequest;
 use App\Http\Requests\Api\V1\StoreEquipmentModelRequest;
 use App\Http\Requests\Api\V1\StoreEquipmentRequest;
@@ -11,10 +12,13 @@ use App\Models\EquipmentBrand;
 use App\Models\EquipmentCollectorPairing;
 use App\Models\EquipmentModel;
 use App\Models\EquipmentPhoto;
+use App\Models\User;
 use App\Services\EquipmentWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
 
@@ -325,6 +329,88 @@ class EquipmentController extends BaseApiController
         );
     }
 
+    /**
+     * Revela a senha de acesso do equipamento mediante step-up de
+     * administrador (padrao sistema-erp-autenticacao-step-up, mesmo desenho do
+     * "Cancelar baixa"): o botao fica acessivel a quem visualiza equipamentos,
+     * mas a senha so e' retornada com credenciais validas de um admin —
+     * a API nunca mais expoe senha_acesso em nenhum outro payload.
+     */
+    public function revealPassword(RevealEquipmentPasswordRequest $request, int $equipment): JsonResponse
+    {
+        // Mesma audiencia da visualizacao do equipamento — o gate real e' o
+        // step-up de admin abaixo, nao a permissao de quem clicou.
+        $this->authorizeEquipmentViewAccess($request);
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $equipmentModel = Equipment::query()->find($equipment);
+        if (! $equipmentModel instanceof Equipment) {
+            return $this->error('Equipamento não encontrado.', 404, 'EQUIPMENT_NOT_FOUND', null, request: $request);
+        }
+
+        $validated = $request->validated();
+        $adminEmail = mb_strtolower(trim((string) $validated['admin_email']));
+        $adminPassword = (string) $validated['admin_password'];
+
+        $throttleKey = 'equipment-password-reveal-admin-auth:' . $adminEmail . '|' . $request->ip();
+        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
+            return $this->error(
+                'Muitas tentativas de verificação de administrador. Aguarde um pouco e tente novamente.',
+                429,
+                'EQUIPMENT_PASSWORD_REVEAL_RATE_LIMITED',
+                ['retry_after' => RateLimiter::availableIn($throttleKey)],
+                request: $request
+            );
+        }
+
+        $admin = User::query()->where('email', $adminEmail)->first();
+
+        if (
+            ! $admin instanceof User
+            || ! (bool) $admin->ativo
+            || mb_strtolower(trim((string) ($admin->perfil ?? ''))) !== 'admin'
+            || ! Hash::check($adminPassword, (string) $admin->senha)
+        ) {
+            RateLimiter::hit($throttleKey, 60);
+
+            logger()->warning('[API V1][EQUIPMENTS] Credenciais de administrador inválidas ao revelar senha de equipamento', [
+                'equipment_id' => $equipment,
+                'user_id' => $user->id,
+                'admin_email' => $adminEmail,
+                'ip' => $request->ip(),
+            ]);
+
+            // 422, nao 401: o desktop trata QUALQUER 401 como "sessao do usuario
+            // atual expirou" e forca logout (ApiClient::parseResponse). Esta e'
+            // uma verificacao de credenciais de um usuario DIFERENTE (admin).
+            return $this->error(
+                'Credenciais de administrador inválidas.',
+                422,
+                'EQUIPMENT_PASSWORD_REVEAL_ADMIN_AUTH_INVALID',
+                null,
+                request: $request
+            );
+        }
+
+        RateLimiter::clear($throttleKey);
+
+        logger()->info('[API V1][EQUIPMENTS] Senha de equipamento revelada com autorização de administrador', [
+            'equipment_id' => $equipment,
+            'user_id' => (int) $user->id,
+            'admin_id' => (int) $admin->id,
+            'ip' => $request->ip(),
+        ]);
+
+        return $this->success(
+            ['senha_acesso' => (string) ($equipmentModel->senha_acesso ?? '')],
+            request: $request
+        );
+    }
+
     public function photo(Request $request, int $equipment, int $photo): Response|JsonResponse
     {
         $this->authorizeEquipmentViewAccess($request);
@@ -419,7 +505,8 @@ class EquipmentController extends BaseApiController
             'cor_rgb' => (string) ($equipment->cor_rgb ?? ''),
             'numero_serie' => (string) ($equipment->numero_serie ?? ''),
             'imei' => (string) ($equipment->imei ?? ''),
-            'senha_acesso' => (string) ($equipment->senha_acesso ?? ''),
+            'senha_acesso' => '',
+            'senha_acesso_configurada' => trim((string) ($equipment->senha_acesso ?? '')) !== '',
             'estado_fisico' => (string) ($equipment->estado_fisico ?? ''),
             'acessorios' => (string) ($equipment->acessorios ?? ''),
             'observacoes' => (string) ($equipment->observacoes ?? ''),

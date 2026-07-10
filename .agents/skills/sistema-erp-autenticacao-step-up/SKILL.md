@@ -102,6 +102,18 @@ Ver `references/exemplo-cancelar-baixa.md` para o exemplo concreto e testado
 baixa" de OS — use como template ao implementar este padrão em qualquer nova
 ação (estorno de lançamento, exclusão de registro crítico, etc.).
 
+**Segunda implementação (2026-07-10): "Revelar senha do equipamento".** Apos o
+hardening v4.0.0.0 mascarar `senha_acesso` em todos os payloads da API, este
+padrao foi replicado para a consulta da senha de desbloqueio do aparelho:
+`RevealEquipmentPasswordRequest` + `EquipmentController::revealPassword`
+(backend, `POST equipments/{id}/reveal-password`, rate limit
+`equipment-password-reveal-admin-auth:{email}|{ip}`, log de auditoria por
+revelacao) → `EquipmentService::revealPassword` + rota
+`POST /equipamentos/{id}/revelar-senha` (desktop) →
+`_reveal_password_modal.blade.php` + `equipments-reveal-password-modal.js`
+(tela de detalhe do equipamento; o modal apaga a senha do DOM ao fechar).
+Este endpoint e' o UNICO caminho que expoe `senha_acesso`.
+
 ## Checklist ao implementar este padrão numa nova ação
 
 - [ ] Form request dedicado só com `admin_email`/`admin_password` (não misturar
