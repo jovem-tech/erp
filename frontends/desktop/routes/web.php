@@ -44,6 +44,8 @@ Route::get('/', function () {
 
 Route::get('/branding/empresa/logo', [ConfigurationController::class, 'publicCompanyLogo'])
     ->name('branding.company.logo');
+Route::get('/branding/login/background', [ConfigurationController::class, 'publicLoginBackground'])
+    ->name('branding.login.background');
 
 Route::middleware('guest')->group(function (): void {
     Route::get('/login', [AuthController::class, 'create'])->name('login');

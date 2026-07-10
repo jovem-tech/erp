@@ -507,7 +507,16 @@ class OrderController extends BaseApiController
             return $this->unauthenticatedResponse($request);
         }
 
-        $result = $this->orderClosureService->close($order, $user, $request->validated());
+        $validated = $request->validated();
+        $classificacaoBaixa = trim((string) ($validated['classificacao_baixa'] ?? 'baixa'));
+        $isBaixa = ! in_array($classificacaoBaixa, ['adiantamento', 'sinal'], true);
+
+        // 'baixa' (ou ausente) fecha a OS de verdade (inalterado). 'adiantamento'/
+        // 'sinal' e' um caminho paralelo que nunca aplica um dos 3
+        // OrderStatus::closureCodes() — ver skill sistema-erp-os-fluxo-fechamento.
+        $result = $isBaixa
+            ? $this->orderClosureService->close($order, $user, $validated)
+            : $this->orderClosureService->registerAdvance($order, $user, $validated);
 
         return match ($result['result'] ?? 'error') {
             'ok' => $this->success(
@@ -531,6 +540,13 @@ class OrderController extends BaseApiController
                 null,
                 request: $request
             ),
+            'order_is_closed' => $this->error(
+                'Esta OS já está encerrada. Para lançar valores ou alterar o status, cancele a baixa primeiro.',
+                422,
+                'ORDER_IS_CLOSED',
+                null,
+                request: $request
+            ),
             'invalid_status' => $this->error(
                 'O status de encerramento informado não é válido.',
                 422,
@@ -542,6 +558,13 @@ class OrderController extends BaseApiController
                 'A data de entrega informada é inválida.',
                 422,
                 'ORDER_CLOSURE_DATE_INVALID',
+                null,
+                request: $request
+            ),
+            'invalid_receipts' => $this->error(
+                'Informe ao menos um recebimento com valor maior que zero.',
+                422,
+                'ORDER_CLOSURE_RECEIPTS_INVALID',
                 null,
                 request: $request
             ),

@@ -10,9 +10,11 @@ use App\Models\BudgetStatusHistory;
 use App\Models\Client;
 use App\Models\Equipment;
 use App\Models\Order;
+use App\Models\OrderEvent;
 use App\Models\Peca;
 use App\Models\Servico;
 use App\Models\User;
+use App\Services\Orders\OrderEventService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -23,7 +25,8 @@ class BudgetWorkflowService
 {
     public function __construct(
         private readonly BudgetOrderSyncService $budgetOrderSyncService,
-        private readonly BudgetApprovalService $budgetApprovalService
+        private readonly BudgetApprovalService $budgetApprovalService,
+        private readonly OrderEventService $orderEventService
     ) {
     }
 
@@ -281,6 +284,23 @@ class BudgetWorkflowService
                 $user->id
             );
 
+            if ((int) ($budget->os_id ?? 0) > 0) {
+                $this->orderEventService->record(
+                    (int) $budget->os_id,
+                    OrderEvent::CATEGORIA_ORCAMENTO,
+                    OrderEvent::TIPO_ORCAMENTO_CRIADO,
+                    'Orçamento criado',
+                    sprintf('Orçamento %s criado (R$ %s).', $budget->numero, number_format((float) $budget->total, 2, ',', '.')),
+                    [
+                        'orcamento_id' => (int) $budget->id,
+                        'numero' => (string) $budget->numero,
+                        'valor_total' => round((float) $budget->total, 2),
+                        'status' => (string) $budget->status,
+                    ],
+                    (int) $user->id
+                );
+            }
+
             $this->budgetOrderSyncService->syncFromBudget($budget, (int) $user->id);
 
             return $this->budgetDetail($this->loadBudgetOrFail((int) $budget->id));
@@ -360,6 +380,24 @@ class BudgetWorkflowService
                 );
             }
 
+            if ((int) ($budget->os_id ?? 0) > 0) {
+                $this->orderEventService->record(
+                    (int) $budget->os_id,
+                    OrderEvent::CATEGORIA_ORCAMENTO,
+                    OrderEvent::TIPO_ORCAMENTO_ATUALIZADO,
+                    'Orçamento atualizado',
+                    sprintf('Orçamento %s atualizado (R$ %s).', $budget->numero, number_format((float) $budget->total, 2, ',', '.')),
+                    [
+                        'orcamento_id' => (int) $budget->id,
+                        'numero' => (string) $budget->numero,
+                        'status_anterior' => $previousStatus,
+                        'status_novo' => (string) $budget->status,
+                        'valor_total' => round((float) $budget->total, 2),
+                    ],
+                    (int) $user->id
+                );
+            }
+
             $this->budgetOrderSyncService->syncFromBudget($budget, (int) $user->id);
 
             return $this->budgetDetail($this->loadBudgetOrFail((int) $budget->id));
@@ -371,11 +409,30 @@ class BudgetWorkflowService
      */
     public function deleteBudget(int $budgetId, User $user): array
     {
-        return DB::transaction(function () use ($budgetId): array {
+        return DB::transaction(function () use ($budgetId, $user): array {
             $budget = Budget::query()->with(['items', 'histories', 'sends', 'approvals'])->find($budgetId);
 
             if (! $budget instanceof Budget) {
                 return ['result' => 'not_found'];
+            }
+
+            // Snapshot ANTES do hard delete para a timeline da OS.
+            $osId = (int) ($budget->os_id ?? 0);
+            if ($osId > 0) {
+                $this->orderEventService->record(
+                    $osId,
+                    OrderEvent::CATEGORIA_ORCAMENTO,
+                    OrderEvent::TIPO_ORCAMENTO_EXCLUIDO,
+                    'Orçamento excluído',
+                    sprintf('Orçamento %s (R$ %s) excluído.', $budget->numero, number_format((float) $budget->total, 2, ',', '.')),
+                    [
+                        'orcamento_id' => (int) $budget->id,
+                        'numero' => (string) $budget->numero,
+                        'valor_total' => round((float) $budget->total, 2),
+                        'status' => (string) $budget->status,
+                    ],
+                    (int) $user->id
+                );
             }
 
             $budget->items()->delete();

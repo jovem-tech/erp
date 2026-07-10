@@ -41,7 +41,7 @@ Route::prefix('v1')->group(function (): void {
     Route::get('health', HealthController::class);
 
     Route::post('auth/login', [AuthController::class, 'login'])->middleware('throttle:10,1');
-    Route::post('auth/password/forgot', [AuthController::class, 'forgotPassword'])->middleware('throttle:5,1');
+    Route::post('auth/password/forgot', [AuthController::class, 'forgotPassword'])->middleware('throttle:password-reset');
     Route::post('auth/password/reset', [AuthController::class, 'resetPassword'])->middleware('throttle:10,1');
     Route::post('collector/snapshots', [EquipmentCollectorController::class, 'storeSnapshot'])
         ->middleware('throttle:20,1');
@@ -51,6 +51,9 @@ Route::prefix('v1')->group(function (): void {
     Route::get('configuracoes/empresa/logo-publica', [ConfigurationController::class, 'publicCompanyLogo'])
         ->middleware('throttle:60,1')
         ->name('api.v1.configuracoes.empresa.logo_publica');
+    Route::get('configuracoes/empresa/login-background-publico', [ConfigurationController::class, 'publicLoginBackground'])
+        ->middleware('throttle:60,1')
+        ->name('api.v1.configuracoes.empresa.login_background_publico');
 
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('auth/me', [AuthController::class, 'me']);

@@ -50,7 +50,7 @@ class UserService
      */
     public function updateActive(int $id, bool $active): array
     {
-        $response = $this->apiClient->post('/users/' . $id . '/active', [
+        $response = $this->apiClient->patch('/users/' . $id . '/active', [
             'active' => $active,
         ]);
 

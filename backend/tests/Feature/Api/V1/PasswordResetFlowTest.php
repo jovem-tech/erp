@@ -165,6 +165,67 @@ class PasswordResetFlowTest extends TestCase
         Notification::assertNothingSent();
     }
 
+    public function test_password_reset_link_uses_desktop_frontend_url_instead_of_api_port(): void
+    {
+        config()->set('services.frontend_desktop.url', 'https://192.168.1.100:8443');
+
+        $url = FrontendPasswordResetNotification::resetUrlFor(
+            'otaviomnsantos@gmail.com',
+            'd25524e8517619cc7f316657ae5017bb6cab2bf0842daddbd159d6abb56dc2d2'
+        );
+
+        $this->assertSame(
+            'https://192.168.1.100/redefinir-senha/d25524e8517619cc7f316657ae5017bb6cab2bf0842daddbd159d6abb56dc2d2?email=otaviomnsantos%40gmail.com',
+            $url
+        );
+    }
+
+    public function test_backend_reset_link_route_redirects_misplaced_api_link_to_desktop(): void
+    {
+        config()->set('services.frontend_desktop.url', 'https://192.168.1.100:8443');
+
+        $this->get('/redefinir-senha/d25524e8517619cc7f316657ae5017bb6cab2bf0842daddbd159d6abb56dc2d2?email=otaviomnsantos%40gmail.com')
+            ->assertRedirect('https://192.168.1.100/redefinir-senha/d25524e8517619cc7f316657ae5017bb6cab2bf0842daddbd159d6abb56dc2d2?email=otaviomnsantos%40gmail.com');
+    }
+
+    public function test_forgot_password_rate_limit_is_scoped_by_email_not_only_by_ip(): void
+    {
+        Notification::fake();
+        config()->set('mail.default', 'smtp');
+
+        $firstUser = $this->createUserRecord([
+            'email' => 'primeiro-reset@empresa.com',
+            'perfil' => 'atendente',
+            'grupo_id' => 3,
+            'ativo' => true,
+        ]);
+        $secondUser = $this->createUserRecord([
+            'email' => 'segundo-reset@empresa.com',
+            'perfil' => 'atendente',
+            'grupo_id' => 3,
+            'ativo' => true,
+        ]);
+
+        for ($attempt = 1; $attempt <= 5; $attempt++) {
+            $this->postJson('/api/v1/auth/password/forgot', [
+                'email' => $firstUser->email,
+            ])->assertOk();
+        }
+
+        $this->postJson('/api/v1/auth/password/forgot', [
+            'email' => $firstUser->email,
+        ])->assertStatus(429)
+            ->assertJsonPath('status', 'error')
+            ->assertJsonPath('error.code', 'RATE_LIMITED')
+            ->assertJsonPath('error.message', 'Muitas tentativas. Aguarde alguns instantes e tente novamente.');
+
+        $this->postJson('/api/v1/auth/password/forgot', [
+            'email' => $secondUser->email,
+        ])->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.reset_link_sent', true);
+    }
+
     public function test_reset_password_updates_password_and_revokes_tokens(): void
     {
         $user = $this->createUserRecord([

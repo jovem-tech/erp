@@ -43,15 +43,13 @@ class UserController extends DesktopController
             'email' => ['required', 'email'],
             'password' => ['required', 'string', 'min:8'],
             'telefone' => ['nullable', 'string', 'max:20'],
-            'perfil' => ['required', 'string', 'max:30'],
-            'grupo_id' => ['nullable', 'integer'],
+            'grupo_id' => ['required', 'integer'],
             'ativo' => ['nullable', 'boolean'],
         ], [], [
             'nome' => 'nome',
             'email' => 'e-mail',
             'password' => 'senha',
             'telefone' => 'telefone',
-            'perfil' => 'perfil',
             'grupo_id' => 'grupo',
         ]);
 
@@ -70,17 +68,17 @@ class UserController extends DesktopController
         $validated = $request->validate([
             'nome' => ['required', 'string', 'max:100'],
             'email' => ['required', 'email'],
-            'password' => ['nullable', 'string', 'min:8'],
+            'password' => ['nullable', 'string', 'min:8', 'confirmed'],
+            'password_confirmation' => ['nullable', 'string', 'min:8'],
             'telefone' => ['nullable', 'string', 'max:20'],
-            'perfil' => ['required', 'string', 'max:30'],
-            'grupo_id' => ['nullable', 'integer'],
+            'grupo_id' => ['required', 'integer'],
             'ativo' => ['nullable', 'boolean'],
         ], [], [
             'nome' => 'nome',
             'email' => 'e-mail',
             'password' => 'senha',
+            'password_confirmation' => 'confirmação da senha',
             'telefone' => 'telefone',
-            'perfil' => 'perfil',
             'grupo_id' => 'grupo',
         ]);
 
@@ -91,6 +89,7 @@ class UserController extends DesktopController
 
         if (($validated['password'] ?? '') === '') {
             unset($payload['password']);
+            unset($payload['password_confirmation']);
         }
 
         $this->userService->update($user, $payload);

@@ -1,45 +1,32 @@
 @extends('layouts.guest')
 
+@php
+    $brandingName = trim((string) ($branding['name'] ?? 'Sistema ERP'));
+    $hasLogo = (bool) ($branding['has_logo'] ?? false);
+    $hasLoginBackground = (bool) ($branding['has_login_background'] ?? false);
+    $version = trim((string) ($systemVersion ?? ''));
+@endphp
+
+@section('styles')
+    @if ($hasLoginBackground)
+        <style>
+            .desktop-login-body {
+                background:
+                    linear-gradient(135deg, rgba(237, 245, 255, 0.88), rgba(248, 251, 255, 0.82)),
+                    url('{{ route('branding.login.background') }}') center / cover no-repeat;
+            }
+
+            .desktop-login-panel {
+                background:
+                    linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(255, 255, 255, 0.92)),
+                    radial-gradient(circle at top right, rgba(56, 104, 176, 0.12), transparent 32%);
+            }
+        </style>
+    @endif
+@endsection
+
 @section('content')
-    @php
-        $brandingName = trim((string) ($branding['name'] ?? 'Sistema ERP'));
-        $hasLogo = (bool) ($branding['has_logo'] ?? false);
-        $version = trim((string) ($systemVersion ?? ''));
-    @endphp
-
     <div class="desktop-login-wrapper">
-        <section class="desktop-login-copy">
-            <div class="desktop-login-copy-card">
-                <span class="desktop-chip mb-3">
-                    <i class="bi bi-tools me-1"></i>
-                    Assistência técnica Jovem Tech
-                </span>
-                <h1>Atendimento técnico, OS e financeiro em uma central de trabalho.</h1>
-                <p>
-                    Organize diagnósticos, orçamentos, reparos, entregas e recebimentos com rastreabilidade
-                    desde a entrada do equipamento até a baixa final da ordem de serviço.
-                </p>
-
-                <div class="desktop-login-feature-grid mt-4">
-                    <div>
-                        <i class="bi bi-clipboard-check"></i>
-                        <strong>OS com histórico</strong>
-                        <span>Status, checklist, fotos e documentos sempre no mesmo fluxo.</span>
-                    </div>
-                    <div>
-                        <i class="bi bi-cpu"></i>
-                        <strong>Equipamentos rastreados</strong>
-                        <span>Tipo, marca, modelo, defeito e solução técnica com contexto.</span>
-                    </div>
-                    <div>
-                        <i class="bi bi-cash-coin"></i>
-                        <strong>Financeiro integrado</strong>
-                        <span>Recebimentos, despesas, DRE e fluxo de caixa conectados à operação.</span>
-                    </div>
-                </div>
-            </div>
-        </section>
-
         <section class="desktop-login-panel-wrap">
             <div class="desktop-login-panel">
                 <div class="desktop-login-brand">
@@ -50,10 +37,7 @@
                             <i class="bi bi-tools"></i>
                         @endif
                     </div>
-                    <div>
-                        <span>Bem-vindo ao</span>
-                        <strong>{{ $brandingName }}</strong>
-                    </div>
+                    <strong>{{ $brandingName }}</strong>
                 </div>
 
                 <form method="post" action="{{ route('login.store') }}" class="d-grid gap-3">
@@ -100,7 +84,7 @@
                         <a href="{{ route('password.request') }}" class="small fw-semibold text-decoration-none">
                             Esqueci minha senha
                         </a>
-                        <span class="small text-muted">O link será enviado para o e-mail cadastrado.</span>
+                        <span class="small text-muted">O link sera enviado para o e-mail cadastrado.</span>
                     </div>
                 </form>
 

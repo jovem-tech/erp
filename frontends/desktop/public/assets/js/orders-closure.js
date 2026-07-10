@@ -8,6 +8,65 @@
         maximumFractionDigits: 2,
     });
 
+    // Converte valores no padrao brasileiro ("R$ 1.234,56", "1.234,56") ou
+    // canonico ("1234.56") para number — mesmo parser da tela de orcamentos
+    // (orcamentos-form.js), onde a mascara BRL de inputs foi introduzida.
+    const parseMoney = (value) => {
+        if (typeof value === 'number') {
+            return Number.isFinite(value) ? value : 0;
+        }
+
+        let normalized = String(value ?? '').trim().replace(/[^\d,.-]/g, '');
+        if (normalized === '' || normalized === '-' || normalized === '.' || normalized === ',') {
+            return 0;
+        }
+
+        const lastComma = normalized.lastIndexOf(',');
+        const lastDot = normalized.lastIndexOf('.');
+
+        if (lastComma !== -1 && lastDot !== -1) {
+            normalized = lastComma > lastDot
+                ? normalized.replace(/\./g, '').replace(',', '.')
+                : normalized.replace(/,/g, '');
+        } else if (lastComma !== -1) {
+            normalized = normalized.replace(/\./g, '').replace(',', '.');
+        } else if (lastDot !== -1) {
+            const parts = normalized.split('.');
+            if (parts.length > 2 || (parts[parts.length - 1] || '').length === 3) {
+                normalized = normalized.replace(/\./g, '');
+            }
+        }
+
+        const parsed = Number.parseFloat(normalized);
+
+        return Number.isFinite(parsed) ? parsed : 0;
+    };
+
+    // Mascara BRL no campo Valor do recebimento: exibe "R$ 50,00" ao sair do
+    // campo e seleciona tudo ao focar (mesmo padrao data-budget-money dos
+    // orcamentos). O valor canonico e restaurado no submit do form.
+    const bindMoneyInput = (input) => {
+        if (!(input instanceof HTMLInputElement) || input.dataset.moneyBound === '1') {
+            return;
+        }
+
+        input.dataset.moneyBound = '1';
+        input.type = 'text';
+        input.inputMode = 'decimal';
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+
+        const sync = () => {
+            input.value = `R$ ${formatMoney(parseMoney(input.value))}`;
+        };
+
+        input.addEventListener('focus', () => {
+            window.requestAnimationFrame(() => input.select());
+        });
+        input.addEventListener('blur', sync);
+        sync();
+    };
+
     const setText = (id, text) => {
         const el = document.getElementById(id);
         if (el) el.textContent = text;
@@ -59,8 +118,14 @@
 
     document.addEventListener('DOMContentLoaded', () => {
         const form = document.getElementById('closureForm');
+        const classificacaoBaixaSelect = document.getElementById('classificacaoBaixa');
         const encerrarComoSelect = document.getElementById('encerrarComo');
         const dataEntregaInput = document.getElementById('dataEntrega');
+        const dataEntregaWrapper = document.getElementById('dataEntregaWrapper');
+        const closureBaixaFields = document.getElementById('closureBaixaFields');
+        const closureAdvanceFields = document.getElementById('closureAdvanceFields');
+        const equipamentoEntregueCheckbox = document.getElementById('equipamentoEntregue');
+        const closureReturnCard = document.getElementById('closureReturnCard');
         const receiptsList = document.getElementById('closureReceiptsList');
         const receiptTemplate = document.getElementById('closureReceiptRowTemplate');
         const emptyHint = document.getElementById('closureReceiptsEmptyHint');
@@ -99,6 +164,11 @@
 
         const isNoRepairClosure = () => noRepairStatuses.includes(encerrarComoSelect?.value || '');
 
+        // Classificação da baixa: 'baixa' (padrão) fecha a OS de verdade;
+        // 'adiantamento'/'sinal' só registra o valor, sem fechar nada — ver
+        // OrderClosureService::registerAdvance() no backend.
+        const isAdvanceClosure = () => (classificacaoBaixaSelect?.value || 'baixa') !== 'baixa';
+
         // Devolvido sem reparo / descartado não geram cobrança pela OS: a aba
         // Financeiro fica desabilitada (não navegável) e o fluxo Continuar/Voltar
         // pula direto entre Encerramento e Confirmação.
@@ -121,15 +191,58 @@
             }
         };
 
-        const updateClassificationVisibility = () => {
-            const hide = isNoRepairClosure();
-            rows().forEach((row) => {
-                const field = row.querySelector('[data-classificacao-field]');
-                if (field instanceof HTMLElement) field.classList.toggle('d-none', hide);
-            });
+        // Mostra/esconde "Data da entrega" dentro do modo Adiantamento/Sinal —
+        // só faz sentido (e só é obrigatória) quando "Equipamento foi
+        // entregue?" está marcado. No modo Baixa ela é sempre obrigatória.
+        const updateDataEntregaVisibility = () => {
+            if (!(dataEntregaWrapper instanceof HTMLElement)) return;
 
-            const advanceBtn = document.querySelector('[data-action="adicionar-adiantamento"]');
-            if (advanceBtn instanceof HTMLElement) advanceBtn.classList.toggle('d-none', hide);
+            if (!isAdvanceClosure()) {
+                dataEntregaWrapper.classList.remove('d-none');
+                if (dataEntregaInput instanceof HTMLInputElement) dataEntregaInput.required = true;
+                return;
+            }
+
+            const entregue = Boolean(equipamentoEntregueCheckbox?.checked);
+            dataEntregaWrapper.classList.toggle('d-none', !entregue);
+            if (dataEntregaInput instanceof HTMLInputElement) dataEntregaInput.required = entregue;
+        };
+
+        // Troca entre o bloco "Encerrar como" + "Data da entrega" (modo Baixa)
+        // e o bloco "Equipamento foi entregue?" (modo Adiantamento/Sinal) —
+        // reaproveita o MESMO input de data (move o wrapper entre os dois
+        // blocos) em vez de duplicar o campo com o mesmo name.
+        const updateClosureModeVisibility = () => {
+            const advance = isAdvanceClosure();
+
+            closureBaixaFields?.classList.toggle('d-none', advance);
+            closureAdvanceFields?.classList.toggle('d-none', !advance);
+
+            if (encerrarComoSelect instanceof HTMLSelectElement) {
+                encerrarComoSelect.required = !advance;
+            }
+
+            if (dataEntregaWrapper instanceof HTMLElement) {
+                const targetParent = advance ? closureAdvanceFields : closureBaixaFields;
+                if (targetParent instanceof HTMLElement && dataEntregaWrapper.parentElement !== targetParent) {
+                    targetParent.appendChild(dataEntregaWrapper);
+                }
+            }
+
+            updateDataEntregaVisibility();
+        };
+
+        // "Retorno pós-serviço" não se aplica quando não é uma Baixa de
+        // verdade (o atendimento não terminou) — some da etapa Confirmação e
+        // garante que não vai marcado por engano.
+        const updateReturnCardVisibility = () => {
+            const advance = isAdvanceClosure();
+            closureReturnCard?.classList.toggle('d-none', advance);
+
+            if (advance && agendarRetornoCheckbox instanceof HTMLInputElement && agendarRetornoCheckbox.checked) {
+                agendarRetornoCheckbox.checked = false;
+                agendarRetornoCheckbox.dispatchEvent(new Event('change'));
+            }
         };
 
         // Devolvido sem reparo / descartado não geram lançamento financeiro:
@@ -186,7 +299,7 @@
             let totalTaxas = 0;
 
             rows().forEach((row) => {
-                const valor = parseFloat(row.querySelector('[data-field="valor"]')?.value || '0') || 0;
+                const valor = parseMoney(row.querySelector('[data-field="valor"]')?.value || '0');
                 totalRecebido += valor;
 
                 const formaPagamento = row.querySelector('[data-field="forma_pagamento"]')?.value || '';
@@ -243,12 +356,16 @@
 
         const validateReceiptRow = (row) => {
             const errors = [];
-            const valor = parseFloat(row.querySelector('[data-field="valor"]')?.value || '0') || 0;
+            const valor = parseMoney(row.querySelector('[data-field="valor"]')?.value || '0');
             const formaPagamento = row.querySelector('[data-field="forma_pagamento"]')?.value || '';
             const operadoraId = row.querySelector('[data-field="operadora_id"]')?.value || '';
 
             if (valor <= 0) {
                 errors.push('Informe um valor maior que zero para todos os recebimentos lançados.');
+            }
+
+            if (formaPagamento === '') {
+                errors.push('Selecione a forma de pagamento de todos os recebimentos lançados.');
             }
 
             if (formaPagamento.startsWith('cartao')) {
@@ -274,6 +391,12 @@
                 errors.push(...validateReceiptRow(row));
             });
 
+            // Adiantamento/Sinal só faz sentido com pelo menos um valor lançado
+            // (é a própria razão da ação existir).
+            if (isAdvanceClosure() && rows().length === 0) {
+                errors.push('Adicione ao menos um recebimento para registrar o adiantamento/sinal.');
+            }
+
             const { totalRecebido } = recalcTotals();
             const valorAberto = Number(config.valorAberto) || 0;
             if (totalRecebido - valorAberto > 0.009) {
@@ -284,6 +407,16 @@
         };
 
         const resolveStatusLabel = (saldoRestante) => {
+            if (isAdvanceClosure()) {
+                const tipoLabel = classificacaoBaixaSelect?.selectedOptions?.[0]?.text || 'Adiantamento';
+                const entregue = Boolean(equipamentoEntregueCheckbox?.checked) && Boolean(dataEntregaInput?.value);
+                const statusLabel = entregue
+                    ? (config.statusPagamentoPendente?.nome || 'Entregue - Pendência Financeira')
+                    : (config.statusAtualNome || 'Sem status');
+
+                return { tipoLabel, statusLabel };
+            }
+
             const tipoLabel = encerrarComoSelect?.selectedOptions?.[0]?.text || '—';
             if (!isNoRepairClosure() && saldoRestante > 0.009 && config.statusPagamentoPendente?.nome) {
                 return { tipoLabel, statusLabel: config.statusPagamentoPendente.nome };
@@ -306,11 +439,19 @@
             updateFinancialSummary(saldoRestante);
 
             const { tipoLabel, statusLabel } = resolveStatusLabel(saldoRestante);
-            const dataEntrega = dataEntregaInput?.value || '';
+            // Em modo Adiantamento/Sinal o campo #dataEntrega fica com o valor
+            // padrão (hoje) preenchido pelo blade mesmo escondido — só reflete
+            // a realidade se "Equipamento foi entregue?" estiver marcado, senão
+            // essa data nunca é aplicada de verdade (ver registerAdvance() no
+            // backend, que só usa data_entrega quando equipamento_entregue=true).
+            const entregue = isAdvanceClosure()
+                ? Boolean(equipamentoEntregueCheckbox?.checked) && Boolean(dataEntregaInput?.value)
+                : true;
+            const dataEntrega = entregue ? (dataEntregaInput?.value || '') : '';
 
             setText('closureConfirmType', tipoLabel);
             setText('closureConfirmStatus', statusLabel);
-            setText('closureConfirmDelivery', dataEntrega ? `Data da entrega: ${dataEntrega}` : 'Data da entrega: —');
+            setText('closureConfirmDelivery', dataEntrega ? `Data da entrega: ${dataEntrega}` : 'Equipamento ainda não entregue');
             setText('closureConfirmActionValue', `R$ ${formatMoney(totalRecebido)}`);
             setText('closureConfirmBalance', `Saldo restante: R$ ${formatMoney(saldoRestante)}`);
             setText('closureConfirmProfit', `R$ ${formatMoney(lucro)}`);
@@ -327,7 +468,12 @@
 
             const confirmWarning = document.getElementById('closureConfirmWarning');
             if (confirmWarning) {
-                if (isNoRepairClosure()) {
+                if (isAdvanceClosure()) {
+                    confirmWarning.className = 'alert alert-info';
+                    confirmWarning.textContent = entregue
+                        ? `A OS NÃO será encerrada — só o valor será lançado e o status vira "${config.statusPagamentoPendente?.nome || 'Entregue - Pendência Financeira'}" (continua aberta).`
+                        : 'A OS NÃO será encerrada nesta ação — apenas o valor será registrado no financeiro. O status atual continua o mesmo.';
+                } else if (isNoRepairClosure()) {
                     confirmWarning.className = 'alert alert-success';
                     confirmWarning.textContent = 'A OS será concluída sem lançamento financeiro nesta ação.';
                 } else if (saldoRestante <= 0) {
@@ -367,10 +513,11 @@
                 dataPagamentoInput.value = dataEntregaInput?.value || config.dataEntregaDefault || '';
             }
 
+            bindMoneyInput(row.querySelector('[data-field="valor"]'));
+
             toggleCardFields(row);
             reindexRows();
             updateEmptyHint();
-            updateClassificationVisibility();
             recalcTotals();
 
             return row;
@@ -420,7 +567,13 @@
             if (targetStep === currentStep) return;
 
             if (targetStep > currentStep) {
-                if (!encerrarComoSelect?.value || !dataEntregaInput?.value) {
+                if (isAdvanceClosure()) {
+                    const entregaPendente = Boolean(equipamentoEntregueCheckbox?.checked) && !dataEntregaInput?.value;
+                    if (entregaPendente) {
+                        dataEntregaInput?.reportValidity?.();
+                        return;
+                    }
+                } else if (!encerrarComoSelect?.value || !dataEntregaInput?.value) {
                     encerrarComoSelect?.reportValidity?.();
                     dataEntregaInput?.reportValidity?.();
                     return;
@@ -464,7 +617,17 @@
                 event.preventDefault();
                 showStepError(result.errors);
                 goToStep(2);
+                return;
             }
+
+            // Desfaz a mascara BRL ("R$ 50,00") antes de enviar: backend e
+            // validacao do desktop esperam o valor canonico ("50.00").
+            rows().forEach((row) => {
+                const valorInput = row.querySelector('[data-field="valor"]');
+                if (valorInput instanceof HTMLInputElement) {
+                    valorInput.value = parseMoney(valorInput.value).toFixed(2);
+                }
+            });
         });
 
         // Eventos dos recebimentos
@@ -511,10 +674,6 @@
             addRow();
         });
 
-        document.querySelector('[data-action="adicionar-adiantamento"]')?.addEventListener('click', () => {
-            addRow({ classificacao_recebimento: 'adiantamento' });
-        });
-
         receiveAllBalanceBtn?.addEventListener('click', () => {
             const { saldoRestante } = recalcTotals();
             if (saldoRestante <= 0.009) {
@@ -527,7 +686,6 @@
         });
 
         encerrarComoSelect?.addEventListener('change', () => {
-            updateClassificationVisibility();
             updateReceiptEntryAvailability();
             updateFinancialSummary();
             updateFinanceiroTabAvailability();
@@ -537,6 +695,33 @@
             if (currentStep === 2 && isNoRepairClosure()) {
                 goToStep(1);
             }
+        });
+
+        // Classificação da baixa: Baixa (fecha a OS) vs Adiantamento/Sinal
+        // (só registra o valor). Troca qual bloco aparece na etapa
+        // Encerramento e some com "Retorno pós-serviço" na Confirmação.
+        const handleClassificacaoBaixaChange = () => {
+            clearStepError();
+            updateClosureModeVisibility();
+            updateReturnCardVisibility();
+            updateFinancialSummary();
+        };
+        classificacaoBaixaSelect?.addEventListener('change', handleClassificacaoBaixaChange);
+        // Select2 (aplicado por padrao em todo `select.form-select` pelo init
+        // global de desktop.js) dispara `change` apenas via
+        // `jQuery(el).trigger('change')` ao escolher uma opcao pela sua UI —
+        // isso nao gera um evento nativo que propague ate o addEventListener
+        // acima. Sem este binding paralelo, escolher Adiantamento/Sinal pelo
+        // Select2 nao escondia "Encerrar como"/"Data da entrega" nem mostrava
+        // o toggle "Equipamento foi entregue?" (mesmo padrao ja visto nos
+        // campos de cartao do recebimento, ver bind de receiptsList acima).
+        if (window.jQuery && classificacaoBaixaSelect) {
+            window.jQuery(classificacaoBaixaSelect).on('change', handleClassificacaoBaixaChange);
+        }
+
+        equipamentoEntregueCheckbox?.addEventListener('change', () => {
+            updateDataEntregaVisibility();
+            updateFinancialSummary();
         });
 
         // Toggle de notificação
@@ -571,15 +756,14 @@
             }
         });
 
-        // Estado inicial: reconstrói recebimentos anteriores (retorno de validação)
+        // Estado inicial: reconstrói recebimentos anteriores (retorno de validação).
+        // Nunca insere automaticamente o saldo total numa linha — isso só deve
+        // acontecer quando o usuário clicar em "Receber saldo total".
         const oldReceipts = Array.isArray(config.old?.recebimentos) ? config.old.recebimentos : [];
-        if (oldReceipts.length > 0) {
-            oldReceipts.forEach((receipt) => addRow(receipt));
-        } else if ((Number(config.valorAberto) || 0) > 0) {
-            addRow({ valor: Number(config.valorAberto).toFixed(2) });
-        }
+        oldReceipts.forEach((receipt) => addRow(receipt));
 
-        updateClassificationVisibility();
+        updateClosureModeVisibility();
+        updateReturnCardVisibility();
         updateReceiptEntryAvailability();
         updateFinanceiroTabAvailability();
         retornoDataWrapper?.classList.toggle('d-none', !agendarRetornoCheckbox?.checked);

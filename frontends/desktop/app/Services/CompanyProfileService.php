@@ -31,11 +31,14 @@ class CompanyProfileService
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
-    public function update(array $payload, ?UploadedFile $logo = null): array
+    public function update(array $payload, ?UploadedFile $logo = null, ?UploadedFile $loginBackground = null): array
     {
         $files = [];
         if ($logo instanceof UploadedFile) {
             $files['empresa_logo'] = [$logo];
+        }
+        if ($loginBackground instanceof UploadedFile) {
+            $files['login_background_image'] = [$loginBackground];
         }
 
         $response = $this->apiClient->postMultipart('/configuracoes/empresa', array_merge($payload, [
@@ -64,7 +67,15 @@ class CompanyProfileService
     }
 
     /**
-     * @return array{name: string, has_logo: bool}
+     * @return array{body: string, headers: array<string, string>, status: int}
+     */
+    public function downloadPublicLoginBackground(): array
+    {
+        return $this->apiClient->guestDownload('/configuracoes/empresa/login-background-publico');
+    }
+
+    /**
+     * @return array{name: string, has_logo: bool, has_login_background: bool}
      */
     public function branding(): array
     {
@@ -81,18 +92,20 @@ class CompanyProfileService
             return [
                 'name' => $name !== '' ? $name : 'Sistema ERP',
                 'has_logo' => (bool) ($data['logo']['exists'] ?? false),
+                'has_login_background' => (bool) ($data['login_background']['exists'] ?? false),
             ];
         });
     }
 
     /**
-     * @return array{name: string, has_logo: bool}
+     * @return array{name: string, has_logo: bool, has_login_background: bool}
      */
     private function fallbackBranding(): array
     {
         return [
             'name' => 'Sistema ERP',
             'has_logo' => false,
+            'has_login_background' => false,
         ];
     }
 }

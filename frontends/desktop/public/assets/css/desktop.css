@@ -4302,6 +4302,96 @@ a {
     color: var(--desktop-text-muted);
 }
 
+/* Timeline de eventos da OS: borda esquerda colorida pela categoria
+   (--event-color vem inline do partial _event_timeline). */
+.timeline-item[data-event-category] {
+    border-left-color: var(--event-color, rgba(111, 90, 252, 0.45));
+}
+
+.event-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.event-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.3rem 0.75rem;
+    border: 1px solid var(--desktop-border);
+    border-radius: 999px;
+    background: var(--desktop-surface-soft);
+    color: var(--desktop-text);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.event-chip:hover {
+    border-color: var(--event-color, var(--desktop-primary));
+}
+
+.event-chip.is-active {
+    border-color: var(--event-color, var(--desktop-primary));
+    background: color-mix(in srgb, var(--event-color, var(--desktop-primary)) 14%, transparent);
+}
+
+.event-chip.is-empty {
+    opacity: 0.55;
+}
+
+.event-chip-dot {
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: var(--event-color, var(--desktop-primary));
+    flex: 0 0 auto;
+}
+
+.event-chip-count {
+    font-weight: 500;
+    color: var(--desktop-text-muted);
+}
+
+.event-category-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--event-color, var(--desktop-primary));
+    background: color-mix(in srgb, var(--event-color, var(--desktop-primary)) 12%, transparent);
+}
+
+.event-data summary {
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: var(--desktop-text-muted);
+}
+
+.event-data dl {
+    margin: 0.5rem 0 0;
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr);
+    gap: 0.15rem 0.75rem;
+    font-size: 0.75rem;
+}
+
+.event-data dt {
+    color: var(--desktop-text-muted);
+    font-weight: 500;
+    text-transform: capitalize;
+}
+
+.event-data dd {
+    margin: 0;
+    word-break: break-word;
+}
+
 .workflow-diagram {
     display: grid;
     gap: 1rem;
@@ -4799,9 +4889,10 @@ a {
     --login-blue-strong: #254F8D;
     --login-blue-soft: rgba(56, 104, 176, 0.12);
     display: flex;
-    align-items: stretch;
+    align-items: center;
     justify-content: center;
     min-height: 100vh;
+    min-height: 100svh;
     background:
         radial-gradient(circle at 12% 18%, rgba(56, 104, 176, 0.18), transparent 30%),
         radial-gradient(circle at 82% 12%, rgba(56, 104, 176, 0.10), transparent 28%),
@@ -4809,18 +4900,20 @@ a {
 }
 
 .desktop-login-wrapper {
-    width: 100%;
+    width: min(100%, 520px);
     min-height: 100vh;
+    min-height: 100svh;
+    margin-inline: auto;
     display: grid;
-    grid-template-columns: minmax(0, 1.25fr) minmax(360px, 470px);
+    grid-template-columns: minmax(0, 450px);
+    justify-content: center;
     align-content: center;
-    align-items: stretch;
-    gap: clamp(1rem, 3vw, 3rem);
+    align-items: center;
     padding: clamp(1rem, 3vw, 3rem);
 }
 
 .desktop-login-copy {
-    display: flex;
+    display: none;
     align-items: stretch;
     justify-content: center;
 }
@@ -4904,7 +4997,7 @@ a {
 
 .desktop-login-panel-wrap {
     display: flex;
-    align-items: stretch;
+    align-items: center;
     justify-content: center;
 }
 

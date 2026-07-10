@@ -5,8 +5,11 @@ namespace App\Providers;
 use App\Models\User;
 use App\Services\Auth\RbacAuthorizationService;
 use App\Services\Integrations\EmailIntegrationSettingsService;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -40,6 +43,7 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->loadMigrationsFrom(database_path('migrations/chat'));
         app(EmailIntegrationSettingsService::class)->applyRuntimeConfig();
+        $this->configureRateLimiting();
 
         // O sistema-erp e 100% Bearer/Sanctum (sem cookie de sessao); o endpoint padrao
         // /broadcasting/auth do Laravel assume guard "web" se nao for sobrescrito aqui.
@@ -65,6 +69,22 @@ class AppServiceProvider extends ServiceProvider
             [$module, $action] = explode(':', $ability, 2);
 
             return $rbacAuthorizationService->allows($user, $module, $action);
+        });
+    }
+
+    private function configureRateLimiting(): void
+    {
+        RateLimiter::for('password-reset', static function (Request $request): array {
+            $email = strtolower(trim((string) $request->input('email', '')));
+            $emailKey = $email !== '' ? hash('sha256', $email) : 'missing-email';
+            $ip = (string) ($request->ip() ?: 'unknown');
+
+            return [
+                // Protege contra abuso em um unico e-mail, sem transformar o IP do
+                // desktop/BFF em gargalo global para toda a assistencia.
+                Limit::perMinute(5)->by('email:'.$emailKey.'|ip:'.$ip),
+                Limit::perMinute(60)->by('ip:'.$ip),
+            ];
         });
     }
 }

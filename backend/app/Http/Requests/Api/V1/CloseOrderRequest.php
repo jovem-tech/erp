@@ -19,16 +19,37 @@ class CloseOrderRequest extends BaseApiFormRequest
      */
     public function rules(): array
     {
+        $isBaixa = $this->classificacaoBaixa() === 'baixa';
+
         return [
+            // Decide o caminho: 'baixa' (padrao, fecha a OS de verdade via
+            // OrderClosureService::close()) ou 'adiantamento'/'sinal' (so
+            // registra o valor no financeiro da OS, via ::registerAdvance() —
+            // nunca aplica um dos 3 OrderStatus::closureCodes()). Ver skill
+            // sistema-erp-os-fluxo-fechamento.
+            'classificacao_baixa' => [
+                'nullable',
+                'string',
+                Rule::in(['baixa', 'adiantamento', 'sinal']),
+            ],
             'encerrar_como' => [
-                'required',
+                Rule::requiredIf($isBaixa),
+                'nullable',
                 'string',
                 'max:80',
                 Rule::in($this->closureStatusCodes()),
             ],
+            // Obrigatorio quando e' uma Baixa de verdade, e tambem quando for
+            // Adiantamento/Sinal mas o equipamento foi marcado como entregue
+            // (nesse caso o status vira entregue_pagamento_pendente).
             'data_entrega' => [
-                'required',
+                Rule::requiredIf($isBaixa || $this->boolean('equipamento_entregue')),
+                'nullable',
                 'date',
+            ],
+            'equipamento_entregue' => [
+                'nullable',
+                'boolean',
             ],
             'observacao' => [
                 'nullable',
@@ -47,22 +68,18 @@ class CloseOrderRequest extends BaseApiFormRequest
                 'nullable',
                 'date',
             ],
-            'recebimentos' => [
-                'nullable',
-                'array',
-            ],
+            // Fora de uma Baixa de verdade, precisa lancar pelo menos um valor
+            // (adiantamento/sinal sem nenhum recebimento nao faz sentido).
+            'recebimentos' => $isBaixa
+                ? ['nullable', 'array']
+                : ['required', 'array', 'min:1'],
             'recebimentos.*.valor' => [
                 'required',
                 'numeric',
                 'min:0.01',
             ],
-            'recebimentos.*.classificacao_recebimento' => [
-                'nullable',
-                'string',
-                Rule::in(['baixa', 'adiantamento', 'sinal']),
-            ],
             'recebimentos.*.forma_pagamento' => [
-                'nullable',
+                'required',
                 'string',
                 Rule::in(Financeiro::FORMAS_PAGAMENTO),
             ],
@@ -88,6 +105,13 @@ class CloseOrderRequest extends BaseApiFormRequest
             ])],
             'recebimentos.*.parcelas' => ['nullable', 'integer', 'min:1', 'max:99'],
         ];
+    }
+
+    private function classificacaoBaixa(): string
+    {
+        $value = trim((string) $this->input('classificacao_baixa', 'baixa'));
+
+        return in_array($value, ['baixa', 'adiantamento', 'sinal'], true) ? $value : 'baixa';
     }
 
     /**

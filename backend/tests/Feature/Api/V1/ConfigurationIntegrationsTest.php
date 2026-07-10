@@ -52,6 +52,7 @@ class ConfigurationIntegrationsTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('data.sistema_nome', 'Jovem Tech Assistência')
             ->assertJsonPath('data.logo.exists', false)
+            ->assertJsonPath('data.login_background.exists', false)
             ->assertJsonMissingPath('data.settings.empresa_email');
     }
 

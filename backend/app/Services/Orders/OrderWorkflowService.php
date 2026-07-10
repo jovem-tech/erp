@@ -11,6 +11,7 @@ use App\Models\Financeiro;
 use App\Models\FinanceiroMovimento;
 use App\Models\Order;
 use App\Models\OrderDocument;
+use App\Models\OrderEvent;
 use App\Models\OrderPhoto;
 use App\Models\OrderStatus;
 use App\Models\OrderProcedureHistory;
@@ -48,7 +49,8 @@ class OrderWorkflowService
         private readonly OrderNumberService $orderNumberService,
         private readonly OsMargemService $osMargemService,
         private readonly WhatsappMessagingService $whatsappMessagingService,
-        private readonly IntegrationSettingsService $integrationSettingsService
+        private readonly IntegrationSettingsService $integrationSettingsService,
+        private readonly OrderEventService $orderEventService
     ) {
     }
 
@@ -582,6 +584,21 @@ class OrderWorkflowService
             $createdPhotoIds[] = (int) $photo->id;
         }
 
+        if ($createdPhotoIds !== []) {
+            $this->orderEventService->record(
+                (int) $order->id,
+                OrderEvent::CATEGORIA_REGISTRO,
+                OrderEvent::TIPO_FOTOS_ADICIONADAS,
+                'Fotos adicionadas',
+                sprintf('%d foto(s) anexada(s) à OS.', count($createdPhotoIds)),
+                [
+                    'quantidade' => count($createdPhotoIds),
+                    'foto_ids' => $createdPhotoIds,
+                    'tipo' => $tipo !== '' ? $tipo : 'recepcao',
+                ]
+            );
+        }
+
         return $createdPhotoIds;
     }
 
@@ -704,6 +721,25 @@ class OrderWorkflowService
             if ($statusChanged) {
                 $this->createStatusHistory($orderId, $previousStatus, $newStatus, $estadoFluxo, $actor, $observacao, $now);
             }
+
+            if ($diagnosticoTecnico !== null || $solucaoAplicada !== null) {
+                $camposTecnicos = array_filter([
+                    'diagnostico_tecnico' => $diagnosticoTecnico !== null ? trim($diagnosticoTecnico) : null,
+                    'solucao_aplicada' => $solucaoAplicada !== null ? trim($solucaoAplicada) : null,
+                ], static fn ($value): bool => $value !== null);
+
+                $this->orderEventService->record(
+                    $orderId,
+                    OrderEvent::CATEGORIA_REGISTRO,
+                    OrderEvent::TIPO_DADOS_TECNICOS_ATUALIZADOS,
+                    'Diagnóstico/solução registrados',
+                    null,
+                    $camposTecnicos,
+                    (int) $actor->id,
+                    OrderEvent::ORIGEM_USUARIO,
+                    $now
+                );
+            }
         });
 
         if ($statusChanged && (bool) ($statusRow->status_final ?? false)) {
@@ -774,12 +810,22 @@ class OrderWorkflowService
             return ['result' => 'empty_description'];
         }
 
-        OrderProcedureHistory::query()->create([
+        $procedure = OrderProcedureHistory::query()->create([
             'os_id' => $orderId,
             'descricao' => $descricao,
             'usuario_id' => (int) $actor->id,
             'created_at' => Carbon::now(),
         ]);
+
+        $this->orderEventService->record(
+            $orderId,
+            OrderEvent::CATEGORIA_REGISTRO,
+            OrderEvent::TIPO_PROCEDIMENTO_REGISTRADO,
+            'Procedimento registrado',
+            $descricao,
+            ['procedimento_historico_id' => (int) $procedure->id],
+            (int) $actor->id
+        );
 
         logger()->info('[API V1][ORDERS] Procedimento registrado', [
             'order_id' => $orderId,
@@ -852,7 +898,8 @@ class OrderWorkflowService
                 $estadoFluxo,
                 $actor,
                 'OS criada pelo backend central.',
-                $now
+                $now,
+                eventTipo: OrderEvent::TIPO_OS_CRIADA
             );
 
             if (is_array($entryChecklistPlan)) {
@@ -986,8 +1033,25 @@ class OrderWorkflowService
             $estadoFluxo = (string) ($payload['estado_fluxo'] ?? $estadoFluxo);
         }
 
+        // Diff real dos campos alterados (antes/depois) para a timeline de
+        // eventos — exclui os campos de status, que ja viram evento proprio
+        // via createStatusHistory, e o carimbo interno de atualizacao.
+        $camposAlterados = [];
+        foreach ($payload as $campo => $valorNovo) {
+            if (in_array($campo, ['status', 'estado_fluxo', 'status_atualizado_em'], true)) {
+                continue;
+            }
+            $valorAnterior = $order->getAttribute($campo);
+            if ((string) $valorAnterior !== (string) $valorNovo) {
+                $camposAlterados[$campo] = [
+                    'antes' => $valorAnterior,
+                    'depois' => $valorNovo,
+                ];
+            }
+        }
+
         if ($payload !== [] || is_array($entryChecklistPlan)) {
-            DB::transaction(function () use ($orderId, $payload, $statusChanged, $previousStatus, $actor, $estadoFluxo, $entryChecklistPlan): void {
+            DB::transaction(function () use ($orderId, $payload, $statusChanged, $previousStatus, $actor, $estadoFluxo, $entryChecklistPlan, $camposAlterados): void {
                 $now = Carbon::now();
 
                 Order::query()
@@ -1002,6 +1066,20 @@ class OrderWorkflowService
                         $estadoFluxo,
                         $actor,
                         'OS atualizada pelo backend central.',
+                        $now
+                    );
+                }
+
+                if ($camposAlterados !== []) {
+                    $this->orderEventService->record(
+                        $orderId,
+                        OrderEvent::CATEGORIA_REGISTRO,
+                        OrderEvent::TIPO_OS_ATUALIZADA,
+                        'OS atualizada',
+                        'Campos alterados: ' . implode(', ', array_keys($camposAlterados)) . '.',
+                        ['campos' => $camposAlterados],
+                        (int) $actor->id,
+                        OrderEvent::ORIGEM_USUARIO,
                         $now
                     );
                 }
@@ -1066,6 +1144,13 @@ class OrderWorkflowService
                     ->orderByDesc('created_at')
                     ->orderByDesc('id')
                     ->limit(20);
+            },
+            'events' => static function ($query): void {
+                $query
+                    ->with('user')
+                    ->orderByDesc('created_at')
+                    ->orderByDesc('id')
+                    ->limit(200);
             },
             'photos' => static function ($query): void {
                 $query->orderBy('id');
@@ -1378,6 +1463,7 @@ class OrderWorkflowService
             'observacoes_cliente' => (string) ($order->observacoes_cliente ?? ''),
             'historico' => $this->mapHistoryCollection($order->statusHistory),
             'procedimentos_historico' => $this->mapProcedureHistoryCollection($order->procedureHistory),
+            'eventos' => $this->mapEventCollection($order->events),
             'status_disponiveis' => $this->mapStatusOptions(),
             'proximas_etapas' => $this->mapNextStatusOptions((string) ($order->status ?? '')),
             'fotos' => $this->mapPhotoCollection($order->photos, (int) ($order->id ?? 0)),
@@ -1999,6 +2085,39 @@ class OrderWorkflowService
                 'created_at' => $this->formatDateTime($historyItem->created_at ?? null),
                 'usuario_id' => (int) ($historyItem->usuario_id ?? 0),
                 'usuario' => $this->mapTechnician($historyItem->user),
+            ];
+        }
+
+        return $items;
+    }
+
+    /**
+     * Timeline unificada de eventos da OS (tabela os_eventos) — ver skill
+     * sistema-erp-os-fluxo-fechamento e documentacao de eventos.
+     *
+     * @param iterable<OrderEvent> $events
+     * @return array<int, array<string, mixed>>
+     */
+    private function mapEventCollection(iterable $events): array
+    {
+        $items = [];
+
+        foreach ($events as $event) {
+            if (! $event instanceof OrderEvent) {
+                continue;
+            }
+
+            $items[] = [
+                'id' => (int) ($event->id ?? 0),
+                'categoria' => (string) ($event->categoria ?? ''),
+                'tipo' => (string) ($event->tipo ?? ''),
+                'titulo' => (string) ($event->titulo ?? ''),
+                'descricao' => $event->descricao !== null ? (string) $event->descricao : null,
+                'dados' => is_array($event->dados) ? $event->dados : null,
+                'origem' => (string) ($event->origem ?? 'sistema'),
+                'created_at' => $this->formatDateTime($event->created_at ?? null),
+                'usuario_id' => (int) ($event->usuario_id ?? 0),
+                'usuario' => $this->mapTechnician($event->user),
             ];
         }
 
@@ -2650,6 +2769,22 @@ class OrderWorkflowService
         if ($responses !== []) {
             DB::table('checklist_respostas')->insert($responses);
         }
+
+        $this->orderEventService->record(
+            $orderId,
+            OrderEvent::CATEGORIA_REGISTRO,
+            OrderEvent::TIPO_CHECKLIST_REGISTRADO,
+            'Checklist de entrada registrado',
+            (string) $plan['resumo_texto'] !== '' ? (string) $plan['resumo_texto'] : null,
+            [
+                'execucao_id' => $executionId,
+                'total_itens' => (int) $plan['total_itens'],
+                'total_discrepancias' => (int) $plan['total_discrepancias'],
+            ],
+            null,
+            OrderEvent::ORIGEM_USUARIO,
+            $now
+        );
     }
 
     /**
@@ -2752,21 +2887,44 @@ class OrderWorkflowService
         string $stateFlow,
         User $actor,
         ?string $note,
-        Carbon $timestamp
+        Carbon $timestamp,
+        string $eventTipo = OrderEvent::TIPO_STATUS_ALTERADO
     ): void {
-        if (! Schema::hasTable('os_status_historico')) {
-            return;
+        if (Schema::hasTable('os_status_historico')) {
+            OrderStatusHistory::query()->create([
+                'os_id' => $orderId,
+                'status_anterior' => $previousStatus !== '' ? $previousStatus : null,
+                'status_novo' => $newStatus,
+                'estado_fluxo' => $stateFlow,
+                'usuario_id' => (int) $actor->id,
+                'observacao' => $note,
+                'created_at' => $timestamp,
+            ]);
         }
 
-        OrderStatusHistory::query()->create([
-            'os_id' => $orderId,
-            'status_anterior' => $previousStatus !== '' ? $previousStatus : null,
-            'status_novo' => $newStatus,
-            'estado_fluxo' => $stateFlow,
-            'usuario_id' => (int) $actor->id,
-            'observacao' => $note,
-            'created_at' => $timestamp,
-        ]);
+        // Timeline unificada (os_eventos): espelha toda transicao de status.
+        // O write legado acima permanece intocado — e dependencia operacional
+        // do cancelamento de baixa (OrderClosureService resolve o status
+        // anterior lendo os_status_historico).
+        $isCreation = $eventTipo === OrderEvent::TIPO_OS_CRIADA;
+        $this->orderEventService->record(
+            $orderId,
+            OrderEvent::CATEGORIA_STATUS,
+            $eventTipo,
+            $isCreation ? 'OS criada' : 'Status alterado',
+            $isCreation
+                ? ($note ?? 'OS aberta')
+                : sprintf('%s → %s', $previousStatus !== null && $previousStatus !== '' ? $previousStatus : 'Sem origem', $newStatus)
+                    . ($note !== null && trim($note) !== '' ? ' — ' . $note : ''),
+            [
+                'status_anterior' => $previousStatus !== '' ? $previousStatus : null,
+                'status_novo' => $newStatus,
+                'estado_fluxo' => $stateFlow,
+            ],
+            (int) $actor->id,
+            OrderEvent::ORIGEM_USUARIO,
+            $timestamp
+        );
     }
 
     /**
@@ -2850,6 +3008,8 @@ class OrderWorkflowService
             );
 
             if ((bool) ($resultado['ok'] ?? false)) {
+                $this->recordClientMessageEvent($order, $newStatus, $telefone, 'inbox');
+
                 return;
             }
 
@@ -2870,7 +3030,9 @@ class OrderWorkflowService
         try {
             $direto = $this->integrationSettingsService->sendDirectMessage($telefone, $texto);
 
-            if (! (bool) ($direto['ok'] ?? false)) {
+            if ((bool) ($direto['ok'] ?? false)) {
+                $this->recordClientMessageEvent($order, $newStatus, $telefone, 'direto');
+            } else {
                 logger()->warning('[API V1][ORDERS] Falha ao notificar cliente sobre mudança de status (envio direto)', [
                     'order_id' => $order->id,
                     'message' => (string) ($direto['message'] ?? ''),
@@ -2882,6 +3044,25 @@ class OrderWorkflowService
                 'message' => $exception->getMessage(),
             ]);
         }
+    }
+
+    private function recordClientMessageEvent(Order $order, string $newStatus, string $telefone, string $canal): void
+    {
+        $this->orderEventService->record(
+            (int) $order->id,
+            OrderEvent::CATEGORIA_MENSAGEM,
+            OrderEvent::TIPO_WHATSAPP_ENVIADO,
+            'WhatsApp enviado ao cliente',
+            'Cliente notificado sobre a mudança de status da OS.',
+            [
+                'origin' => 'order_status_update',
+                'status_novo' => $newStatus,
+                'destino' => $telefone,
+                'canal' => $canal,
+            ],
+            null,
+            OrderEvent::ORIGEM_SISTEMA
+        );
     }
 
     public function canAccessOrder(User $actor, Order $order): bool

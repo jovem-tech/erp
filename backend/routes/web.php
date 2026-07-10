@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Web\BudgetPublicController;
 use App\Http\Controllers\Webhooks\WhatsAppWebhookController;
+use App\Notifications\FrontendPasswordResetNotification;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -16,6 +18,17 @@ Route::get('/', function () {
 Route::post('/webhooks/whatsapp', WhatsAppWebhookController::class)
     ->middleware('throttle:120,1')
     ->name('webhooks.whatsapp');
+
+Route::get('/redefinir-senha/{token}', function (Request $request, string $token) {
+    $email = (string) $request->query('email', '');
+
+    return redirect()->away(
+        FrontendPasswordResetNotification::resetUrlFor($email, $token)
+    );
+})
+    ->where('token', '[A-Za-z0-9]+')
+    ->middleware('throttle:30,1')
+    ->name('password.reset.redirect_to_desktop');
 
 Route::get('/orcamento/{token}', [BudgetPublicController::class, 'show'])
     ->middleware('throttle:120,1')

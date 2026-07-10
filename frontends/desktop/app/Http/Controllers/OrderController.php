@@ -785,17 +785,24 @@ class OrderController extends DesktopController
 
     public function closureStore(Request $request, int $order): RedirectResponse
     {
+        $classificacaoBaixa = trim((string) $request->input('classificacao_baixa', 'baixa'));
+        $isBaixa = ! in_array($classificacaoBaixa, ['adiantamento', 'sinal'], true);
+
         $validated = $request->validate([
-            'encerrar_como' => ['required', 'string'],
-            'data_entrega' => ['required', 'date'],
+            'classificacao_baixa' => ['nullable', 'string', 'in:baixa,adiantamento,sinal'],
+            'encerrar_como' => [$isBaixa ? 'required' : 'nullable', 'string'],
+            'equipamento_entregue' => ['nullable', 'boolean'],
+            'data_entrega' => [
+                ($isBaixa || $request->boolean('equipamento_entregue')) ? 'required' : 'nullable',
+                'date',
+            ],
             'observacao' => ['nullable', 'string'],
             'notificar_cliente' => ['nullable', 'boolean'],
             'agendar_retorno' => ['nullable', 'boolean'],
             'retorno_data' => ['nullable', 'date'],
-            'recebimentos' => ['nullable', 'array'],
+            'recebimentos' => [$isBaixa ? 'nullable' : 'required', 'array', $isBaixa ? 'sometimes' : 'min:1'],
             'recebimentos.*.valor' => ['required', 'numeric', 'min:0.01'],
-            'recebimentos.*.classificacao_recebimento' => ['nullable', 'string'],
-            'recebimentos.*.forma_pagamento' => ['nullable', 'string'],
+            'recebimentos.*.forma_pagamento' => ['required', 'string'],
             'recebimentos.*.data_pagamento' => ['nullable', 'date'],
             'recebimentos.*.observacoes' => ['nullable', 'string'],
             'recebimentos.*.operadora_id' => ['nullable', 'integer'],
@@ -807,22 +814,26 @@ class OrderController extends DesktopController
             'data_entrega' => 'data de entrega',
             'observacao' => 'observação',
             'retorno_data' => 'data de retorno',
+            'recebimentos' => 'recebimentos',
             'recebimentos.*.valor' => 'valor do recebimento',
+            'recebimentos.*.forma_pagamento' => 'forma de pagamento do recebimento',
         ]);
 
         $payload = array_filter([
-            'encerrar_como' => $validated['encerrar_como'],
-            'data_entrega' => $validated['data_entrega'],
+            'classificacao_baixa' => $classificacaoBaixa,
+            'encerrar_como' => $validated['encerrar_como'] ?? null,
+            'data_entrega' => $validated['data_entrega'] ?? null,
+            'equipamento_entregue' => $request->boolean('equipamento_entregue'),
             'observacao' => $validated['observacao'] ?? null,
             'notificar_cliente' => $request->boolean('notificar_cliente'),
-            'agendar_retorno' => $request->boolean('agendar_retorno'),
+            'agendar_retorno' => $isBaixa && $request->boolean('agendar_retorno'),
             'retorno_data' => $validated['retorno_data'] ?? null,
             'recebimentos' => $validated['recebimentos'] ?? [],
         ], static fn ($value): bool => $value !== null && $value !== '');
 
         $result = $this->orderService->close($order, $payload);
 
-        $message = 'OS encerrada com sucesso.';
+        $message = $isBaixa ? 'OS encerrada com sucesso.' : 'Valor registrado com sucesso.';
         if (($result['notificacao_enviada'] ?? null) === false) {
             $message .= ' O cliente não pôde ser notificado por WhatsApp agora.';
         }

@@ -11,6 +11,7 @@ use App\Services\Integrations\IntegrationSettingsService;
 use App\Services\Integrations\PaymentIntegrationSettingsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Symfony\Component\HttpFoundation\Response;
 
 class ConfigurationController extends BaseApiController
@@ -46,11 +47,26 @@ class ConfigurationController extends BaseApiController
     {
         $this->authorize('configuracoes:editar');
 
-        $result = $this->companyProfileService->save($request->safe()->except('empresa_logo'));
+        $result = $this->companyProfileService->save($request->safe()->except([
+            'empresa_logo',
+            'login_background_image',
+        ]));
 
         $logo = $request->file('empresa_logo');
-        if ($logo instanceof \Illuminate\Http\UploadedFile && $logo->isValid()) {
+        $loginBackground = $request->file('login_background_image');
+        $mediaChanged = false;
+
+        if ($logo instanceof UploadedFile && $logo->isValid()) {
             $this->companyProfileService->storeLogo($logo);
+            $mediaChanged = true;
+        }
+
+        if ($loginBackground instanceof UploadedFile && $loginBackground->isValid()) {
+            $this->companyProfileService->storeLoginBackground($loginBackground);
+            $mediaChanged = true;
+        }
+
+        if ($mediaChanged) {
             $result = $this->companyProfileService->payload();
         }
 
@@ -89,6 +105,25 @@ class ConfigurationController extends BaseApiController
                 'Logo da empresa nao configurada.',
                 404,
                 'COMPANY_LOGO_NOT_FOUND',
+                null,
+                request: $request
+            );
+        }
+
+        return response()->file($file['absolute_path'], [
+            'Content-Type' => $file['mime_type'],
+            'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
+        ]);
+    }
+
+    public function publicLoginBackground(Request $request): Response|JsonResponse
+    {
+        $file = $this->companyProfileService->resolveLoginBackgroundFile();
+        if ($file === null) {
+            return $this->error(
+                'Imagem de fundo do login nao configurada.',
+                404,
+                'LOGIN_BACKGROUND_NOT_FOUND',
                 null,
                 request: $request
             );

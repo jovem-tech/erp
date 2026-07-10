@@ -5,12 +5,19 @@ namespace App\Services\Budgets;
 use App\Models\Budget;
 use App\Models\BudgetItem;
 use App\Models\Order;
+use App\Models\OrderEvent;
 use App\Models\OrderStatus;
 use App\Models\OrderStatusHistory;
+use App\Services\Orders\OrderEventService;
 use Illuminate\Support\Facades\Schema;
 
 class BudgetOrderSyncService
 {
+    public function __construct(
+        private readonly OrderEventService $orderEventService
+    ) {
+    }
+
     /**
      * Atualiza status e valores da OS vinculada de acordo com o orçamento.
      */
@@ -61,6 +68,12 @@ class BudgetOrderSyncService
                 'updated_at' => $now,
             ]);
 
+        $observacao = sprintf(
+            'Status sincronizado automaticamente pelo orçamento %s (%s).',
+            trim((string) ($budget->numero ?? ('#' . (int) $budget->id))),
+            Budget::statusLabel((string) ($budget->status ?? ''))
+        );
+
         if (Schema::hasTable('os_status_historico')) {
             OrderStatusHistory::query()->create([
                 'os_id' => $orderId,
@@ -68,14 +81,28 @@ class BudgetOrderSyncService
                 'status_novo' => $targetStatus,
                 'estado_fluxo' => $flowState,
                 'usuario_id' => $userId,
-                'observacao' => sprintf(
-                    'Status sincronizado automaticamente pelo orçamento %s (%s).',
-                    trim((string) ($budget->numero ?? ('#' . (int) $budget->id))),
-                    Budget::statusLabel((string) ($budget->status ?? ''))
-                ),
+                'observacao' => $observacao,
                 'created_at' => $now,
             ]);
         }
+
+        $this->orderEventService->record(
+            $orderId,
+            OrderEvent::CATEGORIA_STATUS,
+            OrderEvent::TIPO_STATUS_SINCRONIZADO_ORCAMENTO,
+            'Status sincronizado pelo orçamento',
+            $observacao,
+            [
+                'orcamento_id' => (int) $budget->id,
+                'orcamento_numero' => trim((string) ($budget->numero ?? '')),
+                'orcamento_status' => (string) ($budget->status ?? ''),
+                'status_anterior' => $currentStatus !== '' ? $currentStatus : null,
+                'status_novo' => $targetStatus,
+            ],
+            $userId,
+            OrderEvent::ORIGEM_AUTOMACAO,
+            $now
+        );
     }
 
     /**
