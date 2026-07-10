@@ -258,6 +258,15 @@ a {
     justify-content: center;
 }
 
+/* Empilha logo e botao de expandir verticalmente quando recolhida: lado a
+   lado eles disputavam a mesma faixa estreita (80px) e ficavam sobrepostos
+   ao revelar o toggle no hover. */
+.desktop-sidebar.is-collapsed .desktop-sidebar-header {
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
 .desktop-sidebar.is-collapsed .desktop-nav-link {
     justify-content: center;
     margin-inline: 0.3rem;

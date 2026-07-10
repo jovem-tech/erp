@@ -26,6 +26,54 @@
         >
             <i class="bi bi-list"></i>
         </button>
+
+        <a href="{{ route('dashboard') }}" class="desktop-icon-button" aria-label="Ir para o início">
+            <i class="bi bi-house-door"></i>
+        </a>
+
+        <div
+            class="dropdown desktop-notification-dropdown"
+            data-desktop-notification-root
+            data-desktop-notification-summary-url="{{ route('notifications.summary') }}"
+        >
+            <button
+                type="button"
+                class="desktop-icon-button position-relative"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Notificações"
+                data-desktop-notification-toggle
+            >
+                <i class="bi bi-bell"></i>
+                <span class="desktop-notification-badge d-none" data-desktop-notification-badge></span>
+            </button>
+
+            <div class="dropdown-menu dropdown-menu-end desktop-notification-menu" data-desktop-notification-menu>
+                <div class="desktop-dropdown-head">
+                    <div>
+                        <strong>Notificações</strong>
+                        <small data-desktop-notification-unread>Resumo carregado sob demanda.</small>
+                    </div>
+
+                    <form method="post" action="{{ route('notifications.mark-all') }}">
+                        @csrf
+                        <button type="submit" class="btn btn-sm btn-soft">
+                            Marcar todas
+                        </button>
+                    </form>
+                </div>
+
+                <div class="desktop-notification-list" data-desktop-notification-list>
+                    <div class="desktop-notification-empty" data-desktop-notification-placeholder>
+                        Abra este menu para carregar as notificações mais recentes.
+                    </div>
+                </div>
+
+                <a href="{{ route('notifications.index') }}" class="desktop-notification-footer" data-desktop-notification-footer>
+                    Ver todas
+                </a>
+            </div>
+        </div>
     </div>
 
     <form
@@ -88,50 +136,6 @@
                 OS
             </a>
         @endif
-
-        <div
-            class="dropdown desktop-notification-dropdown"
-            data-desktop-notification-root
-            data-desktop-notification-summary-url="{{ route('notifications.summary') }}"
-        >
-            <button
-                type="button"
-                class="desktop-icon-button position-relative"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-                aria-label="Notificações"
-                data-desktop-notification-toggle
-            >
-                <i class="bi bi-bell"></i>
-                <span class="desktop-notification-badge d-none" data-desktop-notification-badge></span>
-            </button>
-
-            <div class="dropdown-menu dropdown-menu-end desktop-notification-menu" data-desktop-notification-menu>
-                <div class="desktop-dropdown-head">
-                    <div>
-                        <strong>Notificações</strong>
-                        <small data-desktop-notification-unread>Resumo carregado sob demanda.</small>
-                    </div>
-
-                    <form method="post" action="{{ route('notifications.mark-all') }}">
-                        @csrf
-                        <button type="submit" class="btn btn-sm btn-soft">
-                            Marcar todas
-                        </button>
-                    </form>
-                </div>
-
-                <div class="desktop-notification-list" data-desktop-notification-list>
-                    <div class="desktop-notification-empty" data-desktop-notification-placeholder>
-                        Abra este menu para carregar as notificações mais recentes.
-                    </div>
-                </div>
-
-                <a href="{{ route('notifications.index') }}" class="desktop-notification-footer" data-desktop-notification-footer>
-                    Ver todas
-                </a>
-            </div>
-        </div>
 
         <div class="dropdown desktop-profile-dropdown">
             <button

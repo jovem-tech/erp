@@ -1,5 +1,17 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.0.2.0 — 2026-07-10 18:01
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Move o botao de notificacoes (sino) do lado direito para o lado esquerdo da barra superior, ficando ao lado do botao de inicio (casa)
+- **Arquivos:** frontends/desktop/public/assets/css/desktop.css,frontends/desktop/resources/views/layouts/partials/navbar.blade.php
+
+## v4.0.1.1 — 2026-07-10 17:54
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Adiciona botao de atalho para o Dashboard (icone de casa) ao lado do toggle do menu lateral, e corrige sobreposicao entre a logo e o botao de expandir/recolher quando a sidebar esta recolhida (agora empilham verticalmente no hover)
+- **Arquivos:** frontends/desktop/public/assets/css/desktop.css,frontends/desktop/resources/views/layouts/partials/navbar.blade.php
+
 ## v4.0.1.0 — 2026-07-10 15:30
 - **Tier:** patch
 - **Autor/Agente:** Codex
