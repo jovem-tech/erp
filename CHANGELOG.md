@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.1.0.0 — 2026-07-10 20:11
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** correção e ajustes das notificações (sino)
+- **Arquivos:** backend/app/Console/Commands/NotifyOrderDeadlines.php,backend/app/Events/NotificationCreated.php,backend/app/Notifications/Channels/MobileInboxChannel.php,backend/app/Services/Budgets/BudgetApprovalService.php,backend/app/Services/Budgets/BudgetWorkflowService.php,backend/app/Services/Notifications/NotificationDispatchService.php,backend/app/Services/Orders/OrderClosureService.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/routes/channels.php,backend/routes/console.php,documentacao/03-arquitetura-tecnica/notificacoes-sino.md,frontends/desktop/app/Http/Controllers/NotificationController.php,frontends/desktop/app/Services/NotificationService.php,frontends/desktop/public/assets/js/desktop.js,frontends/desktop/resources/views/layouts/app.blade.php,frontends/desktop/resources/views/layouts/partials/navbar.blade.php,frontends/desktop/routes/web.php
+
 ## v4.0.2.0 — 2026-07-10 18:01
 - **Tier:** patch
 - **Autor/Agente:** Codex

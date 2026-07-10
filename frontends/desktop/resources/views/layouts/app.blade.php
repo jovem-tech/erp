@@ -77,6 +77,19 @@
 
     <script>
         window.__DESKTOP_FLASH = {{ \Illuminate\Support\Js::from($desktopFlash) }};
+        @if (!empty($desktopUser['id']))
+        // Tempo real do sino de notificações (canal privado por usuário via Reverb).
+        window.__DESKTOP_REALTIME = {{ \Illuminate\Support\Js::from([
+            'userId' => (int) ($desktopUser['id'] ?? 0),
+            'pusherKey' => env('REVERB_APP_KEY', ''),
+            'pusherHost' => env('REVERB_HOST', 'localhost'),
+            'pusherPort' => (int) env('REVERB_PORT', 8090),
+            'pusherScheme' => env('REVERB_SCHEME', 'http'),
+            'broadcastAuthUrl' => \Illuminate\Support\Facades\Route::has('desktop.broadcasting.auth') ? route('desktop.broadcasting.auth') : '',
+            'notificationOpenUrlTemplate' => route('notifications.open', ['notification' => '__ID__']),
+            'csrfToken' => csrf_token(),
+        ]) }};
+        @endif
     </script>
     @stack('modals')
     <script src="{{ asset('assets/libs/jquery/jquery-3.7.1.min.js') }}"></script>

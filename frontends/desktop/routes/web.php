@@ -68,9 +68,14 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/notificacoes/resumo', [NotificationController::class, 'summary'])->name('notifications.summary');
     Route::get('/notificacoes/{notification}/abrir', [NotificationController::class, 'open'])->name('notifications.open');
     Route::post('/notificacoes/lidas', [NotificationController::class, 'markAllRead'])->name('notifications.mark-all');
+    Route::post('/notificacoes/limpar-lidas', [NotificationController::class, 'clearRead'])->name('notifications.clear-read');
 
+    // Sem gate de modulo aqui de proposito: este proxy so repassa a
+    // autenticacao de canal ao backend, e e' o backend (routes/channels.php)
+    // quem autoriza CADA canal — 'orders' exige os:visualizar via RBAC,
+    // 'notifications.{id}' exige ser o proprio usuario. Um gate unico de
+    // modulo aqui bloquearia o sino de quem nao enxerga OS.
     Route::post('/broadcasting/auth', BroadcastAuthController::class)
-        ->middleware('desktop.permission:os,visualizar')
         ->name('desktop.broadcasting.auth');
 
     Route::get('/perfil', [ProfileController::class, 'show'])->name('profile.show');
