@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Channels\Whatsapp\PhoneNumberNormalizationService;
 use App\Services\Company\CompanyProfileService;
 use App\Services\Integrations\IntegrationSettingsService;
+use App\Services\Notifications\NotificationDispatchService;
 use App\Services\Orders\OrderEventService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -26,8 +27,25 @@ class BudgetApprovalService
         private readonly CompanyProfileService $companyProfileService,
         private readonly PhoneNumberNormalizationService $phoneNumberNormalizationService,
         private readonly BudgetOrderSyncService $budgetOrderSyncService,
-        private readonly OrderEventService $orderEventService
+        private readonly OrderEventService $orderEventService,
+        private readonly NotificationDispatchService $notificationDispatchService
     ) {
+    }
+
+    /**
+     * Destinatarios do sino para eventos deste orcamento: responsavel, quem
+     * criou e o tecnico da OS vinculada (deduplicados; inativos sao filtrados
+     * pelo proprio dispatch).
+     *
+     * @return array<int, int>
+     */
+    private function budgetNotificationRecipients(Budget $budget): array
+    {
+        return [
+            (int) ($budget->responsavel_id ?? 0),
+            (int) ($budget->criado_por ?? 0),
+            (int) ($budget->order?->tecnico_id ?? 0),
+        ];
     }
 
     /**
@@ -193,6 +211,25 @@ class BudgetApprovalService
             $this->budgetOrderSyncService->syncFromBudget($budget, (int) $user->id);
         });
 
+        if ($dispatchOk) {
+            $this->notificationDispatchService->toUsers(
+                array_merge([(int) $user->id], $this->budgetNotificationRecipients($budget)),
+                [
+                    'kind' => 'orcamento.sent',
+                    'title' => 'Orçamento enviado ao cliente',
+                    'body' => sprintf(
+                        'O orçamento %s foi enviado para aprovação do cliente%s.',
+                        $budget->numero,
+                        trim((string) ($budget->client?->nome_razao ?? '')) !== '' ? ' ' . trim((string) $budget->client->nome_razao) : ''
+                    ),
+                    'route' => '/orcamentos/' . (int) $budget->id,
+                    'icon' => 'send',
+                    'orcamento_id' => (int) $budget->id,
+                    'os_id' => (int) ($budget->os_id ?? 0),
+                ]
+            );
+        }
+
         return [
             'result' => $dispatchOk ? 'ok' : 'dispatch_failed',
             'message' => $dispatchMessage !== ''
@@ -325,6 +362,23 @@ class BudgetApprovalService
             $this->budgetOrderSyncService->syncFromBudget($budget);
         });
 
+        $this->notificationDispatchService->toUsers(
+            $this->budgetNotificationRecipients($budget),
+            [
+                'kind' => 'orcamento.approved',
+                'title' => 'Orçamento aprovado pelo cliente',
+                'body' => sprintf(
+                    'O cliente aprovou o orçamento %s (R$ %s).',
+                    $budget->numero,
+                    number_format((float) $budget->total, 2, ',', '.')
+                ),
+                'route' => '/orcamentos/' . (int) $budget->id,
+                'icon' => 'check-circle',
+                'orcamento_id' => (int) $budget->id,
+                'os_id' => (int) ($budget->os_id ?? 0),
+            ]
+        );
+
         return [
             'result' => 'ok',
             'message' => 'Orçamento aprovado com sucesso.',
@@ -421,6 +475,23 @@ class BudgetApprovalService
             $this->syncOrderForDecision($budget, false, $rejectedAt);
             $this->budgetOrderSyncService->syncFromBudget($budget);
         });
+
+        $this->notificationDispatchService->toUsers(
+            $this->budgetNotificationRecipients($budget),
+            [
+                'kind' => 'orcamento.rejected',
+                'title' => 'Orçamento recusado pelo cliente',
+                'body' => sprintf(
+                    'O cliente recusou o orçamento %s. Motivo: %s',
+                    $budget->numero,
+                    $decisionMessage
+                ),
+                'route' => '/orcamentos/' . (int) $budget->id,
+                'icon' => 'x-circle',
+                'orcamento_id' => (int) $budget->id,
+                'os_id' => (int) ($budget->os_id ?? 0),
+            ]
+        );
 
         return [
             'result' => 'ok',

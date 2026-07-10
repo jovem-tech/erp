@@ -89,26 +89,49 @@ class NotificationService
     }
 
     /**
+     * Remove definitivamente as notificações já lidas do usuário.
+     *
+     * @return array<string, mixed>
+     */
+    public function clearRead(): array
+    {
+        $response = $this->apiClient->delete('/notifications/read');
+        $this->forgetSummaryCache();
+
+        return $response['data'] ?? [];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function normalize(array $notification): array
     {
+        // Contrato real do backend (NotificationInboxService::map): tipo_evento,
+        // created_at e payload (com o icone em payload.icon). As leituras
+        // antigas (tipo/criada_em/dados/icone) nunca existiram na resposta,
+        // entao toda notificacao aparecia como "Agora" com icone generico.
         $route = trim((string) ($notification['rota_destino'] ?? ''));
         $url = $this->resolveUrl($route);
-        $icon = trim((string) ($notification['icone'] ?? ''));
+        $payload = is_array($notification['payload'] ?? null) ? $notification['payload'] : [];
+        $icon = trim((string) ($payload['icon'] ?? ''));
+        $criadaEm = $notification['created_at'] ?? null;
+        $id = (string) ($notification['id'] ?? '');
 
         return [
-            'id' => (string) ($notification['id'] ?? ''),
-            'tipo' => (string) ($notification['tipo'] ?? 'notificacao'),
+            'id' => $id,
+            // Link que marca como lida antes de redirecionar ao destino —
+            // usado pelo dropdown do sino (o link direto nao marcava leitura).
+            'open_url' => $id !== '' ? route('notifications.open', ['notification' => $id]) : $url,
+            'tipo' => (string) ($notification['tipo_evento'] ?? 'notificacao'),
             'titulo' => (string) ($notification['titulo'] ?? 'Notificação'),
             'corpo' => (string) ($notification['corpo'] ?? ''),
             'rota_destino' => $route,
             'url' => $url,
             'icone' => $icon !== '' ? 'bi bi-' . Str::of($icon)->trim()->replace('_', '-')->toString() : 'bi bi-bell',
-            'dados' => is_array($notification['dados'] ?? null) ? $notification['dados'] : [],
+            'dados' => $payload,
             'lida_em' => $this->normalizeTimestamp($notification['lida_em'] ?? null),
-            'criada_em' => $this->normalizeTimestamp($notification['criada_em'] ?? null),
-            'criada_em_humano' => $this->humanizeTimestamp($notification['criada_em'] ?? null),
+            'criada_em' => $this->normalizeTimestamp($criadaEm),
+            'criada_em_humano' => $this->humanizeTimestamp($criadaEm),
         ];
     }
 

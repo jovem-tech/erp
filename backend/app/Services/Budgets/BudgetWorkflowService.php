@@ -14,6 +14,7 @@ use App\Models\OrderEvent;
 use App\Models\Peca;
 use App\Models\Servico;
 use App\Models\User;
+use App\Services\Notifications\NotificationDispatchService;
 use App\Services\Orders\OrderEventService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -26,7 +27,8 @@ class BudgetWorkflowService
     public function __construct(
         private readonly BudgetOrderSyncService $budgetOrderSyncService,
         private readonly BudgetApprovalService $budgetApprovalService,
-        private readonly OrderEventService $orderEventService
+        private readonly OrderEventService $orderEventService,
+        private readonly NotificationDispatchService $notificationDispatchService
     ) {
     }
 
@@ -302,6 +304,24 @@ class BudgetWorkflowService
             }
 
             $this->budgetOrderSyncService->syncFromBudget($budget, (int) $user->id);
+
+            // Sino: avisa quem criou e o tecnico da OS vinculada (se houver).
+            $this->notificationDispatchService->toUsers(
+                [(int) $user->id, (int) ($budget->order?->tecnico_id ?? 0)],
+                [
+                    'kind' => 'orcamento.created',
+                    'title' => 'Orçamento criado',
+                    'body' => sprintf(
+                        'O orçamento %s foi criado (R$ %s).',
+                        $budget->numero,
+                        number_format((float) $budget->total, 2, ',', '.')
+                    ),
+                    'route' => '/orcamentos/' . (int) $budget->id,
+                    'icon' => 'receipt',
+                    'orcamento_id' => (int) $budget->id,
+                    'os_id' => (int) ($budget->os_id ?? 0),
+                ]
+            );
 
             return $this->budgetDetail($this->loadBudgetOrFail((int) $budget->id));
         });

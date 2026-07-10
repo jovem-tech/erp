@@ -2930,6 +2930,24 @@ class OrderWorkflowService
     /**
      * @param array<string, mixed> $extra
      */
+    /**
+     * Versao publica de sendOrderNotification para outros services do modulo
+     * (ex.: OrderClosureService avisando adiantamento/sinal) — mesmo padrao
+     * de destinatarios: autor da acao + tecnico responsavel pela OS.
+     *
+     * @param array<string, mixed> $extra
+     */
+    public function notifyOrderUsers(
+        Order $order,
+        User $actor,
+        string $kind,
+        string $title,
+        string $body,
+        array $extra = []
+    ): void {
+        $this->sendOrderNotification($order, $actor, $kind, $title, $body, $extra);
+    }
+
     private function sendOrderNotification(
         Order $order,
         User $actor,

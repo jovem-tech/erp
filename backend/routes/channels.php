@@ -32,3 +32,9 @@ Broadcast::channel('conversa.{conversaId}', function (User $user, int $conversaI
 Broadcast::channel('orders', function (User $user) {
     return app(RbacAuthorizationService::class)->allows($user, 'os', 'visualizar');
 });
+
+// Sino de notificações do desktop: canal privado por usuário — cada um só
+// escuta as próprias notificações.
+Broadcast::channel('notifications.{userId}', function (User $user, int $userId) {
+    return (int) $user->id === $userId;
+});

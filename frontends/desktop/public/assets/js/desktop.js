@@ -15,7 +15,10 @@ const DesktopUi = (() => {
     const searchSuggestUrl = searchForm?.dataset.suggestUrl || '';
 
     const notificationRoot = document.querySelector('[data-desktop-notification-root]');
-    const notificationSummaryUrl = notificationRoot?.dataset.notificationSummaryUrl || '';
+    // dataset de `data-desktop-notification-summary-url` e' desktopNotificationSummaryUrl —
+    // a leitura sem o prefixo "desktop" deixava a URL vazia e o codigo de
+    // notificacoes desistia silenciosamente (sino nunca carregava nada).
+    const notificationSummaryUrl = notificationRoot?.dataset.desktopNotificationSummaryUrl || '';
     const notificationList = notificationRoot?.querySelector('[data-desktop-notification-list]');
     const notificationUnread = notificationRoot?.querySelector('[data-desktop-notification-unread]');
     const notificationBadge = notificationRoot?.querySelector('[data-desktop-notification-badge]');
@@ -301,7 +304,7 @@ const DesktopUi = (() => {
         }
 
         if (unreadCount > 0) {
-            notificationBadge.textContent = unreadCount > 9 ? '9+' : String(unreadCount);
+            notificationBadge.textContent = String(unreadCount);
             notificationBadge.classList.remove('d-none');
             return;
         }
@@ -349,7 +352,10 @@ const DesktopUi = (() => {
             const title = escapeHtml(notification?.titulo || 'Notificação');
             const body = escapeHtml(notification?.corpo || '');
             const humanTime = escapeHtml(notification?.criada_em_humano || 'Agora');
-            const url = escapeHtml(notification?.url || '#');
+            // open_url passa pela rota notifications.open, que marca a
+            // notificacao como lida ANTES de redirecionar ao destino — o link
+            // direto (url) deixava a notificacao "nao lida" para sempre.
+            const url = escapeHtml(notification?.open_url || notification?.url || '#');
 
             return `
                 <a href="${url}" class="desktop-notification-item ${unreadClass}">
@@ -469,6 +475,119 @@ const DesktopUi = (() => {
         }
 
         window.setTimeout(scheduleLoad, 500);
+    };
+
+    // Tempo real do sino: escuta o canal privado do usuario (Reverb) e, ao
+    // chegar notificacao nova, atualiza badge + lista sem reload e mostra o
+    // toast padrao do sistema (SweetAlert2, canto superior direito).
+    const initNotificationRealtime = () => {
+        const realtime = window.__DESKTOP_REALTIME || {};
+        const pusherKey = String(realtime.pusherKey || '').trim();
+        const authUrl = String(realtime.broadcastAuthUrl || '').trim();
+        const userId = Number(realtime.userId) || 0;
+        const csrfToken = String(realtime.csrfToken || '').trim();
+        const openUrlTemplate = String(realtime.notificationOpenUrlTemplate || '').trim();
+
+        if (!(notificationRoot instanceof HTMLElement) || pusherKey === '' || authUrl === '' || userId <= 0 || typeof Pusher === 'undefined') {
+            return;
+        }
+
+        const currentUnreadCount = () => {
+            const raw = notificationBadge instanceof HTMLElement ? notificationBadge.textContent.trim() : '';
+            const parsed = Number.parseInt(raw, 10);
+            return Number.isFinite(parsed) ? parsed : 0;
+        };
+
+        const normalizeIcon = (icon) => {
+            const trimmed = String(icon || '').trim().replaceAll('_', '-');
+            return trimmed !== '' ? `bi bi-${trimmed}` : 'bi bi-bell';
+        };
+
+        const prependNotificationItem = (payload) => {
+            if (!(notificationList instanceof HTMLElement)) {
+                return;
+            }
+
+            // A lista pode ainda estar no placeholder "abra para carregar" —
+            // nesse caso deixa o fluxo normal buscar o resumo ao abrir.
+            if (notificationRoot.dataset.notificationsLoaded !== '1') {
+                return;
+            }
+
+            notificationList.querySelector('.desktop-notification-empty')?.remove();
+
+            const id = String(payload?.id || '');
+            const url = id !== '' && openUrlTemplate !== ''
+                ? openUrlTemplate.replaceAll('__ID__', id)
+                : '#';
+
+            const item = document.createElement('a');
+            item.href = url;
+            item.className = 'desktop-notification-item is-unread';
+            item.innerHTML = `
+                <span class="desktop-notification-icon">
+                    <i class="${escapeHtml(normalizeIcon(payload?.icon))}"></i>
+                </span>
+
+                <span class="desktop-notification-copy">
+                    <strong>${escapeHtml(payload?.titulo || 'Notificação')}</strong>
+                    <small>${escapeHtml(payload?.corpo || '')}</small>
+                    <span>Agora</span>
+                </span>
+            `;
+            notificationList.prepend(item);
+        };
+
+        const showNotificationToast = (payload) => {
+            if (typeof Swal === 'undefined') {
+                return;
+            }
+
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                timer: 5200,
+                timerProgressBar: true,
+                showConfirmButton: false,
+                icon: 'info',
+                title: String(payload?.titulo || 'Nova notificação'),
+                text: String(payload?.corpo || ''),
+                customClass: {
+                    popup: 'swal-desktop-toast',
+                },
+            });
+        };
+
+        try {
+            const pusher = new Pusher(pusherKey, {
+                wsHost: realtime.pusherHost || 'localhost',
+                wsPort: Number(realtime.pusherPort) || 8090,
+                wssPort: Number(realtime.pusherPort) || 8090,
+                forceTLS: (realtime.pusherScheme || 'http') === 'https',
+                enabledTransports: ['ws', 'wss'],
+                cluster: '',
+                authEndpoint: authUrl,
+                auth: {
+                    headers: {
+                        'X-CSRF-TOKEN': csrfToken,
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                },
+            });
+
+            const channel = pusher.subscribe('private-notifications.' + userId);
+            channel.bind('notification.created', (payload) => {
+                const unread = currentUnreadCount() + 1;
+                renderNotificationBadge(unread);
+                if (notificationUnread instanceof HTMLElement) {
+                    notificationUnread.textContent = `${unread} não lidas`;
+                }
+                prependNotificationItem(payload);
+                showNotificationToast(payload);
+            });
+        } catch (error) {
+            logError('notifications-realtime', error, {});
+        }
     };
 
     const initPageTransitions = () => {
@@ -1288,6 +1407,7 @@ const DesktopUi = (() => {
         initPasswordToggles();
         initFlash();
         initNotifications();
+        initNotificationRealtime();
         initConfirmForms();
         initPageTransitions();
         initModalFillers();

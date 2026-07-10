@@ -405,6 +405,32 @@ class OrderClosureService
             );
         }
 
+        // Sino: registra o recebimento parcial para o autor e o tecnico da OS
+        // (a baixa de verdade ja e' coberta pela notificacao de mudanca de
+        // status; adiantamento/sinal sem entrega nao muda status nenhum).
+        $totalLancado = round(array_sum(array_map(
+            static fn (array $recebimento): float => (float) ($recebimento['valor'] ?? 0),
+            $recebimentos
+        )), 2);
+        $this->orderWorkflowService->notifyOrderUsers(
+            $order,
+            $actor,
+            'os.advance_received',
+            $classificacao === 'sinal' ? 'Sinal recebido' : 'Adiantamento recebido',
+            sprintf(
+                'R$ %s recebido na OS %s. Saldo restante: R$ %s.',
+                number_format($totalLancado, 2, ',', '.'),
+                (string) ($order->numero_os ?: ('#' . $order->id)),
+                number_format((float) $result['saldo_aberto'], 2, ',', '.')
+            ),
+            [
+                'icon' => 'cash-coin',
+                'classificacao' => $classificacao,
+                'valor_lancado' => $totalLancado,
+                'saldo_restante' => round((float) $result['saldo_aberto'], 2),
+            ]
+        );
+
         $updatedOrder = Order::query()->with(['client', 'statusCatalog'])->find($order->id);
 
         return [

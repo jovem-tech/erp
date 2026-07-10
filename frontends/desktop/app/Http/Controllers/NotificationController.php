@@ -62,4 +62,15 @@ class NotificationController extends DesktopController
             ->route('notifications.index')
             ->with('success', 'Todas as notificações foram marcadas como lidas.');
     }
+
+    public function clearRead(): RedirectResponse
+    {
+        $this->notificationService->clearRead();
+
+        // back(): o botão vive no dropdown do sino, presente em qualquer
+        // página — o usuário deve continuar onde estava após limpar.
+        return redirect()
+            ->back()
+            ->with('success', 'Notificações lidas removidas.');
+    }
 }

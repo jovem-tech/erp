@@ -55,12 +55,21 @@
                         <small data-desktop-notification-unread>Resumo carregado sob demanda.</small>
                     </div>
 
-                    <form method="post" action="{{ route('notifications.mark-all') }}">
-                        @csrf
-                        <button type="submit" class="btn btn-sm btn-soft">
-                            Marcar todas
-                        </button>
-                    </form>
+                    <div class="d-flex gap-1">
+                        <form method="post" action="{{ route('notifications.mark-all') }}">
+                            @csrf
+                            <button type="submit" class="btn btn-sm btn-soft" title="Marcar todas como lidas">
+                                Marcar todas
+                            </button>
+                        </form>
+
+                        <form method="post" action="{{ route('notifications.clear-read') }}">
+                            @csrf
+                            <button type="submit" class="btn btn-sm btn-soft" title="Remover as notificações já lidas">
+                                <i class="bi bi-trash3 me-1"></i>Limpar lidas
+                            </button>
+                        </form>
+                    </div>
                 </div>
 
                 <div class="desktop-notification-list" data-desktop-notification-list>
