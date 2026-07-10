@@ -172,29 +172,40 @@ class RbacAdministrationTest extends TestCase
 
         $createResponse = $this->withHeader('Authorization', 'Bearer ' . $token)
             ->postJson('/api/v1/users', [
-                'nome' => 'Técnico Novo',
+                'nome' => 'TÉCNICO NOVO DE TAL',
                 'email' => 'tecnico.novo@example.com',
                 'password' => 'Senha@123',
-                'perfil' => 'tecnico',
+                'perfil' => 'admin',
                 'grupo_id' => 2,
                 'telefone' => '(11) 98888-7777',
                 'ativo' => true,
             ]);
 
         $createResponse->assertCreated()
+            ->assertJsonPath('data.user.nome', 'Técnico Novo de Tal')
             ->assertJsonPath('data.user.email', 'tecnico.novo@example.com')
+            ->assertJsonPath('data.user.perfil', 'tecnico')
             ->assertJsonPath('data.user.group.id', 2);
 
         $createdId = (int) $createResponse->json('data.user.id');
 
         $this->withHeader('Authorization', 'Bearer ' . $token)
             ->patchJson('/api/v1/users/' . $createdId, [
-                'nome' => 'Técnico Atualizado',
+                'password' => 'NovaSenha@123',
+                'password_confirmation' => 'SenhaDiferente@123',
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('status', 'error');
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson('/api/v1/users/' . $createdId, [
+                'nome' => 'TÉCNICO ATUALIZADO DE TAL',
                 'grupo_id' => 3,
-                'perfil' => 'atendente',
+                'perfil' => 'admin',
             ])
             ->assertOk()
-            ->assertJsonPath('data.user.nome', 'Técnico Atualizado')
+            ->assertJsonPath('data.user.nome', 'Técnico Atualizado de Tal')
+            ->assertJsonPath('data.user.perfil', 'atendente')
             ->assertJsonPath('data.user.group.id', 3);
 
         $this->withHeader('Authorization', 'Bearer ' . $token)
@@ -206,10 +217,57 @@ class RbacAdministrationTest extends TestCase
 
         $this->assertDatabaseHas('usuarios', [
             'id' => $createdId,
-            'nome' => 'Técnico Atualizado',
+            'nome' => 'Técnico Atualizado de Tal',
             'grupo_id' => 3,
             'perfil' => 'atendente',
             'ativo' => 0,
+        ]);
+    }
+
+    public function test_group_rename_keeps_linked_users_legacy_profile_compatible(): void
+    {
+        $admin = $this->createUserRecord([
+            'nome' => 'Administrador',
+            'email' => 'admin.rename-group@example.com',
+            'perfil' => 'admin',
+            'grupo_id' => 1,
+        ]);
+
+        $linkedUser = $this->createUserRecord([
+            'nome' => 'Atendente Grupo',
+            'email' => 'atendente.grupo@example.com',
+            'perfil' => 'atendente',
+            'grupo_id' => 3,
+        ]);
+
+        $token = $this->loginAndGetToken($admin->email);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson('/api/v1/groups/3', [
+                'nome' => 'Suporte Técnico',
+                'descricao' => 'Equipe de suporte',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.group.nome', 'Suporte Técnico');
+
+        $this->assertDatabaseHas('usuarios', [
+            'id' => $linkedUser->id,
+            'grupo_id' => 3,
+            'perfil' => 'atendente',
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson('/api/v1/groups/3', [
+                'nome' => 'Administrador Customizado',
+                'descricao' => 'Nome customizado sem privilégio legado',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.group.nome', 'Administrador Customizado');
+
+        $this->assertDatabaseHas('usuarios', [
+            'id' => $linkedUser->id,
+            'grupo_id' => 3,
+            'perfil' => 'atendente',
         ]);
     }
 

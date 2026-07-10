@@ -7,13 +7,17 @@ use App\Models\FinanceiroCategoria;
 use App\Models\FinanceiroMovimento;
 use App\Models\FinanceiroMovimentoCartao;
 use App\Models\Order;
+use App\Models\OrderEvent;
+use App\Services\Orders\OrderEventService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Carbon;
 use RuntimeException;
 
 class FinanceiroService
 {
     public function __construct(
-        private readonly FinanceiroCartaoService $financeiroCartaoService
+        private readonly FinanceiroCartaoService $financeiroCartaoService,
+        private readonly OrderEventService $orderEventService
     ) {
     }
 
@@ -41,8 +45,28 @@ class FinanceiroService
 
         $financeiro = Financeiro::create($resolved);
         $this->finalizeAfterSave($financeiro, $payload);
+        $financeiro = $financeiro->refresh();
 
-        return $financeiro->refresh();
+        // Timeline da OS: todo titulo vinculado a uma OS vira evento auditavel
+        // (cobre tambem ensureReceivableTitle da baixa, que passa por aqui).
+        if ((int) ($financeiro->os_id ?? 0) > 0) {
+            $this->orderEventService->record(
+                (int) $financeiro->os_id,
+                OrderEvent::CATEGORIA_FINANCEIRO,
+                OrderEvent::TIPO_TITULO_CRIADO,
+                'Título financeiro criado',
+                trim((string) $financeiro->descricao) !== '' ? (string) $financeiro->descricao : null,
+                [
+                    'financeiro_id' => (int) $financeiro->id,
+                    'tipo' => (string) $financeiro->tipo,
+                    'categoria' => (string) $financeiro->categoria,
+                    'valor' => round((float) $financeiro->valor, 2),
+                    'origem_tipo' => $financeiro->origem_tipo,
+                ]
+            );
+        }
+
+        return $financeiro;
     }
 
     /**
@@ -52,16 +76,72 @@ class FinanceiroService
     {
         $this->guardMutationAgainstMovements($financeiro, $payload);
 
+        $antes = [
+            'valor' => round((float) $financeiro->valor, 2),
+            'status' => (string) $financeiro->status,
+            'data_vencimento' => $financeiro->data_vencimento?->toDateString(),
+            'descricao' => (string) $financeiro->descricao,
+        ];
+
         $resolved = $this->resolveClassification($payload, $financeiro);
         $financeiro->update($resolved);
         $this->finalizeAfterSave($financeiro, $payload);
+        $financeiro = $financeiro->refresh();
 
-        return $financeiro->refresh();
+        if ((int) ($financeiro->os_id ?? 0) > 0) {
+            $depois = [
+                'valor' => round((float) $financeiro->valor, 2),
+                'status' => (string) $financeiro->status,
+                'data_vencimento' => $financeiro->data_vencimento?->toDateString(),
+                'descricao' => (string) $financeiro->descricao,
+            ];
+            $diff = [];
+            foreach ($antes as $campo => $valorAntes) {
+                if ($valorAntes !== $depois[$campo]) {
+                    $diff[$campo] = ['antes' => $valorAntes, 'depois' => $depois[$campo]];
+                }
+            }
+
+            if ($diff !== []) {
+                $this->orderEventService->record(
+                    (int) $financeiro->os_id,
+                    OrderEvent::CATEGORIA_FINANCEIRO,
+                    OrderEvent::TIPO_TITULO_ATUALIZADO,
+                    'Título financeiro atualizado',
+                    'Campos alterados: ' . implode(', ', array_keys($diff)) . '.',
+                    ['financeiro_id' => (int) $financeiro->id, 'campos' => $diff]
+                );
+            }
+        }
+
+        return $financeiro;
     }
 
     public function delete(Financeiro $financeiro): void
     {
+        // Snapshot ANTES do hard delete — e a unica chance de auditar o que saiu.
+        $osId = (int) ($financeiro->os_id ?? 0);
+        $snapshot = [
+            'financeiro_id' => (int) $financeiro->id,
+            'tipo' => (string) $financeiro->tipo,
+            'categoria' => (string) $financeiro->categoria,
+            'descricao' => (string) $financeiro->descricao,
+            'valor' => round((float) $financeiro->valor, 2),
+            'status' => (string) $financeiro->status,
+        ];
+
         $financeiro->delete();
+
+        if ($osId > 0) {
+            $this->orderEventService->record(
+                $osId,
+                OrderEvent::CATEGORIA_FINANCEIRO,
+                OrderEvent::TIPO_TITULO_EXCLUIDO,
+                'Título financeiro excluído',
+                $snapshot['descricao'] !== '' ? $snapshot['descricao'] : null,
+                $snapshot
+            );
+        }
     }
 
     /**
@@ -159,6 +239,8 @@ class FinanceiroService
                 });
         }
 
+        $movimentosEstornados = $movimentoIds->count();
+
         $financeiro->movimentos()->delete();
 
         $financeiro->update([
@@ -166,6 +248,21 @@ class FinanceiroService
             'data_pagamento' => null,
             'forma_pagamento' => null,
         ]);
+
+        if ((int) ($financeiro->os_id ?? 0) > 0) {
+            $this->orderEventService->record(
+                (int) $financeiro->os_id,
+                OrderEvent::CATEGORIA_FINANCEIRO,
+                OrderEvent::TIPO_TITULO_CANCELADO,
+                'Título cancelado (estorno)',
+                trim((string) $financeiro->descricao) !== '' ? (string) $financeiro->descricao : null,
+                [
+                    'financeiro_id' => (int) $financeiro->id,
+                    'valor' => round((float) $financeiro->valor, 2),
+                    'movimentos_estornados' => $movimentosEstornados,
+                ]
+            );
+        }
 
         return $financeiro->refresh();
     }
@@ -228,6 +325,28 @@ class FinanceiroService
 
         $summary = $this->syncFromMovements($financeiro);
         $summary['movement_id'] = $movimento->id;
+
+        if ((int) ($financeiro->os_id ?? 0) > 0) {
+            $this->orderEventService->record(
+                (int) $financeiro->os_id,
+                OrderEvent::CATEGORIA_FINANCEIRO,
+                OrderEvent::TIPO_MOVIMENTO_REGISTRADO,
+                $financeiro->tipo === Financeiro::TIPO_RECEBER ? 'Recebimento registrado' : 'Pagamento registrado',
+                sprintf(
+                    'R$ %s (%s) em %s.',
+                    number_format($valorMovimento, 2, ',', '.'),
+                    $formaPagamento !== '' ? $formaPagamento : 'forma não informada',
+                    Carbon::parse($dataMovimento)->format('d/m/Y')
+                ),
+                [
+                    'financeiro_id' => (int) $financeiro->id,
+                    'movimento_id' => (int) $movimento->id,
+                    'valor' => $valorMovimento,
+                    'forma_pagamento' => $formaPagamento !== '' ? $formaPagamento : null,
+                    'data_movimento' => $dataMovimento,
+                ]
+            );
+        }
 
         return $summary;
     }

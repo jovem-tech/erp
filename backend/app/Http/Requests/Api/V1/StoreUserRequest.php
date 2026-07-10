@@ -13,8 +13,8 @@ class StoreUserRequest extends BaseApiFormRequest
             'email' => ['required', 'email', 'max:100', Rule::unique('usuarios', 'email')],
             'password' => ['required', 'string', 'min:6', 'max:255'],
             'telefone' => ['nullable', 'string', 'max:20'],
-            'perfil' => ['required', 'string', Rule::in(['admin', 'tecnico', 'atendente'])],
-            'grupo_id' => ['nullable', 'integer', 'min:1', Rule::exists('grupos', 'id')],
+            'perfil' => ['nullable', 'string', 'max:30'],
+            'grupo_id' => ['required', 'integer', 'min:1', Rule::exists('grupos', 'id')],
             'foto' => ['nullable', 'string', 'max:255'],
             'ativo' => ['nullable', 'boolean'],
         ];

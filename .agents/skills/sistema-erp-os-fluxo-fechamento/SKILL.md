@@ -194,6 +194,91 @@ concretiza mediante confirmação de **usuário e senha de um administrador**
 - Arquivos novos: `CancelOrderClosureRequest.php`,
   `_cancel_closure_modal.blade.php`, `orders-cancel-closure-modal.js`.
 
+## Adiantamento/Sinal sem fechar a OS (2026-07-09)
+
+Decisão do usuário: a tela de baixa (`orders/closure.blade.php`) ganhou um
+campo único **"Classificação"** (Baixa / Adiantamento / Sinal), posicionado na
+aba Encerramento acima de "Encerrar como". Ele decide **qual caminho de
+backend** a submissão do wizard vai seguir — não é só um rótulo:
+
+- **Baixa** (padrão): fluxo de sempre, inalterado —
+  `OrderClosureService::close()`, aplica um dos 3 `closureCodes()`.
+- **Adiantamento / Sinal**: **novo método** `OrderClosureService::registerAdvance()`,
+  que **nunca** aplica um dos 3 `closureCodes()`. Só registra recebimento(s)
+  financeiro(s) contra o título da OS (reaproveita `processReceipts()` e
+  `simulateCardPayments()`, os mesmos helpers privados usados por `close()` —
+  não existe lógica financeira duplicada entre os dois caminhos).
+
+Quando classificação é Adiantamento/Sinal, "Encerrar como" e "Data da entrega"
+ficam escondidos e viram irrelevantes (não são enviados/validados como
+obrigatórios). Em vez disso aparece um toggle **"Equipamento foi entregue?"**:
+
+- Se **não marcado**: `registerAdvance()` não toca em `status`, `data_entrega`,
+  `baixa_tecnica_em`/`_por` da OS — só lança o valor no financeiro. A OS
+  continua exatamente na etapa em que estava.
+- Se **marcado + data preenchida**: aplica `entregue_pagamento_pendente` via
+  `updateStatus(..., viaClosureFlow: true)`. **Achado via tinker durante a
+  implementação**: mesmo `entregue_pagamento_pendente` não sendo um dos 3
+  `closureCodes()` (então as duas checagens de bloqueio de "OS encerrada" que
+  `viaClosureFlow` pula nunca seriam acionadas aqui), `updateStatus()` também
+  usa esse flag pra pular a validação do **catálogo de transições**
+  (`allowedTransitionCodes()`) — sem ele, marcar "entregue" falhava com
+  `invalid_transition` em qualquer status de origem que não tivesse essa
+  transição cadastrada (ex.: `aguardando_autorizacao`), já que o equipamento
+  precisa poder ser marcado como entregue a partir de **qualquer** etapa
+  aberta, igual `close()`. Seta `data_entrega`, `baixa_tecnica_em`,
+  `baixa_tecnica_por` (mesma semântica de handoff técnico de `close()`) e
+  agenda cobranças pendentes — mas **propositalmente não seta**
+  `status_final_pendente_pagamento`, porque nenhum código de fechamento real
+  foi escolhido: a OS **continua aberta** (tem pendência financeira), só que
+  com o equipamento já em posse do cliente. O fechamento de verdade só
+  acontece depois, quando alguém rodar uma **Baixa** classificada de fato.
+- Guarda: `registerAdvance()` recusa com `result => 'order_is_closed'` se a OS
+  já estiver num dos 3 `closureCodes()` — mesma regra de "OS encerrada não
+  aceita ação financeira/de status por fora do cancelamento de baixa" (ver
+  seção acima).
+- "Retorno pós-serviço" (etapa Confirmação) some quando a classificação não é
+  Baixa — o atendimento não terminou, não faz sentido agendar retorno.
+- Endpoint é o mesmo de sempre (`POST /orders/{order}/closure`); o roteamento
+  `close()` vs. `registerAdvance()` acontece dentro do
+  `Api/V1/OrderController` lendo `classificacao_baixa` do request validado.
+
+**Bug real encontrado só depois do usuário testar na tela (não pego pelo Chrome
+headless da primeira rodada)**: o listener `change` do select de Classificação
+usava só `addEventListener` nativo. Como todo `select.form-select` vira Select2
+automaticamente (`desktop.js`, `initSelect2()`), e o Select2 só dispara `change`
+via `jQuery(el).trigger('change')` ao escolher uma opção pela sua UI — isso não
+gera evento nativo —, o listener nunca disparava na prática, só quando o valor
+era setado programaticamente (por isso o primeiro teste com Chrome headless via
+`page.select()` passou, mascarando o bug: `page.select()` seta o valor
+direto, sem passar pela UI real do Select2). Corrigido com o mesmo binding
+paralelo via jQuery já usado para os campos de cartão do recebimento nesta
+mesma tela. **Lição**: ao testar um `<select>` com Chrome headless neste
+sistema, interagir com a UI real do Select2 (clicar no `.select2-selection` e
+escolher a opção no `.select2-results__option`), não só `page.select()` — ver
+comentário adicionado em `desktop.js::initSelect2()` para o aviso geral.
+
+**Ao adicionar qualquer novo caminho de fechamento/registro financeiro da OS:**
+nunca aplique um dos 3 `closureCodes()` fora de `OrderClosureService::close()`;
+se o novo caminho só precisa registrar dinheiro sem fechar, siga o padrão de
+`registerAdvance()` (reaproveitar `processReceipts()`/`simulateCardPayments()`,
+nunca duplicar a lógica de título/movimento/cartão).
+
+## Timeline de eventos da OS (`os_eventos`, 2026-07-09)
+
+Os fluxos de baixa/cancelamento (e todo o resto do ciclo de vida da OS) agora
+emitem eventos para a tabela append-only `os_eventos` via
+`OrderEventService::record()` — mudança **puramente aditiva**: a semântica de
+fechamento, os 3 `closureCodes()` e os writes em `os_status_historico`
+continuam exatamente como documentado acima (o cancelamento de baixa segue
+resolvendo o status anterior lendo `os_status_historico`, nunca `os_eventos`).
+Regras: writer único (`record()`), falha de evento nunca quebra a ação
+(try/catch + warning), nenhuma linha de `os_eventos` é atualizada/excluída pela
+aplicação. Detalhes completos (schema, categorias, pontos de emissão, backfill
+`os:backfill-eventos`): `documentacao/03-arquitetura-tecnica/eventos-os.md`.
+Ao criar qualquer NOVO caminho que mexa em OS, emita o evento correspondente
+pelo `OrderEventService` — nunca escreva direto na tabela.
+
 ## Checklist ao tocar em status de OS ou relatorios financeiros
 
 - [ ] Se adicionar um novo caminho que possa alterar `os.status` (novo

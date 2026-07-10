@@ -13,6 +13,17 @@ use Illuminate\Support\Facades\Hash;
 
 class UserController extends BaseApiController
 {
+    private const LOWERCASE_NAME_CONNECTORS = [
+        'da',
+        'das',
+        'de',
+        'di',
+        'do',
+        'dos',
+        'du',
+        'e',
+    ];
+
     public function __construct(
         private readonly RbacAuthorizationService $rbacAuthorizationService
     ) {
@@ -64,12 +75,12 @@ class UserController extends BaseApiController
         $validated = $request->validated();
 
         $user = User::query()->create([
-            'nome' => trim((string) $validated['nome']),
+            'nome' => $this->normalizePersonName((string) $validated['nome']),
             'email' => mb_strtolower(trim((string) $validated['email'])),
             'senha' => Hash::make((string) $validated['password']),
             'telefone' => isset($validated['telefone']) ? trim((string) $validated['telefone']) : null,
-            'perfil' => trim((string) $validated['perfil']),
-            'grupo_id' => isset($validated['grupo_id']) ? (int) $validated['grupo_id'] : null,
+            'perfil' => $this->profileForGroup((int) $validated['grupo_id']),
+            'grupo_id' => (int) $validated['grupo_id'],
             'foto' => isset($validated['foto']) ? trim((string) $validated['foto']) : null,
             'ativo' => array_key_exists('ativo', $validated) ? (bool) $validated['ativo'] : true,
         ]);
@@ -102,16 +113,20 @@ class UserController extends BaseApiController
         $originalGroupId = (int) ($userModel->grupo_id ?? 0);
 
         $payload = [];
-        foreach (['nome', 'email', 'telefone', 'perfil', 'foto'] as $field) {
+        foreach (['nome', 'email', 'telefone', 'foto'] as $field) {
             if (array_key_exists($field, $validated)) {
                 $payload[$field] = trim((string) $validated[$field]) !== '' ? trim((string) $validated[$field]) : null;
             }
+        }
+        if (array_key_exists('nome', $payload) && $payload['nome'] !== null) {
+            $payload['nome'] = $this->normalizePersonName((string) $payload['nome']);
         }
         if (array_key_exists('email', $payload)) {
             $payload['email'] = mb_strtolower((string) $payload['email']);
         }
         if (array_key_exists('grupo_id', $validated)) {
-            $payload['grupo_id'] = $validated['grupo_id'] !== null ? (int) $validated['grupo_id'] : null;
+            $payload['grupo_id'] = (int) $validated['grupo_id'];
+            $payload['perfil'] = $this->profileForGroup((int) $validated['grupo_id']);
         }
         if (array_key_exists('ativo', $validated)) {
             $payload['ativo'] = (bool) $validated['ativo'];
@@ -180,5 +195,37 @@ class UserController extends BaseApiController
             'ativo' => (bool) ($user->ativo ?? false),
             'ultimo_acesso' => $user->ultimo_acesso?->toIso8601String(),
         ];
+    }
+
+    private function normalizePersonName(string $name): string
+    {
+        $name = trim((string) preg_replace('/\s+/u', ' ', $name));
+
+        if ($name === '') {
+            return '';
+        }
+
+        $words = explode(' ', mb_strtolower($name, 'UTF-8'));
+
+        return implode(' ', array_map(
+            static function (string $word, int $index): string {
+                if ($index > 0 && in_array($word, self::LOWERCASE_NAME_CONNECTORS, true)) {
+                    return $word;
+                }
+
+                return mb_convert_case($word, MB_CASE_TITLE, 'UTF-8');
+            },
+            $words,
+            array_keys($words)
+        ));
+    }
+
+    private function profileForGroup(int $groupId): string
+    {
+        return match ($groupId) {
+            1 => 'admin',
+            2 => 'tecnico',
+            default => 'atendente',
+        };
     }
 }

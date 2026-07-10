@@ -10,12 +10,21 @@ class CompanyProfileService
 {
     private const LOGO_CONFIG_KEY = 'empresa_logo';
 
+    private const LOGIN_BACKGROUND_CONFIG_KEY = 'login_background_image';
+
     private const LOGO_DIRECTORY = 'private/empresa';
+
+    private const LOGIN_BACKGROUND_DIRECTORY = 'private/empresa/login';
 
     /**
      * @var array<int, string>
      */
     private const ALLOWED_LOGO_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'svg'];
+
+    /**
+     * @var array<int, string>
+     */
+    private const ALLOWED_LOGIN_BACKGROUND_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
 
     /**
      * @var array<string, string>
@@ -39,6 +48,7 @@ class CompanyProfileService
         return [
             'settings' => $this->loadSettings(),
             'logo' => $this->logoMeta(),
+            'login_background' => $this->loginBackgroundMeta(),
         ];
     }
 
@@ -62,6 +72,7 @@ class CompanyProfileService
         return [
             'sistema_nome' => $systemName !== '' ? $systemName : 'Sistema ERP',
             'logo' => $this->logoMeta(),
+            'login_background' => $this->loginBackgroundMeta(),
         ];
     }
 
@@ -82,23 +93,36 @@ class CompanyProfileService
 
     public function storeLogo(UploadedFile $file): void
     {
-        $extension = strtolower((string) ($file->getClientOriginalExtension() ?: $file->extension() ?: ''));
-        if (! in_array($extension, self::ALLOWED_LOGO_EXTENSIONS, true)) {
-            return;
-        }
-
-        $this->deleteStoredLogo();
-
-        $filename = 'logo_' . now()->format('YmdHisv') . '.' . $extension;
-        Storage::disk('local')->putFileAs(self::LOGO_DIRECTORY, $file, $filename);
-
-        $this->upsert(self::LOGO_CONFIG_KEY, self::LOGO_DIRECTORY . '/' . $filename);
+        $this->storeImage(
+            file: $file,
+            configKey: self::LOGO_CONFIG_KEY,
+            directory: self::LOGO_DIRECTORY,
+            filenamePrefix: 'logo',
+            allowedExtensions: self::ALLOWED_LOGO_EXTENSIONS
+        );
     }
 
     public function removeLogo(): void
     {
-        $this->deleteStoredLogo();
+        $this->deleteStoredImage(self::LOGO_CONFIG_KEY, self::LOGO_DIRECTORY);
         $this->upsert(self::LOGO_CONFIG_KEY, '');
+    }
+
+    public function storeLoginBackground(UploadedFile $file): void
+    {
+        $this->storeImage(
+            file: $file,
+            configKey: self::LOGIN_BACKGROUND_CONFIG_KEY,
+            directory: self::LOGIN_BACKGROUND_DIRECTORY,
+            filenamePrefix: 'login_background',
+            allowedExtensions: self::ALLOWED_LOGIN_BACKGROUND_EXTENSIONS
+        );
+    }
+
+    public function removeLoginBackground(): void
+    {
+        $this->deleteStoredImage(self::LOGIN_BACKGROUND_CONFIG_KEY, self::LOGIN_BACKGROUND_DIRECTORY);
+        $this->upsert(self::LOGIN_BACKGROUND_CONFIG_KEY, '');
     }
 
     /**
@@ -106,24 +130,15 @@ class CompanyProfileService
      */
     public function resolveLogoFile(): ?array
     {
-        $relativePath = trim((string) $this->configValue(self::LOGO_CONFIG_KEY));
-        if ($relativePath === '' || ! Storage::disk('local')->exists($relativePath)) {
-            return null;
-        }
-
-        return [
-            'absolute_path' => Storage::disk('local')->path($relativePath),
-            'mime_type' => Storage::disk('local')->mimeType($relativePath) ?: 'application/octet-stream',
-            'filename' => basename($relativePath),
-        ];
+        return $this->resolveStoredImageFile(self::LOGO_CONFIG_KEY, self::LOGO_DIRECTORY);
     }
 
-    private function deleteStoredLogo(): void
+    /**
+     * @return array{absolute_path: string, mime_type: string, filename: string}|null
+     */
+    public function resolveLoginBackgroundFile(): ?array
     {
-        $relativePath = trim((string) $this->configValue(self::LOGO_CONFIG_KEY));
-        if ($relativePath !== '' && Storage::disk('local')->exists($relativePath)) {
-            Storage::disk('local')->delete($relativePath);
-        }
+        return $this->resolveStoredImageFile(self::LOGIN_BACKGROUND_CONFIG_KEY, self::LOGIN_BACKGROUND_DIRECTORY);
     }
 
     /**
@@ -131,9 +146,15 @@ class CompanyProfileService
      */
     private function logoMeta(): array
     {
-        return [
-            'exists' => $this->resolveLogoFile() !== null,
-        ];
+        return $this->mediaMeta($this->resolveLogoFile());
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function loginBackgroundMeta(): array
+    {
+        return $this->mediaMeta($this->resolveLoginBackgroundFile());
     }
 
     /**
@@ -196,5 +217,81 @@ class CompanyProfileService
                 'created_at' => now(),
             ]
         );
+    }
+
+    /**
+     * @param array<int, string> $allowedExtensions
+     */
+    private function storeImage(
+        UploadedFile $file,
+        string $configKey,
+        string $directory,
+        string $filenamePrefix,
+        array $allowedExtensions
+    ): void {
+        $extension = strtolower((string) ($file->getClientOriginalExtension() ?: $file->extension() ?: ''));
+        if (! in_array($extension, $allowedExtensions, true)) {
+            return;
+        }
+
+        $this->deleteStoredImage($configKey, $directory);
+
+        $filename = $filenamePrefix . '_' . now()->format('YmdHisv') . '.' . $extension;
+        Storage::disk('local')->putFileAs($directory, $file, $filename);
+
+        $this->upsert($configKey, $directory . '/' . $filename);
+    }
+
+    private function deleteStoredImage(string $configKey, string $directory): void
+    {
+        $relativePath = $this->safeStoredImagePath($configKey, $directory);
+        if ($relativePath !== null && Storage::disk('local')->exists($relativePath)) {
+            Storage::disk('local')->delete($relativePath);
+        }
+    }
+
+    /**
+     * @return array{absolute_path: string, mime_type: string, filename: string}|null
+     */
+    private function resolveStoredImageFile(string $configKey, string $directory): ?array
+    {
+        $relativePath = $this->safeStoredImagePath($configKey, $directory);
+        if ($relativePath === null || ! Storage::disk('local')->exists($relativePath)) {
+            return null;
+        }
+
+        return [
+            'absolute_path' => Storage::disk('local')->path($relativePath),
+            'mime_type' => Storage::disk('local')->mimeType($relativePath) ?: 'application/octet-stream',
+            'filename' => basename($relativePath),
+        ];
+    }
+
+    private function safeStoredImagePath(string $configKey, string $directory): ?string
+    {
+        $relativePath = str_replace('\\', '/', trim((string) $this->configValue($configKey)));
+        $expectedPrefix = rtrim($directory, '/') . '/';
+
+        if (
+            $relativePath === ''
+            || str_contains($relativePath, "\0")
+            || str_contains($relativePath, '..')
+            || ! str_starts_with($relativePath, $expectedPrefix)
+        ) {
+            return null;
+        }
+
+        return $relativePath;
+    }
+
+    /**
+     * @param array{absolute_path: string, mime_type: string, filename: string}|null $file
+     * @return array<string, mixed>
+     */
+    private function mediaMeta(?array $file): array
+    {
+        return [
+            'exists' => $file !== null,
+        ];
     }
 }

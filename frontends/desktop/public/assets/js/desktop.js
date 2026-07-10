@@ -841,6 +841,16 @@ const DesktopUi = (() => {
         return $(document.body);
     };
 
+    // Todo `select.form-select` (sem data-select2="false") vira Select2 aqui
+    // automaticamente. IMPORTANTE para quem escreve JS de tela: escolher uma
+    // opção pela UI do Select2 dispara `change` só via `jQuery(el).trigger('change')`
+    // — isso NÃO propaga para um `select.addEventListener('change', ...)` nativo.
+    // Qualquer listener de `change` num desses selects precisa de um binding
+    // paralelo via `window.jQuery(select).on('change', handler)` além do nativo,
+    // ou nunca vai disparar quando o usuário realmente usar o dropdown (só
+    // funciona se o valor for setado programaticamente via JS/testes). Já
+    // mordeu duas vezes em `orders-closure.js` (campos de cartão do
+    // recebimento, depois o select de Classificação da baixa).
     const initSelect2 = (container = document, force = false) => {
         if (typeof window.jQuery === 'undefined' || !window.jQuery.fn || typeof window.jQuery.fn.select2 !== 'function') {
             return;

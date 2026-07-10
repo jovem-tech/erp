@@ -6,6 +6,7 @@ use App\Models\CrmFollowup;
 use App\Models\Financeiro;
 use App\Models\FinanceiroMovimentoCartao;
 use App\Models\Order;
+use App\Models\OrderEvent;
 use App\Models\OrderItem;
 use App\Models\OrderStatus;
 use App\Models\OrderStatusHistory;
@@ -35,7 +36,8 @@ class OrderClosureService
         private readonly FinanceiroService $financeiroService,
         private readonly FinanceiroCartaoService $financeiroCartaoService,
         private readonly WhatsappMessagingService $whatsappMessagingService,
-        private readonly OrderClosurePdfService $orderClosurePdfService
+        private readonly OrderClosurePdfService $orderClosurePdfService,
+        private readonly OrderEventService $orderEventService
     ) {
     }
 
@@ -124,24 +126,11 @@ class OrderClosureService
         // Simula os recebimentos em cartao ANTES da transacao: falha rapido sem
         // efeito colateral nenhum se a combinacao operadora/bandeira/parcelas
         // nao tiver taxa ativa configurada.
-        foreach ($recebimentos as $index => $recebimento) {
-            if (! $this->isCardPayment($recebimento['forma_pagamento'])) {
-                continue;
-            }
-
-            try {
-                $recebimentos[$index]['simulation'] = $this->financeiroCartaoService->simulate([
-                    'valor_bruto' => $recebimento['valor'],
-                    'operadora_id' => $recebimento['operadora_id'],
-                    'bandeira_id' => $recebimento['bandeira_id'],
-                    'modalidade' => $recebimento['modalidade'],
-                    'forma_pagamento' => $recebimento['forma_pagamento'],
-                    'parcelas' => $recebimento['parcelas'],
-                ]);
-            } catch (Throwable $exception) {
-                return ['result' => 'invalid_card_payment', 'message' => $exception->getMessage()];
-            }
+        $simulation = $this->simulateCardPayments($recebimentos);
+        if (! $simulation['ok']) {
+            return ['result' => $simulation['result'], 'message' => $simulation['message']];
         }
+        $recebimentos = $simulation['recebimentos'];
 
         $observacao = trim((string) ($payload['observacao'] ?? ''));
         $agendarRetorno = filter_var($payload['agendar_retorno'] ?? false, FILTER_VALIDATE_BOOL);
@@ -158,26 +147,7 @@ class OrderClosureService
                 $recebimentos,
                 $isNoRepairClosure
             ): array {
-                $titulo = $this->ensureReceivableTitle($order, $dataEntrega);
-
-                foreach ($recebimentos as $recebimento) {
-                    $movementSummary = $this->financeiroService->registerMovement($titulo, [
-                        'valor_movimento' => $recebimento['valor'],
-                        'data_movimento' => $recebimento['data_pagamento'] ?? $dataEntrega,
-                        'forma_pagamento' => $recebimento['forma_pagamento'] !== '' ? $recebimento['forma_pagamento'] : null,
-                        'observacoes' => $recebimento['observacoes'] !== '' ? $recebimento['observacoes'] : null,
-                    ]);
-
-                    $movementId = (int) ($movementSummary['movement_id'] ?? 0);
-
-                    if ($movementId > 0 && isset($recebimento['simulation'])) {
-                        $this->registerCardMovementMeta($movementId, $recebimento['simulation'], $recebimento);
-                        $this->registerCardFeeExpense($order, $recebimento['simulation'], $movementId);
-                    }
-                }
-
-                $resumoFinanceiro = $this->financeiroService->movementSummary($titulo->refresh());
-                $saldoAberto = round((float) ($resumoFinanceiro['valor_aberto'] ?? 0), 2);
+                ['titulo' => $titulo, 'saldo_aberto' => $saldoAberto] = $this->processReceipts($order, $recebimentos, $dataEntrega);
                 $temSaldoPendente = $saldoAberto > 0.009 && ! $isNoRepairClosure;
 
                 $statusAplicado = $temSaldoPendente ? self::PENDING_PAYMENT_STATUS : $encerrarComo;
@@ -208,6 +178,26 @@ class OrderClosureService
                 } else {
                     $this->cancelPendingCollections((int) $order->id);
                 }
+
+                $this->orderEventService->record(
+                    (int) $order->id,
+                    OrderEvent::CATEGORIA_REGISTRO,
+                    OrderEvent::TIPO_FECHAMENTO_CONCLUIDO,
+                    'Fechamento da OS concluído',
+                    sprintf('Baixa concluída como "%s".', $encerrarComo)
+                        . ($temSaldoPendente ? sprintf(' Saldo pendente: R$ %s.', number_format($saldoAberto, 2, ',', '.')) : ''),
+                    [
+                        'encerrar_como' => $encerrarComo,
+                        'status_aplicado' => $statusAplicado,
+                        'data_entrega' => $dataEntrega,
+                        'valor_titulo' => round((float) $titulo->valor, 2),
+                        'saldo_pendente' => round($saldoAberto, 2),
+                        'recebimentos' => count($recebimentos),
+                    ],
+                    (int) $actor->id,
+                    OrderEvent::ORIGEM_USUARIO,
+                    $now
+                );
 
                 return [
                     'result' => 'ok',
@@ -243,6 +233,175 @@ class OrderClosureService
                 $recebimentos,
                 (float) $result['saldo_aberto'],
                 (float) $result['titulo_valor']
+            );
+        }
+
+        $updatedOrder = Order::query()->with(['client', 'statusCatalog'])->find($order->id);
+
+        return [
+            'result' => 'ok',
+            'order' => $updatedOrder instanceof Order ? $this->mapOrderSummary($updatedOrder) : null,
+            'notificacao_enviada' => $notificacaoEnviada,
+        ];
+    }
+
+    /**
+     * Registra um Adiantamento/Sinal contra a OS SEM fechar o atendimento —
+     * ao contrário de close(), nunca aplica um dos 3 OrderStatus::closureCodes().
+     * Caminho paralelo a close(), usado quando a classificação da baixa (tela
+     * de baixa) é "adiantamento" ou "sinal" em vez de "baixa".
+     *
+     * Se o equipamento foi marcado como entregue (com data), o status vira
+     * 'entregue_pagamento_pendente' — fora dos 3 códigos de fechamento, então a
+     * OS continua contando como aberta (tem pendência financeira). Sem marcar,
+     * o status da OS não muda em nada; só o valor é lançado no financeiro.
+     *
+     * A OS só fecha de verdade depois, quando alguém fizer uma Baixa de
+     * verdade (classificação=baixa) — aí sim escolhendo o status final real.
+     * Ver skill sistema-erp-os-fluxo-fechamento, seção "Adiantamento/Sinal sem
+     * fechar a OS".
+     *
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function registerAdvance(int $orderId, User $actor, array $payload): array
+    {
+        $order = Order::query()->find($orderId);
+
+        if (! $order instanceof Order) {
+            return ['result' => 'not_found'];
+        }
+
+        if (! $this->orderWorkflowService->canAccessOrder($actor, $order)) {
+            return ['result' => 'forbidden'];
+        }
+
+        // Defesa em profundidade: uma OS ja encerrada de verdade nao recebe
+        // lancamento nem mudanca de status por este caminho — o unico jeito de
+        // mexer numa OS encerrada e' cancelClosure().
+        if (in_array(trim((string) ($order->status ?? '')), OrderStatus::closureCodes(), true)) {
+            return ['result' => 'order_is_closed'];
+        }
+
+        $recebimentos = $this->normalizeReceipts(is_array($payload['recebimentos'] ?? null) ? $payload['recebimentos'] : []);
+        if ($recebimentos === []) {
+            return ['result' => 'invalid_receipts'];
+        }
+
+        $simulation = $this->simulateCardPayments($recebimentos);
+        if (! $simulation['ok']) {
+            return ['result' => $simulation['result'], 'message' => $simulation['message']];
+        }
+        $recebimentos = $simulation['recebimentos'];
+
+        $observacao = trim((string) ($payload['observacao'] ?? ''));
+        $equipamentoEntregue = filter_var($payload['equipamento_entregue'] ?? false, FILTER_VALIDATE_BOOL);
+        $dataEntrega = $equipamentoEntregue ? $this->normalizeDate($payload['data_entrega'] ?? null) : null;
+
+        if ($equipamentoEntregue && $dataEntrega === null) {
+            return ['result' => 'invalid_date'];
+        }
+
+        $dataReferencia = $dataEntrega ?? Carbon::now()->toDateString();
+        $classificacao = trim((string) ($payload['classificacao_baixa'] ?? 'adiantamento'));
+
+        try {
+            $result = DB::transaction(function () use (
+                $order,
+                $actor,
+                $observacao,
+                $recebimentos,
+                $equipamentoEntregue,
+                $dataEntrega,
+                $dataReferencia,
+                $classificacao
+            ): array {
+                ['titulo' => $titulo, 'saldo_aberto' => $saldoAberto] = $this->processReceipts($order, $recebimentos, $dataReferencia);
+
+                $totalLancado = round(array_sum(array_map(
+                    static fn (array $recebimento): float => (float) ($recebimento['valor'] ?? 0),
+                    $recebimentos
+                )), 2);
+
+                $this->orderEventService->record(
+                    (int) $order->id,
+                    OrderEvent::CATEGORIA_FINANCEIRO,
+                    OrderEvent::TIPO_ADIANTAMENTO_REGISTRADO,
+                    $classificacao === 'sinal' ? 'Sinal registrado' : 'Adiantamento registrado',
+                    sprintf(
+                        'R$ %s lançado(s) sem encerrar a OS. Saldo restante: R$ %s.',
+                        number_format($totalLancado, 2, ',', '.'),
+                        number_format($saldoAberto, 2, ',', '.')
+                    ),
+                    [
+                        'classificacao' => $classificacao,
+                        'valor_lancado' => $totalLancado,
+                        'saldo_restante' => round($saldoAberto, 2),
+                        'recebimentos' => count($recebimentos),
+                        'equipamento_entregue' => $equipamentoEntregue,
+                        'data_entrega' => $dataEntrega,
+                    ],
+                    (int) $actor->id
+                );
+
+                if ($equipamentoEntregue && $dataEntrega !== null) {
+                    // viaClosureFlow: true pelo mesmo motivo de close() — o
+                    // equipamento pode ser marcado como entregue a partir de
+                    // QUALQUER etapa aberta da OS, entao pula a validacao do
+                    // catalogo de transicoes (que so cobre alguns status de
+                    // origem especificos). Seguro: entregue_pagamento_pendente
+                    // nao esta em OrderStatus::closureCodes() e o status atual
+                    // ja foi validado acima como fora de closureCodes(), entao
+                    // nenhuma das duas checagens que viaClosureFlow pula
+                    // (destino/origem encerrados) jamais seria relevante aqui.
+                    $statusResult = $this->orderWorkflowService->updateStatus(
+                        (int) $order->id,
+                        $actor,
+                        self::PENDING_PAYMENT_STATUS,
+                        $observacao !== '' ? $observacao : null,
+                        viaClosureFlow: true
+                    );
+
+                    if (($statusResult['result'] ?? 'error') !== 'ok') {
+                        return $statusResult;
+                    }
+
+                    $now = Carbon::now();
+                    Order::query()->whereKey($order->id)->update([
+                        'data_entrega' => $dataEntrega,
+                        'baixa_tecnica_em' => $now,
+                        'baixa_tecnica_por' => (int) $actor->id,
+                        'updated_at' => $now,
+                    ]);
+
+                    $this->schedulePendingCollections((int) $order->id, (int) $titulo->id, (int) $order->cliente_id);
+                }
+
+                return [
+                    'result' => 'ok',
+                    'saldo_aberto' => $saldoAberto,
+                    'titulo_valor' => round((float) $titulo->valor, 2),
+                ];
+            });
+        } catch (Throwable $exception) {
+            logger()->error('[API V1][ORDERS][CLOSURE] Falha ao registrar adiantamento/sinal', [
+                'order_id' => $orderId,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return ['result' => 'closure_failed'];
+        }
+
+        if (($result['result'] ?? 'error') !== 'ok') {
+            return $result;
+        }
+
+        $notificacaoEnviada = null;
+        if (filter_var($payload['notificar_cliente'] ?? false, FILTER_VALIDATE_BOOL)) {
+            $notificacaoEnviada = $this->sendAdvanceNotification(
+                $order,
+                $equipamentoEntregue,
+                (float) $result['saldo_aberto']
             );
         }
 
@@ -344,6 +503,21 @@ class OrderClosureService
                     'observacao' => $observacao,
                     'created_at' => $now,
                 ]);
+
+                $this->orderEventService->record(
+                    $orderId,
+                    OrderEvent::CATEGORIA_STATUS,
+                    OrderEvent::TIPO_FECHAMENTO_CANCELADO,
+                    'Fechamento (baixa) cancelado',
+                    $observacao,
+                    [
+                        'status_anterior' => $currentStatus,
+                        'status_restaurado' => $previousStatus,
+                    ],
+                    (int) $actor->id,
+                    OrderEvent::ORIGEM_USUARIO,
+                    $now
+                );
             });
         } catch (Throwable $exception) {
             logger()->error('[API V1][ORDERS][CLOSURE] Falha ao cancelar a baixa', [
@@ -392,13 +566,42 @@ class OrderClosureService
             ->where('origem_tipo', 'os_recebimento_cartao')
             ->get();
 
+        // Snapshot auditavel ANTES do hard delete — depois nao ha mais como
+        // saber o que foi removido.
+        $titulosRemovidos = [];
+        $totalMovimentos = 0;
+
         foreach ($titulosReceber->merge($despesasTaxa) as $titulo) {
             $movimentoIds = $titulo->movimentos()->pluck('id');
+            $titulosRemovidos[] = [
+                'financeiro_id' => (int) $titulo->id,
+                'tipo' => (string) $titulo->tipo,
+                'descricao' => (string) $titulo->descricao,
+                'valor' => round((float) $titulo->valor, 2),
+                'movimentos' => $movimentoIds->count(),
+            ];
+            $totalMovimentos += $movimentoIds->count();
+
             if ($movimentoIds->isNotEmpty()) {
                 FinanceiroMovimentoCartao::query()->whereIn('movimento_id', $movimentoIds)->delete();
             }
             $titulo->movimentos()->delete();
             $titulo->delete();
+        }
+
+        if ($titulosRemovidos !== []) {
+            $this->orderEventService->record(
+                $orderId,
+                OrderEvent::CATEGORIA_FINANCEIRO,
+                OrderEvent::TIPO_FINANCEIRO_FECHAMENTO_REMOVIDO,
+                'Lançamentos do fechamento removidos',
+                sprintf(
+                    '%d título(s) e %d movimento(s) excluídos no cancelamento da baixa.',
+                    count($titulosRemovidos),
+                    $totalMovimentos
+                ),
+                ['titulos' => $titulosRemovidos]
+            );
         }
     }
 
@@ -488,6 +691,22 @@ class OrderClosureService
                 $update['status'] = OsCobrancaAgendamento::STATUS_ENVIADO;
                 $update['enviado_em'] = Carbon::now();
                 $summary['agendamentos_enviados']++;
+
+                $this->orderEventService->record(
+                    (int) $order->id,
+                    OrderEvent::CATEGORIA_MENSAGEM,
+                    OrderEvent::TIPO_COBRANCA_ENVIADA,
+                    'Cobrança automática enviada',
+                    sprintf('Lembrete de saldo pendente (D+%d) enviado por WhatsApp.', (int) $row->prazo_dias),
+                    [
+                        'agendamento_id' => (int) $row->id,
+                        'prazo_dias' => (int) $row->prazo_dias,
+                        'saldo_pendente' => round($saldoAberto, 2),
+                        'destino' => $telefone,
+                    ],
+                    null,
+                    OrderEvent::ORIGEM_AUTOMACAO
+                );
             } else {
                 $update['status'] = OsCobrancaAgendamento::STATUS_ERRO;
                 $summary['agendamentos_com_erro']++;
@@ -517,14 +736,8 @@ class OrderClosureService
                 continue;
             }
 
-            $classificacao = trim((string) ($raw['classificacao_recebimento'] ?? 'baixa'));
-            if (! in_array($classificacao, ['baixa', 'adiantamento', 'sinal'], true)) {
-                $classificacao = 'baixa';
-            }
-
             $normalized[] = [
                 'valor' => $valor,
-                'classificacao_recebimento' => $classificacao,
                 'forma_pagamento' => trim((string) ($raw['forma_pagamento'] ?? '')),
                 'data_pagamento' => $this->normalizeDate($raw['data_pagamento'] ?? null),
                 'observacoes' => trim((string) ($raw['observacoes'] ?? '')),
@@ -541,6 +754,74 @@ class OrderClosureService
     private function isCardPayment(string $formaPagamento): bool
     {
         return str_contains(strtolower($formaPagamento), 'cartao');
+    }
+
+    /**
+     * Simula os recebimentos em cartão (compartilhado por close() e
+     * registerAdvance()) ANTES de abrir a transação: falha rápido, sem efeito
+     * colateral nenhum, se a combinação operadora/bandeira/parcelas não tiver
+     * taxa ativa configurada.
+     *
+     * @param array<int, array<string, mixed>> $recebimentos
+     * @return array{ok: true, recebimentos: array<int, array<string, mixed>>}|array{ok: false, result: string, message: string}
+     */
+    private function simulateCardPayments(array $recebimentos): array
+    {
+        foreach ($recebimentos as $index => $recebimento) {
+            if (! $this->isCardPayment($recebimento['forma_pagamento'])) {
+                continue;
+            }
+
+            try {
+                $recebimentos[$index]['simulation'] = $this->financeiroCartaoService->simulate([
+                    'valor_bruto' => $recebimento['valor'],
+                    'operadora_id' => $recebimento['operadora_id'],
+                    'bandeira_id' => $recebimento['bandeira_id'],
+                    'modalidade' => $recebimento['modalidade'],
+                    'forma_pagamento' => $recebimento['forma_pagamento'],
+                    'parcelas' => $recebimento['parcelas'],
+                ]);
+            } catch (Throwable $exception) {
+                return ['ok' => false, 'result' => 'invalid_card_payment', 'message' => $exception->getMessage()];
+            }
+        }
+
+        return ['ok' => true, 'recebimentos' => $recebimentos];
+    }
+
+    /**
+     * Lança os recebimentos contra o título a receber da OS (criando-o se
+     * ainda não existir) — compartilhado por close() e registerAdvance(): é
+     * exatamente o mesmo efeito financeiro, só muda o que acontece com o
+     * status da OS ao redor desta chamada.
+     *
+     * @param array<int, array<string, mixed>> $recebimentos
+     * @return array{titulo: Financeiro, saldo_aberto: float}
+     */
+    private function processReceipts(Order $order, array $recebimentos, string $dataReferencia): array
+    {
+        $titulo = $this->ensureReceivableTitle($order, $dataReferencia);
+
+        foreach ($recebimentos as $recebimento) {
+            $movementSummary = $this->financeiroService->registerMovement($titulo, [
+                'valor_movimento' => $recebimento['valor'],
+                'data_movimento' => $recebimento['data_pagamento'] ?? $dataReferencia,
+                'forma_pagamento' => $recebimento['forma_pagamento'] !== '' ? $recebimento['forma_pagamento'] : null,
+                'observacoes' => $recebimento['observacoes'] !== '' ? $recebimento['observacoes'] : null,
+            ]);
+
+            $movementId = (int) ($movementSummary['movement_id'] ?? 0);
+
+            if ($movementId > 0 && isset($recebimento['simulation'])) {
+                $this->registerCardMovementMeta($movementId, $recebimento['simulation'], $recebimento);
+                $this->registerCardFeeExpense($order, $recebimento['simulation'], $movementId);
+            }
+        }
+
+        $resumoFinanceiro = $this->financeiroService->movementSummary($titulo->refresh());
+        $saldoAberto = round((float) ($resumoFinanceiro['valor_aberto'] ?? 0), 2);
+
+        return ['titulo' => $titulo, 'saldo_aberto' => $saldoAberto];
     }
 
     /**
@@ -582,7 +863,7 @@ class OrderClosureService
 
         $parcelas = (int) ($simulation['parcelas'] ?? 1);
 
-        Financeiro::query()->create([
+        $taxaFinanceiro = Financeiro::query()->create([
             'os_id' => (int) $order->id,
             'avulso' => false,
             'tipo' => Financeiro::TIPO_PAGAR,
@@ -606,6 +887,23 @@ class OrderClosureService
             'impacta_fluxo_caixa' => true,
             'dre_fixo_mensal' => false,
         ]);
+
+        // Criado via Financeiro::create direto (nao passa por
+        // FinanceiroService::create), entao emite o evento aqui.
+        $this->orderEventService->record(
+            (int) $order->id,
+            OrderEvent::CATEGORIA_FINANCEIRO,
+            OrderEvent::TIPO_TITULO_CRIADO,
+            'Taxa de cartão lançada',
+            (string) $taxaFinanceiro->descricao,
+            [
+                'financeiro_id' => (int) $taxaFinanceiro->id,
+                'valor' => $valorTaxa,
+                'movimento_origem_id' => $movementId,
+            ],
+            null,
+            OrderEvent::ORIGEM_SISTEMA
+        );
     }
 
     private function schedulePendingCollections(int $orderId, int $financeiroId, ?int $clienteId): int
@@ -626,15 +924,47 @@ class OrderClosureService
             $created++;
         }
 
+        if ($created > 0) {
+            $this->orderEventService->record(
+                $orderId,
+                OrderEvent::CATEGORIA_FINANCEIRO,
+                OrderEvent::TIPO_COBRANCAS_AGENDADAS,
+                'Cobranças automáticas agendadas',
+                sprintf('%d cobrança(s) por WhatsApp agendada(s) (D+%s).', $created, implode('/D+', self::COLLECTION_SCHEDULE_DAYS)),
+                [
+                    'quantidade' => $created,
+                    'prazos_dias' => self::COLLECTION_SCHEDULE_DAYS,
+                    'financeiro_id' => $financeiroId,
+                ],
+                null,
+                OrderEvent::ORIGEM_SISTEMA
+            );
+        }
+
         return $created;
     }
 
     private function cancelPendingCollections(int $orderId): int
     {
-        return OsCobrancaAgendamento::query()
+        $cancelled = OsCobrancaAgendamento::query()
             ->where('os_id', $orderId)
             ->whereIn('status', [OsCobrancaAgendamento::STATUS_PENDENTE, OsCobrancaAgendamento::STATUS_ERRO])
             ->update(['status' => OsCobrancaAgendamento::STATUS_CANCELADO, 'updated_at' => Carbon::now()]);
+
+        if ($cancelled > 0) {
+            $this->orderEventService->record(
+                $orderId,
+                OrderEvent::CATEGORIA_FINANCEIRO,
+                OrderEvent::TIPO_COBRANCAS_CANCELADAS,
+                'Cobranças automáticas canceladas',
+                sprintf('%d cobrança(s) pendente(s) cancelada(s).', $cancelled),
+                ['quantidade' => $cancelled],
+                null,
+                OrderEvent::ORIGEM_SISTEMA
+            );
+        }
+
+        return $cancelled;
     }
 
     public function createReturnFollowup(int $orderId, string $dataPrevista, ?int $usuarioId = null): ?int
@@ -660,6 +990,20 @@ class OrderClosureService
             'usuario_responsavel' => $usuarioId,
             'origem_evento' => $origin,
         ]);
+
+        $this->orderEventService->record(
+            $orderId,
+            OrderEvent::CATEGORIA_REGISTRO,
+            OrderEvent::TIPO_RETORNO_AGENDADO,
+            'Retorno pós-serviço agendado',
+            sprintf('Follow-up agendado para %s.', Carbon::parse($dataPrevista)->format('d/m/Y')),
+            [
+                'followup_id' => (int) $followup->id,
+                'data_prevista' => Carbon::parse($dataPrevista)->toDateString(),
+            ],
+            $usuarioId,
+            OrderEvent::ORIGEM_SISTEMA
+        );
 
         return (int) $followup->id;
     }
@@ -758,6 +1102,17 @@ class OrderClosureService
                 null,
                 true
             );
+
+            $this->orderEventService->record(
+                (int) $order->id,
+                OrderEvent::CATEGORIA_DOCUMENTO,
+                OrderEvent::TIPO_FECHAMENTO_PDF_GERADO,
+                'PDF de fechamento gerado',
+                'PDF consolidado da OS gerado para envio ao cliente.',
+                ['arquivo' => (string) ($pdf['file_name'] ?? '')],
+                null,
+                OrderEvent::ORIGEM_SISTEMA
+            );
         }
 
         try {
@@ -775,7 +1130,27 @@ class OrderClosureService
                 ]
             );
 
-            return (bool) ($resultado['ok'] ?? false);
+            $enviado = (bool) ($resultado['ok'] ?? false);
+
+            if ($enviado) {
+                $this->orderEventService->record(
+                    (int) $order->id,
+                    OrderEvent::CATEGORIA_MENSAGEM,
+                    OrderEvent::TIPO_WHATSAPP_ENVIADO,
+                    'Comprovante de fechamento enviado',
+                    'Cliente notificado por WhatsApp sobre o encerramento da OS.',
+                    [
+                        'origin' => 'os_closure',
+                        'destino' => $telefone,
+                        'status_codigo' => $statusAplicadoCodigo,
+                        'com_pdf' => $attachments !== [],
+                    ],
+                    null,
+                    OrderEvent::ORIGEM_SISTEMA
+                );
+            }
+
+            return $enviado;
         } catch (Throwable $exception) {
             logger()->warning('[API V1][ORDERS][CLOSURE] Falha ao notificar cliente por WhatsApp', [
                 'order_id' => $order->id,
@@ -787,6 +1162,74 @@ class OrderClosureService
             if (($pdf['ok'] ?? false) && is_string($pdf['path'] ?? null) && is_file($pdf['path'])) {
                 @unlink($pdf['path']);
             }
+        }
+    }
+
+    /**
+     * Notifica o cliente de um Adiantamento/Sinal registrado via
+     * registerAdvance() — mensagem simples de texto (sem PDF de encerramento,
+     * já que a OS não foi encerrada).
+     */
+    private function sendAdvanceNotification(
+        Order $order,
+        bool $equipamentoEntregue,
+        float $saldoRestante
+    ): bool {
+        $order->loadMissing('client');
+        $telefone = trim((string) ($order->client?->telefone1 ?? ''));
+
+        if ($telefone === '') {
+            return false;
+        }
+
+        $numeroOs = trim((string) ($order->numero_os ?: ('#' . $order->id)));
+        $mensagem = sprintf(
+            'Olá! Recebemos seu pagamento referente à OS %s. Saldo restante: R$ %s.%s',
+            $numeroOs,
+            number_format($saldoRestante, 2, ',', '.'),
+            $equipamentoEntregue ? ' O equipamento foi registrado como entregue.' : ''
+        );
+
+        try {
+            $resultado = $this->whatsappMessagingService->sendSystemMessage(
+                $telefone,
+                $mensagem,
+                [],
+                trim((string) ($order->client?->nome_razao ?? '')) ?: null,
+                (int) ($order->cliente_id ?? 0) > 0 ? (int) $order->cliente_id : null,
+                [
+                    'origin' => 'os_advance_payment',
+                    'os_id' => (int) $order->id,
+                ]
+            );
+
+            $enviado = (bool) ($resultado['ok'] ?? false);
+
+            if ($enviado) {
+                $this->orderEventService->record(
+                    (int) $order->id,
+                    OrderEvent::CATEGORIA_MENSAGEM,
+                    OrderEvent::TIPO_WHATSAPP_ENVIADO,
+                    'Recibo de adiantamento enviado',
+                    'Cliente notificado por WhatsApp sobre o valor recebido.',
+                    [
+                        'origin' => 'os_advance_payment',
+                        'destino' => $telefone,
+                        'saldo_restante' => round($saldoRestante, 2),
+                    ],
+                    null,
+                    OrderEvent::ORIGEM_SISTEMA
+                );
+            }
+
+            return $enviado;
+        } catch (Throwable $exception) {
+            logger()->warning('[API V1][ORDERS][CLOSURE] Falha ao notificar cliente por WhatsApp (adiantamento)', [
+                'order_id' => $order->id,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return false;
         }
     }
 

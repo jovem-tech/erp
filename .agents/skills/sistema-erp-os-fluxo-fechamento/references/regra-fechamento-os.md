@@ -190,6 +190,95 @@ limpo (`os-closure-cancel-admin-auth:teste@rate.limit|127.0.0.1`). Dados de
 teste revertidos ao final (histórico voltou a 3 entradas, financeiro/margem/
 cobranças/followup em 0).
 
+## Adiantamento/Sinal sem fechar a OS (2026-07-09)
+
+Pedido original do usuário: o campo "Classificação" (Baixa/Adiantamento/Sinal)
+da tela de baixa estava posicionado na aba errada (Financeiro, por linha de
+recebimento) e não tinha nenhum efeito real — não importava o que fosse
+escolhido, a OS sempre fechava com o status de "Encerrar como". Investigação
+confirmou: campo puramente cosmético, escrito por `normalizeReceipts()` mas
+nunca lido em nenhum lugar downstream (nem passado a `registerMovement`, nem
+persistido em model algum) — seguro remover sem quebrar o fluxo existente.
+
+Decisões do usuário, em sequência:
+
+1. "Sua função é definir se a OS será encerrada ou será apenas lançados
+   valores de sinal ou adiantamento na OS" — ou seja, vira uma decisão de
+   **caminho de backend**, não um rótulo cosmético.
+2. Confirmado via pergunta: escolher Sinal/Adiantamento mantém a OS **aberta**,
+   só registra o valor; o campo passa a ser **um único por baixa** (não mais
+   por linha de recebimento).
+3. "Se for escolhido nas opções sinal ou adiantamento deve ser bloqueado o
+   campo encerrar como e possibilitar prosseguir com o lançamento dos valores
+   de abatimento da OS" — confirma que "Encerrar como"/"Data da entrega" saem
+   de cena nesse modo.
+4. Sobre "Data da entrega": usuário pediu para mantê-la escondida por padrão,
+   mas adicionar um toggle "Equipamento foi entregue?" — se marcado, mostra o
+   campo de data; se preenchido, o status da OS deve virar
+   "Entregue - Pendência Financeira" (`entregue_pagamento_pendente`) e a OS
+   **continua aberta** por ainda ter pendência financeira.
+5. Sobre o toggle "Retorno pós-serviço": usuário escolheu escondê-lo no modo
+   Sinal/Adiantamento (o atendimento não terminou, não faz sentido agendar
+   retorno).
+
+Implementação (detalhada na seção "Adiantamento/Sinal sem fechar a OS" do
+`SKILL.md`): `OrderClosureService::registerAdvance()`, caminho paralelo a
+`close()` que nunca aplica um dos 3 `closureCodes()`. Os dois métodos
+compartilham as mesmas rotinas privadas extraídas (`processReceipts()`,
+`simulateCardPayments()`) — nenhuma lógica financeira duplicada.
+`entregue_pagamento_pendente` é seguro de aplicar fora de `close()` porque está
+estruturalmente fora de `closureCodes()` (`grupo_macro='interrupcao'`),
+confirmado por leitura de código antes da implementação — nenhuma das regras
+de bloqueio de "OS encerrada" documentadas acima se aplica a ele.
+
+**Bug real encontrado via tinker durante a implementação**: a primeira versão
+de `registerAdvance()` chamava `updateStatus()` **sem** `viaClosureFlow: true`
+(por achar que só era necessário para os 3 `closureCodes()`). Resultado:
+marcar "equipamento entregue" falhava com `invalid_transition` em qualquer OS
+cujo status de origem não tivesse `entregue_pagamento_pendente` cadastrado no
+catálogo de transições (`os_status_transicoes`) — ex.: `aguardando_autorizacao`.
+Além disso, como o `return $statusResult;` dentro do closure do `DB::transaction`
+não lança exceção, a transação **commitava mesmo assim**: o título/movimento
+financeiro ficava persistido apesar do resultado final ser de erro. Corrigido
+passando `viaClosureFlow: true` (mesmo padrão de `close()` — o handoff técnico
+precisa poder acontecer a partir de qualquer etapa aberta), o que faz
+`statusResult` ser sempre `ok` na prática, alinhando o comportamento ao de
+`close()`. Reproduzido e confirmado corrigido via tinker na OS de teste 2482
+(ver abaixo).
+
+Verificação (tinker, OS 2482 `aguardando_autorizacao`, revertido ao final):
+
+1. `registerAdvance()` com `equipamento_entregue=false` → `status`/`data_entrega`
+   da OS inalterados, 1 título `Financeiro` criado, 0 cobranças agendadas.
+2. `registerAdvance()` com `equipamento_entregue=true` + `data_entrega` →
+   `status='entregue_pagamento_pendente'`, `data_entrega`/`baixa_tecnica_em`/`_por`
+   preenchidos, `status_final_pendente_pagamento` permanece `null`, 3 cobranças
+   agendadas (D+1/D+3/D+5), `is_encerrada` continua `false`.
+3. Guarda: `registerAdvance()` numa OS já em `closureCodes()` (OS 1,
+   `devolvido_sem_reparo`) → `result: 'order_is_closed'`, zero efeitos colaterais
+   (Financeiro/histórico/status inalterados).
+
+Chrome headless (fluxo completo do wizard nos dois modos, OS 2482) e regressão
+da Baixa normal na mesma OS — ambos verificados e revertidos (Baixa via
+`cancelClosure()`, Adiantamento/Sinal via reversão manual dos artefatos
+financeiros/histórico/status). Dados de teste sempre revertidos ao final.
+
+**Segundo bug real, encontrado só quando o usuário testou manualmente**: o
+select de Classificação vira Select2 automaticamente (todo `select.form-select`
+vira, ver `desktop.js::initSelect2()`), e o Select2 só dispara `change` via
+`jQuery(el).trigger('change')` — não gera evento nativo, então o
+`addEventListener('change', ...)` original nunca disparava ao escolher pela UI
+real. O Chrome headless da primeira rodada de verificação usou `page.select()`,
+que seta o valor programaticamente e mascarou o bug (dispara evento nativo
+direto, sem passar pela UI do Select2). Corrigido com bind paralelo via jQuery
+(mesmo padrão de `receiptsList`/campos de cartão). Reproduzido e confirmado
+corrigido clicando de verdade no dropdown Select2 renderizado
+(`.select2-selection` → `.select2-results__option`), não via `page.select()`.
+Comentário de aviso geral adicionado em `desktop.js::initSelect2()` para
+qualquer novo listener de `change` em select — este é o segundo lugar dentro
+de `orders-closure.js` a ser mordido por isso (o primeiro foram os campos de
+cartão do recebimento).
+
 ## Arquivos que compoem esta regra
 
 - `backend/app/Models/OrderStatus.php` — `closureCodes()`, `REVENUE_CLOSURE_CODE`,
@@ -199,8 +288,13 @@ cobranças/followup em 0).
   `updateOrder()`, `mapNextStatusOptionsFromCatalog()` (filtra closureCodes de
   `proximas_etapas`), `mapSummary()`/`mapDetail()` (`is_encerrada`).
 - `backend/app/Services/Orders/OrderClosureService.php` — `close()`,
-  `closureOptions()`, `cancelClosure(orderId, actor, ?verifiedAdmin)`.
-- `backend/app/Http/Requests/Api/V1/CloseOrderRequest.php` — `closureStatusCodes()`.
+  `closureOptions()`, `cancelClosure(orderId, actor, ?verifiedAdmin)`,
+  `registerAdvance(orderId, actor, payload)` (caminho paralelo, nunca aplica
+  `closureCodes()`), `processReceipts()`/`simulateCardPayments()` (helpers
+  privados compartilhados entre `close()` e `registerAdvance()`).
+- `backend/app/Http/Requests/Api/V1/CloseOrderRequest.php` — `closureStatusCodes()`,
+  `classificacao_baixa` (Baixa/Adiantamento/Sinal, decide quais campos são
+  obrigatórios via `Rule::requiredIf()`).
 - `backend/app/Http/Requests/Api/V1/CancelOrderClosureRequest.php` — valida
   `admin_email`/`admin_password` do gate de "Cancelar baixa".
 - `backend/app/Http/Controllers/Api/V1/OrderController.php` — `update()`,
@@ -229,3 +323,11 @@ cobranças/followup em 0).
   modal compartilhado (listagem + detalhe) do gate de admin.
 - `frontends/desktop/public/assets/js/orders-cancel-closure-modal.js` — submit
   do modal acima (fetch + CSRF, mostra erro inline em falha).
+- `frontends/desktop/app/Http/Controllers/OrderController.php` — `closureStore()`
+  (validação condicional por `classificacao_baixa`).
+- `frontends/desktop/resources/views/orders/closure.blade.php` — select
+  `classificacao_baixa`, bloco `#closureBaixaFields`/`#closureAdvanceFields`,
+  toggle `equipamento_entregue`.
+- `frontends/desktop/public/assets/js/orders-closure.js` — `isAdvanceClosure()`,
+  `updateClosureModeVisibility()`, `updateDataEntregaVisibility()`,
+  `updateReturnCardVisibility()`.

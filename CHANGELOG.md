@@ -1,5 +1,17 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v3.21.0.0 — 2026-07-10 00:50
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** correções na tela de login, correções no RBCA, correções e ajustes na baixa da os
+- **Arquivos:** .agents/skills/sistema-erp-os-fluxo-fechamento/references/regra-fechamento-os.md,.agents/skills/sistema-erp-os-fluxo-fechamento/SKILL.md,backend/app/Console/Commands/BackfillOsEventos.php,backend/app/Http/Controllers/Api/V1/ConfigurationController.php,backend/app/Http/Controllers/Api/V1/OrderController.php,backend/app/Http/Controllers/Api/V1/UserController.php,backend/app/Http/Requests/Api/V1/CloseOrderRequest.php,backend/app/Http/Requests/Api/V1/StoreUserRequest.php,backend/app/Http/Requests/Api/V1/UpdateCompanyProfileRequest.php,backend/app/Http/Requests/Api/V1/UpdateUserRequest.php,backend/app/Models/OrderEvent.php,backend/app/Models/Order.php,backend/app/Notifications/FrontendPasswordResetNotification.php,backend/app/Providers/AppServiceProvider.php,backend/app/Services/Budgets/BudgetApprovalService.php,backend/app/Services/Budgets/BudgetOrderSyncService.php,backend/app/Services/Budgets/BudgetWorkflowService.php,backend/app/Services/Company/CompanyProfileService.php,backend/app/Services/Financeiro/FinanceiroService.php,backend/app/Services/Orders/OrderClosureService.php,backend/app/Services/Orders/OrderEventService.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/bootstrap/app.php,backend/database/migrations/2026_07_09_000001_create_os_eventos_table.php,backend/openapi.yaml,backend/routes/api.php,backend/routes/web.php,backend/tests/Feature/Api/V1/ConfigurationIntegrationsTest.php,backend/tests/Feature/Api/V1/PasswordResetFlowTest.php,backend/tests/Feature/Api/V1/RbacAdministrationTest.php,documentacao/03-arquitetura-tecnica/eventos-os.md,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/app/Http/Controllers/ConfigurationController.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/app/Http/Controllers/UserController.php,frontends/desktop/app/Services/CompanyProfileService.php,frontends/desktop/app/Services/UserService.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/public/assets/js/desktop.js,frontends/desktop/public/assets/js/orders-closure.js,frontends/desktop/resources/views/auth/login.blade.php,frontends/desktop/resources/views/configurations/system.blade.php,frontends/desktop/resources/views/orders/closure.blade.php,frontends/desktop/resources/views/orders/_event_timeline.blade.php,frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/resources/views/users/index.blade.php,frontends/desktop/routes/web.php,frontends/desktop/tests/Unit/
+
+## v3.20.0.1 — 2026-07-09 20:14
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Aproxima paineis do login em telas grandes
+- **Arquivos:** frontends/desktop/public/assets/css/desktop.css
+
 ## v3.20.0.0 — 2026-07-09 08:22
 - **Tier:** minor
 - **Autor/Agente:** Codex

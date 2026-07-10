@@ -130,6 +130,17 @@ return Application::configure(basePath: $basePath)
                 ? $exception->getStatusCode()
                 : 500;
 
+            if ($status === 429) {
+                return ApiResponse::error(
+                    'Muitas tentativas. Aguarde alguns instantes e tente novamente.',
+                    429,
+                    'RATE_LIMITED',
+                    null,
+                    [],
+                    $request
+                );
+            }
+
             $message = $status >= 500
                 ? 'Ocorreu um erro inesperado. Tente novamente em instantes.'
                 : ($exception->getMessage() ?: 'Não foi possível processar a solicitação.');

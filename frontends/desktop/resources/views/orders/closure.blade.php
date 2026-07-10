@@ -611,8 +611,21 @@
                                     'color' => $order['status_cor'] ?? '#64748b',
                                 ])
                             </div>
-                            <p class="form-text mb-3">Defina como a OS será encerrada, a data da entrega e o contexto operacional que precisa ficar registrado.</p>
+                            <p class="form-text mb-3">Defina se esta ação encerra a OS de verdade ou só registra um adiantamento/sinal do cliente.</p>
+
                             <div class="row g-3">
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label" for="classificacaoBaixa">Classificação</label>
+                                    <select id="classificacaoBaixa" name="classificacao_baixa" class="form-select">
+                                        <option value="baixa" @selected(old('classificacao_baixa', 'baixa') === 'baixa')>Baixa (encerra a OS)</option>
+                                        <option value="adiantamento" @selected(old('classificacao_baixa') === 'adiantamento')>Adiantamento</option>
+                                        <option value="sinal" @selected(old('classificacao_baixa') === 'sinal')>Sinal</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            {{-- Visível só quando Classificação = Baixa --}}
+                            <div class="row g-3 mt-0" id="closureBaixaFields">
                                 <div class="col-12 col-md-6">
                                     <label class="form-label" for="encerrarComo">Encerrar como</label>
                                     <select id="encerrarComo" name="encerrar_como" class="form-select @error('encerrar_como') is-invalid @enderror" required>
@@ -627,13 +640,26 @@
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
                                 </div>
-                                <div class="col-12 col-md-6">
+                                <div class="col-12 col-md-6" id="dataEntregaWrapper">
                                     <label class="form-label" for="dataEntrega">Data da entrega</label>
                                     <input type="date" id="dataEntrega" name="data_entrega" class="form-control @error('data_entrega') is-invalid @enderror"
                                         value="{{ old('data_entrega', now()->toDateString()) }}" required>
                                     @error('data_entrega')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
+                                </div>
+                            </div>
+
+                            {{-- Visível só quando Classificação = Adiantamento/Sinal --}}
+                            <div class="row g-3 mt-0 d-none" id="closureAdvanceFields">
+                                <div class="col-12">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" role="switch" id="equipamentoEntregue" name="equipamento_entregue" value="1" @checked(old('equipamento_entregue'))>
+                                        <label class="form-check-label" for="equipamentoEntregue">Equipamento foi entregue?</label>
+                                    </div>
+                                    <p class="form-text mb-0">
+                                        Se marcado e a data de entrega for preenchida, a OS vira "{{ $statusPagamentoPendente['nome'] ?? 'Entregue - Pendência Financeira' }}" — continua aberta, por ainda ter pendência financeira.
+                                    </p>
                                 </div>
                             </div>
                         </div>
@@ -703,9 +729,6 @@
                                 </button>
                                 <button type="button" class="btn btn-primary btn-sm" data-action="adicionar-recebimento">
                                     <i class="bi bi-plus-lg me-1"></i>Adicionar recebimento
-                                </button>
-                                <button type="button" class="btn btn-outline-light btn-sm" data-action="adicionar-adiantamento">
-                                    <i class="bi bi-wallet2 me-1"></i>Adicionar adiantamento
                                 </button>
                             </div>
 
@@ -805,7 +828,7 @@
                                 <div class="closure-choice-state" id="closureNotifyState">Não enviar</div>
                             </div>
 
-                            <div class="closure-choice-card">
+                            <div class="closure-choice-card" id="closureReturnCard">
                                 <div class="closure-choice-head">
                                     <div>
                                         <strong>Retorno pós-serviço</strong>
@@ -880,21 +903,13 @@
                 </div>
                 <div class="desktop-grid desktop-grid-two">
                     <div>
-                        <label class="form-label">Valor</label>
-                        <input type="number" step="0.01" min="0.01" class="form-control" data-field="valor" placeholder="0,00">
-                    </div>
-                    <div data-classificacao-field>
-                        <label class="form-label">Classificação</label>
-                        <select class="form-select" data-field="classificacao_recebimento">
-                            <option value="baixa">Baixa</option>
-                            <option value="adiantamento">Adiantamento</option>
-                            <option value="sinal">Sinal</option>
-                        </select>
+                        <label class="form-label">Valor <span class="text-danger">*</span></label>
+                        <input type="text" inputmode="decimal" autocomplete="off" class="form-control" data-field="valor" placeholder="R$ 0,00" required>
                     </div>
                     <div>
-                        <label class="form-label">Forma de pagamento</label>
-                        <select class="form-select" data-field="forma_pagamento">
-                            <option value="">Não informado</option>
+                        <label class="form-label">Forma de pagamento <span class="text-danger">*</span></label>
+                        <select class="form-select" data-field="forma_pagamento" required>
+                            <option value="">Selecione</option>
                             <option value="dinheiro">Dinheiro</option>
                             <option value="cartao_credito">Cartão de crédito</option>
                             <option value="cartao_debito">Cartão de débito</option>
@@ -962,6 +977,8 @@
             'dataEntregaDefault' => now()->toDateString(),
             'noRepairStatuses' => $noRepairStatuses,
             'statusPagamentoPendente' => $statusPagamentoPendente,
+            'statusAtualNome' => $order['status_nome'] ?? 'Sem status',
+            'statusAtualCodigo' => $order['status'] ?? '',
             'cartao' => $cartaoDataset,
             'clienteTelefone' => $clienteTelefone,
             'initialStep' => (int) old('current_step', 1),
@@ -971,9 +988,10 @@
                 ->all(),
             'old' => [
                 'encerrar_como' => old('encerrar_como'),
+                'classificacao_baixa' => old('classificacao_baixa', 'baixa'),
                 'recebimentos' => old('recebimentos', []),
             ],
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
     </script>
-    <script src="{{ asset('assets/js/orders-closure.js') }}"></script>
+    <script src="{{ asset('assets/js/orders-closure.js') }}?v={{ filemtime(public_path('assets/js/orders-closure.js')) }}"></script>
 @endsection

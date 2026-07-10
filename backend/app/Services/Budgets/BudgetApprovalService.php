@@ -7,10 +7,12 @@ use App\Models\BudgetApproval;
 use App\Models\BudgetSend;
 use App\Models\BudgetStatusHistory;
 use App\Models\Order;
+use App\Models\OrderEvent;
 use App\Models\User;
 use App\Services\Channels\Whatsapp\PhoneNumberNormalizationService;
 use App\Services\Company\CompanyProfileService;
 use App\Services\Integrations\IntegrationSettingsService;
+use App\Services\Orders\OrderEventService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -23,7 +25,8 @@ class BudgetApprovalService
         private readonly IntegrationSettingsService $integrationSettingsService,
         private readonly CompanyProfileService $companyProfileService,
         private readonly PhoneNumberNormalizationService $phoneNumberNormalizationService,
-        private readonly BudgetOrderSyncService $budgetOrderSyncService
+        private readonly BudgetOrderSyncService $budgetOrderSyncService,
+        private readonly OrderEventService $orderEventService
     ) {
     }
 
@@ -101,7 +104,7 @@ class BudgetApprovalService
             $previousStatus = (string) ($budget->status ?? Budget::STATUS_DRAFT);
             $expiry = $this->resolveTokenExpiry($budget);
 
-            BudgetSend::query()->create([
+            $envio = BudgetSend::query()->create([
                 'orcamento_id' => (int) $budget->id,
                 'canal' => 'whatsapp',
                 'destino' => $destinationPhone,
@@ -116,6 +119,54 @@ class BudgetApprovalService
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
+
+            $osId = (int) ($budget->os_id ?? 0);
+            if ($osId > 0) {
+                $this->orderEventService->record(
+                    $osId,
+                    OrderEvent::CATEGORIA_DOCUMENTO,
+                    OrderEvent::TIPO_ORCAMENTO_PDF_GERADO,
+                    'PDF do orçamento gerado',
+                    sprintf('PDF do orçamento %s gerado para envio ao cliente.', $budget->numero),
+                    [
+                        'orcamento_id' => (int) $budget->id,
+                        'arquivo' => (string) ($pdf['file_name'] ?? ''),
+                    ],
+                    (int) $user->id
+                );
+
+                if ($dispatchOk) {
+                    $this->orderEventService->record(
+                        $osId,
+                        OrderEvent::CATEGORIA_ORCAMENTO,
+                        OrderEvent::TIPO_ORCAMENTO_ENVIADO,
+                        'Orçamento enviado para aprovação',
+                        sprintf('Orçamento %s enviado ao cliente para aprovação.', $budget->numero),
+                        [
+                            'orcamento_id' => (int) $budget->id,
+                            'envio_id' => (int) $envio->id,
+                            'canal' => 'whatsapp',
+                            'destino' => $destinationPhone,
+                        ],
+                        (int) $user->id
+                    );
+
+                    $this->orderEventService->record(
+                        $osId,
+                        OrderEvent::CATEGORIA_MENSAGEM,
+                        OrderEvent::TIPO_WHATSAPP_ENVIADO,
+                        'Orçamento enviado por WhatsApp',
+                        sprintf('Proposta do orçamento %s enviada com PDF anexo.', $budget->numero),
+                        [
+                            'origin' => 'orcamento_aprovacao',
+                            'orcamento_id' => (int) $budget->id,
+                            'envio_id' => (int) $envio->id,
+                            'destino' => $destinationPhone,
+                        ],
+                        (int) $user->id
+                    );
+                }
+            }
 
             $budget->forceFill([
                 'status' => $targetStatus,
@@ -245,6 +296,27 @@ class BudgetApprovalService
                 null
             );
 
+            $osId = (int) ($budget->os_id ?? 0);
+            if ($osId > 0) {
+                $this->orderEventService->record(
+                    $osId,
+                    OrderEvent::CATEGORIA_ORCAMENTO,
+                    OrderEvent::TIPO_ORCAMENTO_APROVADO,
+                    'Orçamento aprovado pelo cliente',
+                    sprintf('Cliente aprovou o orçamento %s pelo link público.', $budget->numero),
+                    [
+                        'orcamento_id' => (int) $budget->id,
+                        'numero' => (string) $budget->numero,
+                        'resposta_cliente' => $decisionMessage,
+                        'ip_origem' => $ipAddress,
+                        'user_agent' => $userAgent,
+                    ],
+                    null,
+                    OrderEvent::ORIGEM_CLIENTE,
+                    $approvedAt
+                );
+            }
+
             $this->syncOrderForDecision($budget, true, $approvedAt);
             $this->budgetOrderSyncService->syncFromBudget($budget);
         });
@@ -320,6 +392,27 @@ class BudgetApprovalService
                 'cliente',
                 null
             );
+
+            $osId = (int) ($budget->os_id ?? 0);
+            if ($osId > 0) {
+                $this->orderEventService->record(
+                    $osId,
+                    OrderEvent::CATEGORIA_ORCAMENTO,
+                    OrderEvent::TIPO_ORCAMENTO_RECUSADO,
+                    'Orçamento recusado pelo cliente',
+                    sprintf('Cliente recusou o orçamento %s pelo link público. Motivo: %s', $budget->numero, $decisionMessage),
+                    [
+                        'orcamento_id' => (int) $budget->id,
+                        'numero' => (string) $budget->numero,
+                        'resposta_cliente' => $decisionMessage,
+                        'ip_origem' => $ipAddress,
+                        'user_agent' => $userAgent,
+                    ],
+                    null,
+                    OrderEvent::ORIGEM_CLIENTE,
+                    $rejectedAt
+                );
+            }
 
             $this->syncOrderForDecision($budget, false, $rejectedAt);
             $this->budgetOrderSyncService->syncFromBudget($budget);

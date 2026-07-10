@@ -4019,6 +4019,16 @@ paths:
       tags:
         - Ordens
       summary: Obter detalhe de uma OS.
+      description: |
+        Retorna o detalhe completo da OS, incluindo `eventos` — a timeline
+        unificada e auditável de movimentações (tabela `os_eventos`, máximo de
+        200 itens, mais recentes primeiro). Cada evento tem `categoria`
+        (`status` | `orcamento` | `financeiro` | `documento` | `mensagem` |
+        `registro`), `tipo` (slug do catálogo em `App\Models\OrderEvent`),
+        `titulo`, `descricao`, `dados` (payload JSON auditável), `origem`
+        (`sistema` | `usuario` | `cliente` | `automacao`), `usuario` e
+        `created_at`. Os campos legados `historico` (status, 5 itens) e
+        `procedimentos_historico` (20 itens) continuam presentes e inalterados.
       parameters:
         - $ref: "#/components/parameters/OrderId"
       responses:

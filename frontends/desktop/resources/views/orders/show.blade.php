@@ -480,36 +480,8 @@
                 </div>
             </article>
 
-            {{-- Histórico real de movimentações --}}
-            <section class="surface-card mt-4 os-history-section">
-                <div class="surface-card-header">
-                    <div>
-                        <h2 class="surface-title fs-6"><i class="bi bi-clock-history me-1"></i>Histórico recente da OS</h2>
-                        <p class="surface-subtitle">Movimentos mais recentes retornados pelo backend com autor e observação.</p>
-                    </div>
-                </div>
-
-                @if (($order['historico'] ?? []) !== [])
-                    <div class="timeline">
-                        @foreach ($order['historico'] as $history)
-                            <article class="timeline-item">
-                                <div class="d-flex flex-wrap justify-content-between gap-2">
-                                    <strong>{{ ($history['status_anterior'] ?? '') !== '' ? $history['status_anterior'] : 'Sem origem' }} → {{ ($history['status_novo'] ?? '') !== '' ? $history['status_novo'] : 'Sem destino' }}</strong>
-                                    <small>{{ ($history['created_at'] ?? '') !== '' ? $history['created_at'] : 'Data não informada' }}</small>
-                                </div>
-                                <p class="mb-2 mt-2">{{ ($history['observacao'] ?? '') !== '' ? $history['observacao'] : 'Sem observação registrada.' }}</p>
-                                <small>Responsável: {{ $history['usuario']['nome'] ?? 'Usuário não identificado' }}</small>
-                            </article>
-                        @endforeach
-                    </div>
-                @else
-                    @include('layouts.partials.empty-state', [
-                        'icon' => 'bi-clock-history',
-                        'title' => 'Sem histórico registrado',
-                        'message' => 'Nenhuma movimentação recente foi retornada para esta ordem de serviço.',
-                    ])
-                @endif
-            </section>
+            {{-- Histórico unificado e categorizado de movimentações (os_eventos) --}}
+            @include('orders._event_timeline')
         </div>
     </div>
 @endsection
@@ -569,6 +541,34 @@
             // Mantém a aba ativa visível na faixa rolável ao trocar (sem rolar a página).
             tabs.forEach((tab) => tab.addEventListener('click', () => {
                 tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+            }));
+        })();
+
+        // Filtro por categoria da timeline de eventos da OS (client-side,
+        // mesmo padrão dos toggles [data-os-tab] acima — sem reload).
+        (function () {
+            const root = document.querySelector('[data-event-timeline]');
+            if (!root) {
+                return;
+            }
+            const chips = Array.from(root.querySelectorAll('[data-event-filter]'));
+            const items = Array.from(root.querySelectorAll('[data-event-category]'));
+            const emptyState = root.querySelector('[data-event-empty]');
+            const list = root.querySelector('[data-event-list]');
+
+            chips.forEach((chip) => chip.addEventListener('click', () => {
+                const filter = chip.dataset.eventFilter;
+                chips.forEach((c) => c.classList.toggle('is-active', c === chip));
+
+                let visible = 0;
+                items.forEach((item) => {
+                    const show = filter === 'all' || item.dataset.eventCategory === filter;
+                    item.classList.toggle('d-none', !show);
+                    if (show) visible++;
+                });
+
+                if (emptyState) emptyState.classList.toggle('d-none', visible > 0);
+                if (list) list.classList.toggle('d-none', visible === 0);
             }));
         })();
 

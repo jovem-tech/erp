@@ -75,13 +75,14 @@
                     @foreach ($users as $user)
                         @php
                             $isActive = !empty($user['ativo']);
+                            $profileLabel = (string) ($user['group']['nome'] ?? ($user['perfil'] ?? ''));
                         @endphp
                         <tr>
                             <td data-label="Nome">
                                 <div class="fw-semibold">{{ $user['nome'] !== '' ? $user['nome'] : 'Sem nome' }}</div>
                                 <small class="text-secondary">{{ $user['email'] !== '' ? $user['email'] : 'Sem e-mail' }}</small>
                             </td>
-                            <td data-label="Perfil">{{ $user['perfil'] !== '' ? ucfirst($user['perfil']) : 'Não informado' }}</td>
+                            <td data-label="Perfil">{{ $profileLabel !== '' ? $profileLabel : 'Não informado' }}</td>
                             <td data-label="Grupo">{{ $user['group']['nome'] ?? 'Sem grupo' }}</td>
                             <td data-label="Contato">{{ $user['telefone'] !== '' ? $user['telefone'] : 'Não informado' }}</td>
                             <td data-label="Status">
@@ -106,7 +107,7 @@
                                                 data-field-nome="{{ $user['nome'] }}"
                                                 data-field-email="{{ $user['email'] }}"
                                                 data-field-telefone="{{ $user['telefone'] }}"
-                                                data-field-perfil="{{ $user['perfil'] }}"
+                                                data-field-perfil="{{ $profileLabel }}"
                                                 data-field-grupo-id="{{ $user['grupo_id'] ?: '' }}"
                                                 data-field-ativo="{{ $isActive ? '1' : '0' }}"
                                             >
@@ -166,7 +167,7 @@
                                 <div class="row g-3">
                                     <div class="col-md-6">
                                         <label for="create_nome">Nome</label>
-                                        <input type="text" id="create_nome" name="nome" class="form-control" value="{{ old('nome') }}" required>
+                                        <input type="text" id="create_nome" name="nome" class="form-control" value="{{ old('nome') }}" data-person-name-input required>
                                     </div>
                                     <div class="col-md-6">
                                         <label for="create_email">E-mail</label>
@@ -178,12 +179,21 @@
                                     </div>
                                     <div class="col-md-3">
                                         <label for="create_perfil">Perfil</label>
-                                        <input type="text" id="create_perfil" name="perfil" class="form-control" value="{{ old('perfil', 'atendente') }}" required>
+                                        <input
+                                            type="text"
+                                            id="create_perfil"
+                                            class="form-control"
+                                            value=""
+                                            placeholder="Selecione um grupo"
+                                            data-user-profile-display
+                                            readonly
+                                            tabindex="-1"
+                                        >
                                     </div>
                                     <div class="col-md-3">
                                         <label for="create_grupo_id">Grupo</label>
-                                        <select id="create_grupo_id" name="grupo_id" class="form-select">
-                                            <option value="">Sem grupo</option>
+                                        <select id="create_grupo_id" name="grupo_id" class="form-select" data-user-group-select data-user-profile-target="#create_perfil" required>
+                                            <option value="">Selecione o grupo</option>
                                             @foreach ($groups as $group)
                                                 <option value="{{ $group['id'] }}" @selected((string) old('grupo_id') === (string) $group['id'])>{{ $group['nome'] }}</option>
                                             @endforeach
@@ -227,7 +237,7 @@
                                 <div class="row g-3">
                                     <div class="col-md-6">
                                         <label>Nome</label>
-                                        <input type="text" name="nome" class="form-control" data-field="nome" required>
+                                        <input type="text" name="nome" class="form-control" data-field="nome" data-person-name-input required>
                                     </div>
                                     <div class="col-md-6">
                                         <label>E-mail</label>
@@ -239,20 +249,38 @@
                                     </div>
                                     <div class="col-md-3">
                                         <label>Perfil</label>
-                                        <input type="text" name="perfil" class="form-control" data-field="perfil" required>
+                                        <input
+                                            type="text"
+                                            id="edit_perfil"
+                                            class="form-control"
+                                            data-field="perfil"
+                                            data-user-profile-display
+                                            readonly
+                                            tabindex="-1"
+                                        >
                                     </div>
                                     <div class="col-md-3">
                                         <label>Grupo</label>
-                                        <select name="grupo_id" class="form-select" data-field="grupoId">
-                                            <option value="">Sem grupo</option>
+                                        <select name="grupo_id" class="form-select" data-field="grupoId" data-user-group-select data-user-profile-target="#edit_perfil" required>
+                                            <option value="">Selecione o grupo</option>
                                             @foreach ($groups as $group)
                                                 <option value="{{ $group['id'] }}">{{ $group['nome'] }}</option>
                                             @endforeach
                                         </select>
                                     </div>
-                                    <div class="col-md-6">
+                                    <div class="col-12">
+                                        <button type="button" class="btn btn-outline-light btn-sm" data-user-password-toggle>
+                                            <i class="bi bi-key me-2"></i>
+                                            Alterar senha
+                                        </button>
+                                    </div>
+                                    <div class="col-md-6 d-none" data-user-password-fields>
                                         <label>Nova senha</label>
-                                        <input type="password" name="password" class="form-control" placeholder="Preencha apenas se quiser trocar">
+                                        <input type="password" name="password" class="form-control" placeholder="Digite a nova senha" disabled autocomplete="new-password">
+                                    </div>
+                                    <div class="col-md-6 d-none" data-user-password-fields>
+                                        <label>Confirmar nova senha</label>
+                                        <input type="password" name="password_confirmation" class="form-control" placeholder="Repita a nova senha" disabled autocomplete="new-password">
                                     </div>
                                     <div class="col-md-6 d-flex align-items-end">
                                         <div class="form-check mt-3">
@@ -273,3 +301,146 @@
         </div>
     @endif
 @endpush
+
+@section('scripts')
+    <script>
+        (() => {
+            const lowercaseConnectors = new Set(['da', 'das', 'de', 'di', 'do', 'dos', 'du', 'e']);
+
+            const titleCaseToken = (token) => token
+                .split('-')
+                .map((part) => part === ''
+                    ? part
+                    : part.charAt(0).toLocaleUpperCase('pt-BR') + part.slice(1)
+                )
+                .join('-');
+
+            const normalizePersonName = (value) => {
+                const words = String(value || '')
+                    .trim()
+                    .replace(/\s+/g, ' ')
+                    .toLocaleLowerCase('pt-BR')
+                    .split(' ')
+                    .filter(Boolean);
+
+                return words
+                    .map((word, index) => index > 0 && lowercaseConnectors.has(word) ? word : titleCaseToken(word))
+                    .join(' ');
+            };
+
+            const applyNameMask = (input) => {
+                if (!(input instanceof HTMLInputElement)) {
+                    return;
+                }
+
+                input.value = normalizePersonName(input.value);
+            };
+
+            const selectedGroupLabel = (select) => {
+                if (!(select instanceof HTMLSelectElement) || select.value === '') {
+                    return '';
+                }
+
+                return select.options[select.selectedIndex]?.textContent?.trim() || '';
+            };
+
+            const syncProfileFromGroup = (select) => {
+                if (!(select instanceof HTMLSelectElement)) {
+                    return;
+                }
+
+                const target = select.dataset.userProfileTarget
+                    ? document.querySelector(select.dataset.userProfileTarget)
+                    : null;
+
+                if (!(target instanceof HTMLInputElement)) {
+                    return;
+                }
+
+                target.value = selectedGroupLabel(select);
+            };
+
+            const resetPasswordFields = (form) => {
+                if (!(form instanceof HTMLFormElement)) {
+                    return;
+                }
+
+                form.querySelectorAll('[data-user-password-fields]').forEach((wrapper) => {
+                    wrapper.classList.add('d-none');
+                    wrapper.querySelectorAll('input').forEach((input) => {
+                        input.value = '';
+                        input.disabled = true;
+                        input.required = false;
+                    });
+                });
+
+                const button = form.querySelector('[data-user-password-toggle]');
+                if (button instanceof HTMLButtonElement) {
+                    button.innerHTML = '<i class="bi bi-key me-2"></i>Alterar senha';
+                    button.dataset.passwordVisible = '0';
+                }
+            };
+
+            const togglePasswordFields = (button) => {
+                const form = button.closest('form');
+                if (!(form instanceof HTMLFormElement)) {
+                    return;
+                }
+
+                const shouldShow = button.dataset.passwordVisible !== '1';
+                form.querySelectorAll('[data-user-password-fields]').forEach((wrapper) => {
+                    wrapper.classList.toggle('d-none', !shouldShow);
+                    wrapper.querySelectorAll('input').forEach((input) => {
+                        input.disabled = !shouldShow;
+                        input.required = shouldShow;
+                        if (!shouldShow) {
+                            input.value = '';
+                        }
+                    });
+                });
+
+                button.dataset.passwordVisible = shouldShow ? '1' : '0';
+                button.innerHTML = shouldShow
+                    ? '<i class="bi bi-x-circle me-2"></i>Cancelar alteração de senha'
+                    : '<i class="bi bi-key me-2"></i>Alterar senha';
+
+                if (shouldShow) {
+                    form.querySelector('input[name="password"]')?.focus();
+                }
+            };
+
+            document.querySelectorAll('[data-person-name-input]').forEach((input) => {
+                input.addEventListener('blur', () => applyNameMask(input));
+            });
+
+            document.querySelectorAll('form').forEach((form) => {
+                form.addEventListener('submit', () => {
+                    form.querySelectorAll('[data-person-name-input]').forEach(applyNameMask);
+                });
+            });
+
+            document.querySelectorAll('[data-user-group-select]').forEach((select) => {
+                syncProfileFromGroup(select);
+                select.addEventListener('change', () => syncProfileFromGroup(select));
+
+                if (window.jQuery) {
+                    window.jQuery(select).on('change select2:select select2:clear', () => syncProfileFromGroup(select));
+                }
+            });
+
+            document.querySelectorAll('[data-user-password-toggle]').forEach((button) => {
+                button.addEventListener('click', () => togglePasswordFields(button));
+            });
+
+            document.querySelectorAll('.modal').forEach((modal) => {
+                modal.addEventListener('shown.bs.modal', () => {
+                    modal.querySelectorAll('[data-user-group-select]').forEach(syncProfileFromGroup);
+                });
+
+                modal.addEventListener('hidden.bs.modal', () => {
+                    modal.querySelectorAll('form').forEach(resetPasswordFields);
+                });
+            });
+        })();
+    </script>
+@endsection

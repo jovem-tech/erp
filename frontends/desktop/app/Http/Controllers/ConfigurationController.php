@@ -88,9 +88,14 @@ class ConfigurationController extends DesktopController
         ];
 
         $logo = $request->file('empresa_logo');
+        $loginBackground = $request->file('login_background_image');
 
         try {
-            $this->companyProfileService->update($payload, $logo instanceof UploadedFile ? $logo : null);
+            $this->companyProfileService->update(
+                $payload,
+                $logo instanceof UploadedFile ? $logo : null,
+                $loginBackground instanceof UploadedFile ? $loginBackground : null
+            );
         } catch (ApiAuthenticationException $exception) {
             return redirect()->route('login')->with('error', $exception->getMessage());
         } catch (ApiAuthorizationException $exception) {
@@ -134,6 +139,17 @@ class ConfigurationController extends DesktopController
     {
         try {
             $download = $this->companyProfileService->downloadPublicLogo();
+        } catch (ApiRequestException $exception) {
+            abort($exception->statusCode() > 0 ? $exception->statusCode() : 404, $exception->getMessage());
+        }
+
+        return response($download['body'], $download['status'], $download['headers']);
+    }
+
+    public function publicLoginBackground(): \Illuminate\Http\Response
+    {
+        try {
+            $download = $this->companyProfileService->downloadPublicLoginBackground();
         } catch (ApiRequestException $exception) {
             abort($exception->statusCode() > 0 ? $exception->statusCode() : 404, $exception->getMessage());
         }

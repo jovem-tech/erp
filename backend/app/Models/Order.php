@@ -64,6 +64,11 @@ class Order extends Model
         return $this->hasMany(OrderProcedureHistory::class, 'os_id', 'id');
     }
 
+    public function events(): HasMany
+    {
+        return $this->hasMany(OrderEvent::class, 'os_id', 'id');
+    }
+
     public function photos(): HasMany
     {
         return $this->hasMany(OrderPhoto::class, 'os_id', 'id');

@@ -169,6 +169,7 @@
                 @php
                     $companySettings = $company['settings'] ?? [];
                     $companyHasLogo = (bool) ($company['logo']['exists'] ?? false);
+                    $companyHasLoginBackground = (bool) ($company['login_background']['exists'] ?? false);
                 @endphp
                 <form method="POST" action="{{ route('configurations.company.update') }}" enctype="multipart/form-data">
                     @csrf
@@ -240,6 +241,30 @@
                                 <label class="form-label" for="empresa_logo">Arquivo da logo</label>
                                 <input type="file" class="form-control" id="empresa_logo" name="empresa_logo" accept="image/png, image/jpeg, image/gif, image/svg+xml">
                                 <small class="text-muted d-block mt-1">PNG, JPG, GIF ou SVG, até 4&nbsp;MB.</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="desktop-form-card mt-3 mb-0">
+                        <div class="surface-card-header">
+                            <div>
+                                <h3 class="surface-title mb-1">Imagem de fundo do login</h3>
+                                <p class="surface-subtitle mb-0">Imagem institucional exibida atras do painel de acesso. Use fotos leves e com bom contraste.</p>
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-wrap align-items-center gap-3 mt-1">
+                            <div class="d-flex align-items-center justify-content-center border rounded" style="width:160px; height:96px; overflow:hidden; background:var(--desktop-surface);">
+                                @if ($companyHasLoginBackground)
+                                    <img src="{{ route('branding.login.background') }}" alt="Imagem de fundo atual do login" style="width:100%; height:100%; object-fit:cover;">
+                                @else
+                                    <i class="bi bi-image text-muted" style="font-size:2rem;"></i>
+                                @endif
+                            </div>
+                            <div class="flex-grow-1" style="min-width:220px;">
+                                <label class="form-label" for="login_background_image">Arquivo da imagem de fundo</label>
+                                <input type="file" class="form-control" id="login_background_image" name="login_background_image" accept="image/png, image/jpeg, image/webp">
+                                <small class="text-muted d-block mt-1">PNG, JPG ou WebP, ate 4&nbsp;MB. Recomendacao: imagem horizontal com pelo menos 1600px de largura.</small>
                             </div>
                         </div>
                     </div>
