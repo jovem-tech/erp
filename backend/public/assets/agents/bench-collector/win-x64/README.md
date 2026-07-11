@@ -29,7 +29,10 @@ powershell -ExecutionPolicy Bypass -File .\jovemtech-bench-collector.ps1 --dry-r
 
 Detecta hardware via WMI/CIM (`Get-CimInstance`), sem precisar rodar como
 administrador: placa-mae, BIOS, processador, RAM, discos, GPU e tipo de
-gabinete (mesmos codigos SMBIOS usados pelo build Linux). Serial prioriza
+gabinete (mesmos codigos SMBIOS usados pelo build Linux). Chipset nao tem
+uma classe WMI dedicada — usa a ponte ISA/LPC (`Win32_PnPEntity`) como
+proxy, mesma tecnica do `lspci` no build Linux; pode nao vir preenchido em
+placas mais novas ou incomuns. Serial prioriza
 BIOS/placa-mae/chassi; sem nenhum disponivel, cai pro MAC da primeira
 placa de rede fisica — mesma regra do build Linux e do `.exe` legado
 abaixo. Aceita certificado autoassinado do ERP (`ServerCertificateValidationCallback`

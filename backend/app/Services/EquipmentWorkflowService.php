@@ -394,13 +394,18 @@ class EquipmentWorkflowService
         return EquipmentCollectorPairing::query()->create([
             'user_id' => $user?->id,
             'code' => $code,
+            // Token de uso unico pra este pareamento — e' o que autoriza o
+            // POST /api/v1/collector/snapshots (ver storeCollectorSnapshot),
+            // no lugar do antigo segredo global compartilhado por todo
+            // mundo pra sempre. Cada codigo tem o seu, some quando expira.
+            'submission_token' => bin2hex(random_bytes(24)),
             'expires_at' => now()->addMinutes((int) config('services.collector.pairing_ttl_minutes', 30)),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
     }
 
-    public function storeCollectorSnapshot(array $payload): EquipmentCollectorPairing
+    public function storeCollectorSnapshot(array $payload, string $submissionToken = ''): EquipmentCollectorPairing
     {
         $pairing = EquipmentCollectorPairing::query()
             ->where('code', strtoupper(trim((string) ($payload['pairing_code'] ?? ''))))
@@ -416,6 +421,15 @@ class EquipmentWorkflowService
 
         if ($pairing->expires_at === null || $pairing->expires_at->isPast()) {
             throw new RuntimeException('Codigo de pareamento expirado.');
+        }
+
+        // Token de uso unico por pareamento (ver createCollectorPairing) —
+        // substitui o antigo segredo global; sem ele nenhum arquivo/comando
+        // que sai da empresa carrega um segredo valido pra sempre.
+        $expectedToken = (string) ($pairing->submission_token ?? '');
+        $providedToken = trim($submissionToken);
+        if ($expectedToken === '' || $providedToken === '' || ! hash_equals($expectedToken, $providedToken)) {
+            throw new RuntimeException('Token do coletor invalido para este pareamento.');
         }
 
         $snapshot = is_array($payload['snapshot'] ?? null) ? $payload['snapshot'] : [];
@@ -443,6 +457,97 @@ class EquipmentWorkflowService
         }
 
         return $pairing;
+    }
+
+    /**
+     * Gera um zip com o coletor Windows ja personalizado pro pareamento
+     * (codigo, URL do ERP e token embutidos no .ps1) + um .bat que so' da'
+     * duplo-clique nele — o cliente baixa e roda sem digitar comando
+     * nenhum. Ver bloco JOVEMTECH_PAIRING_DEFAULTS no topo do .ps1.
+     *
+     * @return array{filename: string, mime: string, content: string}
+     */
+    public function buildWindowsCollectorDownloadPackage(string $pairingCode): array
+    {
+        $pairing = EquipmentCollectorPairing::query()
+            ->where('code', strtoupper(trim($pairingCode)))
+            ->first();
+
+        if (! $pairing instanceof EquipmentCollectorPairing) {
+            throw new RuntimeException('Codigo de pareamento nao encontrado.');
+        }
+
+        if ($pairing->expires_at === null || $pairing->expires_at->isPast()) {
+            throw new RuntimeException('Codigo de pareamento expirado.');
+        }
+
+        $templatePath = public_path('assets/agents/bench-collector/win-x64/jovemtech-bench-collector.ps1');
+        if (! is_file($templatePath)) {
+            throw new RuntimeException('Modelo do coletor Windows nao encontrado.', 500);
+        }
+
+        $template = (string) file_get_contents($templatePath);
+        $erpBaseUrl = rtrim((string) config('app.url'), '/');
+        $token = (string) ($pairing->submission_token ?? '');
+
+        // Aspas simples do PowerShell escapam dobrando a aspa — mesma regra
+        // usada em qualquer string literal 'single-quoted' do PS.
+        $psEscape = static fn (string $value): string => str_replace("'", "''", $value);
+
+        $personalized = str_replace(
+            [
+                "\$DefaultPairingCode = ''",
+                "\$DefaultErpBaseUrl = ''",
+                "\$DefaultCollectorToken = ''",
+            ],
+            [
+                "\$DefaultPairingCode = '" . $psEscape($pairing->code) . "'",
+                "\$DefaultErpBaseUrl = '" . $psEscape($erpBaseUrl) . "'",
+                "\$DefaultCollectorToken = '" . $psEscape($token) . "'",
+            ],
+            $template,
+            $replacements
+        );
+
+        if ($replacements < 3) {
+            // Marcadores nao encontrados (modelo mudou) — nao publica um
+            // pacote sem os valores embutidos, silenciosamente incompleto.
+            throw new RuntimeException('Nao foi possivel personalizar o coletor (modelo desatualizado).', 500);
+        }
+
+        $batLauncher = <<<'BAT'
+            @echo off
+            title Coletor Jovem Tech
+            powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0jovemtech-bench-collector.ps1"
+            echo.
+            pause
+            BAT;
+
+        $toCrlf = static fn (string $value): string => str_replace("\n", "\r\n", str_replace("\r\n", "\n", $value));
+
+        $zipPath = tempnam(sys_get_temp_dir(), 'jtcollector_');
+        if ($zipPath === false) {
+            throw new RuntimeException('Nao foi possivel gerar o pacote do coletor.', 500);
+        }
+
+        $zip = new \ZipArchive();
+        if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
+            @unlink($zipPath);
+            throw new RuntimeException('Nao foi possivel gerar o pacote do coletor.', 500);
+        }
+
+        $zip->addFromString('jovemtech-bench-collector.ps1', $toCrlf($personalized));
+        $zip->addFromString('Rodar coletor.bat', $toCrlf($batLauncher));
+        $zip->close();
+
+        $content = (string) file_get_contents($zipPath);
+        @unlink($zipPath);
+
+        return [
+            'filename' => 'coletor-' . $pairing->code . '.zip',
+            'mime' => 'application/zip',
+            'content' => $content,
+        ];
     }
 
     /**

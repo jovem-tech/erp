@@ -100,10 +100,12 @@ class EquipmentController extends BaseApiController
         return $this->success([
             'pairing' => $this->mapCollectorPairing($pairing),
             // So' aqui, na criacao — o tecnico ja autenticado precisa do
-            // token pra montar o comando do coletor na maquina do cliente.
-            // Nao repetimos isto em showCollectorPairing (polling) para nao
-            // reexpor o segredo a cada consulta sem necessidade.
-            'collector_token' => (string) config('services.collector.token', ''),
+            // token pra montar o comando/pacote do coletor na maquina do
+            // cliente. Nao repetimos isto em showCollectorPairing (polling)
+            // para nao reexpor sem necessidade. Token de uso unico deste
+            // pareamento (nao um segredo global compartilhado) — ver
+            // EquipmentWorkflowService::createCollectorPairing().
+            'submission_token' => (string) ($pairing->submission_token ?? ''),
         ], Response::HTTP_CREATED, request: $request);
     }
 
@@ -125,6 +127,33 @@ class EquipmentController extends BaseApiController
         return $this->success([
             'pairing' => $this->mapCollectorPairing($pairing),
         ], request: $request);
+    }
+
+    /**
+     * Zip com o coletor Windows ja personalizado (codigo, URL do ERP e
+     * token embutidos) + atalho .bat — baixa e roda com dois cliques, sem
+     * precisar digitar comando nenhum na maquina do cliente.
+     */
+    public function downloadWindowsCollectorPackage(Request $request, string $code): Response|JsonResponse
+    {
+        $this->authorizeEquipmentFormAccess($request);
+
+        try {
+            $package = $this->equipmentWorkflowService->buildWindowsCollectorDownloadPackage($code);
+        } catch (Throwable $exception) {
+            return $this->error(
+                $exception->getMessage() !== '' ? $exception->getMessage() : 'Nao foi possivel gerar o pacote do coletor.',
+                422,
+                'COLLECTOR_PACKAGE_FAILED',
+                null,
+                request: $request
+            );
+        }
+
+        return response($package['content'], Response::HTTP_OK, [
+            'Content-Type' => $package['mime'],
+            'Content-Disposition' => 'attachment; filename="' . $package['filename'] . '"',
+        ]);
     }
 
     public function localCollectorSnapshot(Request $request): JsonResponse

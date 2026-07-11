@@ -17,18 +17,10 @@ class EquipmentCollectorController extends BaseApiController
 
     public function storeSnapshot(Request $request): JsonResponse
     {
-        $token = trim((string) $request->header('X-Collector-Token', ''));
-        $expectedToken = trim((string) config('services.collector.token', ''));
-
-        if ($expectedToken === '' || ! hash_equals($expectedToken, $token)) {
-            return $this->error(
-                'Token do coletor invalido.',
-                Response::HTTP_UNAUTHORIZED,
-                'COLLECTOR_TOKEN_INVALID',
-                null,
-                request: $request
-            );
-        }
+        // Autorizacao e por pareamento agora (token de uso unico gerado em
+        // createCollectorPairing), nao mais um segredo global fixo — ver
+        // EquipmentWorkflowService::storeCollectorSnapshot().
+        $submissionToken = trim((string) $request->header('X-Collector-Token', ''));
 
         $payload = $request->validate([
             'pairing_code' => ['required', 'string', 'max:32'],
@@ -39,7 +31,7 @@ class EquipmentCollectorController extends BaseApiController
         ]);
 
         try {
-            $pairing = $this->equipmentWorkflowService->storeCollectorSnapshot($payload);
+            $pairing = $this->equipmentWorkflowService->storeCollectorSnapshot($payload, $submissionToken);
         } catch (Throwable $exception) {
             report($exception);
 

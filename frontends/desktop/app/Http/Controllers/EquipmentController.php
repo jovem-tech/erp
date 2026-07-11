@@ -388,6 +388,21 @@ class EquipmentController extends DesktopController
         ]);
     }
 
+    public function downloadWindowsCollectorPackage(string $code)
+    {
+        try {
+            $download = $this->equipmentService->downloadWindowsCollectorPackage($code);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException $exception) {
+            return redirect()->route('equipments.index')->with('error', $exception->getMessage());
+        } catch (ApiRequestException $exception) {
+            abort($exception->statusCode() > 0 ? $exception->statusCode() : 422, $exception->getMessage());
+        }
+
+        return response($download['body'], $download['status'], $download['headers']);
+    }
+
     public function photo(int $equipment, int $photo)
     {
         try {

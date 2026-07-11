@@ -699,6 +699,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/equipamentos/coletor/pareamentos/{code}', [EquipmentController::class, 'showCollectorPairing'])
         ->middleware('desktop.permission:equipamentos,criar|editar')
         ->name('equipments.collector-pairings.show');
+    Route::get('/equipamentos/coletor/pareamentos/{code}/baixar/windows', [EquipmentController::class, 'downloadWindowsCollectorPackage'])
+        ->middleware('desktop.permission:equipamentos,criar|editar')
+        ->name('equipments.collector-pairings.download-windows');
     Route::get('/equipamentos/{equipment}/fotos/{photo}', [EquipmentController::class, 'photo'])
         ->middleware('desktop.permission:equipamentos,visualizar|editar')
         ->name('equipments.photos.show');
