@@ -232,6 +232,7 @@ Route::prefix('v1')->group(function (): void {
         Route::post('equipments/collector/local-collect', [EquipmentController::class, 'localCollectorCollect'])->name('api.v1.equipments.collector.local_collect');
         Route::post('equipments/collector-pairings', [EquipmentController::class, 'createCollectorPairing'])->name('api.v1.equipments.collector_pairings.store');
         Route::get('equipments/collector-pairings/{code}', [EquipmentController::class, 'showCollectorPairing'])->name('api.v1.equipments.collector_pairings.show');
+        Route::get('equipments/collector-pairings/{code}/download/windows', [EquipmentController::class, 'downloadWindowsCollectorPackage'])->name('api.v1.equipments.collector_pairings.download_windows');
         Route::get('equipments', [EquipmentController::class, 'index'])->name('api.v1.equipments.index');
         Route::post('equipments', [EquipmentController::class, 'store'])->name('api.v1.equipments.store');
         Route::match(['put', 'patch'], 'equipments/{equipment}', [EquipmentController::class, 'update'])->name('api.v1.equipments.update');

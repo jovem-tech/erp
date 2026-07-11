@@ -370,16 +370,25 @@
                             </button>
                         </div>
                         <div class="equipment-collector-command d-none" id="collectorPairingCommandWrapperWindows">
-                            <label class="equipment-collector-command-label" for="collectorPairingCommandWindows">Comando para rodar na máquina do cliente (Windows)</label>
-                            <div class="equipment-collector-command-row">
-                                <code id="collectorPairingCommandWindows"></code>
-                                <button type="button" class="btn btn-outline-light btn-sm" id="collectorPairingCommandCopyWindows" title="Copiar comando" aria-label="Copiar comando">
-                                    <i class="bi bi-clipboard"></i>
-                                </button>
-                            </div>
-                            @if ($collectorWindowsDownloadUrl !== '')
-                                <p class="surface-subtitle mb-0">Baixe o script em <a href="{{ $collectorWindowsDownloadUrl }}" target="_blank" rel="noopener">{{ $collectorWindowsDownloadUrl }}</a> e copie para o computador do cliente antes de rodar.</p>
-                            @endif
+                            <p class="equipment-collector-command-label mb-0">Windows</p>
+                            <a href="#" class="btn btn-primary d-none" id="collectorPairingDownloadWindows" download>
+                                <i class="bi bi-file-earmark-zip me-2"></i>
+                                Baixar coletor pronto (.zip)
+                            </a>
+                            <p class="surface-subtitle mb-0">Baixe, extraia e dê duplo clique em <span class="font-monospace">Rodar coletor.bat</span> no computador do cliente — código, endereço do ERP e token já vêm preenchidos, sem digitar nada.</p>
+                            <details class="equipment-collector-command-manual">
+                                <summary>Prefiro rodar manualmente (comando)</summary>
+                                <label class="equipment-collector-command-label" for="collectorPairingCommandWindows">Comando para rodar na máquina do cliente</label>
+                                <div class="equipment-collector-command-row">
+                                    <code id="collectorPairingCommandWindows"></code>
+                                    <button type="button" class="btn btn-outline-light btn-sm" id="collectorPairingCommandCopyWindows" title="Copiar comando" aria-label="Copiar comando">
+                                        <i class="bi bi-clipboard"></i>
+                                    </button>
+                                </div>
+                                @if ($collectorWindowsDownloadUrl !== '')
+                                    <p class="surface-subtitle mb-0">Baixe o script em <a href="{{ $collectorWindowsDownloadUrl }}" target="_blank" rel="noopener">{{ $collectorWindowsDownloadUrl }}</a> e copie para o computador do cliente antes de rodar.</p>
+                                @endif
+                            </details>
                         </div>
                         <div class="equipment-collector-command d-none" id="collectorPairingCommandWrapperLinux">
                             <label class="equipment-collector-command-label" for="collectorPairingCommandLinux">Comando para rodar na máquina do cliente (Linux)</label>
@@ -598,6 +607,7 @@
                 'suggestModels' => route('equipments.models.suggestions'),
                 'createPairing' => route('equipments.collector-pairings.store'),
                 'getPairing' => route('equipments.collector-pairings.show', ['code' => '__CODE__']),
+                'downloadWindowsCollector' => route('equipments.collector-pairings.download-windows', ['code' => '__CODE__']),
             ],
         ]) !!};
     </script>

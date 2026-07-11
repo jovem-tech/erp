@@ -31,6 +31,18 @@
 
 $ErrorActionPreference = 'SilentlyContinue'
 
+# === JOVEMTECH_PAIRING_DEFAULTS =============================================
+# Bloco preenchido automaticamente pelo ERP no "Baixar coletor pronto" (tela
+# de pareamento remoto) — cada download gera uma copia deste script com os
+# tres valores abaixo ja substituidos, pra rodar sem precisar digitar nada
+# nem abrir terminal. Deixados em branco aqui na versao "crua"/generica do
+# repositorio; --pairing-code/--erp-base-url/--collector-token na linha de
+# comando (mais abaixo) sempre tem prioridade sobre estes defaults.
+$DefaultPairingCode = ''
+$DefaultErpBaseUrl = ''
+$DefaultCollectorToken = ''
+# === /JOVEMTECH_PAIRING_DEFAULTS ============================================
+
 $DryRun = $false
 $PairingCode = ''
 $ErpBaseUrl = ''
@@ -50,6 +62,10 @@ foreach ($arg in $args) {
         $CollectorToken = $Matches[1]
     }
 }
+
+if ($PairingCode -eq '') { $PairingCode = $DefaultPairingCode }
+if ($ErpBaseUrl -eq '') { $ErpBaseUrl = $DefaultErpBaseUrl.TrimEnd('/') }
+if ($CollectorToken -eq '') { $CollectorToken = $DefaultCollectorToken }
 
 function Clean-DmiValue {
     param([string]$Value)
@@ -146,6 +162,26 @@ foreach ($video in $videoControllers) {
 }
 $gpu = $gpuParts -join '; '
 
+# Chipset: nao existe uma classe WMI dedicada, entao usa a ponte ISA/LPC
+# (southbridge) via Win32_PnPEntity como proxy - mesma tecnica do lspci no
+# build Linux. O nome amigavel do dispositivo geralmente inclui a familia
+# do chipset (ex.: "Intel(R) 8 Series/C220 Series Chipset Family LPC
+# Controller").
+$chipset = ''
+$chipsetDevice = Get-CimInstance -ClassName Win32_PnPEntity -ErrorAction SilentlyContinue | Where-Object {
+    $_.Name -match 'ISA Bridge|LPC Controller|LPC Interface'
+} | Select-Object -First 1
+
+if (-not $chipsetDevice) {
+    $chipsetDevice = Get-CimInstance -ClassName Win32_PnPEntity -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name -match 'SMBus'
+    } | Select-Object -First 1
+}
+
+if ($chipsetDevice -and $chipsetDevice.Name) {
+    $chipset = Clean-DmiValue $chipsetDevice.Name
+}
+
 # Mesmos codigos numericos SMBIOS usados pelo /sys/class/dmi/id/chassis_type
 # no Linux - Win32_SystemEnclosure.ChassisTypes usa a mesma tabela.
 $chassisTypeCode = $null
@@ -187,7 +223,7 @@ $nowLocal = Get-Date
 
 $snapshot = [ordered]@{
     motherboard    = $motherboard
-    chipset        = ''
+    chipset        = $chipset
     cpu            = $cpu
     gpu            = $gpu
     storageSummary = $storageSummary

@@ -190,6 +190,25 @@ if command -v lspci >/dev/null 2>&1; then
         | sed 's/;/; /g')"
 fi
 
+# Chipset: nao tem um campo dedicado no /sys/class/dmi/id (precisaria de
+# dmidecode + root), entao usa a ponte ISA/LPC (southbridge) do lspci como
+# proxy — o nome do dispositivo geralmente inclui a familia do chipset
+# (ex.: "Intel 8 Series/C220 Series Chipset..." ou "AMD SB7x0/SB8x0..."),
+# igual ja documentado como limitacao no README.
+chipset=""
+if command -v lspci >/dev/null 2>&1; then
+    chipset="$(lspci 2>/dev/null \
+        | grep -Ei 'ISA bridge|LPC Controller' \
+        | head -n1 \
+        | sed -E 's/^[0-9a-f:.]+ [A-Za-z0-9 ]+: //')"
+    if [ -z "$chipset" ]; then
+        chipset="$(lspci 2>/dev/null \
+            | grep -Ei 'SMBus' \
+            | head -n1 \
+            | sed -E 's/^[0-9a-f:.]+ [A-Za-z0-9 ]+: //')"
+    fi
+fi
+
 # Tipo de chassi (tabela SMBIOS) — strings escolhidas para casar com os
 # substrings que EquipmentWorkflowService::mapChassisTypeToCaseType() procura.
 chassis_type=""
@@ -227,7 +246,7 @@ hostname_value="$(hostname 2>/dev/null || echo '')"
 snapshot_json=$(cat <<EOF
 {
     "motherboard": "$(json_escape "$motherboard")",
-    "chipset": "",
+    "chipset": "$(json_escape "$chipset")",
     "cpu": "$(json_escape "$cpu")",
     "gpu": "$(json_escape "$gpu")",
     "storageSummary": "$(json_escape "$storage_summary")",

@@ -1143,6 +1143,21 @@ a {
     font-size: 0.82rem;
 }
 
+.equipment-collector-command-manual {
+    margin-top: 0.15rem;
+}
+
+.equipment-collector-command-manual summary {
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: var(--desktop-text-soft);
+}
+
+.equipment-collector-command-manual[open] summary {
+    margin-bottom: 0.5rem;
+}
+
 .equipment-collector-status {
     display: inline-flex;
     align-items: center;

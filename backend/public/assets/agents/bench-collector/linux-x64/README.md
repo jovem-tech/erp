@@ -43,7 +43,8 @@ Grava so o `last-snapshot.json` ao lado do script, para conferencia manual.
 
 ## Campos coletados
 
-`motherboard`, `chipset` (nao detectavel sem `dmidecode`/root — fica vazio),
+`motherboard`, `chipset` (via ponte ISA/LPC do `lspci` — nao e um campo
+dedicado, entao em placas mais novas ou incomuns pode nao vir preenchido),
 `cpu`, `gpu`, `storageSummary`, `memorySummary`/`ramGb`, `serialNumber` (com
 `serialSource` indicando a origem), `manufacturer`, `model`, `deviceType`
 (`desktop`/`notebook`), `chassisType`, `biosVendor`, `biosVersion` — mesmo
@@ -68,9 +69,9 @@ contrato de campos usado pelo build Windows (`JovemTechBenchCollector.exe`).
   funciona sem ele);
 - o envio usa `curl -k` (aceita certificado autoassinado), pois o ERP na
   rede local normalmente nao tem certificado publico valido;
-- o token do coletor (`--collector-token`) e um segredo compartilhado entre
-  todos os coletores e o endpoint publico do ERP — nao o publique fora da
-  tela autenticada do ERP.
+- o token do coletor (`--collector-token`) e de uso unico por pareamento —
+  gerado junto com o codigo, some quando o pareamento expira ou e consumido.
+  Nao e mais um segredo global fixo; cada codigo tem o seu proprio.
 
 ## Diferenca em relacao ao build Windows
 

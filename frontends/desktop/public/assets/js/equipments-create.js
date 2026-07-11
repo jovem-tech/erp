@@ -89,6 +89,7 @@
         collectorStatus: document.getElementById('collectorPairingStatus'),
         collectorCreate: document.getElementById('collectorPairingCreate'),
         collectorImport: document.getElementById('collectorPairingImport'),
+        collectorDownloadWindows: document.getElementById('collectorPairingDownloadWindows'),
         collectorCommandWrapperWindows: document.getElementById('collectorPairingCommandWrapperWindows'),
         collectorCommandCodeWindows: document.getElementById('collectorPairingCommandWindows'),
         collectorCommandCopyWindows: document.getElementById('collectorPairingCommandCopyWindows'),
@@ -1920,7 +1921,23 @@
         wrapperEl.classList.remove('d-none');
     };
 
+    const showWindowsDownloadLink = (code, token) => {
+        if (!(els.collectorDownloadWindows instanceof HTMLAnchorElement)) {
+            return;
+        }
+
+        if (!code || !token || !config.routes?.downloadWindowsCollector) {
+            els.collectorDownloadWindows.classList.add('d-none');
+            els.collectorDownloadWindows.href = '#';
+            return;
+        }
+
+        els.collectorDownloadWindows.href = config.routes.downloadWindowsCollector.replace('__CODE__', encodeURIComponent(code));
+        els.collectorDownloadWindows.classList.remove('d-none');
+    };
+
     const showPairingCommand = (code, token) => {
+        showWindowsDownloadLink(code, token);
         showPairingCommandFor(
             els.collectorCommandWrapperWindows,
             els.collectorCommandCodeWindows,
@@ -1977,7 +1994,7 @@
                     els.collectorImport.disabled = true;
                 }
 
-                showPairingCommand(code, pairing.collector_token || '');
+                showPairingCommand(code, pairing.submission_token || '');
                 setPairingStatus('Aguardando envio do cliente...', 'waiting');
                 pollCollectorPairing(code);
             } catch (error) {

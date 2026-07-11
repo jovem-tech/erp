@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.4.1.0 — 2026-07-11 20:07
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** correção do coletor dois cliques sem comando
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/EquipmentCollectorController.php,backend/app/Http/Controllers/Api/V1/EquipmentController.php,backend/app/Services/EquipmentWorkflowService.php,backend/database/migrations/2026_07_11_190000_add_submission_token_to_equipment_collector_pairings_table.php,backend/public/assets/agents/bench-collector/linux-x64/jovemtech-bench-collector.sh,backend/public/assets/agents/bench-collector/linux-x64/README.md,backend/public/assets/agents/bench-collector/win-x64/jovemtech-bench-collector.ps1,backend/public/assets/agents/bench-collector/win-x64/README.md,backend/routes/api.php,frontends/desktop/app/Http/Controllers/EquipmentController.php,frontends/desktop/app/Services/EquipmentService.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/public/assets/js/equipments-create.js,frontends/desktop/resources/views/equipments/create.blade.php,frontends/desktop/routes/web.php
+
 ## v4.4.0.0 — 2026-07-11 18:43
 - **Tier:** minor
 - **Autor/Agente:** Codex

@@ -150,7 +150,7 @@ class EquipmentService
         $response = $this->apiClient->post('/equipments/collector-pairings');
 
         $pairing = is_array($response['data']['pairing'] ?? null) ? $response['data']['pairing'] : [];
-        $pairing['collector_token'] = (string) ($response['data']['collector_token'] ?? '');
+        $pairing['submission_token'] = (string) ($response['data']['submission_token'] ?? '');
 
         return $pairing;
     }
@@ -171,5 +171,13 @@ class EquipmentService
     public function downloadPhoto(int $equipmentId, int $photoId): array
     {
         return $this->apiClient->download('/equipments/' . $equipmentId . '/photos/' . $photoId);
+    }
+
+    /**
+     * @return array{body: string, headers: array<string, string>, status: int}
+     */
+    public function downloadWindowsCollectorPackage(string $pairingCode): array
+    {
+        return $this->apiClient->download('/equipments/collector-pairings/' . rawurlencode($pairingCode) . '/download/windows');
     }
 }
