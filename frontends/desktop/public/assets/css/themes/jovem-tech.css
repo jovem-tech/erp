@@ -64,6 +64,10 @@
     color: #FFFFFF;
 }
 
+[data-theme="jovem-tech"] .desktop-sidebar .desktop-brand-copy small {
+    color: rgba(255, 255, 255, 0.78);
+}
+
 [data-theme="jovem-tech"] .desktop-sidebar-toggle {
     color: rgba(255, 255, 255, 0.65);
 }
