@@ -6,6 +6,9 @@
 #   - a mesma heurística objetiva de scripts/classify-change.sh (aplicada ao que
 #     ainda não foi commitado: staged + working tree, contra HEAD)
 #   - scripts/bump-version.sh (quem de fato grava VERSION/CHANGELOG.md/shared/version.php)
+#   - scripts/bash/sync-agent-docs.sh (quando existir), para regenerar
+#     documentacao/04-governanca-ai/manifesto-do-sistema.md e
+#     documentacao/04-governanca-ai/contexto-sistema.json com a nova versão
 #
 # Modo interativo (padrão): pergunta o tier (sugerindo um, com o motivo) e a
 # descrição, monta a lista de arquivos sozinho e chama bump-version.sh.
@@ -13,8 +16,9 @@
 # Modo não-interativo (compatível com o bump-version.sh de sempre):
 #   ./scripts/versionar.sh --tier=major|minor|patch|hotfix --desc="descrição" [--files="a,b"]
 #
-# Só mexe em VERSION/CHANGELOG.md/shared/version.php — não dá commit nem push.
-# Isso é trabalho do scripts/bash/deploy-completo.sh, de propósito, para manter
+# Grava VERSION/CHANGELOG.md/shared/version.php e, quando disponível, sincroniza
+# os artefatos gerados da documentação de agentes. Não dá commit nem push. Isso
+# é trabalho do scripts/bash/deploy-completo.sh, de propósito, para manter
 # "registrar a versão" e "publicar no git" como passos independentes.
 #
 # Ver VERSIONING.md para os critérios completos de classificação.
@@ -23,6 +27,26 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUMP_SCRIPT="$ROOT_DIR/scripts/bump-version.sh"
+SYNC_AGENT_DOCS_SCRIPT="$ROOT_DIR/scripts/bash/sync-agent-docs.sh"
+
+collect_changed_files() {
+  local name_status untracked
+
+  name_status="$(git diff HEAD --name-status 2>/dev/null || true)"
+  untracked="$(git status --porcelain 2>/dev/null | awk '$1=="??"{print $2}' || true)"
+
+  {
+    echo "$name_status" | awk '{print $2}'
+    echo "$untracked"
+  } | grep -v -E '^(VERSION|CHANGELOG\.md|shared/version\.php)$' | grep -v '^$' | sort -u | paste -sd, -
+}
+
+run_post_version_sync() {
+  if [[ -f "$SYNC_AGENT_DOCS_SCRIPT" ]]; then
+    echo ">>> Sincronizando documentação gerada para agentes"
+    bash "$SYNC_AGENT_DOCS_SCRIPT"
+  fi
+}
 
 cd "$ROOT_DIR"
 
@@ -43,6 +67,7 @@ for arg in "$@"; do
     -h|--help)
       echo "Uso interativo: $0"
       echo "Uso direto:     $0 --tier=major|minor|patch|hotfix --desc=\"descrição\" [--files=\"a,b\"]"
+      echo "                Se --files for omitido, a lista de arquivos alterados é detectada automaticamente."
       exit 0
       ;;
     *)
@@ -54,7 +79,11 @@ done
 
 # --- Modo não-interativo: se tier e descrição já vieram por flag, não pergunta nada ---
 if [[ -n "$TIER" && -n "$DESC" ]]; then
+  if [[ -z "$FILES" ]]; then
+    FILES="$(collect_changed_files)"
+  fi
   bash "$BUMP_SCRIPT" --tier="$TIER" --desc="$DESC" ${FILES:+--files="$FILES"}
+  run_post_version_sync
   exit 0
 fi
 
@@ -129,12 +158,7 @@ while [[ -z "$DESC" ]]; do
 done
 
 # Lista de arquivos alterados, sem os que o próprio bump-version.sh vai reescrever.
-FILES_LIST=$(
-  {
-    echo "$NAME_STATUS" | awk '{print $2}'
-    echo "$UNTRACKED"
-  } | grep -v -E '^(VERSION|CHANGELOG\.md|shared/version\.php)$' | grep -v '^$' | sort -u | paste -sd, -
-)
+FILES_LIST="$(collect_changed_files)"
 
 echo ""
 echo "=== Confirmação ==="
@@ -148,3 +172,4 @@ if [[ ! "$CONFIRM" =~ ^[sS]$ ]]; then
 fi
 
 bash "$BUMP_SCRIPT" --tier="$TIER" --desc="$DESC" ${FILES_LIST:+--files="$FILES_LIST"}
+run_post_version_sync

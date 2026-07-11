@@ -590,6 +590,7 @@ class OrderController extends DesktopController
             'equipamento_id' => ['required', 'integer', 'min:1'],
             'relato_cliente' => ['required', 'string', 'min:5'],
             'prioridade' => ['nullable', 'string', 'in:baixa,normal,alta,urgente'],
+            'enviar_pdf_cliente' => ['nullable', 'boolean'],
             'tecnico_id' => ['nullable', 'integer', 'min:1'],
             'data_previsao' => ['nullable', 'date'],
             'observacoes_internas' => ['nullable', 'string'],
@@ -620,20 +621,48 @@ class OrderController extends DesktopController
             'data_previsao' => $validated['data_previsao'] ?? null,
             'observacoes_internas' => trim((string) ($validated['observacoes_internas'] ?? '')),
         ], static fn ($value): bool => $value !== null && $value !== '');
+        $payload['enviar_pdf_cliente'] = $request->boolean('enviar_pdf_cliente');
 
         $entryChecklistPayload = $this->buildEntryChecklistPayload($validated);
         if ($entryChecklistPayload !== []) {
             $payload['checklist_entrada'] = $entryChecklistPayload;
         }
 
-        $order = $this->orderService->create(
+        $result = $this->orderService->create(
             $payload,
             $this->extractUploadedFiles($request, 'fotos')
         );
+        $order = is_array($result['order'] ?? null) ? $result['order'] : [];
+        $openingDocument = is_array($result['opening_document'] ?? null) ? $result['opening_document'] : [];
+        $openingDelivery = is_array($result['opening_delivery'] ?? null) ? $result['opening_delivery'] : [];
 
-        return redirect()
+        $successMessage = 'Nova OS criada com sucesso.';
+        if ((bool) ($openingDocument['generated'] ?? false)) {
+            $successMessage .= ' PDF de abertura gerado.';
+        }
+
+        $warnings = [];
+        if (! (bool) ($openingDocument['generated'] ?? false) && trim((string) ($openingDocument['message'] ?? '')) !== '') {
+            $warnings[] = (string) $openingDocument['message'];
+        }
+
+        if ((bool) ($openingDelivery['requested'] ?? false)) {
+            if ((bool) ($openingDelivery['sent'] ?? false)) {
+                $successMessage .= ' Documento enviado ao cliente.';
+            } elseif (trim((string) ($openingDelivery['message'] ?? '')) !== '') {
+                $warnings[] = (string) $openingDelivery['message'];
+            }
+        }
+
+        $redirect = redirect()
             ->route('orders.show', $order['id'] ?? 0)
-            ->with('success', 'Nova OS criada com sucesso.');
+            ->with('success', $successMessage);
+
+        if ($warnings !== []) {
+            $redirect = $redirect->with('warning', implode(' ', array_unique($warnings)));
+        }
+
+        return $redirect;
     }
 
     public function show(int $order): View

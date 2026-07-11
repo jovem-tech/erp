@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-07-09T23:14:07+00:00",
+    "generated_at": "2026-07-11T21:43:28+00:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "3.20.0",
+        "app_version": "4.4.0",
         "api_version": "1.1.2",
         "production_target": "Ubuntu VPS",
         "development_target": "Windows/XAMPP"
@@ -92,6 +92,10 @@
                     "title": "Contrato da API do Backend Central"
                 },
                 {
+                    "file": "documentacao/03-arquitetura-tecnica/eventos-os.md",
+                    "title": "Timeline de Eventos da OS (`os_eventos`)"
+                },
+                {
                     "file": "documentacao/03-arquitetura-tecnica/frontend-desktop-laravel.md",
                     "title": "Frontend Desktop Laravel"
                 },
@@ -102,6 +106,10 @@
                 {
                     "file": "documentacao/03-arquitetura-tecnica/mapa-migracao-legado-frontend-sistema-hml.md",
                     "title": "Mapa Completo de Migração e Limpeza do `frontend/sistema-hml`"
+                },
+                {
+                    "file": "documentacao/03-arquitetura-tecnica/notificacoes-sino.md",
+                    "title": "Notificações do Sino (desktop) — emissores, prazos e tempo real"
                 },
                 {
                     "file": "documentacao/03-arquitetura-tecnica/ordens-mobile.md",
@@ -406,6 +414,14 @@
                     "title": "Overhaul do modal Alterar status da OS: procedimentos, diagnostico/solucao e notificacao ao cliente"
                 },
                 {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-11-fotos-sem-corte-e-visualizador-modal.md",
+                    "title": "Fotos sem corte e visualizador modal no desktop"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-11-os-abertura-pdf-e-envio-whatsapp.md",
+                    "title": "OS — PDF de abertura e envio opcional ao cliente"
+                },
+                {
                     "file": "documentacao/07-novas-implementacoes/historico-de-versoes.md",
                     "title": "Historico de versoes"
                 }
@@ -442,21 +458,6 @@
         }
     ],
     "specs": [
-        {
-            "directory": "specs/001-fundacao-fisica",
-            "title": "001-fundacao-fisica",
-            "artifacts": {
-                "spec": false,
-                "plan": false,
-                "tasks": false,
-                "research": false,
-                "quickstart": false,
-                "analysis": false,
-                "data_model": false,
-                "contracts": false,
-                "checklists": false
-            }
-        },
         {
             "directory": "specs/002-infraestrutura-ambientes",
             "title": "Spec: Infraestrutura de Desenvolvimento e Produção",

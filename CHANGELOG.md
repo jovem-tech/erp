@@ -1,5 +1,29 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.4.0.0 — 2026-07-11 18:43
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** implantaçãodo coletor de harwares
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/EquipmentController.php,backend/app/Http/Controllers/Api/V1/OrderController.php,backend/app/Http/Requests/Api/V1/UpsertOrderRequest.php,backend/app/Services/EquipmentWorkflowService.php,backend/app/Services/Orders/OrderOpeningPdfService.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/app/Support/Knowledge/PlaceholderCatalog.php,backend/config/services.php,backend/.env.production.example,backend/openapi.yaml,backend/public/assets/agents/bench-collector/linux-x64/jovemtech-bench-collector.sh,backend/public/assets/agents/bench-collector/linux-x64/README.md,backend/public/assets/agents/bench-collector/win-x64/jovemtech-bench-collector.ps1,backend/public/assets/agents/bench-collector/win-x64/README.md,backend/tests/Concerns/BuildsLegacyErpSchema.php,backend/tests/Feature/Api/V1/OrderFlowTest.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,documentacao/07-novas-implementacoes/2026-07-11-fotos-sem-corte-e-visualizador-modal.md,documentacao/07-novas-implementacoes/2026-07-11-os-abertura-pdf-e-envio-whatsapp.md,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/app/Services/EquipmentService.php,frontends/desktop/app/Services/OrderService.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/public/assets/js/desktop.js,frontends/desktop/public/assets/js/equipments-create.js,frontends/desktop/resources/views/equipments/create.blade.php,frontends/desktop/resources/views/equipments/show.blade.php,frontends/desktop/resources/views/layouts/partials/photo-viewer-modal.blade.php,frontends/desktop/resources/views/orders/closure.blade.php,frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/resources/views/orders/_wizard.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,scripts/versionar.sh,VERSIONING.md
+
+## v4.3.0.0 — 2026-07-11 16:07
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** restaura o PDF de abertura da OS, vincula o documento e adiciona envio opcional ao cliente
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/OrderController.php,backend/app/Http/Requests/Api/V1/UpsertOrderRequest.php,backend/app/Services/Orders/OrderOpeningPdfService.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/app/Support/Knowledge/PlaceholderCatalog.php,backend/openapi.yaml,backend/tests/Concerns/BuildsLegacyErpSchema.php,backend/tests/Feature/Api/V1/OrderFlowTest.php,documentacao/07-novas-implementacoes/2026-07-11-os-abertura-pdf-e-envio-whatsapp.md,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/app/Services/OrderService.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/resources/views/orders/_wizard.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.2.0.1 — 2026-07-11 13:03
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** restaura css dos filtros do historico da os
+- **Arquivos:** frontends/desktop/public/assets/css/desktop.css
+
+## v4.2.0.0 — 2026-07-11 10:36
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Fotos do desktop sem corte, visualizador modal e melhorias no versionar.sh com sincronização automática da documentação de agentes
+- **Arquivos:** documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,documentacao/07-novas-implementacoes/2026-07-11-fotos-sem-corte-e-visualizador-modal.md,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/public/assets/js/desktop.js,frontends/desktop/public/assets/js/equipments-create.js,frontends/desktop/resources/views/equipments/create.blade.php,frontends/desktop/resources/views/equipments/show.blade.php,frontends/desktop/resources/views/layouts/partials/photo-viewer-modal.blade.php,frontends/desktop/resources/views/orders/closure.blade.php,frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,scripts/versionar.sh,VERSIONING.md
+
 ## v4.1.0.1 — 2026-07-10 22:04
 - **Tier:** hotfix
 - **Autor/Agente:** Codex

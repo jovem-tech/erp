@@ -130,7 +130,11 @@ class OrderController extends BaseApiController
 
         return match ($result['result'] ?? 'error') {
             'ok' => $this->success(
-                ['order' => $result['order'] ?? null],
+                [
+                    'order' => $result['order'] ?? null,
+                    'opening_document' => $result['opening_document'] ?? null,
+                    'opening_delivery' => $result['opening_delivery'] ?? null,
+                ],
                 201,
                 request: $request
             ),

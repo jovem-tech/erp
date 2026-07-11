@@ -65,7 +65,7 @@ class OrderService
             $response = $this->apiClient->post('/orders', $payload);
         }
 
-        return $response['data']['order'] ?? [];
+        return $response['data'] ?? [];
     }
 
     /**

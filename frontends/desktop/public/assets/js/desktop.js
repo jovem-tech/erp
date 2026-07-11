@@ -304,6 +304,7 @@ const DesktopUi = (() => {
         }
 
         if (unreadCount > 0) {
+            // Quantidade exata, sem teto "9+" — pedido explicito do usuario.
             notificationBadge.textContent = String(unreadCount);
             notificationBadge.classList.remove('d-none');
             return;
@@ -352,9 +353,8 @@ const DesktopUi = (() => {
             const title = escapeHtml(notification?.titulo || 'Notificação');
             const body = escapeHtml(notification?.corpo || '');
             const humanTime = escapeHtml(notification?.criada_em_humano || 'Agora');
-            // open_url passa pela rota notifications.open, que marca a
-            // notificacao como lida ANTES de redirecionar ao destino — o link
-            // direto (url) deixava a notificacao "nao lida" para sempre.
+            // open_url passa por /notificacoes/{id}/abrir: marca como lida e
+            // redireciona ao destino — o link direto (url) nao marcava leitura.
             const url = escapeHtml(notification?.open_url || notification?.url || '#');
 
             return `
@@ -1149,6 +1149,206 @@ const DesktopUi = (() => {
         });
     };
 
+    const initPhotoViewers = (container = document) => {
+        const scope = container instanceof Document || container instanceof Element ? container : document;
+        const modalElement = document.getElementById('desktopPhotoViewerModal');
+        const imageElement = document.getElementById('desktopPhotoViewerImage');
+        const titleElement = document.getElementById('desktopPhotoViewerTitle');
+        const counterElement = document.getElementById('desktopPhotoViewerCounter');
+        const openFullLink = document.getElementById('desktopPhotoViewerOpenFull');
+        const prevButton = document.getElementById('desktopPhotoViewerPrev');
+        const nextButton = document.getElementById('desktopPhotoViewerNext');
+
+        const openInNewTab = (url) => {
+            if (typeof url === 'string' && url !== '') {
+                window.open(url, '_blank', 'noopener,noreferrer');
+            }
+        };
+
+        if (!(modalElement instanceof HTMLElement)
+            || !(imageElement instanceof HTMLImageElement)
+            || !(titleElement instanceof HTMLElement)
+            || !(counterElement instanceof HTMLElement)
+            || !(openFullLink instanceof HTMLAnchorElement)
+            || !(prevButton instanceof HTMLButtonElement)
+            || !(nextButton instanceof HTMLButtonElement)) {
+            scope.querySelectorAll('[data-photo-viewer-trigger]').forEach((trigger) => {
+                if (!(trigger instanceof HTMLElement) || trigger.dataset.photoViewerFallbackBound === '1') {
+                    return;
+                }
+
+                trigger.dataset.photoViewerFallbackBound = '1';
+                trigger.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    openInNewTab(trigger.getAttribute('data-photo-viewer-open-full-url')
+                        || trigger.getAttribute('data-photo-viewer-url')
+                        || (trigger instanceof HTMLAnchorElement ? trigger.href : ''));
+                });
+            });
+
+            return;
+        }
+
+        const state = modalElement.__photoViewerState || { items: [], index: 0 };
+        modalElement.__photoViewerState = state;
+
+        const getViewerTriggers = (group) => Array
+            .from(document.querySelectorAll('[data-photo-viewer-trigger]'))
+            .filter((element) => element instanceof HTMLElement)
+            .filter((element) => {
+                if (group === '') {
+                    return false;
+                }
+
+                return (element.getAttribute('data-photo-viewer-group') || '') === group;
+            });
+
+        const resolveTriggerUrl = (trigger) => {
+            if (!(trigger instanceof HTMLElement)) {
+                return '';
+            }
+
+            const explicitUrl = trigger.getAttribute('data-photo-viewer-url') || '';
+            if (explicitUrl !== '') {
+                return explicitUrl;
+            }
+
+            if (trigger instanceof HTMLAnchorElement && trigger.href !== '') {
+                return trigger.href;
+            }
+
+            const image = trigger.querySelector('img');
+            if (image instanceof HTMLImageElement) {
+                return image.currentSrc || image.src || '';
+            }
+
+            return '';
+        };
+
+        const resolveTriggerTitle = (trigger) => {
+            if (!(trigger instanceof HTMLElement)) {
+                return 'Foto ampliada';
+            }
+
+            const explicitTitle = trigger.getAttribute('data-photo-viewer-title') || '';
+            if (explicitTitle !== '') {
+                return explicitTitle;
+            }
+
+            const image = trigger.querySelector('img');
+            if (image instanceof HTMLImageElement && image.alt.trim() !== '') {
+                return image.alt.trim();
+            }
+
+            return 'Foto ampliada';
+        };
+
+        const renderCurrentPhoto = () => {
+            if (!Array.isArray(state.items) || state.items.length === 0) {
+                return;
+            }
+
+            const total = state.items.length;
+            const current = state.items[state.index] || state.items[0];
+            const currentTitle = current?.title || 'Foto ampliada';
+            const currentUrl = current?.url || '';
+            const currentFullUrl = current?.openFullUrl || currentUrl;
+
+            titleElement.textContent = currentTitle;
+            counterElement.textContent = total > 1 ? `${state.index + 1} de ${total}` : 'Imagem ampliada';
+            imageElement.src = currentUrl;
+            imageElement.alt = currentTitle;
+            openFullLink.href = currentFullUrl;
+
+            const canNavigate = total > 1;
+            prevButton.hidden = !canNavigate;
+            nextButton.hidden = !canNavigate;
+            prevButton.disabled = !canNavigate;
+            nextButton.disabled = !canNavigate;
+        };
+
+        const movePhoto = (direction) => {
+            if (!Array.isArray(state.items) || state.items.length <= 1) {
+                return;
+            }
+
+            const nextIndex = state.index + direction;
+            const total = state.items.length;
+            state.index = (nextIndex + total) % total;
+            renderCurrentPhoto();
+        };
+
+        if (modalElement.dataset.photoViewerControlsBound !== '1') {
+            modalElement.dataset.photoViewerControlsBound = '1';
+
+            prevButton.addEventListener('click', () => movePhoto(-1));
+            nextButton.addEventListener('click', () => movePhoto(1));
+
+            modalElement.addEventListener('hidden.bs.modal', () => {
+                state.items = [];
+                state.index = 0;
+                imageElement.src = '';
+                imageElement.alt = 'Foto ampliada';
+                titleElement.textContent = 'Visualizar foto';
+                counterElement.textContent = '1 de 1';
+                openFullLink.href = '#';
+                prevButton.hidden = true;
+                nextButton.hidden = true;
+                prevButton.disabled = true;
+                nextButton.disabled = true;
+            });
+        }
+
+        scope.querySelectorAll('[data-photo-viewer-trigger]').forEach((trigger) => {
+            if (!(trigger instanceof HTMLElement) || trigger.dataset.photoViewerBound === '1') {
+                return;
+            }
+
+            trigger.dataset.photoViewerBound = '1';
+
+            trigger.addEventListener('click', (event) => {
+                event.preventDefault();
+
+                const group = trigger.getAttribute('data-photo-viewer-group') || '';
+                const groupedTriggers = group !== '' ? getViewerTriggers(group) : [trigger];
+                const items = [];
+                let selectedIndex = 0;
+
+                groupedTriggers.forEach((groupTrigger) => {
+                    const url = resolveTriggerUrl(groupTrigger);
+                    if (url === '') {
+                        return;
+                    }
+
+                    if (groupTrigger === trigger) {
+                        selectedIndex = items.length;
+                    }
+
+                    items.push({
+                        url,
+                        title: resolveTriggerTitle(groupTrigger),
+                        openFullUrl: groupTrigger.getAttribute('data-photo-viewer-open-full-url') || url,
+                    });
+                });
+
+                if (items.length === 0) {
+                    openInNewTab(resolveTriggerUrl(trigger));
+                    return;
+                }
+
+                state.items = items;
+                state.index = Math.max(0, Math.min(selectedIndex, items.length - 1));
+                renderCurrentPhoto();
+
+                if (typeof bootstrap !== 'undefined' && typeof bootstrap.Modal === 'function') {
+                    bootstrap.Modal.getOrCreateInstance(modalElement).show();
+                } else {
+                    openInNewTab(items[state.index]?.openFullUrl || items[state.index]?.url || '');
+                }
+            });
+        });
+    };
+
     const hideSearchResults = () => {
         if (!(searchResults instanceof HTMLElement)) {
             return;
@@ -1413,12 +1613,20 @@ const DesktopUi = (() => {
         initModalFillers();
         initSelect2();
         initOsPreviewModals();
+        initPhotoViewers();
         initSearchAutocomplete();
         initPhotoFallbacks();
         initDropdowns();
     };
 
-    return { init, refreshSelect2, refreshDropdowns: initDropdowns, logError, sanitizeForLog };
+    return {
+        init,
+        refreshSelect2,
+        refreshDropdowns: initDropdowns,
+        refreshPhotoViewers: initPhotoViewers,
+        logError,
+        sanitizeForLog,
+    };
 })();
 
 window.DesktopUi = DesktopUi;

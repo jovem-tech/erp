@@ -112,7 +112,8 @@
         .closure-equipment-photo-frame img {
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            object-fit: contain;
+            background: #fff;
         }
 
         .closure-equipment-photo-empty {
@@ -497,6 +498,7 @@
         $equipamentoMarca = trim((string) ($order['equipamento']['marca_nome'] ?? ''));
         $equipamentoModelo = trim((string) ($order['equipamento']['modelo_nome'] ?? ''));
         $equipamentoFoto = $order['equipamento_foto'] ?? null;
+        $photoViewerGroup = 'order-closure-' . $orderId . '-photos';
     @endphp
 
     {{-- Cabeçalho --}}
@@ -522,15 +524,23 @@
                 <div class="closure-panel-title">Equipamento</div>
                 <div class="closure-equipment-context-body">
                     <div>
-                        <div class="closure-equipment-photo-frame">
-                            @if ($equipamentoFoto && ($equipamentoFoto['id'] ?? 0) > 0)
+                        @if ($equipamentoFoto && ($equipamentoFoto['id'] ?? 0) > 0)
+                            <a href="{{ route('equipments.photos.show', [$equipamentoFoto['equipamento_id'], $equipamentoFoto['id']]) }}"
+                                class="closure-equipment-photo-frame"
+                                target="_blank"
+                                rel="noreferrer"
+                                data-photo-viewer-trigger
+                                data-photo-viewer-group="{{ $photoViewerGroup }}"
+                                data-photo-viewer-title="Foto do equipamento da {{ $order['numero_os'] ?? ('#' . $orderId) }}">
                                 <img src="{{ route('equipments.photos.show', [$equipamentoFoto['equipamento_id'], $equipamentoFoto['id']]) }}" alt="Foto do equipamento">
-                            @else
+                            </a>
+                        @else
+                            <div class="closure-equipment-photo-frame">
                                 <div class="closure-equipment-photo-empty">
                                     <i class="bi bi-camera"></i>
                                 </div>
-                            @endif
-                        </div>
+                            </div>
+                        @endif
                         <div class="closure-equipment-serial">
                             <i class="bi bi-upc-scan"></i>
                             SN: {{ $equipamentoSerie !== '' ? $equipamentoSerie : '—' }}
@@ -965,6 +975,10 @@
         </template>
     </section>
 @endsection
+
+@push('modals')
+    @include('layouts.partials.photo-viewer-modal')
+@endpush
 
 @section('scripts')
     <script>
