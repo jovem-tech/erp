@@ -622,6 +622,24 @@
             </section>
 
             <div class="order-create-actions">
+                @unless ($isEditing)
+                    <div class="order-create-actions-option">
+                        <input type="hidden" name="enviar_pdf_cliente" value="0">
+                        <label class="order-create-send-toggle" for="enviarPdfCliente">
+                            <input
+                                type="checkbox"
+                                id="enviarPdfCliente"
+                                name="enviar_pdf_cliente"
+                                value="1"
+                                @checked(old('enviar_pdf_cliente'))
+                            >
+                            <span>
+                                <strong>Enviar PDF ao cliente</strong>
+                                <small>Gera o comprovante de abertura com o modelo <code>abertura</code> e tenta enviar via template WhatsApp <code>os_aberta</code>.</small>
+                            </span>
+                        </label>
+                    </div>
+                @endunless
                 <a href="{{ $cancelUrl }}" class="btn btn-outline-light">Cancelar</a>
                 <button type="submit" class="btn btn-primary">
                     <i class="bi {{ $submitIcon }} me-2"></i>

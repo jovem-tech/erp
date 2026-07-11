@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-09T23:14:07+00:00`
-- Versao do sistema: `3.20.0`
+- Gerado em: `2026-07-11T21:43:28+00:00`
+- Versao do sistema: `4.4.0`
 - Versao da API: `1.1.2`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Windows/XAMPP`
@@ -62,9 +62,11 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/03-arquitetura-tecnica/backend-central-minimo.md` - Backend Central Minimo
 - `documentacao/03-arquitetura-tecnica/catalogo-status-os.md` - Catálogo de status das Ordens de Serviço
 - `documentacao/03-arquitetura-tecnica/contrato-api-backend-central.md` - Contrato da API do Backend Central
+- `documentacao/03-arquitetura-tecnica/eventos-os.md` - Timeline de Eventos da OS (`os_eventos`)
 - `documentacao/03-arquitetura-tecnica/frontend-desktop-laravel.md` - Frontend Desktop Laravel
 - `documentacao/03-arquitetura-tecnica/frontend-sistema-hml-bff.md` - Frontend sistema-hml como BFF
 - `documentacao/03-arquitetura-tecnica/mapa-migracao-legado-frontend-sistema-hml.md` - Mapa Completo de Migração e Limpeza do `frontend/sistema-hml`
+- `documentacao/03-arquitetura-tecnica/notificacoes-sino.md` - Notificações do Sino (desktop) — emissores, prazos e tempo real
 - `documentacao/03-arquitetura-tecnica/ordens-mobile.md` - Fluxo de OS Mobile
 
 ### `documentacao/04-governanca-ai`
@@ -144,6 +146,8 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-06-schema-drift-ajustes-percentuais-orcamento.md` - Correcao de drift de schema: colunas de ajuste percentual ausentes em orcamentos
 - `documentacao/07-novas-implementacoes/2026-07-06-tipo-equipamento-select2-e-dropdown-tabela.md` - Tipo de equipamento em Select2 com tags e correcao de dropdown em tabela responsiva
 - `documentacao/07-novas-implementacoes/2026-07-07-modal-status-os-procedimentos-notificacao-cliente.md` - Overhaul do modal Alterar status da OS: procedimentos, diagnostico/solucao e notificacao ao cliente
+- `documentacao/07-novas-implementacoes/2026-07-11-fotos-sem-corte-e-visualizador-modal.md` - Fotos sem corte e visualizador modal no desktop
+- `documentacao/07-novas-implementacoes/2026-07-11-os-abertura-pdf-e-envio-whatsapp.md` - OS — PDF de abertura e envio opcional ao cliente
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 
 ### `documentacao/10-deploy`
@@ -157,7 +161,6 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
 ## Inventario de specs
 
-- `specs/001-fundacao-fisica` - 001-fundacao-fisica | artefatos: 
 - `specs/002-infraestrutura-ambientes` - Spec: Infraestrutura de Desenvolvimento e Produção | artefatos: spec, plan, tasks, research, quickstart, checklists
 - `specs/003-backend-central-minimo` - Spec: Backend Central Mínimo | artefatos: spec, plan, tasks, research, quickstart, checklists
 - `specs/004-os-mobile-flow` - Spec: Fluxo de OS Mobile | artefatos: spec, plan, tasks, research, quickstart, data_model, contracts

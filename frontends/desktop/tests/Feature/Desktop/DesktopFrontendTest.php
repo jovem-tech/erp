@@ -2802,7 +2802,8 @@ class DesktopFrontendTest extends TestCase
             ->assertDontSee('data-select2="false"', false)
             ->assertSee('Busque por nome, serie ou cliente')
             ->assertSee(route('orders.equipments.search'), false)
-            ->assertSee('Relato do cliente');
+            ->assertSee('Relato do cliente')
+            ->assertSee('Enviar PDF ao cliente');
     }
 
     public function test_nova_os_client_search_returns_compact_json_for_select2(): void
@@ -2898,11 +2899,17 @@ class DesktopFrontendTest extends TestCase
                 'prioridade' => 'alta',
                 'data_previsao' => '2026-06-24',
                 'observacoes_internas' => 'Prioridade do balcão.',
+                'enviar_pdf_cliente' => '1',
             ]);
 
         $response
             ->assertRedirect(route('orders.show', 77))
             ->assertSessionHas('success');
+
+        Http::assertSent(static function ($request): bool {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/orders'
+                && $request['enviar_pdf_cliente'] === true;
+        });
     }
 
     public function test_nova_os_submission_with_photos_uses_multipart_without_json_content_type(): void
@@ -4144,6 +4151,7 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Notebook Acer Nitro')
             ->assertSee('Foto principal do equipamento')
             ->assertSee(route('equipments.photos.show', [301, 91]), false)
+            ->assertSee('data-photo-viewer-trigger', false)
             ->assertSee('Cliente vinculado')
             ->assertSee('Cliente Alpha')
             ->assertSee('Ordens de serviço vinculadas')
@@ -4267,6 +4275,7 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('id="equipmentCollectorCard" aria-hidden="true"', false)
             ->assertSee('window.__EQUIPMENT_CREATE', false)
             ->assertSee('catalog_relations', false)
+            ->assertSee('desktopPhotoViewerModal', false)
             ->assertSee('id="equipmentClientLabel" value="Cliente Alpha"', false)
             ->assertSee('value="201" selected', false)
             ->assertDontSee('clientsSearch', false);

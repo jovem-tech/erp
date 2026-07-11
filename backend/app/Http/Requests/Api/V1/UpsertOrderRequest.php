@@ -20,6 +20,7 @@ class UpsertOrderRequest extends BaseApiFormRequest
             'status' => [$this->isMethod('post') ? 'nullable' : 'sometimes', 'string', 'max:80', Rule::in(OrderStatus::activeCodes())],
             'estado_fluxo' => ['nullable', 'string', 'max:40'],
             'prioridade' => ['nullable', 'string', Rule::in(['baixa', 'normal', 'alta', 'urgente'])],
+            'enviar_pdf_cliente' => ['nullable', 'boolean'],
             'relato_cliente' => [$requiredOrSometimes, 'string'],
             'diagnostico_tecnico' => ['nullable', 'string'],
             'solucao_aplicada' => ['nullable', 'string'],

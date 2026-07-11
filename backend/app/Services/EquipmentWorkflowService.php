@@ -95,7 +95,20 @@ class EquipmentWorkflowService
             'collector' => [
                 'pairing_ttl_minutes' => (int) config('services.collector.pairing_ttl_minutes', 30),
                 'local_root' => $this->getCollectorLocalRootPath(),
-                'supports_local_collection' => $this->isWindowsHost(),
+                'supports_local_collection' => $this->supportsLocalCollector(),
+                // Base URL que o coletor rodando na maquina do cliente usa para
+                // enviar o check-in pela rede (--erp-base-url do script/exe) —
+                // e o proprio endereco publico deste backend.
+                'erp_base_url' => rtrim((string) config('app.url'), '/'),
+                'download_url_linux' => rtrim((string) config('app.url'), '/')
+                    . '/assets/agents/bench-collector/linux-x64/jovemtech-bench-collector.sh',
+                // O .exe Windows compilado (sem fonte no repo) usa um fluxo
+                // antigo por numero de OS/e-mail, incompativel com o
+                // endpoint de pareamento — por isso o link aqui aponta pro
+                // script .ps1 novo (mesmo protocolo --pairing-code do build
+                // Linux), nao pro .exe.
+                'download_url_windows' => rtrim((string) config('app.url'), '/')
+                    . '/assets/agents/bench-collector/win-x64/jovemtech-bench-collector.ps1',
             ],
         ];
     }
@@ -347,8 +360,8 @@ class EquipmentWorkflowService
      */
     public function readLocalCollectorSnapshot(): array
     {
-        if (! $this->isWindowsHost()) {
-            throw new RuntimeException('A leitura do snapshot local do coletor so esta disponivel quando o ERP estiver rodando em Windows na mesma maquina da bancada.', 422);
+        if (! $this->supportsLocalCollector()) {
+            throw new RuntimeException('A leitura do snapshot local do coletor so esta disponivel quando o ERP estiver rodando na mesma maquina Windows ou Linux da bancada.', 422);
         }
 
         $snapshotData = $this->readLocalCollectorSnapshotPayload();
@@ -1176,8 +1189,8 @@ class EquipmentWorkflowService
      */
     private function runLocalCollectorCapture(): array
     {
-        if (! $this->isWindowsHost()) {
-            throw new RuntimeException('A coleta local do coletor so esta disponivel quando o ERP estiver rodando em Windows na mesma maquina da bancada.', 422);
+        if (! $this->supportsLocalCollector()) {
+            throw new RuntimeException('A coleta local do coletor so esta disponivel quando o ERP estiver rodando na mesma maquina Windows ou Linux da bancada.', 422);
         }
 
         if (! function_exists('exec')) {
@@ -1195,13 +1208,18 @@ class EquipmentWorkflowService
                 return $fallback;
             }
 
-            throw new RuntimeException('Nao encontrei o executavel publicado do coletor em assets/agents/bench-collector/win-x64.', 500);
+            throw new RuntimeException('Nao encontrei o executavel publicado do coletor em assets/agents/bench-collector/' . ($this->isLinuxHost() ? 'linux-x64' : 'win-x64') . '.', 500);
         }
 
         $installInfo = $this->ensureLocalCollectorInstalled();
         $this->clearLocalCollectorSnapshotCache();
 
-        $command = '"' . $installInfo['executable_path'] . '" --dry-run --no-prompt --no-save-config';
+        // Windows executa o .exe diretamente; Linux precisa do interpretador
+        // bash explicito (o exec bit sozinho as vezes nao basta dependendo de
+        // como o arquivo foi copiado/montado).
+        $command = $this->isLinuxHost()
+            ? 'bash ' . escapeshellarg($installInfo['executable_path']) . ' --dry-run --no-prompt --no-save-config'
+            : '"' . $installInfo['executable_path'] . '" --dry-run --no-prompt --no-save-config';
         $output = [];
         $exitCode = 1;
         @exec($command . ' 2>&1', $output, $exitCode);
@@ -1284,6 +1302,12 @@ class EquipmentWorkflowService
                 throw new RuntimeException('Nao foi possivel copiar o coletor para ' . $rootPath . '.', 500);
             }
 
+            // copy() nao preserva o bit de execucao — sem isto o script Linux
+            // fica sem permissao de rodar mesmo com o exec() correto.
+            if ($this->isLinuxHost()) {
+                @chmod($targetExe, 0755);
+            }
+
             $installedNow = true;
         }
 
@@ -1353,22 +1377,27 @@ class EquipmentWorkflowService
 
     private function getCollectorLocalRootPath(): string
     {
+        if ($this->isLinuxHost()) {
+            return trim((string) config('services.collector.local_root_linux', '/home/JovemTechBenchCollector'));
+        }
+
         return trim((string) config('services.collector.local_root', 'C:\\JovemTechBenchCollector'));
     }
 
     private function getPublishedCollectorRootPath(): string
     {
-        $configured = trim((string) config('services.collector.published_root', ''));
+        $configKey = $this->isLinuxHost() ? 'services.collector.published_root_linux' : 'services.collector.published_root';
+        $configured = trim((string) config($configKey, ''));
         if ($configured !== '') {
             return rtrim($configured, '\\/');
         }
 
-        return public_path('assets/agents/bench-collector/win-x64');
+        return public_path('assets/agents/bench-collector/' . ($this->isLinuxHost() ? 'linux-x64' : 'win-x64'));
     }
 
     private function getPublishedCollectorExecutablePath(): string
     {
-        return $this->getPublishedCollectorRootPath() . DIRECTORY_SEPARATOR . 'JovemTechBenchCollector.exe';
+        return $this->getPublishedCollectorRootPath() . DIRECTORY_SEPARATOR . $this->getCollectorExecutableFilename();
     }
 
     private function getPublishedCollectorReadmePath(): string
@@ -1378,12 +1407,34 @@ class EquipmentWorkflowService
 
     private function getCollectorLocalExecutablePath(): string
     {
-        return $this->getCollectorLocalRootPath() . DIRECTORY_SEPARATOR . 'JovemTechBenchCollector.exe';
+        return $this->getCollectorLocalRootPath() . DIRECTORY_SEPARATOR . $this->getCollectorExecutableFilename();
+    }
+
+    private function getCollectorExecutableFilename(): string
+    {
+        return $this->isLinuxHost() ? 'jovemtech-bench-collector.sh' : 'JovemTechBenchCollector.exe';
     }
 
     private function isWindowsHost(): bool
     {
         return strtoupper(substr(PHP_OS_FAMILY, 0, 3)) === 'WIN';
+    }
+
+    private function isLinuxHost(): bool
+    {
+        return strtoupper(substr(PHP_OS_FAMILY, 0, 5)) === 'LINUX';
+    }
+
+    /**
+     * Coleta local via exec() so faz sentido quando o backend roda na MESMA
+     * maquina fisica que esta sendo diagnosticada (o bench da assistencia).
+     * Windows usa o .exe publicado; Linux usa o script shell equivalente —
+     * ambos produzem o mesmo formato de snapshot consumido por
+     * mapCollectorSnapshotToEquipmentFields().
+     */
+    private function supportsLocalCollector(): bool
+    {
+        return $this->isWindowsHost() || $this->isLinuxHost();
     }
 
     private function mapChassisTypeToCaseType(string $chassisType): string

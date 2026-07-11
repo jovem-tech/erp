@@ -16,6 +16,7 @@
             $primaryPhotoUrl = trim((string) ($photos[0]['url'] ?? ''));
         }
         $photosCount = count($photos);
+        $photoViewerGroup = 'equipment-' . (int) ($equipment['id'] ?? 0) . '-photos';
     @endphp
 
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
@@ -99,9 +100,34 @@
                 </div>
 
                 @if ($primaryPhotoUrl !== '')
-                    <a href="{{ $primaryPhotoUrl }}" target="_blank" rel="noreferrer" class="equipment-detail-photo-link">
+                    <a href="{{ $primaryPhotoUrl }}"
+                        class="equipment-detail-photo-link"
+                        target="_blank"
+                        rel="noreferrer"
+                        data-photo-viewer-trigger
+                        data-photo-viewer-group="{{ $photoViewerGroup }}"
+                        data-photo-viewer-title="Foto principal do equipamento">
                         <img src="{{ $primaryPhotoUrl }}" alt="Foto principal do equipamento {{ $equipmentName !== '' ? $equipmentName : 'sem resumo técnico' }}" class="equipment-detail-photo-image" data-photo-fallback>
                     </a>
+
+                    @if ($photos !== [])
+                        <div class="d-none" aria-hidden="true">
+                            @foreach ($photos as $photo)
+                                @php
+                                    $photoUrl = trim((string) ($photo['url'] ?? ''));
+                                    $photoTitle = trim((string) ($photo['nome'] ?? ''));
+                                @endphp
+                                @continue($photoUrl === '' || $photoUrl === $primaryPhotoUrl)
+
+                                <a href="{{ $photoUrl }}"
+                                    data-photo-viewer-trigger
+                                    data-photo-viewer-group="{{ $photoViewerGroup }}"
+                                    data-photo-viewer-title="{{ $photoTitle !== '' ? $photoTitle : 'Foto do equipamento' }}">
+                                </a>
+                            @endforeach
+                        </div>
+                    @endif
+
                     <div class="equipment-detail-photo-placeholder d-none">
                         <i class="bi bi-camera"></i>
                         <strong>Foto indisponível</strong>
@@ -244,6 +270,7 @@
 
 @push('modals')
     @include('equipments._reveal_password_modal')
+    @include('layouts.partials.photo-viewer-modal')
 @endpush
 
 @section('scripts')

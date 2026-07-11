@@ -258,15 +258,6 @@ a {
     justify-content: center;
 }
 
-/* Empilha logo e botao de expandir verticalmente quando recolhida: lado a
-   lado eles disputavam a mesma faixa estreita (80px) e ficavam sobrepostos
-   ao revelar o toggle no hover. */
-.desktop-sidebar.is-collapsed .desktop-sidebar-header {
-    flex-direction: column;
-    justify-content: center;
-    gap: 0.5rem;
-}
-
 .desktop-sidebar.is-collapsed .desktop-nav-link {
     justify-content: center;
     margin-inline: 0.3rem;
@@ -1067,6 +1058,7 @@ a {
     border: 1px solid var(--desktop-border);
     border-radius: var(--desktop-radius-lg);
     background: linear-gradient(180deg, rgba(111, 90, 252, 0.04), rgba(255, 255, 255, 0.96));
+    min-width: 0;
 }
 
 .equipment-technical-panel.is-hidden {
@@ -1089,8 +1081,66 @@ a {
     min-width: 180px;
 }
 
-#collectorPairingDisplay {
-    display: none;
+.equipment-collector-group {
+    display: grid;
+    gap: 0.6rem;
+    padding-top: 0.85rem;
+    border-top: 1px dashed var(--desktop-border);
+    min-width: 0;
+}
+
+.equipment-collector-group:first-of-type {
+    padding-top: 0;
+    border-top: none;
+}
+
+.equipment-collector-group-title {
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--desktop-text-soft);
+}
+
+.equipment-collector-command {
+    display: grid;
+    gap: 0.4rem;
+    padding: 0.85rem 0.95rem;
+    border-radius: var(--desktop-radius-control);
+    border: 1px solid var(--desktop-border);
+    background: rgba(15, 23, 42, 0.03);
+    min-width: 0;
+}
+
+.equipment-collector-command-label {
+    margin: 0;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: var(--desktop-text-soft);
+}
+
+.equipment-collector-command-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+.equipment-collector-command-row code {
+    /* min-width: 0 é o que permite o item flex encolher e o overflow-x
+       abaixo realmente rolar dentro da própria caixa, em vez de estourar
+       a largura do card (comportamento padrão de flex item é não encolher
+       além do conteúdo). */
+    flex: 1 1 0%;
+    min-width: 0;
+    padding: 0.55rem 0.7rem;
+    border-radius: var(--desktop-radius-control);
+    background: #0f172a;
+    color: #e2e8f0;
+    overflow-x: auto;
+    white-space: pre;
+    font-size: 0.82rem;
 }
 
 .equipment-collector-status {
@@ -1270,8 +1320,9 @@ a {
 .equipment-photo-card img {
     width: 100%;
     aspect-ratio: 4 / 3;
-    object-fit: cover;
+    object-fit: contain;
     border-radius: 16px;
+    background: #fff;
 }
 
 .equipment-photo-card-body {
@@ -3464,8 +3515,9 @@ a {
 .equipment-list-photo {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     display: block;
+    background: #fff;
 }
 
 .equipment-list-photo-placeholder {
@@ -3924,8 +3976,9 @@ a {
 .order-create-photo-preview-thumb img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     display: block;
+    background: #fff;
 }
 
 .order-create-photo-preview-meta {
@@ -3971,8 +4024,51 @@ a {
 .order-create-actions {
     display: flex;
     justify-content: flex-end;
+    align-items: center;
+    flex-wrap: wrap;
     gap: 0.75rem;
     padding-top: 0.2rem;
+}
+
+.order-create-actions-option {
+    margin-right: auto;
+}
+
+.order-create-send-toggle {
+    display: inline-flex;
+    align-items: flex-start;
+    gap: 0.85rem;
+    min-height: 56px;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--desktop-border);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+    cursor: pointer;
+}
+
+.order-create-send-toggle input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    margin-top: 0.15rem;
+    accent-color: var(--desktop-primary);
+    flex: 0 0 auto;
+}
+
+.order-create-send-toggle span {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.order-create-send-toggle strong {
+    color: var(--desktop-text);
+    font-size: 0.95rem;
+}
+
+.order-create-send-toggle small {
+    color: var(--desktop-text-soft);
+    line-height: 1.45;
 }
 
 .cashflow-view-toggle {
@@ -4240,8 +4336,9 @@ a {
 .equipment-detail-photo-image {
     width: 100%;
     aspect-ratio: 4 / 3;
-    object-fit: cover;
+    object-fit: contain;
     display: block;
+    background: #fff;
 }
 
 .equipment-detail-photo-meta {
@@ -4311,44 +4408,60 @@ a {
     color: var(--desktop-text-muted);
 }
 
-/* Timeline de eventos da OS: borda esquerda colorida pela categoria
-   (--event-color vem inline do partial _event_timeline). */
 .timeline-item[data-event-category] {
-    border-left-color: var(--event-color, rgba(111, 90, 252, 0.45));
+    border-left-color: var(--event-color, #6f5afc);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--event-color, #6f5afc) 10%, rgba(255, 255, 255, 0.9));
 }
 
 .event-filters {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    align-items: center;
+    gap: 0.55rem;
 }
 
 .event-chip {
+    appearance: none;
+    -webkit-appearance: none;
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    padding: 0.3rem 0.75rem;
+    justify-content: center;
+    gap: 0.45rem;
+    min-height: 38px;
+    padding: 0.45rem 0.85rem;
     border: 1px solid var(--desktop-border);
     border-radius: 999px;
-    background: var(--desktop-surface-soft);
-    color: var(--desktop-text);
-    font-size: 0.8rem;
-    font-weight: 600;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.95) 0%, rgba(243, 247, 255, 0.96) 100%);
+    color: var(--desktop-text-soft);
+    font-family: inherit;
+    font-size: 0.78rem;
+    font-weight: 700;
+    line-height: 1;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
     cursor: pointer;
-    transition: border-color 0.15s ease, background 0.15s ease;
+    transition: transform 0.15s ease, border-color 0.15s ease, color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
 }
 
 .event-chip:hover {
+    transform: translateY(-1px);
     border-color: var(--event-color, var(--desktop-primary));
+    color: var(--desktop-text);
+}
+
+.event-chip:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--event-color, var(--desktop-primary)) 22%, transparent), 0 14px 28px rgba(15, 23, 42, 0.08);
 }
 
 .event-chip.is-active {
     border-color: var(--event-color, var(--desktop-primary));
-    background: color-mix(in srgb, var(--event-color, var(--desktop-primary)) 14%, transparent);
+    color: var(--event-color, var(--desktop-primary));
+    background: color-mix(in srgb, var(--event-color, var(--desktop-primary)) 10%, white);
+    box-shadow: 0 14px 28px color-mix(in srgb, var(--event-color, #6f5afc) 14%, rgba(15, 23, 42, 0.06));
 }
 
 .event-chip.is-empty {
-    opacity: 0.55;
+    opacity: 0.58;
 }
 
 .event-chip-dot {
@@ -4357,50 +4470,100 @@ a {
     border-radius: 50%;
     background: var(--event-color, var(--desktop-primary));
     flex: 0 0 auto;
+    box-shadow: 0 0 0 0.22rem color-mix(in srgb, var(--event-color, var(--desktop-primary)) 18%, transparent);
 }
 
 .event-chip-count {
-    font-weight: 500;
-    color: var(--desktop-text-muted);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.3rem;
+    padding: 0.14rem 0.38rem;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.15);
+    color: inherit;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.event-chip.is-active .event-chip-count {
+    background: color-mix(in srgb, var(--event-color, var(--desktop-primary)) 16%, white);
 }
 
 .event-category-pill {
     display: inline-flex;
     align-items: center;
-    gap: 0.35rem;
-    padding: 0.15rem 0.6rem;
+    gap: 0.4rem;
+    padding: 0.28rem 0.7rem;
     border-radius: 999px;
-    font-size: 0.72rem;
-    font-weight: 600;
+    font-size: 0.73rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
     color: var(--event-color, var(--desktop-primary));
-    background: color-mix(in srgb, var(--event-color, var(--desktop-primary)) 12%, transparent);
+    background: color-mix(in srgb, var(--event-color, var(--desktop-primary)) 12%, white);
+}
+
+.event-category-pill i {
+    font-size: 0.78rem;
+}
+
+.event-data {
+    margin-left: auto;
 }
 
 .event-data summary {
+    list-style: none;
     cursor: pointer;
-    font-size: 0.75rem;
-    color: var(--desktop-text-muted);
+    font-size: 0.76rem;
+    font-weight: 700;
+    color: var(--desktop-text-soft);
+}
+
+.event-data summary::-webkit-details-marker {
+    display: none;
+}
+
+.event-data[open] summary {
+    margin-bottom: 0.55rem;
+    color: var(--desktop-text);
 }
 
 .event-data dl {
-    margin: 0.5rem 0 0;
+    margin: 0;
     display: grid;
     grid-template-columns: max-content minmax(0, 1fr);
-    gap: 0.15rem 0.75rem;
-    font-size: 0.75rem;
+    gap: 0.18rem 0.85rem;
+    font-size: 0.76rem;
 }
 
 .event-data dt {
     color: var(--desktop-text-muted);
-    font-weight: 500;
+    font-weight: 700;
     text-transform: capitalize;
 }
 
 .event-data dd {
     margin: 0;
     word-break: break-word;
+    color: var(--desktop-text);
 }
 
+@media (max-width: 768px) {
+    .event-filters {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        padding-bottom: 0.2rem;
+        scrollbar-width: none;
+    }
+
+    .event-filters::-webkit-scrollbar {
+        display: none;
+    }
+
+    .event-chip {
+        flex: 0 0 auto;
+    }
+}
 .workflow-diagram {
     display: grid;
     gap: 1rem;
@@ -6104,6 +6267,14 @@ a {
         align-items: stretch;
     }
 
+    .order-create-actions-option {
+        margin-right: 0;
+    }
+
+    .order-create-send-toggle {
+        width: 100%;
+    }
+
     .order-create-actions .btn {
         width: 100%;
     }
@@ -6465,7 +6636,8 @@ a {
 .os-photo-frame img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
+    background: #fff;
 }
 
 .os-photo-empty {
@@ -6633,7 +6805,87 @@ a {
 .os-photo-thumb img {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
+    background: #fff;
+}
+
+[data-photo-viewer-trigger] {
+    cursor: zoom-in;
+}
+
+.photo-viewer-modal-dialog {
+    max-width: min(96vw, 1180px);
+}
+
+.photo-viewer-modal-body {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 1rem;
+}
+
+.photo-viewer-nav {
+    width: 48px;
+    height: 48px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.photo-viewer-stage {
+    min-height: min(74vh, 760px);
+    border-radius: 24px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    padding: 1rem;
+}
+
+.photo-viewer-image {
+    max-width: 100%;
+    max-height: min(70vh, 720px);
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    display: block;
+    border-radius: 18px;
+    background: #fff;
+    box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
+}
+
+.photo-viewer-counter {
+    color: var(--desktop-text-muted);
+    font-size: 0.85rem;
+    margin: 0;
+}
+
+@media (max-width: 991.98px) {
+    .photo-viewer-modal-body {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .photo-viewer-stage {
+        grid-column: 1 / -1;
+        min-height: min(58vh, 520px);
+        padding: 0.75rem;
+    }
+
+    .photo-viewer-nav {
+        justify-self: center;
+    }
+
+    .photo-viewer-nav[data-photo-viewer-direction="prev"] {
+        grid-column: 1;
+    }
+
+    .photo-viewer-nav[data-photo-viewer-direction="next"] {
+        grid-column: 2;
+    }
 }
 
 .os-hint {

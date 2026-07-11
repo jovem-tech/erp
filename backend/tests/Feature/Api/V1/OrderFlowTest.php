@@ -889,6 +889,95 @@ class OrderFlowTest extends TestCase
             ->assertHeader('Content-Type', 'image/jpeg');
     }
 
+    public function test_admin_create_order_generates_opening_pdf_and_document_route_serves_private_file(): void
+    {
+        Storage::fake('local');
+
+        [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
+        $this->seedOpeningDocumentTemplates();
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this
+            ->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'tecnico_id' => $technician->id,
+                'status' => 'triagem',
+                'relato_cliente' => 'Cliente relata falha intermitente no vídeo.',
+                'garantia_dias' => 90,
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.opening_document.generated', true)
+            ->assertJsonPath('data.order.documentos.0.tipo_documento', 'abertura');
+
+        $orderId = (int) $response->json('data.order.id');
+        $documentId = (int) $response->json('data.order.documentos.0.id');
+        $relativePath = (string) DB::table('os_documentos')
+            ->where('id', $documentId)
+            ->value('arquivo');
+
+        $this->assertGreaterThan(0, $documentId);
+        $this->assertStringStartsWith("private/os_documentos/{$orderId}/", $relativePath);
+        Storage::disk('local')->assertExists($relativePath);
+
+        $this->assertDatabaseHas('os_documentos', [
+            'id' => $documentId,
+            'os_id' => $orderId,
+            'tipo_documento' => 'abertura',
+            'arquivo' => $relativePath,
+            'versao' => 1,
+        ]);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->get("/api/v1/orders/{$orderId}/documents/{$documentId}")
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf');
+    }
+
+    public function test_create_order_with_delivery_requested_reports_missing_client_phone_without_rolling_back(): void
+    {
+        Storage::fake('local');
+
+        [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
+        $this->seedOpeningDocumentTemplates();
+        DB::table('clientes')->where('id', $clientId)->update([
+            'telefone1' => '',
+            'telefone2' => null,
+            'telefone_contato' => null,
+        ]);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this
+            ->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'tecnico_id' => $technician->id,
+                'status' => 'triagem',
+                'relato_cliente' => 'Cliente relata falha intermitente no vídeo.',
+                'garantia_dias' => 90,
+                'enviar_pdf_cliente' => true,
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.opening_document.generated', true)
+            ->assertJsonPath('data.opening_delivery.requested', true)
+            ->assertJsonPath('data.opening_delivery.sent', false)
+            ->assertJsonPath(
+                'data.opening_delivery.message',
+                'Cliente sem telefone cadastrado para receber o PDF de abertura.'
+            );
+
+        $this->assertDatabaseHas('os', [
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+        ]);
+    }
+
     public function test_admin_can_update_an_order_and_cache_remains_valid_for_next_requests(): void
     {
         [$manager, $orderId] = $this->seedManagerOrderForUpdate();
@@ -1372,6 +1461,48 @@ class OrderFlowTest extends TestCase
         ], $overrides['taxa'] ?? []));
 
         return ['operadora_id' => $operadoraId, 'taxa_id' => $taxaId];
+    }
+
+    private function seedOpeningDocumentTemplates(): void
+    {
+        DB::table('os_pdf_templates')->insert([
+            'codigo' => 'abertura',
+            'nome' => 'Comprovante de abertura',
+            'descricao' => 'Template base para abertura da OS.',
+            'conteudo_html' => '
+                <div class="highlight-box">A OS <strong>{{numero_os}}</strong> foi aberta em {{data_abertura}}.</div>
+                <div class="section-title">Cliente</div>
+                <table class="grid">
+                    <tr><td class="label">Nome</td><td>{{cliente_nome}}</td><td class="label">Telefone</td><td>{{cliente_telefone}}</td></tr>
+                    <tr><td class="label">E-mail</td><td>{{cliente_email}}</td><td class="label">Prioridade</td><td>{{prioridade}}</td></tr>
+                </table>
+                <div class="section-title">Equipamento</div>
+                <table class="grid">
+                    <tr><td class="label">Tipo</td><td>{{equipamento_tipo}}</td><td class="label">Marca</td><td>{{equipamento_marca}}</td></tr>
+                    <tr><td class="label">Modelo</td><td>{{equipamento_modelo}}</td><td class="label">Série</td><td>{{equipamento_serie}}</td></tr>
+                </table>
+                <div class="section-title">Relato</div>
+                <div class="highlight-box">{{relato_cliente}}</div>
+                <div class="section-title">Acessórios</div>
+                {{acessorios_html}}
+                <div class="section-title">Estado físico</div>
+                {{estado_fisico_html}}
+            ',
+            'ordem' => 10,
+            'ativo' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('whatsapp_templates')->insert([
+            'codigo' => 'os_aberta',
+            'nome' => 'OS aberta',
+            'evento' => 'os_aberta',
+            'conteudo' => 'Sua OS {{numero_os}} foi aberta em {{data_abertura}}. Equipamento: {{equipamento}}.',
+            'ativo' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     /**

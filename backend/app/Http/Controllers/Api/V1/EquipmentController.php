@@ -99,6 +99,11 @@ class EquipmentController extends BaseApiController
 
         return $this->success([
             'pairing' => $this->mapCollectorPairing($pairing),
+            // So' aqui, na criacao — o tecnico ja autenticado precisa do
+            // token pra montar o comando do coletor na maquina do cliente.
+            // Nao repetimos isto em showCollectorPairing (polling) para nao
+            // reexpor o segredo a cada consulta sem necessidade.
+            'collector_token' => (string) config('services.collector.token', ''),
         ], Response::HTTP_CREATED, request: $request);
     }
 

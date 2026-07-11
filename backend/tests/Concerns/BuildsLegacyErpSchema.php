@@ -30,6 +30,8 @@ trait BuildsLegacyErpSchema
             'checklist_itens',
             'checklist_modelos',
             'checklist_tipos',
+            'whatsapp_templates',
+            'os_pdf_templates',
             'os_documentos',
             'os_fotos',
             'os_status_historico',
@@ -72,6 +74,8 @@ trait BuildsLegacyErpSchema
         $this->createPasswordResetTokensTable();
         $this->createConfigurationsTable();
         $this->createFinanceiroCartaoTables();
+        $this->createWhatsappTemplatesTable();
+        $this->createOsPdfTemplatesTable();
         $this->createClientsTable();
         $this->createSuppliersTable();
         $this->createServicesTable();
@@ -1121,6 +1125,35 @@ trait BuildsLegacyErpSchema
             $table->string('arquivo', 255);
             $table->dateTime('created_at')->nullable();
             $table->foreign('os_id')->references('id')->on('os')->cascadeOnDelete();
+        });
+    }
+
+    private function createWhatsappTemplatesTable(): void
+    {
+        Schema::create('whatsapp_templates', function (Blueprint $table): void {
+            $table->id();
+            $table->string('codigo', 80)->unique();
+            $table->string('nome', 140);
+            $table->string('evento', 80)->nullable();
+            $table->longText('conteudo');
+            $table->boolean('ativo')->default(true);
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
+        });
+    }
+
+    private function createOsPdfTemplatesTable(): void
+    {
+        Schema::create('os_pdf_templates', function (Blueprint $table): void {
+            $table->id();
+            $table->string('codigo', 255)->unique();
+            $table->string('nome', 255);
+            $table->text('descricao')->nullable();
+            $table->longText('conteudo_html');
+            $table->integer('ordem')->default(0);
+            $table->boolean('ativo')->default(true);
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
         });
     }
 

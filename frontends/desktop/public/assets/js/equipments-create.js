@@ -89,10 +89,13 @@
         collectorStatus: document.getElementById('collectorPairingStatus'),
         collectorCreate: document.getElementById('collectorPairingCreate'),
         collectorImport: document.getElementById('collectorPairingImport'),
-        collectorSourcePath: document.getElementById('collectorSourcePath'),
-        collectorLocalStatus: document.getElementById('collectorLocalStatus'),
-        collectorLocalCollect: document.getElementById('collectorLocalCollect'),
-        collectorLocalRead: document.getElementById('collectorLocalRead'),
+        collectorCommandWrapperWindows: document.getElementById('collectorPairingCommandWrapperWindows'),
+        collectorCommandCodeWindows: document.getElementById('collectorPairingCommandWindows'),
+        collectorCommandCopyWindows: document.getElementById('collectorPairingCommandCopyWindows'),
+        collectorCommandWrapperLinux: document.getElementById('collectorPairingCommandWrapperLinux'),
+        collectorCommandCodeLinux: document.getElementById('collectorPairingCommandLinux'),
+        collectorCommandCopyLinux: document.getElementById('collectorPairingCommandCopyLinux'),
+        collectorPairingCodeInput: document.getElementById('equipmentCollectorPairingCode'),
         cameraModal: document.getElementById('equipmentCameraModal'),
         cameraVideo: document.getElementById('equipmentCameraVideo'),
         cameraCapture: document.getElementById('equipmentCameraCapture'),
@@ -125,6 +128,23 @@
 
     const dispatchSelectChange = (select) => {
         if (!(select instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        // Select2 (ver initSelect2 em desktop.js) só re-renderiza sua própria
+        // UI quando o `change` chega via jQuery — um dispatchEvent nativo
+        // ainda alcança o listener interno do Select2, mas com o DOM em
+        // estado inconsistente para ele (mesmo bug documentado em
+        // orders-closure.js, na direção oposta). Reaproveita a instância já
+        // inicializada quando existir; cai para o evento nativo só se o
+        // select nunca virou Select2.
+        if (
+            typeof window.jQuery !== 'undefined'
+            && window.jQuery.fn
+            && typeof window.jQuery.fn.trigger === 'function'
+            && select.dataset.select2Ready === '1'
+        ) {
+            window.jQuery(select).trigger('change');
             return;
         }
 
@@ -581,13 +601,6 @@
         return family === 'desktop' || family === 'notebook';
     };
 
-    const setLocalCollectorStatus = (text, status = 'idle') => {
-        if (els.collectorLocalStatus instanceof HTMLElement) {
-            els.collectorLocalStatus.textContent = text;
-            els.collectorLocalStatus.dataset.status = status;
-        }
-    };
-
     const updateModelOptions = ({
         forceDesktopDefaults = false,
         selectedBrandId = els.brand instanceof HTMLSelectElement ? String(els.brand.value || '') : '',
@@ -1015,7 +1028,13 @@
 
         els.photoGrid.innerHTML = state.photos.map((item, index) => `
             <article class="equipment-photo-card ${index === primaryIndex ? 'is-primary' : ''}">
-                <img src="${item.previewUrl}" alt="Preview ${index + 1}">
+                <a href="${escapeHtml(item.previewUrl)}"
+                    class="d-block"
+                    data-photo-viewer-trigger
+                    data-photo-viewer-group="equipment-editor-photos"
+                    data-photo-viewer-title="${escapeHtml(item.name || `Foto ${index + 1}`)}">
+                    <img src="${escapeHtml(item.previewUrl)}" alt="Preview ${index + 1}">
+                </a>
                 <div class="equipment-photo-card-body">
                     <strong>${escapeHtml(item.name || `Foto ${index + 1}`)}</strong>
                     <span>${escapeHtml(item.meta || 'Arquivo de imagem')}</span>
@@ -1033,6 +1052,10 @@
                 renderPhotos();
             });
         });
+
+        if (window.DesktopUi && typeof window.DesktopUi.refreshPhotoViewers === 'function') {
+            window.DesktopUi.refreshPhotoViewers(els.photoGrid);
+        }
 
         els.photoGrid.querySelectorAll('[data-photo-remove]').forEach((button) => {
             button.addEventListener('click', () => {
@@ -1288,16 +1311,24 @@
                     els.collectorDisplay.textContent = pairing.code || code;
                 }
 
+                const statusLabels = {
+                    waiting: 'Aguardando envio do cliente...',
+                    ready: 'Snapshot recebido — pronto para importar',
+                    expired: 'Código expirado',
+                    consumed: 'Código já utilizado',
+                };
+                const pairingStatus = pairing.status || 'waiting';
+
                 if (els.collectorStatus instanceof HTMLElement) {
-                    els.collectorStatus.textContent = pairing.status || 'waiting';
-                    els.collectorStatus.dataset.status = pairing.status || 'waiting';
+                    els.collectorStatus.textContent = statusLabels[pairingStatus] || pairingStatus;
+                    els.collectorStatus.dataset.status = pairingStatus;
                 }
 
                 if (els.collectorImport instanceof HTMLButtonElement) {
-                    els.collectorImport.disabled = !(pairing.status === 'ready' && pairing.snapshot);
+                    els.collectorImport.disabled = !(pairingStatus === 'ready' && pairing.snapshot);
                 }
 
-                if (pairing.status === 'expired' || pairing.status === 'consumed') {
+                if (pairingStatus === 'expired' || pairingStatus === 'consumed') {
                     window.clearInterval(state.collectorTimer);
                 }
             } catch (error) {
@@ -1402,39 +1433,6 @@
         }
 
         showToast('success', 'Snapshot importado no formulario.');
-    };
-
-    const applyLocalCollectorPayload = (collector, successTitle) => {
-        const mapped = collector?.mapped || collector?.snapshot || {};
-
-        if (collector?.source_path && els.collectorSourcePath instanceof HTMLElement) {
-            els.collectorSourcePath.textContent = collector.source_path;
-        }
-
-        state.collectorSnapshot = mapped;
-        applySnapshotToForm(mapped);
-
-        if (collector?.collector?.warning) {
-            setLocalCollectorStatus('Importado com aviso', 'warning');
-        } else {
-            setLocalCollectorStatus('Snapshot carregado', 'snapshot');
-        }
-
-        const details = [];
-        if (collector?.collector?.installed_now) {
-            details.push('Coletor copiado para C:\\JovemTechBenchCollector.');
-        }
-        if (collector?.collector?.warning) {
-            details.push(String(collector.collector.warning));
-        }
-        if (collector?.source_path) {
-            details.push(`Snapshot: ${collector.source_path}`);
-        }
-        if (collector?.mapped?.numero_serie_origem === 'mac') {
-            details.push('Serie preenchida com o MAC por falta de serie valida na BIOS.');
-        }
-
-        showAlert('success', successTitle, details.join(' ') || 'Campos tecnicos preenchidos com sucesso.');
     };
 
     const initTabs = () => {
@@ -1886,58 +1884,134 @@
         });
     };
 
+    const setPairingStatus = (text, status = 'idle') => {
+        if (els.collectorStatus instanceof HTMLElement) {
+            els.collectorStatus.textContent = text;
+            els.collectorStatus.dataset.status = status;
+        }
+    };
+
+    const buildPairingCommand = (prefix, code, token) => {
+        const erpBaseUrl = String(config.formData?.collector?.erp_base_url || '').trim();
+        const parts = [prefix, `--pairing-code=${code}`];
+
+        if (erpBaseUrl !== '') {
+            parts.push(`--erp-base-url=${erpBaseUrl}`);
+        }
+
+        if (token) {
+            parts.push(`--collector-token=${token}`);
+        }
+
+        return parts.join(' ');
+    };
+
+    const showPairingCommandFor = (wrapperEl, codeEl, prefix, code, token) => {
+        if (!(wrapperEl instanceof HTMLElement) || !(codeEl instanceof HTMLElement)) {
+            return;
+        }
+
+        if (!code || !token) {
+            wrapperEl.classList.add('d-none');
+            return;
+        }
+
+        codeEl.textContent = buildPairingCommand(prefix, code, token);
+        wrapperEl.classList.remove('d-none');
+    };
+
+    const showPairingCommand = (code, token) => {
+        showPairingCommandFor(
+            els.collectorCommandWrapperWindows,
+            els.collectorCommandCodeWindows,
+            'powershell -ExecutionPolicy Bypass -File .\\jovemtech-bench-collector.ps1',
+            code,
+            token
+        );
+        showPairingCommandFor(
+            els.collectorCommandWrapperLinux,
+            els.collectorCommandCodeLinux,
+            './jovemtech-bench-collector.sh',
+            code,
+            token
+        );
+    };
+
     const initCollector = () => {
-        const collectorCard = document.querySelector('.equipment-collector-card');
-        const collectorTitle = collectorCard?.querySelector('.surface-title');
-        const collectorSubtitle = collectorCard?.querySelector('.surface-subtitle');
-
-        if (collectorTitle instanceof HTMLElement) {
-            collectorTitle.textContent = 'Importacao tecnica pela bancada';
-        }
-
-        if (collectorSubtitle instanceof HTMLElement) {
-            collectorSubtitle.innerHTML = 'Busca local em <span class="font-monospace">C:\\JovemTechBenchCollector</span> e executa o coletor automaticamente quando o desktop e o ERP estiverem na mesma maquina Windows.';
-        }
-
-        if (els.collectorDisplay instanceof HTMLElement) {
-            els.collectorDisplay.classList.add('d-none');
-        }
-
         const ensureCompatibleType = () => {
             if (isCollectorCompatibleType()) {
                 return true;
             }
 
-            showAlert('warning', 'Tipo incompatível', 'Selecione um equipamento do tipo Desktop ou Notebook antes de buscar os dados do agente.');
+            showAlert('warning', 'Tipo incompatível', 'Selecione um equipamento do tipo Desktop ou Notebook antes de gerar o código de pareamento.');
             return false;
         };
 
-        const loadCollector = async (routeKey, successTitle, loadingStatus) => {
+        els.collectorCreate?.addEventListener('click', async () => {
             if (!ensureCompatibleType()) {
                 return;
             }
 
-            setLocalCollectorStatus(loadingStatus, 'running');
+            setPairingStatus('Gerando código...', 'running');
 
             try {
-                const response = await requestJson(config.routes[routeKey], {
-                    method: routeKey === 'collectorLocalCollect' ? 'POST' : 'GET',
-                    body: routeKey === 'collectorLocalCollect' ? {} : null,
-                });
+                const response = await requestJson(config.routes.createPairing, { method: 'POST', body: {} });
+                const pairing = response.pairing || {};
+                const code = pairing.code || '';
 
-                applyLocalCollectorPayload(response.collector || {}, successTitle);
+                if (!code) {
+                    throw new Error('O ERP não retornou um código de pareamento.');
+                }
+
+                state.collectorSnapshot = null;
+
+                if (els.collectorDisplay instanceof HTMLElement) {
+                    els.collectorDisplay.textContent = code;
+                }
+
+                if (els.collectorPairingCodeInput instanceof HTMLInputElement) {
+                    els.collectorPairingCodeInput.value = code;
+                }
+
+                if (els.collectorImport instanceof HTMLButtonElement) {
+                    els.collectorImport.disabled = true;
+                }
+
+                showPairingCommand(code, pairing.collector_token || '');
+                setPairingStatus('Aguardando envio do cliente...', 'waiting');
+                pollCollectorPairing(code);
             } catch (error) {
-                setLocalCollectorStatus('Falha ao importar', 'error');
-                showAlert('error', 'Falha ao buscar do agente', error.message);
+                setPairingStatus('Falha ao gerar código', 'error');
+                showAlert('error', 'Falha ao gerar código de pareamento', error.message);
+            }
+        });
+
+        const copyCommand = async (codeEl) => {
+            const text = codeEl?.textContent || '';
+            if (!text) {
+                return;
+            }
+
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast('success', 'Comando copiado');
+            } catch (error) {
+                showAlert('error', 'Não foi possível copiar', 'Selecione e copie o comando manualmente.');
             }
         };
 
-        els.collectorLocalCollect?.addEventListener('click', () => {
-            loadCollector('collectorLocalCollect', 'Dados importados do agente', 'Executando coleta...');
-        });
+        els.collectorCommandCopyWindows?.addEventListener('click', () => copyCommand(els.collectorCommandCodeWindows));
+        els.collectorCommandCopyLinux?.addEventListener('click', () => copyCommand(els.collectorCommandCodeLinux));
 
-        els.collectorLocalRead?.addEventListener('click', () => {
-            loadCollector('collectorLocalSnapshot', 'Snapshot local importado', 'Lendo snapshot...');
+        els.collectorImport?.addEventListener('click', () => {
+            if (!state.collectorSnapshot) {
+                showAlert('warning', 'Nenhum snapshot recebido', 'Aguarde o coletor na máquina do cliente enviar os dados antes de importar.');
+                return;
+            }
+
+            state.isApplyingSnapshot = false;
+            applySnapshotToForm(state.collectorSnapshot);
+            setPairingStatus('Snapshot importado', 'snapshot');
         });
     };
 

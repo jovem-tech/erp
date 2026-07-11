@@ -66,6 +66,10 @@ Aplicar em ordem — pare no primeiro critério que bater.
    ./scripts/bump-version.sh --tier=<major|minor|patch|hotfix> --desc="descrição curta da alteração"
    ```
    Se não houver acesso a shell no momento, atualizar manualmente `VERSION` e adicionar uma entrada no topo de `CHANGELOG.md` seguindo o mesmo formato.
+   Se usar `./scripts/versionar.sh`, a sincronização de
+   `documentacao/04-governanca-ai/manifesto-do-sistema.md` e
+   `documentacao/04-governanca-ai/contexto-sistema.json` passa a acontecer no
+   mesmo fluxo, desde que `scripts/bash/sync-agent-docs.sh` exista no projeto.
 5. **Nunca pular as etapas 3 e 4** — toda alteração de código gera uma entrada de versão, mesmo que seja HOTFIX.
 6. Sempre informar ao Otávio, ao final da tarefa, qual foi a nova versão e por quê.
 
@@ -93,11 +97,13 @@ O script não decide sozinho — ele **sugere**. A decisão final e o registro e
 
 ## 5. Versionar sem IA (uso direto pelo usuário)
 
-`scripts/versionar.sh` (2026-07-08) é a forma recomendada de rodar este fluxo **sem
+`scripts/versionar.sh` (atualizado em 2026-07-11) é a forma recomendada de rodar este fluxo **sem
 depender de nenhum agente de IA**: reaproveita a mesma heurística de
 `scripts/classify-change.sh` para sugerir o tier, pergunta a descrição, monta a lista de
-arquivos sozinho e chama `scripts/bump-version.sh` por baixo — mesmo resultado da seção 2,
-com um menu interativo em vez de precisar montar os flags na mão.
+arquivos sozinho, chama `scripts/bump-version.sh` por baixo e, quando disponível,
+sincroniza também os artefatos gerados de governança para agentes — mesmo
+resultado da seção 2, com um menu interativo em vez de precisar montar os flags
+na mão.
 
 ```bash
 ./scripts/versionar.sh
@@ -106,8 +112,13 @@ com um menu interativo em vez de precisar montar os flags na mão.
 Também aceita os mesmos flags de `bump-version.sh` para uso direto/automatizado:
 `./scripts/versionar.sh --tier=minor --desc="descrição" [--files="a,b"]`.
 
-Só grava `VERSION`/`CHANGELOG.md`/`shared/version.php` — não dá `commit`/`push`. Publicar
-no GitHub (e promover `develop` → `main`) é o trabalho de
+Quando `--files` não for informado, o próprio `versionar.sh` detecta os arquivos
+alterados e preenche automaticamente a linha `**Arquivos:**` do `CHANGELOG.md`
+tanto no modo interativo quanto no modo direto por flags.
+
+Ele grava `VERSION`/`CHANGELOG.md`/`shared/version.php` e, quando existir o
+script de sincronização, também atualiza `manifesto-do-sistema.md` e
+`contexto-sistema.json` — não dá `commit`/`push`. Publicar no GitHub (e promover `develop` → `main`) é o trabalho de
 `scripts/bash/deploy-completo.sh` (ver `documentacao/10-deploy/workflow-git-multiambiente.md`),
 que inclusive lê a última entrada do `CHANGELOG.md` para montar a mensagem do commit —
 por isso a ordem recomendada é sempre `versionar.sh` primeiro, `deploy-completo.sh` depois.

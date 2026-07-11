@@ -50,10 +50,14 @@
         // está mais de posse da assistência — mudança de status fica bloqueada,
         // só "Cancelar baixa" pode tirar a OS desse estado.
         $isEncerrada = (bool) ($order['is_encerrada'] ?? false);
+        $canEditOrder = \App\Support\DesktopSession::can('os', 'editar');
+        $canCreateBudget = \App\Support\DesktopSession::can('orcamentos', 'criar');
+        $canCloseOrder = $canEditOrder && ! $isEncerrada;
 
         $orcamento = $order['orcamento'] ?? null;
         $hasOrcamento = $orcamento !== null;
         $checklist = $order['checklist'] ?? null;
+        $photoViewerGroup = 'order-' . (int) ($order['id'] ?? 0) . '-photos';
 
         // Trilha de progresso enxuta: concluídas (limitadas) + etapa atual + próximas reais.
         $concluded = [];
@@ -82,54 +86,68 @@
         <div>
             <p class="desktop-eyebrow">Ordem de serviço</p>
             <h2 class="surface-title fs-3 mb-2">{{ ($order['numero_os'] ?? '') !== '' ? $order['numero_os'] : '#' . ($order['id'] ?? 0) }}</h2>
-            <div class="d-flex flex-wrap gap-2">
-                @include('layouts.partials.status-pill', [
-                    'label' => ($order['status_nome'] ?? '') !== '' ? $order['status_nome'] : 'Sem status',
-                    'color' => $order['status_cor'] ?? '#64748b',
-                ])
-                <span class="desktop-chip">{{ ($order['estado_fluxo'] ?? '') !== '' ? ucfirst(str_replace('_', ' ', $order['estado_fluxo'])) : 'Fluxo não definido' }}</span>
-                <span class="desktop-chip">{{ ($order['prioridade'] ?? '') !== '' ? ucfirst(str_replace('_', ' ', $order['prioridade'])) : 'Prioridade não definida' }}</span>
-            </div>
         </div>
 
         <div class="d-flex flex-wrap gap-2 align-items-start os-header-actions">
-            <a href="{{ route('orders.index') }}" class="btn btn-outline-light">
-                <i class="bi bi-arrow-left me-2"></i>Voltar
-            </a>
-            @if (\App\Support\DesktopSession::can('os', 'editar'))
-                <a href="{{ route('orders.edit', $order['id']) }}" class="btn btn-soft">
-                    <i class="bi bi-pencil me-2"></i>Editar
-                </a>
-                @if (! $isEncerrada && ($selectableStatuses ?? []) !== [])
-                    <button type="button" class="btn btn-soft"
-                        data-bs-toggle="modal"
-                        data-bs-target="#orderStatusModal"
-                        data-order-id="{{ $order['id'] }}"
-                        data-order-numero="{{ $order['numero_os'] ?? ('#' . $order['id']) }}">
-                        <i class="bi bi-arrow-left-right me-2"></i>Alterar status
-                    </button>
-                @endif
-            @endif
-            @if ($isEncerrada)
-                {{-- Visível para qualquer usuário com acesso ao painel da OS — a
-                     autorização real é a verificação de credenciais de
-                     administrador feita no submit do modal. --}}
-                <button type="button" class="btn btn-outline-danger"
-                    data-bs-toggle="modal"
-                    data-bs-target="#cancelClosureModal"
-                    data-order-id="{{ $order['id'] }}"
-                    data-order-numero="{{ $order['numero_os'] ?? ('#' . $order['id']) }}">
-                    <i class="bi bi-arrow-counterclockwise me-2"></i>Cancelar baixa
+            
+            <div class="dropdown os-actions-dropdown">
+                <button type="button"
+                    class="btn btn-outline-light dropdown-toggle os-actions-toggle"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false">
+                    Mais ações
                 </button>
-            @endif
-            @if (! $hasOrcamento && \App\Support\DesktopSession::can('orcamentos', 'criar'))
-                <a href="{{ route('orcamentos.create', ['os_id' => $order['id']]) }}" class="btn btn-soft">
-                    <i class="bi bi-receipt me-2"></i>Gerar orçamento
-                </a>
-            @endif
-            <a href="{{ route('orders.preview', $order['id']) }}" target="_blank" rel="noreferrer" class="btn btn-primary">
-                <i class="bi bi-printer me-2"></i>Imprimir
-            </a>
+
+                <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                    @if ($canEditOrder)
+                        <a href="{{ route('orders.edit', $order['id']) }}" class="dropdown-item">
+                            <i class="bi bi-pencil me-2"></i>Editar
+                        </a>
+                    @endif
+
+                    @if ($canEditOrder && ! $isEncerrada && ($selectableStatuses ?? []) !== [])
+                        <button type="button"
+                            class="dropdown-item"
+                            data-bs-toggle="modal"
+                            data-bs-target="#orderStatusModal"
+                            data-order-id="{{ $order['id'] }}"
+                            data-order-numero="{{ $order['numero_os'] ?? ('#' . $order['id']) }}">
+                            <i class="bi bi-arrow-left-right me-2"></i>Alterar status
+                        </button>
+                    @endif
+
+                    @if ($canCloseOrder)
+                        <a href="{{ route('orders.closure.show', $order['id']) }}" class="dropdown-item">
+                            <i class="bi bi-cash-coin me-2"></i>Baixa / Adiantamento
+                        </a>
+                    @endif
+
+                    @if (! $hasOrcamento && $canCreateBudget)
+                        <a href="{{ route('orcamentos.create', ['os_id' => $order['id']]) }}" class="dropdown-item">
+                            <i class="bi bi-receipt me-2"></i>Gerar orçamento
+                        </a>
+                    @endif
+
+                    <a href="{{ route('orders.preview', $order['id']) }}" target="_blank" rel="noreferrer" class="dropdown-item">
+                        <i class="bi bi-printer me-2"></i>Imprimir
+                    </a>
+
+                    @if ($isEncerrada)
+                        <div class="dropdown-divider"></div>
+                        {{-- Visível para qualquer usuário com acesso ao painel da OS — a
+                             autorização real é a verificação de credenciais de
+                             administrador feita no submit do modal. --}}
+                        <button type="button"
+                            class="dropdown-item text-danger"
+                            data-bs-toggle="modal"
+                            data-bs-target="#cancelClosureModal"
+                            data-order-id="{{ $order['id'] }}"
+                            data-order-numero="{{ $order['numero_os'] ?? ('#' . $order['id']) }}">
+                            <i class="bi bi-arrow-counterclockwise me-2"></i>Cancelar baixa
+                        </button>
+                    @endif
+                </div>
+            </div>
         </div>
     </div>
 
@@ -138,16 +156,24 @@
         <aside class="os-detail-aside">
             <article class="surface-card os-photo-card">
                 <span class="summary-card-eyebrow"><i class="bi bi-image me-1"></i>Fotos do equipamento</span>
-                <div class="os-photo-frame">
-                    @if ($equipmentPhoto && ($equipmentPhoto['id'] ?? 0) > 0)
-                        <img src="{{ route('equipments.photos.show', [$equipmentPhoto['equipamento_id'], $equipmentPhoto['id']]) }}" alt="Foto do equipamento">
-                    @else
+                @if ($equipmentPhoto && ($equipmentPhoto['id'] ?? 0) > 0)
+                    <a href="{{ route('equipments.photos.show', [$equipmentPhoto['equipamento_id'], $equipmentPhoto['id']]) }}"
+                        class="os-photo-frame"
+                        target="_blank"
+                        rel="noreferrer"
+                        data-photo-viewer-trigger
+                        data-photo-viewer-group="{{ $photoViewerGroup }}"
+                        data-photo-viewer-title="Foto principal do equipamento">
+                        <img src="{{ route('equipments.photos.show', [$equipmentPhoto['equipamento_id'], $equipmentPhoto['id']]) }}" alt="Foto principal do equipamento">
+                    </a>
+                @else
+                    <div class="os-photo-frame">
                         <div class="os-photo-empty">
                             <i class="bi bi-camera"></i>
                             <span>Sem foto</span>
                         </div>
-                    @endif
-                </div>
+                    </div>
+                @endif
                 <div class="os-photo-serial">
                     <i class="bi bi-upc-scan"></i>
                     SN: {{ ($order['equipamento_numero_serie'] ?? '') !== '' ? $order['equipamento_numero_serie'] : '—' }}
@@ -374,7 +400,14 @@
                                     <h3 class="os-panel-title">{{ $groupLabel }} <span class="os-count">{{ count($groupPhotos) }}</span></h3>
                                     <div class="os-photo-grid">
                                         @foreach ($groupPhotos as $photo)
-                                            <a href="{{ route('orders.photos.show', [$order['id'], $photo['id']]) }}" target="_blank" rel="noreferrer" class="os-photo-thumb" title="{{ $photo['tipo_label'] ?? 'Foto' }}">
+                                            <a href="{{ route('orders.photos.show', [$order['id'], $photo['id']]) }}"
+                                                class="os-photo-thumb"
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                title="{{ $photo['tipo_label'] ?? 'Foto' }}"
+                                                data-photo-viewer-trigger
+                                                data-photo-viewer-group="{{ $photoViewerGroup }}"
+                                                data-photo-viewer-title="{{ $photo['tipo_label'] ?? 'Foto' }}">
                                                 <img src="{{ route('orders.photos.show', [$order['id'], $photo['id']]) }}" alt="{{ $photo['tipo_label'] ?? 'Foto' }}">
                                             </a>
                                         @endforeach
@@ -489,6 +522,7 @@
 @push('modals')
     @include('orders._status_modal')
     @include('orders._cancel_closure_modal')
+    @include('layouts.partials.photo-viewer-modal')
 @endpush
 
 @section('scripts')

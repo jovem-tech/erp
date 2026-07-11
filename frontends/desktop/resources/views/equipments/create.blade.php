@@ -343,34 +343,57 @@
                     </div>
                 </div>
 
+                @php
+                    $collectorLinuxDownloadUrl = trim((string) ($formData['collector']['download_url_linux'] ?? ''));
+                    $collectorWindowsDownloadUrl = trim((string) ($formData['collector']['download_url_windows'] ?? ''));
+                @endphp
                 <section class="equipment-collector-card mt-4" id="equipmentCollectorCard" aria-hidden="{{ $collectorVisible ? 'false' : 'true' }}" @unless($collectorVisible) hidden @endunless>
                     <div>
-                        <p class="desktop-eyebrow mb-2">Coletor local</p>
-                        <h4 class="surface-title fs-5 mb-1">Importação técnica pela bancada</h4>
-                        <p class="surface-subtitle mb-0">Busca local em <span class="font-monospace">C:\JovemTechBenchCollector</span> e executa o coletor automaticamente quando o desktop e o ERP estiverem na mesma máquina Windows.</p>
+                        <p class="desktop-eyebrow mb-2">Coletor de hardware</p>
+                        <h4 class="surface-title fs-5 mb-1">Importação técnica assistida</h4>
+                        <p class="surface-subtitle mb-0">Gere um código, rode o coletor no computador do cliente e importe os dados de hardware direto no formulário.</p>
                     </div>
 
-                    <div class="equipment-collector-actions">
-                        <div class="equipment-collector-code" id="collectorSourcePath">Nenhum snapshot local lido</div>
-                        <span class="equipment-collector-status" id="collectorLocalStatus" data-status="idle">Aguardando</span>
-                        <button type="button" class="btn btn-outline-primary" id="collectorLocalCollect">
-                            <i class="bi bi-cpu me-2"></i>
-                            Buscar do agente (C:\)
-                        </button>
-                        <button type="button" class="btn btn-outline-light" id="collectorLocalRead">
-                            <i class="bi bi-folder2-open me-2"></i>
-                            Ler ultimo snapshot
-                        </button>
-                        <div class="equipment-collector-code d-none" id="collectorPairingDisplay">Nenhum código gerado</div>
-                        <span class="equipment-collector-status d-none" id="collectorPairingStatus">Aguardando</span>
-                        <button type="button" class="btn btn-outline-primary d-none" id="collectorPairingCreate">
-                            <i class="bi bi-link-45deg me-2"></i>
-                            Gerar código
-                        </button>
-                        <button type="button" class="btn btn-outline-light d-none" id="collectorPairingImport" disabled>
-                            <i class="bi bi-download me-2"></i>
-                            Importar snapshot
-                        </button>
+                    <div class="equipment-collector-group">
+                        <p class="equipment-collector-group-title">Pareamento remoto (máquina do cliente)</p>
+                        <p class="surface-subtitle mb-2">Gere um código, rode o coletor no computador do cliente (mesma rede local) e importe o snapshot recebido.</p>
+                        <div class="equipment-collector-actions">
+                            <div class="equipment-collector-code" id="collectorPairingDisplay">Nenhum código gerado</div>
+                            <span class="equipment-collector-status" id="collectorPairingStatus" data-status="idle">Aguardando</span>
+                            <button type="button" class="btn btn-outline-primary" id="collectorPairingCreate">
+                                <i class="bi bi-link-45deg me-2"></i>
+                                Gerar código
+                            </button>
+                            <button type="button" class="btn btn-outline-light" id="collectorPairingImport" disabled>
+                                <i class="bi bi-download me-2"></i>
+                                Importar snapshot
+                            </button>
+                        </div>
+                        <div class="equipment-collector-command d-none" id="collectorPairingCommandWrapperWindows">
+                            <label class="equipment-collector-command-label" for="collectorPairingCommandWindows">Comando para rodar na máquina do cliente (Windows)</label>
+                            <div class="equipment-collector-command-row">
+                                <code id="collectorPairingCommandWindows"></code>
+                                <button type="button" class="btn btn-outline-light btn-sm" id="collectorPairingCommandCopyWindows" title="Copiar comando" aria-label="Copiar comando">
+                                    <i class="bi bi-clipboard"></i>
+                                </button>
+                            </div>
+                            @if ($collectorWindowsDownloadUrl !== '')
+                                <p class="surface-subtitle mb-0">Baixe o script em <a href="{{ $collectorWindowsDownloadUrl }}" target="_blank" rel="noopener">{{ $collectorWindowsDownloadUrl }}</a> e copie para o computador do cliente antes de rodar.</p>
+                            @endif
+                        </div>
+                        <div class="equipment-collector-command d-none" id="collectorPairingCommandWrapperLinux">
+                            <label class="equipment-collector-command-label" for="collectorPairingCommandLinux">Comando para rodar na máquina do cliente (Linux)</label>
+                            <div class="equipment-collector-command-row">
+                                <code id="collectorPairingCommandLinux"></code>
+                                <button type="button" class="btn btn-outline-light btn-sm" id="collectorPairingCommandCopyLinux" title="Copiar comando" aria-label="Copiar comando">
+                                    <i class="bi bi-clipboard"></i>
+                                </button>
+                            </div>
+                            @if ($collectorLinuxDownloadUrl !== '')
+                                <p class="surface-subtitle mb-0">Baixe o script em <a href="{{ $collectorLinuxDownloadUrl }}" target="_blank" rel="noopener">{{ $collectorLinuxDownloadUrl }}</a> e copie para o computador do cliente antes de rodar.</p>
+                            @endif
+                        </div>
+                        <input type="hidden" name="collector_pairing_code" id="equipmentCollectorPairingCode" value="">
                     </div>
                 </section>
 
@@ -566,14 +589,13 @@
                 'models' => $models,
                 'catalog_relations' => $catalogRelations,
                 'desktop_defaults' => $desktopDefaults,
+                'collector' => $formData['collector'] ?? [],
             ],
             'routes' => [
                 'quickClient' => route('clients.quick.store'),
                 'quickBrand' => route('equipments.brands.quick.store'),
                 'quickModel' => route('equipments.models.quick.store'),
                 'suggestModels' => route('equipments.models.suggestions'),
-                'collectorLocalSnapshot' => route('equipments.collector.local-snapshot'),
-                'collectorLocalCollect' => route('equipments.collector.local-collect'),
                 'createPairing' => route('equipments.collector-pairings.store'),
                 'getPairing' => route('equipments.collector-pairings.show', ['code' => '__CODE__']),
             ],
@@ -584,6 +606,8 @@
 @endsection
 
 @push('modals')
+    @include('layouts.partials.photo-viewer-modal')
+
     @include('clients.quick-modal', [
         'fullCreateUrl' => route('clients.create'),
     ])

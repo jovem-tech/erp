@@ -18,6 +18,7 @@ use App\Models\OrderProcedureHistory;
 use App\Models\OrderStatusHistory;
 use App\Models\OrderStatusTransition;
 use App\Models\User;
+use App\Models\WhatsappTemplate;
 use App\Notifications\MobileNotification;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
 use App\Services\Financeiro\OsMargemService;
@@ -48,6 +49,7 @@ class OrderWorkflowService
     public function __construct(
         private readonly OrderNumberService $orderNumberService,
         private readonly OsMargemService $osMargemService,
+        private readonly OrderOpeningPdfService $orderOpeningPdfService,
         private readonly WhatsappMessagingService $whatsappMessagingService,
         private readonly IntegrationSettingsService $integrationSettingsService,
         private readonly OrderEventService $orderEventService
@@ -496,6 +498,34 @@ class OrderWorkflowService
         ];
     }
 
+    /**
+     * @return array{absolute_path:string, relative_path:string, filename:string, mime_type:string}|null
+     */
+    private function resolveManagedDocumentFile(string $arquivo, int $orderId): ?array
+    {
+        $relative = $this->normalizeStoredPath($arquivo);
+        $allowedPrefix = 'private/os_documentos/' . $orderId . '/';
+
+        if (
+            $orderId <= 0
+            || $relative === ''
+            || str_contains($relative, '..')
+            || ! str_starts_with($relative, $allowedPrefix)
+            || ! Storage::disk('local')->exists($relative)
+        ) {
+            return null;
+        }
+
+        $mimeType = trim((string) Storage::disk('local')->mimeType($relative));
+
+        return [
+            'absolute_path' => Storage::disk('local')->path($relative),
+            'relative_path' => $relative,
+            'filename' => basename($relative),
+            'mime_type' => $mimeType !== '' ? $mimeType : $this->inferMimeType($relative),
+        ];
+    }
+
     public function resolveDocumentAccess(int $orderId, int $documentId, User $actor): array
     {
         $order = Order::query()
@@ -525,7 +555,8 @@ class OrderWorkflowService
             ];
         }
 
-        $file = $this->resolveLegacyDocumentFile((string) ($document->arquivo ?? ''));
+        $file = $this->resolveManagedDocumentFile((string) ($document->arquivo ?? ''), $orderId)
+            ?? $this->resolveLegacyDocumentFile((string) ($document->arquivo ?? ''));
         if (! is_array($file)) {
             logger()->warning('[API V1][ORDERS] Documento da OS não encontrado em disco', [
                 'order_id' => $orderId,
@@ -849,6 +880,7 @@ class OrderWorkflowService
     {
         $clientId = (int) ($attributes['cliente_id'] ?? 0);
         $equipmentId = (int) ($attributes['equipamento_id'] ?? 0);
+        $shouldSendOpeningPdf = (bool) ($attributes['enviar_pdf_cliente'] ?? false);
 
         if (! $this->equipmentBelongsToClient($equipmentId, $clientId)) {
             return [
@@ -913,7 +945,19 @@ class OrderWorkflowService
             $this->storeOrderPhotos($order, $uploadedPhotos);
         }
 
+        $openingDocument = $this->generateOpeningDocument($order, $actor);
         $createdOrder = $this->detailQuery()->find((int) $order->id);
+        $openingDelivery = $shouldSendOpeningPdf
+            ? $this->sendOpeningDocumentToClient(
+                $createdOrder instanceof Order ? $createdOrder : $order,
+                $openingDocument
+            )
+            : [
+                'requested' => false,
+                'sent' => false,
+                'channel' => null,
+                'message' => '',
+            ];
 
         if ($createdOrder instanceof Order) {
             $this->sendOrderNotification(
@@ -951,6 +995,8 @@ class OrderWorkflowService
         return [
             'result' => 'ok',
             'order' => $createdOrder instanceof Order ? $this->mapDetail($createdOrder) : null,
+            'opening_document' => $this->sanitizeOpeningDocumentFeedback($openingDocument),
+            'opening_delivery' => $openingDelivery,
         ];
     }
 
@@ -3062,6 +3108,263 @@ class OrderWorkflowService
                 'message' => $exception->getMessage(),
             ]);
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function generateOpeningDocument(Order $order, User $actor): array
+    {
+        try {
+            $result = $this->orderOpeningPdfService->generate($order, $actor);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return [
+                'generated' => false,
+                'document_id' => null,
+                'relative_path' => '',
+                'absolute_path' => '',
+                'file_name' => '',
+                'message' => 'Falha inesperada ao gerar o PDF de abertura.',
+                'skipped' => false,
+            ];
+        }
+
+        return [
+            'generated' => (bool) ($result['ok'] ?? false),
+            'document_id' => isset($result['document_id']) ? (int) $result['document_id'] : null,
+            'relative_path' => (string) ($result['relative_path'] ?? ''),
+            'absolute_path' => (string) ($result['absolute_path'] ?? ''),
+            'file_name' => (string) ($result['file_name'] ?? ''),
+            'message' => (string) ($result['message'] ?? ''),
+            'skipped' => (bool) ($result['skipped'] ?? false),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $openingDocument
+     * @return array<string, mixed>
+     */
+    private function sanitizeOpeningDocumentFeedback(array $openingDocument): array
+    {
+        return [
+            'generated' => (bool) ($openingDocument['generated'] ?? false),
+            'document_id' => isset($openingDocument['document_id']) ? (int) $openingDocument['document_id'] : null,
+            'file_name' => (string) ($openingDocument['file_name'] ?? ''),
+            'message' => (string) ($openingDocument['message'] ?? ''),
+            'skipped' => (bool) ($openingDocument['skipped'] ?? false),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $openingDocument
+     * @return array<string, mixed>
+     */
+    private function sendOpeningDocumentToClient(Order $order, array $openingDocument): array
+    {
+        if (! (bool) ($openingDocument['generated'] ?? false)) {
+            return [
+                'requested' => true,
+                'sent' => false,
+                'channel' => null,
+                'message' => 'O PDF de abertura não foi gerado, então o envio ao cliente não pôde ser concluído.',
+            ];
+        }
+
+        $absolutePath = trim((string) ($openingDocument['absolute_path'] ?? ''));
+        if ($absolutePath === '' || ! is_file($absolutePath)) {
+            return [
+                'requested' => true,
+                'sent' => false,
+                'channel' => null,
+                'message' => 'O arquivo PDF de abertura não foi encontrado para envio ao cliente.',
+            ];
+        }
+
+        $order->loadMissing([
+            'client',
+            'equipment',
+            'equipment.type',
+            'equipment.brand',
+            'equipment.model',
+            'technician',
+        ]);
+
+        $phone = $this->resolveClientNotificationPhone($order);
+        if ($phone === '') {
+            return [
+                'requested' => true,
+                'sent' => false,
+                'channel' => null,
+                'message' => 'Cliente sem telefone cadastrado para receber o PDF de abertura.',
+            ];
+        }
+
+        $clientName = trim((string) ($order->client?->nome_razao ?? ''));
+        $message = $this->renderOpeningClientMessage($order);
+        $fileName = trim((string) ($openingDocument['file_name'] ?? ''));
+        $fileName = $fileName !== '' ? $fileName : basename($absolutePath);
+        $attachment = new UploadedFile($absolutePath, $fileName, 'application/pdf', null, true);
+
+        try {
+            $result = $this->whatsappMessagingService->sendSystemMessage(
+                $phone,
+                $message,
+                [$attachment],
+                $clientName !== '' ? $clientName : null,
+                (int) ($order->cliente_id ?? 0) > 0 ? (int) $order->cliente_id : null,
+                [
+                    'origem' => 'order_opening_pdf',
+                    'order_id' => (int) $order->id,
+                    'numero_os' => (string) ($order->numero_os ?? ''),
+                    'tipo_documento' => 'abertura',
+                ]
+            );
+
+            if ((bool) ($result['ok'] ?? false)) {
+                $this->recordOpeningDocumentDeliveryEvent($order, $phone, 'inbox_whatsapp');
+
+                return [
+                    'requested' => true,
+                    'sent' => true,
+                    'channel' => 'inbox_whatsapp',
+                    'message' => 'PDF de abertura enviado ao cliente.',
+                ];
+            }
+
+            logger()->warning('[API V1][ORDERS] Falha no envio via inbox do PDF de abertura; tentando envio direto', [
+                'order_id' => (int) $order->id,
+                'message' => (string) ($result['message'] ?? ''),
+            ]);
+        } catch (Throwable $exception) {
+            logger()->warning('[API V1][ORDERS] Inbox indisponível para envio do PDF de abertura; tentando envio direto', [
+                'order_id' => (int) $order->id,
+                'message' => $exception->getMessage(),
+            ]);
+        }
+
+        try {
+            $direct = $this->integrationSettingsService->sendDirectMedia(
+                $phone,
+                $absolutePath,
+                'document',
+                $message,
+                $fileName
+            );
+
+            if ((bool) ($direct['ok'] ?? false)) {
+                $this->recordOpeningDocumentDeliveryEvent($order, $phone, 'direct_media');
+
+                return [
+                    'requested' => true,
+                    'sent' => true,
+                    'channel' => 'direct_media',
+                    'message' => 'PDF de abertura enviado ao cliente.',
+                ];
+            }
+
+            return [
+                'requested' => true,
+                'sent' => false,
+                'channel' => null,
+                'message' => trim((string) ($direct['message'] ?? '')) !== ''
+                    ? (string) $direct['message']
+                    : 'Falha ao enviar o PDF de abertura ao cliente.',
+            ];
+        } catch (Throwable $exception) {
+            logger()->warning('[API V1][ORDERS] Falha ao enviar PDF de abertura ao cliente', [
+                'order_id' => (int) $order->id,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return [
+                'requested' => true,
+                'sent' => false,
+                'channel' => null,
+                'message' => 'Falha ao enviar o PDF de abertura ao cliente.',
+            ];
+        }
+    }
+
+    private function renderOpeningClientMessage(Order $order): string
+    {
+        $defaultMessage = 'Sua OS ' . (string) ($order->numero_os ?? '') . ' foi aberta. Segue o comprovante em PDF.';
+        if (! Schema::hasTable('whatsapp_templates')) {
+            return $defaultMessage;
+        }
+
+        $template = WhatsappTemplate::query()
+            ->where(function ($query): void {
+                $query->where('codigo', 'os_aberta')
+                    ->orWhere('evento', 'os_aberta');
+            })
+            ->where('ativo', true)
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $template instanceof WhatsappTemplate) {
+            return $defaultMessage;
+        }
+
+        $equipment = trim(implode(' ', array_filter([
+            trim((string) ($order->equipment?->type?->nome ?? '')),
+            trim((string) ($order->equipment?->brand?->nome ?? '')),
+            trim((string) ($order->equipment?->model?->nome ?? '')),
+        ], static fn (string $value): bool => $value !== '')));
+
+        $message = strtr((string) ($template->conteudo ?? ''), [
+            '{{numero_os}}' => (string) ($order->numero_os ?? ''),
+            '{{cliente_nome}}' => (string) ($order->client?->nome_razao ?? ''),
+            '{{equipamento}}' => $equipment,
+            '{{equipamento_tipo}}' => (string) ($order->equipment?->type?->nome ?? ''),
+            '{{equipamento_marca}}' => (string) ($order->equipment?->brand?->nome ?? ''),
+            '{{equipamento_modelo}}' => (string) ($order->equipment?->model?->nome ?? ''),
+            '{{equipamento_serie}}' => (string) ($order->equipment?->numero_serie ?? ''),
+            '{{data_abertura}}' => $order->data_abertura instanceof Carbon
+                ? $order->data_abertura->format('d/m/Y H:i')
+                : (string) ($order->data_abertura ?? ''),
+            '{{tecnico_nome}}' => (string) ($order->technician?->nome ?? ''),
+        ]);
+
+        $message = trim(strip_tags(html_entity_decode($message, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')));
+
+        return $message !== '' ? $message : $defaultMessage;
+    }
+
+    private function resolveClientNotificationPhone(Order $order): string
+    {
+        foreach ([
+            (string) ($order->client?->telefone1 ?? ''),
+            (string) ($order->client?->telefone_contato ?? ''),
+            (string) ($order->client?->telefone2 ?? ''),
+        ] as $phone) {
+            $phone = trim($phone);
+            if ($phone !== '') {
+                return $phone;
+            }
+        }
+
+        return '';
+    }
+
+    private function recordOpeningDocumentDeliveryEvent(Order $order, string $phone, string $channel): void
+    {
+        $this->orderEventService->record(
+            (int) $order->id,
+            OrderEvent::CATEGORIA_MENSAGEM,
+            OrderEvent::TIPO_WHATSAPP_ENVIADO,
+            'PDF de abertura enviado',
+            'Comprovante de abertura enviado ao cliente.',
+            [
+                'origin' => 'order_opening_pdf',
+                'tipo_documento' => 'abertura',
+                'destino' => $phone,
+                'canal' => $channel,
+            ],
+            null,
+            OrderEvent::ORIGEM_SISTEMA
+        );
     }
 
     private function recordClientMessageEvent(Order $order, string $newStatus, string $telefone, string $canal): void

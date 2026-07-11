@@ -52,6 +52,10 @@ return [
         'suggestions_timeout' => (int) env('EQUIPMENT_MODEL_SUGGESTIONS_TIMEOUT', 5),
         'local_root' => env('COLLECTOR_LOCAL_ROOT', 'C:\\JovemTechBenchCollector'),
         'published_root' => env('COLLECTOR_PUBLISHED_ROOT'),
+        // Coletor Linux (script, nao binario): mesma convencao de pasta fixa
+        // do Windows, so que embaixo de /home em vez de C:\.
+        'local_root_linux' => env('COLLECTOR_LOCAL_ROOT_LINUX', '/home/JovemTechBenchCollector'),
+        'published_root_linux' => env('COLLECTOR_PUBLISHED_ROOT_LINUX'),
     ],
 
     'rbac' => [

@@ -149,7 +149,10 @@ class EquipmentService
     {
         $response = $this->apiClient->post('/equipments/collector-pairings');
 
-        return $response['data']['pairing'] ?? [];
+        $pairing = is_array($response['data']['pairing'] ?? null) ? $response['data']['pairing'] : [];
+        $pairing['collector_token'] = (string) ($response['data']['collector_token'] ?? '');
+
+        return $pairing;
     }
 
     /**

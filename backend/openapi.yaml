@@ -1113,6 +1113,10 @@ components:
             - alta
             - urgente
           nullable: true
+        enviar_pdf_cliente:
+          type: boolean
+          nullable: true
+          description: Quando verdadeiro, o backend gera o PDF de abertura com o modelo "abertura" e tenta enviar o documento ao cliente pelo fluxo WhatsApp configurado.
         relato_cliente:
           type: string
         diagnostico_tecnico:
