@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.1.0.1 — 2026-07-10 22:04
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** ajuste da cor do painel administrativo em tema azul
+- **Arquivos:** frontends/desktop/public/assets/css/themes/jovem-tech.css
+
 ## v4.1.0.0 — 2026-07-10 20:11
 - **Tier:** minor
 - **Autor/Agente:** Codex
