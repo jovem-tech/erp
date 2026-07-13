@@ -5830,7 +5830,13 @@ a {
 }
 
 .dashboard-chart-wrap-stacked {
-    min-height: 270px;
+    /* Precisa de altura explícita, não só min-height: o Chart.js usa
+       responsive:true + maintainAspectRatio:false, e sem uma altura definida
+       no container o ResizeObserver do Chart.js não tem uma referência
+       estável pra travar o canvas — o gráfico cresce sem limite em vez de
+       ocupar só os 270px do card (como o donut já fazia certo). */
+    height: 270px;
+    min-height: 0;
     padding: 0.75rem 1rem 0.65rem;
 }
 
@@ -6512,7 +6518,8 @@ a {
     .dashboard-equipment-stacked-panel .dashboard-chart-wrap-stacked {
         width: max(100%, 520px);
         min-width: 520px;
-        min-height: 255px;
+        height: 255px;
+        min-height: 0;
     }
 
     .dashboard-secondary-grid [data-dashboard-context-panel] .dashboard-chart-wrap-context {
@@ -6623,7 +6630,8 @@ a {
     .dashboard-equipment-stacked-panel .dashboard-chart-wrap-stacked {
         width: max(100%, 480px);
         min-width: 480px;
-        min-height: 245px;
+        height: 245px;
+        min-height: 0;
     }
 
     .dashboard-secondary-grid [data-dashboard-context-panel] .dashboard-chart-wrap-context {

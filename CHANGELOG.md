@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.6.3.0 — 2026-07-13 07:17
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Corrige o gráfico "Tipos de Equipamento" do dashboard, que renderizava quebrado (segmentos empilhados com contorno branco sólido + cantos arredondados em todos os lados, dando aspecto de "pílulas" desconectadas em vez de uma coluna única) e com cores fora do padrão visual do sistema (12 cores arbitrárias, sem validação, com fórmula HSL gerando tons extras a partir do 13º tipo). Trocado por uma paleta categórica de 8 cores fixas e validadas (separação segura para daltonismo, contraste testado contra o fundo real do card, com um tom violeta próximo do roxo primário do sistema); do 9º tipo em diante agora entra no agregado "Outros" com uma cor neutra fixa, nunca mais uma cor gerada por índice. Só o segmento do topo da pilha recebe cantos arredondados (reto embaixo e entre segmentos), com um espaçamento fino na cor da superfície do card em vez de contorno branco chapado. Corrigido também o container do canvas, que só tinha "min-height" (sem altura explícita) — sem uma referência estável de altura o Chart.js (responsive + maintainAspectRatio:false) deixava o gráfico crescer sem limite, nunca cabendo inteiro na tela; agora usa altura explícita nas três faixas responsivas, mesmo padrão já usado no gráfico de rosca "OS por status"
+- **Arquivos:** backend/app/Services/Dashboard/DashboardSummaryService.php,backend/tests/Feature/Api/V1/DashboardSummaryTest.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/public/assets/js/dashboard.js
+
 ## v4.6.2.0 — 2026-07-12 22:51
 - **Tier:** patch
 - **Autor/Agente:** Claude
