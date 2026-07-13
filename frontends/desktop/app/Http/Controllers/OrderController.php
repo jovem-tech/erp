@@ -10,6 +10,7 @@ use App\Services\DesktopOrderStatusFlowService;
 use App\Services\EquipmentService;
 use App\Services\OrderService;
 use App\Services\ReportedDefectService;
+use App\Services\TeamMemberService;
 use App\Services\UserService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -27,6 +28,7 @@ class OrderController extends DesktopController
         private readonly ClientService $clientService,
         private readonly EquipmentService $equipmentService,
         private readonly ReportedDefectService $reportedDefectService,
+        private readonly TeamMemberService $teamMemberService,
         private readonly UserService $userService,
         private readonly DesktopOrderStatusFlowService $statusFlowService
     ) {
@@ -121,26 +123,54 @@ class OrderController extends DesktopController
     private function resolveTechnicianOptions(): array
     {
         try {
-            // Cacheado por ser catalogo de referencia (lista de tecnicos ativos), igual
-            // para qualquer usuario com acesso; evita repetir essa chamada na API a cada
-            // carregamento da listagem de OS. Erros (sem permissao/API fora) nao sao
-            // cacheados, entao um usuario sem acesso nunca "contamina" o cache para quem tem.
-            $result = Cache::remember(
-                'desktop:order_filters:technicians',
+            // A fonte operacional do técnico agora é a grade da equipe. Mantemos
+            // cache curto por ser catálogo de apoio do formulário/listagem.
+            $items = Cache::remember(
+                'desktop:order_filters:team_technicians',
                 60,
-                fn (): array => $this->userService->paginate(['per_page' => 100, 'active' => 1])
+                fn (): array => $this->teamMemberService->assignableTechnicians()
             );
-        } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
-            // O filtro de tecnico e um complemento operacional: se o usuario atual nao
-            // tem permissao de visualizar usuarios (ou a API falhar), a listagem de OS
-            // continua funcionando normalmente, apenas sem opcoes nesse filtro.
-            return [];
-        }
 
-        return array_values(array_filter(
-            $result['items'],
-            static fn (array $user): bool => mb_strtolower(trim((string) ($user['perfil'] ?? ''))) === 'tecnico'
-        ));
+            return array_values(array_map(
+                static function (array $member): array {
+                    $linkedUser = is_array($member['linked_user'] ?? null) ? $member['linked_user'] : [];
+                    $userId = (int) ($member['order_technician_user_id'] ?? 0);
+                    $name = trim((string) ($member['nome'] ?? ''));
+                    $email = trim((string) ($member['email'] ?? ''));
+
+                    if ($email === '') {
+                        $email = trim((string) ($linkedUser['email'] ?? ''));
+                    }
+
+                    return [
+                        'id' => $userId,
+                        'nome' => $name !== '' ? $name : ('Técnico #' . $userId),
+                        'email' => $email,
+                    ];
+                },
+                array_values(array_filter(
+                    $items,
+                    static fn (array $member): bool => (int) ($member['order_technician_user_id'] ?? 0) > 0
+                ))
+            ));
+        } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
+            // Fallback de segurança: se a grade da equipe estiver indisponível,
+            // a OS continua utilizável com a origem legada por usuário.
+            try {
+                $result = Cache::remember(
+                    'desktop:order_filters:technicians_legacy_fallback',
+                    60,
+                    fn (): array => $this->userService->paginate(['per_page' => 100, 'active' => 1])
+                );
+            } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
+                return [];
+            }
+
+            return array_values(array_filter(
+                $result['items'],
+                static fn (array $user): bool => mb_strtolower(trim((string) ($user['perfil'] ?? ''))) === 'tecnico'
+            ));
+        }
     }
 
     /**
@@ -1085,6 +1115,477 @@ class OrderController extends DesktopController
             ->withHeaders($file['headers']);
     }
 
+    public function documentFormat(int $order, int $document, string $format): Response
+    {
+        $file = $this->orderService->downloadDocumentFile($order, $document, $format);
+
+        return response($file['body'], $file['status'])
+            ->withHeaders($file['headers']);
+    }
+
+    public function documentsCenter(int $order): View|RedirectResponse
+    {
+        try {
+            $viewData = $this->documentsCenterViewData($order);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return redirect()->route('orders.show', $order)->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return redirect()->route('orders.show', $order)->with('error', 'Não foi possível carregar a central documental desta OS agora.');
+        }
+
+        return view('orders.documents-center', array_merge(
+            ['pageTitle' => 'Documentos da OS'],
+            $viewData
+        ));
+    }
+
+    /**
+     * Estado atual da central documental para o AJAX de refresh
+     * (sem reload): devolve os 4 fragments (catalogo/acervo/envios/links)
+     * já renderizados, para o JS trocar o innerHTML dos wrappers estáveis.
+     */
+    public function documentsCenterState(int $order): JsonResponse
+    {
+        try {
+            $viewData = $this->documentsCenterViewData($order);
+        } catch (ApiAuthenticationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 401);
+        } catch (ApiAuthorizationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 403);
+        } catch (ApiRequestException $exception) {
+            return $this->jsonFailure($exception->getMessage(), $exception->statusCode() > 0 ? $exception->statusCode() : 422, $exception->details());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->jsonFailure('Não foi possível atualizar a central documental agora.', 500);
+        }
+
+        $orderId = (int) ($viewData['orderId'] ?? $order);
+        $pendingSends = count(array_filter(
+            $viewData['sendHistory'],
+            static fn (array $send): bool => (string) ($send['status'] ?? '') === 'na_fila'
+        ));
+
+        return response()->json([
+            'success' => true,
+            'fragments' => [
+                'catalog' => view('orders.documents-center._catalog', [
+                    'catalog' => $viewData['catalog'],
+                    'orderId' => $orderId,
+                ])->render(),
+                'documents' => view('orders.documents-center._documents-table', [
+                    'documents' => $viewData['documents'],
+                    'orderId' => $orderId,
+                ])->render(),
+                'sends' => view('orders.documents-center._send-history', [
+                    'sendHistory' => $viewData['sendHistory'],
+                ])->render(),
+                'links' => view('orders.documents-center._share-links', [
+                    'shareLinks' => $viewData['shareLinks'],
+                    'orderId' => $orderId,
+                ])->render(),
+            ],
+            'meta' => [
+                'pending_sends' => $pendingSends,
+                'documents_count' => count($viewData['documents']),
+            ],
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function documentsCenterViewData(int $order): array
+    {
+        $context = $this->orderService->documentsCenter($order);
+
+        return [
+            'orderId' => $order,
+            'order' => is_array($context['order'] ?? null) ? $context['order'] : [],
+            'catalog' => is_array($context['catalog'] ?? null) ? $context['catalog'] : [],
+            'documents' => is_array($context['documents'] ?? null) ? $context['documents'] : [],
+            'dispatchDefaults' => is_array($context['dispatch_defaults'] ?? null) ? $context['dispatch_defaults'] : [],
+            'whatsappTemplates' => is_array($context['whatsapp_templates'] ?? null) ? $context['whatsapp_templates'] : [],
+            'sendHistory' => is_array($context['send_history'] ?? null) ? $context['send_history'] : [],
+            'shareLinks' => is_array($context['share_links'] ?? null) ? $context['share_links'] : [],
+            'limits' => is_array($context['limits'] ?? null) ? $context['limits'] : [],
+        ];
+    }
+
+    public function documentsCenterGenerate(Request $request, int $order): RedirectResponse|JsonResponse
+    {
+        $validated = $request->validate([
+            'tipos' => ['required', 'array', 'min:1'],
+            'tipos.*' => ['required', 'string', 'max:80'],
+        ], [], [
+            'tipos' => 'tipos documentais',
+            'tipos.*' => 'tipo documental',
+        ]);
+
+        $wantsJson = $request->expectsJson();
+
+        try {
+            $result = $this->orderService->generateDocuments($order, array_values($validated['tipos'] ?? []));
+        } catch (ApiAuthenticationException $exception) {
+            if ($wantsJson) {
+                return $this->jsonFailure($exception->getMessage(), 401);
+            }
+
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            if ($wantsJson) {
+                $status = $exception instanceof ApiRequestException && $exception->statusCode() > 0 ? $exception->statusCode() : 422;
+                $details = $exception instanceof ApiRequestException ? $exception->details() : null;
+
+                return $this->jsonFailure($exception->getMessage(), $status, $details);
+            }
+
+            return back()->withInput()->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            if ($wantsJson) {
+                return $this->jsonFailure('Não foi possível gerar os documentos selecionados agora.', 500);
+            }
+
+            return back()->withInput()->with('error', 'Não foi possível gerar os documentos selecionados agora.');
+        }
+
+        $documents = is_array($result['documents'] ?? null) ? $result['documents'] : [];
+        $successfulDocuments = array_values(array_filter(
+            $documents,
+            static fn (array $document): bool => (bool) ($document['ok'] ?? false)
+        ));
+
+        if ($documents !== [] && $successfulDocuments === []) {
+            $messages = array_values(array_filter(array_map(
+                static fn (array $document): string => trim((string) ($document['message'] ?? '')),
+                $documents
+            )));
+            $errorMessage = $messages[0] ?? 'Nenhum documento pôde ser gerado com os dados atuais da OS.';
+
+            if ($wantsJson) {
+                return $this->jsonFailure($errorMessage, 422, ['results' => $documents]);
+            }
+
+            return redirect()
+                ->route('orders.documents.center', $order)
+                ->with('error', $errorMessage);
+        }
+
+        $successMessage = count($successfulDocuments) === 1
+            ? '1 documento gerado com sucesso.'
+            : count($successfulDocuments) . ' documentos gerados com sucesso.';
+
+        if ($documents !== [] && count($successfulDocuments) < count($documents)) {
+            $successMessage .= ' Alguns itens permaneceram pendentes por falta de pré-requisitos.';
+        }
+
+        if ($wantsJson) {
+            return response()->json([
+                'success' => true,
+                'message' => $successMessage,
+                'results' => $documents,
+            ]);
+        }
+
+        return redirect()
+            ->route('orders.documents.center', $order)
+            ->with('success', $successMessage);
+    }
+
+    public function documentsCenterDispatch(Request $request, int $order): RedirectResponse
+    {
+        $action = trim((string) $request->input('dispatch_action', ''));
+
+        return match ($action) {
+            'share' => $this->documentsCenterShare($request, $order),
+            'send' => $this->documentsCenterSend($request, $order),
+            default => redirect()
+                ->route('orders.documents.center', $order)
+                ->with('error', 'A ação documental solicitada é inválida ou não foi informada.'),
+        };
+    }
+
+    public function documentsCenterSend(Request $request, int $order): RedirectResponse|JsonResponse
+    {
+        $wantsJson = $request->expectsJson();
+
+        $validated = validator(
+            [
+                'document_ids' => $this->extractDocumentIdsFromRequest($request),
+                'channel' => $this->firstRequestValue($request, ['send_channel', 'channel']),
+                'format' => $this->firstRequestValue($request, ['send_format', 'format']),
+                'template_code' => $this->firstRequestValue($request, ['send_template_code', 'template_code']),
+                'destino' => $this->firstRequestValue($request, ['send_destino', 'destino']),
+                'message' => $this->firstRequestValue($request, ['send_message', 'message']),
+                'confirmar_destino_alternativo' => $this->firstRequestBoolean($request, ['send_confirmar_destino_alternativo', 'confirmar_destino_alternativo']),
+            ],
+            [
+                'document_ids' => ['required', 'array', 'min:1'],
+                'document_ids.*' => ['required', 'integer', 'min:1'],
+                'channel' => ['nullable', 'string', 'in:whatsapp,email'],
+                'format' => ['nullable', 'string', 'in:a4,80mm'],
+                'template_code' => ['nullable', 'string', 'max:80'],
+                'destino' => ['nullable', 'string', 'max:255'],
+                'message' => ['nullable', 'string', 'max:4000'],
+                'confirmar_destino_alternativo' => ['nullable', 'boolean'],
+            ],
+            [
+                'document_ids.required' => 'Selecione ao menos um documento do acervo antes de enfileirar o envio.',
+                'document_ids.array' => 'Selecione ao menos um documento válido do acervo antes de enfileirar o envio.',
+                'document_ids.min' => 'Selecione ao menos um documento do acervo antes de enfileirar o envio.',
+                'document_ids.*.integer' => 'Existe um documento inválido na seleção do envio.',
+                'document_ids.*.min' => 'Existe um documento inválido na seleção do envio.',
+            ]
+        )->validate();
+
+        try {
+            $result = $this->orderService->sendDocuments($order, $validated);
+        } catch (ApiAuthenticationException $exception) {
+            if ($wantsJson) {
+                return $this->jsonFailure($exception->getMessage(), 401);
+            }
+
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            if ($wantsJson) {
+                $status = $exception instanceof ApiRequestException && $exception->statusCode() > 0 ? $exception->statusCode() : 422;
+                $details = $exception instanceof ApiRequestException ? $exception->details() : null;
+
+                return $this->jsonFailure($exception->getMessage(), $status, $details);
+            }
+
+            return back()->withInput()->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            if ($wantsJson) {
+                return $this->jsonFailure('Não foi possível enfileirar o envio documental agora.', 500);
+            }
+
+            return back()->withInput()->with('error', 'Não foi possível enfileirar o envio documental agora.');
+        }
+
+        if ($wantsJson) {
+            return response()->json([
+                'success' => true,
+                'message' => 'Envio documental enfileirado.',
+                'send' => is_array($result['send'] ?? null) ? $result['send'] : null,
+            ]);
+        }
+
+        return redirect()
+            ->route('orders.documents.center', $order)
+            ->with('success', 'Envio documental enfileirado.');
+    }
+
+    public function documentsCenterShare(Request $request, int $order): RedirectResponse|JsonResponse
+    {
+        $wantsJson = $request->expectsJson();
+
+        $validated = validator(
+            [
+                'document_ids' => $this->extractDocumentIdsFromRequest($request),
+                'format' => $this->firstRequestValue($request, ['share_format', 'format']),
+                'expiracao' => $this->firstRequestValue($request, ['share_expiracao', 'expiracao']),
+            ],
+            [
+                'document_ids' => ['required', 'array', 'min:1'],
+                'document_ids.*' => ['required', 'integer', 'min:1'],
+                'format' => ['nullable', 'string', 'in:a4,80mm'],
+                'expiracao' => ['nullable', 'string', 'in:24h,7d,30d'],
+            ],
+            [
+                'document_ids.required' => 'Selecione ao menos um documento do acervo antes de gerar o link.',
+                'document_ids.array' => 'Selecione ao menos um documento válido do acervo antes de gerar o link.',
+                'document_ids.min' => 'Selecione ao menos um documento do acervo antes de gerar o link.',
+                'document_ids.*.integer' => 'Existe um documento inválido na seleção do link.',
+                'document_ids.*.min' => 'Existe um documento inválido na seleção do link.',
+            ]
+        )->validate();
+
+        try {
+            $result = $this->orderService->createShareLink($order, $validated);
+        } catch (ApiAuthenticationException $exception) {
+            if ($wantsJson) {
+                return $this->jsonFailure($exception->getMessage(), 401);
+            }
+
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            if ($wantsJson) {
+                $status = $exception instanceof ApiRequestException && $exception->statusCode() > 0 ? $exception->statusCode() : 422;
+                $details = $exception instanceof ApiRequestException ? $exception->details() : null;
+
+                return $this->jsonFailure($exception->getMessage(), $status, $details);
+            }
+
+            return back()->withInput()->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            if ($wantsJson) {
+                return $this->jsonFailure('Não foi possível gerar o link documental agora.', 500);
+            }
+
+            return back()->withInput()->with('error', 'Não foi possível gerar o link documental agora.');
+        }
+
+        $link = is_array($result['link'] ?? null) ? $result['link'] : [];
+        $message = 'Link seguro criado com sucesso.';
+
+        if ($wantsJson) {
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'link' => [
+                    'url' => (string) ($link['url'] ?? ''),
+                    'format' => (string) ($link['format'] ?? ($validated['format'] ?? 'a4')),
+                    'expires_at' => (string) ($link['expires_at'] ?? ''),
+                ],
+            ]);
+        }
+
+        if (($link['url'] ?? '') !== '') {
+            $message .= ' URL: ' . $link['url'];
+        }
+
+        return redirect()
+            ->route('orders.documents.center', $order)
+            ->with('success', $message)
+            ->with('generated_document_link', [
+                'url' => (string) ($link['url'] ?? ''),
+                'format' => (string) ($link['format'] ?? ($validated['format'] ?? 'a4')),
+                'expires_at' => (string) ($link['expires_at'] ?? ''),
+            ]);
+    }
+
+    public function documentsCenterRevokeLink(Request $request, int $order, int $link): RedirectResponse|JsonResponse
+    {
+        $wantsJson = $request->expectsJson();
+
+        try {
+            $this->orderService->revokeShareLink($order, $link);
+        } catch (ApiAuthenticationException $exception) {
+            if ($wantsJson) {
+                return $this->jsonFailure($exception->getMessage(), 401);
+            }
+
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            if ($wantsJson) {
+                $status = $exception instanceof ApiRequestException && $exception->statusCode() > 0 ? $exception->statusCode() : 422;
+                $details = $exception instanceof ApiRequestException ? $exception->details() : null;
+
+                return $this->jsonFailure($exception->getMessage(), $status, $details);
+            }
+
+            return back()->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            if ($wantsJson) {
+                return $this->jsonFailure('Não foi possível revogar o link agora.', 500);
+            }
+
+            return back()->with('error', 'Não foi possível revogar o link agora.');
+        }
+
+        if ($wantsJson) {
+            return response()->json(['success' => true, 'message' => 'Link revogado com sucesso.']);
+        }
+
+        return redirect()
+            ->route('orders.documents.center', $order)
+            ->with('success', 'Link revogado com sucesso.');
+    }
+
+    public function documentsCenterArchive(Request $request, int $order, int $document): RedirectResponse|JsonResponse
+    {
+        return $this->toggleDocumentArchive($request, $order, $document, true);
+    }
+
+    public function documentsCenterUnarchive(Request $request, int $order, int $document): RedirectResponse|JsonResponse
+    {
+        return $this->toggleDocumentArchive($request, $order, $document, false);
+    }
+
+    public function documentsCenterDownload(Request $request, int $order): Response|RedirectResponse
+    {
+        $documentIds = $this->extractDocumentIdsFromRequest($request);
+        $format = in_array((string) $request->query('format', 'a4'), ['a4', '80mm'], true)
+            ? (string) $request->query('format', 'a4')
+            : 'a4';
+
+        if ($documentIds === []) {
+            return redirect()->route('orders.documents.center', $order)->with('error', 'Selecione ao menos um documento para montar o ZIP.');
+        }
+
+        try {
+            $file = $this->orderService->downloadDocumentsZip($order, $documentIds, $format);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return redirect()->route('orders.documents.center', $order)->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return redirect()->route('orders.documents.center', $order)->with('error', 'Não foi possível montar o ZIP documental agora.');
+        }
+
+        return response($file['body'], $file['status'])
+            ->withHeaders($file['headers']);
+    }
+
+    public function documentsCenterPrint(Request $request, int $order): View|RedirectResponse
+    {
+        $documentIds = $this->extractDocumentIdsFromRequest($request);
+        $format = in_array((string) $request->query('format', 'a4'), ['a4', '80mm'], true)
+            ? (string) $request->query('format', 'a4')
+            : 'a4';
+
+        if ($documentIds === []) {
+            return redirect()->route('orders.documents.center', $order)->with('error', 'Selecione ao menos um documento para abrir a fila de impressão.');
+        }
+
+        try {
+            $bundle = $this->orderService->printDocuments($order, $documentIds, $format);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return redirect()->route('orders.documents.center', $order)->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return redirect()->route('orders.documents.center', $order)->with('error', 'Não foi possível abrir o bundle de impressão agora.');
+        }
+
+        $documents = collect($bundle['documents'] ?? [])
+            ->map(function (array $document) use ($order, $format): array {
+                $document['print_url'] = route('orders.documents.files.show', [
+                    'order' => $order,
+                    'document' => (int) ($document['id'] ?? 0),
+                    'format' => $format,
+                ]);
+
+                return $document;
+            })
+            ->values()
+            ->all();
+
+        return view('orders.documents-print', [
+            'pageTitle' => 'Impressão documental da OS',
+            'order' => is_array($bundle['order'] ?? null) ? $bundle['order'] : ['id' => $order],
+            'format' => $format,
+            'documents' => $documents,
+        ]);
+    }
+
     /**
      * Resposta JSON de erro padronizada (mesmo formato dos demais controllers
      * do desktop, ex.: EquipmentController). Consumida pelos endpoints AJAX
@@ -1097,5 +1598,107 @@ class OrderController extends DesktopController
             'message' => $message,
             'errors' => $errors,
         ], $status);
+    }
+
+    private function toggleDocumentArchive(Request $request, int $order, int $document, bool $archive): RedirectResponse|JsonResponse
+    {
+        $wantsJson = $request->expectsJson();
+        $successMessage = $archive ? 'Documento arquivado com sucesso.' : 'Documento reativado com sucesso.';
+        $failureMessage = $archive
+            ? 'Não foi possível arquivar o documento agora.'
+            : 'Não foi possível reativar o documento agora.';
+
+        try {
+            $this->orderService->archiveDocument($order, $document, $archive);
+        } catch (ApiAuthenticationException $exception) {
+            if ($wantsJson) {
+                return $this->jsonFailure($exception->getMessage(), 401);
+            }
+
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            if ($wantsJson) {
+                $status = $exception instanceof ApiRequestException && $exception->statusCode() > 0 ? $exception->statusCode() : 422;
+                $details = $exception instanceof ApiRequestException ? $exception->details() : null;
+
+                return $this->jsonFailure($exception->getMessage(), $status, $details);
+            }
+
+            return back()->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            if ($wantsJson) {
+                return $this->jsonFailure($failureMessage, 500);
+            }
+
+            return back()->with('error', $failureMessage);
+        }
+
+        if ($wantsJson) {
+            return response()->json(['success' => true, 'message' => $successMessage]);
+        }
+
+        return redirect()
+            ->route('orders.documents.center', $order)
+            ->with('success', $successMessage);
+    }
+
+    /**
+     * @param array<int, mixed> $values
+     * @return array<int, int>
+     */
+    private function normalizeDocumentIds(array $values): array
+    {
+        return array_values(array_filter(array_map(
+            static fn ($value): int => (int) $value,
+            $values
+        ), static fn (int $value): bool => $value > 0));
+    }
+
+    /**
+     * @return array<int, int>
+     */
+    private function extractDocumentIdsFromRequest(Request $request): array
+    {
+        $values = $request->input('document_ids', $request->query('document_ids', []));
+
+        if (is_string($values)) {
+            $values = preg_split('/[\s,]+/', $values, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        }
+
+        if (! is_array($values)) {
+            $values = [$values];
+        }
+
+        return $this->normalizeDocumentIds($values);
+    }
+
+    private function firstRequestValue(Request $request, array $keys): ?string
+    {
+        foreach ($keys as $key) {
+            if (! $request->exists($key)) {
+                continue;
+            }
+
+            $value = trim((string) $request->input($key));
+
+            return $value !== '' ? $value : null;
+        }
+
+        return null;
+    }
+
+    private function firstRequestBoolean(Request $request, array $keys): ?bool
+    {
+        foreach ($keys as $key) {
+            if (! $request->exists($key)) {
+                continue;
+            }
+
+            return $request->boolean($key);
+        }
+
+        return null;
     }
 }

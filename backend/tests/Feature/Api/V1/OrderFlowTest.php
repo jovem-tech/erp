@@ -192,7 +192,7 @@ class OrderFlowTest extends TestCase
         ]);
     }
 
-    public function test_index_open_status_scope_excludes_closure_and_delivered_pending_payment_orders(): void
+    public function test_index_open_status_scope_excludes_only_the_three_closure_codes(): void
     {
         [$manager, $techA, $techB, $clientA, $clientB, $equipmentA, $equipmentB] = $this->seedAdminOrderActors();
 
@@ -257,13 +257,16 @@ class OrderFlowTest extends TestCase
             ->getJson('/api/v1/orders?status_scope=open');
 
         $response->assertOk()
-            ->assertJsonPath('meta.pagination.total', 2);
+            ->assertJsonPath('meta.pagination.total', 3);
 
         $orders = collect($response->json('data.orders', []));
 
         $this->assertTrue($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $openOrder));
         $this->assertTrue($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $pausedOperationalOrder));
-        $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $deliveredPendingPaymentOrder));
+        // Entregue com pendencia financeira NAO e' um dos 3 closureCodes() —
+        // a OS continua com acao pendente (cobranca) e deve seguir aparecendo
+        // na listagem operacional padrao (decisao explicita do usuario, 2026-07-12).
+        $this->assertTrue($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $deliveredPendingPaymentOrder));
         $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $deliveredOrder));
         $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $noRepairOrder));
         $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $discardedOrder));
@@ -932,7 +935,74 @@ class OrderFlowTest extends TestCase
         ]);
 
         $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->getJson("/api/v1/orders/{$orderId}/documents")
+            ->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.documents.0.id', $documentId)
+            ->assertJsonPath('data.documents.0.type', 'abertura')
+            ->assertJsonPath('data.documents.0.files.a4.available', true)
+            ->assertJsonPath('data.catalog.0.type', 'abertura');
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
             ->get("/api/v1/orders/{$orderId}/documents/{$documentId}")
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf');
+    }
+
+    public function test_document_center_can_create_public_share_link_for_selected_os_document(): void
+    {
+        Storage::fake('local');
+
+        [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
+        $this->seedOpeningDocumentTemplates();
+        $token = $this->loginAndGetToken($manager->email);
+
+        $createResponse = $this
+            ->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'tecnico_id' => $technician->id,
+                'status' => 'triagem',
+                'relato_cliente' => 'Cliente precisa do comprovante para acompanhamento.',
+                'garantia_dias' => 90,
+            ]);
+
+        $createResponse->assertCreated()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.opening_document.generated', true);
+
+        $orderId = (int) $createResponse->json('data.order.id');
+        $orderNumber = (string) $createResponse->json('data.order.numero_os');
+        $documentId = (int) $createResponse->json('data.order.documentos.0.id');
+
+        $shareResponse = $this
+            ->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson("/api/v1/orders/{$orderId}/documents/share-links", [
+                'document_ids' => [$documentId],
+                'format' => 'a4',
+                'expiracao' => '7d',
+            ]);
+
+        $shareResponse->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.link.format', 'a4');
+
+        $publicUrl = (string) $shareResponse->json('data.link.url');
+        $publicPath = (string) parse_url($publicUrl, PHP_URL_PATH);
+        $publicToken = basename($publicPath);
+
+        $this->assertSame(64, strlen($publicToken));
+        $this->assertDatabaseHas('os_documento_links', [
+            'os_id' => $orderId,
+            'formato_padrao' => 'a4',
+        ]);
+
+        $this->get($publicPath)
+            ->assertOk()
+            ->assertSee($orderNumber);
+
+        $this->get($publicPath . '/arquivos/' . $documentId . '/a4')
             ->assertOk()
             ->assertHeader('Content-Type', 'application/pdf');
     }

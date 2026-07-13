@@ -82,12 +82,15 @@
 
         /* Cards de contexto: cliente + equipamento (abaixo da barra de etapas) */
         .closure-context-card {
-            background: var(--desktop-surface-soft);
+            background: var(--desktop-surface);
             border: 1px solid var(--desktop-border);
-            border-radius: var(--desktop-radius-md);
-            padding: 0.85rem 1rem;
+            border-radius: var(--desktop-radius-lg);
+            box-shadow: var(--desktop-shadow-soft);
+            padding: 1.15rem;
             font-size: 0.8rem;
             height: 100%;
+            position: relative;
+            overflow: hidden;
         }
 
         .closure-equipment-context-body {
@@ -165,14 +168,16 @@
         }
 
         .closure-equipment-name {
-            font-weight: 700;
-            color: var(--desktop-text);
+            font-weight: 800;
+            color: var(--desktop-heading);
             line-height: 1.3;
+            font-size: 1.15rem;
         }
 
         .closure-equipment-meta {
             color: var(--desktop-text-soft);
-            margin-top: 0.15rem;
+            margin-top: 0.35rem;
+            font-size: 0.9rem;
         }
 
         /* Step panels */
@@ -185,12 +190,12 @@
         }
 
         .closure-panel-title {
-            font-size: 0.7rem;
+            font-size: 0.74rem;
             font-weight: 800;
-            letter-spacing: 0.07em;
+            letter-spacing: 0.08em;
             text-transform: uppercase;
-            color: var(--desktop-text-muted);
-            margin-bottom: 0.75rem;
+            color: var(--desktop-text-soft);
+            margin-bottom: 0.55rem;
         }
 
         /* Decision note (step 1) */
@@ -246,30 +251,27 @@
         /* Metric grid (step 2 right) */
         .closure-metric-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0.65rem;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 1rem;
             margin-bottom: 1rem;
         }
 
-        .closure-metric-card {
-            background: var(--desktop-surface);
-            border: 1px solid var(--desktop-border);
-            border-radius: var(--desktop-radius-sm);
-            padding: 0.7rem 0.85rem;
-            font-size: 0.78rem;
+        .closure-metric-grid .summary-card {
+            height: 100%;
         }
 
-        .closure-metric-card span {
-            display: block;
-            color: var(--desktop-text-soft);
-            margin-bottom: 0.2rem;
-            line-height: 1.3;
+        .closure-metric-grid .summary-card-value {
+            font-size: 1.1rem;
         }
 
-        .closure-metric-card strong {
-            font-size: 0.95rem;
-            font-weight: 700;
-            color: var(--desktop-text);
+        .closure-metric-grid .summary-card-meta {
+            min-height: 2.75rem;
+        }
+
+        @media (max-width: 767.98px) {
+            .closure-metric-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         /* Payment action buttons */
@@ -491,6 +493,7 @@
         $retornoPadrao = (string) ($closure['retorno_padrao'] ?? now()->addDays(180)->toDateString());
         $noRepairStatuses = $closure['status_sem_reparo'] ?? ['devolvido_sem_reparo', 'descartado'];
         $statusPagamentoPendente = $closure['status_pagamento_pendente'] ?? ['codigo' => 'entregue_pagamento_pendente', 'nome' => 'Entregue - Pendência Financeira'];
+        $statusEntregue = $closure['status_entregue'] ?? 'equipamento_entregue';
 
         $equipamentoNome = trim((string) ($order['equipamento_nome'] ?? ($order['equipamento']['nome'] ?? '')));
         $equipamentoTipo = trim((string) ($order['equipamento_tipo_nome'] ?? ($order['equipamento']['tipo_nome'] ?? ($order['equipamento']['tipo']['nome'] ?? ''))));
@@ -499,13 +502,87 @@
         $equipamentoModelo = trim((string) ($order['equipamento']['modelo_nome'] ?? ''));
         $equipamentoFoto = $order['equipamento_foto'] ?? null;
         $photoViewerGroup = 'order-closure-' . $orderId . '-photos';
+
+        // Mesmas condições de orders/show.blade.php para o dropdown "Mais ações"
+        // (o item "Baixa/Adiantamento" fica de fora aqui pois já estamos nessa página).
+        $isEncerradaHeader = (bool) ($order['is_encerrada'] ?? false);
+        $canEditOrderHeader = \App\Support\DesktopSession::can('os', 'editar');
+        $canCreateBudgetHeader = \App\Support\DesktopSession::can('orcamentos', 'criar');
+        $orcamentoHeader = $order['orcamento'] ?? null;
+        $hasOrcamentoHeader = $orcamentoHeader !== null;
+        $selectableStatusesHeader = (array) ($order['proximas_etapas'] ?? []);
+        foreach ((array) ($order['status_disponiveis'] ?? []) as $option) {
+            if (($option['codigo'] ?? '') === ($order['status'] ?? '')) {
+                array_unshift($selectableStatusesHeader, $option);
+                break;
+            }
+        }
     @endphp
 
     {{-- Cabeçalho --}}
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
+        <div></div>
 
-        <div class="align-self-start">
-            <a href="{{ route('orders.show', $orderId) }}" class="btn btn-outline-light">ir para a {{ $order['numero_os'] ?? ('#' . $orderId) }}</a>
+        <div class="dropdown os-actions-dropdown align-self-start">
+            <button type="button"
+                class="btn btn-outline-light dropdown-toggle os-actions-toggle"
+                data-bs-toggle="dropdown"
+                aria-expanded="false">
+                Mais ações
+            </button>
+
+            <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                <a href="{{ route('orders.show', $orderId) }}" class="dropdown-item">
+                    <i class="bi bi-eye me-2"></i>Ver OS
+                </a>
+
+                <a href="{{ route('orders.documents.center', $orderId) }}" class="dropdown-item">
+                    <i class="bi bi-folder-symlink me-2"></i>Documentos da OS
+                </a>
+
+                @if ($canEditOrderHeader)
+                    <a href="{{ route('orders.edit', $orderId) }}" class="dropdown-item">
+                        <i class="bi bi-pencil me-2"></i>Editar
+                    </a>
+                @endif
+
+                @if ($canEditOrderHeader && ! $isEncerradaHeader && $selectableStatusesHeader !== [])
+                    <button type="button"
+                        class="dropdown-item"
+                        data-bs-toggle="modal"
+                        data-bs-target="#orderStatusModal"
+                        data-order-id="{{ $orderId }}"
+                        data-order-numero="{{ $order['numero_os'] ?? ('#' . $orderId) }}">
+                        <i class="bi bi-arrow-left-right me-2"></i>Alterar status
+                    </button>
+                @endif
+
+                @if ($hasOrcamentoHeader)
+                    <a href="{{ route('orcamentos.show', $orcamentoHeader['id']) }}" class="dropdown-item">
+                        <i class="bi bi-receipt me-2"></i>Ver orçamento
+                    </a>
+                @elseif ($canCreateBudgetHeader)
+                    <a href="{{ route('orcamentos.create', ['os_id' => $orderId]) }}" class="dropdown-item">
+                        <i class="bi bi-receipt me-2"></i>Gerar orçamento
+                    </a>
+                @endif
+
+                <a href="{{ route('orders.preview', $orderId) }}" target="_blank" rel="noreferrer" class="dropdown-item">
+                    <i class="bi bi-printer me-2"></i>Imprimir
+                </a>
+
+                @if ($isEncerradaHeader)
+                    <div class="dropdown-divider"></div>
+                    <button type="button"
+                        class="dropdown-item text-danger"
+                        data-bs-toggle="modal"
+                        data-bs-target="#cancelClosureModal"
+                        data-order-id="{{ $orderId }}"
+                        data-order-numero="{{ $order['numero_os'] ?? ('#' . $orderId) }}">
+                        <i class="bi bi-arrow-counterclockwise me-2"></i>Cancelar baixa
+                    </button>
+                @endif
+            </div>
         </div>
     </div>
 
@@ -743,22 +820,26 @@
                             </div>
 
                             <div class="closure-metric-grid">
-                                <div class="closure-metric-card">
-                                    <span>Valor final da OS</span>
-                                    <strong id="closureMetricValorOs">R$ {{ number_format($valorFinal, 2, ',', '.') }}</strong>
-                                </div>
-                                <div class="closure-metric-card">
-                                    <span>Recebido antes desta baixa</span>
-                                    <strong id="closureMetricValorRecebido">R$ {{ number_format($valorMovimentado, 2, ',', '.') }}</strong>
-                                </div>
-                                <div class="closure-metric-card">
-                                    <span>Saldo em aberto</span>
-                                    <strong id="closureMetricValorAberto">R$ {{ number_format($valorAberto, 2, ',', '.') }}</strong>
-                                </div>
-                                <div class="closure-metric-card">
-                                    <span>Lançado nesta ação</span>
-                                    <strong id="closureMetricValorBaixa">R$ 0,00</strong>
-                                </div>
+                                <article class="summary-card">
+                                    <span class="summary-card-eyebrow">Valor final da OS</span>
+                                    <div class="summary-card-value" id="closureMetricValorOs">R$ {{ number_format($valorFinal, 2, ',', '.') }}</div>
+                                    <div class="summary-card-meta">Total consolidado da OS considerado nesta baixa.</div>
+                                </article>
+                                <article class="summary-card">
+                                    <span class="summary-card-eyebrow">Recebido antes desta baixa</span>
+                                    <div class="summary-card-value" id="closureMetricValorRecebido">R$ {{ number_format($valorMovimentado, 2, ',', '.') }}</div>
+                                    <div class="summary-card-meta">Valores já registrados anteriormente no financeiro da OS.</div>
+                                </article>
+                                <article class="summary-card">
+                                    <span class="summary-card-eyebrow">Saldo em aberto</span>
+                                    <div class="summary-card-value" id="closureMetricValorAberto">R$ {{ number_format($valorAberto, 2, ',', '.') }}</div>
+                                    <div class="summary-card-meta">Diferença restante antes de concluir o fechamento financeiro.</div>
+                                </article>
+                                <article class="summary-card">
+                                    <span class="summary-card-eyebrow">Lançado nesta ação</span>
+                                    <div class="summary-card-value" id="closureMetricValorBaixa">R$ 0,00</div>
+                                    <div class="summary-card-meta">Soma dos recebimentos e adiantamentos adicionados agora.</div>
+                                </article>
                             </div>
 
                             <div id="closureReceiptsEmptyHint" class="closure-muted-box">
@@ -967,6 +1048,7 @@
                         <div>
                             <label class="form-label">Parcelas</label>
                             <input type="number" min="1" max="99" step="1" class="form-control" data-field="parcelas" value="1">
+                            <small class="text-secondary d-block mt-1" data-parcelas-hint></small>
                         </div>
                     </div>
                     <p class="small text-secondary mt-2 mb-0" data-card-preview>Selecione operadora e parcelas para estimar a taxa.</p>
@@ -978,6 +1060,8 @@
 
 @push('modals')
     @include('layouts.partials.photo-viewer-modal')
+    @include('orders._status_modal')
+    @include('orders._cancel_closure_modal')
 @endpush
 
 @section('scripts')
@@ -991,6 +1075,7 @@
             'dataEntregaDefault' => now()->toDateString(),
             'noRepairStatuses' => $noRepairStatuses,
             'statusPagamentoPendente' => $statusPagamentoPendente,
+            'deliveredStatusCode' => $statusEntregue,
             'statusAtualNome' => $order['status_nome'] ?? 'Sem status',
             'statusAtualCodigo' => $order['status'] ?? '',
             'cartao' => $cartaoDataset,
@@ -1008,4 +1093,20 @@
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
     </script>
     <script src="{{ asset('assets/js/orders-closure.js') }}?v={{ filemtime(public_path('assets/js/orders-closure.js')) }}"></script>
+
+    {{-- Dropdown "Mais ações" reaproveita os mesmos modais/JS de orders/show.blade.php --}}
+    <script>
+        window.__DESKTOP_STATUS_MODAL = {
+            statusContextUrlTemplate: '{{ route('orders.status.context', ['order' => '__ORDER__']) }}',
+            statusUpdateUrlTemplate: '{{ route('orders.status.update', ['order' => '__ORDER__']) }}',
+            proceduresUrlTemplate: '{{ route('orders.procedures.store', ['order' => '__ORDER__']) }}',
+            csrfToken: '{{ csrf_token() }}',
+        };
+        window.__DESKTOP_CANCEL_CLOSURE_MODAL = {
+            cancelUrlTemplate: '{{ route('orders.closure.cancel', ['order' => '__ORDER__']) }}',
+            csrfToken: '{{ csrf_token() }}',
+        };
+    </script>
+    <script src="{{ asset('assets/js/orders-status-modal.js') }}"></script>
+    <script src="{{ asset('assets/js/orders-cancel-closure-modal.js') }}"></script>
 @endsection

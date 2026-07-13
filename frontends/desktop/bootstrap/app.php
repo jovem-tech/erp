@@ -11,6 +11,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 $basePath = dirname(__DIR__);
@@ -65,6 +66,22 @@ return Application::configure(basePath: $basePath)
                 ->withInput($request->except(['password', 'admin_password']))
                 ->with('error', $exception->getMessage())
                 ->with('api_error_details', $exception->details() ?? []);
+        });
+
+        // ValidationException não implementa HttpExceptionInterface, então sem
+        // este render() dedicado ela cairia no fallback genérico abaixo (que
+        // trata tudo que não é HttpExceptionInterface como erro 500) — o
+        // JSON de validação (com a mensagem por campo) nunca chegaria ao
+        // JS, e o front-end só veria "Ocorreu um erro inesperado."
+        $exceptions->render(function (ValidationException $exception, Request $request) {
+            if (! ($request->expectsJson() || $request->ajax())) {
+                return null;
+            }
+
+            return response()->json([
+                'message' => $exception->getMessage(),
+                'errors' => $exception->errors(),
+            ], $exception->status);
         });
 
         // Fallback para qualquer exceção não tratada acima, apenas em requisições

@@ -477,6 +477,29 @@ const DesktopUi = (() => {
         window.setTimeout(scheduleLoad, 500);
     };
 
+    let notificationRealtimePusher = null;
+    let notificationRealtimeInitTimer = null;
+    let notificationRealtimeStarted = false;
+
+    const clearNotificationRealtimeInitTimer = () => {
+        if (notificationRealtimeInitTimer === null) {
+            return;
+        }
+
+        window.clearTimeout(notificationRealtimeInitTimer);
+        notificationRealtimeInitTimer = null;
+    };
+
+    const disconnectNotificationRealtime = () => {
+        clearNotificationRealtimeInitTimer();
+
+        if (notificationRealtimePusher && typeof notificationRealtimePusher.disconnect === 'function') {
+            notificationRealtimePusher.disconnect();
+        }
+
+        notificationRealtimePusher = null;
+    };
+
     // Tempo real do sino: escuta o canal privado do usuario (Reverb) e, ao
     // chegar notificacao nova, atualiza badge + lista sem reload e mostra o
     // toast padrao do sistema (SweetAlert2, canto superior direito).
@@ -489,6 +512,10 @@ const DesktopUi = (() => {
         const openUrlTemplate = String(realtime.notificationOpenUrlTemplate || '').trim();
 
         if (!(notificationRoot instanceof HTMLElement) || pusherKey === '' || authUrl === '' || userId <= 0 || typeof Pusher === 'undefined') {
+            return;
+        }
+
+        if (notificationRealtimeStarted) {
             return;
         }
 
@@ -558,36 +585,79 @@ const DesktopUi = (() => {
             });
         };
 
-        try {
-            const pusher = new Pusher(pusherKey, {
-                wsHost: realtime.pusherHost || 'localhost',
-                wsPort: Number(realtime.pusherPort) || 8090,
-                wssPort: Number(realtime.pusherPort) || 8090,
-                forceTLS: (realtime.pusherScheme || 'http') === 'https',
-                enabledTransports: ['ws', 'wss'],
-                cluster: '',
-                authEndpoint: authUrl,
-                auth: {
-                    headers: {
-                        'X-CSRF-TOKEN': csrfToken,
-                        'X-Requested-With': 'XMLHttpRequest',
-                    },
-                },
-            });
+        const startRealtime = () => {
+            clearNotificationRealtimeInitTimer();
 
-            const channel = pusher.subscribe('private-notifications.' + userId);
-            channel.bind('notification.created', (payload) => {
-                const unread = currentUnreadCount() + 1;
-                renderNotificationBadge(unread);
-                if (notificationUnread instanceof HTMLElement) {
-                    notificationUnread.textContent = `${unread} não lidas`;
-                }
-                prependNotificationItem(payload);
-                showNotificationToast(payload);
-            });
-        } catch (error) {
-            logError('notifications-realtime', error, {});
+            if (notificationRealtimeStarted) {
+                return;
+            }
+
+            if (document.visibilityState === 'hidden' || document.body.classList.contains('is-page-transitioning')) {
+                return;
+            }
+
+            notificationRealtimeStarted = true;
+
+            try {
+                const pusher = new Pusher(pusherKey, {
+                    wsHost: realtime.pusherHost || 'localhost',
+                    wsPort: Number(realtime.pusherPort) || 8090,
+                    wssPort: Number(realtime.pusherPort) || 8090,
+                    forceTLS: (realtime.pusherScheme || 'http') === 'https',
+                    enabledTransports: ['ws', 'wss'],
+                    disableStats: true,
+                    cluster: '',
+                    authEndpoint: authUrl,
+                    auth: {
+                        headers: {
+                            'X-CSRF-TOKEN': csrfToken,
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    },
+                });
+
+                notificationRealtimePusher = pusher;
+
+                const channel = pusher.subscribe('private-notifications.' + userId);
+                channel.bind('notification.created', (payload) => {
+                    const unread = currentUnreadCount() + 1;
+                    renderNotificationBadge(unread);
+                    if (notificationUnread instanceof HTMLElement) {
+                        notificationUnread.textContent = `${unread} nao lidas`;
+                    }
+                    prependNotificationItem(payload);
+                    showNotificationToast(payload);
+                });
+            } catch (error) {
+                notificationRealtimeStarted = false;
+                notificationRealtimePusher = null;
+                logError('notifications-realtime', error, {});
+            }
+        };
+
+        const scheduleRealtimeStart = (delay = 900) => {
+            if (notificationRealtimeStarted || notificationRealtimeInitTimer !== null) {
+                return;
+            }
+
+            notificationRealtimeInitTimer = window.setTimeout(startRealtime, delay);
+        };
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                scheduleRealtimeStart(250);
+            }
+        });
+
+        window.addEventListener('pagehide', disconnectNotificationRealtime);
+        window.addEventListener('beforeunload', disconnectNotificationRealtime);
+
+        if (typeof window.requestIdleCallback === 'function') {
+            window.requestIdleCallback(() => scheduleRealtimeStart(0), { timeout: 1600 });
+            return;
         }
+
+        scheduleRealtimeStart();
     };
 
     const initPageTransitions = () => {
@@ -628,6 +698,7 @@ const DesktopUi = (() => {
             event.preventDefault();
 
             showPageLoader(form.dataset.pageLoaderMessage || 'Enviando dados...');
+            disconnectNotificationRealtime();
 
             if (pageLoaderTimer !== null) {
                 window.clearTimeout(pageLoaderTimer);

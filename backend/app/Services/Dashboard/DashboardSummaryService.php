@@ -289,13 +289,12 @@ class DashboardSummaryService
             return;
         }
 
-        $query
-            ->whereNotIn('os.status', $closureCodes)
-            ->where(static function (Builder $scopeQuery) use ($closureCodes): void {
-                $scopeQuery
-                    ->whereNull('os.status_final_pendente_pagamento')
-                    ->orWhereNotIn('os.status_final_pendente_pagamento', $closureCodes);
-            });
+        // Mesma regra de OrderWorkflowService::applyOperationalStatusScope()
+        // (status_scope=open) — OS so sai do escopo "aberta" quando os.status
+        // literalmente esta em closureCodes(). Nao filtrar por
+        // os.status_final_pendente_pagamento: uma OS entregue com pendencia
+        // financeira continua aberta ate a baixa ser de fato quitada.
+        $query->whereNotIn('os.status', $closureCodes);
     }
 
     /**

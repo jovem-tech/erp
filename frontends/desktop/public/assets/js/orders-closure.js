@@ -104,6 +104,27 @@
         return candidates[0];
     };
 
+    // Faixa de parcelas realmente liberada para operadora+modalidade(+bandeira)
+    // nas taxas cadastradas (Financeiro > Cartões > Taxas) — usada para limitar
+    // o campo "Parcelas" do recebimento em vez de aceitar qualquer valor de 1 a 99.
+    const getParcelasRange = (operadoraId, modalidade, bandeiraId) => {
+        if (!operadoraId || !modalidade) return null;
+
+        const candidates = cartaoTaxas.filter((taxa) => {
+            if (Number(taxa.operadora_id) !== Number(operadoraId)) return false;
+            if (taxa.modalidade !== modalidade) return false;
+            if (taxa.bandeira_id === null || taxa.bandeira_id === undefined) return true;
+            return bandeiraId !== null && Number(taxa.bandeira_id) === Number(bandeiraId);
+        });
+
+        if (candidates.length === 0) return null;
+
+        const min = candidates.reduce((acc, taxa) => Math.min(acc, Math.max(1, Number(taxa.parcelas_inicial) || 1)), Infinity);
+        const max = candidates.reduce((acc, taxa) => Math.max(acc, Math.max(1, Number(taxa.parcelas_final) || 1)), 1);
+
+        return { min, max };
+    };
+
     const estimateFee = (operadoraId, modalidade, parcelas, bandeiraId, valorBruto) => {
         const rate = findApplicableRate(operadoraId, modalidade, parcelas, bandeiraId);
         if (!rate || !valorBruto) return null;
@@ -294,6 +315,46 @@
             }
         };
 
+        // Ajusta min/max do campo "Parcelas" para a faixa realmente cadastrada
+        // em Financeiro > Cartões > Taxas para a operadora/modalidade/bandeira
+        // selecionadas — sem isso o campo aceitava qualquer valor de 1 a 99,
+        // mesmo sem taxa configurada para parcelas fora da faixa liberada.
+        const syncParcelasLimits = (row) => {
+            const parcelasInput = row.querySelector('[data-field="parcelas"]');
+            const hintEl = row.querySelector('[data-parcelas-hint]');
+            if (!(parcelasInput instanceof HTMLInputElement)) return;
+
+            const operadoraId = row.querySelector('[data-field="operadora_id"]')?.value || '';
+            const bandeiraId = row.querySelector('[data-field="bandeira_id"]')?.value || '';
+            const modalidade = row.querySelector('[data-field="modalidade"]')?.value || '';
+
+            const range = getParcelasRange(operadoraId, modalidade, bandeiraId || null);
+
+            if (!range) {
+                parcelasInput.min = '1';
+                parcelasInput.max = '99';
+                if (hintEl instanceof HTMLElement) {
+                    hintEl.textContent = operadoraId
+                        ? 'Nenhuma faixa de parcelas cadastrada para esta operadora/modalidade.'
+                        : '';
+                }
+                return;
+            }
+
+            parcelasInput.min = String(range.min);
+            parcelasInput.max = String(range.max);
+
+            const current = parseInt(parcelasInput.value || '1', 10) || 1;
+            if (current < range.min) parcelasInput.value = String(range.min);
+            if (current > range.max) parcelasInput.value = String(range.max);
+
+            if (hintEl instanceof HTMLElement) {
+                hintEl.textContent = range.min === range.max
+                    ? `${range.max}x disponível para esta operadora.`
+                    : `${range.min}x a ${range.max}x disponíveis para esta operadora.`;
+            }
+        };
+
         const recalcTotals = () => {
             let totalRecebido = 0;
             let totalTaxas = 0;
@@ -401,6 +462,20 @@
             const valorAberto = Number(config.valorAberto) || 0;
             if (totalRecebido - valorAberto > 0.009) {
                 errors.push(`O total lançado (R$ ${formatMoney(totalRecebido)}) é maior que o saldo em aberto (R$ ${formatMoney(valorAberto)}).`);
+            }
+
+            // Encerrar como "Equipamento Entregue" exige algum valor recebido — de
+            // baixas/adiantamentos anteriores (valorMovimentado) ou nesta ação.
+            // Pagamento parcial é aceito (o saldo restante segue como pendência
+            // financeira); só bloqueia a entrega com ZERO recebido. Não se aplica a
+            // adiantamento/sinal, devolução sem reparo/descarte, nem aos demais
+            // encerramentos.
+            const deliveredCode = config.deliveredStatusCode || 'equipamento_entregue';
+            if (!isAdvanceClosure() && !isNoRepairClosure() && (encerrarComoSelect?.value || '') === deliveredCode) {
+                const recebidoAntes = Number(config.valorMovimentado) || 0;
+                if (recebidoAntes + totalRecebido <= 0.009) {
+                    errors.push('Para encerrar como "Equipamento Entregue" registre ao menos um recebimento com valor maior que zero. O pagamento parcial é aceito e o saldo restante fica como pendência financeira.');
+                }
             }
 
             return { ok: errors.length === 0, errors };
@@ -650,8 +725,14 @@
         const handleReceiptChange = (target) => {
             if (!(target instanceof HTMLElement)) return;
 
+            const row = target.closest('[data-receipt-row]');
+
             if (target.matches('[data-field="forma_pagamento"]')) {
-                toggleCardFields(target.closest('[data-receipt-row]'));
+                toggleCardFields(row);
+            }
+
+            if (row && target.matches('[data-field="operadora_id"], [data-field="bandeira_id"], [data-field="modalidade"], [data-field="forma_pagamento"]')) {
+                syncParcelasLimits(row);
             }
 
             recalcTotals();

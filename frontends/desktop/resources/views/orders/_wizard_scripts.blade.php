@@ -39,3 +39,22 @@
 @if ($canCreateClient)
     <script src="{{ asset('assets/js/clients-form.js') }}?v={{ filemtime(public_path('assets/js/clients-form.js')) }}"></script>
 @endif
+
+@if ($isEditing)
+    {{-- Dropdown "Mais ações" + botão inline "Alterar status" (acima) reaproveitam
+         os mesmos modais/JS de orders/show.blade.php --}}
+    <script>
+        window.__DESKTOP_STATUS_MODAL = {
+            statusContextUrlTemplate: '{{ route('orders.status.context', ['order' => '__ORDER__']) }}',
+            statusUpdateUrlTemplate: '{{ route('orders.status.update', ['order' => '__ORDER__']) }}',
+            proceduresUrlTemplate: '{{ route('orders.procedures.store', ['order' => '__ORDER__']) }}',
+            csrfToken: '{{ csrf_token() }}',
+        };
+        window.__DESKTOP_CANCEL_CLOSURE_MODAL = {
+            cancelUrlTemplate: '{{ route('orders.closure.cancel', ['order' => '__ORDER__']) }}',
+            csrfToken: '{{ csrf_token() }}',
+        };
+    </script>
+    <script src="{{ asset('assets/js/orders-status-modal.js') }}"></script>
+    <script src="{{ asset('assets/js/orders-cancel-closure-modal.js') }}"></script>
+@endif

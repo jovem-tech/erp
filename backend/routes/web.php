@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Web\BudgetPublicController;
+use App\Http\Controllers\Web\OrderDocumentPublicController;
 use App\Http\Controllers\Webhooks\WhatsAppWebhookController;
 use App\Notifications\FrontendPasswordResetNotification;
 use Illuminate\Http\Request;
@@ -45,3 +46,13 @@ Route::post('/orcamento/{token}/aprovar', [BudgetPublicController::class, 'appro
 Route::post('/orcamento/{token}/rejeitar', [BudgetPublicController::class, 'reject'])
     ->middleware(['throttle:30,1'])
     ->name('budgets.public.reject');
+
+Route::get('/documentos/compartilhados/{token}', [OrderDocumentPublicController::class, 'show'])
+    ->middleware('throttle:60,1')
+    ->name('orders.documents.public.show');
+
+Route::get('/documentos/compartilhados/{token}/arquivos/{document}/{format}', [OrderDocumentPublicController::class, 'file'])
+    ->whereNumber('document')
+    ->whereIn('format', ['a4', '80mm'])
+    ->middleware('throttle:120,1')
+    ->name('orders.documents.public.file');

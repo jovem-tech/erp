@@ -31,6 +31,10 @@ class OrderClosureService
 
     private const PENDING_PAYMENT_STATUS = 'entregue_pagamento_pendente';
 
+    // Encerramento como "Equipamento Entregue": exige ao menos algum valor
+    // recebido (antes desta baixa OU nesta ação). Ver close().
+    private const DELIVERED_STATUS = 'equipamento_entregue';
+
     public function __construct(
         private readonly OrderWorkflowService $orderWorkflowService,
         private readonly FinanceiroService $financeiroService,
@@ -67,6 +71,7 @@ class OrderClosureService
             'cartao' => $this->financeiroCartaoService->buildActiveDataset(),
             'status_pagamento_pendente' => $this->pendingPaymentStatusInfo(),
             'status_sem_reparo' => self::NO_REPAIR_STATUSES,
+            'status_entregue' => self::DELIVERED_STATUS,
         ];
     }
 
@@ -131,6 +136,24 @@ class OrderClosureService
             return ['result' => $simulation['result'], 'message' => $simulation['message']];
         }
         $recebimentos = $simulation['recebimentos'];
+
+        // Encerrar como "Equipamento Entregue" exige que a OS tenha algum valor
+        // recebido — seja de baixas/adiantamentos anteriores (valor_movimentado)
+        // ou nesta ação. Pagamento parcial é aceito (o saldo restante segue como
+        // pendência financeira); só bloqueia a entrega com ZERO recebido. Não se
+        // aplica a devolução sem reparo / descarte nem aos demais encerramentos.
+        if ($encerrarComo === self::DELIVERED_STATUS) {
+            $recebidoAntes = round((float) ($this->financialSummary($order)['valor_movimentado'] ?? 0), 2);
+            $recebidoNesta = array_reduce(
+                $recebimentos,
+                static fn (float $total, array $recebimento): float => $total + (float) ($recebimento['valor'] ?? 0),
+                0.0
+            );
+
+            if ($recebidoAntes + $recebidoNesta <= 0.009) {
+                return ['result' => 'delivery_requires_payment'];
+            }
+        }
 
         $observacao = trim((string) ($payload['observacao'] ?? ''));
         $agendarRetorno = filter_var($payload['agendar_retorno'] ?? false, FILTER_VALIDATE_BOOL);

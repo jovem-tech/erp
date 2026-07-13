@@ -4,8 +4,10 @@ namespace App\Services\Orders;
 
 use App\Models\Order;
 use App\Models\OrderDocument;
+use App\Models\OrderEvent;
 use App\Models\OsPdfTemplate;
 use App\Models\User;
+use App\Support\TemplateHtmlSanitizer;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -15,6 +17,11 @@ use Throwable;
 
 class OrderOpeningPdfService
 {
+    public function __construct(
+        private readonly OrderEventService $orderEventService
+    ) {
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -72,16 +79,6 @@ class OrderOpeningPdfService
             ]);
 
             $numeroOs = trim((string) ($order->numero_os ?? ('OS-' . (int) $order->id)));
-            $version = max(
-                1,
-                ((int) OrderDocument::query()
-                    ->where('os_id', (int) $order->id)
-                    ->where('tipo_documento', 'abertura')
-                    ->max('versao')) + 1
-            );
-
-            $relativePath = 'private/os_documentos/' . (int) $order->id . '/abertura_' . $this->slug($numeroOs) . '_v' . $version . '.pdf';
-            $absolutePath = Storage::disk('local')->path($relativePath);
 
             $html = $this->wrapHtml(
                 $this->renderTemplate($templateHtml, $this->placeholderMap($order)),
@@ -94,12 +91,23 @@ class OrderOpeningPdfService
                 ->setPaper('a4', 'portrait')
                 ->output();
 
-            Storage::disk('local')->put($relativePath, $pdfBytes);
+            /** @var array{document: OrderDocument, relative_path: string, absolute_path: string, version: int} $persisted */
+            $persisted = DB::transaction(function () use ($order, $actor, $numeroOs, $pdfBytes): array {
+                $version = max(
+                    1,
+                    ((int) DB::table('os_documentos')
+                        ->where('os_id', (int) $order->id)
+                        ->where('tipo_documento', 'abertura')
+                        ->lockForUpdate()
+                        ->max('versao')) + 1
+                );
 
-            try {
-                /** @var OrderDocument $document */
-                $document = DB::transaction(function () use ($order, $actor, $relativePath, $pdfBytes, $version): OrderDocument {
-                    return OrderDocument::query()->create([
+                $relativePath = 'private/os_documentos/' . (int) $order->id . '/abertura_' . $this->slug($numeroOs) . '_v' . $version . '.pdf';
+                $absolutePath = Storage::disk('local')->path($relativePath);
+                Storage::disk('local')->put($relativePath, $pdfBytes);
+
+                try {
+                    $payload = [
                         'os_id' => (int) $order->id,
                         'tipo_documento' => 'abertura',
                         'arquivo' => $relativePath,
@@ -108,13 +116,44 @@ class OrderOpeningPdfService
                         'gerado_por' => $actor instanceof User ? (int) $actor->id : null,
                         'created_at' => now(),
                         'updated_at' => now(),
-                    ]);
-                });
-            } catch (Throwable $exception) {
-                Storage::disk('local')->delete($relativePath);
+                    ];
 
-                throw $exception;
-            }
+                    if (Schema::hasColumn('os_documentos', 'hash_sha256')) {
+                        $payload['hash_sha256'] = hash('sha256', $pdfBytes);
+                    }
+
+                    if (Schema::hasColumn('os_documentos', 'template_codigo')) {
+                        $payload['template_codigo'] = 'abertura';
+                    }
+
+                    if (Schema::hasColumn('os_documentos', 'metadados_json')) {
+                        $payload['metadados_json'] = json_encode([
+                            'layout_padrao' => 'a4',
+                            'origin' => 'order_opening_pdf',
+                        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    }
+
+                    $document = OrderDocument::query()->create($payload);
+                } catch (Throwable $exception) {
+                    Storage::disk('local')->delete($relativePath);
+
+                    throw $exception;
+                }
+
+                return [
+                    'document' => $document,
+                    'relative_path' => $relativePath,
+                    'absolute_path' => $absolutePath,
+                    'version' => $version,
+                ];
+            });
+
+            $document = $persisted['document'];
+            $relativePath = $persisted['relative_path'];
+            $absolutePath = $persisted['absolute_path'];
+            $version = $persisted['version'];
+
+            $this->recordDocumentGeneratedEvent($order, $document, $actor);
 
             return [
                 'ok' => true,
@@ -135,6 +174,24 @@ class OrderOpeningPdfService
                 'message' => 'Falha ao gerar o PDF de abertura da OS.',
             ];
         }
+    }
+
+    private function recordDocumentGeneratedEvent(Order $order, OrderDocument $document, ?User $actor = null): void
+    {
+        $this->orderEventService->record(
+            (int) $order->id,
+            OrderEvent::CATEGORIA_DOCUMENTO,
+            'documento_cliente_gerado',
+            'Documento do cliente gerado',
+            'Uma nova vers?o documental foi registrada para a OS.',
+            [
+                'documento_id' => (int) ($document->id ?? 0),
+                'tipo_documento' => (string) ($document->tipo_documento ?? ''),
+                'versao' => (int) ($document->versao ?? 1),
+            ],
+            $actor instanceof User ? (int) $actor->id : ((int) ($document->gerado_por ?? 0) ?: null),
+            $actor instanceof User ? OrderEvent::ORIGEM_USUARIO : OrderEvent::ORIGEM_SISTEMA
+        );
     }
 
     /**
@@ -230,9 +287,7 @@ class OrderOpeningPdfService
 
     private function sanitizeTemplateHtml(string $html): string
     {
-        $sanitized = (string) preg_replace('/<script\b[^>]*>.*?<\/script>/is', '', $html);
-
-        return (string) preg_replace('/<iframe\b[^>]*>.*?<\/iframe>/is', '', $sanitized);
+        return TemplateHtmlSanitizer::sanitize($html);
     }
 
     private function equipmentLabel(Order $order): string
@@ -258,7 +313,6 @@ class OrderOpeningPdfService
             $orderId <= 0
             || ! Schema::hasTable('checklist_execucoes')
             || ! Schema::hasTable('checklist_respostas')
-            || ! Schema::hasTable('checklist_itens')
         ) {
             return [
                 'observacoes_estado' => '',
@@ -278,16 +332,40 @@ class OrderOpeningPdfService
             ];
         }
 
-        $items = DB::table('checklist_respostas')
-            ->leftJoin('checklist_itens', 'checklist_itens.id', '=', 'checklist_respostas.checklist_item_id')
+        $itemsQuery = DB::table('checklist_respostas')
             ->where('checklist_respostas.checklist_execucao_id', (int) $execution->id)
             ->orderBy('checklist_respostas.ordem')
-            ->orderBy('checklist_respostas.id')
-            ->get([
-                'checklist_itens.nome as item_nome',
+            ->orderBy('checklist_respostas.id');
+
+        if (Schema::hasTable('checklist_itens')) {
+            $itemsQuery->leftJoin('checklist_itens', 'checklist_itens.id', '=', 'checklist_respostas.checklist_item_id');
+        }
+
+        $itemNameSources = [];
+
+        if (Schema::hasColumn('checklist_respostas', 'descricao_item')) {
+            $itemNameSources[] = "NULLIF(TRIM(checklist_respostas.descricao_item), '')";
+        }
+
+        if (Schema::hasTable('checklist_itens') && Schema::hasColumn('checklist_itens', 'descricao')) {
+            $itemNameSources[] = "NULLIF(TRIM(checklist_itens.descricao), '')";
+        }
+
+        if (Schema::hasTable('checklist_itens') && Schema::hasColumn('checklist_itens', 'nome')) {
+            $itemNameSources[] = "NULLIF(TRIM(checklist_itens.nome), '')";
+        }
+
+        $itemNameExpression = $itemNameSources === []
+            ? "'Item do checklist'"
+            : 'COALESCE(' . implode(', ', $itemNameSources) . ", 'Item do checklist')";
+
+        $items = $itemsQuery
+            ->selectRaw($itemNameExpression . ' as item_nome')
+            ->addSelect([
                 'checklist_respostas.status',
                 'checklist_respostas.observacao',
             ])
+            ->get()
             ->map(static function (object $row): array {
                 return [
                     'item_nome' => trim((string) ($row->item_nome ?? 'Item do checklist')),

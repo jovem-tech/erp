@@ -177,4 +177,106 @@ class OrderService
     {
         return $this->apiClient->download('/orders/' . $orderId . '/documents/' . $documentId);
     }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function documentsCenter(int $orderId): array
+    {
+        $response = $this->apiClient->get('/orders/' . $orderId . '/documents');
+
+        return $response['data'] ?? [];
+    }
+
+    /**
+     * @param array<int, string> $types
+     * @return array<string, mixed>
+     */
+    public function generateDocuments(int $orderId, array $types): array
+    {
+        $response = $this->apiClient->post('/orders/' . $orderId . '/documents/generate', [
+            'tipos' => array_values($types),
+        ]);
+
+        return $response['data'] ?? [];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function sendDocuments(int $orderId, array $payload): array
+    {
+        $response = $this->apiClient->post('/orders/' . $orderId . '/documents/send', $payload);
+
+        return $response['data'] ?? [];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function createShareLink(int $orderId, array $payload): array
+    {
+        $response = $this->apiClient->post('/orders/' . $orderId . '/documents/share-links', $payload);
+
+        return $response['data'] ?? [];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function revokeShareLink(int $orderId, int $linkId): array
+    {
+        $response = $this->apiClient->patch('/orders/' . $orderId . '/documents/share-links/' . $linkId . '/revoke');
+
+        return $response['data'] ?? [];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function archiveDocument(int $orderId, int $documentId, bool $archive = true): array
+    {
+        $uri = '/orders/' . $orderId . '/documents/' . $documentId . '/' . ($archive ? 'archive' : 'unarchive');
+        $response = $this->apiClient->patch($uri);
+
+        return $response['data'] ?? [];
+    }
+
+    /**
+     * @return array{body: string, headers: array<string, string>, status: int}
+     */
+    public function downloadDocumentFile(int $orderId, int $documentId, string $format): array
+    {
+        return $this->apiClient->download('/orders/' . $orderId . '/documents/' . $documentId . '/files/' . $format);
+    }
+
+    /**
+     * @param array<int, int> $documentIds
+     * @return array{body: string, headers: array<string, string>, status: int}
+     */
+    public function downloadDocumentsZip(int $orderId, array $documentIds, string $format = 'a4'): array
+    {
+        $query = http_build_query([
+            'document_ids' => array_values($documentIds),
+            'format' => $format,
+        ]);
+
+        return $this->apiClient->download('/orders/' . $orderId . '/documents/download?' . $query);
+    }
+
+    /**
+     * @param array<int, int> $documentIds
+     * @return array<string, mixed>
+     */
+    public function printDocuments(int $orderId, array $documentIds, string $format = 'a4'): array
+    {
+        $response = $this->apiClient->get('/orders/' . $orderId . '/documents/print', [
+            'document_ids' => array_values($documentIds),
+            'format' => $format,
+        ]);
+
+        return $response['data'] ?? [];
+    }
 }

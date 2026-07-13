@@ -1,7 +1,7 @@
 ﻿openapi: 3.0.3
 info:
   title: Sistema ERP API
-  version: 1.1.2
+  version: 1.2.0
   description: |
     Contrato técnico oficial da API v1 do backend central do Sistema ERP.
 
@@ -4136,6 +4136,360 @@ paths:
         "500":
           $ref: "#/components/responses/ServerError"
 
+  /orders/{order}/documents:
+    get:
+      tags:
+        - Ordens
+      summary: Listar central documental versionada da OS.
+      description: Retorna catálogo de tipos documentais, versões já geradas, histórico resumido de envios e links públicos da ordem de serviço.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /orders/{order}/documents/generate:
+    post:
+      tags:
+        - Ordens
+      summary: Gerar uma ou várias novas versões documentais da OS.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tipos
+              properties:
+                tipos:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: string
+                    enum:
+                      - abertura
+                      - orcamento
+                      - laudo
+                      - cobranca_manutencao
+                      - entrega
+                      - devolucao_sem_reparo
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /orders/{order}/documents/send:
+    post:
+      tags:
+        - Ordens
+      summary: Enfileirar envio documental por WhatsApp ou e-mail.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - document_ids
+              properties:
+                document_ids:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: integer
+                    minimum: 1
+                channel:
+                  type: string
+                  enum: [whatsapp, email]
+                  default: whatsapp
+                format:
+                  type: string
+                  enum: [a4, 80mm]
+                  default: a4
+                destino:
+                  type: string
+                  nullable: true
+                  example: cliente@empresa.com
+                message:
+                  type: string
+                  nullable: true
+                  example: Seguem os documentos da sua OS para acompanhamento.
+                confirmar_destino_alternativo:
+                  type: boolean
+                  default: false
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /orders/{order}/documents/share-links:
+    post:
+      tags:
+        - Ordens
+      summary: Criar link público seguro para documentos selecionados da OS.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - document_ids
+              properties:
+                document_ids:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: integer
+                    minimum: 1
+                format:
+                  type: string
+                  enum: [a4, 80mm]
+                  default: a4
+                expiracao:
+                  type: string
+                  enum: [24h, 7d, 30d]
+                  default: 7d
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /orders/{order}/documents/share-links/{link}/revoke:
+    patch:
+      tags:
+        - Ordens
+      summary: Revogar um link público de compartilhamento documental da OS.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - name: link
+          in: path
+          required: true
+          description: Identificador interno do link público.
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /orders/{order}/documents/download:
+    get:
+      tags:
+        - Ordens
+      summary: Baixar ZIP com documentos selecionados da OS.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - name: document_ids[]
+          in: query
+          required: true
+          description: IDs dos documentos que entrarão no pacote ZIP.
+          schema:
+            type: array
+            minItems: 1
+            items:
+              type: integer
+              minimum: 1
+          style: form
+          explode: true
+        - name: format
+          in: query
+          required: false
+          description: Layout preferencial do arquivo dentro do ZIP.
+          schema:
+            type: string
+            enum: [a4, 80mm]
+            default: a4
+      responses:
+        "200":
+          description: Arquivo ZIP seguro do lote documental.
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /orders/{order}/documents/print:
+    get:
+      tags:
+        - Ordens
+      summary: Obter bundle visual de impressão dos documentos selecionados.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - name: document_ids[]
+          in: query
+          required: true
+          description: IDs das versões documentais a incluir na fila visual de impressão.
+          schema:
+            type: array
+            minItems: 1
+            items:
+              type: integer
+              minimum: 1
+          style: form
+          explode: true
+        - name: format
+          in: query
+          required: false
+          description: Layout visual solicitado para impressão.
+          schema:
+            type: string
+            enum: [a4, 80mm]
+            default: a4
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /orders/{order}/documents/{document}/files/{format}:
+    get:
+      tags:
+        - Ordens
+      summary: Servir formato específico de uma versão documental autenticada da OS.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/DocumentId"
+        - name: format
+          in: path
+          required: true
+          description: Formato/renderização do arquivo documental.
+          schema:
+            type: string
+            enum: [a4, 80mm]
+      responses:
+        "200":
+          description: Arquivo PDF do formato solicitado.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /orders/{order}/documents/{document}/archive:
+    patch:
+      tags:
+        - Ordens
+      summary: Arquivar logicamente uma versão documental da OS.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/DocumentId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
+  /orders/{order}/documents/{document}/unarchive:
+    patch:
+      tags:
+        - Ordens
+      summary: Reativar uma versão documental arquivada logicamente.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+        - $ref: "#/components/parameters/DocumentId"
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/ServerError"
+
   /orders/{order}/documents/{document}:
     get:
       tags:
@@ -4164,6 +4518,83 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/ServerError"
+
+  /documentos/compartilhados/{token}:
+    get:
+      tags:
+        - Ordens
+      summary: Abrir página pública segura com os documentos compartilhados da OS.
+      security: []
+      servers:
+        - url: http://127.0.0.1:8000
+          description: Desenvolvimento local para rotas web públicas.
+        - url: https://api.example.com
+          description: Base pública do backend.
+      parameters:
+        - name: token
+          in: path
+          required: true
+          description: Token opaco temporário do compartilhamento público.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Página HTML pública com os documentos selecionados.
+          content:
+            text/html:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          description: Link expirado ou revogado.
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /documentos/compartilhados/{token}/arquivos/{document}/{format}:
+    get:
+      tags:
+        - Ordens
+      summary: Baixar ou visualizar um arquivo documental público do link compartilhado.
+      security: []
+      servers:
+        - url: http://127.0.0.1:8000
+          description: Desenvolvimento local para rotas web públicas.
+        - url: https://api.example.com
+          description: Base pública do backend.
+      parameters:
+        - name: token
+          in: path
+          required: true
+          description: Token opaco temporário do compartilhamento público.
+          schema:
+            type: string
+        - $ref: "#/components/parameters/DocumentId"
+        - name: format
+          in: path
+          required: true
+          description: Formato do arquivo compartilhado.
+          schema:
+            type: string
+            enum: [a4, 80mm]
+      responses:
+        "200":
+          description: Arquivo PDF público autorizado pelo token.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "410":
+          description: Link expirado ou revogado.
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
   /orders/{order}/status:
     patch:

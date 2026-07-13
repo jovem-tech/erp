@@ -1,0 +1,591 @@
+@extends('layouts.app')
+
+@section('content')
+    @php
+        $orderId = (int) ($order['id'] ?? 0);
+        $orderNumber = (string) ($order['numero_os'] ?? ('#' . $orderId));
+        $clientName = (string) ($order['cliente_nome'] ?? 'Não informado');
+        $equipmentLabel = (string) (($order['equipamento_resumo_curto'] ?? '') !== '' ? $order['equipamento_resumo_curto'] : ($order['equipamento_resumo_tecnico'] ?? 'Não informado'));
+        $maxAttachments = (int) ($limits['max_attachments'] ?? 10);
+        $maxMb = (int) floor(((int) ($limits['max_total_bytes'] ?? (20 * 1024 * 1024))) / 1024 / 1024);
+        $shareExpirationOptions = is_array($limits['share_expirations'] ?? null) ? $limits['share_expirations'] : ['24h', '7d', '30d'];
+        $generatedDocumentLink = session('generated_document_link');
+        $generatedDocumentLinkUrl = is_array($generatedDocumentLink) ? trim((string) ($generatedDocumentLink['url'] ?? '')) : '';
+        $generatedDocumentLinkFormat = is_array($generatedDocumentLink) ? strtoupper((string) ($generatedDocumentLink['format'] ?? 'a4')) : 'A4';
+        $generatedDocumentLinkExpiresAt = is_array($generatedDocumentLink) ? trim((string) ($generatedDocumentLink['expires_at'] ?? '')) : '';
+    @endphp
+
+    <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
+        <div>
+            <p class="desktop-eyebrow">Central documental da OS</p>
+            <h2 class="surface-title fs-3 mb-1">{{ $orderNumber }}</h2>
+            <p class="surface-subtitle mb-0">{{ $clientName }} · {{ $equipmentLabel }}</p>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 align-items-start">
+            <a href="{{ route('orders.show', $orderId) }}" class="btn btn-outline-light">
+                <i class="bi bi-arrow-left me-2"></i>Voltar para a OS
+            </a>
+        </div>
+    </div>
+
+    <section class="desktop-grid desktop-grid-three mb-4">
+        <article class="summary-card">
+            <span class="summary-card-eyebrow">Cliente</span>
+            <div class="summary-card-value">{{ $clientName }}</div>
+            <div class="summary-card-meta">Histórico centralizado por OS atual.</div>
+        </article>
+        <article class="summary-card">
+            <span class="summary-card-eyebrow">Limite por envio</span>
+            <div class="summary-card-value">{{ $maxAttachments }} anexos</div>
+            <div class="summary-card-meta">Até {{ $maxMb }} MB por lote, depois disso prefira link.</div>
+        </article>
+        <article class="summary-card">
+            <span class="summary-card-eyebrow">Formatos</span>
+            <div class="summary-card-value">A4 e 80mm</div>
+            <div class="summary-card-meta">A4 segue como padrão do acervo; 80mm é renderização complementar.</div>
+        </article>
+    </section>
+
+    @if ($generatedDocumentLinkUrl !== '')
+        <article class="surface-card mb-4 border border-success-subtle">
+            <div class="d-flex flex-wrap justify-content-between gap-3 align-items-start">
+                <div>
+                    <p class="desktop-eyebrow text-success mb-1">Link recém-gerado</p>
+                    <h3 class="surface-title fs-5 mb-1">Compartilhamento público seguro {{ $generatedDocumentLinkFormat }}</h3>
+                    <p class="surface-subtitle mb-0">
+                        Esse URL é exibido apenas agora por segurança. Depois, o histórico mostrará só a auditoria do link.
+                    </p>
+                </div>
+                <div class="d-flex gap-2 flex-wrap">
+                    <button type="button"
+                            class="btn btn-outline-light"
+                            onclick="navigator.clipboard.writeText(@js($generatedDocumentLinkUrl)).then(() => window.alert('Link copiado.'));">
+                        <i class="bi bi-clipboard me-2"></i>Copiar link
+                    </button>
+                    <a href="{{ $generatedDocumentLinkUrl }}" target="_blank" rel="noreferrer noopener" class="btn btn-primary">
+                        <i class="bi bi-box-arrow-up-right me-2"></i>Abrir link
+                    </a>
+                </div>
+            </div>
+
+            <div class="mt-3">
+                <label class="form-label">URL pública</label>
+                <input type="text" class="form-control" value="{{ $generatedDocumentLinkUrl }}" readonly onclick="this.select()">
+            </div>
+
+            @if ($generatedDocumentLinkExpiresAt !== '')
+                <p class="text-secondary small mb-0 mt-2">
+                    Expira em {{ \Illuminate\Support\Carbon::parse($generatedDocumentLinkExpiresAt)->format('d/m/Y H:i') }}.
+                </p>
+            @endif
+        </article>
+    @endif
+
+    <article class="surface-card mb-4">
+        <div class="d-flex flex-wrap justify-content-between gap-3 align-items-center mb-3">
+            <div>
+                <h3 class="surface-title fs-5 mb-1">Tipos documentais disponíveis</h3>
+                <p class="surface-subtitle mb-0">A geração manual respeita pré-requisitos e os marcos automáticos do fluxo da OS.</p>
+            </div>
+            <form method="post" action="{{ route('orders.documents.generate', $orderId) }}" id="orderDocumentGenerateForm">
+                @csrf
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-file-earmark-plus me-2"></i>Gerar selecionados
+                </button>
+            </form>
+        </div>
+
+        <div class="desktop-grid desktop-grid-three">
+            @foreach ($catalog as $type)
+                @php
+                    $latest = is_array($type['latest_document'] ?? null) ? $type['latest_document'] : null;
+                    $canGenerate = (bool) ($type['can_generate'] ?? false);
+                @endphp
+                <article class="summary-card h-100">
+                    <div class="d-flex justify-content-between gap-3">
+                        <div>
+                            <span class="summary-card-eyebrow">{{ $type['type'] ?? '' }}</span>
+                            <div class="summary-card-value fs-6">{{ $type['label'] ?? 'Documento' }}</div>
+                        </div>
+                        <div class="form-check m-0">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   name="tipos[]"
+                                   value="{{ $type['type'] ?? '' }}"
+                                   form="orderDocumentGenerateForm"
+                                   {{ $canGenerate ? '' : 'disabled' }}>
+                        </div>
+                    </div>
+
+                    <div class="summary-card-meta mt-2">
+                        @if ($latest)
+                            Última versão: v{{ $latest['version'] ?? 1 }}
+                        @else
+                            Ainda sem versões geradas.
+                        @endif
+                    </div>
+
+                    @if (! $canGenerate)
+                        <div class="mt-3 text-danger small">{{ $type['blocked_reason'] ?? 'Pré-requisito ausente.' }}</div>
+                    @else
+                        <div class="mt-3 text-success small">Geração manual liberada.</div>
+                    @endif
+
+                    @if (is_array($type['automatic_triggers'] ?? null) && ($type['automatic_triggers'] ?? []) !== [])
+                        <div class="mt-3 d-flex flex-wrap gap-2">
+                            @foreach (($type['automatic_triggers'] ?? []) as $trigger)
+                                <span class="desktop-chip">{{ $trigger }}</span>
+                            @endforeach
+                        </div>
+                    @endif
+                </article>
+            @endforeach
+        </div>
+    </article>
+
+    <article class="surface-card mb-4" data-doc-center-root>
+        <form id="orderDocumentsDispatchForm" method="post" action="{{ route('orders.documents.dispatch', $orderId) }}" class="d-none">
+            @csrf
+            <input type="hidden" name="dispatch_action" id="orderDocumentsDispatchAction" value="">
+        </form>
+
+        <div class="d-flex flex-wrap justify-content-between gap-3 align-items-center mb-3">
+            <div>
+                <h3 class="surface-title fs-5 mb-1">Acervo versionado do cliente</h3>
+                <p class="surface-subtitle mb-0">Selecione versões específicas para enviar, compartilhar, baixar ZIP ou imprimir.</p>
+                <p class="text-secondary small mb-0 mt-2" data-doc-selection-count>Nenhum documento selecionado.</p>
+            </div>
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <button type="button" class="btn btn-outline-light" data-doc-select-all>
+                    <i class="bi bi-check2-square me-2"></i>Selecionar tudo
+                </button>
+                <button type="button" class="btn btn-outline-light" data-doc-clear-all>
+                    <i class="bi bi-eraser me-2"></i>Limpar seleção
+                </button>
+            </div>
+        </div>
+
+        <div class="alert alert-warning d-none mb-3" role="alert" data-doc-selection-alert></div>
+
+        @if ($documents !== [])
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead>
+                    <tr>
+                        <th style="width: 48px;"></th>
+                        <th>Documento</th>
+                        <th>Versão</th>
+                        <th>Formatos</th>
+                        <th>Gerado em</th>
+                        <th>Status</th>
+                        <th class="text-end">Ações</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach ($documents as $document)
+                        @php
+                            $files = is_array($document['files'] ?? null) ? $document['files'] : [];
+                            $isArchived = ($document['archived_at'] ?? null) !== null;
+                        @endphp
+                        <tr>
+                            <td>
+                                <input type="checkbox"
+                                       class="form-check-input"
+                                       name="document_ids[]"
+                                       form="orderDocumentsDispatchForm"
+                                       value="{{ (int) ($document['id'] ?? 0) }}"
+                                       data-document-row-checkbox>
+                            </td>
+                            <td>
+                                <strong>{{ $document['label'] ?? 'Documento' }}</strong>
+                                <div class="text-secondary small">{{ $document['type'] ?? '' }}</div>
+                            </td>
+                            <td>v{{ $document['version'] ?? 1 }}</td>
+                            <td>
+                                <div class="d-flex flex-wrap gap-2">
+                                    @foreach (['a4' => 'A4', '80mm' => '80mm'] as $formatCode => $formatLabel)
+                                        @php
+                                            $formatData = is_array($files[$formatCode] ?? null) ? $files[$formatCode] : [];
+                                        @endphp
+                                        @if (($formatData['available'] ?? false) && ($formatData['url'] ?? null) !== null)
+                                            <a href="{{ route('orders.documents.files.show', ['order' => $orderId, 'document' => (int) ($document['id'] ?? 0), 'format' => $formatCode]) }}"
+                                               target="_blank"
+                                               rel="noreferrer"
+                                               class="btn btn-sm btn-outline-light">
+                                                {{ $formatLabel }}
+                                            </a>
+                                        @else
+                                            <span class="desktop-chip text-secondary">{{ $formatLabel }} indisponível</span>
+                                        @endif
+                                    @endforeach
+                                </div>
+                            </td>
+                            <td>
+                                <div>{{ isset($document['created_at']) ? \Illuminate\Support\Carbon::parse($document['created_at'])->format('d/m/Y H:i') : '—' }}</div>
+                                @if (($document['generated_by']['name'] ?? '') !== '')
+                                    <div class="text-secondary small">{{ $document['generated_by']['name'] }}</div>
+                                @endif
+                            </td>
+                            <td>
+                                @if ($isArchived)
+                                    <span class="desktop-chip">Arquivado</span>
+                                @else
+                                    <span class="desktop-chip">Ativo</span>
+                                @endif
+                            </td>
+                            <td class="text-end">
+                                @if ($isArchived)
+                                    <form method="post" action="{{ route('orders.documents.unarchive', ['order' => $orderId, 'document' => (int) ($document['id'] ?? 0)]) }}" class="d-inline">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-outline-light">Reativar</button>
+                                    </form>
+                                @else
+                                    <form method="post" action="{{ route('orders.documents.archive', ['order' => $orderId, 'document' => (int) ($document['id'] ?? 0)]) }}" class="d-inline">
+                                        @csrf
+                                        <button type="submit" class="btn btn-sm btn-outline-light">Arquivar</button>
+                                    </form>
+                                @endif
+                            </td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @else
+            @include('layouts.partials.empty-state', [
+                'icon' => 'bi-file-earmark-x',
+                'title' => 'Nenhum documento no acervo',
+                'message' => 'Gere a primeira versão documental desta OS para começar a central do cliente.',
+            ])
+        @endif
+
+        <div class="desktop-grid desktop-grid-three mt-4">
+            <article class="summary-card">
+                <span class="summary-card-eyebrow">Download em lote</span>
+                <div class="summary-card-value fs-6">ZIP seguro</div>
+                <div class="summary-card-meta">Baixa os selecionados sem expor caminhos internos.</div>
+
+                <form method="get" action="{{ route('orders.documents.download', $orderId) }}" data-selected-documents-target data-selection-required-message="Selecione ao menos um documento do acervo antes de baixar o ZIP." class="mt-3">
+                    <div class="d-flex gap-2">
+                        <select name="format" class="form-select">
+                            <option value="a4">ZIP A4</option>
+                            <option value="80mm">ZIP 80mm</option>
+                        </select>
+                        <button type="submit" class="btn btn-outline-light" data-doc-submit-button>Baixar ZIP</button>
+                    </div>
+                </form>
+            </article>
+
+            <article class="summary-card">
+                <span class="summary-card-eyebrow">Impressão</span>
+                <div class="summary-card-value fs-6">Fila visual</div>
+                <div class="summary-card-meta">Abre o layout no navegador e deixa o diálogo de impressão com você.</div>
+
+                <form method="get" action="{{ route('orders.documents.print', $orderId) }}" data-selected-documents-target data-selection-required-message="Selecione ao menos um documento do acervo antes de abrir a fila de impressão." class="mt-3">
+                    <div class="d-flex gap-2">
+                        <select name="format" class="form-select">
+                            <option value="a4">Imprimir A4</option>
+                            <option value="80mm">Imprimir 80mm</option>
+                        </select>
+                        <button type="submit" class="btn btn-outline-light" formtarget="_blank" data-doc-submit-button>Abrir impressão</button>
+                    </div>
+                </form>
+            </article>
+
+            <article class="summary-card">
+                <span class="summary-card-eyebrow">Link público seguro</span>
+                <div class="summary-card-value fs-6">Compartilhamento por token</div>
+                <div class="summary-card-meta">O URL é exibido no momento da criação e o histórico guarda apenas auditoria segura.</div>
+
+                <div class="mt-3">
+                    <div class="row g-2">
+                        <div class="col-sm-6">
+                            <select name="share_format" class="form-select" form="orderDocumentsDispatchForm">
+                                <option value="a4">Link A4</option>
+                                <option value="80mm">Link 80mm</option>
+                            </select>
+                        </div>
+                        <div class="col-sm-6">
+                            <select name="share_expiracao" class="form-select" form="orderDocumentsDispatchForm">
+                                @foreach ($shareExpirationOptions as $expiration)
+                                    <option value="{{ $expiration }}">{{ $expiration }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+                    <button type="submit"
+                            class="btn btn-outline-light mt-3"
+                            form="orderDocumentsDispatchForm"
+                            onclick="document.getElementById('orderDocumentsDispatchAction').value='share';"
+                            data-doc-submit-button
+                            data-selection-required-message="Selecione ao menos um documento do acervo antes de gerar o link.">
+                        Gerar link
+                    </button>
+                </div>
+            </article>
+        </div>
+
+        <article class="summary-card mt-4">
+            <span class="summary-card-eyebrow">Enviar para cliente</span>
+            <div class="summary-card-value fs-6">WhatsApp ou e-mail</div>
+            <div class="summary-card-meta">Você pode usar o contato padrão do cliente ou confirmar um destino alternativo auditado.</div>
+
+            <div class="mt-3">
+                <div class="row g-3">
+                    <div class="col-lg-2">
+                        <label class="form-label">Canal</label>
+                        <select name="send_channel" class="form-select" form="orderDocumentsDispatchForm">
+                            <option value="whatsapp">WhatsApp</option>
+                            <option value="email">E-mail</option>
+                        </select>
+                    </div>
+                    <div class="col-lg-2">
+                        <label class="form-label">Formato</label>
+                        <select name="send_format" class="form-select" form="orderDocumentsDispatchForm">
+                            <option value="a4">A4</option>
+                            <option value="80mm">80mm</option>
+                        </select>
+                    </div>
+                    <div class="col-lg-4">
+                        <label class="form-label">Destino alternativo (opcional)</label>
+                        <input type="text"
+                               name="send_destino"
+                               class="form-control"
+                               form="orderDocumentsDispatchForm"
+                               value="{{ old('send_destino', old('destino')) }}"
+                               placeholder="Telefone ou e-mail alternativo">
+                    </div>
+                    <div class="col-lg-4">
+                        <label class="form-label">Mensagem final</label>
+                        <input type="text"
+                               name="send_message"
+                               class="form-control"
+                               form="orderDocumentsDispatchForm"
+                               value="{{ old('send_message', old('message')) }}"
+                               placeholder="Mensagem final editável antes do disparo">
+                    </div>
+                </div>
+
+                <div class="form-check mt-3">
+                    <input class="form-check-input"
+                           type="checkbox"
+                           value="1"
+                           id="confirmar_destino_alternativo"
+                           name="send_confirmar_destino_alternativo"
+                           form="orderDocumentsDispatchForm"
+                           {{ old('send_confirmar_destino_alternativo', old('confirmar_destino_alternativo')) ? 'checked' : '' }}>
+                    <label class="form-check-label" for="confirmar_destino_alternativo">
+                        Confirmo explicitamente o uso do destino alternativo informado acima, se houver.
+                    </label>
+                </div>
+
+                <button type="submit"
+                        class="btn btn-primary mt-3"
+                        form="orderDocumentsDispatchForm"
+                        onclick="document.getElementById('orderDocumentsDispatchAction').value='send';"
+                        data-doc-submit-button
+                        data-selection-required-message="Selecione ao menos um documento do acervo antes de enfileirar o envio.">
+                    <i class="bi bi-send me-2"></i>Enfileirar envio
+                </button>
+            </div>
+        </article>
+    </article>
+
+    <section class="desktop-grid desktop-grid-two">
+        <article class="surface-card">
+            <h3 class="surface-title fs-5 mb-1">Histórico de envios</h3>
+            <p class="surface-subtitle">Auditoria resumida de canais, destinos mascarados e status.</p>
+
+            @if ($sendHistory !== [])
+                <div class="d-flex flex-column gap-3">
+                    @foreach ($sendHistory as $send)
+                        <div class="summary-card">
+                            <div class="d-flex justify-content-between gap-3">
+                                <div>
+                                    <span class="summary-card-eyebrow">{{ strtoupper($send['channel'] ?? 'canal') }}</span>
+                                    <div class="summary-card-value fs-6">{{ $send['destination_masked'] ?? 'Destino mascarado' }}</div>
+                                </div>
+                                <span class="desktop-chip">{{ $send['status'] ?? 'na_fila' }}</span>
+                            </div>
+                            <div class="summary-card-meta mt-2">
+                                Template: {{ $send['template_code'] ?? '—' }} ·
+                                Responsável: {{ $send['sender']['name'] ?? 'Sistema' }}
+                            </div>
+                            @if (($send['error'] ?? '') !== '')
+                                <div class="text-danger small mt-2">{{ $send['error'] }}</div>
+                            @endif
+                        </div>
+                    @endforeach
+                </div>
+            @else
+                <p class="text-secondary mb-0">Nenhum envio registrado até agora.</p>
+            @endif
+        </article>
+
+        <article class="surface-card">
+            <h3 class="surface-title fs-5 mb-1">Histórico de links</h3>
+            <p class="surface-subtitle">O token bruto não é persistido; o histórico mantém apenas auditoria segura e controle de revogação.</p>
+
+            @if ($shareLinks !== [])
+                <div class="d-flex flex-column gap-3">
+                    @foreach ($shareLinks as $link)
+                        <div class="summary-card">
+                            <div class="d-flex justify-content-between gap-3">
+                                <div>
+                                    <span class="summary-card-eyebrow">Link #{{ $link['id'] ?? 0 }}</span>
+                                    <div class="summary-card-value fs-6">{{ ($link['format'] ?? 'a4') === '80mm' ? '80mm' : 'A4' }}</div>
+                                </div>
+                                <span class="desktop-chip">{{ ($link['revoked_at'] ?? null) ? 'Revogado' : 'Ativo/expira' }}</span>
+                            </div>
+                            <div class="summary-card-meta mt-2">
+                                Expira em:
+                                {{ isset($link['expires_at']) ? \Illuminate\Support\Carbon::parse($link['expires_at'])->format('d/m/Y H:i') : '—' }}
+                                · Acessos: {{ $link['access_count'] ?? 0 }}
+                            </div>
+                            @if (! ($link['revoked_at'] ?? null))
+                                <form method="post" action="{{ route('orders.documents.share.revoke', ['order' => $orderId, 'link' => (int) ($link['id'] ?? 0)]) }}" class="mt-3">
+                                    @csrf
+                                    <button type="submit" class="btn btn-sm btn-outline-light">Revogar</button>
+                                </form>
+                            @endif
+                        </div>
+                    @endforeach
+                </div>
+            @else
+                <p class="text-secondary mb-0">Nenhum link público gerado até agora.</p>
+            @endif
+        </article>
+    </section>
+@endsection
+
+@push('scripts')
+    <script>
+        (() => {
+            const root = document.querySelector('[data-doc-center-root]');
+            if (!root) {
+                return;
+            }
+
+            const bulkDispatchForm = document.getElementById('orderDocumentsDispatchForm');
+            const rowCheckboxes = Array.from(root.querySelectorAll('[data-document-row-checkbox]'));
+            const forms = Array.from(root.querySelectorAll('[data-selected-documents-target]'));
+            const selectAllButton = root.querySelector('[data-doc-select-all]');
+            const clearAllButton = root.querySelector('[data-doc-clear-all]');
+            const selectionCount = root.querySelector('[data-doc-selection-count]');
+            const selectionAlert = root.querySelector('[data-doc-selection-alert]');
+            const submitButtons = Array.from(root.querySelectorAll('[data-doc-submit-button]'));
+
+            const hideSelectionAlert = () => {
+                if (!selectionAlert) {
+                    return;
+                }
+
+                selectionAlert.textContent = '';
+                selectionAlert.classList.add('d-none');
+            };
+
+            const showSelectionAlert = (message) => {
+                if (!selectionAlert) {
+                    window.alert(message);
+                    return;
+                }
+
+                selectionAlert.textContent = message;
+                selectionAlert.classList.remove('d-none');
+                selectionAlert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            };
+
+            const syncSelectedDocuments = () => {
+                const selected = rowCheckboxes
+                    .filter((checkbox) => checkbox.checked)
+                    .map((checkbox) => checkbox.value);
+
+                forms.forEach((form) => {
+                    form.querySelectorAll('input[data-generated-document-id]').forEach((input) => input.remove());
+
+                    selected.forEach((value) => {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = 'document_ids[]';
+                        input.value = value;
+                        input.setAttribute('data-generated-document-id', '1');
+                        form.appendChild(input);
+                    });
+                });
+
+                if (selectionCount) {
+                    selectionCount.textContent = selected.length === 0
+                        ? 'Nenhum documento selecionado.'
+                        : selected.length === 1
+                            ? '1 documento selecionado.'
+                            : `${selected.length} documentos selecionados.`;
+                }
+
+                submitButtons.forEach((button) => {
+                    button.disabled = selected.length === 0;
+                });
+
+                if (selected.length > 0) {
+                    hideSelectionAlert();
+                }
+            };
+
+            rowCheckboxes.forEach((checkbox) => {
+                checkbox.addEventListener('change', syncSelectedDocuments);
+            });
+
+            if (selectAllButton) {
+                selectAllButton.addEventListener('click', () => {
+                    rowCheckboxes.forEach((checkbox) => {
+                        checkbox.checked = true;
+                    });
+                    syncSelectedDocuments();
+                });
+            }
+
+            if (clearAllButton) {
+                clearAllButton.addEventListener('click', () => {
+                    rowCheckboxes.forEach((checkbox) => {
+                        checkbox.checked = false;
+                    });
+                    syncSelectedDocuments();
+                });
+            }
+
+            if (bulkDispatchForm) {
+                bulkDispatchForm.addEventListener('submit', (event) => {
+                    const selectedCount = rowCheckboxes.filter((checkbox) => checkbox.checked).length;
+                    if (selectedCount > 0) {
+                        hideSelectionAlert();
+                        return;
+                    }
+
+                    event.preventDefault();
+                    showSelectionAlert(
+                        event.submitter?.getAttribute('data-selection-required-message')
+                        || 'Selecione ao menos um documento do acervo antes de continuar.'
+                    );
+                });
+            }
+
+            forms.forEach((form) => {
+                form.addEventListener('submit', (event) => {
+                    const selectedCount = rowCheckboxes.filter((checkbox) => checkbox.checked).length;
+                    if (selectedCount > 0) {
+                        hideSelectionAlert();
+                        return;
+                    }
+
+                    event.preventDefault();
+                    showSelectionAlert(
+                        form.getAttribute('data-selection-required-message')
+                        || 'Selecione ao menos um documento do acervo antes de continuar.'
+                    );
+                });
+            });
+
+            syncSelectedDocuments();
+        })();
+    </script>
+@endpush

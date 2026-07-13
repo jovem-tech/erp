@@ -1,9 +1,9 @@
 {
-    "generated_at": "2026-07-11T23:07:30+00:00",
+    "generated_at": "2026-07-13T01:52:32+00:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "4.4.1",
-        "api_version": "1.1.2",
+        "app_version": "4.6.2",
+        "api_version": "1.2.0",
         "production_target": "Ubuntu VPS",
         "development_target": "Windows/XAMPP"
     },
@@ -412,6 +412,10 @@
                 {
                     "file": "documentacao/07-novas-implementacoes/2026-07-07-modal-status-os-procedimentos-notificacao-cliente.md",
                     "title": "Overhaul do modal Alterar status da OS: procedimentos, diagnostico/solucao e notificacao ao cliente"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-11-central-documentos-cliente-os.md",
+                    "title": "OS — central de documentos do cliente"
                 },
                 {
                     "file": "documentacao/07-novas-implementacoes/2026-07-11-fotos-sem-corte-e-visualizador-modal.md",

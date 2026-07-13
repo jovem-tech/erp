@@ -21,6 +21,7 @@
         panels: Array.from(document.querySelectorAll('[data-order-tab-panel]')),
         clientSelect: document.getElementById(config.clientSelectId || 'clienteId'),
         equipmentSelect: document.getElementById(config.equipmentSelectId || 'equipamentoId'),
+        submitButton: document.querySelector('[data-order-create-submit]'),
         technicianSelect: document.getElementById(config.technicianSelectId || 'tecnicoId'),
         prioritySelect: document.getElementById('prioridade'),
         relatoField: document.getElementById('relatoCliente'),
@@ -37,6 +38,7 @@
         mainPhotoFrame: document.querySelector('[data-order-create-photo-frame]'),
         summaryStatus: document.querySelector(summarySelectors.status || '[data-order-create-summary-status]'),
         summaryClient: document.querySelector(summarySelectors.client || '[data-order-create-summary-client]'),
+        summaryClientPhone: document.querySelector('[data-order-create-summary-client-phone]'),
         summaryClientIcon: document.querySelector('[data-order-create-summary-client-icon]'),
         summaryEquipment: document.querySelector(summarySelectors.equipment || '[data-order-create-summary-equipment]'),
         summaryEquipmentIcon: document.querySelector('[data-order-create-summary-equipment-icon]'),
@@ -890,7 +892,13 @@
                     return escapeHtml(client?.text || placeholder);
                 }
 
-                return escapeHtml(normalizeText(client.name || client.text || placeholder));
+                const optionRecord = client.element instanceof HTMLOptionElement
+                    ? getClientRecordFromOption(client.element)
+                    : null;
+                const name = normalizeText(optionRecord?.name || client.name || client.text || placeholder);
+                const phone = normalizeText(optionRecord?.phone || client.phone || client.clientPhone || '');
+
+                return escapeHtml(phone !== '' ? `${name} · ${phone}` : name);
             },
             ajax: {
                 url: clientSearchUrl,
@@ -958,7 +966,7 @@
         const previsao = normalizeText(els.previsaoField instanceof HTMLInputElement ? els.previsaoField.value : '');
         const photoCount = state.existingPhotosCount + state.photoEntries.length;
         const checklist = getChecklistSummary();
-        const isReady = client.id > 0 && equipment.id > 0 && relato.length >= 5;
+        const isReady = client.id > 0 && equipment.id > 0 && relato.length >= 5 && technician.id > 0 && previsao !== '';
 
         if (!config.lockStatus) {
             setText(els.summaryStatus, isReady ? 'Pronto para abrir' : 'Triagem em andamento');
@@ -967,6 +975,10 @@
         setText(els.summaryClient, client.name);
         setRowTitle(els.summaryClient, [client.phone, client.email].filter(Boolean).join(' · '));
         setSummaryIcon(els.summaryClientIcon, client.id > 0);
+        setText(els.summaryClientPhone, client.phone);
+        if (els.summaryClientPhone instanceof HTMLElement) {
+            els.summaryClientPhone.classList.toggle('d-none', client.phone === '');
+        }
         setText(els.summaryEquipment, equipment.name);
         setRowTitle(els.summaryEquipment, equipment.serial !== '' ? `S/N ${equipment.serial}` : '');
         setSummaryIcon(els.summaryEquipmentIcon, equipment.id > 0);
@@ -997,6 +1009,8 @@
         if (observacoes !== '' && els.summaryStatus instanceof HTMLElement) {
             els.summaryStatus.title = observacoes;
         }
+
+        updateSubmitButtonState(client, equipment, relato, technician, previsao);
     };
 
     const setActiveTab = (name) => {
@@ -1033,6 +1047,134 @@
         if (activeTab !== '') {
             setActiveTab(activeTab);
         }
+    };
+
+    const getFieldLabel = (field) => {
+        if (field.id) {
+            const label = document.querySelector(`label[for="${field.id}"]`);
+            if (label) {
+                return normalizeText(label.textContent).replace(/\s*\*\s*$/, '');
+            }
+        }
+
+        return field.name || 'campo obrigatorio';
+    };
+
+    const focusInvalidField = (field, { announce = true } = {}) => {
+        const panel = field.closest('[data-order-tab-panel]');
+        const tabName = panel instanceof HTMLElement ? panel.dataset.orderTabPanel || '' : '';
+        if (tabName !== '') {
+            setActiveTab(tabName);
+        }
+
+        const isSelect2 = field instanceof HTMLSelectElement
+            && typeof window.jQuery === 'function'
+            && Boolean(window.jQuery(field).data('select2'));
+
+        window.requestAnimationFrame(() => {
+            if (isSelect2) {
+                window.jQuery(field).select2('open');
+            } else if (typeof field.focus === 'function') {
+                field.focus();
+            }
+
+            if (typeof field.scrollIntoView === 'function') {
+                field.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            if (!isSelect2 && announce && typeof field.reportValidity === 'function') {
+                field.reportValidity();
+            }
+        });
+
+        if (announce) {
+            showAlert('warning', 'Campo obrigatorio', `Preencha o campo "${getFieldLabel(field)}" para criar a OS.`);
+        }
+    };
+
+    const getNextPendingField = (client, equipment, relatoValue, technician, previsaoValue) => {
+        if (client.id <= 0 && els.clientSelect instanceof HTMLElement) {
+            return els.clientSelect;
+        }
+        if (equipment.id <= 0 && els.equipmentSelect instanceof HTMLElement) {
+            return els.equipmentSelect;
+        }
+        if (relatoValue.length < 5 && els.relatoField instanceof HTMLElement) {
+            return els.relatoField;
+        }
+        if (technician.id <= 0 && els.technicianSelect instanceof HTMLElement) {
+            return els.technicianSelect;
+        }
+        if (previsaoValue === '' && els.previsaoField instanceof HTMLElement) {
+            return els.previsaoField;
+        }
+        return null;
+    };
+
+    const updateSubmitButtonState = (client, equipment, relatoValue, technician, previsaoValue) => {
+        if (!(els.submitButton instanceof HTMLElement)) {
+            return;
+        }
+
+        const pendingField = getNextPendingField(client, equipment, relatoValue, technician, previsaoValue);
+        const iconEl = els.submitButton.querySelector('[data-order-create-submit-icon]');
+        const labelEl = els.submitButton.querySelector('[data-order-create-submit-label]');
+
+        if (pendingField) {
+            els.submitButton.dataset.pendingField = pendingField.id || '';
+            if (labelEl) {
+                labelEl.textContent = els.submitButton.dataset.nextLabel || 'Proximo';
+            }
+            if (iconEl) {
+                iconEl.className = `bi ${els.submitButton.dataset.nextIcon || 'bi-arrow-right-circle'} me-2`;
+            }
+        } else {
+            els.submitButton.dataset.pendingField = '';
+            if (labelEl) {
+                labelEl.textContent = els.submitButton.dataset.submitLabel || 'Salvar';
+            }
+            if (iconEl) {
+                iconEl.className = `bi ${els.submitButton.dataset.submitIcon || 'bi-check2-circle'} me-2`;
+            }
+        }
+    };
+
+    const initSubmitButton = () => {
+        if (!hasWizardForm || !(els.submitButton instanceof HTMLElement)) {
+            return;
+        }
+
+        els.submitButton.addEventListener('click', () => {
+            const pendingFieldId = els.submitButton.dataset.pendingField || '';
+            const pendingField = pendingFieldId !== '' ? document.getElementById(pendingFieldId) : null;
+
+            if (pendingField) {
+                focusInvalidField(pendingField, { announce: false });
+                return;
+            }
+
+            if (typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+            } else {
+                form.submit();
+            }
+        });
+    };
+
+    const initFormValidation = () => {
+        if (!hasWizardForm) {
+            return;
+        }
+
+        form.addEventListener('submit', (event) => {
+            const requiredFields = Array.from(form.querySelectorAll('[required]'));
+            const invalidField = requiredFields.find((field) => typeof field.checkValidity === 'function' && !field.checkValidity());
+
+            if (invalidField) {
+                event.preventDefault();
+                focusInvalidField(invalidField);
+            }
+        });
     };
 
     const handleClientChange = () => {
@@ -1759,5 +1901,7 @@
     initPhotos();
     initQuickClient();
     initQuickEquipment();
+    initFormValidation();
+    initSubmitButton();
     updateSummary();
 })();

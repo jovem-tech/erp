@@ -485,14 +485,377 @@
                     <p class="surface-subtitle mb-0">Configure as faixas usadas na baixa e nas simulações do financeiro.</p>
                 </div>
 
-                <span class="desktop-chip">
-                    <i class="bi bi-percent"></i>
-                    {{ number_format(count($taxas), 0, ',', '.') }} faixas
-                </span>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="desktop-chip">
+                        <i class="bi bi-percent"></i>
+                        {{ number_format(count($taxas), 0, ',', '.') }} faixas
+                    </span>
+                    @if ($canEdit)
+                        <button type="button" class="btn btn-primary btn-sm" data-cartoes-new="taxa">
+                            <i class="bi bi-plus-lg me-1"></i>
+                            Nova taxa
+                        </button>
+                    @endif
+                </div>
             </div>
 
-            <div class="desktop-grid desktop-grid-two align-items-start mt-3">
-                <section class="desktop-form-card">
+            <section class="surface-table mt-3">
+                <div class="surface-card-header align-items-start mb-3">
+                    <div>
+                        <h3 class="surface-title mb-1">Taxas cadastradas</h3>
+                        <p class="surface-subtitle mb-0">Filtre por operadora e veja a faixa exata antes de editar.</p>
+                    </div>
+                    <div class="d-flex flex-wrap justify-content-end gap-2">
+                        <button type="button" class="btn btn-sm btn-primary" data-cartoes-taxa-filter="all">Todas</button>
+                        @foreach ($operadoras as $operadora)
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline-light"
+                                data-cartoes-taxa-filter="{{ (int) ($operadora['id'] ?? 0) }}"
+                            >
+                                {{ $operadora['nome'] ?? '-' }}
+                            </button>
+                        @endforeach
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-stack align-middle">
+                        <thead>
+                        <tr>
+                            <th>Operadora</th>
+                            <th>Bandeira</th>
+                            <th>Modalidade</th>
+                            <th>Faixa</th>
+                            <th>Taxa</th>
+                            <th>Liquidação</th>
+                            <th>Status</th>
+                            <th class="text-end">Ações</th>
+                        </tr>
+                        </thead>
+                        <tbody data-cartoes-taxas-body>
+                            @forelse ($taxas as $taxa)
+                                @php
+                                    $taxaId = (int) ($taxa['id'] ?? 0);
+                                    $taxaOperadoraId = (int) ($taxa['operadora_id'] ?? 0);
+                                @endphp
+                                <tr data-operadora-id="{{ $taxaOperadoraId }}" data-cartoes-row="taxa">
+                                    <td data-label="Operadora">{{ $taxa['operadora_nome'] ?? '-' }}</td>
+                                    <td data-label="Bandeira">{{ $taxa['bandeira_nome'] ?? 'Todas' }}</td>
+                                    <td data-label="Modalidade">{{ ucfirst((string) ($taxa['modalidade'] ?? '-')) }}</td>
+                                    <td data-label="Faixa">
+                                        {{ number_format((int) ($taxa['parcelas_inicial'] ?? 0), 0, ',', '.') }}
+                                        x a
+                                        {{ number_format((int) ($taxa['parcelas_final'] ?? 0), 0, ',', '.') }}
+                                        x
+                                    </td>
+                                    <td data-label="Taxa">
+                                        {{ number_format((float) ($taxa['taxa_percentual'] ?? 0), 4, ',', '.') }}%
+                                        + {{ $formatMoney((float) ($taxa['taxa_fixa'] ?? 0)) }}
+                                    </td>
+                                    <td data-label="Liquidação">{{ number_format((int) ($taxa['prazo_recebimento_dias'] ?? 0), 0, ',', '.') }} dias</td>
+                                    <td data-label="Status">
+                                        @include('layouts.partials.status-pill', [
+                                            'label' => (bool) ($taxa['ativo'] ?? false) ? 'Ativa' : 'Inativa',
+                                            'color' => (bool) ($taxa['ativo'] ?? false) ? '#29c384' : '#8b93a7',
+                                            'small' => true,
+                                        ])
+                                    </td>
+                                    <td data-label="Ações" class="text-end">
+                                        <div class="dropdown">
+                                            <button type="button" class="btn btn-sm btn-outline-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                                <span>Ações</span>
+                                                <i class="bi bi-chevron-down"></i>
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-end">
+                                                @if ($canEdit)
+                                                    <li>
+                                                        <button
+                                                            type="button"
+                                                            class="dropdown-item"
+                                                            data-cartoes-edit="taxa"
+                                                            data-cartoes-id="{{ $taxaId }}"
+                                                            data-cartoes-operadora-id="{{ $taxaOperadoraId }}"
+                                                            data-cartoes-bandeira-id="{{ ($taxa['bandeira_id'] ?? null) !== null ? (int) $taxa['bandeira_id'] : '' }}"
+                                                            data-cartoes-modalidade="{{ $taxa['modalidade'] ?? '' }}"
+                                                            data-cartoes-parcelas-inicial="{{ (int) ($taxa['parcelas_inicial'] ?? 1) }}"
+                                                            data-cartoes-parcelas-final="{{ (int) ($taxa['parcelas_final'] ?? 1) }}"
+                                                            data-cartoes-taxa-percentual="{{ (float) ($taxa['taxa_percentual'] ?? 0) }}"
+                                                            data-cartoes-taxa-fixa="{{ (float) ($taxa['taxa_fixa'] ?? 0) }}"
+                                                            data-cartoes-prazo-recebimento-dias="{{ (int) ($taxa['prazo_recebimento_dias'] ?? 0) }}"
+                                                            data-cartoes-observacoes="{{ $taxa['observacoes'] ?? '' }}"
+                                                            data-cartoes-ativo="{{ (bool) ($taxa['ativo'] ?? false) ? '1' : '0' }}"
+                                                        >
+                                                            <i class="bi bi-pencil me-2"></i>Editar
+                                                        </button>
+                                                    </li>
+                                                @endif
+                                                @if ($canDelete && $taxaId > 0)
+                                                    <li>
+                                                        <form method="post" action="{{ route('financeiro.cartoes.taxas.delete', $taxaId) }}" data-confirm="Desativar esta taxa?" data-confirm-title="Desativar taxa" data-confirm-button="Sim, desativar">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit" class="dropdown-item text-danger">
+                                                                <i class="bi bi-slash-circle me-2"></i>Desativar
+                                                            </button>
+                                                        </form>
+                                                    </li>
+                                                @endif
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="8">
+                                        @include('layouts.partials.empty-state', [
+                                            'icon' => 'bi-percent',
+                                            'title' => 'Nenhuma taxa cadastrada',
+                                            'message' => 'Cadastre a primeira faixa para liberar a simulação com taxa automática.',
+                                        ])
+                                    </td>
+                                </tr>
+                            @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+        </div>
+
+        <div class="config-subpanel {{ $activeTab === 'simulador' ? 'is-active' : '' }}" data-cartoes-panel="simulador">
+            <div class="surface-card-header align-items-start mt-3">
+                <div>
+                    <h3 class="surface-title mb-1">Simulador de faturamento líquido</h3>
+                    <p class="surface-subtitle mb-0">Veja a taxa estimada antes de confirmar o recebimento.</p>
+                </div>
+            </div>
+
+            <div class="desktop-form-card mt-3">
+                <form method="post" action="{{ route('financeiro.cartoes.simulate') }}" class="desktop-filter-grid" data-financeiro-cartoes-simulator>
+                    @csrf
+                    <div>
+                        <label for="simValorBruto">Valor bruto da venda</label>
+                        <input type="number" name="valor_bruto" id="simValorBruto" class="form-control" step="0.01" min="0.01" value="{{ old('valor_bruto', '130.00') }}" required>
+                    </div>
+                    <div>
+                        <label for="simOperadora">Operadora</label>
+                        <select name="operadora_id" id="simOperadora" class="form-select" data-select2-placeholder="Selecione a operadora..." required>
+                            <option value=""></option>
+                            @foreach ($simuladorCatalogo['operadoras'] ?? [] as $operadora)
+                                <option value="{{ (int) ($operadora['id'] ?? 0) }}" @selected((string) old('operadora_id', (string) (($firstActiveOperadora['id'] ?? '') !== '' ? $firstActiveOperadora['id'] : '')) === (string) ($operadora['id'] ?? ''))>
+                                    {{ $operadora['nome'] ?? '-' }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label for="simBandeira">Bandeira</label>
+                        <select name="bandeira_id" id="simBandeira" class="form-select" data-select2-placeholder="Opcional">
+                            <option value=""></option>
+                            @foreach ($simuladorCatalogo['bandeiras'] ?? [] as $bandeira)
+                                <option value="{{ (int) ($bandeira['id'] ?? 0) }}" @selected((string) old('bandeira_id', (string) (($firstActiveBandeira['id'] ?? '') !== '' ? $firstActiveBandeira['id'] : '')) === (string) ($bandeira['id'] ?? ''))>
+                                    {{ $bandeira['nome'] ?? '-' }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label for="simModalidade">Modalidade</label>
+                        <select name="modalidade" id="simModalidade" class="form-select" data-select2-placeholder="Selecione a modalidade..." required>
+                            <option value=""></option>
+                            <option value="credito" @selected($firstSimuladorModalidade === 'credito')>Crédito</option>
+                            <option value="debito" @selected($firstSimuladorModalidade === 'debito')>Débito</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="simParcelas">Parcelas</label>
+                        <input type="number" name="parcelas" id="simParcelas" class="form-control" min="1" max="24" step="1" value="{{ old('parcelas', 1) }}" required>
+                    </div>
+                    <div class="field-actions">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-calculator me-2"></i>
+                            Simular recebimento
+                        </button>
+                    </div>
+                </form>
+
+                <div class="desktop-grid desktop-grid-four mt-4" data-financeiro-cartoes-simulation-results>
+                    <div class="summary-card">
+                        <p class="summary-card-eyebrow">Taxa total</p>
+                        <h3 class="summary-card-value" data-sim-field="fee">R$ 0,00</h3>
+                        <p class="summary-card-meta" data-sim-meta="fee">Aguardando simulação</p>
+                    </div>
+                    <div class="summary-card">
+                        <p class="summary-card-eyebrow">Valor líquido</p>
+                        <h3 class="summary-card-value" data-sim-field="net">R$ 0,00</h3>
+                        <p class="summary-card-meta" data-sim-meta="net">Aguardando simulação</p>
+                    </div>
+                    <div class="summary-card">
+                        <p class="summary-card-eyebrow">Percentual aplicado</p>
+                        <h3 class="summary-card-value" data-sim-field="percent">0,0000%</h3>
+                        <p class="summary-card-meta" data-sim-meta="percent">Aguardando simulação</p>
+                    </div>
+                    <div class="summary-card">
+                        <p class="summary-card-eyebrow">Previsão de recebimento</p>
+                        <h3 class="summary-card-value" data-sim-field="due">-</h3>
+                        <p class="summary-card-meta" data-sim-meta="due">Aguardando simulação</p>
+                    </div>
+                </div>
+
+                <div class="surface-subtitle mt-3 mb-0" data-financeiro-cartoes-simulator-status>
+                    Preencha os dados acima para estimar o valor líquido, a taxa e a liquidação.
+                </div>
+            </div>
+        </div>
+
+        <div class="config-subpanel {{ $activeTab === 'gateway' ? 'is-active' : '' }}" data-cartoes-panel="gateway">
+            <div class="surface-card-header align-items-start mt-3">
+                <div>
+                    <h3 class="surface-title mb-1">Taxas online</h3>
+                    <p class="surface-subtitle mb-0">Configure as tarifas embutidas em Pix, boleto, crédito e débito.</p>
+                </div>
+
+                <div class="d-flex align-items-center gap-2">
+                    <span class="desktop-chip">
+                        <i class="bi bi-globe2"></i>
+                        {{ number_format((int) ($gatewaySummary['ativas'] ?? 0), 0, ',', '.') }} ativas
+                    </span>
+                    @if ($canEdit)
+                        <button type="button" class="btn btn-primary btn-sm" data-cartoes-new="gateway">
+                            <i class="bi bi-plus-lg me-1"></i>
+                            Nova taxa online
+                        </button>
+                    @endif
+                </div>
+            </div>
+
+            <section class="surface-table mt-3">
+                <div class="surface-card-header align-items-start mb-3">
+                    <div>
+                        <h3 class="surface-title mb-1">Taxas online cadastradas</h3>
+                        <p class="surface-subtitle mb-0">Filtre pelo gateway e edite sem sair da tela.</p>
+                    </div>
+                    <div class="d-flex flex-wrap justify-content-end gap-2">
+                        <button type="button" class="btn btn-sm btn-primary" data-cartoes-gateway-filter="all">Todas</button>
+                        @foreach ($gatewayCatalog as $providerKey => $provider)
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline-light"
+                                data-cartoes-gateway-filter="{{ $providerKey }}"
+                            >
+                                {{ $provider['label'] ?? $providerKey }}
+                            </button>
+                        @endforeach
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-stack align-middle">
+                        <thead>
+                        <tr>
+                            <th>Gateway</th>
+                            <th>Modalidade</th>
+                            <th>Taxa</th>
+                            <th>Status</th>
+                            <th>Observações</th>
+                            <th class="text-end">Ações</th>
+                        </tr>
+                        </thead>
+                        <tbody data-cartoes-gateway-body>
+                            @forelse ($gatewayTaxas as $gatewayTaxa)
+                                @php
+                                    $gatewayTaxaId = (int) ($gatewayTaxa['id'] ?? 0);
+                                    $gatewayProvider = (string) ($gatewayTaxa['provider'] ?? '');
+                                @endphp
+                                <tr data-provider="{{ $gatewayProvider }}" data-cartoes-row="gateway">
+                                    <td data-label="Gateway">
+                                        <div class="fw-semibold">{{ $gatewayTaxa['provider_label'] ?? ucfirst($gatewayProvider) }}</div>
+                                    </td>
+                                    <td data-label="Modalidade">
+                                        <div class="fw-semibold">{{ $gatewayTaxa['modalidade_label'] ?? ($gatewayTaxa['modalidade'] ?? '-') }}</div>
+                                        <small class="text-secondary d-block">{{ $gatewayTaxa['description'] ?? '' }}</small>
+                                    </td>
+                                    <td data-label="Taxa">
+                                        {{ number_format((float) ($gatewayTaxa['taxa_percentual'] ?? 0), 4, ',', '.') }}%
+                                        + {{ $formatMoney((float) ($gatewayTaxa['taxa_fixa'] ?? 0)) }}
+                                    </td>
+                                    <td data-label="Status">
+                                        @include('layouts.partials.status-pill', [
+                                            'label' => (bool) ($gatewayTaxa['ativo'] ?? false) ? 'Ativa' : 'Inativa',
+                                            'color' => (bool) ($gatewayTaxa['ativo'] ?? false) ? '#29c384' : '#8b93a7',
+                                            'small' => true,
+                                        ])
+                                    </td>
+                                    <td data-label="Observações">{{ $gatewayTaxa['observacoes'] ?? '-' }}</td>
+                                    <td data-label="Ações" class="text-end">
+                                        <div class="dropdown">
+                                            <button type="button" class="btn btn-sm btn-outline-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+                                                <span>Ações</span>
+                                                <i class="bi bi-chevron-down"></i>
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-end">
+                                                @if ($canEdit)
+                                                    <li>
+                                                        <button
+                                                            type="button"
+                                                            class="dropdown-item"
+                                                            data-cartoes-edit="gateway"
+                                                            data-cartoes-id="{{ $gatewayTaxaId }}"
+                                                            data-cartoes-provider="{{ $gatewayProvider }}"
+                                                            data-cartoes-modalidade="{{ $gatewayTaxa['modalidade'] ?? '' }}"
+                                                            data-cartoes-taxa-percentual="{{ (float) ($gatewayTaxa['taxa_percentual'] ?? 0) }}"
+                                                            data-cartoes-taxa-fixa="{{ (float) ($gatewayTaxa['taxa_fixa'] ?? 0) }}"
+                                                            data-cartoes-ordem-exibicao="{{ (int) ($gatewayTaxa['ordem_exibicao'] ?? 0) }}"
+                                                            data-cartoes-observacoes="{{ $gatewayTaxa['observacoes'] ?? '' }}"
+                                                            data-cartoes-ativo="{{ (bool) ($gatewayTaxa['ativo'] ?? false) ? '1' : '0' }}"
+                                                        >
+                                                            <i class="bi bi-pencil me-2"></i>Editar
+                                                        </button>
+                                                    </li>
+                                                @endif
+                                                @if ($canDelete && $gatewayTaxaId > 0)
+                                                    <li>
+                                                        <form method="post" action="{{ route('financeiro.cartoes.gateway.delete', $gatewayTaxaId) }}" data-confirm="Desativar esta taxa online?" data-confirm-title="Desativar taxa online" data-confirm-button="Sim, desativar">
+                                                            @csrf
+                                                            @method('DELETE')
+                                                            <button type="submit" class="dropdown-item text-danger">
+                                                                <i class="bi bi-slash-circle me-2"></i>Desativar
+                                                            </button>
+                                                        </form>
+                                                    </li>
+                                                @endif
+                                            </ul>
+                                        </div>
+                                    </td>
+                                </tr>
+                            @empty
+                                <tr>
+                                    <td colspan="6">
+                                        @include('layouts.partials.empty-state', [
+                                            'icon' => 'bi-globe2',
+                                            'title' => 'Nenhuma taxa online cadastrada',
+                                            'message' => 'Cadastre a primeira taxa para embutir custo em pagamentos online.',
+                                        ])
+                                    </td>
+                                </tr>
+                            @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+        </div>
+    </section>
+@endsection
+
+@push('modals')
+    <div class="modal fade" id="cartaoTaxaModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content modal-shell">
+                <div class="modal-header">
+                    <h5 class="modal-title" data-cartoes-taxa-modal-title>Nova taxa</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                </div>
+                <div class="modal-body">
                     <form
                         method="post"
                         action="{{ route('financeiro.cartoes.taxas.save') }}"
@@ -670,233 +1033,19 @@
                             </button>
                         </div>
                     </form>
-                </section>
-
-                <section class="surface-table">
-                    <div class="surface-card-header align-items-start mb-3">
-                        <div>
-                            <h3 class="surface-title mb-1">Taxas cadastradas</h3>
-                            <p class="surface-subtitle mb-0">Filtre por operadora e veja a faixa exata antes de editar.</p>
-                        </div>
-                        <div class="d-flex flex-wrap justify-content-end gap-2">
-                            <button type="button" class="btn btn-sm btn-primary" data-cartoes-taxa-filter="all">Todas</button>
-                            @foreach ($operadoras as $operadora)
-                                <button
-                                    type="button"
-                                    class="btn btn-sm btn-outline-light"
-                                    data-cartoes-taxa-filter="{{ (int) ($operadora['id'] ?? 0) }}"
-                                >
-                                    {{ $operadora['nome'] ?? '-' }}
-                                </button>
-                            @endforeach
-                        </div>
-                    </div>
-
-                    <div class="table-responsive">
-                        <table class="table table-stack align-middle">
-                            <thead>
-                            <tr>
-                                <th>Operadora</th>
-                                <th>Bandeira</th>
-                                <th>Modalidade</th>
-                                <th>Faixa</th>
-                                <th>Taxa</th>
-                                <th>Liquidação</th>
-                                <th>Status</th>
-                                <th class="text-end">Ações</th>
-                            </tr>
-                            </thead>
-                            <tbody data-cartoes-taxas-body>
-                            @forelse ($taxas as $taxa)
-                                @php
-                                    $taxaId = (int) ($taxa['id'] ?? 0);
-                                    $taxaOperadoraId = (int) ($taxa['operadora_id'] ?? 0);
-                                @endphp
-                                <tr data-operadora-id="{{ $taxaOperadoraId }}" data-cartoes-row="taxa">
-                                    <td data-label="Operadora">{{ $taxa['operadora_nome'] ?? '-' }}</td>
-                                    <td data-label="Bandeira">{{ $taxa['bandeira_nome'] ?? 'Todas' }}</td>
-                                    <td data-label="Modalidade">{{ ucfirst((string) ($taxa['modalidade'] ?? '-')) }}</td>
-                                    <td data-label="Faixa">
-                                        {{ number_format((int) ($taxa['parcelas_inicial'] ?? 0), 0, ',', '.') }}
-                                        x a
-                                        {{ number_format((int) ($taxa['parcelas_final'] ?? 0), 0, ',', '.') }}
-                                        x
-                                    </td>
-                                    <td data-label="Taxa">
-                                        {{ number_format((float) ($taxa['taxa_percentual'] ?? 0), 4, ',', '.') }}%
-                                        + {{ $formatMoney((float) ($taxa['taxa_fixa'] ?? 0)) }}
-                                    </td>
-                                    <td data-label="Liquidação">{{ number_format((int) ($taxa['prazo_recebimento_dias'] ?? 0), 0, ',', '.') }} dias</td>
-                                    <td data-label="Status">
-                                        @include('layouts.partials.status-pill', [
-                                            'label' => (bool) ($taxa['ativo'] ?? false) ? 'Ativa' : 'Inativa',
-                                            'color' => (bool) ($taxa['ativo'] ?? false) ? '#29c384' : '#8b93a7',
-                                            'small' => true,
-                                        ])
-                                    </td>
-                                    <td data-label="Ações" class="text-end">
-                                        <div class="dropdown">
-                                            <button type="button" class="btn btn-sm btn-outline-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-                                                <span>Ações</span>
-                                                <i class="bi bi-chevron-down"></i>
-                                            </button>
-                                            <ul class="dropdown-menu dropdown-menu-end">
-                                                @if ($canEdit)
-                                                    <li>
-                                                        <button
-                                                            type="button"
-                                                            class="dropdown-item"
-                                                            data-cartoes-edit="taxa"
-                                                            data-cartoes-id="{{ $taxaId }}"
-                                                            data-cartoes-operadora-id="{{ $taxaOperadoraId }}"
-                                                            data-cartoes-bandeira-id="{{ (int) ($taxa['bandeira_id'] ?? 0) }}"
-                                                            data-cartoes-modalidade="{{ $taxa['modalidade'] ?? '' }}"
-                                                            data-cartoes-parcelas-inicial="{{ (int) ($taxa['parcelas_inicial'] ?? 1) }}"
-                                                            data-cartoes-parcelas-final="{{ (int) ($taxa['parcelas_final'] ?? 1) }}"
-                                                            data-cartoes-taxa-percentual="{{ (float) ($taxa['taxa_percentual'] ?? 0) }}"
-                                                            data-cartoes-taxa-fixa="{{ (float) ($taxa['taxa_fixa'] ?? 0) }}"
-                                                            data-cartoes-prazo-recebimento-dias="{{ (int) ($taxa['prazo_recebimento_dias'] ?? 0) }}"
-                                                            data-cartoes-observacoes="{{ $taxa['observacoes'] ?? '' }}"
-                                                            data-cartoes-ativo="{{ (bool) ($taxa['ativo'] ?? false) ? '1' : '0' }}"
-                                                        >
-                                                            <i class="bi bi-pencil me-2"></i>Editar
-                                                        </button>
-                                                    </li>
-                                                @endif
-                                                @if ($canDelete && $taxaId > 0)
-                                                    <li>
-                                                        <form method="post" action="{{ route('financeiro.cartoes.taxas.delete', $taxaId) }}" data-confirm="Desativar esta taxa?" data-confirm-title="Desativar taxa" data-confirm-button="Sim, desativar">
-                                                            @csrf
-                                                            @method('DELETE')
-                                                            <button type="submit" class="dropdown-item text-danger">
-                                                                <i class="bi bi-slash-circle me-2"></i>Desativar
-                                                            </button>
-                                                        </form>
-                                                    </li>
-                                                @endif
-                                            </ul>
-                                        </div>
-                                    </td>
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="8">
-                                        @include('layouts.partials.empty-state', [
-                                            'icon' => 'bi-percent',
-                                            'title' => 'Nenhuma taxa cadastrada',
-                                            'message' => 'Cadastre a primeira faixa para liberar a simulação com taxa automática.',
-                                        ])
-                                    </td>
-                                </tr>
-                            @endforelse
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
-            </div>
-        </div>
-
-        <div class="config-subpanel {{ $activeTab === 'simulador' ? 'is-active' : '' }}" data-cartoes-panel="simulador">
-            <div class="surface-card-header align-items-start mt-3">
-                <div>
-                    <h3 class="surface-title mb-1">Simulador de faturamento líquido</h3>
-                    <p class="surface-subtitle mb-0">Veja a taxa estimada antes de confirmar o recebimento.</p>
-                </div>
-            </div>
-
-            <div class="desktop-form-card mt-3">
-                <form method="post" action="{{ route('financeiro.cartoes.simulate') }}" class="desktop-filter-grid" data-financeiro-cartoes-simulator>
-                    @csrf
-                    <div>
-                        <label for="simValorBruto">Valor bruto da venda</label>
-                        <input type="number" name="valor_bruto" id="simValorBruto" class="form-control" step="0.01" min="0.01" value="{{ old('valor_bruto', '130.00') }}" required>
-                    </div>
-                    <div>
-                        <label for="simOperadora">Operadora</label>
-                        <select name="operadora_id" id="simOperadora" class="form-select" data-select2-placeholder="Selecione a operadora..." required>
-                            <option value=""></option>
-                            @foreach ($simuladorCatalogo['operadoras'] ?? [] as $operadora)
-                                <option value="{{ (int) ($operadora['id'] ?? 0) }}" @selected((string) old('operadora_id', (string) (($firstActiveOperadora['id'] ?? '') !== '' ? $firstActiveOperadora['id'] : '')) === (string) ($operadora['id'] ?? ''))>
-                                    {{ $operadora['nome'] ?? '-' }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div>
-                        <label for="simBandeira">Bandeira</label>
-                        <select name="bandeira_id" id="simBandeira" class="form-select" data-select2-placeholder="Opcional">
-                            <option value=""></option>
-                            @foreach ($simuladorCatalogo['bandeiras'] ?? [] as $bandeira)
-                                <option value="{{ (int) ($bandeira['id'] ?? 0) }}" @selected((string) old('bandeira_id', (string) (($firstActiveBandeira['id'] ?? '') !== '' ? $firstActiveBandeira['id'] : '')) === (string) ($bandeira['id'] ?? ''))>
-                                    {{ $bandeira['nome'] ?? '-' }}
-                                </option>
-                            @endforeach
-                        </select>
-                    </div>
-                    <div>
-                        <label for="simModalidade">Modalidade</label>
-                        <select name="modalidade" id="simModalidade" class="form-select" data-select2-placeholder="Selecione a modalidade..." required>
-                            <option value=""></option>
-                            <option value="credito" @selected($firstSimuladorModalidade === 'credito')>Crédito</option>
-                            <option value="debito" @selected($firstSimuladorModalidade === 'debito')>Débito</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label for="simParcelas">Parcelas</label>
-                        <input type="number" name="parcelas" id="simParcelas" class="form-control" min="1" max="24" step="1" value="{{ old('parcelas', 1) }}" required>
-                    </div>
-                    <div class="field-actions">
-                        <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-calculator me-2"></i>
-                            Simular recebimento
-                        </button>
-                    </div>
-                </form>
-
-                <div class="desktop-grid desktop-grid-four mt-4" data-financeiro-cartoes-simulation-results>
-                    <div class="summary-card">
-                        <p class="summary-card-eyebrow">Taxa total</p>
-                        <h3 class="summary-card-value" data-sim-field="fee">R$ 0,00</h3>
-                        <p class="summary-card-meta" data-sim-meta="fee">Aguardando simulação</p>
-                    </div>
-                    <div class="summary-card">
-                        <p class="summary-card-eyebrow">Valor líquido</p>
-                        <h3 class="summary-card-value" data-sim-field="net">R$ 0,00</h3>
-                        <p class="summary-card-meta" data-sim-meta="net">Aguardando simulação</p>
-                    </div>
-                    <div class="summary-card">
-                        <p class="summary-card-eyebrow">Percentual aplicado</p>
-                        <h3 class="summary-card-value" data-sim-field="percent">0,0000%</h3>
-                        <p class="summary-card-meta" data-sim-meta="percent">Aguardando simulação</p>
-                    </div>
-                    <div class="summary-card">
-                        <p class="summary-card-eyebrow">Previsão de recebimento</p>
-                        <h3 class="summary-card-value" data-sim-field="due">-</h3>
-                        <p class="summary-card-meta" data-sim-meta="due">Aguardando simulação</p>
-                    </div>
-                </div>
-
-                <div class="surface-subtitle mt-3 mb-0" data-financeiro-cartoes-simulator-status>
-                    Preencha os dados acima para estimar o valor líquido, a taxa e a liquidação.
                 </div>
             </div>
         </div>
+    </div>
 
-        <div class="config-subpanel {{ $activeTab === 'gateway' ? 'is-active' : '' }}" data-cartoes-panel="gateway">
-            <div class="surface-card-header align-items-start mt-3">
-                <div>
-                    <h3 class="surface-title mb-1">Taxas online</h3>
-                    <p class="surface-subtitle mb-0">Configure as tarifas embutidas em Pix, boleto, crédito e débito.</p>
+    <div class="modal fade" id="cartaoGatewayModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content modal-shell">
+                <div class="modal-header">
+                    <h5 class="modal-title" data-cartoes-gateway-modal-title>Nova taxa online</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
-
-                <span class="desktop-chip">
-                    <i class="bi bi-globe2"></i>
-                    {{ number_format((int) ($gatewaySummary['ativas'] ?? 0), 0, ',', '.') }} ativas
-                </span>
-            </div>
-
-            <div class="desktop-grid desktop-grid-two align-items-start mt-3">
-                <section class="desktop-form-card">
+                <div class="modal-body">
                     <form
                         method="post"
                         action="{{ route('financeiro.cartoes.gateway.save') }}"
@@ -981,126 +1130,11 @@
                             </button>
                         </div>
                     </form>
-                </section>
-
-                <section class="surface-table">
-                    <div class="surface-card-header align-items-start mb-3">
-                        <div>
-                            <h3 class="surface-title mb-1">Taxas online cadastradas</h3>
-                            <p class="surface-subtitle mb-0">Filtre pelo gateway e edite sem sair da tela.</p>
-                        </div>
-                        <div class="d-flex flex-wrap justify-content-end gap-2">
-                            <button type="button" class="btn btn-sm btn-primary" data-cartoes-gateway-filter="all">Todas</button>
-                            @foreach ($gatewayCatalog as $providerKey => $provider)
-                                <button
-                                    type="button"
-                                    class="btn btn-sm btn-outline-light"
-                                    data-cartoes-gateway-filter="{{ $providerKey }}"
-                                >
-                                    {{ $provider['label'] ?? $providerKey }}
-                                </button>
-                            @endforeach
-                        </div>
-                    </div>
-
-                    <div class="table-responsive">
-                        <table class="table table-stack align-middle">
-                            <thead>
-                            <tr>
-                                <th>Gateway</th>
-                                <th>Modalidade</th>
-                                <th>Taxa</th>
-                                <th>Status</th>
-                                <th>Observações</th>
-                                <th class="text-end">Ações</th>
-                            </tr>
-                            </thead>
-                            <tbody data-cartoes-gateway-body>
-                            @forelse ($gatewayTaxas as $gatewayTaxa)
-                                @php
-                                    $gatewayTaxaId = (int) ($gatewayTaxa['id'] ?? 0);
-                                    $gatewayProvider = (string) ($gatewayTaxa['provider'] ?? '');
-                                @endphp
-                                <tr data-provider="{{ $gatewayProvider }}" data-cartoes-row="gateway">
-                                    <td data-label="Gateway">
-                                        <div class="fw-semibold">{{ $gatewayTaxa['provider_label'] ?? ucfirst($gatewayProvider) }}</div>
-                                    </td>
-                                    <td data-label="Modalidade">
-                                        <div class="fw-semibold">{{ $gatewayTaxa['modalidade_label'] ?? ($gatewayTaxa['modalidade'] ?? '-') }}</div>
-                                        <small class="text-secondary d-block">{{ $gatewayTaxa['description'] ?? '' }}</small>
-                                    </td>
-                                    <td data-label="Taxa">
-                                        {{ number_format((float) ($gatewayTaxa['taxa_percentual'] ?? 0), 4, ',', '.') }}%
-                                        + {{ $formatMoney((float) ($gatewayTaxa['taxa_fixa'] ?? 0)) }}
-                                    </td>
-                                    <td data-label="Status">
-                                        @include('layouts.partials.status-pill', [
-                                            'label' => (bool) ($gatewayTaxa['ativo'] ?? false) ? 'Ativa' : 'Inativa',
-                                            'color' => (bool) ($gatewayTaxa['ativo'] ?? false) ? '#29c384' : '#8b93a7',
-                                            'small' => true,
-                                        ])
-                                    </td>
-                                    <td data-label="Observações">{{ $gatewayTaxa['observacoes'] ?? '-' }}</td>
-                                    <td data-label="Ações" class="text-end">
-                                        <div class="dropdown">
-                                            <button type="button" class="btn btn-sm btn-outline-light dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
-                                                <span>Ações</span>
-                                                <i class="bi bi-chevron-down"></i>
-                                            </button>
-                                            <ul class="dropdown-menu dropdown-menu-end">
-                                                @if ($canEdit)
-                                                    <li>
-                                                        <button
-                                                            type="button"
-                                                            class="dropdown-item"
-                                                            data-cartoes-edit="gateway"
-                                                            data-cartoes-id="{{ $gatewayTaxaId }}"
-                                                            data-cartoes-provider="{{ $gatewayProvider }}"
-                                                            data-cartoes-modalidade="{{ $gatewayTaxa['modalidade'] ?? '' }}"
-                                                            data-cartoes-taxa-percentual="{{ (float) ($gatewayTaxa['taxa_percentual'] ?? 0) }}"
-                                                            data-cartoes-taxa-fixa="{{ (float) ($gatewayTaxa['taxa_fixa'] ?? 0) }}"
-                                                            data-cartoes-ordem-exibicao="{{ (int) ($gatewayTaxa['ordem_exibicao'] ?? 0) }}"
-                                                            data-cartoes-observacoes="{{ $gatewayTaxa['observacoes'] ?? '' }}"
-                                                            data-cartoes-ativo="{{ (bool) ($gatewayTaxa['ativo'] ?? false) ? '1' : '0' }}"
-                                                        >
-                                                            <i class="bi bi-pencil me-2"></i>Editar
-                                                        </button>
-                                                    </li>
-                                                @endif
-                                                @if ($canDelete && $gatewayTaxaId > 0)
-                                                    <li>
-                                                        <form method="post" action="{{ route('financeiro.cartoes.gateway.delete', $gatewayTaxaId) }}" data-confirm="Desativar esta taxa online?" data-confirm-title="Desativar taxa online" data-confirm-button="Sim, desativar">
-                                                            @csrf
-                                                            @method('DELETE')
-                                                            <button type="submit" class="dropdown-item text-danger">
-                                                                <i class="bi bi-slash-circle me-2"></i>Desativar
-                                                            </button>
-                                                        </form>
-                                                    </li>
-                                                @endif
-                                            </ul>
-                                        </div>
-                                    </td>
-                                </tr>
-                            @empty
-                                <tr>
-                                    <td colspan="6">
-                                        @include('layouts.partials.empty-state', [
-                                            'icon' => 'bi-globe2',
-                                            'title' => 'Nenhuma taxa online cadastrada',
-                                            'message' => 'Cadastre a primeira taxa para embutir custo em pagamentos online.',
-                                        ])
-                                    </td>
-                                </tr>
-                            @endforelse
-                            </tbody>
-                        </table>
-                    </div>
-                </section>
+                </div>
             </div>
         </div>
-    </section>
-@endsection
+    </div>
+@endpush
 
 @section('scripts')
     <script>
