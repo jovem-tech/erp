@@ -497,6 +497,7 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Notebook Dell Inspiron 15')
             ->assertSee('Gerar orçamento')
             ->assertSee('Alterar status')
+            ->assertSee('Documentos da OS')
             ->assertSee('Aguardando Reparo')
             ->assertSee('<select id="status" name="status"', false)
             ->assertSee('<option value="triagem"', false)
@@ -510,6 +511,7 @@ class DesktopFrontendTest extends TestCase
                 '<label for="technician_id">Técnico</label>',
             ], false)
             ->assertSee(route('orcamentos.create', ['os_id' => 3578]), false)
+            ->assertSee(route('orders.documents.center', 3578), false)
             ->assertSee(route('orders.status.update', 3578), false);
 
         Http::assertSent(static function ($request): bool {
@@ -517,6 +519,317 @@ class DesktopFrontendTest extends TestCase
                 && str_contains($request->url(), '/api/v1/orders')
                 && str_contains($request->url(), 'status_scope=open');
         });
+    }
+
+    public function test_order_documents_center_page_renders_generation_sending_and_secure_share_actions(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/501/documents' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'order' => [
+                        'id' => 501,
+                        'numero_os' => 'OS26070009',
+                        'cliente_nome' => 'Cliente Alpha',
+                        'equipamento_resumo_curto' => 'Acer / Nitro 5',
+                    ],
+                    'catalog' => [
+                        [
+                            'type' => 'abertura',
+                            'label' => 'Comprovante de abertura',
+                            'can_generate' => true,
+                            'automatic_triggers' => ['criacao_os'],
+                            'latest_document' => [
+                                'id' => 9001,
+                                'version' => 1,
+                            ],
+                        ],
+                        [
+                            'type' => 'laudo',
+                            'label' => 'Laudo tÃ©cnico',
+                            'can_generate' => false,
+                            'blocked_reason' => 'DiagnÃ³stico tÃ©cnico pendente.',
+                            'automatic_triggers' => ['status_tecnico'],
+                            'latest_document' => null,
+                        ],
+                    ],
+                    'documents' => [
+                        [
+                            'id' => 9001,
+                            'type' => 'abertura',
+                            'label' => 'Comprovante de abertura',
+                            'version' => 1,
+                            'created_at' => '2026-07-11T15:00:00-03:00',
+                            'generated_by' => [
+                                'name' => 'Administrador',
+                            ],
+                            'archived_at' => null,
+                            'files' => [
+                                'a4' => [
+                                    'available' => true,
+                                    'url' => 'http://127.0.0.1:8000/api/v1/orders/501/documents/9001/files/a4',
+                                ],
+                                '80mm' => [
+                                    'available' => true,
+                                    'url' => 'http://127.0.0.1:8000/api/v1/orders/501/documents/9001/files/80mm',
+                                ],
+                            ],
+                        ],
+                    ],
+                    'send_history' => [
+                        [
+                            'channel' => 'whatsapp',
+                            'destination_masked' => '(21) *****-4100',
+                            'status' => 'enviado',
+                            'template_code' => 'os_aberta',
+                            'sender' => [
+                                'name' => 'Administrador',
+                            ],
+                        ],
+                    ],
+                    'share_links' => [
+                        [
+                            'id' => 44,
+                            'format' => 'a4',
+                            'expires_at' => '2026-07-18T15:00:00-03:00',
+                            'revoked_at' => null,
+                            'access_count' => 2,
+                        ],
+                    ],
+                    'limits' => [
+                        'max_attachments' => 10,
+                        'max_total_bytes' => 20971520,
+                        'share_expirations' => ['24h', '7d', '30d'],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['os' => ['visualizar', 'editar']]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os/501/documentos');
+
+        $response
+            ->assertOk()
+            ->assertSee('Central documental da OS')
+            ->assertSee('Comprovante de abertura')
+            ->assertSee('Laudo tÃ©cnico')
+            ->assertSee('Gerar link público')
+            ->assertSee('Enviar para cliente')
+            ->assertSee('doc-action-bar', false)
+            ->assertSee('docSendModal', false)
+            ->assertSee('docShareModal', false)
+            ->assertSee('window.__ORDER_DOCUMENTS_CENTER', false)
+            ->assertSee('assets/js/orders-documents-center.js', false)
+            // As rotas dentro de window.__ORDER_DOCUMENTS_CENTER passam por
+            // Illuminate\Support\Js::from() (escapa "/" como "\/") e depois
+            // pelo JSON.parse('...') externo (escapa cada "\" de novo) — o
+            // HTML cru contem 3 barras invertidas antes de cada "/" original.
+            ->assertSee(str_replace('/', str_repeat('\\', 3) . '/', route('orders.documents.state', 501)), false)
+            ->assertSee(str_replace('/', str_repeat('\\', 3) . '/', route('orders.documents.generate', 501)), false)
+            ->assertSee(str_replace('/', str_repeat('\\', 3) . '/', route('orders.documents.send', 501)), false)
+            ->assertSee(str_replace('/', str_repeat('\\', 3) . '/', route('orders.documents.share', 501)), false)
+            ->assertSee(str_replace('/', str_repeat('\\', 3) . '/', route('orders.documents.print', 501)), false)
+            ->assertSee(str_replace('/', str_repeat('\\', 3) . '/', route('orders.documents.download', 501)), false);
+
+        Http::assertSent(static function ($request): bool {
+            return $request->method() === 'GET'
+                && $request->url() === 'http://127.0.0.1:8000/api/v1/orders/501/documents';
+        });
+    }
+
+    public function test_order_documents_center_state_endpoint_returns_rendered_fragments_and_pending_sends(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/501/documents' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'order' => ['id' => 501, 'numero_os' => 'OS26070009', 'cliente_nome' => 'Cliente Alpha'],
+                    'catalog' => [
+                        ['type' => 'abertura', 'label' => 'Comprovante de abertura', 'can_generate' => true, 'latest_document' => null],
+                    ],
+                    'documents' => [],
+                    'send_history' => [
+                        ['id' => 1, 'channel' => 'whatsapp', 'destination_masked' => '(21) *****-4100', 'status' => 'na_fila', 'sender' => ['name' => 'Administrador']],
+                        ['id' => 2, 'channel' => 'email', 'destination_masked' => 'a***@x.com', 'status' => 'enviado', 'sender' => ['name' => 'Administrador']],
+                    ],
+                    'share_links' => [],
+                    'limits' => ['max_attachments' => 10, 'max_total_bytes' => 20971520, 'share_expirations' => ['24h', '7d', '30d']],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge($this->desktopSession(['os' => ['visualizar']]), ['desktop_theme' => 'default']))
+            ->getJson('/os/501/documentos/estado');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('meta.pending_sends', 1)
+            ->assertJsonPath('meta.documents_count', 0)
+            ->assertJsonStructure(['success', 'fragments' => ['catalog', 'documents', 'sends', 'links'], 'meta' => ['pending_sends', 'documents_count']]);
+
+        $this->assertStringContainsString('Comprovante de abertura', $response->json('fragments.catalog'));
+        $this->assertStringContainsString('Na fila', $response->json('fragments.sends'));
+        $this->assertStringContainsString('Nenhum link público gerado', $response->json('fragments.links'));
+    }
+
+    public function test_order_documents_center_generate_json_validates_missing_tipos_with_friendly_message(): void
+    {
+        $response = $this
+            ->withSession(array_merge($this->desktopSession(['os' => ['visualizar', 'editar']]), ['desktop_theme' => 'default']))
+            ->postJson('/os/501/documentos/gerar', []);
+
+        $response->assertStatus(422);
+        $this->assertStringContainsString('tipos documentais', $response->json('errors.tipos.0'));
+    }
+
+    public function test_order_documents_center_generate_json_returns_success_results(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orders/501/documents/generate' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'documents' => [
+                        ['type' => 'abertura', 'ok' => true, 'message' => 'PDF de abertura gerado com sucesso.'],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge($this->desktopSession(['os' => ['visualizar', 'editar']]), ['desktop_theme' => 'default']))
+            ->postJson('/os/501/documentos/gerar', ['tipos' => ['abertura']]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('results.0.type', 'abertura')
+            ->assertJsonPath('results.0.ok', true);
+    }
+
+    public function test_order_documents_center_send_json_validates_missing_document_ids_with_friendly_message(): void
+    {
+        $response = $this
+            ->withSession(array_merge($this->desktopSession(['os' => ['visualizar', 'editar']]), ['desktop_theme' => 'default']))
+            ->postJson('/os/501/documentos/enviar', ['channel' => 'email']);
+
+        $response->assertStatus(422);
+        $this->assertSame(
+            'Selecione ao menos um documento do acervo antes de enfileirar o envio.',
+            $response->json('errors.document_ids.0')
+        );
+    }
+
+    public function test_order_documents_center_send_json_returns_success(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orders/501/documents/send' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'send' => ['id' => 55, 'status' => 'na_fila'],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge($this->desktopSession(['os' => ['visualizar', 'editar']]), ['desktop_theme' => 'default']))
+            ->postJson('/os/501/documentos/enviar', [
+                'document_ids' => [9001],
+                'channel' => 'email',
+                'format' => 'a4',
+                'destino' => 'cliente@example.com',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('message', 'Envio documental enfileirado.')
+            ->assertJsonPath('send.id', 55);
+    }
+
+    public function test_order_documents_center_share_json_returns_link_url(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orders/501/documents/share-links' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'link' => ['url' => 'https://erp.example.com/documentos/compartilhados/abc123', 'format' => 'a4', 'expires_at' => '2026-07-19T12:00:00-03:00'],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge($this->desktopSession(['os' => ['visualizar', 'editar']]), ['desktop_theme' => 'default']))
+            ->postJson('/os/501/documentos/links', [
+                'document_ids' => [9001],
+                'format' => 'a4',
+                'expiracao' => '24h',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('link.url', 'https://erp.example.com/documentos/compartilhados/abc123');
+    }
+
+    public function test_order_documents_center_archive_json_returns_success(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orders/501/documents/9001/archive' => Http::response([
+                'status' => 'success',
+                'data' => [],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge($this->desktopSession(['os' => ['visualizar', 'editar']]), ['desktop_theme' => 'default']))
+            ->postJson('/os/501/documentos/9001/arquivar', []);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('message', 'Documento arquivado com sucesso.');
+    }
+
+    public function test_order_documents_center_generate_classic_post_fallback_still_redirects(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orders/501/documents/generate' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'documents' => [
+                        ['type' => 'abertura', 'ok' => true, 'message' => 'PDF de abertura gerado com sucesso.'],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge($this->desktopSession(['os' => ['visualizar', 'editar']]), ['desktop_theme' => 'default']))
+            ->post('/os/501/documentos/gerar', ['tipos' => ['abertura']]);
+
+        $response
+            ->assertRedirect(route('orders.documents.center', 501))
+            ->assertSessionHas('success');
     }
 
     public function test_orcamentos_create_page_renders_dynamic_item_reference_select_without_select2_exclusion(): void
@@ -774,22 +1087,29 @@ class DesktopFrontendTest extends TestCase
             ->get('/orcamentos/novo?os_id=401');
 
         $html = $response->getContent();
-        $helpButtonPosition = strpos($html, route('orcamentos.help'));
-        $newBudgetButtonPosition = strpos($html, route('orcamentos.create') . '" class="btn btn-outline-secondary"');
-        $backButtonPosition = strpos($html, route('orcamentos.index') . '" class="btn btn-outline-light"');
+        $helpButtonPosition = strpos($html, route('orcamentos.help') . '" class="dropdown-item"');
+        $newBudgetButtonPosition = strpos($html, route('orcamentos.create') . '" class="dropdown-item"');
+        $viewOrderPosition = strpos($html, route('orders.show', 401) . '" class="dropdown-item"');
+        $documentsCenterPosition = strpos($html, route('orders.documents.center', 401) . '" class="dropdown-item"');
+        $backButtonPosition = strpos($html, route('orcamentos.index') . '" class="dropdown-item"');
 
         $response
             ->assertOk()
             ->assertSee('OS401', false)
             ->assertSee('Cliente Alpha', false)
+            ->assertSee('Mais ações', false)
             ->assertSee('Novo orçamento', false)
             ->assertDontSee('Cliente definido pela OS', false);
 
         $this->assertNotFalse($helpButtonPosition);
         $this->assertNotFalse($newBudgetButtonPosition);
+        $this->assertNotFalse($viewOrderPosition);
+        $this->assertNotFalse($documentsCenterPosition);
         $this->assertNotFalse($backButtonPosition);
         $this->assertTrue($helpButtonPosition < $newBudgetButtonPosition);
-        $this->assertTrue($newBudgetButtonPosition < $backButtonPosition);
+        $this->assertTrue($newBudgetButtonPosition < $viewOrderPosition);
+        $this->assertTrue($viewOrderPosition < $documentsCenterPosition);
+        $this->assertTrue($documentsCenterPosition < $backButtonPosition);
 
         Http::allowStrayRequests();
     }
@@ -3756,6 +4076,7 @@ class DesktopFrontendTest extends TestCase
                             ['codigo' => 'testes_finais', 'nome' => 'Testes finais'],
                             ['codigo' => 'aguardando_pecas', 'nome' => 'Aguardando peças'],
                         ],
+                        'orcamento' => ['id' => 777, 'numero' => 'ORC-2607-000009'],
                     ],
                 ],
                 'error' => null,
@@ -3808,10 +4129,13 @@ class DesktopFrontendTest extends TestCase
         ]);
 
         $response = $this
-            ->withSession($this->desktopSession([
-                'dashboard' => ['visualizar'],
-                'os' => ['visualizar', 'editar'],
-            ]))
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'os' => ['visualizar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
             ->get('/os/501/editar');
 
         $response
@@ -3832,6 +4156,9 @@ class DesktopFrontendTest extends TestCase
             ->assertSee(route('orders.photos.show', [501, 91]), false)
             ->assertSee('value="201"', false)
             ->assertSee('value="301"', false)
+            ->assertSee('Ver orçamento', false)
+            ->assertSee(route('orcamentos.show', 777), false)
+            ->assertDontSee('Gerar orçamento', false)
             ->assertDontSee('Fluxo inicial');
     }
 
@@ -3908,10 +4235,13 @@ class DesktopFrontendTest extends TestCase
         ]));
 
         $response = $this
-            ->withSession($this->desktopSession([
-                'dashboard' => ['visualizar'],
-                'os' => ['visualizar', 'editar'],
-            ]))
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'os' => ['visualizar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
             ->get('/os/3614/baixa');
 
         $response

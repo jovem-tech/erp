@@ -26,6 +26,12 @@
         <env name="DB_CONNECTION" value="sqlite"/>
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="DB_URL" value=""/>
+        <!-- Sem isto, o valor real de DESKTOP_API_BASE_URL do .env deste
+             servidor (https://192.168.1.100:8443/api/v1) vaza pros testes,
+             e qualquer teste sem Http::preventStrayRequests() acaba batendo
+             de verdade no backend real em vez do Http::fake() —
+             centenas de testes deste arquivo assumem 127.0.0.1:8000. -->
+        <env name="DESKTOP_API_BASE_URL" value="http://127.0.0.1:8000/api/v1"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>

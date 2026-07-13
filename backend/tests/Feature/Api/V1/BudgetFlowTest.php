@@ -457,6 +457,12 @@ class BudgetFlowTest extends TestCase
             'total' => 330.00,
         ]);
 
+        $budgetPdfPath = storage_path('app/private/testing/orcamento.pdf');
+        if (! is_dir(dirname($budgetPdfPath))) {
+            mkdir(dirname($budgetPdfPath), 0777, true);
+        }
+        file_put_contents($budgetPdfPath, '%PDF-1.4 orçamento de teste');
+
         $this->mock(\App\Services\Budgets\BudgetPdfService::class, function ($mock): void {
             $mock->shouldReceive('generate')
                 ->once()
@@ -518,6 +524,17 @@ class BudgetFlowTest extends TestCase
             'os_id' => $orderId,
             'status_anterior' => 'triagem',
             'status_novo' => 'aguardando_autorizacao',
+        ]);
+
+        $documentId = (int) \Illuminate\Support\Facades\DB::table('os_documentos')
+            ->where('os_id', $orderId)
+            ->where('tipo_documento', 'orcamento')
+            ->max('id');
+
+        $this->assertGreaterThan(0, $documentId);
+        $this->assertDatabaseHas('os_documento_arquivos', [
+            'documento_id' => $documentId,
+            'formato' => 'a4',
         ]);
     }
 

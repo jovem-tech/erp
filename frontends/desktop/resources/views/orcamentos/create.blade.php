@@ -54,21 +54,37 @@
             @endif
         </div>
 
-        <div class="d-flex flex-wrap gap-2 align-self-start">
-            <a href="{{ route('orcamentos.help') }}" class="btn btn-outline-info">
-                <i class="bi bi-question-circle me-2"></i>
-                Ajuda
-            </a>
-            @if ($lockedOrderContext['locked'])
-                <a href="{{ route('orcamentos.create') }}" class="btn btn-outline-secondary">
-                    <i class="bi bi-file-earmark-plus me-2"></i>
-                    Novo orçamento
+        <div class="dropdown os-actions-dropdown align-self-start">
+            <button type="button"
+                class="btn btn-outline-light dropdown-toggle os-actions-toggle"
+                data-bs-toggle="dropdown"
+                aria-expanded="false">
+                Mais ações
+            </button>
+
+            <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                <a href="{{ route('orcamentos.help') }}" class="dropdown-item">
+                    <i class="bi bi-question-circle me-2"></i>Ajuda
                 </a>
-            @endif
-            <a href="{{ route('orcamentos.index') }}" class="btn btn-outline-light">
-                <i class="bi bi-arrow-left me-2"></i>
-                Voltar
-            </a>
+
+                @if ($lockedOrderContext['locked'])
+                    <a href="{{ route('orcamentos.create') }}" class="dropdown-item">
+                        <i class="bi bi-file-earmark-plus me-2"></i>Novo orçamento
+                    </a>
+
+                    <a href="{{ route('orders.show', $lockedOrderContext['order_id']) }}" class="dropdown-item">
+                        <i class="bi bi-eye me-2"></i>Ver OS
+                    </a>
+
+                    <a href="{{ route('orders.documents.center', $lockedOrderContext['order_id']) }}" class="dropdown-item">
+                        <i class="bi bi-folder-symlink me-2"></i>Documentos da OS
+                    </a>
+                @endif
+
+                <a href="{{ route('orcamentos.index') }}" class="dropdown-item">
+                    <i class="bi bi-arrow-left me-2"></i>Voltar
+                </a>
+            </div>
         </div>
     </div>
 

@@ -2,9 +2,9 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-11T23:07:30+00:00`
-- Versao do sistema: `4.4.1`
-- Versao da API: `1.1.2`
+- Gerado em: `2026-07-13T01:52:32+00:00`
+- Versao do sistema: `4.6.2`
+- Versao da API: `1.2.0`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Windows/XAMPP`
 
@@ -146,6 +146,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-06-schema-drift-ajustes-percentuais-orcamento.md` - Correcao de drift de schema: colunas de ajuste percentual ausentes em orcamentos
 - `documentacao/07-novas-implementacoes/2026-07-06-tipo-equipamento-select2-e-dropdown-tabela.md` - Tipo de equipamento em Select2 com tags e correcao de dropdown em tabela responsiva
 - `documentacao/07-novas-implementacoes/2026-07-07-modal-status-os-procedimentos-notificacao-cliente.md` - Overhaul do modal Alterar status da OS: procedimentos, diagnostico/solucao e notificacao ao cliente
+- `documentacao/07-novas-implementacoes/2026-07-11-central-documentos-cliente-os.md` - OS — central de documentos do cliente
 - `documentacao/07-novas-implementacoes/2026-07-11-fotos-sem-corte-e-visualizador-modal.md` - Fotos sem corte e visualizador modal no desktop
 - `documentacao/07-novas-implementacoes/2026-07-11-os-abertura-pdf-e-envio-whatsapp.md` - OS — PDF de abertura e envio opcional ao cliente
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes

@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\V1\OrderStatusFlowController;
 use App\Http\Controllers\Api\V1\OsPdfTemplateController;
 use App\Http\Controllers\Api\V1\ServicoController;
 use App\Http\Controllers\Api\V1\SupplierController;
+use App\Http\Controllers\Api\V1\TeamMemberController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\WhatsappTemplateController;
 use App\Support\ApiResponse;
@@ -171,6 +172,18 @@ Route::prefix('v1')->group(function (): void {
         Route::post('orders', [OrderController::class, 'store'])->name('api.v1.orders.store');
         Route::match(['put', 'patch'], 'orders/{order}', [OrderController::class, 'update'])->name('api.v1.orders.update');
         Route::get('orders/{order}/photos/{photo}', [OrderController::class, 'photo'])->name('api.v1.orders.photos.show');
+        Route::get('orders/{order}/documents', [OrderController::class, 'documents'])->name('api.v1.orders.documents.index');
+        Route::post('orders/{order}/documents/generate', [OrderController::class, 'generateDocuments'])->name('api.v1.orders.documents.generate');
+        Route::post('orders/{order}/documents/send', [OrderController::class, 'sendDocuments'])->name('api.v1.orders.documents.send');
+        Route::post('orders/{order}/documents/share-links', [OrderController::class, 'createDocumentShareLink'])->name('api.v1.orders.documents.share_links.store');
+        Route::patch('orders/{order}/documents/share-links/{link}/revoke', [OrderController::class, 'revokeDocumentShareLink'])->name('api.v1.orders.documents.share_links.revoke');
+        Route::get('orders/{order}/documents/download', [OrderController::class, 'downloadDocuments'])->name('api.v1.orders.documents.download');
+        Route::get('orders/{order}/documents/print', [OrderController::class, 'printDocuments'])->name('api.v1.orders.documents.print');
+        Route::get('orders/{order}/documents/{document}/files/{format}', [OrderController::class, 'documentFile'])
+            ->whereIn('format', ['a4', '80mm'])
+            ->name('api.v1.orders.documents.files.show');
+        Route::patch('orders/{order}/documents/{document}/archive', [OrderController::class, 'archiveDocument'])->name('api.v1.orders.documents.archive');
+        Route::patch('orders/{order}/documents/{document}/unarchive', [OrderController::class, 'unarchiveDocument'])->name('api.v1.orders.documents.unarchive');
         Route::get('orders/{order}/documents/{document}', [OrderController::class, 'document'])->name('api.v1.orders.documents.show');
         Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus'])->name('api.v1.orders.status.update');
         Route::post('orders/{order}/procedures', [OrderController::class, 'storeProcedure'])->name('api.v1.orders.procedures.store');
@@ -232,11 +245,9 @@ Route::prefix('v1')->group(function (): void {
         Route::post('equipments/collector/local-collect', [EquipmentController::class, 'localCollectorCollect'])->name('api.v1.equipments.collector.local_collect');
         Route::post('equipments/collector-pairings', [EquipmentController::class, 'createCollectorPairing'])->name('api.v1.equipments.collector_pairings.store');
         Route::get('equipments/collector-pairings/{code}', [EquipmentController::class, 'showCollectorPairing'])->name('api.v1.equipments.collector_pairings.show');
-        Route::get('equipments/collector-pairings/{code}/download/windows', [EquipmentController::class, 'downloadWindowsCollectorPackage'])->name('api.v1.equipments.collector_pairings.download_windows');
         Route::get('equipments', [EquipmentController::class, 'index'])->name('api.v1.equipments.index');
         Route::post('equipments', [EquipmentController::class, 'store'])->name('api.v1.equipments.store');
         Route::match(['put', 'patch'], 'equipments/{equipment}', [EquipmentController::class, 'update'])->name('api.v1.equipments.update');
-        Route::post('equipments/{equipment}/reveal-password', [EquipmentController::class, 'revealPassword'])->name('api.v1.equipments.reveal_password');
         Route::get('equipments/{equipment}/photos/{photo}', [EquipmentController::class, 'photo'])->name('api.v1.equipments.photos.show');
         Route::get('equipments/{equipment}', [EquipmentController::class, 'show'])->name('api.v1.equipments.show');
 
@@ -316,6 +327,11 @@ Route::prefix('v1')->group(function (): void {
         Route::post('users', [UserController::class, 'store'])->name('api.v1.users.store');
         Route::match(['put', 'patch'], 'users/{user}', [UserController::class, 'update'])->name('api.v1.users.update');
         Route::patch('users/{user}/active', [UserController::class, 'updateActive'])->name('api.v1.users.active.update');
+
+        Route::get('team-members', [TeamMemberController::class, 'index'])->name('api.v1.team_members.index');
+        Route::post('team-members', [TeamMemberController::class, 'store'])->name('api.v1.team_members.store');
+        Route::match(['put', 'patch'], 'team-members/{member}', [TeamMemberController::class, 'update'])->name('api.v1.team_members.update');
+        Route::patch('team-members/{member}/active', [TeamMemberController::class, 'updateActive'])->name('api.v1.team_members.active.update');
 
         Route::get('groups', [GroupController::class, 'index'])->name('api.v1.groups.index');
         Route::post('groups', [GroupController::class, 'store'])->name('api.v1.groups.store');

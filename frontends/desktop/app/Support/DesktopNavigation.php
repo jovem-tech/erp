@@ -128,7 +128,7 @@ class DesktopNavigation
                                 'icon' => 'bi-truck',
                             ],
                             [
-                                'label' => 'Equipe Técnica',
+                                'label' => 'Equipe da Assistência',
                                 'route' => 'technicians.index',
                                 'module' => 'funcionarios',
                                 'icon' => 'bi-person-badge',

@@ -1,6 +1,10 @@
 @extends('layouts.app')
 
 @section('content')
+    @php
+        $orderId = (int) (($budget['os']['id'] ?? null) ?? ($budget['os_id'] ?? 0));
+    @endphp
+
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
         <div>
             <p class="desktop-eyebrow">Comercial</p>
@@ -8,15 +12,33 @@
             <p class="surface-subtitle mb-0">Atualize cliente, equipamento, itens e valores mantendo a rastreabilidade comercial.</p>
         </div>
 
-        <div class="d-flex flex-wrap gap-2 align-self-start">
-            <a href="{{ route('orcamentos.help') }}" class="btn btn-outline-info">
-                <i class="bi bi-question-circle me-2"></i>
-                Ajuda
-            </a>
-            <a href="{{ route('orcamentos.show', $budget['id'] ?? 0) }}" class="btn btn-outline-light">
-                <i class="bi bi-arrow-left me-2"></i>
-                Voltar
-            </a>
+        <div class="dropdown os-actions-dropdown align-self-start">
+            <button type="button"
+                class="btn btn-outline-light dropdown-toggle os-actions-toggle"
+                data-bs-toggle="dropdown"
+                aria-expanded="false">
+                Mais ações
+            </button>
+
+            <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                <a href="{{ route('orcamentos.help') }}" class="dropdown-item">
+                    <i class="bi bi-question-circle me-2"></i>Ajuda
+                </a>
+
+                @if ($orderId > 0)
+                    <a href="{{ route('orders.show', $orderId) }}" class="dropdown-item">
+                        <i class="bi bi-eye me-2"></i>Ver OS
+                    </a>
+
+                    <a href="{{ route('orders.documents.center', $orderId) }}" class="dropdown-item">
+                        <i class="bi bi-folder-symlink me-2"></i>Documentos da OS
+                    </a>
+                @endif
+
+                <a href="{{ route('orcamentos.show', $budget['id'] ?? 0) }}" class="dropdown-item">
+                    <i class="bi bi-arrow-left me-2"></i>Voltar
+                </a>
+            </div>
         </div>
     </div>
 

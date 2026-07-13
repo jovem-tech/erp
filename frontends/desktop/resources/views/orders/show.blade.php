@@ -99,6 +99,10 @@
                 </button>
 
                 <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                    <a href="{{ route('orders.documents.center', $order['id']) }}" class="dropdown-item">
+                        <i class="bi bi-folder-symlink me-2"></i>Documentos da OS
+                    </a>
+
                     @if ($canEditOrder)
                         <a href="{{ route('orders.edit', $order['id']) }}" class="dropdown-item">
                             <i class="bi bi-pencil me-2"></i>Editar
@@ -122,7 +126,11 @@
                         </a>
                     @endif
 
-                    @if (! $hasOrcamento && $canCreateBudget)
+                    @if ($hasOrcamento)
+                        <a href="{{ route('orcamentos.show', $orcamento['id']) }}" class="dropdown-item">
+                            <i class="bi bi-receipt me-2"></i>Ver orçamento
+                        </a>
+                    @elseif ($canCreateBudget)
                         <a href="{{ route('orcamentos.create', ['os_id' => $order['id']]) }}" class="dropdown-item">
                             <i class="bi bi-receipt me-2"></i>Gerar orçamento
                         </a>
@@ -426,6 +434,16 @@
 
                 {{-- Aba: Documentos --}}
                 <div class="equipment-tab-panel" data-os-panel="documentos">
+                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                        <div>
+                            <h3 class="os-panel-title mb-1"><i class="bi bi-file-earmark-text me-1"></i>Acervo documental da OS</h3>
+                            <p class="surface-subtitle mb-0">Abra a central para gerar, versionar, compartilhar, reenviar e imprimir os documentos do cliente.</p>
+                        </div>
+                        <a href="{{ route('orders.documents.center', $order['id']) }}" class="btn btn-soft btn-sm">
+                            <i class="bi bi-folder-symlink me-2"></i>Abrir central de documentos
+                        </a>
+                    </div>
+
                     @if ($documents !== [])
                         <div class="attachment-grid">
                             @foreach ($documents as $document)

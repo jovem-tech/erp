@@ -86,7 +86,7 @@
             <ul class="list-unstyled mb-0">
                 @foreach ($placeholders as $item)
                     <li class="mb-1">
-                        <code>{{ '{{' }}{{ $item['token'] }}{{ '}}' }}</code> — {{ $item['label'] }}
+                        <code>{{ '{' . '{' . ($item['token'] ?? '') . '}' . '}' }}</code> — {{ $item['label'] ?? '' }}
                     </li>
                 @endforeach
             </ul>

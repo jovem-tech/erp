@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class OrderDocument extends Model
 {
@@ -18,8 +19,10 @@ class OrderDocument extends Model
         'os_id' => 'integer',
         'versao' => 'integer',
         'gerado_por' => 'integer',
+        'metadados_json' => 'array',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'arquivado_em' => 'datetime',
     ];
 
     public function order(): BelongsTo
@@ -30,5 +33,10 @@ class OrderDocument extends Model
     public function generatedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'gerado_por', 'id');
+    }
+
+    public function files(): HasMany
+    {
+        return $this->hasMany(OrderDocumentFile::class, 'documento_id', 'id');
     }
 }

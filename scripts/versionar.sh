@@ -33,7 +33,7 @@ collect_changed_files() {
   local name_status untracked
 
   name_status="$(git diff HEAD --name-status 2>/dev/null || true)"
-  untracked="$(git status --porcelain 2>/dev/null | awk '$1=="??"{print $2}' || true)"
+  untracked="$(git ls-files --others --exclude-standard 2>/dev/null || true)"
 
   {
     echo "$name_status" | awk '{print $2}'
@@ -50,8 +50,9 @@ run_post_version_sync() {
 
 cd "$ROOT_DIR"
 
-if [ ! -d .git ]; then
-  echo "ERRO: $ROOT_DIR não é um repositório git." >&2
+GIT_TOPLEVEL="$(git -C "$ROOT_DIR" rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -z "$GIT_TOPLEVEL" ]]; then
+  echo "ERRO: $ROOT_DIR não está dentro de um repositório git acessível." >&2
   exit 1
 fi
 
@@ -91,7 +92,7 @@ fi
 NAME_STATUS=$(git diff HEAD --name-status 2>/dev/null || true)
 NUMSTAT=$(git diff HEAD --numstat 2>/dev/null || true)
 RAW_DIFF=$(git diff HEAD 2>/dev/null || true)
-UNTRACKED=$(git status --porcelain 2>/dev/null | awk '$1=="??"{print $2}' || true)
+UNTRACKED=$(git ls-files --others --exclude-standard 2>/dev/null || true)
 
 if [[ -z "$NAME_STATUS" && -z "$UNTRACKED" ]]; then
   echo "Nenhuma alteração pendente (working tree limpa e nada staged)."

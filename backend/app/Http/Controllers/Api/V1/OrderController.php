@@ -9,19 +9,23 @@ use App\Http\Requests\Api\V1\UpdateOrderStatusRequest;
 use App\Http\Requests\Api\V1\UpsertOrderRequest;
 use App\Models\User;
 use App\Services\Orders\OrderClosureService;
+use App\Services\Orders\OrderDocumentCenterService;
 use App\Services\Orders\OrderWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OrderController extends BaseApiController
 {
     public function __construct(
         private readonly OrderWorkflowService $orderWorkflowService,
-        private readonly OrderClosureService $orderClosureService
+        private readonly OrderClosureService $orderClosureService,
+        private readonly OrderDocumentCenterService $orderDocumentCenterService
     ) {
     }
 
@@ -321,6 +325,266 @@ class OrderController extends BaseApiController
         ]);
     }
 
+    public function documents(Request $request, int $order): JsonResponse
+    {
+        $this->authorize('os:visualizar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $result = $this->orderDocumentCenterService->catalog($order, $user);
+
+        return $this->documentCenterResponse($request, $result, [
+            'ok' => fn (): JsonResponse => $this->success([
+                'order' => $result['order'] ?? null,
+                'catalog' => $result['catalog'] ?? [],
+                'documents' => $result['documents'] ?? [],
+                'dispatch_defaults' => $result['dispatch_defaults'] ?? [],
+                'send_history' => $result['send_history'] ?? [],
+                'share_links' => $result['share_links'] ?? [],
+                'limits' => $result['limits'] ?? [],
+            ], request: $request),
+        ]);
+    }
+
+    public function generateDocuments(Request $request, int $order): JsonResponse
+    {
+        $this->authorize('os:editar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $validated = $request->validate([
+            'tipos' => ['required', 'array', 'min:1'],
+            'tipos.*' => ['required', 'string', 'max:80'],
+        ]);
+
+        $result = $this->orderDocumentCenterService->generate(
+            $order,
+            $user,
+            array_values($validated['tipos'] ?? [])
+        );
+
+        $documents = is_array($result['documents'] ?? null) ? $result['documents'] : [];
+        $successfulDocuments = array_values(array_filter(
+            $documents,
+            static fn (array $document): bool => (bool) ($document['ok'] ?? false)
+        ));
+
+        if (($result['result'] ?? 'error') === 'ok' && $documents !== [] && $successfulDocuments === []) {
+            $messages = array_values(array_filter(array_map(
+                static fn (array $document): string => trim((string) ($document['message'] ?? '')),
+                $documents
+            )));
+
+            return $this->error(
+                $messages[0] ?? 'Nenhum documento pôde ser gerado com os dados atuais da OS.',
+                422,
+                'ORDER_DOCUMENT_GENERATION_BLOCKED',
+                [
+                    'documents' => $documents,
+                    'catalog' => $result['catalog'] ?? [],
+                ],
+                request: $request
+            );
+        }
+
+        return $this->documentCenterResponse($request, $result, [
+            'ok' => fn (): JsonResponse => $this->success([
+                'documents' => $result['documents'] ?? [],
+                'catalog' => $result['catalog'] ?? [],
+            ], request: $request),
+        ]);
+    }
+
+    public function sendDocuments(Request $request, int $order): JsonResponse
+    {
+        $this->authorize('os:editar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $validated = $request->validate([
+            'document_ids' => ['required', 'array', 'min:1'],
+            'document_ids.*' => ['required', 'integer', 'min:1'],
+            'channel' => ['nullable', 'string', 'in:whatsapp,email'],
+            'format' => ['nullable', 'string', 'in:a4,80mm'],
+            'template_code' => ['nullable', 'string', 'max:80'],
+            'destino' => ['nullable', 'string', 'max:255'],
+            'message' => ['nullable', 'string', 'max:4000'],
+            'confirmar_destino_alternativo' => ['nullable', 'boolean'],
+        ]);
+
+        $result = $this->orderDocumentCenterService->queueSend(
+            $order,
+            $user,
+            $this->normalizeDocumentIds($validated['document_ids'] ?? []),
+            $validated
+        );
+
+        return $this->documentCenterResponse($request, $result, [
+            'ok' => fn (): JsonResponse => $this->success([
+                'send' => $result['send'] ?? null,
+                'message' => $result['message'] ?? 'Envio enfileirado.',
+            ], request: $request),
+        ]);
+    }
+
+    public function createDocumentShareLink(Request $request, int $order): JsonResponse
+    {
+        $this->authorize('os:editar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $validated = $request->validate([
+            'document_ids' => ['required', 'array', 'min:1'],
+            'document_ids.*' => ['required', 'integer', 'min:1'],
+            'format' => ['nullable', 'string', 'in:a4,80mm'],
+            'expiracao' => ['nullable', 'string', 'in:24h,7d,30d'],
+        ]);
+
+        $result = $this->orderDocumentCenterService->createShareLink(
+            $order,
+            $user,
+            $this->normalizeDocumentIds($validated['document_ids'] ?? []),
+            $validated
+        );
+
+        return $this->documentCenterResponse($request, $result, [
+            'ok' => fn (): JsonResponse => $this->success([
+                'link' => $result['link'] ?? null,
+            ], request: $request),
+        ]);
+    }
+
+    public function revokeDocumentShareLink(Request $request, int $order, int $link): JsonResponse
+    {
+        $this->authorize('os:editar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $result = $this->orderDocumentCenterService->revokeShareLink($order, $link, $user);
+
+        return $this->documentCenterResponse($request, $result, [
+            'ok' => fn (): JsonResponse => $this->success(['revoked' => true], request: $request),
+        ]);
+    }
+
+    public function archiveDocument(Request $request, int $order, int $document): JsonResponse
+    {
+        $this->authorize('os:editar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $result = $this->orderDocumentCenterService->archive($order, $document, $user, true);
+
+        return $this->documentCenterResponse($request, $result, [
+            'ok' => fn (): JsonResponse => $this->success(['archived' => true], request: $request),
+        ]);
+    }
+
+    public function unarchiveDocument(Request $request, int $order, int $document): JsonResponse
+    {
+        $this->authorize('os:editar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $result = $this->orderDocumentCenterService->archive($order, $document, $user, false);
+
+        return $this->documentCenterResponse($request, $result, [
+            'ok' => fn (): JsonResponse => $this->success(['archived' => false], request: $request),
+        ]);
+    }
+
+    public function documentFile(Request $request, int $order, int $document, string $format): BinaryFileResponse|JsonResponse
+    {
+        $this->authorize('os:visualizar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $result = $this->orderDocumentCenterService->resolveFileForActor($order, $document, $format, $user);
+        if (($result['result'] ?? 'error') !== 'ok') {
+            return $this->attachmentErrorResponse($request, $result['result'] ?? 'error', 'DOCUMENT');
+        }
+
+        $file = $result['file'];
+
+        return response()->file($file['absolute_path'], [
+            'Content-Type' => $file['mime_type'],
+            'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
+            'Cache-Control' => 'no-store, private',
+        ]);
+    }
+
+    public function downloadDocuments(Request $request, int $order): StreamedResponse|JsonResponse
+    {
+        $this->authorize('os:visualizar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $documentIds = $this->normalizeDocumentIds((array) $request->query('document_ids', []));
+        $format = (string) $request->query('format', 'a4');
+        $result = $this->orderDocumentCenterService->buildZip($order, $user, $documentIds, $format);
+
+        if (($result['result'] ?? 'error') !== 'ok') {
+            return $this->documentCenterResponse($request, $result, []);
+        }
+
+        $file = $result['file'] ?? [];
+
+        return Storage::disk('local')->download(
+            (string) ($file['relative_path'] ?? ''),
+            (string) ($file['file_name'] ?? 'documentos.zip'),
+            ['Content-Type' => 'application/zip']
+        );
+    }
+
+    public function printDocuments(Request $request, int $order): JsonResponse
+    {
+        $this->authorize('os:visualizar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $documentIds = $this->normalizeDocumentIds((array) $request->query('document_ids', []));
+        $format = (string) $request->query('format', 'a4');
+        $result = $this->orderDocumentCenterService->printBundle($order, $user, $documentIds, $format);
+
+        return $this->documentCenterResponse($request, $result, [
+            'ok' => fn (): JsonResponse => $this->success([
+                'order' => $result['order'] ?? null,
+                'format' => $result['format'] ?? 'a4',
+                'documents' => $result['documents'] ?? [],
+            ], request: $request),
+        ]);
+    }
+
     public function updateStatus(UpdateOrderStatusRequest $request, int $order): JsonResponse
     {
         $this->authorize('os:editar');
@@ -341,6 +605,14 @@ class OrderController extends BaseApiController
             isset($validated['solucao_aplicada']) ? (string) $validated['solucao_aplicada'] : null,
             filter_var($validated['comunicar_cliente'] ?? false, FILTER_VALIDATE_BOOL)
         );
+
+        if (($result['result'] ?? 'error') === 'ok') {
+            $this->orderDocumentCenterService->syncAfterStatusChange(
+                $order,
+                $user,
+                isset($validated['status']) && $validated['status'] !== '' ? (string) $validated['status'] : null
+            );
+        }
 
         return match ($result['result'] ?? 'error') {
             'ok' => $this->success(
@@ -475,6 +747,7 @@ class OrderController extends BaseApiController
                     'cartao' => $result['cartao'] ?? null,
                     'status_pagamento_pendente' => $result['status_pagamento_pendente'] ?? null,
                     'status_sem_reparo' => $result['status_sem_reparo'] ?? [],
+                    'status_entregue' => $result['status_entregue'] ?? null,
                 ],
                 request: $request
             ),
@@ -521,6 +794,10 @@ class OrderController extends BaseApiController
         $result = $isBaixa
             ? $this->orderClosureService->close($order, $user, $validated)
             : $this->orderClosureService->registerAdvance($order, $user, $validated);
+
+        if (($result['result'] ?? 'error') === 'ok' && $isBaixa) {
+            $this->orderDocumentCenterService->syncAfterClosure($order, $user);
+        }
 
         return match ($result['result'] ?? 'error') {
             'ok' => $this->success(
@@ -569,6 +846,13 @@ class OrderController extends BaseApiController
                 'Informe ao menos um recebimento com valor maior que zero.',
                 422,
                 'ORDER_CLOSURE_RECEIPTS_INVALID',
+                null,
+                request: $request
+            ),
+            'delivery_requires_payment' => $this->error(
+                'Para encerrar como "Equipamento Entregue" registre ao menos um recebimento com valor maior que zero. O pagamento parcial é aceito e o saldo restante continua como pendência financeira.',
+                422,
+                'ORDER_CLOSURE_DELIVERY_REQUIRES_PAYMENT',
                 null,
                 request: $request
             ),
@@ -726,6 +1010,66 @@ class OrderController extends BaseApiController
                 'Falha ao acessar o arquivo solicitado.',
                 500,
                 'ORDER_' . $kind . '_ACCESS_FAILED',
+                null,
+                request: $request
+            ),
+        };
+    }
+
+    /**
+     * @param array<int, mixed> $values
+     * @return array<int, int>
+     */
+    private function normalizeDocumentIds(array $values): array
+    {
+        return array_values(array_filter(array_map(
+            static fn ($value): int => (int) $value,
+            $values
+        ), static fn (int $value): bool => $value > 0));
+    }
+
+    /**
+     * @param array<string, callable> $overrides
+     */
+    private function documentCenterResponse(Request $request, array $result, array $overrides): JsonResponse
+    {
+        if (($result['result'] ?? 'error') === 'ok' && isset($overrides['ok'])) {
+            return $overrides['ok']();
+        }
+
+        return match ($result['result'] ?? 'error') {
+            'forbidden' => $this->error(
+                'Você não tem permissão para acessar esta central documental.',
+                403,
+                'ORDER_FORBIDDEN',
+                null,
+                request: $request
+            ),
+            'not_found' => $this->error(
+                'OS, documento ou link não encontrado.',
+                404,
+                'ORDER_DOCUMENT_NOT_FOUND',
+                null,
+                request: $request
+            ),
+            'validation_error', 'unsupported' => $this->error(
+                (string) ($result['message'] ?? 'Falha de validação na central documental.'),
+                422,
+                'ORDER_DOCUMENT_VALIDATION_ERROR',
+                null,
+                request: $request
+            ),
+            'missing_file' => $this->error(
+                'O arquivo documental solicitado não está disponível.',
+                404,
+                'ORDER_DOCUMENT_FILE_MISSING',
+                null,
+                request: $request
+            ),
+            default => $this->error(
+                (string) ($result['message'] ?? 'Falha ao processar a central documental da OS.'),
+                500,
+                'ORDER_DOCUMENT_CENTER_FAILED',
                 null,
                 request: $request
             ),

@@ -32,6 +32,10 @@ trait BuildsLegacyErpSchema
             'checklist_tipos',
             'whatsapp_templates',
             'os_pdf_templates',
+            'os_documento_link_itens',
+            'os_documento_links',
+            'os_documento_envios',
+            'os_documento_arquivos',
             'os_documentos',
             'os_fotos',
             'os_status_historico',
@@ -96,6 +100,7 @@ trait BuildsLegacyErpSchema
         $this->createOrderStatusHistoryTable();
         $this->createOrderPhotosTable();
         $this->createOrderDocumentsTable();
+        $this->createOrderDocumentSupportTables();
         $this->createOrderItemsTable();
         $this->createChecklistTables();
         $this->createBudgetTables();
@@ -263,7 +268,11 @@ trait BuildsLegacyErpSchema
             [
                 'codigo' => 'entregue_pagamento_pendente',
                 'nome' => 'Entregue - Pendência Financeira',
-                'grupo_macro' => 'encerrado',
+                // grupo_macro real (producao/homolog) e' 'interrupcao', nao
+                // 'encerrado' — este status NAO e' um dos 3 OrderStatus::closureCodes()
+                // (ver skill sistema-erp-os-fluxo-fechamento). O fixture estava com
+                // valor divergente do banco real, mascarando esse bug nos testes.
+                'grupo_macro' => 'interrupcao',
                 'icone' => null,
                 'cor' => 'warning',
                 'ordem_fluxo' => 33,
@@ -1166,11 +1175,89 @@ trait BuildsLegacyErpSchema
             $table->string('arquivo', 255);
             $table->integer('versao')->default(1);
             $table->string('hash_sha1', 40)->nullable();
-            $table->unsignedBigInteger('gerado_por')->nullable();
+            $table->string('template_codigo', 80)->nullable();
+            $table->string('hash_sha256', 64)->nullable();
+            $table->string('idempotency_key', 120)->nullable();
+            $table->longText('metadados_json')->nullable();
+            $table->integer('gerado_por')->nullable();
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
+            $table->dateTime('arquivado_em')->nullable();
+            $table->integer('arquivado_por')->nullable();
+            $table->foreign('os_id')->references('id')->on('os')->cascadeOnDelete();
+            $table->foreign('gerado_por')->references('id')->on('usuarios')->nullOnDelete();
+            $table->foreign('arquivado_por')->references('id')->on('usuarios')->nullOnDelete();
+        });
+    }
+
+    private function createOrderDocumentSupportTables(): void
+    {
+        Schema::create('os_documento_arquivos', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('documento_id');
+            $table->string('formato', 20);
+            $table->string('arquivo', 255);
+            $table->string('mime', 120)->nullable();
+            $table->unsignedBigInteger('tamanho_bytes')->nullable();
+            $table->string('hash_sha256', 64)->nullable();
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
+            $table->unique(['documento_id', 'formato'], 'ux_os_doc_arquivos_documento_formato');
+            $table->foreign('documento_id')->references('id')->on('os_documentos')->cascadeOnDelete();
+        });
+
+        Schema::create('os_documento_envios', function (Blueprint $table): void {
+            $table->id();
+            $table->integer('os_id');
+            $table->unsignedBigInteger('documento_id')->nullable();
+            $table->string('canal', 20);
+            $table->string('destino_mascarado', 255)->nullable();
+            $table->longText('destino_criptografado')->nullable();
+            $table->string('template_codigo', 80)->nullable();
+            $table->longText('mensagem_final')->nullable();
+            $table->string('status', 40)->default('pendente');
+            $table->string('provedor', 80)->nullable();
+            $table->string('referencia_externa', 120)->nullable();
+            $table->text('erro_sanitizado')->nullable();
+            $table->integer('enviado_por')->nullable();
+            $table->longText('metadados_json')->nullable();
+            $table->dateTime('enviado_em')->nullable();
             $table->dateTime('created_at')->nullable();
             $table->dateTime('updated_at')->nullable();
             $table->foreign('os_id')->references('id')->on('os')->cascadeOnDelete();
-            $table->foreign('gerado_por')->references('id')->on('usuarios')->nullOnDelete();
+            $table->foreign('documento_id')->references('id')->on('os_documentos')->nullOnDelete();
+            $table->foreign('enviado_por')->references('id')->on('usuarios')->nullOnDelete();
+        });
+
+        Schema::create('os_documento_links', function (Blueprint $table): void {
+            $table->id();
+            $table->integer('os_id');
+            $table->string('token_hash', 64)->unique();
+            $table->string('formato_padrao', 20)->nullable();
+            $table->integer('criado_por')->nullable();
+            $table->integer('revogado_por')->nullable();
+            $table->dateTime('expira_em')->nullable();
+            $table->dateTime('revogado_em')->nullable();
+            $table->unsignedInteger('acessos_count')->default(0);
+            $table->dateTime('ultimo_acesso_em')->nullable();
+            $table->string('ultimo_acesso_ip_hash', 64)->nullable();
+            $table->longText('metadados_json')->nullable();
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
+            $table->foreign('os_id')->references('id')->on('os')->cascadeOnDelete();
+            $table->foreign('criado_por')->references('id')->on('usuarios')->nullOnDelete();
+            $table->foreign('revogado_por')->references('id')->on('usuarios')->nullOnDelete();
+        });
+
+        Schema::create('os_documento_link_itens', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('link_id');
+            $table->unsignedBigInteger('documento_id');
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
+            $table->unique(['link_id', 'documento_id'], 'ux_os_doc_link_documento');
+            $table->foreign('link_id')->references('id')->on('os_documento_links')->cascadeOnDelete();
+            $table->foreign('documento_id')->references('id')->on('os_documentos')->cascadeOnDelete();
         });
     }
 

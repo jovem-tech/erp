@@ -68,6 +68,45 @@ ficam incoerentes.
   `os_margem` so contem OS com `status = OrderStatus::REVENUE_CLOSURE_CODE`
   (ver secao "Margem por OS" abaixo).
 
+## Listagem operacional padrao (`status_scope=open`) so esconde os 3 closureCodes (2026-07-12)
+
+Decisao explicita do usuario: a listagem de OS (`orders/index.blade.php`) e o
+card "OS abertas" do dashboard usam `status_scope=open` por padrao quando
+nenhum filtro explicito e informado. Esse escopo **so pode excluir uma OS
+quando `os.status` literalmente esta em `OrderStatus::closureCodes()`** — os
+mesmos 3 codigos da regra central, nada alem disso.
+
+**Bug corrigido nesta data:** `applyOperationalStatusScope()`
+(`OrderWorkflowService`) e `applyOperationalOpenScope()`
+(`DashboardSummaryService`) tambem excluiam qualquer OS cujo
+`os.status_final_pendente_pagamento` estivesse em `closureCodes()` — isso
+escondia da listagem padrao qualquer OS "Entregue - Pendência Financeira"
+(`entregue_pagamento_pendente`) que tivesse passado pela baixa real com saldo
+em aberto (`OrderClosureService::close()` seta esse campo para o encerramento
+que *vai* ser aplicado quando o saldo for quitado — ver `close()` e a secao
+"Adiantamento/Sinal" abaixo). Essa OS **nao esta encerrada** — ainda ha
+cobranca pendente — e sumia incorretamente da tela inicial da listagem.
+Removida a clausula sobre `status_final_pendente_pagamento` nos dois lugares;
+o escopo "aberta" agora depende apenas de `os.status`.
+
+Regra de negocio explicita do usuario (2026-07-12): uma OS so e considerada
+fechada com um dos 3 `closureCodes()`. Status que *parecem* encerrar o
+atendimento mas nao sao um dos 3 (ex.: `entregue_pagamento_pendente`,
+`irreparavel`, `reparo_recusado` — todos `grupo_macro='interrupcao'`)
+continuam **abertos**, seja porque o equipamento ainda esta de posse da
+assistencia, seja porque falta pagamento total.
+
+**Achado durante a correcao**: o fixture de teste `seedOrderCatalog()`
+(`tests/Concerns/BuildsLegacyErpSchema.php`) tinha `entregue_pagamento_pendente`
+com `grupo_macro='encerrado'`, divergente do banco real (`'interrupcao'`).
+Isso mascarava o bug nos testes — a exclusao acontecia via `closureCodes()`
+diretamente (o status em si virava um "4º closure code" no catalogo de teste),
+nao via `status_final_pendente_pagamento`. Corrigido o fixture para bater com
+o banco real; teste renomeado para
+`test_index_open_status_scope_excludes_only_the_three_closure_codes` e
+ajustado para esperar a OS com pendencia financeira **visivel** no escopo
+aberto.
+
 ### Onde a regra e aplicada na UI (os 3 status nao aparecem em dropdown fora da baixa)
 
 - `OrderWorkflowService::mapNextStatusOptionsFromCatalog()` — filtra

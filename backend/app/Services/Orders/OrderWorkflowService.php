@@ -171,20 +171,16 @@ class OrderWorkflowService
                 return;
             }
 
-            // A listagem operacional inicial deve mostrar tudo que ainda pode
-            // exigir acao da assistencia, mas esconder OS que ja sairam da
-            // posse da loja. A fonte canonica dos encerramentos reais e'
-            // OrderStatus::closureCodes(); alem do status aplicado diretamente,
-            // a baixa com saldo em aberto usa um status intermediario de
-            // cobranca e preserva o encerramento desejado em
-            // os.status_final_pendente_pagamento.
-            $query
-                ->whereNotIn('os.status', $closureCodes)
-                ->where(static function (Builder $scopeQuery) use ($closureCodes): void {
-                    $scopeQuery
-                        ->whereNull('os.status_final_pendente_pagamento')
-                        ->orWhereNotIn('os.status_final_pendente_pagamento', $closureCodes);
-                });
+            // A listagem operacional inicial deve mostrar toda OS que ainda tem
+            // algum vinculo em aberto com a assistencia — equipamento ainda na
+            // loja OU pagamento pendente. A OS so e' considerada encerrada de
+            // fato quando os.status literalmente esta em OrderStatus::closureCodes()
+            // (decisao explicita do usuario, 2026-07-12). NAO filtrar por
+            // os.status_final_pendente_pagamento aqui: esse campo so guarda o
+            // encerramento que *vai* ser aplicado quando o saldo for quitado —
+            // uma OS "Entregue - Pendencia Financeira" (nao esta em closureCodes)
+            // continua precisando de acao (cobranca) e deve seguir aparecendo.
+            $query->whereNotIn('os.status', $closureCodes);
         }
     }
 
@@ -1509,7 +1505,7 @@ class OrderWorkflowService
             'observacoes_cliente' => (string) ($order->observacoes_cliente ?? ''),
             'historico' => $this->mapHistoryCollection($order->statusHistory),
             'procedimentos_historico' => $this->mapProcedureHistoryCollection($order->procedureHistory),
-            'eventos' => $this->mapEventCollection($order->events),
+            'eventos' => $this->mapEventCollection($order->events, $order->documents),
             'status_disponiveis' => $this->mapStatusOptions(),
             'proximas_etapas' => $this->mapNextStatusOptions((string) ($order->status ?? '')),
             'fotos' => $this->mapPhotoCollection($order->photos, (int) ($order->id ?? 0)),
@@ -2144,30 +2140,169 @@ class OrderWorkflowService
      * @param iterable<OrderEvent> $events
      * @return array<int, array<string, mixed>>
      */
-    private function mapEventCollection(iterable $events): array
+    private function mapEventCollection(iterable $events, iterable $documents = []): array
     {
         $items = [];
+        $existingDocumentKeys = [];
 
         foreach ($events as $event) {
             if (! $event instanceof OrderEvent) {
                 continue;
             }
 
-            $items[] = [
+            $dados = is_array($event->dados) ? $event->dados : null;
+            $item = [
                 'id' => (int) ($event->id ?? 0),
                 'categoria' => (string) ($event->categoria ?? ''),
                 'tipo' => (string) ($event->tipo ?? ''),
                 'titulo' => (string) ($event->titulo ?? ''),
                 'descricao' => $event->descricao !== null ? (string) $event->descricao : null,
-                'dados' => is_array($event->dados) ? $event->dados : null,
+                'dados' => $dados,
                 'origem' => (string) ($event->origem ?? 'sistema'),
                 'created_at' => $this->formatDateTime($event->created_at ?? null),
                 'usuario_id' => (int) ($event->usuario_id ?? 0),
                 'usuario' => $this->mapTechnician($event->user),
+                '_sort_at' => $this->resolveTimelineSortAt($event->created_at ?? null),
             ];
+
+            if ($item['categoria'] === OrderEvent::CATEGORIA_DOCUMENTO) {
+                foreach ($this->extractDocumentEventKeys($dados) as $key) {
+                    $existingDocumentKeys[$key] = true;
+                }
+            }
+
+            $items[] = $item;
         }
 
-        return $items;
+        foreach ($documents as $document) {
+            if (! $document instanceof OrderDocument) {
+                continue;
+            }
+
+            $keys = $this->documentIdentityKeys($document);
+            $alreadyTracked = false;
+
+            foreach ($keys as $key) {
+                if (isset($existingDocumentKeys[$key])) {
+                    $alreadyTracked = true;
+                    break;
+                }
+            }
+
+            if ($alreadyTracked) {
+                continue;
+            }
+
+            foreach ($keys as $key) {
+                $existingDocumentKeys[$key] = true;
+            }
+
+            $items[] = $this->buildSyntheticDocumentTimelineEvent($document);
+        }
+
+        usort($items, static function (array $left, array $right): int {
+            return ((int) ($right['_sort_at'] ?? 0)) <=> ((int) ($left['_sort_at'] ?? 0));
+        });
+
+        return array_map(static function (array $item): array {
+            unset($item['_sort_at']);
+
+            return $item;
+        }, $items);
+    }
+
+    /**
+     * @param array<string, mixed>|null $dados
+     * @return array<int, string>
+     */
+    private function extractDocumentEventKeys(?array $dados): array
+    {
+        if (! is_array($dados)) {
+            return [];
+        }
+
+        $keys = [];
+        $documentId = (int) ($dados['documento_id'] ?? 0);
+        if ($documentId > 0) {
+            $keys[] = 'id:' . $documentId;
+        }
+
+        $type = strtolower(trim((string) ($dados['tipo_documento'] ?? '')));
+        $version = (int) ($dados['versao'] ?? 0);
+        if ($type !== '' && $version > 0) {
+            $keys[] = 'typev:' . $type . ':' . $version;
+        }
+
+        return $keys;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function documentIdentityKeys(OrderDocument $document): array
+    {
+        $keys = [];
+        $documentId = (int) ($document->id ?? 0);
+        if ($documentId > 0) {
+            $keys[] = 'id:' . $documentId;
+        }
+
+        $type = strtolower(trim((string) ($document->tipo_documento ?? '')));
+        $version = (int) ($document->versao ?? 0);
+        if ($type !== '' && $version > 0) {
+            $keys[] = 'typev:' . $type . ':' . $version;
+        }
+
+        return $keys;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildSyntheticDocumentTimelineEvent(OrderDocument $document): array
+    {
+        $type = strtolower(trim((string) ($document->tipo_documento ?? '')));
+        $label = match ($type) {
+            'abertura' => 'Comprovante de abertura',
+            'orcamento' => 'Orçamento',
+            'laudo' => 'Laudo técnico',
+            'entrega' => 'Comprovante de entrega',
+            'devolucao_sem_reparo' => 'Comprovante de devolução sem reparo',
+            default => $this->humanizeDocumentType($type),
+        };
+
+        return [
+            'id' => 0,
+            'categoria' => OrderEvent::CATEGORIA_DOCUMENTO,
+            'tipo' => 'documento_cliente_gerado',
+            'titulo' => $label . ' gerado',
+            'descricao' => $label . ' registrado no acervo da OS.',
+            'dados' => [
+                'documento_id' => (int) ($document->id ?? 0),
+                'tipo_documento' => $type,
+                'versao' => (int) ($document->versao ?? 1),
+            ],
+            'origem' => OrderEvent::ORIGEM_SISTEMA,
+            'created_at' => $this->formatDateTime($document->created_at ?? null),
+            'usuario_id' => (int) ($document->gerado_por ?? 0),
+            'usuario' => $this->mapTechnician($document->generatedBy),
+            '_sort_at' => $this->resolveTimelineSortAt($document->created_at ?? null),
+        ];
+    }
+
+    private function resolveTimelineSortAt($value): int
+    {
+        if ($value instanceof Carbon) {
+            return $value->getTimestamp();
+        }
+
+        if (is_string($value) && trim($value) !== '') {
+            $timestamp = strtotime($value);
+
+            return $timestamp !== false ? $timestamp : 0;
+        }
+
+        return 0;
     }
 
     /**

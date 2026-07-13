@@ -70,11 +70,6 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/notificacoes/lidas', [NotificationController::class, 'markAllRead'])->name('notifications.mark-all');
     Route::post('/notificacoes/limpar-lidas', [NotificationController::class, 'clearRead'])->name('notifications.clear-read');
 
-    // Sem gate de modulo aqui de proposito: este proxy so repassa a
-    // autenticacao de canal ao backend, e e' o backend (routes/channels.php)
-    // quem autoriza CADA canal — 'orders' exige os:visualizar via RBAC,
-    // 'notifications.{id}' exige ser o proprio usuario. Um gate unico de
-    // modulo aqui bloquearia o sino de quem nao enxerga OS.
     Route::post('/broadcasting/auth', BroadcastAuthController::class)
         ->name('desktop.broadcasting.auth');
 
@@ -226,6 +221,43 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/os/{order}/fotos/{photo}', [OrderController::class, 'photo'])
         ->middleware('desktop.permission:os,visualizar')
         ->name('orders.photos.show');
+    Route::get('/os/{order}/documentos', [OrderController::class, 'documentsCenter'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('orders.documents.center');
+    Route::post('/os/{order}/documentos', [OrderController::class, 'documentsCenterDispatch'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('orders.documents.dispatch');
+    Route::post('/os/{order}/documentos/gerar', [OrderController::class, 'documentsCenterGenerate'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('orders.documents.generate');
+    Route::post('/os/{order}/documentos/enviar', [OrderController::class, 'documentsCenterSend'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('orders.documents.send');
+    Route::post('/os/{order}/documentos/links', [OrderController::class, 'documentsCenterShare'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('orders.documents.share');
+    Route::post('/os/{order}/documentos/links/{link}/revogar', [OrderController::class, 'documentsCenterRevokeLink'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('orders.documents.share.revoke');
+    Route::post('/os/{order}/documentos/{document}/arquivar', [OrderController::class, 'documentsCenterArchive'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('orders.documents.archive');
+    Route::post('/os/{order}/documentos/{document}/reativar', [OrderController::class, 'documentsCenterUnarchive'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('orders.documents.unarchive');
+    Route::get('/os/{order}/documentos/estado', [OrderController::class, 'documentsCenterState'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('orders.documents.state');
+    Route::get('/os/{order}/documentos/download', [OrderController::class, 'documentsCenterDownload'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('orders.documents.download');
+    Route::get('/os/{order}/documentos/imprimir', [OrderController::class, 'documentsCenterPrint'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('orders.documents.print');
+    Route::get('/os/{order}/documentos/{document}/arquivos/{format}', [OrderController::class, 'documentFormat'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->whereIn('format', ['a4', '80mm'])
+        ->name('orders.documents.files.show');
     Route::get('/os/{order}/documentos/{document}', [OrderController::class, 'document'])
         ->middleware('desktop.permission:os,visualizar')
         ->name('orders.documents.show');
@@ -651,6 +683,15 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/equipe-tecnica', [PeopleController::class, 'technicalTeam'])
         ->middleware('desktop.permission:funcionarios,visualizar')
         ->name('technicians.index');
+    Route::post('/equipe-tecnica', [PeopleController::class, 'store'])
+        ->middleware('desktop.permission:funcionarios,criar')
+        ->name('technicians.store');
+    Route::match(['put', 'patch'], '/equipe-tecnica/{member}', [PeopleController::class, 'update'])
+        ->middleware('desktop.permission:funcionarios,editar')
+        ->name('technicians.update');
+    Route::patch('/equipe-tecnica/{member}/active', [PeopleController::class, 'updateTechnicalTeamActive'])
+        ->middleware('desktop.permission:funcionarios,editar')
+        ->name('technicians.active.update');
 
     Route::get('/equipamentos', [EquipmentController::class, 'index'])
         ->middleware('desktop.permission:equipamentos,visualizar')
@@ -670,8 +711,6 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::match(['put', 'patch'], '/equipamentos/{equipment}', [EquipmentController::class, 'update'])
         ->middleware('desktop.permission:equipamentos,editar')
         ->name('equipments.update');
-    // Visivel a quem visualiza equipamentos — o gate real e' a verificacao de
-    // credenciais de administrador no backend (step-up).
     Route::post('/equipamentos/{equipment}/revelar-senha', [EquipmentController::class, 'revealPassword'])
         ->middleware('desktop.permission:equipamentos,visualizar')
         ->name('equipments.reveal-password');

@@ -713,6 +713,49 @@ a {
     background: var(--desktop-primary-soft);
 }
 
+.desktop-chip-success {
+    color: var(--desktop-success-text);
+    background: rgba(var(--desktop-success-rgb), 0.14);
+}
+
+.desktop-chip-warning {
+    color: #b45309;
+    background: rgba(245, 158, 11, 0.16);
+}
+
+.desktop-chip-danger {
+    color: var(--desktop-danger-text);
+    background: rgba(var(--desktop-danger-rgb), 0.14);
+}
+
+/* Central documental da OS (orders/documents-center) ------------------- */
+
+.doc-action-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+    align-items: center;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--desktop-border);
+    border-radius: var(--desktop-radius-lg);
+    background: var(--desktop-surface-soft);
+}
+
+.doc-action-bar #docActionFormat {
+    max-width: 160px;
+}
+
+.doc-selection-count {
+    font-weight: 700;
+    color: var(--desktop-text-soft);
+    margin-right: auto;
+}
+
+.doc-type-card.is-generating {
+    opacity: 0.6;
+    pointer-events: none;
+}
+
 .desktop-main {
     min-height: 100vh;
     margin-left: var(--desktop-sidebar-width);
@@ -3819,6 +3862,24 @@ a {
     max-width: 150px;
 }
 
+.order-create-summary-row-value-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    min-width: 0;
+    gap: 0.1rem;
+}
+
+.order-create-summary-row-subtext {
+    color: var(--desktop-text-soft);
+    font-size: 0.68rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
 .order-create-summary-row-edit {
     display: inline-flex;
     align-items: center;
@@ -4050,8 +4111,10 @@ a {
 }
 
 .order-create-send-toggle {
-    display: inline-flex;
-    align-items: flex-start;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
     gap: 0.85rem;
     min-height: 56px;
     padding: 0.85rem 1rem;
@@ -4059,31 +4122,69 @@ a {
     border-radius: 18px;
     background: rgba(255, 255, 255, 0.92);
     box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
-    cursor: pointer;
 }
 
-.order-create-send-toggle input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    margin-top: 0.15rem;
-    accent-color: var(--desktop-primary);
-    flex: 0 0 auto;
-}
-
-.order-create-send-toggle span {
+.order-create-send-toggle-text {
     display: flex;
     flex-direction: column;
     gap: 0.2rem;
 }
 
-.order-create-send-toggle strong {
+.order-create-send-toggle-text strong {
     color: var(--desktop-text);
     font-size: 0.95rem;
 }
 
-.order-create-send-toggle small {
+.order-create-send-toggle-text small {
     color: var(--desktop-text-soft);
     line-height: 1.45;
+}
+
+.order-create-required-mark {
+    color: var(--desktop-danger-text);
+    font-weight: 700;
+    margin-left: 0.1rem;
+}
+
+.order-create-yes-no {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+}
+
+.order-create-yes-no-option {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    padding: 0.45rem 1.1rem;
+    border-radius: 999px;
+    border: 1px solid var(--desktop-border);
+    background: transparent;
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--desktop-text-soft);
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.order-create-yes-no-option input[type="radio"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    margin: 0;
+    cursor: pointer;
+}
+
+.order-create-yes-no-option:has(input:checked) {
+    background: var(--desktop-primary);
+    border-color: var(--desktop-primary);
+    color: #fff;
+}
+
+.order-create-yes-no-option:has(input:focus-visible) {
+    outline: 2px solid var(--desktop-primary);
+    outline-offset: 2px;
 }
 
 .cashflow-view-toggle {

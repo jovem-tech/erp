@@ -92,9 +92,10 @@ class FinanceiroCartoesTest extends TestCase
         ]);
 
         $response = $this
-            ->withSession($this->desktopSession([
-                'financeiro' => ['visualizar', 'editar', 'excluir'],
-            ]))
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'editar', 'excluir']]),
+                ['desktop_theme' => 'default']
+            ))
             ->get('/financeiro/cartoes?tab=gateway');
 
         $response
@@ -104,7 +105,29 @@ class FinanceiroCartoesTest extends TestCase
             ->assertSee('Taxa por parcela')
             ->assertSee('Taxas online')
             ->assertSee('data-select2-placeholder="Selecione a operadora..."', false)
-            ->assertSee('data-select2-placeholder="Selecione o gateway..."', false);
+            ->assertSee('data-select2-placeholder="Selecione o gateway..."', false)
+            ->assertSee('id="cartaoTaxaModal"', false)
+            ->assertSee('data-cartoes-new="taxa"', false)
+            ->assertSee('id="cartaoGatewayModal"', false)
+            ->assertSee('data-cartoes-new="gateway"', false)
+            ->assertSee('Taxas cadastradas')
+            ->assertSee('Taxas online cadastradas');
+
+        $html = $response->getContent();
+        $taxasPanelStart = strpos($html, 'data-cartoes-panel="taxas"');
+        $simuladorPanelStart = strpos($html, 'data-cartoes-panel="simulador"');
+        $taxasPanelHtml = substr($html, $taxasPanelStart, $simuladorPanelStart - $taxasPanelStart);
+
+        // Os forms de taxa e taxa online foram movidos para dentro dos
+        // modais (@push('modals'), renderizados no fim do body) — não devem
+        // mais existir inline dentro dos painéis das abas "taxas"/"gateway".
+        $this->assertStringNotContainsString('data-cartoes-form="taxa"', $taxasPanelHtml);
+
+        $gatewayPanelStart = strpos($html, 'data-cartoes-panel="gateway"');
+        $gatewayModalStart = strpos($html, 'id="cartaoGatewayModal"');
+        $gatewayPanelHtml = substr($html, $gatewayPanelStart, $gatewayModalStart - $gatewayPanelStart);
+
+        $this->assertStringNotContainsString('data-cartoes-form="gateway"', $gatewayPanelHtml);
     }
 
     public function test_help_page_renders_guidance_and_back_link(): void
@@ -133,9 +156,10 @@ class FinanceiroCartoesTest extends TestCase
         ]);
 
         $response = $this
-            ->withSession($this->desktopSession([
-                'financeiro' => ['visualizar'],
-            ]))
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar']]),
+                ['desktop_theme' => 'default']
+            ))
             ->get('/financeiro/cartoes/ajuda');
 
         $response
@@ -174,9 +198,10 @@ class FinanceiroCartoesTest extends TestCase
         ]);
 
         $response = $this
-            ->withSession($this->desktopSession([
-                'financeiro' => ['visualizar'],
-            ]))
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar']]),
+                ['desktop_theme' => 'default']
+            ))
             ->postJson('/financeiro/cartoes/simular', [
                 'valor_bruto' => 130.0,
                 'operadora_id' => 1,

@@ -122,7 +122,42 @@
         });
 
         refreshSelect2(form);
-        form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        // Os forms de taxa e taxa online vivem dentro de modais (ficam
+        // display:none até serem abertos) — rolar até eles não faz sentido e
+        // o scrollIntoView de um elemento oculto é um no-op silencioso mesmo.
+        // Os outros forms (operadora/bandeira) continuam inline na página.
+        if (!MODAL_FORMS.includes(formName)) {
+            form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    };
+
+    const MODAL_FORMS = ['taxa', 'gateway'];
+
+    const modals = {
+        taxa: {
+            el: document.getElementById('cartaoTaxaModal'),
+            title: document.querySelector('[data-cartoes-taxa-modal-title]'),
+        },
+        gateway: {
+            el: document.getElementById('cartaoGatewayModal'),
+            title: document.querySelector('[data-cartoes-gateway-modal-title]'),
+        },
+    };
+
+    const openFormModal = (formName, title) => {
+        const modal = modals[formName];
+        if (!modal) {
+            return;
+        }
+
+        if (modal.title instanceof HTMLElement) {
+            modal.title.textContent = title;
+        }
+
+        if (modal.el instanceof HTMLElement && window.bootstrap?.Modal) {
+            window.bootstrap.Modal.getOrCreateInstance(modal.el).show();
+        }
     };
 
     const syncGatewayModes = () => {
@@ -364,13 +399,36 @@
                         return;
                     }
 
-                    const rawKey = attribute.name.replace('data-cartoes-', '');
-                    const key = rawKey.replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+                    // Os campos do form usam data-cartoes-field="snake_case"
+                    // (mesmo nome do atributo `name`) — converter pra
+                    // camelCase aqui fazia o lookup em fillForm() nunca bater
+                    // pra nenhum campo com hifen (operadora-id, parcelas-inicial,
+                    // taxa-percentual, etc.), deixando "Editar" em branco pra
+                    // tudo exceto os campos de uma palavra só.
+                    const key = attribute.name.replace('data-cartoes-', '').replaceAll('-', '_');
                     values[key] = attribute.value;
                 });
 
                 fillForm(target, values);
+
+                if (target === 'taxa') {
+                    openFormModal('taxa', 'Editar taxa');
+                } else if (target === 'gateway') {
+                    openFormModal('gateway', 'Editar taxa online');
+                }
             });
+        });
+    };
+
+    const bindNewModalFormButtons = () => {
+        document.querySelector('[data-cartoes-new="taxa"]')?.addEventListener('click', () => {
+            clearForm('taxa');
+            openFormModal('taxa', 'Nova taxa');
+        });
+
+        document.querySelector('[data-cartoes-new="gateway"]')?.addEventListener('click', () => {
+            clearForm('gateway');
+            openFormModal('gateway', 'Nova taxa online');
         });
     };
 
@@ -390,6 +448,7 @@
         bindTabButtons();
         bindResetButtons();
         bindEditButtons();
+        bindNewModalFormButtons();
         bindRowFilters();
         bindSimulator();
         initGatewaySelect();

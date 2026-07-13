@@ -31,6 +31,8 @@
 
             return $fallback;
         };
+
+        $orderId = (int) ($order['id'] ?? ($budget['os_id'] ?? 0));
     @endphp
 
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
@@ -48,42 +50,61 @@
             </div>
         </div>
 
-        <div class="d-flex flex-wrap align-items-center gap-2">
-            <a href="{{ route('orcamentos.index') }}" class="btn btn-outline-light">
-                <i class="bi bi-arrow-left me-2"></i>
-                Voltar
-            </a>
-            @if ($publicLink !== '')
-                <button type="button" class="btn btn-outline-light" data-copy-link="{{ $publicLink }}">
-                    <i class="bi bi-clipboard me-2"></i>
-                    Copiar link
-                </button>
-            @endif
-            @if (! empty($budget['can_send_approval']))
-                <form method="post" action="{{ route('orcamentos.send_approval', $budgetId) }}" data-confirm="O PDF da proposta será gerado e enviado ao cliente pelo WhatsApp. Deseja continuar?" data-confirm-title="{{ $sends !== [] ? 'Reenviar proposta' : 'Enviar proposta' }}" data-confirm-button="Sim, enviar">
-                    @csrf
-                    <button type="submit" class="btn btn-success">
-                        <i class="bi bi-send me-2"></i>
-                        {{ $sends !== [] ? 'Reenviar para aprovação' : 'Enviar para aprovação' }}
-                    </button>
-                </form>
-            @endif
-            @if (! empty($budget['can_edit']))
-                <a href="{{ route('orcamentos.edit', $budgetId) }}" class="btn btn-primary">
-                    <i class="bi bi-pencil me-2"></i>
-                    Editar
+        <div class="dropdown os-actions-dropdown align-self-start">
+            <button type="button"
+                class="btn btn-outline-light dropdown-toggle os-actions-toggle"
+                data-bs-toggle="dropdown"
+                aria-expanded="false">
+                Mais ações
+            </button>
+
+            <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                <a href="{{ route('orcamentos.index') }}" class="dropdown-item">
+                    <i class="bi bi-arrow-left me-2"></i>Voltar
                 </a>
-            @endif
-            @if (! empty($budget['can_delete']))
-                <form method="post" action="{{ route('orcamentos.destroy', $budgetId) }}" data-confirm="Deseja excluir este orçamento? Esta ação não poderá ser desfeita." data-confirm-title="Excluir orçamento" data-confirm-button="Sim, excluir">
-                    @csrf
-                    @method('DELETE')
-                    <button type="submit" class="btn btn-outline-danger">
-                        <i class="bi bi-trash me-2"></i>
-                        Excluir
+
+                @if ($orderId > 0)
+                    <a href="{{ route('orders.show', $orderId) }}" class="dropdown-item">
+                        <i class="bi bi-eye me-2"></i>Ver OS
+                    </a>
+
+                    <a href="{{ route('orders.documents.center', $orderId) }}" class="dropdown-item">
+                        <i class="bi bi-folder-symlink me-2"></i>Documentos da OS
+                    </a>
+                @endif
+
+                @if ($publicLink !== '')
+                    <button type="button" class="dropdown-item" data-copy-link="{{ $publicLink }}">
+                        <i class="bi bi-clipboard me-2"></i>Copiar link
                     </button>
-                </form>
-            @endif
+                @endif
+
+                @if (! empty($budget['can_edit']))
+                    <a href="{{ route('orcamentos.edit', $budgetId) }}" class="dropdown-item">
+                        <i class="bi bi-pencil me-2"></i>Editar
+                    </a>
+                @endif
+
+                @if (! empty($budget['can_send_approval']))
+                    <form method="post" action="{{ route('orcamentos.send_approval', $budgetId) }}" data-confirm="O PDF da proposta será gerado e enviado ao cliente pelo WhatsApp. Deseja continuar?" data-confirm-title="{{ $sends !== [] ? 'Reenviar proposta' : 'Enviar proposta' }}" data-confirm-button="Sim, enviar">
+                        @csrf
+                        <button type="submit" class="dropdown-item">
+                            <i class="bi bi-send me-2"></i>{{ $sends !== [] ? 'Reenviar para aprovação' : 'Enviar para aprovação' }}
+                        </button>
+                    </form>
+                @endif
+
+                @if (! empty($budget['can_delete']))
+                    <div class="dropdown-divider"></div>
+                    <form method="post" action="{{ route('orcamentos.destroy', $budgetId) }}" data-confirm="Deseja excluir este orçamento? Esta ação não poderá ser desfeita." data-confirm-title="Excluir orçamento" data-confirm-button="Sim, excluir">
+                        @csrf
+                        @method('DELETE')
+                        <button type="submit" class="dropdown-item text-danger">
+                            <i class="bi bi-trash me-2"></i>Excluir
+                        </button>
+                    </form>
+                @endif
+            </div>
         </div>
     </div>
 

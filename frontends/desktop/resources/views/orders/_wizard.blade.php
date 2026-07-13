@@ -104,6 +104,21 @@
     // "Cancelar baixa", na tela de detalhe, pode tirá-la desse estado).
     $isEncerrada = (bool) data_get($order, 'is_encerrada', false);
     $canChangeStatus = $isEditing && \App\Support\DesktopSession::can('os', 'editar') && $statusDisponiveis !== [] && ! $isEncerrada;
+
+    // Mesmas condições de orders/show.blade.php para o dropdown "Mais ações"
+    // (só faz sentido em modo edição — na criação a OS ainda não existe).
+    $canEditOrderHeader = \App\Support\DesktopSession::can('os', 'editar');
+    $canCreateBudgetHeader = \App\Support\DesktopSession::can('orcamentos', 'criar');
+    $canCloseOrderHeader = $canEditOrderHeader && ! $isEncerrada;
+    $orcamentoHeader = data_get($order, 'orcamento');
+    $hasOrcamentoHeader = $orcamentoHeader !== null;
+    $selectableStatusesHeader = (array) data_get($order, 'proximas_etapas', []);
+    foreach ((array) data_get($order, 'status_disponiveis', []) as $option) {
+        if (($option['codigo'] ?? '') === $currentStatusCode) {
+            array_unshift($selectableStatusesHeader, $option);
+            break;
+        }
+    }
 @endphp
 
 <section class="desktop-form-card order-create-shell">
@@ -114,6 +129,70 @@
                 <p class="surface-subtitle">{{ $orderSubtitle }}</p>
             @endif
         </div>
+
+        @if ($isEditing)
+            <div class="dropdown os-actions-dropdown">
+                <button type="button"
+                    class="btn btn-outline-light dropdown-toggle os-actions-toggle"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false">
+                    Mais ações
+                </button>
+
+                <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                    <a href="{{ route('orders.show', $orderId) }}" class="dropdown-item">
+                        <i class="bi bi-eye me-2"></i>Ver OS
+                    </a>
+
+                    <a href="{{ route('orders.documents.center', $orderId) }}" class="dropdown-item">
+                        <i class="bi bi-folder-symlink me-2"></i>Documentos da OS
+                    </a>
+
+                    @if ($canEditOrderHeader && ! $isEncerrada && $selectableStatusesHeader !== [])
+                        <button type="button"
+                            class="dropdown-item"
+                            data-bs-toggle="modal"
+                            data-bs-target="#orderStatusModal"
+                            data-order-id="{{ $orderId }}"
+                            data-order-numero="{{ $orderNumberLabel !== '' ? $orderNumberLabel : ('#' . $orderId) }}">
+                            <i class="bi bi-arrow-left-right me-2"></i>Alterar status
+                        </button>
+                    @endif
+
+                    @if ($canCloseOrderHeader)
+                        <a href="{{ route('orders.closure.show', $orderId) }}" class="dropdown-item">
+                            <i class="bi bi-cash-coin me-2"></i>Baixa / Adiantamento
+                        </a>
+                    @endif
+
+                    @if ($hasOrcamentoHeader)
+                        <a href="{{ route('orcamentos.show', $orcamentoHeader['id']) }}" class="dropdown-item">
+                            <i class="bi bi-receipt me-2"></i>Ver orçamento
+                        </a>
+                    @elseif ($canCreateBudgetHeader)
+                        <a href="{{ route('orcamentos.create', ['os_id' => $orderId]) }}" class="dropdown-item">
+                            <i class="bi bi-receipt me-2"></i>Gerar orçamento
+                        </a>
+                    @endif
+
+                    <a href="{{ route('orders.preview', $orderId) }}" target="_blank" rel="noreferrer" class="dropdown-item">
+                        <i class="bi bi-printer me-2"></i>Imprimir
+                    </a>
+
+                    @if ($isEncerrada)
+                        <div class="dropdown-divider"></div>
+                        <button type="button"
+                            class="dropdown-item text-danger"
+                            data-bs-toggle="modal"
+                            data-bs-target="#cancelClosureModal"
+                            data-order-id="{{ $orderId }}"
+                            data-order-numero="{{ $orderNumberLabel !== '' ? $orderNumberLabel : ('#' . $orderId) }}">
+                            <i class="bi bi-arrow-counterclockwise me-2"></i>Cancelar baixa
+                        </button>
+                    @endif
+                </div>
+            </div>
+        @endif
     </div>
 
     <form
@@ -136,7 +215,10 @@
                     <li class="order-create-summary-row" title="{{ $selectedClientPhone !== '' || $selectedClientEmail !== '' ? trim($selectedClientPhone . ' ' . $selectedClientEmail) : '' }}">
                         <span class="order-create-summary-row-label">Cliente</span>
                         <span class="order-create-summary-row-value">
-                            <span class="order-create-summary-row-text" data-order-create-summary-client>{{ $selectedClientName !== '' ? $selectedClientName : 'Nao selecionado' }}</span>
+                            <span class="order-create-summary-row-value-stack">
+                                <span class="order-create-summary-row-text" data-order-create-summary-client>{{ $selectedClientName !== '' ? $selectedClientName : 'Nao selecionado' }}</span>
+                                <span class="order-create-summary-row-subtext {{ $selectedClientPhone !== '' ? '' : 'd-none' }}" data-order-create-summary-client-phone>{{ $selectedClientPhone }}</span>
+                            </span>
                             @if ($canEditClient)
                                 <a
                                     href="{{ $selectedClientEditUrl !== '' ? $selectedClientEditUrl : '#' }}"
@@ -280,7 +362,7 @@
                 <div class="order-create-panel-grid">
                     <div class="order-create-field order-create-field-span-2">
                         <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
-                            <label for="clienteId" class="mb-0">Cliente</label>
+                            <label for="clienteId" class="mb-0">Cliente <span class="order-create-required-mark">*</span></label>
                             @if ($canCreateClient)
                                 <button type="button" id="btnNovoClienteRapido" class="btn btn-soft btn-sm">
                                     <i class="bi bi-person-plus me-1"></i>
@@ -327,7 +409,7 @@
                 <div class="order-create-panel-grid">
                     <div class="order-create-field order-create-field-span-2">
                         <div class="d-flex align-items-center justify-content-between gap-2 mb-1">
-                            <label for="equipamentoId" class="mb-0">Equipamento</label>
+                            <label for="equipamentoId" class="mb-0">Equipamento <span class="order-create-required-mark">*</span></label>
                             @if ($canCreateEquipment)
                                 <button
                                     type="button"
@@ -400,7 +482,7 @@
                     </div>
 
                     <div class="order-create-field order-create-field-span-2">
-                        <label for="relatoCliente">Relato do cliente</label>
+                        <label for="relatoCliente">Relato do cliente <span class="order-create-required-mark">*</span></label>
                         <textarea
                             id="relatoCliente"
                             name="relato_cliente"
@@ -474,15 +556,16 @@
                     </div>
 
                     <div>
-                        <label for="tecnicoId">Tecnico responsavel</label>
+                        <label for="tecnicoId">Tecnico responsavel <span class="order-create-required-mark">*</span></label>
                         <select
                             id="tecnicoId"
                             name="tecnico_id"
                             class="form-select @error('tecnico_id') is-invalid @enderror"
+                            required
                             data-order-create-technician-select
-                            data-select2-placeholder="Nao atribuido"
+                            data-select2-placeholder="Selecione o tecnico"
                         >
-                            <option value="">Nao atribuido</option>
+                            <option value="">Selecione o tecnico</option>
                             @foreach (($technicians ?? []) as $technician)
                                 @php
                                     $technicianId = (int) ($technician['id'] ?? 0);
@@ -502,7 +585,7 @@
                     </div>
 
                     <div>
-                        <label for="prazoEntrega">Prazo de entrega</label>
+                        <label for="prazoEntrega">Prazo de entrega <span class="order-create-required-mark">*</span></label>
                         <select
                             id="prazoEntrega"
                             class="form-select"
@@ -515,16 +598,18 @@
                             <option value="15">15 dias</option>
                             <option value="30">30 dias</option>
                         </select>
+                        <small class="text-secondary d-block mt-2">Atalho que preenche a data de previsao automaticamente.</small>
                     </div>
 
                     <div>
-                        <label for="dataPrevisao">Data de previsao</label>
+                        <label for="dataPrevisao">Data de previsao <span class="order-create-required-mark">*</span></label>
                         <input
                             type="date"
                             id="dataPrevisao"
                             name="data_previsao"
                             class="form-control @error('data_previsao') is-invalid @enderror"
                             value="{{ $selectedPrevisao }}"
+                            required
                             data-order-create-previsao
                         >
                         @error('data_previsao')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
@@ -623,27 +708,52 @@
 
             <div class="order-create-actions">
                 @unless ($isEditing)
+                    @php
+                        $enviarPdfClienteOld = old('enviar_pdf_cliente', '0');
+                    @endphp
                     <div class="order-create-actions-option">
-                        <input type="hidden" name="enviar_pdf_cliente" value="0">
-                        <label class="order-create-send-toggle" for="enviarPdfCliente">
-                            <input
-                                type="checkbox"
-                                id="enviarPdfCliente"
-                                name="enviar_pdf_cliente"
-                                value="1"
-                                @checked(old('enviar_pdf_cliente'))
-                            >
-                            <span>
-                                <strong>Enviar PDF ao cliente</strong>
+                        <div class="order-create-send-toggle">
+                            <span class="order-create-send-toggle-text">
+                                <strong>Enviar PDF ao cliente <span class="order-create-required-mark">*</span></strong>
                                 <small>Gera o comprovante de abertura com o modelo <code>abertura</code> e tenta enviar via template WhatsApp <code>os_aberta</code>.</small>
                             </span>
-                        </label>
+                            <div class="order-create-yes-no" role="radiogroup" aria-label="Enviar PDF ao cliente">
+                                <label class="order-create-yes-no-option">
+                                    <input
+                                        type="radio"
+                                        name="enviar_pdf_cliente"
+                                        value="0"
+                                        required
+                                        @checked($enviarPdfClienteOld !== '1')
+                                    >
+                                    <span>Nao</span>
+                                </label>
+                                <label class="order-create-yes-no-option">
+                                    <input
+                                        type="radio"
+                                        name="enviar_pdf_cliente"
+                                        value="1"
+                                        required
+                                        @checked($enviarPdfClienteOld === '1')
+                                    >
+                                    <span>Sim</span>
+                                </label>
+                            </div>
+                        </div>
                     </div>
                 @endunless
                 <a href="{{ $cancelUrl }}" class="btn btn-outline-light">Cancelar</a>
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi {{ $submitIcon }} me-2"></i>
-                    {{ $submitLabel }}
+                <button
+                    type="button"
+                    class="btn btn-primary"
+                    data-order-create-submit
+                    data-submit-label="{{ $submitLabel }}"
+                    data-submit-icon="{{ $submitIcon }}"
+                    data-next-label="Proximo"
+                    data-next-icon="bi-arrow-right-circle"
+                >
+                    <i class="bi {{ $submitIcon }} me-2" data-order-create-submit-icon></i>
+                    <span data-order-create-submit-label>{{ $submitLabel }}</span>
                 </button>
             </div>
         </div>

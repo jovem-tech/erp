@@ -3,8 +3,9 @@
 # com a branch `develop` do GitHub.
 #
 # So deve ser executado no servidor de dev, dentro de /var/www/sistema-erp.
-# Mais leve que o deploy de producao (sem backup obrigatorio, sem restart de
-# supervisor por padrao) — o ambiente de dev e' descartavel.
+# Mais leve que o deploy de producao (sem backup obrigatorio), mas agora tenta
+# reciclar fila/supervisor quando disponiveis para que fluxos assincronos
+# documentais entrem em operacao sem passo manual extra no dev.
 #
 # Ver documentacao/10-deploy/workflow-git-multiambiente.md.
 
@@ -33,6 +34,7 @@ php artisan migrate --force
 php artisan config:clear && php artisan config:cache
 php artisan route:clear && php artisan route:cache
 php artisan view:clear && php artisan view:cache
+php artisan queue:restart || true
 
 echo ">>> Desktop"
 cd ../frontends/desktop
@@ -45,5 +47,6 @@ php artisan route:clear && php artisan route:cache
 php artisan view:clear && php artisan view:cache
 
 sudo systemctl reload php8.5-fpm 2>/dev/null || true
+sudo supervisorctl restart all 2>/dev/null || true
 
 echo "DEV_ATUALIZADO_OK ($(git rev-parse --short HEAD))"
