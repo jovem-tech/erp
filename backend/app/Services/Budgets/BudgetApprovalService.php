@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\Channels\Whatsapp\PhoneNumberNormalizationService;
 use App\Services\Company\CompanyProfileService;
 use App\Services\Integrations\IntegrationSettingsService;
+use App\Services\Notifications\NotificationDispatchService;
 use App\Services\Orders\OrderDocumentCenterService;
 use App\Services\Orders\OrderEventService;
 use Illuminate\Support\Carbon;
@@ -28,8 +29,25 @@ class BudgetApprovalService
         private readonly PhoneNumberNormalizationService $phoneNumberNormalizationService,
         private readonly BudgetOrderSyncService $budgetOrderSyncService,
         private readonly OrderEventService $orderEventService,
-        private readonly OrderDocumentCenterService $orderDocumentCenterService
+        private readonly OrderDocumentCenterService $orderDocumentCenterService,
+        private readonly NotificationDispatchService $notificationDispatchService
     ) {
+    }
+
+    /**
+     * Destinatários do sino para decisão do cliente (aprovação/recusa) pelo
+     * link público: responsável + criador do orçamento + técnico da OS
+     * vinculada (ver documentacao/03-arquitetura-tecnica/notificacoes-sino.md).
+     *
+     * @return array<int, int>
+     */
+    private function budgetDecisionRecipients(Budget $budget): array
+    {
+        return [
+            (int) ($budget->responsavel_id ?? 0),
+            (int) ($budget->criado_por ?? 0),
+            (int) ($budget->order?->tecnico_id ?? 0),
+        ];
     }
 
     /**
@@ -339,6 +357,27 @@ class BudgetApprovalService
 
             $this->syncOrderForDecision($budget, true, $approvedAt);
             $this->budgetOrderSyncService->syncFromBudget($budget);
+
+            // Sino: avisa responsável, criador e técnico da OS — sem isso a
+            // aprovação só aparecia no sino no próximo carregamento manual da
+            // lista (nenhum dispatch existia aqui antes, apesar de já
+            // documentado em notificacoes-sino.md).
+            $this->notificationDispatchService->toUsers(
+                $this->budgetDecisionRecipients($budget),
+                [
+                    'kind' => 'orcamento.approved',
+                    'title' => 'Orçamento aprovado pelo cliente',
+                    'body' => sprintf(
+                        'O cliente aprovou o orçamento %s (R$ %s).',
+                        $budget->numero,
+                        number_format((float) $budget->total, 2, ',', '.')
+                    ),
+                    'route' => '/orcamentos/' . (int) $budget->id,
+                    'icon' => 'receipt',
+                    'orcamento_id' => (int) $budget->id,
+                    'os_id' => (int) ($budget->os_id ?? 0),
+                ]
+            );
         });
 
         return [
@@ -436,6 +475,20 @@ class BudgetApprovalService
 
             $this->syncOrderForDecision($budget, false, $rejectedAt);
             $this->budgetOrderSyncService->syncFromBudget($budget);
+
+            // Sino: mesmo aviso da aprovação, ver comentário em approveByToken().
+            $this->notificationDispatchService->toUsers(
+                $this->budgetDecisionRecipients($budget),
+                [
+                    'kind' => 'orcamento.rejected',
+                    'title' => 'Orçamento recusado pelo cliente',
+                    'body' => sprintf('O cliente recusou o orçamento %s.', $budget->numero),
+                    'route' => '/orcamentos/' . (int) $budget->id,
+                    'icon' => 'receipt',
+                    'orcamento_id' => (int) $budget->id,
+                    'os_id' => (int) ($budget->os_id ?? 0),
+                ]
+            );
         });
 
         return [

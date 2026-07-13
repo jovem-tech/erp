@@ -67,7 +67,43 @@ class FinanceiroTest extends TestCase
         $response->assertOk()
             ->assertSee('Financeiro')
             ->assertSee('Serviço')
-            ->assertSee('Novo lançamento');
+            ->assertSee('Novo lançamento')
+            ->assertSee('Relatórios')
+            ->assertSee(route('financeiro.relatorios.fluxo-caixa'), false)
+            ->assertSee(route('financeiro.relatorios.dre'), false)
+            ->assertSee(route('financeiro.relatorios.dre-caixa'), false)
+            ->assertSee(route('financeiro.relatorios.margem'), false)
+            ->assertSee('Mais ações')
+            ->assertSee(route('financeiro.cartoes.index'), false)
+            ->assertSee(route('financeiro.configuracoes'), false)
+            // Sessão sem permissão de "precificacao" — item some do dropdown.
+            ->assertDontSee(route('financeiro.precificacao.index'), false);
+    }
+
+    public function test_index_page_shows_precificacao_in_mais_acoes_when_permitted(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'lancamentos' => [],
+                    'status_options' => [],
+                ],
+                'error' => null,
+                'meta' => ['pagination' => ['current_page' => 1, 'per_page' => 15, 'total' => 0, 'last_page' => 1, 'from' => 0, 'to' => 0]],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'financeiro' => ['visualizar'],
+                'precificacao' => ['visualizar'],
+            ]))
+            ->get('/financeiro');
+
+        $response->assertOk()
+            ->assertSee(route('financeiro.precificacao.index'), false);
     }
 
     public function test_store_redirects_to_index_on_success(): void
