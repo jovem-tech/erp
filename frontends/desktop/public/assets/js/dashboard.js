@@ -262,20 +262,30 @@
         const labels = Array.isArray(summary?.labels) ? summary.labels : [];
         const series = Array.isArray(summary?.series) ? summary.series : [];
 
+        // Separador entre segmentos empilhados é um "gap" na cor da
+        // superfície do card (não um contorno branco solto) — só o topo do
+        // segmento mais alto da pilha ganha cantos arredondados; os demais
+        // ficam retos, senão cada segmento vira uma pílula independente e a
+        // coluna parece "quebrada" em vez de uma barra única.
+        const stackSurfaceColor = '#f8fafc';
+        const lastSeriesIndex = series.length - 1;
+
         destroyChart('equipment');
         chartInstances.equipment = new Chart(canvas, {
             type: 'bar',
             data: {
                 labels,
-                datasets: series.map((item) => ({
+                datasets: series.map((item, seriesIndex) => ({
                     label: item.label || 'Sem tipo',
                     data: Array.isArray(item.data) ? item.data.map((value) => Number(value ?? 0)) : [],
                     backgroundColor: item.backgroundColor || item.color || '#3b82f6',
-                    borderColor: '#ffffff',
-                    borderWidth: 1,
-                    borderRadius: 8,
+                    borderColor: stackSurfaceColor,
+                    borderWidth: 2,
+                    borderRadius: seriesIndex === lastSeriesIndex
+                        ? { topLeft: 4, topRight: 4, bottomLeft: 0, bottomRight: 0 }
+                        : 0,
                     borderSkipped: false,
-                    maxBarThickness: 54,
+                    maxBarThickness: 24,
                     stack: 'equipment',
                 })),
             },

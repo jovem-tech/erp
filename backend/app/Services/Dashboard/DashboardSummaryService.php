@@ -114,24 +114,29 @@ class DashboardSummaryService
     ];
 
     /**
+     * Paleta categórica validada (ordem fixa = mecanismo de segurança contra
+     * daltonismo — nunca reordenar por índice solto). 8 matizes é o teto de
+     * uma paleta categórica; o 9º tipo em diante entra em "Outros" em vez de
+     * gerar mais uma cor. ΔE mínimo adjacente 24.2 (light, protanopia).
+     *
      * @var array<int, string>
      */
     private const EQUIPMENT_CHART_COLORS = [
-        '#2563eb',
-        '#7c3aed',
-        '#059669',
-        '#f97316',
-        '#dc2626',
-        '#0891b2',
-        '#ca8a04',
-        '#db2777',
-        '#4f46e5',
-        '#16a34a',
-        '#ea580c',
-        '#9333ea',
+        '#2a78d6', // blue
+        '#1baf7a', // aqua
+        '#eda100', // yellow
+        '#008300', // green
+        '#4a3aa7', // violet (próximo do --desktop-primary #6f5afc)
+        '#e34948', // red
+        '#e87ba4', // magenta
+        '#eb6834', // orange
     ];
 
-    private const EQUIPMENT_CHART_MAX_TYPES = 12;
+    private const EQUIPMENT_CHART_MAX_TYPES = 8;
+
+    // Cor neutra fixa para o agregado "Outros" — nunca deve competir com as
+    // 8 cores de identidade categórica acima nem gerar um matiz novo.
+    private const EQUIPMENT_CHART_OTHER_COLOR = '#94a3b8';
 
     public function __construct(
         private readonly OrderWorkflowService $orderWorkflowService,
@@ -797,7 +802,7 @@ class DashboardSummaryService
                 }
             }
 
-            $otherColor = $this->chartColor(self::EQUIPMENT_CHART_COLORS, count($series));
+            $otherColor = self::EQUIPMENT_CHART_OTHER_COLOR;
             $otherData = array_values($otherMonthly);
             $series[] = [
                 'key' => 'outros',

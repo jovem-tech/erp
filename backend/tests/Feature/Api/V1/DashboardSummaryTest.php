@@ -221,6 +221,73 @@ class DashboardSummaryTest extends TestCase
         }
     }
 
+    public function test_equipment_types_chart_caps_at_eight_categorical_colors_and_folds_rest_into_outros(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-01-20 10:00:00'));
+
+        try {
+            $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Paleta']);
+
+            // 9 tipos com exatamente 1 OS cada — empate no total força o
+            // desempate alfabético do backend (usort), então "Tipo I" (9º em
+            // ordem alfa) e' quem entra no agregado "Outros".
+            $labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'];
+            foreach ($labels as $index => $letter) {
+                $tipoId = 100 + $index;
+                DB::table('equipamentos_tipos')->insert([
+                    'id' => $tipoId,
+                    'nome' => 'Tipo ' . $letter,
+                    'ativo' => 1,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                $equipmentId = $this->createEquipmentRecord($clientId, ['tipo_id' => $tipoId]);
+
+                $this->createOrderRecord([
+                    'numero_os' => 'OS2601' . str_pad((string) (200 + $index), 4, '0', STR_PAD_LEFT),
+                    'cliente_id' => $clientId,
+                    'equipamento_id' => $equipmentId,
+                    'status' => 'triagem',
+                    'estado_fluxo' => 'em_atendimento',
+                    'data_abertura' => Carbon::parse('2026-01-10 09:00:00'),
+                    'data_entrada' => Carbon::parse('2026-01-10 09:05:00'),
+                    'relato_cliente' => 'Fixture da paleta categórica do gráfico de tipos.',
+                ]);
+            }
+
+            $user = $this->createUserRecord([
+                'nome' => 'Usuario Paleta',
+                'email' => 'paleta@example.com',
+                'perfil' => 'gerente',
+                'grupo_id' => 3,
+            ]);
+
+            Sanctum::actingAs($user, ['*']);
+
+            $response = $this->getJson('/api/v1/dashboard/summary?ano=2026&equip_mes=1&equip_ano=2026');
+
+            $response->assertOk()
+                // 8 tipos reais (A a H) + o agregado "Outros" (Tipo I) = 9 series.
+                ->assertJsonCount(9, 'data.charts.equipment_types.series')
+                ->assertJsonPath('data.charts.equipment_types.series.0.label', 'Tipo A')
+                ->assertJsonPath('data.charts.equipment_types.series.0.backgroundColor', '#2a78d6')
+                ->assertJsonPath('data.charts.equipment_types.series.1.backgroundColor', '#1baf7a')
+                ->assertJsonPath('data.charts.equipment_types.series.2.backgroundColor', '#eda100')
+                ->assertJsonPath('data.charts.equipment_types.series.3.backgroundColor', '#008300')
+                ->assertJsonPath('data.charts.equipment_types.series.4.backgroundColor', '#4a3aa7')
+                ->assertJsonPath('data.charts.equipment_types.series.5.backgroundColor', '#e34948')
+                ->assertJsonPath('data.charts.equipment_types.series.6.backgroundColor', '#e87ba4')
+                ->assertJsonPath('data.charts.equipment_types.series.7.label', 'Tipo H')
+                ->assertJsonPath('data.charts.equipment_types.series.7.backgroundColor', '#eb6834')
+                ->assertJsonPath('data.charts.equipment_types.series.8.label', 'Outros')
+                ->assertJsonPath('data.charts.equipment_types.series.8.backgroundColor', '#94a3b8')
+                ->assertJsonPath('data.charts.equipment_types.series.8.total', 1);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_dashboard_summary_returns_technician_context_when_financial_access_is_missing(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-01-20 10:00:00'));

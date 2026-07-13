@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-07-13T01:52:32+00:00",
+    "generated_at": "2026-07-13T10:17:47+00:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "4.6.2",
+        "app_version": "4.6.3",
         "api_version": "1.2.0",
         "production_target": "Ubuntu VPS",
         "development_target": "Windows/XAMPP"
