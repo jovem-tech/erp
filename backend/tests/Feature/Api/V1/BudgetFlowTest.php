@@ -677,6 +677,118 @@ class BudgetFlowTest extends TestCase
         ]);
     }
 
+    public function test_public_budget_approval_notifies_responsavel_criador_and_tecnico(): void
+    {
+        $responsavel = $this->createUserRecord([
+            'nome' => 'Responsavel Orcamento',
+            'email' => 'responsavel.aprova@example.com',
+        ]);
+        $criador = $this->createUserRecord([
+            'nome' => 'Criador Orcamento',
+            'email' => 'criador.aprova@example.com',
+        ]);
+        $tecnico = $this->createUserRecord([
+            'nome' => 'Tecnico Orcamento',
+            'email' => 'tecnico.aprova@example.com',
+        ]);
+
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Notificacao Aprovacao']);
+        $equipmentId = $this->createEquipmentRecord($clientId, ['resumo_tecnico' => 'Equipamento notificacao']);
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'numero_os' => 'OS26070010',
+            'tecnico_id' => $tecnico->id,
+            'orcamento_aprovado' => 0,
+        ]);
+        $budgetId = $this->createBudgetRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'os_id' => $orderId,
+            'responsavel_id' => $responsavel->id,
+            'criado_por' => $criador->id,
+            'status' => 'aguardando_resposta',
+            'token_publico' => 'token-public-notify-approve',
+            'token_expira_em' => now()->addDays(5),
+            'numero' => 'ORC-2607-000099',
+            'subtotal' => 100.00,
+            'total' => 100.00,
+        ]);
+        $this->createBudgetItemRecord($budgetId, [
+            'descricao' => 'Servico notificado',
+            'valor_unitario' => 100.00,
+            'total' => 100.00,
+        ]);
+
+        $this->post('/orcamento/token-public-notify-approve/aprovar', [
+            'resposta_cliente' => 'Pode executar.',
+        ])->assertRedirect(route('budgets.public.show', ['token' => 'token-public-notify-approve']));
+
+        foreach ([$responsavel->id, $criador->id, $tecnico->id] as $userId) {
+            $this->assertDatabaseHas('mobile_notifications', [
+                'usuario_id' => $userId,
+                'tipo_evento' => 'orcamento.approved',
+                'titulo' => 'Orçamento aprovado pelo cliente',
+            ]);
+        }
+    }
+
+    public function test_public_budget_rejection_notifies_responsavel_criador_and_tecnico(): void
+    {
+        $responsavel = $this->createUserRecord([
+            'nome' => 'Responsavel Orcamento Rejeicao',
+            'email' => 'responsavel.rejeita@example.com',
+        ]);
+        $criador = $this->createUserRecord([
+            'nome' => 'Criador Orcamento Rejeicao',
+            'email' => 'criador.rejeita@example.com',
+        ]);
+        $tecnico = $this->createUserRecord([
+            'nome' => 'Tecnico Orcamento Rejeicao',
+            'email' => 'tecnico.rejeita@example.com',
+        ]);
+
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Notificacao Rejeicao']);
+        $equipmentId = $this->createEquipmentRecord($clientId, ['resumo_tecnico' => 'Equipamento notificacao rejeicao']);
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'numero_os' => 'OS26070011',
+            'tecnico_id' => $tecnico->id,
+            'orcamento_aprovado' => 0,
+        ]);
+        $budgetId = $this->createBudgetRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'os_id' => $orderId,
+            'responsavel_id' => $responsavel->id,
+            'criado_por' => $criador->id,
+            'status' => 'aguardando_resposta',
+            'token_publico' => 'token-public-notify-reject',
+            'token_expira_em' => now()->addDays(5),
+            'numero' => 'ORC-2607-000098',
+            'subtotal' => 90.00,
+            'total' => 90.00,
+        ]);
+        $this->createBudgetItemRecord($budgetId, [
+            'descricao' => 'Servico rejeitado notificado',
+            'valor_unitario' => 90.00,
+            'total' => 90.00,
+        ]);
+
+        $this->post('/orcamento/token-public-notify-reject/rejeitar', [
+            'motivo_rejeicao' => 'Fora do orcamento.',
+        ])->assertRedirect(route('budgets.public.show', ['token' => 'token-public-notify-reject']));
+
+        foreach ([$responsavel->id, $criador->id, $tecnico->id] as $userId) {
+            $this->assertDatabaseHas('mobile_notifications', [
+                'usuario_id' => $userId,
+                'tipo_evento' => 'orcamento.rejected',
+                'titulo' => 'Orçamento recusado pelo cliente',
+            ]);
+        }
+    }
+
     public function test_budget_status_changes_sync_linked_order_status(): void
     {
         $admin = $this->createUserRecord([

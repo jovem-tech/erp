@@ -27,10 +27,58 @@
                 </span>
             @endif
 
-            <a href="{{ route('financeiro.configuracoes') }}" class="btn btn-outline-info">
-                <i class="bi bi-bar-chart-line me-2"></i>
-                Configurações financeiras
-            </a>
+            <div class="dropdown os-actions-dropdown">
+                <button type="button"
+                    class="btn btn-outline-info dropdown-toggle os-actions-toggle"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false">
+                    <i class="bi bi-file-earmark-bar-graph me-2"></i>
+                    Relatórios
+                </button>
+
+                <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                    <a href="{{ route('financeiro.relatorios.fluxo-caixa') }}" class="dropdown-item">
+                        <i class="bi bi-calendar3-week me-2"></i>Fluxo de Caixa
+                    </a>
+
+                    <a href="{{ route('financeiro.relatorios.dre') }}" class="dropdown-item">
+                        <i class="bi bi-graph-up-arrow me-2"></i>DRE por Competência
+                    </a>
+
+                    <a href="{{ route('financeiro.relatorios.dre-caixa') }}" class="dropdown-item">
+                        <i class="bi bi-wallet2 me-2"></i>DRE de Caixa
+                    </a>
+
+                    <a href="{{ route('financeiro.relatorios.margem') }}" class="dropdown-item">
+                        <i class="bi bi-graph-up me-2"></i>Margem por OS
+                    </a>
+                </div>
+            </div>
+
+            <div class="dropdown os-actions-dropdown">
+                <button type="button"
+                    class="btn btn-outline-light dropdown-toggle os-actions-toggle"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false">
+                    Mais ações
+                </button>
+
+                <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                    <a href="{{ route('financeiro.cartoes.index') }}" class="dropdown-item">
+                        <i class="bi bi-credit-card-2-front me-2"></i>Cartões e Taxas
+                    </a>
+
+                    <a href="{{ route('financeiro.configuracoes') }}" class="dropdown-item">
+                        <i class="bi bi-bar-chart-line me-2"></i>Configurações Financeiras
+                    </a>
+
+                    @if (\App\Support\DesktopSession::can('precificacao', 'visualizar'))
+                        <a href="{{ route('financeiro.precificacao.index') }}" class="dropdown-item">
+                            <i class="bi bi-calculator me-2"></i>Precificação
+                        </a>
+                    @endif
+                </div>
+            </div>
 
             @if (\App\Support\DesktopSession::can('financeiro', 'criar'))
                 <a href="{{ route('financeiro.create') }}" class="btn btn-primary">

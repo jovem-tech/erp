@@ -1,5 +1,17 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.6.5.0 — 2026-07-13 09:34
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Reorganiza o acesso às telas financeiras secundárias: removidos do menu lateral os 4 relatórios (DRE por Competência, DRE de Caixa, Fluxo de Caixa, Margem por OS) e também Cartões e Taxas, Configurações Financeiras e Precificação — a seção "Financeiro" do menu agora só tem "Lançamentos". Em vez disso, a tela de Lançamentos ganhou dois botões dropdown: "Relatórios" (os 4 relatórios) e "Mais ações" (Cartões e Taxas, Configurações Financeiras, Precificação — este último só aparece com permissão própria do módulo `precificacao`, distinta de `financeiro`). Rotas e páginas continuam as mesmas, só o ponto de acesso mudou
+- **Arquivos:** frontends/desktop/app/Support/DesktopNavigation.php,frontends/desktop/resources/views/financeiro/index.blade.php,frontends/desktop/tests/Feature/Desktop/FinanceiroTest.php
+
+## v4.6.4.0 — 2026-07-13 07:49
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Corrige a notificação do sino "Orçamento aprovado/recusado pelo cliente" (link público), que estava documentada em notificacoes-sino.md mas nunca foi implementada — o evento era gravado normalmente na timeline da OS (os_eventos), porém `BudgetApprovalService::approveByToken()`/`rejectByToken()` nunca chamavam o `NotificationDispatchService`, então nenhuma linha em mobile_notifications era criada e nada era transmitido em tempo real via Reverb. Corrigido injetando o `NotificationDispatchService` no serviço e disparando `orcamento.approved`/`orcamento.rejected` para responsável + criador do orçamento + técnico da OS vinculada (mesma lista de destinatários já documentada), tanto na aprovação quanto na recusa pelo link público
+- **Arquivos:** backend/app/Services/Budgets/BudgetApprovalService.php,backend/tests/Feature/Api/V1/BudgetFlowTest.php
+
 ## v4.6.3.0 — 2026-07-13 07:17
 - **Tier:** patch
 - **Autor/Agente:** Claude

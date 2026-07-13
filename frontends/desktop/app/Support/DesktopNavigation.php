@@ -146,48 +146,6 @@ class DesktopNavigation
                         'module' => 'financeiro',
                         'icon' => 'bi-cash-coin',
                     ],
-                    [
-                        'label' => 'DRE por Competência',
-                        'route' => 'financeiro.relatorios.dre',
-                        'module' => 'financeiro',
-                        'icon' => 'bi-graph-up-arrow',
-                    ],
-                    [
-                        'label' => 'DRE de Caixa',
-                        'route' => 'financeiro.relatorios.dre-caixa',
-                        'module' => 'financeiro',
-                        'icon' => 'bi-wallet2',
-                    ],
-                    [
-                        'label' => 'Fluxo de Caixa',
-                        'route' => 'financeiro.relatorios.fluxo-caixa',
-                        'module' => 'financeiro',
-                        'icon' => 'bi-calendar3-week',
-                    ],
-                    [
-                        'label' => 'Margem por OS',
-                        'route' => 'financeiro.relatorios.margem',
-                        'module' => 'financeiro',
-                        'icon' => 'bi-graph-up',
-                    ],
-                    [
-                        'label' => 'Cartões e Taxas',
-                        'route' => 'financeiro.cartoes.index',
-                        'module' => 'financeiro',
-                        'icon' => 'bi-credit-card-2-front',
-                    ],
-                    [
-                        'label' => 'Configurações Financeiras',
-                        'route' => 'financeiro.configuracoes',
-                        'module' => 'financeiro',
-                        'icon' => 'bi-bar-chart-line',
-                    ],
-                    [
-                        'label' => 'Precificação',
-                        'route' => 'financeiro.precificacao.index',
-                        'module' => 'precificacao',
-                        'icon' => 'bi-calculator',
-                    ],
                 ],
             ],
             [
