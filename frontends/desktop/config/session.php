@@ -32,9 +32,26 @@ return [
     |
     */
 
-    'lifetime' => (int) env('SESSION_LIFETIME', 120),
+    // Teto de retenção do dado de sessão no storage (arquivo/tabela). Não é o
+    // tempo de inatividade de fato aplicado às sessões normais — esse é o
+    // 'desktop_idle_timeout' abaixo, reforçado por EnsureBackendToken/DesktopSession.
+    // Este teto generoso só importa para sessões "Manter conectado" (remember-me).
+    'lifetime' => (int) env('SESSION_LIFETIME', 43200),
 
-    'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', false),
+    // Seguro por padrão: cookie de sessão morre ao fechar o navegador. É
+    // sobrescrito em tempo de execução (por requisição) pelo EnsureBackendToken
+    // conforme o usuário tenha marcado "Manter-me conectado" no login ou não —
+    // ver DesktopSession::rememberMe(). Nunca fixar como false aqui: sem o
+    // toggle, o cookie sobrevive ao fechamento do navegador em qualquer login,
+    // permitindo que quem reabra o navegador (ex.: computador de cliente)
+    // reutilize a sessão de quem esqueceu de fazer logoff.
+    'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', true),
+
+    // Tempo de inatividade (minutos) tolerado para sessões SEM "Manter-me
+    // conectado" marcado. Aplicado manualmente (não é o 'lifetime' nativo do
+    // Laravel) porque o remember-me precisa de um teto de storage bem maior
+    // (30 dias) sem enfraquecer o timeout padrão das sessões comuns.
+    'desktop_idle_timeout' => (int) env('SESSION_IDLE_TIMEOUT_MINUTES', 120),
 
     /*
     |--------------------------------------------------------------------------

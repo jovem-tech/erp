@@ -23,16 +23,10 @@
         $photosDiagnostico = $photosByTipo(['diagnostico']);
         $photosEntrega = $photosByTipo(['entrega']);
 
-        // Catálogo completo (para o histórico/progresso) e próximas etapas reais (transições válidas).
+        // Catálogo de status e próximas etapas reais (transições válidas).
         $statusOptions = $order['status_disponiveis'] ?? [];
         $nextSteps = $order['proximas_etapas'] ?? [];
         $currentCode = $order['status'] ?? '';
-        $currentOrdem = null;
-        foreach ($statusOptions as $option) {
-            if (($option['codigo'] ?? '') === $currentCode) {
-                $currentOrdem = (int) ($option['ordem_fluxo'] ?? 0);
-            }
-        }
 
         // Status selecionáveis no formulário = etapa atual + transições permitidas.
         $currentOption = null;
@@ -58,27 +52,6 @@
         $hasOrcamento = $orcamento !== null;
         $checklist = $order['checklist'] ?? null;
         $photoViewerGroup = 'order-' . (int) ($order['id'] ?? 0) . '-photos';
-
-        // Trilha de progresso enxuta: concluídas (limitadas) + etapa atual + próximas reais.
-        $concluded = [];
-        foreach ($statusOptions as $option) {
-            if ($currentOrdem !== null && (int) ($option['ordem_fluxo'] ?? 0) < $currentOrdem) {
-                $concluded[] = $option;
-            }
-        }
-        $hiddenConcluded = max(0, count($concluded) - 3);
-        $concluded = array_slice($concluded, -3);
-
-        $progressSteps = [];
-        foreach ($concluded as $option) {
-            $progressSteps[] = ['opt' => $option, 'state' => 'concluido'];
-        }
-        if ($currentOption !== null) {
-            $progressSteps[] = ['opt' => $currentOption, 'state' => 'atual'];
-        }
-        foreach ($nextSteps as $option) {
-            $progressSteps[] = ['opt' => $option, 'state' => 'proximo'];
-        }
     @endphp
 
     {{-- Cabeçalho + ações principais --}}
@@ -188,47 +161,13 @@
                 </div>
             </article>
 
-            <details class="surface-card os-progress-card" data-os-progress open>
-                <summary class="os-progress-summary">
-                    <div>
-                        <h2 class="surface-title fs-6"><i class="bi bi-diagram-3 me-1"></i>Histórico e Progresso</h2>
-                        <p class="surface-subtitle mb-0">
-                            Etapa atual:
-                            <strong>{{ ($order['status_nome'] ?? '') !== '' ? $order['status_nome'] : 'Sem status' }}</strong>
-                        </p>
-                    </div>
-                    <i class="bi bi-chevron-down os-progress-chevron"></i>
-                </summary>
-
-                @if ($progressSteps !== [])
-                    <ol class="os-progress">
-                        @if ($hiddenConcluded > 0)
-                            <li class="os-progress-more">+{{ $hiddenConcluded }} etapa(s) anterior(es)</li>
-                        @endif
-                        @foreach ($progressSteps as $step)
-                            <li class="os-progress-step is-{{ $step['state'] }}">
-                                <span class="os-progress-dot"></span>
-                                <div>
-                                    <strong>{{ $step['opt']['nome'] ?? $step['opt']['codigo'] ?? 'Etapa' }}</strong>
-                                    <small>
-                                        @if ($step['state'] === 'atual') Etapa atual
-                                        @elseif ($step['state'] === 'concluido') Concluída
-                                        @else Próxima provável
-                                        @endif
-                                    </small>
-                                </div>
-                            </li>
-                        @endforeach
-                    </ol>
-                @else
-                    <p class="surface-subtitle mb-0">Nenhuma etapa de fluxo cadastrada no catálogo de status.</p>
-                @endif
-            </details>
+            {{-- Histórico unificado e categorizado de movimentações (os_eventos) --}}
+            @include('orders._event_timeline')
         </aside>
 
         {{-- Painel principal: resumo + abas --}}
         <div class="os-detail-main">
-            <section class="desktop-grid desktop-grid-three mb-4 os-summary-section">
+            <section class="desktop-grid desktop-grid-two mb-4 os-summary-section">
                 <article class="summary-card">
                     <span class="summary-card-eyebrow">Cliente</span>
                     <div class="summary-card-value">{{ ($order['cliente_nome'] ?? '') !== '' ? $order['cliente_nome'] : 'Não informado' }}</div>
@@ -248,14 +187,6 @@
                         @if(($order['equipamento_resumo_tecnico'] ?? '') !== '')
                             · {{ $order['equipamento_resumo_tecnico'] }}
                         @endif
-                    </div>
-                </article>
-
-                <article class="summary-card">
-                    <span class="summary-card-eyebrow">Técnico responsável</span>
-                    <div class="summary-card-value">{{ $technician['nome'] ?? 'Não atribuído' }}</div>
-                    <div class="summary-card-meta">
-                        {{ $technician['email'] ?? ($technician['perfil'] ?? 'Sem perfil informado') }}
                     </div>
                 </article>
             </section>
@@ -377,6 +308,16 @@
                 {{-- Aba: Diagnóstico --}}
                 <div class="equipment-tab-panel" data-os-panel="diagnostico">
                     <div class="detail-list">
+                        <div class="detail-item">
+                            <strong>Técnico responsável</strong>
+                            <span>
+                                {{ ($technician['nome'] ?? '') !== '' ? $technician['nome'] : 'Não atribuído' }}
+                                @php $tecnicoMeta = $technician['email'] ?? ($technician['perfil'] ?? ''); @endphp
+                                @if (($tecnicoMeta ?? '') !== '')
+                                    · {{ $tecnicoMeta }}
+                                @endif
+                            </span>
+                        </div>
                         <div class="detail-item">
                             <strong>Defeito relatado pelo cliente</strong>
                             <p>{{ ($order['relato_cliente'] ?? '') !== '' ? $order['relato_cliente'] : 'Nenhum relato registrado.' }}</p>
@@ -530,9 +471,6 @@
                     </div>
                 </div>
             </article>
-
-            {{-- Histórico unificado e categorizado de movimentações (os_eventos) --}}
-            @include('orders._event_timeline')
         </div>
     </div>
 @endsection
@@ -622,20 +560,6 @@
                 if (emptyState) emptyState.classList.toggle('d-none', visible > 0);
                 if (list) list.classList.toggle('d-none', visible === 0);
             }));
-        })();
-
-        // Progresso: aberto no desktop, recolhido no mobile (o usuário pode expandir).
-        (function () {
-            const progress = document.querySelector('[data-os-progress]');
-            if (!progress) {
-                return;
-            }
-            const mq = window.matchMedia('(max-width: 992px)');
-            const sync = (event) => {
-                progress.open = !event.matches;
-            };
-            sync(mq);
-            mq.addEventListener('change', sync);
         })();
     </script>
 @endsection

@@ -228,24 +228,6 @@ class DesktopNavigation
                         'module' => 'configuracoes',
                         'icon' => 'bi-sliders',
                     ],
-                    [
-                        'label' => 'Integrações',
-                        'route' => 'configurations.integrations.index',
-                        'module' => 'configuracoes',
-                        'icon' => 'bi-plug',
-                    ],
-                    [
-                        'label' => 'Usuários',
-                        'route' => 'users.index',
-                        'module' => 'usuarios',
-                        'icon' => 'bi-people-fill',
-                    ],
-                    [
-                        'label' => 'Níveis de Acesso',
-                        'route' => 'groups.index',
-                        'module' => 'grupos',
-                        'icon' => 'bi-shield-lock-fill',
-                    ],
                 ],
             ],
         ];

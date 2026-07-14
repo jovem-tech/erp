@@ -86,6 +86,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/configuracoes/empresa', [ConfigurationController::class, 'updateCompany'])
         ->middleware('desktop.permission:configuracoes,editar')
         ->name('configurations.company.update');
+    Route::post('/configuracoes/sessao-seguranca', [ConfigurationController::class, 'updateSessionSecurity'])
+        ->middleware('desktop.permission:configuracoes,editar')
+        ->name('configurations.session-security.update');
     Route::get('/configuracoes/empresa/logo', [ConfigurationController::class, 'companyLogo'])
         ->name('configurations.company.logo');
     Route::get('/configuracoes/integracoes', [ConfigurationController::class, 'integrations'])
