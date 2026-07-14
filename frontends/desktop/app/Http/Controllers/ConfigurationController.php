@@ -9,7 +9,10 @@ use App\Models\UserPreference;
 use App\Services\CompanyProfileService;
 use App\Services\ConfigurationService;
 use App\Services\DocumentationService;
+use App\Services\GroupService;
+use App\Services\UserService;
 use App\Support\DesktopSession;
+use App\Support\SessionSecuritySettings;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -23,7 +26,9 @@ class ConfigurationController extends DesktopController
     public function __construct(
         private readonly ConfigurationService $configurationService,
         private readonly CompanyProfileService $companyProfileService,
-        private readonly DocumentationService $documentationService
+        private readonly DocumentationService $documentationService,
+        private readonly UserService $userService,
+        private readonly GroupService $groupService
     ) {
     }
 
@@ -66,12 +71,62 @@ class ConfigurationController extends DesktopController
             $documentationDoc = null;
         }
 
+        $users = [];
+        $userGroups = [];
+        $userPagination = [];
+        $userFilters = [];
+
+        if (DesktopSession::can('usuarios', 'visualizar')) {
+            $userFilters = [
+                'search' => trim((string) $request->query('search', '')),
+                'active' => trim((string) $request->query('active', '')),
+                'page' => (int) $request->query('page', 1),
+                'per_page' => (int) $request->query('per_page', 15),
+            ];
+
+            $result = $this->userService->paginate(array_filter(
+                $userFilters,
+                static fn ($value) => $value !== '' && $value !== 0
+            ));
+
+            $users = $result['items'];
+            $userPagination = $result['pagination'];
+            $userGroups = $this->groupService->all();
+        }
+
         return view('configurations.system', [
             'pageTitle' => 'Configurações do Sistema',
             'company' => $company,
             'documentationTree' => $documentationTree,
             'documentationDoc' => $documentationDoc,
+            'users' => $users,
+            'groups' => $userGroups,
+            'pagination' => $userPagination,
+            'filters' => $userFilters,
+            'sessionSecuritySettings' => SessionSecuritySettings::current(),
         ]);
+    }
+
+    public function updateSessionSecurity(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'idle_timeout_minutes' => ['required', 'integer', 'min:5', 'max:1440'],
+            'remember_me_lifetime_days' => ['required', 'integer', 'min:1', 'max:90'],
+        ], [], [
+            'idle_timeout_minutes' => 'tempo de inatividade',
+            'remember_me_lifetime_days' => 'duração do "Manter-me conectado"',
+        ]);
+
+        SessionSecuritySettings::update([
+            'idle_timeout_minutes' => (int) $validated['idle_timeout_minutes'],
+            'remember_me_enabled' => $request->boolean('remember_me_enabled'),
+            'remember_me_lifetime_days' => (int) $validated['remember_me_lifetime_days'],
+            'warn_on_close' => $request->boolean('warn_on_close'),
+        ]);
+
+        return redirect()
+            ->route('configurations.system.index', ['tab' => 'sessao'])
+            ->with('success', 'Configurações de sessão e segurança salvas com sucesso.');
     }
 
     public function updateCompany(Request $request): RedirectResponse

@@ -2,7 +2,9 @@
 
 @section('content')
     @php
-        $activeTab = (string) request()->query('tab', 'aparencia');
+        $canViewUsuarios = \App\Support\DesktopSession::can('usuarios', 'visualizar');
+        $canViewGrupos = \App\Support\DesktopSession::can('grupos', 'visualizar');
+
         $tabs = [
             'aparencia' => [
                 'label' => 'Aparência',
@@ -19,12 +21,30 @@
                 'icon' => 'bi-shield-lock',
                 'description' => 'Políticas de acesso, sessão e endurecimento da navegação.',
             ],
-            'documentacao' => [
-                'label' => 'Documentação',
-                'icon' => 'bi-journal-text',
-                'description' => 'Documentação oficial do sistema: fundação, arquitetura, deploy e histórico.',
-            ],
         ];
+
+        if ($canViewUsuarios) {
+            $tabs['usuarios'] = [
+                'label' => 'Usuários',
+                'icon' => 'bi-people-fill',
+                'description' => 'Visualização e gerenciamento das contas de acesso ao sistema.',
+            ];
+        }
+
+        $tabs['integracoes'] = [
+            'label' => 'Integrações',
+            'icon' => 'bi-plug',
+            'description' => 'WhatsApp, pagamentos, e-mail e demais conexões externas.',
+        ];
+
+        $tabs['documentacao'] = [
+            'label' => 'Documentação',
+            'icon' => 'bi-journal-text',
+            'description' => 'Documentação oficial do sistema: fundação, arquitetura, deploy e histórico.',
+        ];
+
+        $requestedTab = (string) request()->query('tab', 'aparencia');
+        $activeTab = array_key_exists($requestedTab, $tabs) ? $requestedTab : array_key_first($tabs);
     @endphp
 
     <section class="desktop-page-stack">
@@ -287,14 +307,133 @@
                     </div>
 
                     <div class="desktop-form-card">
-                        <h4 class="surface-title mb-2">Pontos previstos</h4>
+                        <div class="surface-card-header">
+                            <div>
+                                <h3 class="surface-title mb-1">Encerramento automático</h3>
+                                <p class="surface-subtitle mb-0">
+                                    Por padrão, a sessão é encerrada ao fechar o navegador. Estas opções
+                                    controlam o timeout por inatividade e o recurso "Manter-me conectado" do login.
+                                </p>
+                            </div>
+                        </div>
+
+                        <form method="POST" action="{{ route('configurations.session-security.update') }}">
+                            @csrf
+                            <div class="row g-3 mt-1">
+                                <div class="col-md-6">
+                                    <label class="form-label" for="idle_timeout_minutes">Tempo de inatividade (minutos)</label>
+                                    <input
+                                        type="number"
+                                        min="5"
+                                        max="1440"
+                                        class="form-control"
+                                        id="idle_timeout_minutes"
+                                        name="idle_timeout_minutes"
+                                        value="{{ old('idle_timeout_minutes', $sessionSecuritySettings->idle_timeout_minutes) }}"
+                                    >
+                                    <small class="text-muted d-block mt-1">Sessões sem "Manter-me conectado" marcado são encerradas após esse tempo sem nenhuma ação.</small>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label" for="remember_me_lifetime_days">Duração do "Manter-me conectado" (dias)</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max="90"
+                                        class="form-control"
+                                        id="remember_me_lifetime_days"
+                                        name="remember_me_lifetime_days"
+                                        value="{{ old('remember_me_lifetime_days', $sessionSecuritySettings->remember_me_lifetime_days) }}"
+                                    >
+                                    <small class="text-muted d-block mt-1">Por quantos dias a sessão continua ativa mesmo fechando o navegador, para quem marcar a opção no login.</small>
+                                </div>
+
+                                <div class="col-12">
+                                    <div class="form-check form-switch">
+                                        <input
+                                            class="form-check-input"
+                                            type="checkbox"
+                                            role="switch"
+                                            id="remember_me_enabled"
+                                            name="remember_me_enabled"
+                                            value="1"
+                                            @checked(old('remember_me_enabled', $sessionSecuritySettings->remember_me_enabled))
+                                        >
+                                        <label class="form-check-label" for="remember_me_enabled">Permitir "Manter-me conectado" no login</label>
+                                    </div>
+                                    <small class="text-muted d-block mt-1">Se desativado, o campo some do login e nenhuma sessão sobrevive ao fechamento do navegador, mesmo as já ativas.</small>
+                                </div>
+
+                                <div class="col-12">
+                                    <div class="form-check form-switch">
+                                        <input
+                                            class="form-check-input"
+                                            type="checkbox"
+                                            role="switch"
+                                            id="warn_on_close"
+                                            name="warn_on_close"
+                                            value="1"
+                                            @checked(old('warn_on_close', $sessionSecuritySettings->warn_on_close))
+                                        >
+                                        <label class="form-check-label" for="warn_on_close">Avisar ao fechar o navegador com sessão ativa</label>
+                                    </div>
+                                    <small class="text-muted d-block mt-1">Só para sessões sem "Manter-me conectado": ao fechar a aba/janela, o navegador exibe uma confirmação lembrando de encerrar a sessão. O aviso não aparece na navegação normal dentro do sistema.</small>
+                                </div>
+                            </div>
+
+                            <div class="mt-3">
+                                <button type="submit" class="btn btn-primary btn-sm">
+                                    <i class="bi bi-check2 me-1"></i>Salvar
+                                </button>
+                            </div>
+                        </form>
+
+                        <h4 class="surface-title mb-2 mt-4">Pontos previstos</h4>
                         <div class="d-flex flex-wrap gap-2">
-                            <span class="badge text-bg-light border text-secondary">Tempo de sessão</span>
                             <span class="badge text-bg-light border text-secondary">Reautenticação</span>
                             <span class="badge text-bg-light border text-secondary">Políticas de senha</span>
                             <span class="badge text-bg-light border text-secondary">Bloqueios</span>
                         </div>
                     </div>
+
+                    @if ($canViewGrupos)
+                        <div class="desktop-form-card">
+                            <div class="surface-card-header">
+                                <div>
+                                    <h3 class="surface-title mb-1">Níveis de Acesso</h3>
+                                    <p class="surface-subtitle mb-0">Grupos de permissão que definem o que cada perfil de usuário pode ver e fazer no sistema.</p>
+                                </div>
+                            </div>
+                            <a href="{{ route('groups.index') }}" class="btn btn-outline-light">
+                                <i class="bi bi-shield-lock-fill me-2"></i>
+                                Gerenciar níveis de acesso
+                            </a>
+                        </div>
+                    @endif
+                </div>
+            </div>
+
+            @if ($canViewUsuarios)
+                <div class="config-subpanel {{ $activeTab === 'usuarios' ? 'is-active' : '' }}" data-config-subpanel="usuarios">
+                    @include('users._index-content', [
+                        'usersClearUrl' => route('configurations.system.index', ['tab' => 'usuarios']),
+                        'usersTabValue' => 'usuarios',
+                    ])
+                </div>
+            @endif
+
+            <div class="config-subpanel {{ $activeTab === 'integracoes' ? 'is-active' : '' }}" data-config-subpanel="integracoes">
+                <div class="desktop-form-card">
+                    <div class="surface-card-header">
+                        <div>
+                            <h3 class="surface-title mb-1">Integrações</h3>
+                            <p class="surface-subtitle mb-0">WhatsApp, pagamentos, e-mail e Google — conexões externas do sistema com testes de conectividade próprios.</p>
+                        </div>
+                    </div>
+                    <a href="{{ route('configurations.integrations.index') }}" class="btn btn-outline-light">
+                        <i class="bi bi-plug me-2"></i>
+                        Gerenciar integrações
+                    </a>
                 </div>
             </div>
 
@@ -389,3 +528,13 @@
         </div>
     </section>
 @endsection
+
+@if ($canViewUsuarios)
+    @push('modals')
+        @include('users._index-modals', ['usersTabValue' => 'usuarios'])
+    @endpush
+
+    @section('scripts')
+        @include('users._index-scripts')
+    @endsection
+@endif

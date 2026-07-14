@@ -6729,7 +6729,7 @@ a {
    ========================================================================== */
 .os-detail-layout {
     display: grid;
-    grid-template-columns: minmax(260px, 300px) minmax(0, 1fr);
+    grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
     gap: 1.25rem;
     align-items: start;
 }
@@ -6737,8 +6737,21 @@ a {
 .os-detail-aside {
     display: grid;
     gap: 1.25rem;
-    position: sticky;
-    top: 1rem;
+    align-content: start;
+}
+
+/* O histórico da OS vive na coluna lateral (feed de atividades). Anula o mt-4
+   do partial — o espaçamento vem do gap da própria coluna — e limita a altura
+   num scroll interno para as duas colunas não descolarem em OS com muitos
+   eventos. */
+.os-detail-aside .os-history-section {
+    margin-top: 0 !important;
+}
+
+.os-detail-aside .os-history-section .timeline {
+    max-height: 60vh;
+    overflow-y: auto;
+    padding-right: 0.35rem;
 }
 
 .os-photo-card {
@@ -7084,13 +7097,16 @@ a {
         order: 3;
     }
 
-    .os-progress-card {
-        order: 4;
-    }
-
     .os-history-section {
         order: 5;
         margin-top: 0 !important;
+    }
+
+    /* No mobile o histórico acompanha o scroll da página (sem scroll interno). */
+    .os-detail-aside .os-history-section .timeline {
+        max-height: none;
+        overflow-y: visible;
+        padding-right: 0;
     }
 
     /* Cabeçalho: ações em grade 2 colunas, alinhadas como num app. */

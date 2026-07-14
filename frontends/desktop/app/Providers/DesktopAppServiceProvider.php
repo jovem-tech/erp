@@ -6,6 +6,7 @@ use App\Services\CompanyProfileService;
 use App\Services\SearchService;
 use App\Support\DesktopNavigation;
 use App\Support\DesktopSession;
+use App\Support\SessionSecuritySettings;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
@@ -43,6 +44,14 @@ class DesktopAppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // Precisa rodar aqui (bootstrap da aplicação), não em um middleware:
+        // o teto de storage da sessão (session.lifetime) tem que estar certo
+        // ANTES do StartSession ler/gravar a sessão da requisição, e nesse
+        // ponto ainda não sabemos nada sobre a sessão em si — só o valor
+        // configurado pelo admin em Configurações do Sistema > Sessão e
+        // Segurança (ou o padrão do .env, se a tabela ainda não existir).
+        SessionSecuritySettings::applyToRuntimeConfig();
+
         View::composer('*', function ($view): void {
             $appName = trim((string) config('app.name', ));
             $version = (string) config('app.version', '3.0.0');
@@ -64,6 +73,16 @@ class DesktopAppServiceProvider extends ServiceProvider
             $view->with('desktopCompanyBranding', DesktopSession::hasToken()
                 ? app(CompanyProfileService::class)->branding()
                 : ['name' => 'Sistema ERP', 'has_logo' => false]);
+
+            // Guard de "fechar o navegador = deslogar" para sessões SEM
+            // "Manter-me conectado": ativo apenas quando há sessão e ela não é
+            // lembrada. justLoggedIn evita falso-positivo no primeiro
+            // carregamento logo após o login (flash de uma requisição só).
+            $view->with('desktopSessionGuard', [
+                'active' => DesktopSession::hasToken() && ! DesktopSession::rememberMe(),
+                'justLoggedIn' => (bool) session('session_just_started', false),
+                'warnOnClose' => SessionSecuritySettings::warnOnClose(),
+            ]);
         });
     }
 }

@@ -59,7 +59,7 @@ class UserController extends DesktopController
         ]);
 
         return redirect()
-            ->route('users.index')
+            ->to($this->redirectTarget($request))
             ->with('success', 'Usuário criado com sucesso.');
     }
 
@@ -95,7 +95,7 @@ class UserController extends DesktopController
         $this->userService->update($user, $payload);
 
         return redirect()
-            ->route('users.index')
+            ->to($this->redirectTarget($request))
             ->with('success', 'Usuário atualizado com sucesso.');
     }
 
@@ -110,7 +110,22 @@ class UserController extends DesktopController
         $this->userService->updateActive($user, (bool) $validated['active']);
 
         return redirect()
-            ->route('users.index')
+            ->to($this->redirectTarget($request))
             ->with('success', 'Status do usuário atualizado com sucesso.');
+    }
+
+    /**
+     * Usuários pode ser gerenciado tanto pela página própria (/usuarios) quanto
+     * embutido na aba "usuarios" de Configurações do Sistema — preserva a origem.
+     */
+    private function redirectTarget(Request $request): string
+    {
+        $tab = trim((string) $request->input('tab', ''));
+
+        if ($tab !== '') {
+            return route('configurations.system.index', ['tab' => $tab]);
+        }
+
+        return route('users.index');
     }
 }

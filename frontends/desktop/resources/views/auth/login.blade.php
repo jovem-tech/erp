@@ -75,6 +75,16 @@
                         </div>
                     </div>
 
+                    @if ($rememberMeEnabled ?? true)
+                        <div class="form-check">
+                            <input type="checkbox" class="form-check-input" id="remember" name="remember" value="1" @checked(old('remember')) >
+                            <label class="form-check-label" for="remember">Manter-me conectado neste dispositivo</label>
+                            <small class="text-muted d-block mt-1">
+                                Use apenas em computadores pessoais e de confiança. Em computadores compartilhados ou de clientes, deixe desmarcado — a sessão será encerrada assim que o navegador for fechado.
+                            </small>
+                        </div>
+                    @endif
+
                     <button type="submit" class="btn btn-primary w-100 py-3">
                         <i class="bi bi-box-arrow-in-right me-2"></i>
                         Entrar no sistema

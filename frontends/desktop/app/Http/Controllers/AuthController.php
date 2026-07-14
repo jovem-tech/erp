@@ -8,6 +8,7 @@ use App\Services\ApiClient;
 use App\Services\CompanyProfileService;
 use App\Support\DesktopNavigation;
 use App\Support\DesktopSession;
+use App\Support\SessionSecuritySettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -29,6 +30,7 @@ class AuthController extends DesktopController
         return view('auth.login', [
             'branding' => $this->companyProfileService->branding(),
             'systemVersion' => $this->systemVersion(),
+            'rememberMeEnabled' => SessionSecuritySettings::rememberMeEnabled(),
         ]);
     }
 
@@ -65,15 +67,37 @@ class AuthController extends DesktopController
             return $redirect;
         }
 
+        // Reforço: mesmo que alguém envie remember=1 manualmente, se o admin
+        // desativou o recurso em Configurações do Sistema > Sessão e
+        // Segurança, o login não deve honrar o pedido.
+        $remember = $request->boolean('remember') && SessionSecuritySettings::rememberMeEnabled();
+
         $request->session()->regenerate();
         DesktopSession::store(
             (string) ($payload['data']['access_token'] ?? ''),
-            $payload['data']['user'] ?? []
+            $payload['data']['user'] ?? [],
+            $remember
         );
+
+        // A resposta deste próprio login já precisa refletir a escolha do
+        // usuário — nas próximas requisições autenticadas quem cuida disso é
+        // o EnsureBackendToken, mas essa primeira resposta não passa por ele
+        // (rota de login fica fora do middleware desktop.auth). Sem "lembrar-me"
+        // o cookie de sessão morre ao fechar o navegador e o XSRF-TOKEN nasce
+        // curto (validade = timeout de inatividade) em vez de 30 dias.
+        if ($remember) {
+            config(['session.expire_on_close' => false]);
+        } else {
+            config([
+                'session.expire_on_close' => true,
+                'session.lifetime' => SessionSecuritySettings::idleTimeoutMinutes(),
+            ]);
+        }
 
         return redirect()
             ->intended(route(DesktopNavigation::firstAllowedRouteName()))
-            ->with('success', 'Login realizado com sucesso.');
+            ->with('success', 'Login realizado com sucesso.')
+            ->with('session_just_started', true);
     }
 
     public function destroy(Request $request): RedirectResponse
@@ -97,6 +121,7 @@ class AuthController extends DesktopController
         }
 
         DesktopSession::forget();
+        config(['session.expire_on_close' => true]);
 
         if ($forgetRememberedState) {
             $request->session()->forget([
@@ -108,9 +133,15 @@ class AuthController extends DesktopController
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
-        $message = $forgetRememberedState
-            ? 'Sessão encerrada e login esquecido com sucesso.'
-            : 'Sessão encerrada com sucesso.';
+        if ($request->boolean('reopened')) {
+            // Logout disparado pelo guard de JS quando detecta que o navegador
+            // foi fechado e reaberto (sessão sem "Manter-me conectado").
+            $message = 'Sessão encerrada automaticamente ao reabrir o navegador.';
+        } else {
+            $message = $forgetRememberedState
+                ? 'Sessão encerrada e login esquecido com sucesso.'
+                : 'Sessão encerrada com sucesso.';
+        }
 
         return redirect()
             ->route('login')
