@@ -52,13 +52,85 @@
         $hasOrcamento = $orcamento !== null;
         $checklist = $order['checklist'] ?? null;
         $photoViewerGroup = 'order-' . (int) ($order['id'] ?? 0) . '-photos';
+
+        // Mesma paleta de estados de prazo usada no card da listagem
+        // (orders/index.blade.php) — mantém a leitura visual consistente entre
+        // as duas telas.
+        $deadlineColors = [
+            'atrasado' => '#dc2626',
+            'critico' => '#f59e0b',
+            'vence_hoje' => '#f97316',
+            'no_prazo' => '#16a34a',
+            'concluido_no_prazo' => '#16a34a',
+            'concluido_atrasado' => '#dc2626',
+            'sem_previsao' => '#64748b',
+        ];
+        $deadline = is_array($order['prazo'] ?? null) ? $order['prazo'] : [];
+        $deadlineColor = $deadlineColors[$deadline['estado'] ?? 'sem_previsao'] ?? '#64748b';
+
+        $dataPrevisaoFormatada = null;
+        if (($order['data_previsao'] ?? '') !== '') {
+            try {
+                $dataPrevisaoFormatada = \Illuminate\Support\Carbon::parse($order['data_previsao'])->format('d/m/Y');
+            } catch (\Throwable) {
+                $dataPrevisaoFormatada = null;
+            }
+        }
+
+        // Duração da OS: dias desde a abertura até a conclusão/entrega (se já
+        // encerrada) ou até agora (se ainda aberta) — resumo de relance no
+        // cabeçalho, sem precisar abrir a aba Valores para ver as datas cruas.
+        $duracaoLabel = null;
+        if (($order['data_abertura'] ?? '') !== '') {
+            try {
+                $aberturaCarbon = \Illuminate\Support\Carbon::parse($order['data_abertura']);
+                $referenciaFim = ($order['data_conclusao'] ?? '') !== ''
+                    ? $order['data_conclusao']
+                    : (($order['data_entrega'] ?? '') !== '' ? $order['data_entrega'] : null);
+                $fimCarbon = $referenciaFim !== null ? \Illuminate\Support\Carbon::parse($referenciaFim) : now();
+                $dias = $aberturaCarbon->diffInDays($fimCarbon);
+
+                if ($dias === 0) {
+                    $duracaoLabel = $isEncerrada ? 'Concluída hoje' : 'Aberta hoje';
+                } else {
+                    $duracaoLabel = ($isEncerrada ? 'Concluída em ' : 'Aberta há ') . $dias . ' dia' . ($dias === 1 ? '' : 's');
+                }
+            } catch (\Throwable) {
+                $duracaoLabel = null;
+            }
+        }
     @endphp
 
     {{-- Cabeçalho + ações principais --}}
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4 os-detail-header">
         <div>
             <p class="desktop-eyebrow">Ordem de serviço</p>
-            <h2 class="surface-title fs-3 mb-2">{{ ($order['numero_os'] ?? '') !== '' ? $order['numero_os'] : '#' . ($order['id'] ?? 0) }}</h2>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <h2 class="surface-title fs-3 mb-0">{{ ($order['numero_os'] ?? '') !== '' ? $order['numero_os'] : '#' . ($order['id'] ?? 0) }}</h2>
+                @include('layouts.partials.status-pill', [
+                    'label' => ($order['status_nome'] ?? '') !== '' ? $order['status_nome'] : 'Sem status',
+                    'color' => $order['status_cor'] ?? '#64748b',
+                ])
+            </div>
+
+            <div class="os-header-meta">
+                @if ($duracaoLabel !== null)
+                    <span class="os-header-meta-item"><i class="bi bi-clock-history"></i>{{ $duracaoLabel }}</span>
+                @endif
+                @if ($dataPrevisaoFormatada !== null)
+                    <span class="os-header-meta-item"><i class="bi bi-calendar-event"></i>Previsão: {{ $dataPrevisaoFormatada }}</span>
+                @endif
+                @if ($deadline !== [] && ($deadline['estado'] ?? 'sem_previsao') !== 'sem_previsao')
+                    @include('layouts.partials.status-pill', [
+                        'label' => ($deadline['label'] ?? '') . (($deadline['dias'] ?? null) !== null ? ' (' . $deadline['dias'] . 'd)' : ''),
+                        'color' => $deadlineColor,
+                        'small' => true,
+                    ])
+                @endif
+                <span class="os-header-meta-item">
+                    <i class="bi bi-person-badge"></i>{{ ($technician['nome'] ?? '') !== '' ? $technician['nome'] : 'Técnico não atribuído' }}
+                </span>
+            </div>
         </div>
 
         <div class="d-flex flex-wrap gap-2 align-items-start os-header-actions">

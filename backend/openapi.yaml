@@ -1155,6 +1155,25 @@ components:
           type: string
           format: date
           nullable: true
+        prazo:
+          type: object
+          description: Estado de prazo calculado a partir de data_previsao/data_conclusao/data_entrega (mesmo cálculo usado na listagem).
+          properties:
+            estado:
+              type: string
+              enum:
+                - sem_previsao
+                - atrasado
+                - vence_hoje
+                - critico
+                - no_prazo
+                - concluido_no_prazo
+                - concluido_atrasado
+            label:
+              type: string
+            dias:
+              type: integer
+              nullable: true
         baixa_tecnica_em:
           type: string
           format: date

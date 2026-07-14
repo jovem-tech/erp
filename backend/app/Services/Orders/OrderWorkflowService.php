@@ -1489,6 +1489,14 @@ class OrderWorkflowService
             'data_previsao' => $this->formatDate($order->data_previsao ?? null),
             'data_conclusao' => $this->formatDateTime($order->data_conclusao ?? null),
             'data_entrega' => $this->formatDateTime($order->data_entrega ?? null),
+            // Mesmo cálculo de SLA usado no card da listagem (mapSummary) — ver
+            // resolveDeadlineState(). Aqui alimenta o resumo de prazo no
+            // cabeçalho do detalhe da OS.
+            'prazo' => $this->resolveDeadlineState(
+                $order->data_previsao ?? null,
+                $order->data_conclusao ?? null,
+                $order->data_entrega ?? null
+            ),
             'baixa_tecnica_em' => $this->formatDateTime($order->baixa_tecnica_em ?? null),
             'baixa_tecnica_por' => (int) ($order->baixa_tecnica_por ?? 0),
             'valor_mao_obra' => $this->normalizeDecimalString($order->valor_mao_obra ?? null),

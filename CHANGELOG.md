@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.7.6.0 — 2026-07-14 08:49
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Reorganiza a tela de detalhe da OS: cabeçalho ganha pill de status ao lado do número, linha de metadados (duração 'Aberta há Xd'/'Concluída em Xd', previsão, pill de prazo/SLA com mesma paleta da listagem, técnico responsável) para leitura de relance sem abrir aba; card KPI 'Técnico responsável' (removido em ajuste anterior) segue disponível na aba Diagnóstico; histórico da OS na coluna lateral ganha faixa de filtros rolável (em vez de quebrar em várias linhas) para caber na largura reduzida da coluna; novo campo prazo (SLA) exposto em GET /orders/{id}, reaproveitando o mesmo cálculo já usado na listagem
+- **Arquivos:** backend/app/Services/Orders/OrderWorkflowService.php,backend/openapi.yaml,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/resources/views/orders/show.blade.php
+
 ## v4.7.5.0 — 2026-07-14 07:34
 - **Tier:** patch
 - **Autor/Agente:** Claude
