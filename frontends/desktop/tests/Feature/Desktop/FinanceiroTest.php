@@ -106,6 +106,135 @@ class FinanceiroTest extends TestCase
             ->assertSee(route('financeiro.precificacao.index'), false);
     }
 
+    public function test_show_page_groups_actions_in_mais_acoes_dropdown(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => ['categorias' => [], 'cartao' => ['operadoras' => [], 'bandeiras' => [], 'taxas' => []]],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/63' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'lancamento' => [
+                        'id' => 63,
+                        'tipo' => 'receber',
+                        'categoria' => 'Serviço',
+                        'descricao' => 'Cobrança da OS OS26070014',
+                        'valor' => 80.0,
+                        'status' => 'pendente',
+                        'data_vencimento' => '2026-07-14',
+                        'avulso' => false,
+                    ],
+                    'resumo' => ['valor_movimentado' => 0, 'valor_aberto' => 80.0, 'percentual_quitado' => 0, 'total_movimentos' => 0],
+                    'detalhes' => [
+                        'contraparte' => ['tipo' => 'cliente', 'id' => 396, 'titulo' => 'Quem pagou', 'nome' => 'Deborah Evelyn Rosa'],
+                        'origem' => ['titulo' => 'Ordem de serviço', 'descricao' => 'Lançamento vinculado ao fluxo financeiro de uma OS.'],
+                        'os' => [
+                            'id' => 3626,
+                            'numero_os' => 'OS26070014',
+                            'status' => 'entregue_reparado',
+                            'status_nome' => 'Equipamento Entregue',
+                            'datas' => [],
+                            'valores' => [],
+                            'cliente' => ['id' => 396, 'nome' => 'Deborah Evelyn Rosa'],
+                            'equipamento' => [],
+                            'defeito' => [],
+                            'orcamento' => ['id' => 8, 'numero' => 'ORC-2607-000008', 'status' => 'aprovado'],
+                        ],
+                        'movimentos' => [],
+                        'impactos' => [],
+                        'auditoria' => [],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'financeiro' => ['visualizar', 'criar', 'editar', 'excluir'],
+                'os' => ['visualizar'],
+                'orcamentos' => ['visualizar'],
+                'clientes' => ['visualizar'],
+            ]))
+            ->get('/financeiro/63');
+
+        $response->assertOk()
+            ->assertSee('Mais ações')
+            ->assertSee('Ver lançamentos')
+            ->assertSee(route('financeiro.index'), false)
+            ->assertSee('Novo lançamento')
+            ->assertSee(route('financeiro.create'), false)
+            ->assertSee('Editar lançamento')
+            ->assertSee('Registrar baixa')
+            ->assertSee('Ver OS vinculada')
+            ->assertSee(route('orders.show', 3626), false)
+            ->assertSee('Ver orçamento vinculado')
+            ->assertSee(route('orcamentos.show', 8), false)
+            ->assertSee('Ver cliente')
+            ->assertSee(route('clients.show', 396), false)
+            ->assertSee('Cancelar lançamento')
+            ->assertSee('Excluir lançamento')
+            ->assertSee('payModal63', false)
+            ->assertSee('voltar_para', false);
+    }
+
+    public function test_show_page_hides_linked_actions_without_permissions(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/64' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'lancamento' => [
+                        'id' => 64,
+                        'tipo' => 'receber',
+                        'categoria' => 'Serviço',
+                        'descricao' => 'Lançamento pago',
+                        'valor' => 50.0,
+                        'status' => 'pago',
+                        'avulso' => true,
+                    ],
+                    'resumo' => ['valor_movimentado' => 50.0, 'valor_aberto' => 0, 'percentual_quitado' => 100, 'total_movimentos' => 1],
+                    'detalhes' => [
+                        'contraparte' => ['tipo' => 'cliente', 'id' => 396, 'nome' => 'Deborah'],
+                        'origem' => [],
+                        'os' => null,
+                        'movimentos' => [],
+                        'impactos' => [],
+                        'auditoria' => [],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar']]))
+            ->get('/financeiro/64');
+
+        $response->assertOk()
+            // "Mais ações" sempre aparece (com "Ver lançamentos", que só exige
+            // financeiro,visualizar). Sem permissão de criar/editar/excluir e
+            // sem OS/orçamento/cliente vinculado, nenhuma outra ação aparece.
+            ->assertSee('Mais ações')
+            ->assertSee('Ver lançamentos')
+            ->assertDontSee('Novo lançamento')
+            ->assertDontSee('Editar lançamento')
+            ->assertDontSee('Registrar baixa')
+            ->assertDontSee('Ver OS vinculada')
+            ->assertDontSee('Ver orçamento vinculado')
+            ->assertDontSee('Ver cliente')
+            ->assertDontSee('Cancelar lançamento')
+            ->assertDontSee('Excluir lançamento');
+    }
+
     public function test_store_redirects_to_index_on_success(): void
     {
         Http::fake([

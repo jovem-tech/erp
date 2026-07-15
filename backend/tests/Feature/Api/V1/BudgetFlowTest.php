@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\Api\V1;
 
+use App\Models\Financeiro;
+use App\Models\FinanceiroMovimento;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\BuildsLegacyErpSchema;
 use Tests\TestCase;
@@ -979,6 +981,291 @@ class BudgetFlowTest extends TestCase
                 ],
             ])
             ->assertForbidden();
+    }
+
+    public function test_updating_budget_on_closed_order_is_blocked_without_admin_confirmation(): void
+    {
+        $actor = $this->createUserRecord([
+            'nome' => 'Atendente',
+            'email' => 'atendente.closed-budget@example.com',
+            'perfil' => 'atendente',
+            'grupo_id' => 1,
+        ]);
+
+        [$orderId, $budgetId, $financeiroId, $movimentoId] = $this->createClosedOrderWithBudgetAndPayment();
+
+        $token = $this->loginAndGetToken($actor->email);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+                'tipo_orcamento' => 'assistencia',
+                'os_id' => $orderId,
+                'itens' => [[
+                    'tipo_item' => 'servico',
+                    'descricao' => 'Reparo de placa (corrigido)',
+                    'quantidade' => 1,
+                    'valor_unitario' => 50.00,
+                ]],
+            ])
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BUDGET_CLOSED_OS_ADMIN_REQUIRED');
+
+        $this->assertDatabaseHas('orcamentos', ['id' => $budgetId, 'total' => 60.00]);
+        $this->assertDatabaseHas('financeiro', ['id' => $financeiroId, 'valor' => 60.00]);
+        $this->assertDatabaseHas('financeiro_movimentos', ['id' => $movimentoId, 'valor_movimento' => 60.00]);
+    }
+
+    public function test_admin_can_correct_budget_and_financials_on_closed_order(): void
+    {
+        $actor = $this->createUserRecord([
+            'nome' => 'Atendente',
+            'email' => 'atendente.closed-budget-fix@example.com',
+            'perfil' => 'atendente',
+            'grupo_id' => 1,
+        ]);
+        $admin = $this->createUserRecord([
+            'nome' => 'Administrador',
+            'email' => 'admin.closed-budget-fix@example.com',
+            'perfil' => 'admin',
+            'grupo_id' => 1,
+        ]);
+
+        [$orderId, $budgetId, $financeiroId, $movimentoId] = $this->createClosedOrderWithBudgetAndPayment();
+
+        $token = $this->loginAndGetToken($actor->email);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+                'tipo_orcamento' => 'assistencia',
+                'os_id' => $orderId,
+                'itens' => [[
+                    'tipo_item' => 'servico',
+                    'descricao' => 'Reparo de placa (corrigido)',
+                    'quantidade' => 1,
+                    'valor_unitario' => 50.00,
+                ]],
+                'admin_email' => $admin->email,
+                'admin_password' => 'Senha@123',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.budget.total', 50.0);
+
+        $this->assertDatabaseHas('orcamentos', ['id' => $budgetId, 'total' => 50.00]);
+        $this->assertDatabaseHas('financeiro', ['id' => $financeiroId, 'valor' => 50.00]);
+        $this->assertDatabaseHas('financeiro_movimentos', ['id' => $movimentoId, 'valor_movimento' => 50.00]);
+        $this->assertDatabaseHas('os_eventos', [
+            'os_id' => $orderId,
+            'categoria' => 'financeiro',
+            'tipo' => 'movimento_registrado',
+        ]);
+        $this->assertDatabaseHas('os_eventos', [
+            'os_id' => $orderId,
+            'categoria' => 'orcamento',
+            'tipo' => 'orcamento_atualizado',
+        ]);
+    }
+
+    public function test_updating_budget_on_closed_order_with_invalid_admin_credentials_is_rejected(): void
+    {
+        $actor = $this->createUserRecord([
+            'nome' => 'Atendente',
+            'email' => 'atendente.invalid-admin@example.com',
+            'perfil' => 'atendente',
+            'grupo_id' => 1,
+        ]);
+        $admin = $this->createUserRecord([
+            'nome' => 'Administrador',
+            'email' => 'admin.invalid-admin@example.com',
+            'perfil' => 'admin',
+            'grupo_id' => 1,
+        ]);
+
+        [$orderId, $budgetId, $financeiroId] = $this->createClosedOrderWithBudgetAndPayment();
+
+        $token = $this->loginAndGetToken($actor->email);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+                'tipo_orcamento' => 'assistencia',
+                'os_id' => $orderId,
+                'admin_email' => $admin->email,
+                'admin_password' => 'senha-errada',
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'BUDGET_ADMIN_AUTH_INVALID');
+
+        $this->assertDatabaseHas('orcamentos', ['id' => $budgetId, 'total' => 60.00]);
+        $this->assertDatabaseHas('financeiro', ['id' => $financeiroId, 'valor' => 60.00]);
+    }
+
+    public function test_budget_admin_confirmation_is_rate_limited_after_five_invalid_attempts(): void
+    {
+        $actor = $this->createUserRecord([
+            'nome' => 'Atendente',
+            'email' => 'atendente.rate-limit@example.com',
+            'perfil' => 'atendente',
+            'grupo_id' => 1,
+        ]);
+        $admin = $this->createUserRecord([
+            'nome' => 'Administrador',
+            'email' => 'admin.rate-limit@example.com',
+            'perfil' => 'admin',
+            'grupo_id' => 1,
+        ]);
+
+        [$orderId, $budgetId] = $this->createClosedOrderWithBudgetAndPayment();
+
+        $token = $this->loginAndGetToken($actor->email);
+
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $this->withHeader('Authorization', 'Bearer ' . $token)
+                ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+                    'tipo_orcamento' => 'assistencia',
+                    'os_id' => $orderId,
+                    'admin_email' => $admin->email,
+                    'admin_password' => 'senha-errada',
+                ])
+                ->assertStatus(422);
+        }
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+                'tipo_orcamento' => 'assistencia',
+                'os_id' => $orderId,
+                'admin_email' => $admin->email,
+                'admin_password' => 'senha-errada',
+            ])
+            ->assertStatus(429)
+            ->assertJsonPath('error.code', 'BUDGET_ADMIN_AUTH_RATE_LIMITED');
+    }
+
+    public function test_updating_approved_budget_total_on_open_order_triggers_resend_for_client_approval(): void
+    {
+        $actor = $this->createUserRecord([
+            'nome' => 'Atendente',
+            'email' => 'atendente.resend@example.com',
+            'perfil' => 'atendente',
+            'grupo_id' => 1,
+        ]);
+
+        $clientId = $this->createClientRecord([
+            'nome_razao' => 'Cliente Reenvio',
+            'cpf_cnpj' => '33.444.555/0001-66',
+        ]);
+        $equipmentId = $this->createEquipmentRecord($clientId, [
+            'resumo_tecnico' => 'Notebook Reenvio',
+        ]);
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'numero_os' => 'OS26060102',
+            'status' => 'aguardando_reparo',
+            'estado_fluxo' => 'em_atendimento',
+        ]);
+        $budgetId = $this->createBudgetRecord([
+            'os_id' => $orderId,
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'status' => 'aprovado',
+            'origem' => 'os',
+            'subtotal' => 100.00,
+            'total' => 100.00,
+        ]);
+        $this->createBudgetItemRecord($budgetId, [
+            'descricao' => 'Serviço original',
+            'valor_unitario' => 100.00,
+            'total' => 100.00,
+        ]);
+
+        $token = $this->loginAndGetToken($actor->email);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+                'tipo_orcamento' => 'assistencia',
+                'os_id' => $orderId,
+                'itens' => [[
+                    'tipo_item' => 'servico',
+                    'descricao' => 'Serviço original + ajuste',
+                    'quantidade' => 1,
+                    'valor_unitario' => 130.00,
+                ]],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.budget.status', 'reenviar_orcamento');
+
+        $this->assertDatabaseHas('orcamentos', [
+            'id' => $budgetId,
+            'status' => 'reenviar_orcamento',
+            'total' => 130.00,
+        ]);
+        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'aguardando_orcamento']);
+        $this->assertDatabaseHas('orcamento_status_historico', [
+            'orcamento_id' => $budgetId,
+            'status_anterior' => 'aprovado',
+            'status_novo' => 'reenviar_orcamento',
+        ]);
+    }
+
+    /**
+     * Cria uma OS já encerrada (entregue_reparado) com um orçamento aprovado
+     * de R$60 e o título/movimento financeiro correspondentes já baixados —
+     * fixture compartilhada pelos testes de edição admin-autorizada.
+     *
+     * @return array{0: int, 1: int, 2: int, 3: int} os_id, budget_id, financeiro_id, movimento_id
+     */
+    private function createClosedOrderWithBudgetAndPayment(): array
+    {
+        $clientId = $this->createClientRecord([
+            'nome_razao' => 'Cliente OS Encerrada',
+            'cpf_cnpj' => '44.555.666/0001-77',
+        ]);
+        $equipmentId = $this->createEquipmentRecord($clientId, [
+            'resumo_tecnico' => 'Smartphone Encerrado',
+        ]);
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'numero_os' => 'OS26060101',
+            'status' => 'entregue_reparado',
+            'estado_fluxo' => 'encerrado',
+            'data_conclusao' => now()->toDateString(),
+            'data_entrega' => now(),
+        ]);
+
+        $budgetId = $this->createBudgetRecord([
+            'os_id' => $orderId,
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'status' => 'aprovado',
+            'origem' => 'os',
+            'subtotal' => 60.00,
+            'total' => 60.00,
+        ]);
+        $this->createBudgetItemRecord($budgetId, [
+            'descricao' => 'Reparo de placa',
+            'valor_unitario' => 60.00,
+            'total' => 60.00,
+        ]);
+
+        $financeiroId = (int) Financeiro::query()->create([
+            'os_id' => $orderId,
+            'cliente_id' => $clientId,
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'categoria' => 'Serviço',
+            'descricao' => 'Cobrança da OS',
+            'valor' => 60.00,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->toDateString(),
+        ])->id;
+
+        $movimentoId = (int) FinanceiroMovimento::query()->create([
+            'financeiro_id' => $financeiroId,
+            'tipo_movimento' => FinanceiroMovimento::TIPO_ENTRADA,
+            'data_movimento' => now()->toDateString(),
+            'valor_movimento' => 60.00,
+        ])->id;
+
+        return [$orderId, $budgetId, $financeiroId, $movimentoId];
     }
 
     private function loginAndGetToken(string $email): string

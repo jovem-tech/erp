@@ -2,6 +2,7 @@
 
 namespace App\Services\Financeiro;
 
+use App\Models\Budget;
 use App\Models\Financeiro;
 use App\Models\FinanceiroCategoria;
 use App\Models\FinanceiroMovimento;
@@ -31,7 +32,10 @@ class FinanceiroService
         return Financeiro::query()
             ->withFilters($filters)
             ->with(['order', 'client'])
-            ->orderByDesc('data_vencimento')
+            // Ordem de pagamento/recebimento efetivo, não de vencimento. Sem
+            // data_pagamento (título ainda pendente) vai para o fim da lista —
+            // NULL é o menor valor em ORDER BY DESC.
+            ->orderByDesc('data_pagamento')
             ->orderByDesc('id')
             ->paginate($perPage);
     }
@@ -265,6 +269,82 @@ class FinanceiroService
         }
 
         return $financeiro->refresh();
+    }
+
+    /**
+     * Reduz (ou remove) movimentos de recebimento já registrados para que o
+     * total baixado não ultrapasse um novo valor de título menor — necessário
+     * quando o valor de uma OS encerrada é corrigido para baixo depois que o
+     * pagamento já foi recebido (ex.: recebido R$60, corrigido para R$50).
+     * Chamar ANTES de update() com o novo 'valor', senão guardMutationAgainstMovements()
+     * rejeita a redução por já haver baixa maior registrada.
+     *
+     * Reduz a partir do movimento mais recente (LIFO) — mais fácil de conciliar
+     * com o extrato bancário do que diluir proporcionalmente entre várias
+     * linhas, e trata o pagamento mais recente como o mais provável de conter
+     * o erro. Movimentos com meta de cartão vinculada nunca são tocados (uma
+     * taxa de cartão já paga à operadora não pode ser "desfeita" automaticamente);
+     * lança exceção se, mesmo pulando esses, sobrar excedente sem conseguir zerar.
+     *
+     * @return array{ajustado: bool, ajustes?: array<int, array<string, mixed>>, valor_liberado?: float}
+     */
+    public function reduceMovementsToTotal(Financeiro $financeiro, float $novoValorTitulo): array
+    {
+        $summary = $this->movementSummary($financeiro);
+        $excedente = round($summary['valor_movimentado'] - $novoValorTitulo, 2);
+
+        if ($excedente <= 0.009) {
+            return ['ajustado' => false];
+        }
+
+        $movimentos = $financeiro->movimentos()
+            ->with('cartao')
+            ->orderByDesc('data_movimento')
+            ->orderByDesc('id')
+            ->get();
+
+        $ajustes = [];
+
+        foreach ($movimentos as $movimento) {
+            if ($excedente <= 0.009) {
+                break;
+            }
+
+            if ($movimento->cartao !== null) {
+                continue;
+            }
+
+            $valorAtual = round((float) $movimento->valor_movimento, 2);
+            $reducao = min($excedente, $valorAtual);
+            $valorRestante = round($valorAtual - $reducao, 2);
+
+            $ajustes[] = [
+                'movimento_id' => (int) $movimento->id,
+                'valor_antes' => $valorAtual,
+                'valor_depois' => $valorRestante > 0.009 ? $valorRestante : 0.0,
+                'removido' => $valorRestante <= 0.009,
+            ];
+
+            if ($valorRestante <= 0.009) {
+                $movimento->delete();
+            } else {
+                $movimento->update(['valor_movimento' => $valorRestante]);
+            }
+
+            $excedente = round($excedente - $reducao, 2);
+        }
+
+        if ($excedente > 0.009) {
+            throw new RuntimeException(
+                'Não foi possível ajustar automaticamente: o valor excedente está concentrado em recebimentos via cartão, que exigem estorno manual.'
+            );
+        }
+
+        return [
+            'ajustado' => true,
+            'ajustes' => $ajustes,
+            'valor_liberado' => round($summary['valor_movimentado'] - $novoValorTitulo, 2),
+        ];
     }
 
     /**
@@ -509,6 +589,7 @@ class FinanceiroService
 
             return [
                 'tipo' => 'cliente',
+                'id' => $client?->id !== null ? (int) $client->id : null,
                 'titulo' => 'Quem pagou',
                 'nome' => $client?->nome_razao ?: null,
                 'documento' => $client?->cpf_cnpj ?: null,
@@ -522,6 +603,7 @@ class FinanceiroService
 
         return [
             'tipo' => 'fornecedor',
+            'id' => $supplier?->id !== null ? (int) $supplier->id : null,
             'titulo' => 'Para quem pagou',
             'nome' => $supplier?->nome_fantasia ?: $supplier?->razao_social ?: null,
             'documento' => $supplier?->cnpj_cpf ?: null,
@@ -634,6 +716,35 @@ class FinanceiroService
                 'solucao_aplicada' => $order->solucao_aplicada,
                 'procedimentos_executados' => $order->procedimentos_executados,
             ],
+            'orcamento' => $this->budgetSummaryForOrder((int) $order->id),
+        ];
+    }
+
+    /**
+     * Orçamento mais recente da OS vinculada — permite ao frontend oferecer o
+     * atalho "Ver orçamento" nos detalhes do lançamento.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function budgetSummaryForOrder(int $orderId): ?array
+    {
+        if ($orderId <= 0) {
+            return null;
+        }
+
+        $budget = Budget::query()
+            ->where('os_id', $orderId)
+            ->orderByDesc('id')
+            ->first(['id', 'numero', 'status']);
+
+        if ($budget === null) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $budget->id,
+            'numero' => $budget->numero,
+            'status' => $budget->status,
         ];
     }
 

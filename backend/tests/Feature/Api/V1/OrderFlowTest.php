@@ -356,7 +356,8 @@ class OrderFlowTest extends TestCase
             ->assertJsonPath('data.orders.0.orcamento.status', 'aguardando_resposta')
             ->assertJsonPath('data.orders.0.proximas_etapas.0.codigo', 'aguardando_reparo')
             ->assertJsonPath('data.orders.0.valor_recebido', '100.00')
-            ->assertJsonPath('data.orders.0.saldo', '200.00');
+            ->assertJsonPath('data.orders.0.saldo', '200.00')
+            ->assertJsonPath('data.orders.0.financeiro_titulo_id', $financeiroId);
     }
 
     public function test_index_summary_handles_orders_without_photo_budget_or_receivable(): void
@@ -400,7 +401,8 @@ class OrderFlowTest extends TestCase
             ->assertJsonPath('data.orders.0.prazo.estado', 'sem_previsao')
             ->assertJsonPath('data.orders.0.orcamento', null)
             ->assertJsonPath('data.orders.0.valor_recebido', null)
-            ->assertJsonPath('data.orders.0.saldo', null);
+            ->assertJsonPath('data.orders.0.saldo', null)
+            ->assertJsonPath('data.orders.0.financeiro_titulo_id', null);
     }
 
     public function test_index_filters_by_macro_group_opening_date_range_and_value_range(): void
@@ -947,6 +949,44 @@ class OrderFlowTest extends TestCase
             ->get("/api/v1/orders/{$orderId}/documents/{$documentId}")
             ->assertOk()
             ->assertHeader('Content-Type', 'application/pdf');
+    }
+
+    public function test_document_center_zip_download_returns_a_valid_zip_file(): void
+    {
+        Storage::fake('local');
+
+        [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
+        $this->seedOpeningDocumentTemplates();
+        $token = $this->loginAndGetToken($manager->email);
+
+        $createResponse = $this
+            ->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'tecnico_id' => $technician->id,
+                'status' => 'triagem',
+                'relato_cliente' => 'Cliente relata falha intermitente no vídeo.',
+                'garantia_dias' => 90,
+            ]);
+
+        $createResponse->assertCreated();
+
+        $orderId = (int) $createResponse->json('data.order.id');
+        $documentId = (int) $createResponse->json('data.order.documentos.0.id');
+        $this->assertGreaterThan(0, $documentId);
+
+        $response = $this
+            ->withHeader('Authorization', 'Bearer ' . $token)
+            ->get("/api/v1/orders/{$orderId}/documents/download?document_ids[]={$documentId}&format=a4");
+
+        $response->assertOk();
+        $this->assertSame('application/zip', $response->headers->get('Content-Type'));
+
+        // Assinatura de arquivo ZIP válido ("PK\x03\x04"), não uma resposta de
+        // erro disfarçada de binário — é exatamente o tipo de bug que passaria
+        // despercebido só olhando o status HTTP.
+        $this->assertStringStartsWith("PK\x03\x04", $response->streamedContent());
     }
 
     public function test_document_center_can_create_public_share_link_for_selected_os_document(): void

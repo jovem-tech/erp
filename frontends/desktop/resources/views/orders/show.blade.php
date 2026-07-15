@@ -50,6 +50,12 @@
 
         $orcamento = $order['orcamento'] ?? null;
         $hasOrcamento = $orcamento !== null;
+
+        // Lançamento financeiro mais recente vinculado à OS (título "a
+        // receber" não cancelado) — mesmo dado já usado na aba Valores.
+        $financeiroTituloId = (int) ($order['financeiro_resumo']['titulo_id'] ?? 0);
+        $canViewFinanceiro = \App\Support\DesktopSession::can('financeiro', 'visualizar');
+
         $checklist = $order['checklist'] ?? null;
         $photoViewerGroup = 'order-' . (int) ($order['id'] ?? 0) . '-photos';
 
@@ -178,6 +184,12 @@
                     @elseif ($canCreateBudget)
                         <a href="{{ route('orcamentos.create', ['os_id' => $order['id']]) }}" class="dropdown-item">
                             <i class="bi bi-receipt me-2"></i>Gerar orçamento
+                        </a>
+                    @endif
+
+                    @if ($canViewFinanceiro && $financeiroTituloId > 0)
+                        <a href="{{ route('financeiro.show', $financeiroTituloId) }}" class="dropdown-item">
+                            <i class="bi bi-cash-coin me-2"></i>Ver lançamento financeiro
                         </a>
                     @endif
 

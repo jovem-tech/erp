@@ -521,6 +521,105 @@ class DesktopFrontendTest extends TestCase
         });
     }
 
+    public function test_orders_index_shows_financeiro_link_in_row_actions_when_linked_and_permitted(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), $this->ordersIndexFixture(financeiroTituloId: 63), [
+            'http://127.0.0.1:8000/api/v1/users*' => Http::response(['status' => 'success', 'data' => ['users' => []], 'error' => null, 'meta' => []]),
+            'http://127.0.0.1:8000/api/v1/knowledge/os-flow*' => Http::response(['status' => 'success', 'data' => ['statuses' => [], 'transitions' => []], 'error' => null, 'meta' => []]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'os' => ['visualizar', 'editar'],
+                    'financeiro' => ['visualizar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os');
+
+        $response
+            ->assertOk()
+            ->assertSee('Ver lançamento financeiro')
+            ->assertSee(route('financeiro.show', 63), false);
+    }
+
+    public function test_orders_index_hides_financeiro_link_in_row_actions_without_permission(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), $this->ordersIndexFixture(financeiroTituloId: 63), [
+            'http://127.0.0.1:8000/api/v1/users*' => Http::response(['status' => 'success', 'data' => ['users' => []], 'error' => null, 'meta' => []]),
+            'http://127.0.0.1:8000/api/v1/knowledge/os-flow*' => Http::response(['status' => 'success', 'data' => ['statuses' => [], 'transitions' => []], 'error' => null, 'meta' => []]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'os' => ['visualizar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os');
+
+        $response
+            ->assertOk()
+            ->assertDontSee('Ver lançamento financeiro');
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function ordersIndexFixture(?int $financeiroTituloId): array
+    {
+        return [
+            'http://127.0.0.1:8000/api/v1/orders/status-catalog' => Http::response([
+                'status' => 'success',
+                'data' => ['statuses' => []],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orders*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'orders' => [
+                        [
+                            'id' => 3614,
+                            'numero_os' => 'OS26070002',
+                            'numero_os_legado' => '',
+                            'cliente_nome' => 'Heliandro Alves Rodrigues',
+                            'cliente_telefone' => '21979027772',
+                            'equipamento_id' => 204,
+                            'equipamento_resumo_tecnico' => 'Tablet Generico Generico',
+                            'equipamento_resumo_curto' => 'Tablet Generico Generico',
+                            'equipamento_numero_serie' => '',
+                            'equipamento_foto_id' => 0,
+                            'equipamento_foto_url' => null,
+                            'status' => 'aguardando_reparo',
+                            'status_nome' => 'Aguardando Reparo',
+                            'status_cor' => '#16a34a',
+                            'prioridade' => 'normal',
+                            'data_abertura' => '2026-07-03T08:00:00-03:00',
+                            'data_entrada' => '2026-07-03T08:00:00-03:00',
+                            'data_previsao' => '2026-07-10',
+                            'data_conclusao' => null,
+                            'data_entrega' => null,
+                            'prazo' => ['estado' => 'concluido_no_prazo', 'label' => 'Concluída no prazo', 'dias' => 0],
+                            'orcamento' => ['id' => 27, 'numero' => 'ORC-2607-000008', 'status' => 'aprovado', 'status_label' => 'Aprovado', 'status_color' => '#16a34a'],
+                            'proximas_etapas' => [],
+                            'valor_final' => '200.00',
+                            'valor_recebido' => '80.00',
+                            'saldo' => '120.00',
+                            'financeiro_titulo_id' => $financeiroTituloId,
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => ['pagination' => ['current_page' => 1, 'last_page' => 1, 'from' => 1, 'to' => 1, 'total' => 1]],
+            ]),
+        ];
+    }
+
     public function test_order_documents_center_page_renders_generation_sending_and_secure_share_actions(): void
     {
         Http::fake(array_merge($this->notificationsFixture(), [
@@ -641,6 +740,83 @@ class DesktopFrontendTest extends TestCase
             return $request->method() === 'GET'
                 && $request->url() === 'http://127.0.0.1:8000/api/v1/orders/501/documents';
         });
+    }
+
+    public function test_order_documents_center_catalog_row_gains_per_document_actions_when_generated(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/501/documents' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'order' => [
+                        'id' => 501,
+                        'numero_os' => 'OS26070009',
+                        'cliente_nome' => 'Cliente Alpha',
+                        'equipamento_resumo_curto' => 'Acer / Nitro 5',
+                    ],
+                    'catalog' => [
+                        [
+                            'type' => 'abertura',
+                            'label' => 'Comprovante de abertura',
+                            'can_generate' => true,
+                            'automatic_triggers' => ['criacao_os'],
+                            'latest_document' => [
+                                'id' => 9001,
+                                'version' => 1,
+                                'archived_at' => null,
+                                'files' => [
+                                    'a4' => ['available' => true, 'url' => 'http://127.0.0.1:8000/api/v1/orders/501/documents/9001/files/a4'],
+                                    '80mm' => ['available' => false, 'url' => null],
+                                ],
+                            ],
+                        ],
+                        [
+                            'type' => 'laudo',
+                            'label' => 'Laudo técnico',
+                            'can_generate' => false,
+                            'blocked_reason' => 'Diagnóstico técnico pendente.',
+                            'automatic_triggers' => ['status_tecnico'],
+                            'latest_document' => null,
+                        ],
+                    ],
+                    'documents' => [],
+                    'send_history' => [],
+                    'share_links' => [],
+                    'limits' => [
+                        'max_attachments' => 10,
+                        'max_total_bytes' => 20971520,
+                        'share_expirations' => ['24h', '7d', '30d'],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['os' => ['visualizar', 'editar']]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os/501/documentos');
+
+        $response
+            ->assertOk()
+            // Documento já gerado: ganha o dropdown de ações por linha.
+            ->assertSee('Gerar nova versão')
+            ->assertSee('Visualizar A4')
+            ->assertDontSee('Visualizar 80mm')
+            ->assertSee(route('orders.documents.files.show', ['order' => 501, 'document' => 9001, 'format' => 'a4']), false)
+            ->assertSee('data-doc-row-zip="9001"', false)
+            ->assertSee('data-doc-row-print="9001"', false)
+            ->assertSee('data-doc-row-share="9001"', false)
+            ->assertSee('data-doc-row-send="9001"', false)
+            ->assertSee('data-doc-archive-toggle="9001"', false)
+            // Tipo ainda não gerado: só o botão de gerar, sem dropdown de ações.
+            ->assertSee('Laudo técnico')
+            ->assertDontSee('data-doc-row-zip=""', false)
+            // Tabela do acervo agora vive acoplada, na mesma seção.
+            ->assertSee('Todas as versões geradas');
     }
 
     public function test_order_documents_center_state_endpoint_returns_rendered_fragments_and_pending_sends(): void
@@ -3515,16 +3691,22 @@ class DesktopFrontendTest extends TestCase
         ]);
 
         $response = $this
-            ->withSession($this->desktopSession([
-                'clientes' => ['visualizar', 'editar'],
-                'os' => ['visualizar', 'criar'],
-                'equipamentos' => ['visualizar'],
-            ]))
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'clientes' => ['visualizar', 'editar'],
+                    'os' => ['visualizar', 'criar'],
+                    'equipamentos' => ['visualizar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
             ->get('/clientes/201');
 
         $response
             ->assertOk()
+            ->assertSee('Mais ações')
             ->assertSee('Editar cliente')
+            ->assertSee('Ver OS do cliente')
+            ->assertSee('Ver equipamentos')
             ->assertSee('Ações rápidas')
             ->assertSee('Ligar')
             ->assertSee('WhatsApp')
@@ -4045,6 +4227,145 @@ class DesktopFrontendTest extends TestCase
         });
     }
 
+    public function test_orders_show_page_links_to_linked_financeiro_lancamento_when_permitted(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/501' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'order' => [
+                        'id' => 501,
+                        'numero_os' => 'OS26070009',
+                        'status' => 'em_execucao',
+                        'status_nome' => 'Em execução do serviço',
+                        'status_cor' => '#64748b',
+                        'is_encerrada' => false,
+                        'prioridade' => 'alta',
+                        'cliente' => ['id' => 201, 'nome_razao' => 'Cliente Alpha'],
+                        'equipamento' => ['id' => 301, 'resumo_tecnico' => 'Notebook Acer Nitro 5'],
+                        'tecnico' => ['id' => 51, 'nome' => 'Tecnico Banco'],
+                        'fotos' => [],
+                        'documentos' => [],
+                        'status_disponiveis' => [],
+                        'proximas_etapas' => [],
+                        'orcamento' => null,
+                        'financeiro_resumo' => [
+                            'titulo_id' => 63,
+                            'valor_titulo' => 80.0,
+                            'valor_recebido' => 80.0,
+                            'saldo_aberto' => 0.0,
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'os' => ['visualizar'],
+                    'financeiro' => ['visualizar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os/501');
+
+        $response
+            ->assertOk()
+            ->assertSee('Ver lançamento financeiro')
+            ->assertSee(route('financeiro.show', 63), false);
+    }
+
+    public function test_orders_show_page_hides_financeiro_link_without_permission(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/501' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'order' => [
+                        'id' => 501,
+                        'numero_os' => 'OS26070009',
+                        'status' => 'em_execucao',
+                        'status_nome' => 'Em execução do serviço',
+                        'status_cor' => '#64748b',
+                        'is_encerrada' => false,
+                        'cliente' => ['id' => 201, 'nome_razao' => 'Cliente Alpha'],
+                        'equipamento' => ['id' => 301, 'resumo_tecnico' => 'Notebook Acer Nitro 5'],
+                        'fotos' => [],
+                        'documentos' => [],
+                        'status_disponiveis' => [],
+                        'proximas_etapas' => [],
+                        'orcamento' => null,
+                        'financeiro_resumo' => ['titulo_id' => 63],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'os' => ['visualizar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os/501');
+
+        $response
+            ->assertOk()
+            ->assertDontSee('Ver lançamento financeiro');
+    }
+
+    public function test_orders_show_page_hides_financeiro_link_when_no_lancamento_linked(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/501' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'order' => [
+                        'id' => 501,
+                        'numero_os' => 'OS26070009',
+                        'status' => 'em_execucao',
+                        'status_nome' => 'Em execução do serviço',
+                        'status_cor' => '#64748b',
+                        'is_encerrada' => false,
+                        'cliente' => ['id' => 201, 'nome_razao' => 'Cliente Alpha'],
+                        'equipamento' => ['id' => 301, 'resumo_tecnico' => 'Notebook Acer Nitro 5'],
+                        'fotos' => [],
+                        'documentos' => [],
+                        'status_disponiveis' => [],
+                        'proximas_etapas' => [],
+                        'orcamento' => null,
+                        'financeiro_resumo' => ['titulo_id' => null],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'os' => ['visualizar'],
+                    'financeiro' => ['visualizar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os/501');
+
+        $response
+            ->assertOk()
+            ->assertDontSee('Ver lançamento financeiro');
+    }
+
     public function test_orders_edit_page_renders_same_wizard_layout_prefilled_with_order_data(): void
     {
         Http::fake([
@@ -4356,11 +4677,14 @@ class DesktopFrontendTest extends TestCase
         ]);
 
         $response = $this
-            ->withSession($this->desktopSession([
-                'equipamentos' => ['visualizar'],
-                'os' => ['visualizar', 'criar'],
-                'clientes' => ['visualizar'],
-            ]))
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'equipamentos' => ['visualizar'],
+                    'os' => ['visualizar', 'criar'],
+                    'clientes' => ['visualizar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
             ->get('/equipamentos');
 
         $response
@@ -4469,11 +4793,14 @@ class DesktopFrontendTest extends TestCase
         ]);
 
         $response = $this
-            ->withSession($this->desktopSession([
-                'equipamentos' => ['visualizar'],
-                'os' => ['visualizar', 'criar'],
-                'clientes' => ['visualizar'],
-            ]))
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'equipamentos' => ['visualizar'],
+                    'os' => ['visualizar', 'criar'],
+                    'clientes' => ['visualizar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
             ->get('/equipamentos/301');
 
         $response
@@ -4487,6 +4814,7 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Ordens de serviço vinculadas')
             ->assertSee('OS1001')
             ->assertSee('Nova OS')
+            ->assertSee('Mais ações')
             ->assertSee('Abrir cliente');
 
         Http::assertSent(static function ($request): bool {

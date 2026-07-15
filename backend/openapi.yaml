@@ -1051,6 +1051,10 @@ components:
           type: string
           nullable: true
           description: valor_final menos valor_recebido; nulo quando não há título financeiro vinculado.
+        financeiro_titulo_id:
+          type: integer
+          nullable: true
+          description: Id do título "a receber" (financeiro) mais recente vinculado à OS; nulo quando não há título vinculado. Permite montar o link direto para /financeiro/{id}.
 
     OrderWorkflowStatusOption:
       type: object

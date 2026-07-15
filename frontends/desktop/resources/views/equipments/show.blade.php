@@ -38,20 +38,35 @@
                 <i class="bi bi-arrow-left me-2"></i>
                 Voltar
             </a>
-            @if (\App\Support\DesktopSession::can('equipamentos', 'editar'))
-                <a href="{{ route('equipments.edit', (int) ($equipment['id'] ?? 0)) }}" class="btn btn-soft">
-                    <i class="bi bi-pencil-square me-2"></i>
-                    Editar
-                </a>
-            @endif
-            @if ($clientId > 0 && \App\Support\DesktopSession::can('clientes', 'visualizar'))
-                <a href="{{ route('clients.show', $clientId) }}" class="btn btn-soft">Abrir cliente</a>
-            @endif
             @if ($clientId > 0 && \App\Support\DesktopSession::can('os', 'criar'))
                 <a href="{{ $newOrderUrl }}" class="btn btn-primary">
                     <i class="bi bi-plus-lg me-2"></i>
                     Nova OS
                 </a>
+            @endif
+
+            @if (\App\Support\DesktopSession::can('equipamentos', 'editar') || ($clientId > 0 && \App\Support\DesktopSession::can('clientes', 'visualizar')))
+                <div class="dropdown os-actions-dropdown">
+                    <button type="button"
+                        class="btn btn-outline-light dropdown-toggle os-actions-toggle"
+                        data-bs-toggle="dropdown"
+                        aria-expanded="false">
+                        Mais ações
+                    </button>
+
+                    <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                        @if (\App\Support\DesktopSession::can('equipamentos', 'editar'))
+                            <a href="{{ route('equipments.edit', (int) ($equipment['id'] ?? 0)) }}" class="dropdown-item">
+                                <i class="bi bi-pencil-square me-2"></i>Editar
+                            </a>
+                        @endif
+                        @if ($clientId > 0 && \App\Support\DesktopSession::can('clientes', 'visualizar'))
+                            <a href="{{ route('clients.show', $clientId) }}" class="dropdown-item">
+                                <i class="bi bi-person me-2"></i>Abrir cliente
+                            </a>
+                        @endif
+                    </div>
+                </div>
             @endif
         </div>
     </div>

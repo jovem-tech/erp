@@ -1336,6 +1336,7 @@ class OrderWorkflowService
             'valor_final' => $this->normalizeDecimalString($order->valor_final ?? null),
             'valor_recebido' => $receivable !== null ? $this->normalizeDecimalString($valorRecebido) : null,
             'saldo' => $receivable !== null ? $this->normalizeDecimalString($receivable['saldo'] ?? max(0.0, $valorFinal - $valorRecebido)) : null,
+            'financeiro_titulo_id' => $receivable !== null ? (int) ($receivable['titulo_id'] ?? 0) : null,
             'proximas_etapas' => array_values($nextStatusOptions ?? []),
         ];
     }

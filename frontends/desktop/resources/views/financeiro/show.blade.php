@@ -48,6 +48,34 @@
         $osValores = is_array($os) ? ($os['valores'] ?? []) : [];
         $canViewOs = \App\Support\DesktopSession::can('os', 'visualizar');
         $canEditFinanceiro = \App\Support\DesktopSession::can('financeiro', 'editar');
+        $canDeleteFinanceiro = \App\Support\DesktopSession::can('financeiro', 'excluir');
+        $canCreateFinanceiro = \App\Support\DesktopSession::can('financeiro', 'criar');
+
+        // Vínculos e ações do dropdown "Mais ações".
+        $osId = is_array($os) ? (int) ($os['id'] ?? 0) : 0;
+        $orcamento = is_array($os) ? ($os['orcamento'] ?? null) : null;
+        $orcamentoId = is_array($orcamento) ? (int) ($orcamento['id'] ?? 0) : 0;
+        $canViewOrcamento = \App\Support\DesktopSession::can('orcamentos', 'visualizar');
+        $contraparteId = (int) ($contraparte['id'] ?? 0);
+        $contraparteTipo = (string) ($contraparte['tipo'] ?? '');
+        $canViewCliente = \App\Support\DesktopSession::can('clientes', 'visualizar');
+        $canEditFornecedor = \App\Support\DesktopSession::can('fornecedores', 'editar');
+        $canPay = in_array($status, ['pendente', 'parcial'], true) && $canEditFinanceiro;
+        $canCancel = $status !== 'cancelado' && $canEditFinanceiro;
+        $valorAberto = round((float) ($resumo['valor_aberto'] ?? $lancamento['valor'] ?? 0), 2);
+        $hasMovements = in_array($status, ['parcial', 'pago'], true);
+        $cancelConfirmMessage = $hasMovements
+            ? 'Este lançamento já possui baixa registrada. Cancelar vai estornar (remover) os valores já lançados no fluxo de caixa e no DRE. Esta ação não pode ser desfeita. Deseja continuar?'
+            : 'Deseja cancelar este lançamento? Ele deixará de contar no fluxo de caixa e no DRE, mas o registro é mantido.';
+
+        $hasLinkActions = ($canViewOs && $osId > 0)
+            || ($canViewOrcamento && $orcamentoId > 0)
+            || ($contraparteTipo === 'cliente' && $canViewCliente && $contraparteId > 0)
+            || ($contraparteTipo === 'fornecedor' && $canEditFornecedor && $contraparteId > 0);
+        $hasFinanceiroSpecificActions = $canEditFinanceiro || $canPay || $canCancel || $canDeleteFinanceiro || $hasLinkActions;
+        // "Ver lançamentos" sempre aparece: chegar nesta página já exige
+        // financeiro,visualizar, a mesma permissão da listagem.
+        $hasAnyAction = true;
     @endphp
 
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
@@ -71,11 +99,108 @@
                 <i class="bi bi-arrow-left me-2"></i>
                 Voltar
             </a>
-            @if ($canEditFinanceiro)
-                <a href="{{ route('financeiro.edit', $id) }}" class="btn btn-primary">
-                    <i class="bi bi-pencil me-2"></i>
-                    Editar
-                </a>
+
+            @if ($hasAnyAction)
+            <div class="dropdown os-actions-dropdown">
+                <button type="button"
+                    class="btn btn-primary dropdown-toggle os-actions-toggle"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false">
+                    Mais ações
+                </button>
+
+                <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                    <a href="{{ route('financeiro.index') }}" class="dropdown-item">
+                        <i class="bi bi-list-ul me-2"></i>Ver lançamentos
+                    </a>
+
+                    @if ($canCreateFinanceiro)
+                        <a href="{{ route('financeiro.create') }}" class="dropdown-item">
+                            <i class="bi bi-plus-lg me-2"></i>Novo lançamento
+                        </a>
+                    @endif
+
+                    @if ($hasFinanceiroSpecificActions)
+                        <div class="dropdown-divider"></div>
+                    @endif
+
+                    @if ($canEditFinanceiro)
+                        <a href="{{ route('financeiro.edit', $id) }}" class="dropdown-item">
+                            <i class="bi bi-pencil me-2"></i>Editar lançamento
+                        </a>
+                    @endif
+
+                    @if ($canPay)
+                        <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#payModal{{ $id }}">
+                            <i class="bi bi-cash-stack me-2"></i>Registrar baixa
+                        </button>
+                    @endif
+
+                    @if (($canViewOs && $osId > 0) || ($canViewOrcamento && $orcamentoId > 0) || ($contraparteTipo === 'cliente' && $canViewCliente && $contraparteId > 0) || ($contraparteTipo === 'fornecedor' && $canEditFornecedor && $contraparteId > 0))
+                        <div class="dropdown-divider"></div>
+                    @endif
+
+                    @if ($canViewOs && $osId > 0)
+                        <a href="{{ route('orders.show', $osId) }}" class="dropdown-item">
+                            <i class="bi bi-clipboard-check me-2"></i>Ver OS vinculada
+                        </a>
+                    @endif
+
+                    @if ($canViewOrcamento && $orcamentoId > 0)
+                        <a href="{{ route('orcamentos.show', $orcamentoId) }}" class="dropdown-item">
+                            <i class="bi bi-receipt me-2"></i>Ver orçamento vinculado
+                        </a>
+                    @endif
+
+                    @if ($contraparteTipo === 'cliente' && $canViewCliente && $contraparteId > 0)
+                        <a href="{{ route('clients.show', $contraparteId) }}" class="dropdown-item">
+                            <i class="bi bi-person me-2"></i>Ver cliente
+                        </a>
+                    @endif
+
+                    @if ($contraparteTipo === 'fornecedor' && $canEditFornecedor && $contraparteId > 0)
+                        <a href="{{ route('suppliers.edit', $contraparteId) }}" class="dropdown-item">
+                            <i class="bi bi-truck me-2"></i>Ver fornecedor
+                        </a>
+                    @endif
+
+                    @if ($canCancel || $canDeleteFinanceiro)
+                        <div class="dropdown-divider"></div>
+                    @endif
+
+                    @if ($canCancel)
+                        <form
+                            method="post"
+                            action="{{ route('financeiro.cancel', $id) }}"
+                            data-confirm="{{ $cancelConfirmMessage }}"
+                            data-confirm-title="Cancelar lançamento"
+                            data-confirm-button="Sim, cancelar"
+                        >
+                            @csrf
+                            <input type="hidden" name="voltar_para" value="show">
+                            <button type="submit" class="dropdown-item text-warning">
+                                <i class="bi bi-x-circle me-2"></i>Cancelar lançamento
+                            </button>
+                        </form>
+                    @endif
+
+                    @if ($canDeleteFinanceiro)
+                        <form
+                            method="post"
+                            action="{{ route('financeiro.destroy', $id) }}"
+                            data-confirm="Deseja excluir este lançamento? Esta ação não pode ser desfeita."
+                            data-confirm-title="Excluir lançamento"
+                            data-confirm-button="Sim, excluir"
+                        >
+                            @csrf
+                            @method('DELETE')
+                            <button type="submit" class="dropdown-item text-danger">
+                                <i class="bi bi-trash me-2"></i>Excluir lançamento
+                            </button>
+                        </form>
+                    @endif
+                </div>
+            </div>
             @endif
         </div>
     </div>
@@ -100,14 +225,21 @@
         </article>
 
         <article class="summary-card">
-            <span class="summary-card-eyebrow">{{ $tipo === 'receber' ? 'Recebido em' : 'Pago em' }}</span>
-            <div class="summary-card-value">{{ $date($lancamento['data_pagamento'] ?? null) }}</div>
-            <div class="summary-card-meta">Forma: {{ $text($detalhes['forma_pagamento_label'] ?? null, 'Não informada') }}</div>
+            <span class="summary-card-eyebrow">{{ $text($contraparte['titulo'] ?? null, $tipo === 'receber' ? 'Quem pagou' : 'Para quem pagou') }}</span>
+            <div class="summary-card-value">{{ $text($contraparte['nome'] ?? null, $tipo === 'receber' ? 'Cliente não vinculado' : 'Fornecedor não vinculado') }}</div>
+            <div class="summary-card-meta">
+                {{ $text($contraparte['documento'] ?? null, 'Documento não informado') }}
+                @if ($text($contraparte['telefone'] ?? null, '') !== '')
+                    · {{ $contraparte['telefone'] }}
+                @endif
+                @if ($text($contraparte['email'] ?? null, '') !== '')
+                    · {{ $contraparte['email'] }}
+                @endif
+            </div>
         </article>
     </section>
 
-    <div class="desktop-grid desktop-grid-two align-items-start">
-        <div class="d-flex flex-column gap-4">
+    <div class="desktop-grid desktop-grid-two mb-4">
             <article class="surface-card">
                 <h3 class="surface-title fs-5 mb-2">
                     <i class="bi bi-receipt-cutoff me-2"></i>
@@ -123,6 +255,10 @@
                     <div class="col-md-6">
                         <span class="summary-card-eyebrow">Competência</span>
                         <p class="mb-0 fw-semibold">{{ $date($impactos['data_competencia'] ?? $lancamento['data_competencia'] ?? null) }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <span class="summary-card-eyebrow">Tipo de origem</span>
+                        <p class="mb-0 fw-semibold">{{ $text($origem['titulo'] ?? null, 'Origem não informada') }}</p>
                     </div>
                     <div class="col-12">
                         <span class="summary-card-eyebrow">Descrição</span>
@@ -144,145 +280,18 @@
                             Fixo mensal: {{ $yesNo($impactos['dre_fixo_mensal'] ?? false) }}
                         </p>
                     </div>
-                </div>
-            </article>
-
-            <article class="surface-card">
-                <h3 class="surface-title fs-5 mb-2">
-                    <i class="bi bi-person-lines-fill me-2"></i>
-                    {{ $text($contraparte['titulo'] ?? null, $tipo === 'receber' ? 'Quem pagou' : 'Para quem pagou') }}
-                </h3>
-                <p class="surface-subtitle mb-4">Cliente, fornecedor ou contraparte vinculada ao lançamento.</p>
-
-                <div class="row g-3">
                     <div class="col-md-6">
-                        <span class="summary-card-eyebrow">Nome</span>
-                        <p class="mb-0 fw-semibold">{{ $text($contraparte['nome'] ?? null, $tipo === 'receber' ? 'Cliente não vinculado' : 'Fornecedor não vinculado') }}</p>
+                        <span class="summary-card-eyebrow">{{ $tipo === 'receber' ? 'Recebido em' : 'Pago em' }}</span>
+                        <p class="mb-0 fw-semibold">{{ $date($lancamento['data_pagamento'] ?? null) }}</p>
                     </div>
                     <div class="col-md-6">
-                        <span class="summary-card-eyebrow">Documento</span>
-                        <p class="mb-0">{{ $text($contraparte['documento'] ?? null) }}</p>
-                    </div>
-                    <div class="col-md-6">
-                        <span class="summary-card-eyebrow">Telefone</span>
-                        <p class="mb-0">{{ $text($contraparte['telefone'] ?? null) }}</p>
-                    </div>
-                    <div class="col-md-6">
-                        <span class="summary-card-eyebrow">E-mail</span>
-                        <p class="mb-0">{{ $text($contraparte['email'] ?? null) }}</p>
+                        <span class="summary-card-eyebrow">Forma de pagamento</span>
+                        <p class="mb-0">{{ $text($detalhes['forma_pagamento_label'] ?? null, 'Não informada') }}</p>
                     </div>
                     <div class="col-12">
                         <span class="summary-card-eyebrow">Observações da contraparte</span>
                         <p class="mb-0">{{ $text($contraparte['observacoes'] ?? null, 'Nenhuma observação registrada.') }}</p>
                     </div>
-                </div>
-            </article>
-
-            <article class="surface-card">
-                <h3 class="surface-title fs-5 mb-2">
-                    <i class="bi bi-clock-history me-2"></i>
-                    Baixas e formas de pagamento
-                </h3>
-                <p class="surface-subtitle mb-4">Cada movimento efetivamente lançado no caixa, incluindo taxas de cartão quando houver.</p>
-
-                @if ($movimentos !== [])
-                    <div class="table-responsive">
-                        <table class="table table-stack align-middle mb-0">
-                            <thead>
-                            <tr>
-                                <th>Data</th>
-                                <th>Tipo</th>
-                                <th>Forma</th>
-                                <th>Valor</th>
-                                <th>Taxa/cartão</th>
-                            </tr>
-                            </thead>
-                            <tbody>
-                            @foreach ($movimentos as $movimento)
-                                @php
-                                    $cartao = $movimento['cartao'] ?? null;
-                                @endphp
-                                <tr>
-                                    <td data-label="Data">{{ $date($movimento['data_movimento'] ?? null) }}</td>
-                                    <td data-label="Tipo">{{ $text($movimento['tipo_label'] ?? null) }}</td>
-                                    <td data-label="Forma">
-                                        <div class="fw-semibold">{{ $text($movimento['forma_pagamento_label'] ?? null, 'Não informada') }}</div>
-                                        @if (! empty($movimento['documento_ref']))
-                                            <small class="text-secondary">Doc.: {{ $movimento['documento_ref'] }}</small>
-                                        @endif
-                                    </td>
-                                    <td data-label="Valor">{{ $money($movimento['valor'] ?? null) }}</td>
-                                    <td data-label="Taxa/cartão">
-                                        @if (is_array($cartao))
-                                            <div class="fw-semibold">
-                                                {{ $text($cartao['operadora'] ?? null, 'Operadora não informada') }}
-                                                @if (! empty($cartao['bandeira']))
-                                                    · {{ $cartao['bandeira'] }}
-                                                @endif
-                                            </div>
-                                            <small class="text-secondary d-block">
-                                                {{ ucfirst((string) ($cartao['modalidade'] ?? 'crédito')) }}
-                                                em {{ (int) ($cartao['parcelas'] ?? 1) }}x ·
-                                                Taxa {{ number_format((float) ($cartao['taxa_percentual'] ?? 0), 4, ',', '.') }}%
-                                                @if ((float) ($cartao['taxa_fixa'] ?? 0) > 0)
-                                                    + {{ $money($cartao['taxa_fixa']) }}
-                                                @endif
-                                            </small>
-                                            <small class="text-secondary d-block">
-                                                Bruto {{ $money($cartao['valor_bruto'] ?? null) }} ·
-                                                Taxa {{ $money($cartao['valor_taxa'] ?? null) }} ·
-                                                Líquido {{ $money($cartao['valor_liquido'] ?? null) }}
-                                            </small>
-                                            <small class="text-secondary d-block">
-                                                Repasse previsto: {{ $date($cartao['data_prevista_repasse'] ?? $cartao['data_prevista_recebimento'] ?? null) }}
-                                            </small>
-                                        @else
-                                            —
-                                        @endif
-                                        @if (! empty($movimento['observacoes']))
-                                            <small class="text-secondary d-block mt-1">{{ $movimento['observacoes'] }}</small>
-                                        @endif
-                                    </td>
-                                </tr>
-                            @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                @else
-                    <div class="empty-state py-4">
-                        <i class="bi bi-cash-stack"></i>
-                        <h4>Nenhuma baixa registrada</h4>
-                        <p>O título ainda não possui movimento de pagamento/recebimento no fluxo de caixa.</p>
-                    </div>
-                @endif
-            </article>
-        </div>
-
-        <div class="d-flex flex-column gap-4">
-            <article class="surface-card">
-                <h3 class="surface-title fs-5 mb-2">
-                    <i class="bi bi-diagram-3 me-2"></i>
-                    Origem do lançamento
-                </h3>
-                <p class="surface-subtitle mb-4">{{ $text($origem['descricao'] ?? null, 'Origem não informada.') }}</p>
-
-                <div class="row g-3">
-                    <div class="col-12">
-                        <span class="summary-card-eyebrow">Tipo de origem</span>
-                        <p class="mb-0 fw-semibold">{{ $text($origem['titulo'] ?? null, 'Origem não informada') }}</p>
-                    </div>
-
-                    @if (! empty($origem['lancamento_origem_id']))
-                        <div class="col-12">
-                            <span class="summary-card-eyebrow">Lançamento de origem</span>
-                            <p class="mb-0">
-                                <a href="{{ route('financeiro.show', (int) $origem['lancamento_origem_id']) }}">
-                                    #{{ (int) $origem['lancamento_origem_id'] }}
-                                </a>
-                                — {{ $text($origem['lancamento_origem_descricao'] ?? null, 'Sem descrição') }}
-                            </p>
-                        </div>
-                    @endif
                 </div>
             </article>
 
@@ -362,23 +371,204 @@
                     </p>
                 </article>
             @endif
-
-            <article class="surface-card">
-                <h3 class="surface-title fs-5 mb-2">
-                    <i class="bi bi-shield-check me-2"></i>
-                    Auditoria
-                </h3>
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <span class="summary-card-eyebrow">Criado em</span>
-                        <p class="mb-0">{{ $date($auditoria['criado_em'] ?? $lancamento['created_at'] ?? null, true) }}</p>
-                    </div>
-                    <div class="col-md-6">
-                        <span class="summary-card-eyebrow">Atualizado em</span>
-                        <p class="mb-0">{{ $date($auditoria['atualizado_em'] ?? $lancamento['updated_at'] ?? null, true) }}</p>
-                    </div>
-                </div>
-            </article>
-        </div>
     </div>
+
+    <article class="surface-card mb-4">
+        <h3 class="surface-title fs-5 mb-2">
+            <i class="bi bi-clock-history me-2"></i>
+            Baixas e formas de pagamento
+        </h3>
+                <p class="surface-subtitle mb-4">Cada movimento efetivamente lançado no caixa, incluindo taxas de cartão quando houver.</p>
+
+                @if ($movimentos !== [])
+                    <div class="table-responsive">
+                        <table class="table table-stack align-middle mb-0">
+                            <thead>
+                            <tr>
+                                <th>Data</th>
+                                <th>Tipo</th>
+                                <th>Forma</th>
+                                <th>Valor</th>
+                                <th>Taxa/cartão</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            @foreach ($movimentos as $movimento)
+                                @php
+                                    $cartao = $movimento['cartao'] ?? null;
+                                @endphp
+                                <tr>
+                                    <td data-label="Data">{{ $date($movimento['data_movimento'] ?? null) }}</td>
+                                    <td data-label="Tipo">{{ $text($movimento['tipo_label'] ?? null) }}</td>
+                                    <td data-label="Forma">
+                                        <div class="fw-semibold">{{ $text($movimento['forma_pagamento_label'] ?? null, 'Não informada') }}</div>
+                                        @if (! empty($movimento['documento_ref']))
+                                            <small class="text-secondary">Doc.: {{ $movimento['documento_ref'] }}</small>
+                                        @endif
+                                    </td>
+                                    <td data-label="Valor">{{ $money($movimento['valor'] ?? null) }}</td>
+                                    <td data-label="Taxa/cartão">
+                                        @if (is_array($cartao))
+                                            <div class="fw-semibold">
+                                                {{ $text($cartao['operadora'] ?? null, 'Operadora não informada') }}
+                                                @if (! empty($cartao['bandeira']))
+                                                    · {{ $cartao['bandeira'] }}
+                                                @endif
+                                            </div>
+                                            <small class="text-secondary d-block">
+                                                {{ ucfirst((string) ($cartao['modalidade'] ?? 'crédito')) }}
+                                                em {{ (int) ($cartao['parcelas'] ?? 1) }}x ·
+                                                Taxa {{ number_format((float) ($cartao['taxa_percentual'] ?? 0), 4, ',', '.') }}%
+                                                @if ((float) ($cartao['taxa_fixa'] ?? 0) > 0)
+                                                    + {{ $money($cartao['taxa_fixa']) }}
+                                                @endif
+                                            </small>
+                                            <small class="text-secondary d-block">
+                                                Bruto {{ $money($cartao['valor_bruto'] ?? null) }} ·
+                                                Taxa {{ $money($cartao['valor_taxa'] ?? null) }} ·
+                                                Líquido {{ $money($cartao['valor_liquido'] ?? null) }}
+                                            </small>
+                                            <small class="text-secondary d-block">
+                                                Repasse previsto: {{ $date($cartao['data_prevista_repasse'] ?? $cartao['data_prevista_recebimento'] ?? null) }}
+                                            </small>
+                                        @else
+                                            —
+                                        @endif
+                                        @if (! empty($movimento['observacoes']))
+                                            <small class="text-secondary d-block mt-1">{{ $movimento['observacoes'] }}</small>
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                            </tbody>
+                        </table>
+                    </div>
+                @else
+                    <div class="empty-state py-4">
+                        <i class="bi bi-cash-stack"></i>
+                        <h4>Nenhuma baixa registrada</h4>
+                        <p>O título ainda não possui movimento de pagamento/recebimento no fluxo de caixa.</p>
+                    </div>
+                @endif
+            </article>
+
+    <article class="surface-card">
+        <h3 class="surface-title fs-5 mb-2">
+            <i class="bi bi-shield-check me-2"></i>
+            Auditoria
+        </h3>
+        <div class="row g-3">
+            <div class="col-md-6">
+                <span class="summary-card-eyebrow">Criado em</span>
+                <p class="mb-0">{{ $date($auditoria['criado_em'] ?? $lancamento['created_at'] ?? null, true) }}</p>
+            </div>
+            <div class="col-md-6">
+                <span class="summary-card-eyebrow">Atualizado em</span>
+                <p class="mb-0">{{ $date($auditoria['atualizado_em'] ?? $lancamento['updated_at'] ?? null, true) }}</p>
+            </div>
+        </div>
+    </article>
 @endsection
+
+@if ($canPay ?? false)
+    @push('modals')
+        <div class="modal fade" id="payModal{{ $id }}" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <form method="post" action="{{ route('financeiro.pay', $id) }}" data-financeiro-pay-form data-valor-aberto="{{ number_format($valorAberto, 2, '.', '') }}">
+                        @csrf
+                        <input type="hidden" name="voltar_para" value="show">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Registrar baixa — Lançamento #{{ $id }}</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label class="form-label">Valor da baixa</label>
+                                <div class="d-flex flex-wrap gap-2 mb-2">
+                                    <button type="button" class="btn btn-outline-primary btn-sm" data-action="valor-total">
+                                        <i class="bi bi-cash-coin me-1"></i>Valor total (R$ {{ number_format($valorAberto, 2, ',', '.') }})
+                                    </button>
+                                    <button type="button" class="btn btn-outline-light btn-sm" data-action="valor-parcial">
+                                        <i class="bi bi-pie-chart me-1"></i>Valor parcial
+                                    </button>
+                                </div>
+                                <input type="number" name="valor_movimento" class="form-control" step="0.01" min="0.01" max="{{ number_format($valorAberto, 2, '.', '') }}" data-field="valor_movimento" required>
+                                <small class="text-secondary d-block mt-1">
+                                    Saldo em aberto: R$ {{ number_format($valorAberto, 2, ',', '.') }}. Um valor parcial mantém o lançamento como "Parcial", com o valor pago e o saldo pendente calculados automaticamente.
+                                </small>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Data do movimento</label>
+                                <input type="date" name="data_movimento" class="form-control" value="{{ now()->toDateString() }}">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Forma de pagamento</label>
+                                <select name="forma_pagamento" class="form-select" data-field="forma_pagamento">
+                                    <option value="">Não informado</option>
+                                    <option value="dinheiro">Dinheiro</option>
+                                    <option value="cartao_credito">Cartão de crédito</option>
+                                    <option value="cartao_debito">Cartão de débito</option>
+                                    <option value="pix">Pix</option>
+                                    <option value="boleto">Boleto</option>
+                                    <option value="transferencia">Transferência</option>
+                                </select>
+                            </div>
+                            <div class="d-none mb-3 pt-2 border-top" data-card-fields>
+                                <div class="desktop-grid desktop-grid-two">
+                                    <div>
+                                        <label class="form-label">Operadora</label>
+                                        <select class="form-select" name="operadora_id" data-field="operadora_id">
+                                            <option value="">Selecione</option>
+                                            @foreach ($cartaoDataset['operadoras'] ?? [] as $operadora)
+                                                <option value="{{ $operadora['id'] }}">{{ $operadora['nome'] }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Bandeira (opcional)</label>
+                                        <select class="form-select" name="bandeira_id" data-field="bandeira_id">
+                                            <option value="">Genérica (qualquer bandeira)</option>
+                                            @foreach ($cartaoDataset['bandeiras'] ?? [] as $bandeira)
+                                                <option value="{{ $bandeira['id'] }}">{{ $bandeira['nome'] }}</option>
+                                            @endforeach
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Modalidade</label>
+                                        <select class="form-select" name="modalidade" data-field="modalidade">
+                                            <option value="credito">Crédito</option>
+                                            <option value="debito">Débito</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label class="form-label">Parcelas</label>
+                                        <input type="number" min="1" max="99" step="1" class="form-control" name="parcelas" value="1" data-field="parcelas">
+                                    </div>
+                                </div>
+                                <p class="small text-secondary mt-2 mb-0" data-card-preview>Selecione operadora, modalidade e parcelas para estimar a taxa.</p>
+                            </div>
+                            <div>
+                                <label class="form-label">Observações</label>
+                                <textarea name="observacoes" class="form-control" rows="2"></textarea>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">Confirmar baixa</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    @endpush
+
+    @section('scripts')
+        <script>
+            window.__DESKTOP_FINANCEIRO_INDEX = {!! json_encode([
+                'cartao' => $cartaoDataset ?? ['operadoras' => [], 'bandeiras' => [], 'taxas' => []],
+            ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
+        </script>
+        <script src="{{ asset('assets/js/financeiro-pay.js') }}?v={{ filemtime(public_path('assets/js/financeiro-pay.js')) }}"></script>
+    @endsection
+@endif

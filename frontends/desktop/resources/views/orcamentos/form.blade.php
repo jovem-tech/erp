@@ -161,6 +161,10 @@
         ? $formatPercentDisplay($globalAdditionPercent)
         : $formatMoney($globalAdditionAmount);
     $globalAdditionPreviewVisible = $globalAdditionType === 'percentual';
+
+    // OS encerrada (skill sistema-erp-os-fluxo-fechamento): edição exige
+    // confirmação de administrador — ver BudgetWorkflowService::isOrderClosed().
+    $osIsEncerrada = (bool) ($budget['os']['is_encerrada'] ?? false);
 @endphp
 
 <section class="desktop-form-card">
@@ -194,6 +198,16 @@
         </div>
     </div>
 
+    @if ($osIsEncerrada)
+        <div class="alert alert-warning d-flex align-items-center gap-2" role="alert">
+            <i class="bi bi-lock-fill"></i>
+            <div>
+                <strong>Esta OS está encerrada.</strong>
+                Qualquer alteração salva aqui exigirá confirmação de um administrador.
+            </div>
+        </div>
+    @endif
+
     <form
         method="post"
         action="{{ $formAction }}"
@@ -201,12 +215,15 @@
         data-budget-form
         data-budget-draft-key="{{ $draftKey }}"
         data-budget-is-edit="{{ $isEditMode ? '1' : '0' }}"
+        data-budget-is-encerrada="{{ $osIsEncerrada ? '1' : '0' }}"
     >
         @csrf
         @if ($formMethod !== 'POST')
             @method($formMethod)
         @endif
         <input type="hidden" name="submission_mode" value="save_only" data-budget-submission-mode>
+        <input type="hidden" name="admin_email" value="" data-budget-admin-email>
+        <input type="hidden" name="admin_password" value="" data-budget-admin-password>
 
         <input type="hidden" name="numero" value="{{ old('numero', $budget['numero'] ?? '') }}">
         <input type="hidden" name="versao" value="{{ old('versao', $budget['versao'] ?? 1) }}">
@@ -568,6 +585,10 @@
 </section>
 
 @push('modals')
+    @if ($osIsEncerrada)
+        @include('orcamentos._admin_confirm_modal')
+    @endif
+
     @if ($canQuickCatalog)
         @include('orcamentos.partials.quick-item-modal', [
             'quickCatalogs' => $quickCatalogs,

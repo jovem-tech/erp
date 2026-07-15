@@ -57,27 +57,40 @@
                 <i class="bi bi-arrow-left me-2"></i>
                 Voltar
             </a>
-            @if (\App\Support\DesktopSession::can('clientes', 'editar'))
-                <a href="{{ $editUrl }}" class="btn btn-soft">
-                    <i class="bi bi-pencil-square me-2"></i>
-                    Editar cliente
-                </a>
-            @endif
             @if (\App\Support\DesktopSession::can('os', 'criar'))
                 <a href="{{ $newOrderUrl }}" class="btn btn-primary">
                     <i class="bi bi-plus-lg me-2"></i>
                     Nova OS
                 </a>
             @endif
-            @if ($canViewOrders)
-                <a href="{{ $ordersIndexUrl }}" class="btn btn-soft">
-                    Ver OS do cliente
-                </a>
-            @endif
-            @if ($canViewEquipments)
-                <a href="{{ $equipmentsIndexUrl }}" class="btn btn-soft">
-                    Ver equipamentos
-                </a>
+
+            @if (\App\Support\DesktopSession::can('clientes', 'editar') || $canViewOrders || $canViewEquipments)
+                <div class="dropdown os-actions-dropdown">
+                    <button type="button"
+                        class="btn btn-outline-light dropdown-toggle os-actions-toggle"
+                        data-bs-toggle="dropdown"
+                        aria-expanded="false">
+                        Mais ações
+                    </button>
+
+                    <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                        @if (\App\Support\DesktopSession::can('clientes', 'editar'))
+                            <a href="{{ $editUrl }}" class="dropdown-item">
+                                <i class="bi bi-pencil-square me-2"></i>Editar cliente
+                            </a>
+                        @endif
+                        @if ($canViewOrders)
+                            <a href="{{ $ordersIndexUrl }}" class="dropdown-item">
+                                <i class="bi bi-clipboard-check me-2"></i>Ver OS do cliente
+                            </a>
+                        @endif
+                        @if ($canViewEquipments)
+                            <a href="{{ $equipmentsIndexUrl }}" class="dropdown-item">
+                                <i class="bi bi-laptop me-2"></i>Ver equipamentos
+                            </a>
+                        @endif
+                    </div>
+                </div>
             @endif
         </div>
     </div>
