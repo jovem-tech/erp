@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.8.1.0 — 2026-07-15 18:47
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Reforça a cobertura de teste do cancelamento de título com motivo "Fechamento inadvertido" (reversão completa da baixa da OS): passa a verificar também que `data_entrega` volta a `null` junto com o status, não só o status em si. Investigação disparada por um relato de produção onde uma OS revertida para "Aguardando Reparo" continuou exibindo a data de entrega antiga na listagem — o teste confirma que o `develop` já corrige isso corretamente (via `OrderClosureService::cancelClosure()`, a mesma lógica reaproveitada de "Cancelar baixa"); a causa mais provável do que foi visto em produção é o deploy daquele fluxo ainda não ter chegado lá, ou o cancelamento ter sido feito antes da correção existir
+- **Arquivos:** backend/tests/Feature/Api/V1/FinanceiroTest.php
+
 ## v4.8.0.0 — 2026-07-15 13:15
 - **Tier:** minor
 - **Autor/Agente:** Claude

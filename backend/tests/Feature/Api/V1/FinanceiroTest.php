@@ -939,6 +939,12 @@ class FinanceiroTest extends TestCase
 
         $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'aguardando_reparo']);
         $this->assertDatabaseMissing('financeiro', ['id' => $financeiroId]);
+
+        // Reversão completa da baixa: a OS deixa de estar "entregue", então a
+        // data de entrega tem que voltar a null junto com o status — senão a
+        // listagem mostra "Concluída no prazo" com uma OS que nem está mais
+        // encerrada, e a data de entrega de um fechamento que foi desfeito.
+        $this->assertNull(DB::table('os')->where('id', $orderId)->value('data_entrega'));
     }
 
     public function test_cancel_on_closed_order_with_invalid_admin_credentials_is_rejected(): void
