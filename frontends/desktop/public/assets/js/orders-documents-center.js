@@ -426,8 +426,8 @@
             : 'Padrão: telefone/WhatsApp cadastrado do cliente.';
     };
 
-    const openSendModal = () => {
-        resyncSelectionFromLiveDom();
+    const openSendModal = (explicitIds = null) => {
+        applyExplicitSelection(explicitIds);
 
         if (state.selected.size === 0) {
             return;
@@ -535,8 +535,8 @@
         }
     };
 
-    const openShareModal = () => {
-        resyncSelectionFromLiveDom();
+    const openShareModal = (explicitIds = null) => {
+        applyExplicitSelection(explicitIds);
 
         if (state.selected.size === 0) {
             return;
@@ -710,8 +710,22 @@
         return `${baseUrl}?${params.toString()}`;
     };
 
-    const downloadZip = () => {
-        resyncSelectionFromLiveDom();
+    // Ação de uma linha específica do catálogo (um só documento, o mais
+    // recente daquele tipo) não deve depender da seleção via checkbox do
+    // acervo — troca state.selected pelo id explícito, sem reler os
+    // checkboxes (resyncSelectionFromLiveDom reverteria essa troca).
+    const applyExplicitSelection = (explicitIds) => {
+        if (!explicitIds) {
+            resyncSelectionFromLiveDom();
+            return;
+        }
+
+        state.selected = new Set(explicitIds.map(String));
+        applySelectionToDom();
+    };
+
+    const downloadZip = (explicitIds = null) => {
+        applyExplicitSelection(explicitIds);
 
         if (state.selected.size === 0) {
             return;
@@ -721,8 +735,8 @@
         window.location.assign(buildSelectionUrl(config.routes.download));
     };
 
-    const openPrint = () => {
-        resyncSelectionFromLiveDom();
+    const openPrint = (explicitIds = null) => {
+        applyExplicitSelection(explicitIds);
 
         if (state.selected.size === 0) {
             return;
@@ -742,6 +756,34 @@
 
         if (event.target.closest('[data-doc-generate-batch]')) {
             generateTypes(Array.from(state.catalogSelected));
+            return;
+        }
+
+        // Ações de uma linha só do catálogo — cada tipo documental já gerado
+        // ganhou seu próprio botão de ZIP/imprimir/link/enviar, sem precisar
+        // marcar checkbox nenhum (a confusão entre a seleção do catálogo e a
+        // do acervo era exatamente por que "Baixar ZIP" parecia não funcionar).
+        const zipRowButton = event.target.closest('[data-doc-row-zip]');
+        if (zipRowButton) {
+            downloadZip([zipRowButton.getAttribute('data-doc-row-zip')]);
+            return;
+        }
+
+        const printRowButton = event.target.closest('[data-doc-row-print]');
+        if (printRowButton) {
+            openPrint([printRowButton.getAttribute('data-doc-row-print')]);
+            return;
+        }
+
+        const shareRowButton = event.target.closest('[data-doc-row-share]');
+        if (shareRowButton) {
+            openShareModal([shareRowButton.getAttribute('data-doc-row-share')]);
+            return;
+        }
+
+        const sendRowButton = event.target.closest('[data-doc-row-send]');
+        if (sendRowButton) {
+            openSendModal([sendRowButton.getAttribute('data-doc-row-send')]);
             return;
         }
 

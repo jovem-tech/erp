@@ -7,15 +7,13 @@ use App\Http\Requests\Api\V1\CloseOrderRequest;
 use App\Http\Requests\Api\V1\StoreOrderProcedureRequest;
 use App\Http\Requests\Api\V1\UpdateOrderStatusRequest;
 use App\Http\Requests\Api\V1\UpsertOrderRequest;
-use App\Models\User;
+use App\Services\Auth\AdminCredentialVerifier;
 use App\Services\Orders\OrderClosureService;
 use App\Services\Orders\OrderDocumentCenterService;
 use App\Services\Orders\OrderWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -25,7 +23,8 @@ class OrderController extends BaseApiController
     public function __construct(
         private readonly OrderWorkflowService $orderWorkflowService,
         private readonly OrderClosureService $orderClosureService,
-        private readonly OrderDocumentCenterService $orderDocumentCenterService
+        private readonly OrderDocumentCenterService $orderDocumentCenterService,
+        private readonly AdminCredentialVerifier $adminCredentialVerifier
     ) {
     }
 
@@ -888,37 +887,27 @@ class OrderController extends BaseApiController
         }
 
         $validated = $request->validated();
-        $adminEmail = mb_strtolower(trim((string) $validated['admin_email']));
+        $adminEmail = (string) $validated['admin_email'];
         $adminPassword = (string) $validated['admin_password'];
 
-        $throttleKey = 'os-closure-cancel-admin-auth:' . $adminEmail . '|' . $request->ip();
-        if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
+        $verification = $this->adminCredentialVerifier->verify(
+            $adminEmail,
+            $adminPassword,
+            'os-closure-cancel-admin-auth',
+            (string) $request->ip()
+        );
+
+        if (($verification['error'] ?? null) === 'rate_limited') {
             return $this->error(
                 'Muitas tentativas de verificação de administrador. Aguarde um pouco e tente novamente.',
                 429,
                 'ORDER_CLOSURE_CANCEL_ADMIN_AUTH_RATE_LIMITED',
-                ['retry_after' => RateLimiter::availableIn($throttleKey)],
+                ['retry_after' => $verification['retry_after'] ?? null],
                 request: $request
             );
         }
 
-        $admin = User::query()->where('email', $adminEmail)->first();
-
-        if (
-            ! $admin instanceof User
-            || ! (bool) $admin->ativo
-            || mb_strtolower(trim((string) ($admin->perfil ?? ''))) !== 'admin'
-            || ! Hash::check($adminPassword, (string) $admin->senha)
-        ) {
-            RateLimiter::hit($throttleKey, 60);
-
-            logger()->warning('[API V1][ORDERS][CLOSURE] Credenciais de administrador inválidas ao cancelar baixa', [
-                'order_id' => $order,
-                'user_id' => $user->id,
-                'admin_email' => $adminEmail,
-                'ip' => $request->ip(),
-            ]);
-
+        if (! ($verification['ok'] ?? false)) {
             // 422, nao 401: o desktop trata QUALQUER 401 como "sessao do usuario
             // atual expirou" e forca logout (ApiClient::parseResponse). Isso e'
             // uma verificacao de credenciais de um usuario DIFERENTE (admin),
@@ -932,7 +921,7 @@ class OrderController extends BaseApiController
             );
         }
 
-        RateLimiter::clear($throttleKey);
+        $admin = $verification['admin'];
 
         $result = $this->orderClosureService->cancelClosure($order, $user, $admin);
 

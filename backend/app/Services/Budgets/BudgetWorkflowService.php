@@ -9,11 +9,14 @@ use App\Models\BudgetSend;
 use App\Models\BudgetStatusHistory;
 use App\Models\Client;
 use App\Models\Equipment;
+use App\Models\Financeiro;
 use App\Models\Order;
 use App\Models\OrderEvent;
 use App\Models\Peca;
 use App\Models\Servico;
 use App\Models\User;
+use App\Services\Financeiro\FinanceiroService;
+use App\Services\Financeiro\OsMargemService;
 use App\Services\Notifications\NotificationDispatchService;
 use App\Services\Orders\OrderEventService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -28,8 +31,33 @@ class BudgetWorkflowService
         private readonly BudgetOrderSyncService $budgetOrderSyncService,
         private readonly BudgetApprovalService $budgetApprovalService,
         private readonly OrderEventService $orderEventService,
-        private readonly NotificationDispatchService $notificationDispatchService
+        private readonly NotificationDispatchService $notificationDispatchService,
+        private readonly FinanceiroService $financeiroService,
+        private readonly OsMargemService $osMargemService
     ) {
+    }
+
+    /**
+     * Encerramentos com equipamento efetivamente entregue/devolvido/descartado
+     * ao cliente — mais estreito que OrderStatus::closureCodes() de propósito:
+     * esse método também inclui 'cancelado' (usado no dropdown "Encerrar como"
+     * e no badge geral "OS encerrada"), mas uma OS pode chegar em 'cancelado'
+     * só por sincronização automática do orçamento rejeitado
+     * (BudgetOrderSyncService::syncFromBudget()), sem NENHUM lançamento
+     * financeiro ter existido. Bloquear a edição do orçamento nesse caso não
+     * protegeria nada e só atrapalharia a correção do orçamento rejeitado.
+     */
+    private const BUDGET_LOCK_CLOSURE_CODES = ['entregue_reparado', 'devolvido_sem_reparo', 'descartado'];
+
+    /**
+     * OS encerrada (skill sistema-erp-os-fluxo-fechamento): já houve entrega do
+     * equipamento e, em geral, lançamento financeiro — editar o orçamento nesse
+     * estado exige confirmação de administrador (ver updateBudget()/createBudget()).
+     */
+    private function isOrderClosed(?Order $order): bool
+    {
+        return $order instanceof Order
+            && in_array(trim((string) $order->status), self::BUDGET_LOCK_CLOSURE_CODES, true);
     }
 
     /**
@@ -238,12 +266,20 @@ class BudgetWorkflowService
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
-    public function createBudget(User $user, array $payload): array
+    public function createBudget(User $user, array $payload, ?User $verifiedAdmin = null): array
     {
-        return DB::transaction(function () use ($user, $payload): array {
+        return DB::transaction(function () use ($user, $payload, $verifiedAdmin): array {
             $attributes = $this->normalizePayload($payload, true);
             $budgetAttributes = $attributes;
             unset($budgetAttributes['itens']);
+
+            $osId = (int) ($budgetAttributes['os_id'] ?? 0);
+            if ($osId > 0) {
+                $order = Order::query()->find($osId);
+                if ($this->isOrderClosed($order) && ! ($verifiedAdmin instanceof User)) {
+                    return ['result' => 'requires_admin_confirmation'];
+                }
+            }
 
             $budget = new Budget();
             $budget->fill($budgetAttributes);
@@ -331,13 +367,20 @@ class BudgetWorkflowService
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
-    public function updateBudget(int $budgetId, User $user, array $payload): array
+    public function updateBudget(int $budgetId, User $user, array $payload, ?User $verifiedAdmin = null): array
     {
-        return DB::transaction(function () use ($budgetId, $user, $payload): array {
+        return DB::transaction(function () use ($budgetId, $user, $payload, $verifiedAdmin): array {
             $budget = $this->loadBudget($budgetId);
 
             if (! $budget instanceof Budget) {
                 return ['result' => 'not_found'];
+            }
+
+            $order = $budget->order; // já eager-loaded por loadBudget()
+            $osClosed = $this->isOrderClosed($order);
+
+            if ($osClosed && ! ($verifiedAdmin instanceof User)) {
+                return ['result' => 'requires_admin_confirmation'];
             }
 
             $attributes = $this->normalizePayload($payload, false);
@@ -389,6 +432,30 @@ class BudgetWorkflowService
 
             $this->recalculateBudgetFinancials($budget, $itemsSubtotal, $budgetAttributes['subtotal'] ?? $budget->subtotal);
 
+            $totalChanged = abs((float) $budget->total - $previousTotal) > 0.009;
+            $financialAdjustment = null;
+
+            if ($osClosed && $totalChanged && $order instanceof Order) {
+                // Edição autorizada por admin numa OS encerrada mudou o valor:
+                // o título a receber (e, se necessário, os movimentos já
+                // registrados) precisam refletir o valor corrigido — senão o
+                // financeiro fica dessincronizado da realidade.
+                $financialAdjustment = $this->correctClosedOrderFinancials($order, (float) $budget->total);
+            } elseif (
+                ! $osClosed
+                && $totalChanged
+                && $previousStatus === Budget::STATUS_APPROVED
+                && $budget->status === $previousStatus
+            ) {
+                // OS ainda aberta e o valor mudou depois de já aprovado pelo
+                // cliente: volta a exigir aprovação (reenviar_orcamento já
+                // aparece automaticamente com o botão "Reenviar para
+                // aprovação" em orcamentos/show.blade.php). Só sobrescreve o
+                // status se nada mais no payload já tiver mudado explicitamente.
+                $budget->status = Budget::STATUS_RESEND;
+                $budget->save();
+            }
+
             if ($previousStatus !== $budget->status) {
                 $this->recordStatusHistory(
                     $budget,
@@ -401,27 +468,87 @@ class BudgetWorkflowService
             }
 
             if ((int) ($budget->os_id ?? 0) > 0) {
+                $descricao = sprintf('Orçamento %s atualizado (R$ %s).', $budget->numero, number_format((float) $budget->total, 2, ',', '.'));
+                $dados = [
+                    'orcamento_id' => (int) $budget->id,
+                    'numero' => (string) $budget->numero,
+                    'status_anterior' => $previousStatus,
+                    'status_novo' => (string) $budget->status,
+                    'valor_total' => round((float) $budget->total, 2),
+                ];
+
+                if ($osClosed && $verifiedAdmin instanceof User) {
+                    $dados['autorizado_por_admin'] = [
+                        'id' => (int) $verifiedAdmin->id,
+                        'email' => (string) $verifiedAdmin->email,
+                    ];
+                    $dados['total_anterior'] = round($previousTotal, 2);
+                    $dados['total_novo'] = round((float) $budget->total, 2);
+                    $descricao = 'Edição em OS encerrada autorizada por administrador. ' . $descricao;
+                }
+
                 $this->orderEventService->record(
                     (int) $budget->os_id,
                     OrderEvent::CATEGORIA_ORCAMENTO,
                     OrderEvent::TIPO_ORCAMENTO_ATUALIZADO,
                     'Orçamento atualizado',
-                    sprintf('Orçamento %s atualizado (R$ %s).', $budget->numero, number_format((float) $budget->total, 2, ',', '.')),
-                    [
-                        'orcamento_id' => (int) $budget->id,
-                        'numero' => (string) $budget->numero,
-                        'status_anterior' => $previousStatus,
-                        'status_novo' => (string) $budget->status,
-                        'valor_total' => round((float) $budget->total, 2),
-                    ],
+                    $descricao,
+                    $dados,
                     (int) $user->id
                 );
+
+                if (($financialAdjustment['ajustado'] ?? false) === true) {
+                    $this->orderEventService->record(
+                        (int) $budget->os_id,
+                        OrderEvent::CATEGORIA_FINANCEIRO,
+                        OrderEvent::TIPO_MOVIMENTO_REGISTRADO,
+                        'Movimento de recebimento ajustado',
+                        sprintf(
+                            'Recebimento reduzido em R$ %s após correção do orçamento em OS encerrada.',
+                            number_format((float) ($financialAdjustment['valor_liberado'] ?? 0), 2, ',', '.')
+                        ),
+                        ['ajustes' => $financialAdjustment['ajustes'] ?? []],
+                        (int) $user->id
+                    );
+                }
             }
 
             $this->budgetOrderSyncService->syncFromBudget($budget, (int) $user->id);
 
+            if ($osClosed && $totalChanged && $order instanceof Order) {
+                $this->osMargemService->calcularParaOs((int) $order->id);
+            }
+
             return $this->budgetDetail($this->loadBudgetOrFail((int) $budget->id));
         });
+    }
+
+    /**
+     * Corrige o título a receber (e, se preciso, os movimentos já baixados)
+     * de uma OS encerrada para acompanhar o novo total do orçamento — usado
+     * apenas na edição admin-autorizada de orçamento com OS já fechada.
+     * Retorna null quando a OS não tem título a receber (ex.: devolvido sem
+     * reparo / descartado nunca geram lançamento financeiro).
+     *
+     * @return array{ajustado: bool, ajustes?: array<int, array<string, mixed>>, valor_liberado?: float}|null
+     */
+    private function correctClosedOrderFinancials(Order $order, float $novoTotal): ?array
+    {
+        $financeiro = Financeiro::query()
+            ->where('os_id', $order->id)
+            ->where('tipo', Financeiro::TIPO_RECEBER)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $financeiro instanceof Financeiro) {
+            return null;
+        }
+
+        $ajuste = $this->financeiroService->reduceMovementsToTotal($financeiro, $novoTotal);
+        $this->financeiroService->update($financeiro, ['valor' => $novoTotal]);
+
+        return $ajuste;
     }
 
     /**
@@ -595,6 +722,7 @@ class BudgetWorkflowService
                 'numero_os' => (string) ($order->numero_os ?? ''),
                 'status' => (string) ($order->status ?? ''),
                 'estado_fluxo' => (string) ($order->estado_fluxo ?? ''),
+                'is_encerrada' => $this->isOrderClosed($order),
             ] : null,
             'responsavel' => $budget->responsible ? [
                 'id' => (int) $budget->responsible->id,

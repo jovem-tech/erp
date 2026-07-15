@@ -3,16 +3,19 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\Api\V1\UpsertBudgetRequest;
+use App\Services\Auth\AdminCredentialVerifier;
 use App\Services\Budgets\BudgetApprovalService;
 use App\Services\Budgets\BudgetWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 
 class BudgetController extends BaseApiController
 {
     public function __construct(
         private readonly BudgetWorkflowService $budgetWorkflowService,
-        private readonly BudgetApprovalService $budgetApprovalService
+        private readonly BudgetApprovalService $budgetApprovalService,
+        private readonly AdminCredentialVerifier $adminCredentialVerifier
     ) {
     }
 
@@ -97,7 +100,24 @@ class BudgetController extends BaseApiController
             return $this->unauthenticatedResponse($request);
         }
 
-        $result = $this->budgetWorkflowService->createBudget($user, $request->validated());
+        $validated = $request->validated();
+        $adminCheck = $this->verifyAdminIfProvided($validated, $request);
+        if (! $adminCheck['ok']) {
+            return $adminCheck['response'];
+        }
+
+        $payload = Arr::except($validated, ['admin_email', 'admin_password']);
+        $result = $this->budgetWorkflowService->createBudget($user, $payload, $adminCheck['admin']);
+
+        if (($result['result'] ?? 'ok') === 'requires_admin_confirmation') {
+            return $this->error(
+                'Esta OS está encerrada. Confirme com credenciais de administrador para vincular um orçamento a ela.',
+                409,
+                'BUDGET_CLOSED_OS_ADMIN_REQUIRED',
+                null,
+                request: $request
+            );
+        }
 
         return $this->success(
             ['budget' => $result],
@@ -115,13 +135,16 @@ class BudgetController extends BaseApiController
             return $this->unauthenticatedResponse($request);
         }
 
-        $result = $this->budgetWorkflowService->updateBudget($budget, $user, $request->validated());
+        $validated = $request->validated();
+        $adminCheck = $this->verifyAdminIfProvided($validated, $request);
+        if (! $adminCheck['ok']) {
+            return $adminCheck['response'];
+        }
+
+        $payload = Arr::except($validated, ['admin_email', 'admin_password']);
+        $result = $this->budgetWorkflowService->updateBudget($budget, $user, $payload, $adminCheck['admin']);
 
         return match ($result['result'] ?? 'ok') {
-            'ok' => $this->success(
-                ['budget' => $result],
-                request: $request
-            ),
             'not_found' => $this->error(
                 'Orçamento não encontrado.',
                 404,
@@ -129,11 +152,15 @@ class BudgetController extends BaseApiController
                 null,
                 request: $request
             ),
-            default => $this->error(
-                'Falha ao atualizar o orçamento.',
-                500,
-                'BUDGET_UPDATE_FAILED',
+            'requires_admin_confirmation' => $this->error(
+                'Esta OS está encerrada. Confirme com credenciais de administrador para editar o orçamento.',
+                409,
+                'BUDGET_CLOSED_OS_ADMIN_REQUIRED',
                 null,
+                request: $request
+            ),
+            default => $this->success(
+                ['budget' => $result],
                 request: $request
             ),
         };
@@ -212,5 +239,60 @@ class BudgetController extends BaseApiController
                 request: $request
             ),
         };
+    }
+
+    /**
+     * Verifica credenciais de administrador quando o payload as inclui —
+     * campos usados apenas para autorizar edição/criação de orçamento numa OS
+     * já encerrada (ver BudgetWorkflowService::isOrderClosed()). Se nenhum
+     * dos dois campos vier preenchido, retorna ok sem exigir nada (o guard de
+     * OS encerrada por si só decide se a confirmação é necessária).
+     *
+     * @param array<string, mixed> $validated
+     * @return array{ok: bool, admin?: ?\App\Models\User, response?: JsonResponse}
+     */
+    private function verifyAdminIfProvided(array $validated, Request $request): array
+    {
+        $email = trim((string) ($validated['admin_email'] ?? ''));
+        $password = (string) ($validated['admin_password'] ?? '');
+
+        if ($email === '' || $password === '') {
+            return ['ok' => true, 'admin' => null];
+        }
+
+        $verification = $this->adminCredentialVerifier->verify(
+            $email,
+            $password,
+            'budget-edit-admin-auth',
+            (string) $request->ip()
+        );
+
+        if (($verification['error'] ?? null) === 'rate_limited') {
+            return [
+                'ok' => false,
+                'response' => $this->error(
+                    'Muitas tentativas de verificação de administrador. Aguarde um pouco e tente novamente.',
+                    429,
+                    'BUDGET_ADMIN_AUTH_RATE_LIMITED',
+                    ['retry_after' => $verification['retry_after'] ?? null],
+                    request: $request
+                ),
+            ];
+        }
+
+        if (! ($verification['ok'] ?? false)) {
+            return [
+                'ok' => false,
+                'response' => $this->error(
+                    'Credenciais de administrador inválidas.',
+                    422,
+                    'BUDGET_ADMIN_AUTH_INVALID',
+                    null,
+                    request: $request
+                ),
+            ];
+        }
+
+        return ['ok' => true, 'admin' => $verification['admin']];
     }
 }

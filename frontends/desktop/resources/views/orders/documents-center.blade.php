@@ -142,7 +142,7 @@
         <div class="d-flex flex-wrap justify-content-between gap-3 align-items-center mb-3">
             <div>
                 <h3 class="surface-title fs-5 mb-1">Tipos documentais disponíveis</h3>
-                <p class="surface-subtitle mb-0">A geração manual respeita pré-requisitos e os marcos automáticos do fluxo da OS.</p>
+                <p class="surface-subtitle mb-0">Gere, visualize, baixe, imprima, compartilhe e envie cada documento direto na linha dele. A geração manual respeita pré-requisitos e os marcos automáticos do fluxo da OS.</p>
             </div>
             <button type="button" class="btn btn-primary" data-doc-generate-batch disabled>
                 <i class="bi bi-file-earmark-plus me-2"></i>Gerar selecionados (0)
@@ -152,19 +152,19 @@
         <div data-fragment="catalog">
             @include('orders.documents-center._catalog', ['catalog' => $catalog, 'orderId' => $orderId])
         </div>
-    </article>
 
-    <article class="surface-card mb-4" data-doc-center-root>
+        <hr class="my-4">
+
         <div class="d-flex flex-wrap justify-content-between gap-3 align-items-center mb-3">
             <div>
-                <h3 class="surface-title fs-5 mb-1">Acervo versionado do cliente</h3>
-                <p class="surface-subtitle mb-0">Selecione versões específicas para enviar, compartilhar, baixar ZIP ou imprimir.</p>
+                <h4 class="surface-title fs-6 mb-1">Todas as versões geradas</h4>
+                <p class="surface-subtitle mb-0">Histórico completo do acervo, incluindo versões antigas arquivadas. Selecione várias para combinar num único ZIP, impressão, link ou envio.</p>
             </div>
             <div class="d-flex flex-wrap gap-2 align-items-center">
-                <button type="button" class="btn btn-outline-light" data-doc-select-all>
+                <button type="button" class="btn btn-outline-light btn-sm" data-doc-select-all>
                     <i class="bi bi-check2-square me-2"></i>Selecionar tudo
                 </button>
-                <button type="button" class="btn btn-outline-light" data-doc-clear-all>
+                <button type="button" class="btn btn-outline-light btn-sm" data-doc-clear-all>
                     <i class="bi bi-eraser me-2"></i>Limpar seleção
                 </button>
             </div>

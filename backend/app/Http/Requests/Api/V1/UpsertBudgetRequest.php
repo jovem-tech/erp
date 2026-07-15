@@ -72,6 +72,10 @@ class UpsertBudgetRequest extends BaseApiFormRequest
             'itens.*.total' => ['nullable', 'numeric', 'min:0'],
             'itens.*.ordem' => ['nullable', 'integer', 'min:0'],
             'itens.*.observacoes' => ['nullable', 'string'],
+            // Só usados quando a OS vinculada já está encerrada — ver
+            // BudgetWorkflowService::isOrderClosed()/AdminCredentialVerifier.
+            'admin_email' => ['nullable', 'string', 'email'],
+            'admin_password' => ['nullable', 'string'],
         ];
     }
 }

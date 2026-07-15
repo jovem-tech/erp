@@ -126,11 +126,25 @@ class FinanceiroController extends DesktopController
             abort(404);
         }
 
+        // Dataset de operadoras/taxas só é necessário quando o modal de
+        // "Registrar baixa" pode aparecer (título em aberto + permissão).
+        $status = (string) ($data['lancamento']['status'] ?? 'pendente');
+        $cartaoDataset = ['operadoras' => [], 'bandeiras' => [], 'taxas' => []];
+
+        if (in_array($status, ['pendente', 'parcial'], true) && \App\Support\DesktopSession::can('financeiro', 'editar')) {
+            try {
+                $cartaoDataset = $this->financeiroService->catalogo()['cartao'];
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
+
         return view('financeiro.show', [
             'pageTitle' => 'Detalhes do lançamento',
             'lancamento' => $data['lancamento'],
             'resumo' => $data['resumo'] ?? [],
             'detalhes' => $data['detalhes'] ?? [],
+            'cartaoDataset' => $cartaoDataset,
         ]);
     }
 
@@ -246,7 +260,7 @@ class FinanceiroController extends DesktopController
             ->with('success', 'Lançamento excluído com sucesso.');
     }
 
-    public function cancel(int $financeiro): RedirectResponse
+    public function cancel(Request $request, int $financeiro): RedirectResponse
     {
         try {
             $this->financeiroService->cancel($financeiro);
@@ -259,7 +273,7 @@ class FinanceiroController extends DesktopController
         }
 
         return redirect()
-            ->route('financeiro.index')
+            ->to($this->successTarget($request, $financeiro))
             ->with('success', 'Lançamento cancelado com sucesso.');
     }
 
@@ -295,8 +309,21 @@ class FinanceiroController extends DesktopController
         }
 
         return redirect()
-            ->route('financeiro.index')
+            ->to($this->successTarget($request, $financeiro))
             ->with('success', 'Baixa registrada com sucesso.');
+    }
+
+    /**
+     * Baixa e cancelamento podem ser disparados tanto da listagem quanto da
+     * página de detalhes — o campo oculto "voltar_para=show" preserva a origem.
+     */
+    private function successTarget(Request $request, int $financeiro): string
+    {
+        if ($request->input('voltar_para') === 'show') {
+            return route('financeiro.show', $financeiro);
+        }
+
+        return route('financeiro.index');
     }
 
     /**

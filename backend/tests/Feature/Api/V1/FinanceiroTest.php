@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api\V1;
 
+use App\Models\Financeiro;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
@@ -192,6 +193,55 @@ class FinanceiroTest extends TestCase
             ->assertJsonPath('data.lancamentos.0.cliente_id', $clienteId);
     }
 
+    public function test_index_orders_by_data_pagamento_descending_with_pending_titles_last(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        $clienteId = $this->createClientRecord();
+        Sanctum::actingAs($admin, ['*']);
+
+        // Vencimento não importa para a ordenação: o mais antigo a vencer foi
+        // o último a ser efetivamente pago, e deve aparecer primeiro.
+        $paidOldestDueOldest = Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'cliente_id' => $clienteId,
+            'categoria' => 'Serviço',
+            'descricao' => 'Pago por último, vencia primeiro',
+            'valor' => 100.00,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->subDays(10)->toDateString(),
+            'data_pagamento' => now()->toDateString(),
+        ]);
+
+        $paidMiddle = Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'cliente_id' => $clienteId,
+            'categoria' => 'Serviço',
+            'descricao' => 'Pago no meio',
+            'valor' => 100.00,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->toDateString(),
+            'data_pagamento' => now()->subDays(3)->toDateString(),
+        ]);
+
+        $pending = Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'cliente_id' => $clienteId,
+            'categoria' => 'Serviço',
+            'descricao' => 'Ainda pendente',
+            'valor' => 100.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->addDays(5)->toDateString(),
+            'data_pagamento' => null,
+        ]);
+
+        $response = $this->getJson('/api/v1/financeiro?cliente_id=' . $clienteId);
+
+        $response->assertOk()
+            ->assertJsonPath('data.lancamentos.0.id', $paidOldestDueOldest->id)
+            ->assertJsonPath('data.lancamentos.1.id', $paidMiddle->id)
+            ->assertJsonPath('data.lancamentos.2.id', $pending->id);
+    }
+
     public function test_creating_with_status_pago_registers_full_settlement_automatically(): void
     {
         $admin = $this->createUserRecord(['grupo_id' => 1]);
@@ -264,6 +314,13 @@ class FinanceiroTest extends TestCase
             'updated_at' => now(),
         ]);
 
+        $orcamentoId = $this->createBudgetRecord([
+            'numero' => 'ORC-2607-000008',
+            'os_id' => $osId,
+            'cliente_id' => $clienteId,
+            'status' => 'aprovado',
+        ]);
+
         $store = $this->postJson('/api/v1/financeiro', [
             'tipo' => 'receber',
             'categoria' => 'Serviço',
@@ -286,6 +343,9 @@ class FinanceiroTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('data.detalhes.contraparte.nome', 'Cliente Detalhado')
+            ->assertJsonPath('data.detalhes.contraparte.id', $clienteId)
+            ->assertJsonPath('data.detalhes.os.orcamento.id', $orcamentoId)
+            ->assertJsonPath('data.detalhes.os.orcamento.numero', 'ORC-2607-000008')
             ->assertJsonPath('data.detalhes.origem.tipo', 'os')
             ->assertJsonPath('data.detalhes.os.numero_os', 'OS26070099')
             ->assertJsonPath('data.detalhes.os.equipamento.tipo', 'Notebook')

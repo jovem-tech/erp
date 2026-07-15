@@ -400,7 +400,19 @@
             quickItemType: 'servico',
             quickItemSubmitting: false,
             reviewConfirmed: false,
+            adminConfirmed: false,
         };
+
+        // OS encerrada (skill sistema-erp-os-fluxo-fechamento): salvar exige
+        // confirmação de administrador — ver orcamentos/_admin_confirm_modal.blade.php.
+        const budgetIsEncerrada = form.dataset.budgetIsEncerrada === '1';
+        const adminConfirmModalElement = document.getElementById('orcamentoAdminConfirmModal');
+        const adminEmailInput = document.getElementById('orcamentoAdminEmail');
+        const adminPasswordInput = document.getElementById('orcamentoAdminPassword');
+        const adminConfirmError = document.getElementById('orcamentoAdminConfirmError');
+        const adminConfirmSubmitButton = document.getElementById('orcamentoAdminConfirmSubmit');
+        const adminEmailHidden = form.querySelector('[data-budget-admin-email]');
+        const adminPasswordHidden = form.querySelector('[data-budget-admin-password]');
 
         const getRowCatalog = (type) => {
             return type === 'peca' ? catalogs.parts : catalogs.services;
@@ -1841,6 +1853,14 @@
         form.addEventListener('change', () => updateSummary());
         form.addEventListener('submit', (event) => {
             if (state.reviewConfirmed) {
+                if (budgetIsEncerrada && !state.adminConfirmed) {
+                    event.preventDefault();
+                    if (adminConfirmModalElement instanceof HTMLElement) {
+                        getModal(adminConfirmModalElement)?.show();
+                    }
+                    return;
+                }
+
                 removeEmptyRows();
                 updateSummary();
 
@@ -1860,6 +1880,46 @@
             event.preventDefault();
             renderReviewModal();
             getModal(reviewModalElement)?.show();
+        });
+
+        adminConfirmSubmitButton?.addEventListener('click', () => {
+            const email = (adminEmailInput?.value || '').trim();
+            const password = adminPasswordInput?.value || '';
+
+            if (email === '' || password === '') {
+                if (adminConfirmError instanceof HTMLElement) {
+                    adminConfirmError.textContent = 'Informe e-mail e senha do administrador.';
+                    adminConfirmError.classList.remove('d-none');
+                }
+                return;
+            }
+
+            if (adminEmailHidden instanceof HTMLInputElement) {
+                adminEmailHidden.value = email;
+            }
+            if (adminPasswordHidden instanceof HTMLInputElement) {
+                adminPasswordHidden.value = password;
+            }
+
+            state.adminConfirmed = true;
+            getModal(adminConfirmModalElement)?.hide();
+
+            if (typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+                return;
+            }
+
+            form.submit();
+        });
+
+        adminConfirmModalElement?.addEventListener('hidden.bs.modal', () => {
+            if (adminConfirmError instanceof HTMLElement) {
+                adminConfirmError.classList.add('d-none');
+                adminConfirmError.textContent = '';
+            }
+            if (adminPasswordInput instanceof HTMLInputElement) {
+                adminPasswordInput.value = '';
+            }
         });
 
         reviewSubmitButtons.forEach((button) => {

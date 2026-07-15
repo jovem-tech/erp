@@ -284,6 +284,9 @@
                             $canCreateBudget = \App\Support\DesktopSession::can('orcamentos', 'criar');
                             $canViewBudget = \App\Support\DesktopSession::can('orcamentos', 'visualizar');
                             $nextStatusOptions = is_array($order['proximas_etapas'] ?? null) ? $order['proximas_etapas'] : [];
+
+                            $financeiroTituloId = (int) ($order['financeiro_titulo_id'] ?? 0);
+                            $canViewFinanceiro = \App\Support\DesktopSession::can('financeiro', 'visualizar');
                             $budgetActionUrl = '';
                             $budgetActionLabel = '';
 
@@ -434,6 +437,15 @@
                                                 <a href="{{ route('orders.closure.show', $orderId) }}" class="dropdown-item">
                                                     <i class="bi bi-box-seam me-2"></i>
                                                     Baixa
+                                                </a>
+                                            </li>
+                                        @endif
+
+                                        @if ($canViewFinanceiro && $financeiroTituloId > 0)
+                                            <li>
+                                                <a href="{{ route('financeiro.show', $financeiroTituloId) }}" class="dropdown-item">
+                                                    <i class="bi bi-cash-coin me-2"></i>
+                                                    Ver lançamento financeiro
                                                 </a>
                                             </li>
                                         @endif

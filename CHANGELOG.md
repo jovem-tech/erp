@@ -1,5 +1,53 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.7.14.0 — 2026-07-15 01:56
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Reorganiza a Central Documental da OS (`/os/{id}/documentos`): as tabelas "Tipos documentais disponíveis" e "Acervo versionado do cliente" (renomeada para "Todas as versões geradas") passam a viver no mesmo card, uma logo abaixo da outra. Cada linha de "Tipos documentais disponíveis" com documento já gerado ganha um dropdown "Ações" com Visualizar A4/80mm (só aparece o formato realmente disponível), Baixar ZIP, Imprimir, Gerar link, Enviar e Arquivar/Reativar, agindo direto naquele documento — sem precisar marcar checkbox nenhum. Corrige o "Baixar ZIP" que parecia não funcionar: a causa raiz era a seleção da tabela "Tipos documentais" (usada só para gerar em lote) ser um estado desconectado da seleção da tabela do acervo (usada pelos botões de ZIP/imprimir/link/enviar) — confirmado por teste automatizado novo que o endpoint de ZIP do backend sempre funcionou corretamente. A tabela do acervo mantém seleção múltipla para combinar vários documentos num único ZIP/impressão/link/envio
+- **Arquivos:** backend/tests/Feature/Api/V1/OrderFlowTest.php,frontends/desktop/resources/views/orders/documents-center.blade.php,frontends/desktop/resources/views/orders/documents-center/_catalog.blade.php,frontends/desktop/public/assets/js/orders-documents-center.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.7.13.0 — 2026-07-15 01:50
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** A listagem de lançamentos financeiros (`/financeiro`) passa a ordenar por data de pagamento/recebimento efetivo (mais recente primeiro), em vez de data de vencimento. Títulos ainda pendentes (sem data de pagamento) vão para o final da lista
+- **Arquivos:** backend/app/Services/Financeiro/FinanceiroService.php,backend/tests/Feature/Api/V1/FinanceiroTest.php
+
+## v4.7.12.0 — 2026-07-14 23:53
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Adiciona "Ver lançamentos" e "Novo lançamento" ao topo do dropdown "Mais ações" da tela de detalhes do lançamento financeiro, com divisor separando-os das demais ações. "Ver lançamentos" sempre aparece (exige apenas a permissão de visualizar já necessária para chegar nesta página); "Novo lançamento" só aparece com permissão de criar. Como consequência, o botão "Mais ações" deixa de sumir por completo quando o usuário não tem nenhuma outra ação disponível — passa a mostrar ao menos "Ver lançamentos"
+- **Arquivos:** frontends/desktop/resources/views/financeiro/show.blade.php,frontends/desktop/tests/Feature/Desktop/FinanceiroTest.php
+
+## v4.7.11.0 — 2026-07-14 23:30
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Estende o padrão "Mais ações" (já usado em OS, orçamentos, documentos e lançamentos financeiros) para os detalhes de Cliente e de Equipamento. Em Cliente (`/clientes/{id}`): "Voltar" e "Nova OS" continuam como botões visíveis; "Editar cliente", "Ver OS do cliente" e "Ver equipamentos" passam para o dropdown. Em Equipamento (`/equipamentos/{id}`): "Voltar" e "Nova OS" continuam visíveis; "Editar" e "Abrir cliente" passam para o dropdown. Cada item mantém sua checagem de permissão de módulo já existente; o botão "Mais ações" some por completo quando nenhum item está disponível para o perfil do usuário
+- **Arquivos:** frontends/desktop/resources/views/clients/show.blade.php,frontends/desktop/resources/views/equipments/show.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.7.10.0 — 2026-07-14 22:51
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Reorganiza a tela de detalhes do lançamento financeiro (`/financeiro/{id}`) para reduzir a quantidade de cards e o scroll necessário. "Dados do lançamento" passa a concentrar também os dados de "Quem pagou"/"Para quem pagou" e de "Origem do lançamento" (antes três cards separados), com data/forma de pagamento do recebimento movidos para dentro dele; o card KPI "Recebido em/Pago em" do topo foi substituído por um card "Quem pagou"/"Para quem pagou" (nome, documento, telefone e e-mail da contraparte, no mesmo estilo compacto dos demais KPIs); "Tipo de origem" passa a ser só um campo dentro de "Dados do lançamento" (removida a subseção "Origem do lançamento" e o campo "Lançamento de origem"); "Dados do lançamento" e "OS vinculada" ficam lado a lado numa grade própria com altura igualada (bases alinhadas); "Baixas e formas de pagamento" e "Auditoria" passam a ocupar a largura inteira, abaixo desse par
+- **Arquivos:** frontends/desktop/resources/views/financeiro/show.blade.php
+
+## v4.7.9.0 — 2026-07-14 22:00
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Corrige o dropdown "Ações" da LISTAGEM de OS (não só da tela de detalhe, já corrigida antes), que não mostrava "Ver lançamento financeiro" mesmo em OS com título vinculado (ex.: OS26070002, com R$ 80,00 recebidos) — o id do título nunca era exposto na resposta da listagem, só na tela de detalhe. Backend passa a incluir `financeiro_titulo_id` em cada linha de `GET /orders` (o dado já era calculado internamente para "Recebido/Saldo", só faltava expor o id); listagem do desktop ganha o mesmo item de menu já usado no detalhe, condicionado a ter lançamento vinculado e permissão de visualizar o módulo financeiro
+- **Arquivos:** backend/app/Services/Orders/OrderWorkflowService.php,backend/openapi.yaml,backend/tests/Feature/Api/V1/OrderFlowTest.php,frontends/desktop/resources/views/orders/index.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.7.8.0 — 2026-07-14 21:38
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** O dropdown "Mais ações" da tela de detalhe da OS ganha o item "Ver lançamento financeiro" quando a OS tem um título "a receber" vinculado (não cancelado) — mesmo dado já usado no resumo financeiro da aba Valores, agora também como atalho direto para a página de detalhes do lançamento. Item some automaticamente quando a OS não tem lançamento vinculado ou o usuário não tem permissão de visualizar o módulo financeiro
+- **Arquivos:** frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.7.7.0 — 2026-07-14 20:53
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Página de detalhes do lançamento financeiro ganha o botão "Mais ações" (mesmo padrão das telas de OS), agrupando todas as ações do lançamento: Editar lançamento; Registrar baixa (modal completo com valor total/parcial, forma de pagamento e taxas de cartão — antes só existia na listagem, agora dá para baixar direto dos detalhes); Ver OS vinculada; Ver orçamento vinculado (novo atalho — backend passa a expor o orçamento mais recente da OS no payload de detalhes); Ver cliente/fornecedor (contraparte, com id agora exposto pelo backend); Cancelar lançamento e Excluir lançamento (com as mesmas confirmações da listagem). O botão "Editar" isolado do cabeçalho foi movido para dentro do dropdown; sem nenhuma ação disponível para o perfil, o dropdown some. Baixa e cancelamento feitos a partir dos detalhes voltam para os detalhes (novo campo voltar_para), em vez de sempre caírem na listagem
+- **Arquivos:** backend/app/Services/Financeiro/FinanceiroService.php,backend/tests/Feature/Api/V1/FinanceiroTest.php,frontends/desktop/app/Http/Controllers/FinanceiroController.php,frontends/desktop/resources/views/financeiro/show.blade.php,frontends/desktop/tests/Feature/Desktop/FinanceiroTest.php
+
 ## v4.7.6.0 — 2026-07-14 08:49
 - **Tier:** patch
 - **Autor/Agente:** Claude

@@ -95,19 +95,19 @@ class OrcamentoController extends DesktopController
             return redirect()->route('orcamentos.index')->with('error', $exception->getMessage());
         } catch (ApiRequestException $exception) {
             return back()
-                ->withInput($request->all())
+                ->withInput($request->except('admin_password'))
                 ->withErrors($this->formatApiErrors($exception))
                 ->with('error', $exception->getMessage());
         } catch (ValidationException $exception) {
             return back()
-                ->withInput($request->all())
+                ->withInput($request->except('admin_password'))
                 ->withErrors($exception->errors())
                 ->with('error', 'Verifique os campos do orçamento.');
         } catch (Throwable $exception) {
             report($exception);
 
             return back()
-                ->withInput($request->all())
+                ->withInput($request->except('admin_password'))
                 ->with('error', 'Não foi possível criar o orçamento agora. Tente novamente.');
         }
 
@@ -194,19 +194,19 @@ class OrcamentoController extends DesktopController
             return redirect()->route('orcamentos.index')->with('error', $exception->getMessage());
         } catch (ApiRequestException $exception) {
             return back()
-                ->withInput($request->all())
+                ->withInput($request->except('admin_password'))
                 ->withErrors($this->formatApiErrors($exception))
                 ->with('error', $exception->getMessage());
         } catch (ValidationException $exception) {
             return back()
-                ->withInput($request->all())
+                ->withInput($request->except('admin_password'))
                 ->withErrors($exception->errors())
                 ->with('error', 'Verifique os campos do orçamento.');
         } catch (Throwable $exception) {
             report($exception);
 
             return back()
-                ->withInput($request->all())
+                ->withInput($request->except('admin_password'))
                 ->with('error', 'Não foi possível atualizar o orçamento agora. Tente novamente.');
         }
 
@@ -335,6 +335,10 @@ class OrcamentoController extends DesktopController
             'itens.*.acrescimo_percentual' => ['nullable', 'numeric', 'min:0'],
             'itens.*.observacoes' => ['nullable', 'string'],
             'itens.*.modo_precificacao' => ['nullable', 'string', 'max:50'],
+            // Só usados quando a OS vinculada está encerrada — ver
+            // orcamentos/_admin_confirm_modal.blade.php.
+            'admin_email' => ['nullable', 'string'],
+            'admin_password' => ['nullable', 'string'],
         ], [], [
             'numero' => 'número',
             'versao' => 'versão',
@@ -409,10 +413,19 @@ class OrcamentoController extends DesktopController
             ? 'Orçamento criado com sucesso.'
             : 'Orçamento atualizado com sucesso.';
 
+        // Valor alterado após aprovação (ver BudgetWorkflowService::updateBudget()):
+        // o botão "Reenviar para aprovação" já aparece sozinho em orcamentos/show.blade.php
+        // quando o status é reenviar_orcamento — só falta explicar o porquê.
+        $resendInfo = ! $created && (string) ($budget['status'] ?? '') === 'reenviar_orcamento'
+            ? 'Valor do orçamento alterado — reenvie para nova aprovação do cliente.'
+            : null;
+
         if ($budgetId <= 0 || $submissionMode !== 'send_for_approval') {
-            return redirect()
+            $redirect = redirect()
                 ->route('orcamentos.show', $budgetId)
                 ->with('success', $successMessage);
+
+            return $resendInfo !== null ? $redirect->with('info', $resendInfo) : $redirect;
         }
 
         try {
