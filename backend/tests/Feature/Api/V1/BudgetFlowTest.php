@@ -248,6 +248,88 @@ class BudgetFlowTest extends TestCase
         ]);
     }
 
+    public function test_clearing_os_id_on_update_downgrades_origem_from_os_to_manual(): void
+    {
+        $admin = $this->createUserRecord([
+            'nome' => 'Administrador',
+            'email' => 'admin.budgets.origin@example.com',
+            'perfil' => 'admin',
+            'grupo_id' => 1,
+        ]);
+
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Origem']);
+        $equipmentId = $this->createEquipmentRecord($clientId, ['resumo_tecnico' => 'Notebook origem']);
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'numero_os' => 'OS26070098',
+        ]);
+
+        $token = $this->loginAndGetToken($admin->email);
+
+        $createResponse = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson('/api/v1/orcamentos', [
+                'tipo_orcamento' => 'assistencia',
+                'status' => 'rascunho',
+                'origem' => 'os',
+                'cliente_id' => $clientId,
+                'os_id' => $orderId,
+                'equipamento_id' => $equipmentId,
+                'titulo' => 'Orçamento com OS',
+                'validade_dias' => 10,
+                'itens' => [
+                    [
+                        'tipo_item' => 'servico',
+                        'descricao' => 'Serviço origem',
+                        'quantidade' => 1,
+                        'valor_unitario' => 100,
+                        'desconto' => 0,
+                        'acrescimo' => 0,
+                    ],
+                ],
+            ]);
+
+        $createResponse->assertCreated()->assertJsonPath('data.budget.os.id', $orderId);
+        $budgetId = (int) $createResponse->json('data.budget.id');
+
+        // O select de "Origem" no formulário é independente do select de "OS"
+        // (que tem allow-clear) — simula o cenário real: o usuário limpou só
+        // o campo OS antes de salvar, mas "Origem" continuou marcado como
+        // "os". O backend precisa corrigir isso, não persistir o rótulo
+        // "veio de uma OS" sem nenhum os_id de verdade.
+        $updateResponse = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+                'tipo_orcamento' => 'assistencia',
+                'status' => 'rascunho',
+                'origem' => 'os',
+                'cliente_id' => $clientId,
+                'os_id' => null,
+                'equipamento_id' => $equipmentId,
+                'titulo' => 'Orçamento sem OS',
+                'validade_dias' => 10,
+                'itens' => [
+                    [
+                        'tipo_item' => 'servico',
+                        'descricao' => 'Serviço sem OS',
+                        'quantidade' => 1,
+                        'valor_unitario' => 100,
+                        'desconto' => 0,
+                        'acrescimo' => 0,
+                    ],
+                ],
+            ]);
+
+        $updateResponse->assertOk()
+            ->assertJsonPath('data.budget.origem', 'manual')
+            ->assertJsonPath('data.budget.os', null);
+
+        $this->assertDatabaseHas('orcamentos', [
+            'id' => $budgetId,
+            'origem' => 'manual',
+            'os_id' => null,
+        ]);
+    }
+
     public function test_admin_can_create_budget_with_null_numero_and_backend_generates_identifier(): void
     {
         $admin = $this->createUserRecord([

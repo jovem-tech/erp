@@ -920,6 +920,17 @@ class BudgetWorkflowService
         }
 
         $origin = strtolower(trim((string) ($attributes['origem'] ?? '')));
+
+        // "os" só é uma origem válida quando $fromOrder é true (os_id
+        // realmente preenchido). O campo "Origem" do formulário é editável
+        // independente do campo "OS" (que tem allow-clear no Select2) — sem
+        // essa trava, limpar só a OS e salvar deixava o orçamento com o
+        // rótulo "veio de uma OS" sem nenhum os_id de verdade, escondendo a
+        // ação "Ver OS" e mentindo sobre a origem no card de detalhes.
+        if ($origin === 'os') {
+            $origin = 'manual';
+        }
+
         return in_array($origin, array_column(Budget::originOptions(), 'value'), true) ? $origin : 'manual';
     }
 
