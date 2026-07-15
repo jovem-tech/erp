@@ -1226,9 +1226,16 @@ class OrderClosureService
 
     private function ensureReceivableTitle(Order $order, string $dataEntrega): Financeiro
     {
+        // Um título cancelado (ex.: motivo "erro_cobranca", que reverte a OS
+        // sem apagar o título) não pode ser reaproveitado aqui: registerMovement()
+        // bloqueia baixa em título cancelado, então a OS ficaria travada sem
+        // nenhum título ativo para receber. Ignorar o cancelado e criar um novo
+        // espelha o filtro que OrderWorkflowService já aplica ao resolver o
+        // título "atual" da OS para o resumo/financeiro_titulo_id.
         $titulo = Financeiro::query()
             ->where('os_id', $order->id)
             ->where('tipo', Financeiro::TIPO_RECEBER)
+            ->where('status', '!=', Financeiro::STATUS_CANCELADO)
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->first();
