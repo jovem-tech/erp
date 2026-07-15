@@ -32,8 +32,10 @@ class OrderClosureService
     private const PENDING_PAYMENT_STATUS = 'entregue_pagamento_pendente';
 
     // Encerramento como "Equipamento Entregue": exige ao menos algum valor
-    // recebido (antes desta baixa OU nesta ação). Ver close().
-    private const DELIVERED_STATUS = 'equipamento_entregue';
+    // recebido (antes desta baixa OU nesta ação). Ver close(). O código real
+    // (ver skill sistema-erp-os-fluxo-fechamento) é 'entregue_reparado' — é o
+    // único dos 3 OrderStatus::closureCodes() com REVENUE_CLOSURE_CODE.
+    private const DELIVERED_STATUS = OrderStatus::REVENUE_CLOSURE_CODE;
 
     public function __construct(
         private readonly OrderWorkflowService $orderWorkflowService,
@@ -100,6 +102,16 @@ class OrderClosureService
 
         if (! $order instanceof Order) {
             return ['result' => 'not_found'];
+        }
+
+        // Autorização específica da OS (técnico não designado a esta OS) tem
+        // que ser checada ANTES de qualquer validação de negócio (status,
+        // data, pagamento) — senão um usuário sem acesso à OS aprenderia
+        // detalhes dela (ex.: "falta pagamento") antes de saber que nem pode
+        // mexer nela. updateStatus() já faz essa checagem, mas só dentro da
+        // transação, depois de toda a validação abaixo — tarde demais.
+        if (! $this->orderWorkflowService->canAccessOrder($actor, $order)) {
+            return ['result' => 'forbidden'];
         }
 
         $encerrarComo = trim((string) ($payload['encerrar_como'] ?? ''));
@@ -591,6 +603,145 @@ class OrderClosureService
             'result' => 'ok',
             'order' => $updatedOrder instanceof Order ? $this->mapOrderSummary($updatedOrder) : null,
             'status_revertido' => $previousStatus,
+        ];
+    }
+
+    /**
+     * Cancela um lançamento financeiro (`Financeiro::cancel()`) vinculado a
+     * uma OS encerrada, aplicando a consequência correspondente ao motivo
+     * informado pelo administrador:
+     *
+     * - 'sem_reparo': o reparo não teve sucesso mas o equipamento foi
+     *   entregue — a OS é reclassificada para 'devolvido_sem_reparo' (nunca
+     *   deveria ter gerado cobrança).
+     * - 'erro_cobranca': o valor cobrado estava errado — a OS volta a
+     *   'entregue_pagamento_pendente' (segue entregue, mas com pendência
+     *   financeira de novo) e as cobranças automáticas antigas são
+     *   canceladas (o valor será corrigido depois via edição de orçamento).
+     * - 'fechamento_indevido': a baixa inteira foi um engano — delega 100%
+     *   para cancelClosure(), que já reverte a OS ao status pré-baixa.
+     *
+     * Ao contrário de cancelClosure()/close(), não faz update via
+     * OrderWorkflowService::updateStatus(): esse método bloqueia
+     * deliberadamente qualquer troca de status quando a OS já está em
+     * closureCodes() (só permite via cancelClosure()) — aqui o update de
+     * status é direto, mesmo padrão já usado por cancelClosure() para
+     * corrigir administrativamente uma OS já encerrada.
+     *
+     * @return array{result: string, order?: array<string, mixed>|null, financeiro?: Financeiro}
+     */
+    public function cancelReceivableWithReason(Financeiro $financeiro, string $motivo, User $actor, User $verifiedAdmin): array
+    {
+        $orderId = (int) ($financeiro->os_id ?? 0);
+        $order = $orderId > 0 ? Order::query()->find($orderId) : null;
+
+        if ($motivo === 'fechamento_indevido') {
+            if (! $order instanceof Order) {
+                return ['result' => 'not_found'];
+            }
+
+            return $this->cancelClosure($orderId, $actor, $verifiedAdmin);
+        }
+
+        if ($order instanceof Order && ! $this->orderWorkflowService->canAccessOrder($actor, $order)) {
+            return ['result' => 'forbidden'];
+        }
+
+        $novoStatus = $motivo === 'sem_reparo' ? 'devolvido_sem_reparo' : 'entregue_pagamento_pendente';
+        $novoStatusRow = OrderStatus::activeByCode($novoStatus);
+
+        if ($order instanceof Order && ! $novoStatusRow instanceof OrderStatus) {
+            return ['result' => 'invalid_status'];
+        }
+
+        try {
+            $tituloCancelado = DB::transaction(function () use ($financeiro, $motivo, $order, $orderId, $actor, $verifiedAdmin, $novoStatus, $novoStatusRow): Financeiro {
+                $statusAnterior = trim((string) ($order?->status ?? ''));
+
+                $tituloCancelado = $this->financeiroService->cancel($financeiro);
+
+                if ($order instanceof Order && $novoStatusRow instanceof OrderStatus) {
+                    $now = Carbon::now();
+                    $estadoFluxo = trim((string) ($novoStatusRow->estado_fluxo_padrao ?? '')) ?: 'encerrado';
+
+                    Order::query()->whereKey($orderId)->update([
+                        'status' => $novoStatus,
+                        'estado_fluxo' => $estadoFluxo,
+                        // 'erro_cobranca' mantém a OS "resolvendo" para
+                        // entregue_reparado quando o saldo for quitado depois
+                        // (mesmo padrão de close() com saldo pendente);
+                        // 'sem_reparo' nunca tem pendência financeira.
+                        'status_final_pendente_pagamento' => $motivo === 'erro_cobranca'
+                            ? OrderStatus::REVENUE_CLOSURE_CODE
+                            : null,
+                        'status_atualizado_em' => $now,
+                        'updated_at' => $now,
+                    ]);
+
+                    $observacao = sprintf(
+                        'Título #%d cancelado (motivo: %s). Autorizado por administrador: %s <%s>.',
+                        (int) $financeiro->id,
+                        $motivo === 'sem_reparo' ? 'reparo sem sucesso, entregue ao cliente' : 'erro de cobrança',
+                        trim((string) ($verifiedAdmin->nome ?? '')),
+                        trim((string) ($verifiedAdmin->email ?? ''))
+                    );
+
+                    OrderStatusHistory::query()->create([
+                        'os_id' => $orderId,
+                        'status_anterior' => $statusAnterior,
+                        'status_novo' => $novoStatus,
+                        'estado_fluxo' => $estadoFluxo,
+                        'usuario_id' => (int) $actor->id,
+                        'observacao' => $observacao,
+                        'created_at' => $now,
+                    ]);
+
+                    $this->orderEventService->record(
+                        $orderId,
+                        OrderEvent::CATEGORIA_STATUS,
+                        OrderEvent::TIPO_STATUS_ALTERADO,
+                        'Status corrigido após cancelamento de título',
+                        $observacao,
+                        [
+                            'financeiro_id' => (int) $financeiro->id,
+                            'motivo' => $motivo,
+                            'status_anterior' => $statusAnterior,
+                            'status_novo' => $novoStatus,
+                            'autorizado_por_admin' => [
+                                'id' => (int) $verifiedAdmin->id,
+                                'email' => (string) $verifiedAdmin->email,
+                            ],
+                        ],
+                        (int) $actor->id,
+                        OrderEvent::ORIGEM_USUARIO,
+                        $now
+                    );
+
+                    if ($motivo === 'erro_cobranca') {
+                        $this->cancelPendingCollections($orderId);
+                    }
+                }
+
+                return $tituloCancelado;
+            });
+        } catch (Throwable $exception) {
+            logger()->error('[API V1][FINANCEIRO][CANCEL] Falha ao cancelar título com motivo', [
+                'financeiro_id' => (int) $financeiro->id,
+                'motivo' => $motivo,
+                'message' => $exception->getMessage(),
+            ]);
+
+            return ['result' => 'cancel_failed'];
+        }
+
+        $updatedOrder = $orderId > 0
+            ? Order::query()->with(['client', 'statusCatalog'])->find($orderId)
+            : null;
+
+        return [
+            'result' => 'ok',
+            'order' => $updatedOrder instanceof Order ? $this->mapOrderSummary($updatedOrder) : null,
+            'financeiro' => $tituloCancelado,
         ];
     }
 

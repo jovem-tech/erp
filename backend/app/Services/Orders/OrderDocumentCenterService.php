@@ -9,6 +9,7 @@ use App\Models\OrderDocumentFile;
 use App\Models\OrderDocumentSend;
 use App\Models\OrderDocumentShareLink;
 use App\Models\OrderDocumentShareLinkItem;
+use App\Models\OrderStatus;
 use App\Models\User;
 use App\Models\WhatsappTemplate;
 use App\Services\Budgets\BudgetPdfService;
@@ -757,7 +758,7 @@ class OrderDocumentCenterService
             }
 
             $status = mb_strtolower(trim((string) ($order->status ?? '')));
-            if ($status === 'equipamento_entregue') {
+            if ($status === OrderStatus::REVENUE_CLOSURE_CODE) {
                 $this->generate($orderId, $actor, ['entrega']);
 
                 if ((float) ($order->valor_final ?? 0) > 0) {
@@ -769,7 +770,7 @@ class OrderDocumentCenterService
                 $this->generate($orderId, $actor, ['devolucao_sem_reparo']);
             }
 
-            if ($this->hasTechnicalContent($order) && in_array($status, ['reparo_concluido', 'equipamento_entregue', 'devolvido_sem_reparo', 'irreparavel', 'cancelado'], true)) {
+            if ($this->hasTechnicalContent($order) && in_array($status, ['reparo_concluido', OrderStatus::REVENUE_CLOSURE_CODE, 'devolvido_sem_reparo', 'irreparavel', 'cancelado'], true)) {
                 $this->generate($orderId, $actor, ['laudo']);
             }
         } catch (Throwable $exception) {
@@ -789,7 +790,7 @@ class OrderDocumentCenterService
                 ? mb_strtolower(trim($newStatus))
                 : mb_strtolower(trim((string) ($order->status ?? '')));
 
-            if ($this->hasTechnicalContent($order) && in_array($status, ['reparo_concluido', 'equipamento_entregue', 'devolvido_sem_reparo', 'irreparavel'], true)) {
+            if ($this->hasTechnicalContent($order) && in_array($status, ['reparo_concluido', OrderStatus::REVENUE_CLOSURE_CODE, 'devolvido_sem_reparo', 'irreparavel'], true)) {
                 $this->generate((int) $order->id, $actor, ['laudo']);
             }
         } catch (Throwable $exception) {
@@ -1244,7 +1245,7 @@ class OrderDocumentCenterService
             'cobranca_manutencao' => (float) ($order->valor_final ?? 0) > 0
                 ? ['ok' => true, 'reason' => '']
                 : ['ok' => false, 'reason' => 'A cobrança só pode ser gerada quando houver valor final positivo na OS.'],
-            'entrega' => mb_strtolower(trim((string) ($order->status ?? ''))) === 'equipamento_entregue'
+            'entrega' => mb_strtolower(trim((string) ($order->status ?? ''))) === OrderStatus::REVENUE_CLOSURE_CODE
                 ? ['ok' => true, 'reason' => '']
                 : ['ok' => false, 'reason' => 'O comprovante de entrega só fica disponível quando a OS é encerrada como equipamento entregue.'],
             'devolucao_sem_reparo' => mb_strtolower(trim((string) ($order->status ?? ''))) === 'devolvido_sem_reparo'

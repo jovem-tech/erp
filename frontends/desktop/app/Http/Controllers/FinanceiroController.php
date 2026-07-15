@@ -243,16 +243,26 @@ class FinanceiroController extends DesktopController
             ->with('success', 'Lançamento atualizado com sucesso.');
     }
 
-    public function destroy(int $financeiro): RedirectResponse
+    public function destroy(Request $request, int $financeiro): RedirectResponse
     {
+        // admin_email/admin_password só são preenchidos pelo modal de
+        // confirmação (ver financeiro/_delete_admin_modal.blade.php) — a
+        // exclusão exige credenciais de administrador sempre.
+        $payload = array_filter([
+            'admin_email' => trim((string) $request->input('admin_email', '')),
+            'admin_password' => (string) $request->input('admin_password', ''),
+        ], static fn ($value): bool => $value !== '');
+
         try {
-            $this->financeiroService->destroy($financeiro);
+            $this->financeiroService->destroy($financeiro, $payload);
         } catch (ApiAuthenticationException $exception) {
             return redirect()->route('login')->with('error', $exception->getMessage());
         } catch (ApiAuthorizationException $exception) {
             return redirect()->route('financeiro.index')->with('error', $exception->getMessage());
         } catch (ApiRequestException $exception) {
-            return redirect()->route('financeiro.index')->with('error', $exception->getMessage());
+            return redirect()
+                ->to($this->successTarget($request, $financeiro))
+                ->with('error', $exception->getMessage());
         }
 
         return redirect()
@@ -262,14 +272,26 @@ class FinanceiroController extends DesktopController
 
     public function cancel(Request $request, int $financeiro): RedirectResponse
     {
+        // motivo/admin_email/admin_password só são usados quando o lançamento
+        // está vinculado a uma OS encerrada — ver
+        // financeiro/_cancel_reason_modal.blade.php. Em qualquer outro caso o
+        // payload vem vazio e o comportamento é idêntico ao de antes.
+        $payload = array_filter([
+            'motivo' => trim((string) $request->input('motivo', '')),
+            'admin_email' => trim((string) $request->input('admin_email', '')),
+            'admin_password' => (string) $request->input('admin_password', ''),
+        ], static fn ($value): bool => $value !== '');
+
         try {
-            $this->financeiroService->cancel($financeiro);
+            $this->financeiroService->cancel($financeiro, $payload);
         } catch (ApiAuthenticationException $exception) {
             return redirect()->route('login')->with('error', $exception->getMessage());
         } catch (ApiAuthorizationException $exception) {
             return redirect()->route('financeiro.index')->with('error', $exception->getMessage());
         } catch (ApiRequestException $exception) {
-            return redirect()->route('financeiro.index')->with('error', $exception->getMessage());
+            return redirect()
+                ->to($this->successTarget($request, $financeiro))
+                ->with('error', $exception->getMessage());
         }
 
         return redirect()

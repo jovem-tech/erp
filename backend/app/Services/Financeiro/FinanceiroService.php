@@ -3,12 +3,14 @@
 namespace App\Services\Financeiro;
 
 use App\Models\Budget;
+use App\Models\Client;
 use App\Models\Financeiro;
 use App\Models\FinanceiroCategoria;
 use App\Models\FinanceiroMovimento;
 use App\Models\FinanceiroMovimentoCartao;
 use App\Models\Order;
 use App\Models\OrderEvent;
+use App\Models\Supplier;
 use App\Services\Orders\OrderEventService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
@@ -31,13 +33,116 @@ class FinanceiroService
 
         return Financeiro::query()
             ->withFilters($filters)
-            ->with(['order', 'client'])
+            // Relações necessárias para resolveOriginTrail() (trilha de origem
+            // exibida sob a categoria, na listagem) — todas eager-loaded para
+            // não virar N+1 por linha: 'order.equipment.*' cobre o caso
+            // "Serviço" ligado a OS, 'supplier' cobre "A pagar" avulso,
+            // 'origemMovimento.financeiro.*' resolve taxas de cartão até o
+            // título a receber que as originou.
+            ->with([
+                'order.equipment.brand',
+                'order.equipment.model',
+                'client',
+                'supplier',
+                'origemMovimento.financeiro.client',
+                'origemMovimento.financeiro.order',
+            ])
             // Ordem de pagamento/recebimento efetivo, não de vencimento. Sem
             // data_pagamento (título ainda pendente) vai para o fim da lista —
             // NULL é o menor valor em ORDER BY DESC.
             ->orderByDesc('data_pagamento')
             ->orderByDesc('id')
             ->paginate($perPage);
+    }
+
+    /**
+     * Trilha de rastreabilidade da origem de um lançamento, exibida na
+     * listagem sob a categoria (ex.: "Cliente | OS 26060014 | iPhone 12").
+     * Substitui o antigo subtítulo genérico grupo_dre/subgrupo_dre, que era
+     * igual para todo lançamento da mesma categoria e não dizia nada sobre a
+     * origem específica daquele registro.
+     *
+     * @return array<int, string>
+     */
+    public function resolveOriginTrail(Financeiro $financeiro): array
+    {
+        $segments = [];
+
+        if ((bool) $financeiro->dre_fixo_mensal) {
+            $segments[] = 'Fixo mensal';
+        }
+
+        // Taxa de cartão (os_recebimento_cartao = gerada na baixa da OS,
+        // financeiro_movimento_cartao = gerada num recebimento avulso em
+        // cartão) — em ambos os casos origem_id aponta para o movimento cuja
+        // baixa gerou a taxa; o título pai desse movimento é a conta a
+        // receber de origem.
+        if (in_array((string) $financeiro->origem_tipo, ['os_recebimento_cartao', 'financeiro_movimento_cartao'], true)) {
+            $tituloOrigem = $financeiro->origemMovimento?->financeiro;
+
+            if (! $tituloOrigem instanceof Financeiro) {
+                return array_merge($segments, ['Origem da taxa não encontrada']);
+            }
+
+            if ($tituloOrigem->client instanceof Client) {
+                $segments[] = (string) $tituloOrigem->client->nome_razao;
+            }
+            if ($tituloOrigem->order instanceof Order) {
+                $segments[] = 'OS ' . (string) $tituloOrigem->order->numero_os;
+            }
+            // Sempre inclui o id do título de origem — é o "mínimo" que
+            // identifica a taxa mesmo quando o título pai também é avulso
+            // (sem cliente/OS vinculado).
+            $segments[] = 'Título #' . (int) $tituloOrigem->id;
+
+            return $segments;
+        }
+
+        // Ligado a uma OS (o caso mais comum de "Serviço", mas vale para
+        // qualquer lançamento — manual ou automático — com os_id preenchido).
+        if ($financeiro->order instanceof Order) {
+            $client = $financeiro->client ?? $financeiro->order->client;
+            if ($client instanceof Client) {
+                $segments[] = (string) $client->nome_razao;
+            }
+
+            $segments[] = 'OS ' . (string) $financeiro->order->numero_os;
+
+            $equipment = $financeiro->order->equipment;
+            $equipmentLabel = trim(implode(' ', array_filter([
+                $equipment?->brand?->nome,
+                $equipment?->model?->nome,
+            ], static fn ($value): bool => trim((string) $value) !== '')));
+            if ($equipmentLabel !== '') {
+                $segments[] = $equipmentLabel;
+            }
+
+            return $segments;
+        }
+
+        // Avulso, sem OS: para "a receber", mostra o cliente (se houver) e
+        // deixa explícito que não há OS vinculada; para "a pagar", mostra o
+        // fornecedor quando preenchido.
+        if ((string) $financeiro->tipo === Financeiro::TIPO_RECEBER) {
+            if ($financeiro->client instanceof Client) {
+                $segments[] = (string) $financeiro->client->nome_razao;
+            }
+            $segments[] = 'sem OS vinculada';
+
+            return $segments;
+        }
+
+        if ($financeiro->supplier instanceof Supplier) {
+            $segments[] = (string) ($financeiro->supplier->nome_fantasia ?: $financeiro->supplier->razao_social);
+
+            return $segments;
+        }
+
+        if ($segments === []) {
+            $segments[] = 'Lançamento avulso';
+        }
+
+        return $segments;
     }
 
     /**
@@ -508,6 +613,13 @@ class FinanceiroService
         $taxaFinanceiro = Financeiro::create([
             'tipo' => Financeiro::TIPO_PAGAR,
             'avulso' => true,
+            // Herda a OS do título pago (quando houver) — sem isso, a despesa
+            // de taxa fica "solta" (os_id nulo) e o cancelamento dela nunca
+            // aciona a trava de motivo+admin de OS encerrada (ver
+            // FinanceiroController::resolveOsIsEncerrada()), mesmo a OS
+            // estando fechada. Mesmo padrão já usado em
+            // OrderClosureService::registerCardFeeExpense().
+            'os_id' => $financeiro->os_id,
             'categoria' => 'Taxa de cartão',
             'descricao' => sprintf(
                 'Taxa %s - Lançamento #%d (%s%s)',

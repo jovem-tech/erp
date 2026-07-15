@@ -132,10 +132,13 @@ class ApiClient
         );
     }
 
-    public function delete(string $uri): array
+    /**
+     * @param array<string, mixed> $payload
+     */
+    public function delete(string $uri, array $payload = []): array
     {
         return $this->parseResponse(
-            $this->retryRequest(fn() => $this->authenticatedRequest('delete', $uri))
+            $this->retryRequest(fn() => $this->authenticatedRequest('delete', $uri, $payload))
         );
     }
 
@@ -152,10 +155,7 @@ class ApiClient
 
         return [
             'body' => $response->body(),
-            'headers' => [
-                'Content-Type' => (string) $response->header('Content-Type', 'application/octet-stream'),
-                'Content-Disposition' => (string) $response->header('Content-Disposition', 'inline'),
-            ],
+            'headers' => $this->downloadHeaders($response),
             'status' => $response->status(),
         ];
     }
@@ -173,12 +173,34 @@ class ApiClient
 
         return [
             'body' => $response->body(),
-            'headers' => [
-                'Content-Type' => (string) $response->header('Content-Type', 'application/octet-stream'),
-                'Content-Disposition' => (string) $response->header('Content-Disposition', 'inline'),
-            ],
+            'headers' => $this->downloadHeaders($response),
             'status' => $response->status(),
         ];
+    }
+
+    /**
+     * Repassa tambem Cache-Control/Last-Modified do backend — sem isso, toda
+     * imagem de marca (logo, fundo do login) chega ao navegador marcada
+     * "no-cache, private" (padrao do Symfony ao ver sessao ativa) e e
+     * rebaixada em toda navegacao dentro do sistema.
+     *
+     * @return array<string, string>
+     */
+    private function downloadHeaders(Response $response): array
+    {
+        $headers = [
+            'Content-Type' => (string) $response->header('Content-Type', 'application/octet-stream'),
+            'Content-Disposition' => (string) $response->header('Content-Disposition', 'inline'),
+        ];
+
+        foreach (['Cache-Control', 'Last-Modified', 'ETag'] as $header) {
+            $value = $response->header($header);
+            if ($value !== null && $value !== '') {
+                $headers[$header] = (string) $value;
+            }
+        }
+
+        return $headers;
     }
 
     /**

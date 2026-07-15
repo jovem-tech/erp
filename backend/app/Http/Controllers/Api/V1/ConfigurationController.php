@@ -91,10 +91,10 @@ class ConfigurationController extends BaseApiController
             );
         }
 
-        return response()->file($file['absolute_path'], [
+        return response()->file($file['absolute_path'], array_merge([
             'Content-Type' => $file['mime_type'],
             'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
-        ]);
+        ], $this->brandingCacheHeaders($file['absolute_path'], public: false)));
     }
 
     public function publicCompanyLogo(Request $request): Response|JsonResponse
@@ -110,10 +110,10 @@ class ConfigurationController extends BaseApiController
             );
         }
 
-        return response()->file($file['absolute_path'], [
+        return response()->file($file['absolute_path'], array_merge([
             'Content-Type' => $file['mime_type'],
             'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
-        ]);
+        ], $this->brandingCacheHeaders($file['absolute_path'], public: true)));
     }
 
     public function publicLoginBackground(Request $request): Response|JsonResponse
@@ -129,10 +129,27 @@ class ConfigurationController extends BaseApiController
             );
         }
 
-        return response()->file($file['absolute_path'], [
+        return response()->file($file['absolute_path'], array_merge([
             'Content-Type' => $file['mime_type'],
             'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
-        ]);
+        ], $this->brandingCacheHeaders($file['absolute_path'], public: true)));
+    }
+
+    /**
+     * Sem isso, a resposta herda o "Cache-Control: no-cache, private" padrao
+     * do Symfony (Response::prepare, disparado pela sessao do Laravel), entao
+     * logo/fundo de login sao rebaixados a cada navegacao dentro do sistema.
+     * max-age moderado (nao "immutable") porque a URL nao muda ao trocar a
+     * imagem — o admin que atualizar a marca pode precisar de um refresh.
+     *
+     * @return array<string, string>
+     */
+    private function brandingCacheHeaders(string $absolutePath, bool $public): array
+    {
+        return [
+            'Cache-Control' => ($public ? 'public' : 'private') . ', max-age=86400, must-revalidate',
+            'Last-Modified' => gmdate('D, d M Y H:i:s', filemtime($absolutePath) ?: time()) . ' GMT',
+        ];
     }
 
     public function integrations(Request $request): JsonResponse

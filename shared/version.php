@@ -1,3 +1,3 @@
 <?php
 
-return '4.7.14';
+return '4.8.0';
