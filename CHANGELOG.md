@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.8.2.0 — 2026-07-15 19:31
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Corrige a baixa/fechamento de uma OS que já teve um título cancelado por "Erro de cobrança" anteriormente (motivo que reverte a OS para pagamento pendente mas mantém o título cancelado vinculado, ao contrário de "Fechamento inadvertido", que apaga o título). Ao fechar a OS de novo, `OrderClosureService::ensureReceivableTitle()` buscava "o" título da OS sem filtrar por status, encontrava o cancelado (único vinculado) e tentava lançar o novo recebimento nele — `FinanceiroService::registerMovement()` bloqueia baixa em título cancelado, então o fechamento falhava com HTTP 500 ("Não é possível registrar baixa em título cancelado."), travando a OS sem nenhum título ativo para receber. A busca agora ignora títulos cancelados (mesmo filtro que `OrderWorkflowService` já aplicava ao resolver o título "atual" da OS para o resumo/financeiro_titulo_id) e cria um título novo quando só existir um cancelado, preservando o cancelado intocado para auditoria. Bug relatado em produção na OS 26070011 (título #29 cancelado bloqueando a baixa); reproduzido e corrigido primeiro no `develop`.
+- **Arquivos:** backend/app/Services/Orders/OrderClosureService.php,backend/tests/Feature/Api/V1/FinanceiroTest.php
+
 ## v4.8.1.0 — 2026-07-15 18:47
 - **Tier:** patch
 - **Autor/Agente:** Claude

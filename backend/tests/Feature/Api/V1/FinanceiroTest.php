@@ -925,6 +925,55 @@ class FinanceiroTest extends TestCase
         );
     }
 
+    public function test_closing_again_after_erro_cobranca_cancellation_ignores_cancelled_title_and_creates_a_new_one(): void
+    {
+        // Reproduz o bug relatado: "erro_cobranca" cancela o título mas
+        // mantém o os_id nele (só "fechamento_indevido" apaga o título).
+        // Fechar a OS de novo tem que IGNORAR esse título cancelado e criar
+        // um novo ativo — antes, ensureReceivableTitle() pegava o cancelado
+        // (o único com aquele os_id) e a baixa travava com "Não é possível
+        // registrar baixa em título cancelado.".
+        [$actor, $orderId, $financeiroId] = $this->createClosedOrderReceivable(['valor_final' => 130.00]);
+        $admin = $this->createUserRecord(['perfil' => 'admin', 'grupo_id' => 1]);
+        $this->grantGroupPermissions(1, ['os' => ['editar']]);
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->postJson("/api/v1/financeiro/{$financeiroId}/cancelar", [
+            'motivo' => 'erro_cobranca',
+            'admin_email' => $admin->email,
+            'admin_password' => 'Senha@123',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('financeiro', ['id' => $financeiroId, 'status' => 'cancelado']);
+
+        $response = $this->postJson("/api/v1/orders/{$orderId}/closure", [
+            'encerrar_como' => 'entregue_reparado',
+            'data_entrega' => now()->toDateString(),
+            'recebimentos' => [
+                ['valor' => 130.00, 'forma_pagamento' => 'pix'],
+            ],
+        ]);
+
+        $response->assertOk()->assertJsonPath('data.order.status', 'entregue_reparado');
+
+        // O título cancelado continua intocado (auditoria preservada).
+        $this->assertDatabaseHas('financeiro', ['id' => $financeiroId, 'status' => 'cancelado']);
+
+        $novoTitulo = Financeiro::query()
+            ->where('os_id', $orderId)
+            ->where('tipo', Financeiro::TIPO_RECEBER)
+            ->where('id', '!=', $financeiroId)
+            ->first();
+
+        $this->assertNotNull($novoTitulo);
+        $this->assertNotSame('cancelado', $novoTitulo->status);
+        $this->assertDatabaseHas('financeiro_movimentos', [
+            'financeiro_id' => $novoTitulo->id,
+            'valor_movimento' => 130.00,
+            'forma_pagamento' => 'pix',
+        ]);
+    }
+
     public function test_cancel_with_fechamento_indevido_reverts_order_to_pre_closure_status(): void
     {
         [$actor, $orderId, $financeiroId] = $this->createClosedOrderReceivable();
