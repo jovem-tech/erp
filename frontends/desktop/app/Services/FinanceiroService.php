@@ -56,17 +56,21 @@ class FinanceiroService
         return $response['data']['lancamento'] ?? [];
     }
 
-    public function destroy(int $id): void
+    /**
+     * @param array<string, mixed> $payload
+     */
+    public function destroy(int $id, array $payload = []): void
     {
-        $this->apiClient->delete('/financeiro/' . $id);
+        $this->apiClient->delete('/financeiro/' . $id, $payload);
     }
 
     /**
+     * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
-    public function cancel(int $id): array
+    public function cancel(int $id, array $payload = []): array
     {
-        $response = $this->apiClient->post('/financeiro/' . $id . '/cancelar');
+        $response = $this->apiClient->post('/financeiro/' . $id . '/cancelar', $payload);
 
         return $response['data']['lancamento'] ?? [];
     }

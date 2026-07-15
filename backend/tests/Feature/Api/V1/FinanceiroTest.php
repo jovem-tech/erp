@@ -3,6 +3,8 @@
 namespace Tests\Feature\Api\V1;
 
 use App\Models\Financeiro;
+use App\Models\FinanceiroMovimento;
+use App\Models\OsCobrancaAgendamento;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
@@ -23,6 +25,7 @@ class FinanceiroTest extends TestCase
         $this->seedOrderCatalog();
         $this->grantGroupPermissions(1, [
             'financeiro' => ['visualizar', 'criar', 'editar', 'excluir'],
+            'os' => ['visualizar'],
         ]);
     }
 
@@ -708,5 +711,496 @@ class FinanceiroTest extends TestCase
 
         $dre = $this->getJson('/api/v1/financeiro/relatorios/dre?mes=' . now()->format('Y-m'));
         $dre->assertOk()->assertJsonPath('data.dre.despesas_operacionais.total', 0.0);
+    }
+
+    public function test_index_exposes_origin_trail_for_all_lancamento_shapes(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $clienteId = $this->createClientRecord(['nome_razao' => 'Cliente Rastreável']);
+        $equipamentoId = $this->createEquipmentRecord($clienteId);
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clienteId,
+            'equipamento_id' => $equipamentoId,
+            'numero_os' => 'OS26070200',
+        ]);
+        $fornecedorId = $this->createSupplierRecord(['nome_fantasia' => 'Fornecedor Rastreável']);
+
+        // 1) Serviço ligado a OS: cliente | OS | equipamento (marca+modelo).
+        $servicoOsId = (int) Financeiro::query()->create([
+            'os_id' => $orderId,
+            'cliente_id' => $clienteId,
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'categoria' => 'Serviço',
+            'descricao' => 'Cobrança da OS',
+            'valor' => 200.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->toDateString(),
+        ])->id;
+
+        // 2) Serviço avulso com cliente preenchido: cliente | sem OS vinculada.
+        $servicoAvulsoComClienteId = (int) Financeiro::query()->create([
+            'cliente_id' => $clienteId,
+            'avulso' => true,
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'categoria' => 'Serviço',
+            'descricao' => 'Serviço avulso com cliente',
+            'valor' => 80.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->toDateString(),
+        ])->id;
+
+        // 3) Serviço avulso sem cliente: só "sem OS vinculada".
+        $servicoAvulsoSemClienteId = (int) Financeiro::query()->create([
+            'avulso' => true,
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'categoria' => 'Serviço',
+            'descricao' => 'Serviço avulso sem cliente',
+            'valor' => 40.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->toDateString(),
+        ])->id;
+
+        // 4) Taxa de cartão originada da baixa de uma OS (os_recebimento_cartao):
+        // cliente | OS | Título #origem.
+        $movimentoOsId = (int) FinanceiroMovimento::query()->create([
+            'financeiro_id' => $servicoOsId,
+            'tipo_movimento' => FinanceiroMovimento::TIPO_ENTRADA,
+            'data_movimento' => now()->toDateString(),
+            'valor_movimento' => 200.00,
+        ])->id;
+        $taxaOsId = (int) Financeiro::query()->create([
+            'os_id' => $orderId,
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Taxa de cartão',
+            'descricao' => 'Taxa da operadora',
+            'valor' => 8.00,
+            'status' => Financeiro::STATUS_PAGO,
+            'origem_tipo' => 'os_recebimento_cartao',
+            'origem_id' => $movimentoOsId,
+            'data_vencimento' => now()->toDateString(),
+        ])->id;
+
+        // 5) Taxa de cartão originada de um título avulso sem cliente/OS
+        // (financeiro_movimento_cartao): só "Título #origem" (o mínimo).
+        $movimentoAvulsoId = (int) FinanceiroMovimento::query()->create([
+            'financeiro_id' => $servicoAvulsoSemClienteId,
+            'tipo_movimento' => FinanceiroMovimento::TIPO_ENTRADA,
+            'data_movimento' => now()->toDateString(),
+            'valor_movimento' => 40.00,
+        ])->id;
+        $taxaAvulsaId = (int) Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Taxa de cartão',
+            'descricao' => 'Taxa da operadora (avulso)',
+            'valor' => 1.60,
+            'status' => Financeiro::STATUS_PAGO,
+            'origem_tipo' => 'financeiro_movimento_cartao',
+            'origem_id' => $movimentoAvulsoId,
+            'data_vencimento' => now()->toDateString(),
+        ])->id;
+
+        // 6) Despesa fixa mensal com fornecedor: "Fixo mensal | Fornecedor".
+        $despesaFixaId = (int) Financeiro::query()->create([
+            'fornecedor_id' => $fornecedorId,
+            'avulso' => true,
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Aluguel',
+            'descricao' => 'Aluguel da loja',
+            'valor' => 1500.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'dre_fixo_mensal' => true,
+            'data_vencimento' => now()->toDateString(),
+        ])->id;
+
+        $response = $this->getJson('/api/v1/financeiro?per_page=50');
+        $response->assertOk();
+
+        $trilhaPorId = collect($response->json('data.lancamentos'))
+            ->keyBy('id')
+            ->map(fn (array $item): array => $item['origem_trilha'] ?? []);
+
+        $this->assertSame(['Cliente Rastreável', 'OS OS26070200', 'Dell Inspiron 15'], $trilhaPorId[$servicoOsId]);
+        $this->assertSame(['Cliente Rastreável', 'sem OS vinculada'], $trilhaPorId[$servicoAvulsoComClienteId]);
+        $this->assertSame(['sem OS vinculada'], $trilhaPorId[$servicoAvulsoSemClienteId]);
+        $this->assertSame(['Cliente Rastreável', 'OS OS26070200', 'Título #' . $servicoOsId], $trilhaPorId[$taxaOsId]);
+        $this->assertSame(['Título #' . $servicoAvulsoSemClienteId], $trilhaPorId[$taxaAvulsaId]);
+        $this->assertSame(['Fixo mensal', 'Fornecedor Rastreável'], $trilhaPorId[$despesaFixaId]);
+    }
+
+    public function test_cancel_on_open_order_still_works_without_reason_or_admin(): void
+    {
+        [$actor, , $financeiroId] = $this->createClosedOrderReceivable(['status' => 'aguardando_reparo']);
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->postJson("/api/v1/financeiro/{$financeiroId}/cancelar")
+            ->assertOk()
+            ->assertJsonPath('data.lancamento.status', 'cancelado');
+    }
+
+    public function test_cancel_on_closed_order_is_blocked_without_reason_and_admin(): void
+    {
+        [$actor, $orderId, $financeiroId] = $this->createClosedOrderReceivable();
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->postJson("/api/v1/financeiro/{$financeiroId}/cancelar")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'FINANCEIRO_CANCEL_REQUIRES_REASON_AND_ADMIN');
+
+        $this->assertDatabaseHas('financeiro', ['id' => $financeiroId, 'status' => 'pago']);
+        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'entregue_reparado']);
+    }
+
+    public function test_cancel_with_sem_reparo_reclassifies_order_as_returned_without_repair(): void
+    {
+        [$actor, $orderId, $financeiroId] = $this->createClosedOrderReceivable();
+        $admin = $this->createUserRecord(['perfil' => 'admin', 'grupo_id' => 1]);
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->postJson("/api/v1/financeiro/{$financeiroId}/cancelar", [
+            'motivo' => 'sem_reparo',
+            'admin_email' => $admin->email,
+            'admin_password' => 'Senha@123',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('financeiro', ['id' => $financeiroId, 'status' => 'cancelado']);
+        $this->assertDatabaseHas('os', [
+            'id' => $orderId,
+            'status' => 'devolvido_sem_reparo',
+            'status_final_pendente_pagamento' => null,
+        ]);
+        $this->assertDatabaseHas('os_status_historico', [
+            'os_id' => $orderId,
+            'status_anterior' => 'entregue_reparado',
+            'status_novo' => 'devolvido_sem_reparo',
+        ]);
+    }
+
+    public function test_cancel_with_erro_cobranca_reverts_order_to_pending_payment_and_cancels_collections(): void
+    {
+        [$actor, $orderId, $financeiroId] = $this->createClosedOrderReceivable();
+        $admin = $this->createUserRecord(['perfil' => 'admin', 'grupo_id' => 1]);
+        $clienteId = (int) DB::table('os')->where('id', $orderId)->value('cliente_id');
+
+        foreach ([1, 3, 5] as $prazoDia) {
+            OsCobrancaAgendamento::query()->create([
+                'os_id' => $orderId,
+                'financeiro_id' => $financeiroId,
+                'cliente_id' => $clienteId,
+                'canal' => 'whatsapp',
+                'prazo_dias' => $prazoDia,
+                'enviar_em' => now()->addDays($prazoDia),
+                'status' => OsCobrancaAgendamento::STATUS_PENDENTE,
+            ]);
+        }
+
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->postJson("/api/v1/financeiro/{$financeiroId}/cancelar", [
+            'motivo' => 'erro_cobranca',
+            'admin_email' => $admin->email,
+            'admin_password' => 'Senha@123',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('financeiro', ['id' => $financeiroId, 'status' => 'cancelado']);
+        $this->assertDatabaseHas('os', [
+            'id' => $orderId,
+            'status' => 'entregue_pagamento_pendente',
+            'status_final_pendente_pagamento' => 'entregue_reparado',
+        ]);
+        $this->assertSame(
+            0,
+            OsCobrancaAgendamento::query()
+                ->where('os_id', $orderId)
+                ->where('status', OsCobrancaAgendamento::STATUS_PENDENTE)
+                ->count()
+        );
+        $this->assertSame(
+            3,
+            OsCobrancaAgendamento::query()
+                ->where('os_id', $orderId)
+                ->where('status', OsCobrancaAgendamento::STATUS_CANCELADO)
+                ->count()
+        );
+    }
+
+    public function test_cancel_with_fechamento_indevido_reverts_order_to_pre_closure_status(): void
+    {
+        [$actor, $orderId, $financeiroId] = $this->createClosedOrderReceivable();
+        $admin = $this->createUserRecord(['perfil' => 'admin', 'grupo_id' => 1]);
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->postJson("/api/v1/financeiro/{$financeiroId}/cancelar", [
+            'motivo' => 'fechamento_indevido',
+            'admin_email' => $admin->email,
+            'admin_password' => 'Senha@123',
+        ])->assertOk();
+
+        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'aguardando_reparo']);
+        $this->assertDatabaseMissing('financeiro', ['id' => $financeiroId]);
+    }
+
+    public function test_cancel_on_closed_order_with_invalid_admin_credentials_is_rejected(): void
+    {
+        [$actor, $orderId, $financeiroId] = $this->createClosedOrderReceivable();
+        $admin = $this->createUserRecord(['perfil' => 'admin', 'grupo_id' => 1]);
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->postJson("/api/v1/financeiro/{$financeiroId}/cancelar", [
+            'motivo' => 'sem_reparo',
+            'admin_email' => $admin->email,
+            'admin_password' => 'senha-errada',
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'FINANCEIRO_ADMIN_AUTH_INVALID');
+
+        $this->assertDatabaseHas('financeiro', ['id' => $financeiroId, 'status' => 'pago']);
+        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'entregue_reparado']);
+    }
+
+    public function test_destroy_is_blocked_when_order_is_encerrada(): void
+    {
+        // A exclusão (hard delete) não passava por nenhuma trava — ao
+        // contrário do cancelamento, ela nem sequer perguntava motivo/admin,
+        // então dava pra apagar o título de uma OS encerrada sem deixar
+        // rastro nenhum. Excluir continua bloqueado; quem precisa desfazer
+        // o título de uma OS encerrada deve usar "Cancelar" (que já tem toda
+        // a trava de motivo+admin+correção de status).
+        [$actor, $orderId, $financeiroId] = $this->createClosedOrderReceivable();
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->deleteJson("/api/v1/financeiro/{$financeiroId}")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'FINANCEIRO_DELETE_BLOCKED_OS_ENCERRADA');
+
+        $this->assertDatabaseHas('financeiro', ['id' => $financeiroId, 'status' => 'pago']);
+        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'entregue_reparado']);
+    }
+
+    public function test_destroy_requires_admin_credentials_even_when_order_is_open(): void
+    {
+        // Excluir é irreversível (hard delete, sem histórico) — diferente do
+        // cancelamento, que só exige admin quando a OS está encerrada, a
+        // exclusão exige admin sempre.
+        [$actor, , $financeiroId] = $this->createClosedOrderReceivable(['status' => 'aguardando_reparo']);
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->deleteJson("/api/v1/financeiro/{$financeiroId}")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'FINANCEIRO_DELETE_REQUIRES_ADMIN');
+
+        $this->assertDatabaseHas('financeiro', ['id' => $financeiroId]);
+    }
+
+    public function test_destroy_with_invalid_admin_credentials_is_rejected(): void
+    {
+        [$actor, , $financeiroId] = $this->createClosedOrderReceivable(['status' => 'aguardando_reparo']);
+        $admin = $this->createUserRecord(['perfil' => 'admin', 'grupo_id' => 1]);
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->deleteJson("/api/v1/financeiro/{$financeiroId}", [
+            'admin_email' => $admin->email,
+            'admin_password' => 'senha-errada',
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'FINANCEIRO_ADMIN_AUTH_INVALID');
+
+        $this->assertDatabaseHas('financeiro', ['id' => $financeiroId]);
+    }
+
+    public function test_destroy_still_works_when_order_is_open_with_valid_admin_credentials(): void
+    {
+        [$actor, , $financeiroId] = $this->createClosedOrderReceivable(['status' => 'aguardando_reparo']);
+        $admin = $this->createUserRecord(['perfil' => 'admin', 'grupo_id' => 1]);
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->deleteJson("/api/v1/financeiro/{$financeiroId}", [
+            'admin_email' => $admin->email,
+            'admin_password' => 'Senha@123',
+        ])->assertOk();
+
+        $this->assertDatabaseMissing('financeiro', ['id' => $financeiroId]);
+    }
+
+    public function test_destroy_still_works_for_title_without_order(): void
+    {
+        $actor = $this->createUserRecord(['grupo_id' => 1]);
+        $admin = $this->createUserRecord(['perfil' => 'admin', 'grupo_id' => 1]);
+        $clienteId = $this->createClientRecord();
+        Sanctum::actingAs($actor, ['*']);
+
+        $financeiroId = (int) Financeiro::query()->create([
+            'cliente_id' => $clienteId,
+            'avulso' => true,
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'categoria' => 'Serviço',
+            'descricao' => 'Lançamento avulso',
+            'valor' => 50.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->toDateString(),
+        ])->id;
+
+        $this->deleteJson("/api/v1/financeiro/{$financeiroId}", [
+            'admin_email' => $admin->email,
+            'admin_password' => 'Senha@123',
+        ])->assertOk();
+
+        $this->assertDatabaseMissing('financeiro', ['id' => $financeiroId]);
+    }
+
+    public function test_card_fee_expense_inherits_order_and_is_gated_when_order_is_closed(): void
+    {
+        // Bug real reportado: a despesa "Taxa de cartão" (a pagar) gerada por
+        // FinanceiroService::registerCardFeeExpense() (baixa avulsa via
+        // POST /financeiro/{id}/baixar) nunca herdava o os_id do título pago
+        // — diferente da despesa equivalente gerada pelo fechamento da OS
+        // (OrderClosureService::registerCardFeeExpense(), que já setava
+        // os_id). Sem o os_id, resolveOsIsEncerrada() nunca detectava a OS
+        // encerrada e a trava de motivo+admin (cancelar/excluir) era
+        // simplesmente pulada para esse título.
+        [$actor, $orderId] = $this->createClosedOrderReceivable();
+        Sanctum::actingAs($actor, ['*']);
+
+        $operadoraId = (int) DB::table('financeiro_cartao_operadoras')->insertGetId([
+            'nome' => 'Stone',
+            'ordem_exibicao' => 1,
+            'prazo_padrao_dias' => 0,
+            'ativo' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('financeiro_cartao_taxas')->insert([
+            'operadora_id' => $operadoraId,
+            'bandeira_id' => null,
+            'modalidade' => 'debito',
+            'parcelas_inicial' => 1,
+            'parcelas_final' => 1,
+            'taxa_percentual' => 1.99,
+            'taxa_fixa' => 0.00,
+            'prazo_recebimento_dias' => 0,
+            'ativo' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $pecaFinanceiroId = (int) Financeiro::query()->create([
+            'os_id' => $orderId,
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'categoria' => 'Peça',
+            'descricao' => 'Peça cobrada à parte',
+            'valor' => 50.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->toDateString(),
+        ])->id;
+
+        $this->postJson("/api/v1/financeiro/{$pecaFinanceiroId}/baixar", [
+            'valor_movimento' => 50.00,
+            'forma_pagamento' => 'cartao_debito',
+            'operadora_id' => $operadoraId,
+            'modalidade' => 'debito',
+            'parcelas' => 1,
+        ])->assertOk();
+
+        $taxaFinanceiroId = (int) DB::table('financeiro')
+            ->where('categoria', 'Taxa de cartão')
+            ->where('origem_tipo', 'financeiro_movimento_cartao')
+            ->value('id');
+
+        $this->assertDatabaseHas('financeiro', ['id' => $taxaFinanceiroId, 'os_id' => $orderId]);
+
+        $index = $this->getJson('/api/v1/financeiro?tipo=pagar')->assertOk();
+        $row = collect($index->json('data.lancamentos'))->firstWhere('id', $taxaFinanceiroId);
+        $this->assertNotNull($row, 'Despesa de taxa de cartão não apareceu na listagem "a pagar".');
+        $this->assertTrue($row['os_is_encerrada']);
+
+        $this->postJson("/api/v1/financeiro/{$taxaFinanceiroId}/cancelar")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'FINANCEIRO_CANCEL_REQUIRES_REASON_AND_ADMIN');
+
+        $this->deleteJson("/api/v1/financeiro/{$taxaFinanceiroId}")
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'FINANCEIRO_DELETE_BLOCKED_OS_ENCERRADA');
+    }
+
+    public function test_index_hides_open_balance_from_cancelled_title(): void
+    {
+        // Reproduz o bug real reportado: listagem de OS não filtrava
+        // status='cancelado' ao somar valor_recebido/saldo (diferente do
+        // detalhe da OS, que já filtrava corretamente) — ver
+        // OrderWorkflowService::resolveReceivableSummaryByOrderId().
+        [$actor, $orderId, $financeiroId] = $this->createClosedOrderReceivable();
+        $admin = $this->createUserRecord(['perfil' => 'admin', 'grupo_id' => 1]);
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->postJson("/api/v1/financeiro/{$financeiroId}/cancelar", [
+            'motivo' => 'erro_cobranca',
+            'admin_email' => $admin->email,
+            'admin_password' => 'Senha@123',
+        ])->assertOk();
+
+        $response = $this->getJson('/api/v1/orders?search=' . DB::table('os')->where('id', $orderId)->value('numero_os'));
+
+        $response->assertOk()
+            ->assertJsonPath('data.orders.0.valor_recebido', null)
+            ->assertJsonPath('data.orders.0.saldo', null);
+    }
+
+    /**
+     * Cria uma OS encerrada como "entregue_reparado" com um título "Serviço"
+     * já pago (R$130) — fixture compartilhada pelos testes de cancelamento
+     * com motivo. Retorna [ator autenticado, os_id, financeiro_id].
+     *
+     * @param array<string, mixed> $orderOverrides
+     * @return array{0: \App\Models\User, 1: int, 2: int}
+     */
+    private function createClosedOrderReceivable(array $orderOverrides = []): array
+    {
+        $actor = $this->createUserRecord(['grupo_id' => 1]);
+        $clienteId = $this->createClientRecord(['nome_razao' => 'Cliente Cancelamento']);
+        $equipamentoId = $this->createEquipmentRecord($clienteId);
+
+        $orderId = $this->createOrderRecord(array_merge([
+            'cliente_id' => $clienteId,
+            'equipamento_id' => $equipamentoId,
+            'numero_os' => 'OS26070300',
+            'status' => 'entregue_reparado',
+            'estado_fluxo' => 'encerrado',
+            'data_conclusao' => now()->toDateString(),
+            'data_entrega' => now(),
+        ], $orderOverrides));
+
+        // Histórico de status: necessário para a opção "fechamento_indevido"
+        // (cancelClosure()) resolver o status anterior à baixa.
+        DB::table('os_status_historico')->insert([
+            'os_id' => $orderId,
+            'status_anterior' => 'aguardando_reparo',
+            'status_novo' => $orderOverrides['status'] ?? 'entregue_reparado',
+            'estado_fluxo' => 'encerrado',
+            'usuario_id' => $actor->id,
+            'observacao' => 'Baixa da OS.',
+            'created_at' => now(),
+        ]);
+
+        $financeiroId = (int) Financeiro::query()->create([
+            'os_id' => $orderId,
+            'cliente_id' => $clienteId,
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'categoria' => 'Serviço',
+            'descricao' => 'Cobrança da OS',
+            'valor' => 130.00,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->toDateString(),
+        ])->id;
+
+        FinanceiroMovimento::query()->create([
+            'financeiro_id' => $financeiroId,
+            'tipo_movimento' => FinanceiroMovimento::TIPO_ENTRADA,
+            'data_movimento' => now()->toDateString(),
+            'valor_movimento' => 130.00,
+        ]);
+
+        return [$actor, $orderId, $financeiroId];
     }
 }

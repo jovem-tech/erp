@@ -26,6 +26,12 @@ class CompanyProfileService
      */
     private const ALLOWED_LOGIN_BACKGROUND_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
 
+    private const MAX_LOGO_DIMENSION = 800;
+
+    private const MAX_LOGIN_BACKGROUND_DIMENSION = 1920;
+
+    private const LOGIN_BACKGROUND_JPEG_QUALITY = 82;
+
     /**
      * @var array<string, string>
      */
@@ -238,8 +244,140 @@ class CompanyProfileService
 
         $filename = $filenamePrefix . '_' . now()->format('YmdHisv') . '.' . $extension;
         Storage::disk('local')->putFileAs($directory, $file, $filename);
+        $relativePath = $directory . '/' . $filename;
 
-        $this->upsert($configKey, $directory . '/' . $filename);
+        $relativePath = $configKey === self::LOGIN_BACKGROUND_CONFIG_KEY
+            ? $this->optimizeLoginBackground($relativePath, $extension)
+            : $this->capImageDimensions($relativePath, $extension, self::MAX_LOGO_DIMENSION);
+
+        $this->upsert($configKey, $relativePath);
+    }
+
+    /**
+     * Fundos de login sao fotos de tela cheia enviadas com frequencia como PNG
+     * sem necessidade real de transparencia (ver CHANGELOG); reencodar para
+     * JPEG reduz o peso em ~90% sem perda visual perceptivel atras do
+     * gradiente que sempre cobre a imagem (layouts/auth/login.blade.php).
+     */
+    private function optimizeLoginBackground(string $relativePath, string $extension): string
+    {
+        if (! in_array($extension, ['jpg', 'jpeg', 'png'], true) || ! extension_loaded('gd')) {
+            return $relativePath;
+        }
+
+        $absolutePath = Storage::disk('local')->path($relativePath);
+        $image = $this->loadGdImage($absolutePath, $extension);
+        if ($image === null) {
+            return $relativePath;
+        }
+
+        $image = $this->resizeToMaxDimension($image, self::MAX_LOGIN_BACKGROUND_DIMENSION);
+        $flattened = $this->flattenOntoWhite($image);
+
+        $jpegPath = preg_replace('/\.' . preg_quote($extension, '/') . '$/', '.jpg', $absolutePath);
+        imagejpeg($flattened, $jpegPath, self::LOGIN_BACKGROUND_JPEG_QUALITY);
+        imagedestroy($image);
+        imagedestroy($flattened);
+
+        $jpegRelativePath = preg_replace('/\.' . preg_quote($extension, '/') . '$/', '.jpg', $relativePath);
+        if ($jpegPath !== $absolutePath) {
+            @unlink($absolutePath);
+        }
+
+        return $jpegRelativePath;
+    }
+
+    /**
+     * Logos raramente precisam de mais que algumas centenas de pixels (sao
+     * exibidos em ~90px na tela de login e na sidebar); limita o lado maior
+     * preservando formato e transparencia.
+     */
+    private function capImageDimensions(string $relativePath, string $extension, int $maxDimension): string
+    {
+        if (! in_array($extension, ['jpg', 'jpeg', 'png'], true) || ! extension_loaded('gd')) {
+            return $relativePath;
+        }
+
+        $absolutePath = Storage::disk('local')->path($relativePath);
+        $image = $this->loadGdImage($absolutePath, $extension);
+        if ($image === null) {
+            return $relativePath;
+        }
+
+        if (imagesx($image) <= $maxDimension && imagesy($image) <= $maxDimension) {
+            imagedestroy($image);
+
+            return $relativePath;
+        }
+
+        $resized = $this->resizeToMaxDimension($image, $maxDimension);
+        imagedestroy($image);
+
+        if ($extension === 'png') {
+            imagesavealpha($resized, true);
+            imagepng($resized, $absolutePath, 6);
+        } else {
+            imagejpeg($resized, $absolutePath, 85);
+        }
+        imagedestroy($resized);
+
+        return $relativePath;
+    }
+
+    /**
+     * @return \GdImage|null
+     */
+    private function loadGdImage(string $absolutePath, string $extension)
+    {
+        $image = match ($extension) {
+            'png' => @imagecreatefrompng($absolutePath),
+            default => @imagecreatefromjpeg($absolutePath),
+        };
+
+        return $image instanceof \GdImage ? $image : null;
+    }
+
+    /**
+     * @param \GdImage $image
+     * @return \GdImage
+     */
+    private function resizeToMaxDimension($image, int $maxDimension)
+    {
+        $width = imagesx($image);
+        $height = imagesy($image);
+        $largestSide = max($width, $height);
+
+        if ($largestSide <= $maxDimension) {
+            return $image;
+        }
+
+        $ratio = $maxDimension / $largestSide;
+        $newWidth = max(1, (int) round($width * $ratio));
+        $newHeight = max(1, (int) round($height * $ratio));
+
+        $resized = imagecreatetruecolor($newWidth, $newHeight);
+        imagealphablending($resized, false);
+        imagesavealpha($resized, true);
+        imagecopyresampled($resized, $image, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height);
+
+        return $resized;
+    }
+
+    /**
+     * @param \GdImage $image
+     * @return \GdImage
+     */
+    private function flattenOntoWhite($image)
+    {
+        $width = imagesx($image);
+        $height = imagesy($image);
+
+        $flattened = imagecreatetruecolor($width, $height);
+        $white = imagecolorallocate($flattened, 255, 255, 255);
+        imagefill($flattened, 0, 0, $white);
+        imagecopy($flattened, $image, 0, 0, 0, 0, $width, $height);
+
+        return $flattened;
     }
 
     private function deleteStoredImage(string $configKey, string $directory): void

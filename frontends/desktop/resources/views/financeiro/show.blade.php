@@ -67,6 +67,7 @@
         $cancelConfirmMessage = $hasMovements
             ? 'Este lançamento já possui baixa registrada. Cancelar vai estornar (remover) os valores já lançados no fluxo de caixa e no DRE. Esta ação não pode ser desfeita. Deseja continuar?'
             : 'Deseja cancelar este lançamento? Ele deixará de contar no fluxo de caixa e no DRE, mas o registro é mantido.';
+        $osIsEncerrada = (bool) ($lancamento['os_is_encerrada'] ?? false);
 
         $hasLinkActions = ($canViewOs && $osId > 0)
             || ($canViewOrcamento && $orcamentoId > 0)
@@ -170,34 +171,59 @@
 
                     @if ($canCancel)
                         <form
+                            id="financeiroCancelForm{{ $id }}"
                             method="post"
                             action="{{ route('financeiro.cancel', $id) }}"
-                            data-confirm="{{ $cancelConfirmMessage }}"
-                            data-confirm-title="Cancelar lançamento"
-                            data-confirm-button="Sim, cancelar"
+                            @unless($osIsEncerrada)
+                                data-confirm="{{ $cancelConfirmMessage }}"
+                                data-confirm-title="Cancelar lançamento"
+                                data-confirm-button="Sim, cancelar"
+                            @endunless
                         >
                             @csrf
                             <input type="hidden" name="voltar_para" value="show">
-                            <button type="submit" class="dropdown-item text-warning">
+                            @if ($osIsEncerrada)
+                                <input type="hidden" name="motivo" value="" data-financeiro-cancel-motivo>
+                                <input type="hidden" name="admin_email" value="" data-financeiro-cancel-admin-email>
+                                <input type="hidden" name="admin_password" value="" data-financeiro-cancel-admin-password>
+                            @endif
+                            <button
+                                type="{{ $osIsEncerrada ? 'button' : 'submit' }}"
+                                class="dropdown-item text-warning"
+                                @if ($osIsEncerrada)
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#financeiroCancelReasonModal"
+                                    data-target-form="#financeiroCancelForm{{ $id }}"
+                                @endif
+                            >
                                 <i class="bi bi-x-circle me-2"></i>Cancelar lançamento
                             </button>
                         </form>
                     @endif
 
                     @if ($canDeleteFinanceiro)
-                        <form
-                            method="post"
-                            action="{{ route('financeiro.destroy', $id) }}"
-                            data-confirm="Deseja excluir este lançamento? Esta ação não pode ser desfeita."
-                            data-confirm-title="Excluir lançamento"
-                            data-confirm-button="Sim, excluir"
-                        >
-                            @csrf
-                            @method('DELETE')
-                            <button type="submit" class="dropdown-item text-danger">
-                                <i class="bi bi-trash me-2"></i>Excluir lançamento
-                            </button>
-                        </form>
+                        @if ($osIsEncerrada)
+                            <span class="dropdown-item disabled">
+                                <i class="bi bi-lock me-2"></i>Excluir (OS encerrada — use Cancelar)
+                            </span>
+                        @else
+                            <form id="financeiroDeleteForm{{ $id }}" method="post" action="{{ route('financeiro.destroy', $id) }}">
+                                @csrf
+                                @method('DELETE')
+                                <input type="hidden" name="voltar_para" value="show">
+                                <input type="hidden" name="admin_email" value="" data-financeiro-delete-admin-email>
+                                <input type="hidden" name="admin_password" value="" data-financeiro-delete-admin-password>
+                                <button
+                                    type="button"
+                                    class="dropdown-item text-danger"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#financeiroDeleteAdminModal"
+                                    data-target-form="#financeiroDeleteForm{{ $id }}"
+                                >
+                                    <i class="bi bi-trash me-2"></i>Excluir lançamento
+                                </button>
+                            </form>
+                        @endif
                     @endif
                 </div>
             </div>
@@ -470,8 +496,17 @@
     </article>
 @endsection
 
-@if ($canPay ?? false)
+@if (($canPay ?? false) || ($canCancel && $osIsEncerrada) || ($canDeleteFinanceiro && ! $osIsEncerrada))
     @push('modals')
+        @if ($canCancel && $osIsEncerrada)
+            @include('financeiro._cancel_reason_modal')
+        @endif
+
+        @if ($canDeleteFinanceiro && ! $osIsEncerrada)
+            @include('financeiro._delete_admin_modal')
+        @endif
+
+        @if ($canPay ?? false)
         <div class="modal fade" id="payModal{{ $id }}" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
@@ -561,6 +596,7 @@
                 </div>
             </div>
         </div>
+        @endif
     @endpush
 
     @section('scripts')
@@ -569,6 +605,14 @@
                 'cartao' => $cartaoDataset ?? ['operadoras' => [], 'bandeiras' => [], 'taxas' => []],
             ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
         </script>
-        <script src="{{ asset('assets/js/financeiro-pay.js') }}?v={{ filemtime(public_path('assets/js/financeiro-pay.js')) }}"></script>
+        @if ($canPay ?? false)
+            <script src="{{ asset('assets/js/financeiro-pay.js') }}?v={{ filemtime(public_path('assets/js/financeiro-pay.js')) }}"></script>
+        @endif
+        @if ($canCancel && $osIsEncerrada)
+            <script src="{{ asset('assets/js/financeiro-cancel-reason-modal.js') }}?v={{ filemtime(public_path('assets/js/financeiro-cancel-reason-modal.js')) }}"></script>
+        @endif
+        @if ($canDeleteFinanceiro && ! $osIsEncerrada)
+            <script src="{{ asset('assets/js/financeiro-delete-admin-modal.js') }}?v={{ filemtime(public_path('assets/js/financeiro-delete-admin-modal.js')) }}"></script>
+        @endif
     @endsection
 @endif

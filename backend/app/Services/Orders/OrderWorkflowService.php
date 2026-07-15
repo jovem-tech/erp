@@ -230,6 +230,11 @@ class OrderWorkflowService
         $titulosPorOs = Financeiro::query()
             ->whereIn('os_id', $orderIds)
             ->where('tipo', Financeiro::TIPO_RECEBER)
+            // Mesmo filtro já usado em resolveDetailFinancialSummary() — um
+            // título cancelado (estornado) não deve contar como saldo em
+            // aberto na listagem; sem isso, a OS aparece com "Saldo: R$X"
+            // mesmo depois do cancelamento zerar o que era cobrado.
+            ->where('status', '!=', Financeiro::STATUS_CANCELADO)
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->get(['id', 'os_id', 'valor', 'status'])

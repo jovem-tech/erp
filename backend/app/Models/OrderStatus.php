@@ -22,6 +22,19 @@ class OrderStatus extends Model
      */
     public const CLOSURE_MACRO_GROUP = 'encerrado';
 
+    /**
+     * Subconjunto de closureCodes() com impacto financeiro real: equipamento
+     * de fato entregue/devolvido/descartado ao cliente. Mais estreito de
+     * proposito — closureCodes() tambem inclui 'cancelado', mas uma OS pode
+     * chegar la so por sincronizacao automatica de orcamento rejeitado
+     * (BudgetOrderSyncService::syncFromBudget()), sem nenhum lancamento
+     * financeiro ter existido. Usar esta constante em qualquer guard que
+     * dependa de "a OS teve lancamento financeiro de verdade" — edicao de
+     * orcamento em OS encerrada, cancelamento de titulo com pergunta de
+     * motivo, etc.
+     */
+    public const FINANCIAL_IMPACT_CLOSURE_CODES = ['entregue_reparado', 'devolvido_sem_reparo', 'descartado'];
+
     protected $table = 'os_status';
 
     protected $primaryKey = 'id';

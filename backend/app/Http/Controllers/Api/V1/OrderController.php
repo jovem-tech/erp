@@ -897,28 +897,19 @@ class OrderController extends BaseApiController
             (string) $request->ip()
         );
 
-        if (($verification['error'] ?? null) === 'rate_limited') {
-            return $this->error(
-                'Muitas tentativas de verificação de administrador. Aguarde um pouco e tente novamente.',
-                429,
-                'ORDER_CLOSURE_CANCEL_ADMIN_AUTH_RATE_LIMITED',
-                ['retry_after' => $verification['retry_after'] ?? null],
-                request: $request
-            );
-        }
+        // 422, nao 401: o desktop trata QUALQUER 401 como "sessao do usuario
+        // atual expirou" e forca logout (ApiClient::parseResponse). Isso e'
+        // uma verificacao de credenciais de um usuario DIFERENTE (admin),
+        // nao a sessao de quem esta clicando — nunca pode disparar esse logout.
+        $errorResponse = $this->respondToAdminVerification(
+            $verification,
+            $request,
+            'ORDER_CLOSURE_CANCEL_ADMIN_AUTH_RATE_LIMITED',
+            'ORDER_CLOSURE_CANCEL_ADMIN_AUTH_INVALID'
+        );
 
-        if (! ($verification['ok'] ?? false)) {
-            // 422, nao 401: o desktop trata QUALQUER 401 como "sessao do usuario
-            // atual expirou" e forca logout (ApiClient::parseResponse). Isso e'
-            // uma verificacao de credenciais de um usuario DIFERENTE (admin),
-            // nao a sessao de quem esta clicando — nunca pode disparar esse logout.
-            return $this->error(
-                'Credenciais de administrador inválidas.',
-                422,
-                'ORDER_CLOSURE_CANCEL_ADMIN_AUTH_INVALID',
-                null,
-                request: $request
-            );
+        if ($errorResponse !== null) {
+            return $errorResponse;
         }
 
         $admin = $verification['admin'];

@@ -166,6 +166,7 @@
                             ];
                             $canPay = in_array($status, ['pendente', 'parcial'], true);
                             $valorAberto = round((float) ($lancamento['valor_aberto'] ?? $lancamento['valor'] ?? 0), 2);
+                            $osIsEncerrada = (bool) ($lancamento['os_is_encerrada'] ?? false);
                         @endphp
                         <tr>
                             <td data-label="ID">{{ $id > 0 ? $id : '-' }}</td>
@@ -176,8 +177,9 @@
                             </td>
                             <td data-label="Categoria">
                                 <div class="fw-semibold">{{ $lancamento['categoria'] ?? 'Sem categoria' }}</div>
-                                @if (! empty($lancamento['grupo_dre']))
-                                    <small class="text-secondary d-block">{{ $lancamento['grupo_dre'] }} / {{ $lancamento['subgrupo_dre'] ?? '-' }}</small>
+                                @php $origemTrilha = array_filter((array) ($lancamento['origem_trilha'] ?? [])); @endphp
+                                @if ($origemTrilha !== [])
+                                    <small class="text-secondary d-block">{{ implode(' | ', $origemTrilha) }}</small>
                                 @endif
                             </td>
                             <td data-label="Valor">R$ {{ number_format((float) ($lancamento['valor'] ?? 0), 2, ',', '.') }}</td>
@@ -225,14 +227,30 @@
                                         @endphp
                                         <li>
                                             <form
+                                                id="financeiroCancelForm{{ $id }}"
                                                 method="post"
                                                 action="{{ route('financeiro.cancel', $id) }}"
-                                                data-confirm="{{ $cancelConfirmMessage }}"
-                                                data-confirm-title="Cancelar lançamento"
-                                                data-confirm-button="Sim, cancelar"
+                                                @unless($osIsEncerrada)
+                                                    data-confirm="{{ $cancelConfirmMessage }}"
+                                                    data-confirm-title="Cancelar lançamento"
+                                                    data-confirm-button="Sim, cancelar"
+                                                @endunless
                                             >
                                                 @csrf
-                                                <button type="submit" class="dropdown-item text-warning">
+                                                @if ($osIsEncerrada)
+                                                    <input type="hidden" name="motivo" value="" data-financeiro-cancel-motivo>
+                                                    <input type="hidden" name="admin_email" value="" data-financeiro-cancel-admin-email>
+                                                    <input type="hidden" name="admin_password" value="" data-financeiro-cancel-admin-password>
+                                                @endif
+                                                <button
+                                                    type="{{ $osIsEncerrada ? 'button' : 'submit' }}"
+                                                    class="dropdown-item text-warning"
+                                                    @if ($osIsEncerrada)
+                                                        data-bs-toggle="modal"
+                                                        data-bs-target="#financeiroCancelReasonModal"
+                                                        data-target-form="#financeiroCancelForm{{ $id }}"
+                                                    @endif
+                                                >
                                                     <i class="bi bi-x-circle me-2"></i>
                                                     Cancelar
                                                 </button>
@@ -242,20 +260,29 @@
 
                                     @if (\App\Support\DesktopSession::can('financeiro', 'excluir'))
                                         <li>
-                                            <form
-                                                method="post"
-                                                action="{{ route('financeiro.destroy', $id) }}"
-                                                data-confirm="Deseja excluir este lançamento? Esta ação não pode ser desfeita."
-                                                data-confirm-title="Excluir lançamento"
-                                                data-confirm-button="Sim, excluir"
-                                            >
-                                                @csrf
-                                                @method('DELETE')
-                                                <button type="submit" class="dropdown-item text-danger">
-                                                    <i class="bi bi-trash me-2"></i>
-                                                    Excluir
-                                                </button>
-                                            </form>
+                                            @if ($osIsEncerrada)
+                                                <span class="dropdown-item disabled">
+                                                    <i class="bi bi-lock me-2"></i>
+                                                    Excluir (OS encerrada — use Cancelar)
+                                                </span>
+                                            @else
+                                                <form id="financeiroDeleteForm{{ $id }}" method="post" action="{{ route('financeiro.destroy', $id) }}">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <input type="hidden" name="admin_email" value="" data-financeiro-delete-admin-email>
+                                                    <input type="hidden" name="admin_password" value="" data-financeiro-delete-admin-password>
+                                                    <button
+                                                        type="button"
+                                                        class="dropdown-item text-danger"
+                                                        data-bs-toggle="modal"
+                                                        data-bs-target="#financeiroDeleteAdminModal"
+                                                        data-target-form="#financeiroDeleteForm{{ $id }}"
+                                                    >
+                                                        <i class="bi bi-trash me-2"></i>
+                                                        Excluir
+                                                    </button>
+                                                </form>
+                                            @endif
                                         </li>
                                     @endif
                                 </x-list-actions>
@@ -383,6 +410,9 @@
             ])
         @endif
     </section>
+
+    @include('financeiro._cancel_reason_modal')
+    @include('financeiro._delete_admin_modal')
 @endsection
 
 @section('scripts')
@@ -392,4 +422,6 @@
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
     </script>
     <script src="{{ asset('assets/js/financeiro-pay.js') }}?v={{ filemtime(public_path('assets/js/financeiro-pay.js')) }}"></script>
+    <script src="{{ asset('assets/js/financeiro-cancel-reason-modal.js') }}?v={{ filemtime(public_path('assets/js/financeiro-cancel-reason-modal.js')) }}"></script>
+    <script src="{{ asset('assets/js/financeiro-delete-admin-modal.js') }}?v={{ filemtime(public_path('assets/js/financeiro-delete-admin-modal.js')) }}"></script>
 @endsection

@@ -267,30 +267,15 @@ class BudgetController extends BaseApiController
             (string) $request->ip()
         );
 
-        if (($verification['error'] ?? null) === 'rate_limited') {
-            return [
-                'ok' => false,
-                'response' => $this->error(
-                    'Muitas tentativas de verificação de administrador. Aguarde um pouco e tente novamente.',
-                    429,
-                    'BUDGET_ADMIN_AUTH_RATE_LIMITED',
-                    ['retry_after' => $verification['retry_after'] ?? null],
-                    request: $request
-                ),
-            ];
-        }
+        $errorResponse = $this->respondToAdminVerification(
+            $verification,
+            $request,
+            'BUDGET_ADMIN_AUTH_RATE_LIMITED',
+            'BUDGET_ADMIN_AUTH_INVALID'
+        );
 
-        if (! ($verification['ok'] ?? false)) {
-            return [
-                'ok' => false,
-                'response' => $this->error(
-                    'Credenciais de administrador inválidas.',
-                    422,
-                    'BUDGET_ADMIN_AUTH_INVALID',
-                    null,
-                    request: $request
-                ),
-            ];
+        if ($errorResponse !== null) {
+            return ['ok' => false, 'response' => $errorResponse];
         }
 
         return ['ok' => true, 'admin' => $verification['admin']];

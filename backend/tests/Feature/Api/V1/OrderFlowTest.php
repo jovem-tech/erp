@@ -1186,8 +1186,12 @@ class OrderFlowTest extends TestCase
         ]);
     }
 
-    public function test_close_allows_closing_without_any_payment(): void
+    public function test_close_rejects_delivery_without_any_payment(): void
     {
+        // Reproduz o cenário do bug real: DELIVERED_STATUS comparava com a
+        // string errada ('equipamento_entregue') e nunca disparava — essa
+        // trava nunca bloqueou nada até a correção. Ver skill
+        // sistema-erp-os-fluxo-fechamento: o código real é 'entregue_reparado'.
         [$manager, $orderId] = $this->seedManagerOrderForUpdate();
         $token = $this->loginAndGetToken($manager->email);
 
@@ -1197,17 +1201,11 @@ class OrderFlowTest extends TestCase
                 'data_entrega' => now()->toDateString(),
             ]);
 
-        $response->assertOk()
-            ->assertJsonPath('data.order.status', 'entregue_reparado');
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'ORDER_CLOSURE_DELIVERY_REQUIRES_PAYMENT');
 
-        $this->assertDatabaseHas('financeiro', [
-            'os_id' => $orderId,
-            'tipo' => 'receber',
-            'status' => 'pendente',
-        ]);
-        $this->assertDatabaseMissing('financeiro_movimentos', [
-            'financeiro_id' => DB::table('financeiro')->where('os_id', $orderId)->value('id'),
-        ]);
+        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'triagem']);
+        $this->assertDatabaseMissing('financeiro', ['os_id' => $orderId]);
     }
 
     public function test_close_rejects_a_status_that_is_not_a_closure_status(): void
@@ -1251,6 +1249,7 @@ class OrderFlowTest extends TestCase
     public function test_close_notification_failure_does_not_revert_the_closure(): void
     {
         [$manager, $orderId] = $this->seedManagerOrderForUpdate();
+        DB::table('os')->where('id', $orderId)->update(['valor_final' => 100.00]);
         $token = $this->loginAndGetToken($manager->email);
 
         $this->mock(\App\Services\Channels\Whatsapp\WhatsappMessagingService::class, function ($mock): void {
@@ -1262,6 +1261,9 @@ class OrderFlowTest extends TestCase
                 'encerrar_como' => 'entregue_reparado',
                 'data_entrega' => now()->toDateString(),
                 'notificar_cliente' => true,
+                'recebimentos' => [
+                    ['valor' => 100.00, 'forma_pagamento' => 'pix'],
+                ],
             ]);
 
         $response->assertOk()
@@ -1443,6 +1445,7 @@ class OrderFlowTest extends TestCase
     public function test_close_with_agendar_retorno_creates_crm_followup_and_dedups(): void
     {
         [$manager, $orderId] = $this->seedManagerOrderForUpdate();
+        DB::table('os')->where('id', $orderId)->update(['valor_final' => 100.00]);
         $token = $this->loginAndGetToken($manager->email);
         $retornoData = now()->addDays(180)->toDateString();
 
@@ -1452,6 +1455,9 @@ class OrderFlowTest extends TestCase
                 'data_entrega' => now()->toDateString(),
                 'agendar_retorno' => true,
                 'retorno_data' => $retornoData,
+                'recebimentos' => [
+                    ['valor' => 100.00, 'forma_pagamento' => 'pix'],
+                ],
             ]);
 
         $response->assertOk();

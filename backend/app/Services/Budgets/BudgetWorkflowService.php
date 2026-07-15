@@ -12,6 +12,7 @@ use App\Models\Equipment;
 use App\Models\Financeiro;
 use App\Models\Order;
 use App\Models\OrderEvent;
+use App\Models\OrderStatus;
 use App\Models\Peca;
 use App\Models\Servico;
 use App\Models\User;
@@ -38,26 +39,17 @@ class BudgetWorkflowService
     }
 
     /**
-     * Encerramentos com equipamento efetivamente entregue/devolvido/descartado
-     * ao cliente — mais estreito que OrderStatus::closureCodes() de propósito:
-     * esse método também inclui 'cancelado' (usado no dropdown "Encerrar como"
-     * e no badge geral "OS encerrada"), mas uma OS pode chegar em 'cancelado'
-     * só por sincronização automática do orçamento rejeitado
-     * (BudgetOrderSyncService::syncFromBudget()), sem NENHUM lançamento
-     * financeiro ter existido. Bloquear a edição do orçamento nesse caso não
-     * protegeria nada e só atrapalharia a correção do orçamento rejeitado.
-     */
-    private const BUDGET_LOCK_CLOSURE_CODES = ['entregue_reparado', 'devolvido_sem_reparo', 'descartado'];
-
-    /**
      * OS encerrada (skill sistema-erp-os-fluxo-fechamento): já houve entrega do
      * equipamento e, em geral, lançamento financeiro — editar o orçamento nesse
      * estado exige confirmação de administrador (ver updateBudget()/createBudget()).
+     * Usa OrderStatus::FINANCIAL_IMPACT_CLOSURE_CODES (mais estreito que
+     * closureCodes() — exclui 'cancelado', que pode ser atingido sem nenhum
+     * lançamento financeiro real via BudgetOrderSyncService::syncFromBudget()).
      */
     private function isOrderClosed(?Order $order): bool
     {
         return $order instanceof Order
-            && in_array(trim((string) $order->status), self::BUDGET_LOCK_CLOSURE_CODES, true);
+            && in_array(trim((string) $order->status), OrderStatus::FINANCIAL_IMPACT_CLOSURE_CODES, true);
     }
 
     /**

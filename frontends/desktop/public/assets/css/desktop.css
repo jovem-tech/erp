@@ -5187,6 +5187,12 @@ a {
         linear-gradient(135deg, #edf5ff 0%, #f8fbff 48%, #eef5ff 100%);
 }
 
+/* O <main> so existe para dar um ponto de referencia de acessibilidade
+   (landmark-one-main); nao deve participar do layout flex do body. */
+.desktop-login-body > main {
+    display: contents;
+}
+
 .desktop-login-wrapper {
     width: min(100%, 520px);
     min-height: 100vh;
@@ -5423,10 +5429,16 @@ a {
 
 .password-toggle {
     position: absolute;
-    right: 0.85rem;
+    right: 0.35rem;
     top: 50%;
     transform: translateY(-50%);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
     border: 0;
+    border-radius: 999px;
     background: transparent;
     color: var(--desktop-text-muted);
 }
