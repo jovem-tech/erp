@@ -2,6 +2,7 @@
     const config = window.__DESKTOP_ORDER_CLOSURE || {};
     const cartaoTaxas = Array.isArray(config.cartao?.taxas) ? config.cartao.taxas : [];
     const noRepairStatuses = Array.isArray(config.noRepairStatuses) ? config.noRepairStatuses : [];
+    const orcamentoPendenteAprovacao = Boolean(config.orcamentoPendenteAprovacao);
 
     const formatMoney = (value) => Number(value || 0).toLocaleString('pt-BR', {
         minimumFractionDigits: 2,
@@ -161,6 +162,7 @@
         const currentStepInput = document.getElementById('closureCurrentStepInput');
         const stepErrorBox = document.getElementById('closureStepError');
         const financeiroTabIndicator = document.querySelector('[data-step-indicator="2"]');
+        const confirmacaoTabIndicator = document.querySelector('[data-step-indicator="3"]');
 
         if (!(form instanceof HTMLFormElement) || !(receiptsList instanceof HTMLElement) || !(receiptTemplate instanceof HTMLTemplateElement)) {
             return;
@@ -185,6 +187,13 @@
 
         const isNoRepairClosure = () => noRepairStatuses.includes(encerrarComoSelect?.value || '');
 
+        // "Entregue - Reparado e Pago" com orçamento vinculado ainda não
+        // aprovado: bloqueia ANTES de avançar de etapa (não só no submit final)
+        // — o backend também recusa (ver OrderClosureService::close()), mas
+        // esperar até lá faria o técnico preencher tudo à toa.
+        const isBlockedByUnapprovedBudget = () => orcamentoPendenteAprovacao
+            && (encerrarComoSelect?.value || '') === (config.deliveredStatusCode || 'entregue_reparado_pago');
+
         // Classificação da baixa: 'baixa' (padrão) fecha a OS de verdade;
         // 'adiantamento'/'sinal' só registra o valor, sem fechar nada — ver
         // OrderClosureService::registerAdvance() no backend.
@@ -192,15 +201,35 @@
 
         // Devolvido sem reparo / descartado não geram cobrança pela OS: a aba
         // Financeiro fica desabilitada (não navegável) e o fluxo Continuar/Voltar
-        // pula direto entre Encerramento e Confirmação.
+        // pula direto entre Encerramento e Confirmação. "Entregue - Reparado e
+        // Pago" com orçamento vinculado não aprovado: as abas Financeiro E
+        // Confirmação ficam desabilitadas, e o botão "Continuar" da etapa 1
+        // fica desabilitado de verdade (não é só um clique interceptado) — o
+        // técnico não avança de jeito nenhum enquanto o orçamento não for
+        // resolvido.
         const updateFinanceiroTabAvailability = () => {
-            const disable = isNoRepairClosure();
+            const disableForNoRepair = isNoRepairClosure();
+            const disableForBudget = isBlockedByUnapprovedBudget();
+            const disableFinanceiro = disableForNoRepair || disableForBudget;
+            const budgetTitle = 'Esta OS tem um orçamento vinculado ainda não aprovado.';
+
             if (financeiroTabIndicator instanceof HTMLButtonElement) {
-                financeiroTabIndicator.disabled = disable;
-                financeiroTabIndicator.classList.toggle('is-disabled', disable);
-                financeiroTabIndicator.title = disable
-                    ? 'Não aplicável para devolução sem reparo ou descarte.'
-                    : '';
+                financeiroTabIndicator.disabled = disableFinanceiro;
+                financeiroTabIndicator.classList.toggle('is-disabled', disableFinanceiro);
+                financeiroTabIndicator.title = disableForBudget
+                    ? budgetTitle
+                    : (disableForNoRepair ? 'Não aplicável para devolução sem reparo ou descarte.' : '');
+            }
+
+            if (confirmacaoTabIndicator instanceof HTMLButtonElement) {
+                confirmacaoTabIndicator.disabled = disableForBudget;
+                confirmacaoTabIndicator.classList.toggle('is-disabled', disableForBudget);
+                confirmacaoTabIndicator.title = disableForBudget ? budgetTitle : '';
+            }
+
+            if (footerNextBtn instanceof HTMLButtonElement) {
+                footerNextBtn.disabled = currentStep < 3 && disableForBudget;
+                footerNextBtn.title = footerNextBtn.disabled ? budgetTitle : '';
             }
         };
 
@@ -470,7 +499,7 @@
             // financeira); só bloqueia a entrega com ZERO recebido. Não se aplica a
             // adiantamento/sinal, devolução sem reparo/descarte, nem aos demais
             // encerramentos.
-            const deliveredCode = config.deliveredStatusCode || 'equipamento_entregue';
+            const deliveredCode = config.deliveredStatusCode || 'entregue_reparado_pago';
             if (!isAdvanceClosure() && !isNoRepairClosure() && (encerrarComoSelect?.value || '') === deliveredCode) {
                 const recebidoAntes = Number(config.valorMovimentado) || 0;
                 if (recebidoAntes + totalRecebido <= 0.009) {
@@ -625,6 +654,8 @@
             // Botão de submissão visível apenas na etapa 3
             if (submitButton) submitButton.classList.toggle('d-none', step !== 3);
 
+            updateFinanceiroTabAvailability();
+
             if (step === 2) updateFinancialSummary();
             if (step === 3) updateConfirmStep();
         };
@@ -651,6 +682,9 @@
                 } else if (!encerrarComoSelect?.value || !dataEntregaInput?.value) {
                     encerrarComoSelect?.reportValidity?.();
                     dataEntregaInput?.reportValidity?.();
+                    return;
+                } else if (isBlockedByUnapprovedBudget()) {
+                    showStepError('Esta OS tem um orçamento vinculado que ainda não foi aprovado. Escolha outro encerramento ou aguarde a aprovação antes de continuar.');
                     return;
                 }
 
@@ -687,6 +721,13 @@
 
         // Revalidação defensiva no submit (cobre edição de recebimentos já na etapa 3)
         form.addEventListener('submit', (event) => {
+            if (isBlockedByUnapprovedBudget()) {
+                event.preventDefault();
+                showStepError('Esta OS tem um orçamento vinculado que ainda não foi aprovado. Escolha outro encerramento ou aguarde a aprovação antes de continuar.');
+                goToStep(1);
+                return;
+            }
+
             const result = validateFinancialStep();
             if (!result.ok) {
                 event.preventDefault();
@@ -766,7 +807,7 @@
             addRow({ valor: saldoRestante.toFixed(2) });
         });
 
-        encerrarComoSelect?.addEventListener('change', () => {
+        const handleEncerrarComoChange = () => {
             updateReceiptEntryAvailability();
             updateFinancialSummary();
             updateFinanceiroTabAvailability();
@@ -776,7 +817,21 @@
             if (currentStep === 2 && isNoRepairClosure()) {
                 goToStep(1);
             }
-        });
+        };
+        encerrarComoSelect?.addEventListener('change', handleEncerrarComoChange);
+        // Select2 (aplicado por padrao em todo `select.form-select` pelo init
+        // global de desktop.js) dispara `change` apenas via
+        // `jQuery(el).trigger('change')` ao escolher uma opcao pela sua UI —
+        // isso nao gera um evento nativo que propague ate o addEventListener
+        // acima (mesmo padrao ja visto em classificacaoBaixaSelect e
+        // receiptsList, ver comentarios acima). Sem este binding paralelo, a
+        // trava de orcamento nao aprovado (updateFinanceiroTabAvailability)
+        // NUNCA rodava ao escolher "Entregue - Reparado e Pago" pela UI real
+        // do Select2 — so via script/teste automatizado que seta o valor
+        // direto, mascarando o bug.
+        if (window.jQuery && encerrarComoSelect) {
+            window.jQuery(encerrarComoSelect).on('change', handleEncerrarComoChange);
+        }
 
         // Classificação da baixa: Baixa (fecha a OS) vs Adiantamento/Sinal
         // (só registra o valor). Troca qual bloco aparece na etapa

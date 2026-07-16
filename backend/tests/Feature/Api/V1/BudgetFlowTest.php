@@ -5,6 +5,7 @@ namespace Tests\Feature\Api\V1;
 use App\Models\Financeiro;
 use App\Models\FinanceiroMovimento;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\Concerns\BuildsLegacyErpSchema;
 use Tests\TestCase;
 
@@ -957,9 +958,20 @@ class BudgetFlowTest extends TestCase
                 'status' => $expectedOrderStatus,
                 'estado_fluxo' => $expectedFlowState,
             ]);
+
+            // "cancelado" está em OrderStatus::DEADLINE_FREEZE_CODES: o sync
+            // automático de orçamento entra nesse status (rejeitado/cancelado)
+            // igual a qualquer outra transição — congela o prazo (SLA) sem
+            // precisar de nenhum código extra fora de syncFromBudget().
+            if ($expectedOrderStatus === 'cancelado') {
+                $this->assertNotNull(DB::table('os')->where('id', $orderId)->value('data_conclusao'));
+            }
         }
 
-        // OS cancelada volta ao fluxo quando o orçamento é reativado.
+        // OS cancelada volta ao fluxo quando o orçamento é reativado. Isso sai
+        // de "cancelado" (congela prazo) para "aguardando_orcamento" (não
+        // congela) — reabertura automática: redefine o prazo pra hoje+7 dias
+        // sozinho, sem modal, e registra no histórico (origem automação).
         $this->withHeader('Authorization', 'Bearer ' . $token)
             ->patchJson('/api/v1/orcamentos/' . $budgetId, [
                 'tipo_orcamento' => 'assistencia',
@@ -972,6 +984,16 @@ class BudgetFlowTest extends TestCase
             'id' => $orderId,
             'status' => 'aguardando_orcamento',
             'estado_fluxo' => 'em_atendimento',
+        ]);
+
+        $reopenedOrder = DB::table('os')->where('id', $orderId)->first();
+        $this->assertNull($reopenedOrder->data_conclusao);
+        $this->assertSame(now()->addDays(7)->toDateString(), (string) $reopenedOrder->data_previsao);
+        $this->assertDatabaseHas('os_eventos', [
+            'os_id' => $orderId,
+            'categoria' => 'status',
+            'tipo' => 'prazo_redefinido',
+            'origem' => 'automacao',
         ]);
     }
 
@@ -1289,7 +1311,7 @@ class BudgetFlowTest extends TestCase
     }
 
     /**
-     * Cria uma OS já encerrada (entregue_reparado) com um orçamento aprovado
+     * Cria uma OS já encerrada (entregue_reparado_pago) com um orçamento aprovado
      * de R$60 e o título/movimento financeiro correspondentes já baixados —
      * fixture compartilhada pelos testes de edição admin-autorizada.
      *
@@ -1308,7 +1330,7 @@ class BudgetFlowTest extends TestCase
             'cliente_id' => $clientId,
             'equipamento_id' => $equipmentId,
             'numero_os' => 'OS26060101',
-            'status' => 'entregue_reparado',
+            'status' => 'entregue_reparado_pago',
             'estado_fluxo' => 'encerrado',
             'data_conclusao' => now()->toDateString(),
             'data_entrega' => now(),

@@ -59,14 +59,36 @@ class BudgetOrderSyncService
         $flowState = trim((string) ($statusRow->estado_fluxo_padrao ?? '')) ?: 'em_atendimento';
         $now = now();
 
+        // Congelamento de prazo (SLA) — mesma regra de OrderWorkflowService::
+        // updateStatus(), mas aplicada silenciosamente (sem modal): este
+        // caminho é sempre automático, disparado pela sincronização de status
+        // do orçamento, sem um usuário interagindo no instante da troca.
+        $enteringDeadlineFreeze = in_array($targetStatus, OrderStatus::DEADLINE_FREEZE_CODES, true)
+            && ! in_array($currentStatus, OrderStatus::DEADLINE_FREEZE_CODES, true);
+        $leavingDeadlineFreeze = in_array($currentStatus, OrderStatus::DEADLINE_FREEZE_CODES, true)
+            && ! in_array($targetStatus, OrderStatus::DEADLINE_FREEZE_CODES, true);
+        $prazoAnterior = $order->data_previsao;
+        $novoPrazo = $leavingDeadlineFreeze ? $now->copy()->addDays(7)->toDateString() : null;
+
+        $orderUpdate = [
+            'status' => $targetStatus,
+            'estado_fluxo' => $flowState,
+            'status_atualizado_em' => $now,
+            'updated_at' => $now,
+        ];
+
+        if ($enteringDeadlineFreeze) {
+            $orderUpdate['data_conclusao'] = $now;
+        }
+
+        if ($leavingDeadlineFreeze) {
+            $orderUpdate['data_conclusao'] = null;
+            $orderUpdate['data_previsao'] = $novoPrazo;
+        }
+
         Order::query()
             ->whereKey($orderId)
-            ->update([
-                'status' => $targetStatus,
-                'estado_fluxo' => $flowState,
-                'status_atualizado_em' => $now,
-                'updated_at' => $now,
-            ]);
+            ->update($orderUpdate);
 
         $observacao = sprintf(
             'Status sincronizado automaticamente pelo orçamento %s (%s).',
@@ -103,6 +125,24 @@ class BudgetOrderSyncService
             OrderEvent::ORIGEM_AUTOMACAO,
             $now
         );
+
+        if ($leavingDeadlineFreeze) {
+            $this->orderEventService->record(
+                $orderId,
+                OrderEvent::CATEGORIA_STATUS,
+                OrderEvent::TIPO_PRAZO_REDEFINIDO,
+                'Prazo redefinido',
+                null,
+                [
+                    'prazo_anterior' => $prazoAnterior !== null ? $prazoAnterior->toDateString() : null,
+                    'prazo_novo' => $novoPrazo,
+                    'motivo' => 'reabertura_automatica_orcamento',
+                ],
+                $userId,
+                OrderEvent::ORIGEM_AUTOMACAO,
+                $now
+            );
+        }
     }
 
     /**

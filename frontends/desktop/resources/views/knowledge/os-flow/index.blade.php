@@ -524,11 +524,18 @@
         </section>
     @endif
 
+    @php
+        $transitionMatrix = $transitionMatrix ?? ['super_groups' => [], 'ordered_statuses' => []];
+        $matrixSuperGroups = $transitionMatrix['super_groups'] ?? [];
+        $orderedDestinos = $transitionMatrix['ordered_statuses'] ?? [];
+        $matrixColCount = count($orderedDestinos);
+    @endphp
+
     <section class="surface-table">
         <div class="surface-table-header">
             <div>
                 <h2 class="surface-title">Matriz operacional de transições</h2>
-                <p class="surface-subtitle">Marque para quais status cada situação pode avançar. A matriz abaixo alimenta o diagrama visual acima.</p>
+                <p class="surface-subtitle">Marque para quais status cada situação pode avançar. Linhas e colunas estão agrupadas por super-grupo (Início / Execução / Término) e macrofase. A matriz alimenta o diagrama visual acima.</p>
             </div>
         </div>
 
@@ -536,41 +543,78 @@
             @csrf
             @method('PATCH')
 
-            <div class="table-responsive">
-                <table class="table align-middle">
+            <div class="table-responsive matrix-scroll">
+                <table class="table align-middle matrix-transitions">
                     <thead>
+                    {{-- Faixa 1: super-grupos --}}
                     <tr>
-                        <th>Origem \ Destino</th>
-                        @foreach ($activeStatuses as $destino)
-                            <th class="text-center">{{ $destino['nome'] }}</th>
+                        <th rowspan="3" class="matrix-corner">Origem \ Destino</th>
+                        @foreach ($matrixSuperGroups as $super)
+                            <th
+                                class="text-center matrix-supergroup"
+                                colspan="{{ (int) ($super['span'] ?? 1) }}"
+                                style="--matrix-accent: {{ $super['accent'] ?? '#6f5afc' }}; --matrix-soft-accent: {{ $super['soft_accent'] ?? 'rgba(111, 90, 252, 0.12)' }};"
+                            >{{ $super['label'] ?? 'Grupo' }}</th>
+                        @endforeach
+                    </tr>
+                    {{-- Faixa 2: macrofases --}}
+                    <tr>
+                        @foreach ($matrixSuperGroups as $super)
+                            @foreach ($super['macros'] ?? [] as $macro)
+                                <th
+                                    class="text-center matrix-macro"
+                                    colspan="{{ (int) ($macro['span'] ?? 1) }}"
+                                    style="--matrix-accent: {{ $macro['accent'] ?? '#6f5afc' }}; --matrix-soft-accent: {{ $macro['soft_accent'] ?? 'rgba(111, 90, 252, 0.12)' }};"
+                                >{{ $macro['label'] ?? 'Macrofase' }}</th>
+                            @endforeach
+                        @endforeach
+                    </tr>
+                    {{-- Faixa 3: status (colunas) --}}
+                    <tr>
+                        @foreach ($orderedDestinos as $destino)
+                            <th class="text-center matrix-status-col">{{ $destino['nome'] }}</th>
                         @endforeach
                     </tr>
                     </thead>
                     <tbody>
-                    @foreach ($activeStatuses as $origem)
-                        <tr>
-                            <td>
-                                <div class="fw-semibold">{{ $origem['nome'] }}</div>
-                                <small class="text-secondary">{{ $origem['codigo'] }}</small>
-                            </td>
-                            @foreach ($activeStatuses as $destino)
-                                @if ($origem['id'] === $destino['id'])
-                                    <td class="text-center">—</td>
-                                @else
-                                    <td class="text-center">
-                                        <input
-                                            type="checkbox"
-                                            class="form-check-input"
-                                            name="transitions[{{ $origem['id'] }}][]"
-                                            value="{{ $destino['id'] }}"
-                                            @checked(in_array($origem['id'] . '-' . $destino['id'], $transitionLookup, true))
-                                            @disabled(!$canEdit)
-                                        >
-                                    </td>
-                                @endif
-                            @endforeach
+                    @forelse ($matrixSuperGroups as $super)
+                        <tr class="matrix-band matrix-band-super" style="--matrix-accent: {{ $super['accent'] ?? '#6f5afc' }}; --matrix-soft-accent: {{ $super['soft_accent'] ?? 'rgba(111, 90, 252, 0.12)' }};">
+                            <td colspan="{{ $matrixColCount + 1 }}">{{ $super['label'] ?? 'Grupo' }}</td>
                         </tr>
-                    @endforeach
+                        @foreach ($super['macros'] ?? [] as $macro)
+                            <tr class="matrix-band matrix-band-macro" style="--matrix-accent: {{ $macro['accent'] ?? '#6f5afc' }}; --matrix-soft-accent: {{ $macro['soft_accent'] ?? 'rgba(111, 90, 252, 0.12)' }};">
+                                <td colspan="{{ $matrixColCount + 1 }}">{{ $macro['label'] ?? 'Macrofase' }}</td>
+                            </tr>
+                            @foreach ($macro['statuses'] ?? [] as $origem)
+                                <tr>
+                                    <td class="matrix-row-head">
+                                        <div class="fw-semibold">{{ $origem['nome'] }}</div>
+                                        <small class="text-secondary">{{ $origem['codigo'] }}</small>
+                                    </td>
+                                    @foreach ($orderedDestinos as $destino)
+                                        @if ($origem['id'] === $destino['id'])
+                                            <td class="text-center matrix-diagonal">—</td>
+                                        @else
+                                            <td class="text-center">
+                                                <input
+                                                    type="checkbox"
+                                                    class="form-check-input"
+                                                    name="transitions[{{ $origem['id'] }}][]"
+                                                    value="{{ $destino['id'] }}"
+                                                    @checked(in_array($origem['id'] . '-' . $destino['id'], $transitionLookup, true))
+                                                    @disabled(!$canEdit)
+                                                >
+                                            </td>
+                                        @endif
+                                    @endforeach
+                                </tr>
+                            @endforeach
+                        @endforeach
+                    @empty
+                        <tr>
+                            <td class="text-secondary">Nenhum status ativo para montar a matriz.</td>
+                        </tr>
+                    @endforelse
                     </tbody>
                 </table>
             </div>

@@ -80,7 +80,7 @@ class DashboardSummaryTest extends TestCase
                 'numero_os' => 'OS25120099',
                 'cliente_id' => $clientId,
                 'equipamento_id' => $equipmentId,
-                'status' => 'entregue_reparado',
+                'status' => 'entregue_reparado_pago',
                 'estado_fluxo' => 'encerrado',
                 'data_abertura' => Carbon::parse('2025-12-05 09:00:00'),
                 'data_entrada' => Carbon::parse('2025-12-05 09:05:00'),
@@ -124,7 +124,7 @@ class DashboardSummaryTest extends TestCase
                 'numero_os' => 'OS26010099',
                 'cliente_id' => $clientId,
                 'equipamento_id' => $equipmentId,
-                'status' => 'entregue_reparado',
+                'status' => 'entregue_reparado_pago',
                 'estado_fluxo' => 'encerrado',
                 'data_abertura' => Carbon::parse('2025-12-10 09:00:00'),
                 'data_entrada' => Carbon::parse('2025-12-10 09:10:00'),
@@ -141,7 +141,7 @@ class DashboardSummaryTest extends TestCase
                 'numero_os' => 'OS26010002',
                 'cliente_id' => $clientId,
                 'equipamento_id' => $equipmentId,
-                'status' => 'entregue_reparado',
+                'status' => 'entregue_reparado_pago',
                 'estado_fluxo' => 'encerrado',
                 'data_abertura' => Carbon::parse('2026-01-12 08:30:00'),
                 'data_entrada' => Carbon::parse('2026-01-12 08:40:00'),
@@ -216,6 +216,60 @@ class DashboardSummaryTest extends TestCase
                 ->assertJsonPath('data.recent_clients.0.nome_razao', 'Ana Comércio LTDA')
                 ->assertJsonPath('data.recent_equipments.0.resumo_tecnico', 'Notebook Acer Nitro')
                 ->assertJsonPath('data.low_stock', []);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_free_repaired_deliveries_count_as_delivered_but_not_as_revenue(): void
+    {
+        // Sem custo e garantia são reparos ENTREGUES — contam no card
+        // "Equipamento Entregue" e no mês atual — mas R$0 nunca entram no
+        // faturamento. Só o entregue_reparado_pago gera receita.
+        Carbon::setTestNow(Carbon::parse('2026-01-20 10:00:00'));
+
+        try {
+            $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Entrega Gratuita']);
+            $equipmentId = $this->createEquipmentRecord($clientId);
+
+            $entregasJaneiro = [
+                ['numero_os' => 'OS26010301', 'status' => 'entregue_reparado_pago', 'valor_final' => 100],
+                ['numero_os' => 'OS26010302', 'status' => 'entregue_reparado_sem_custo', 'valor_final' => 0],
+                ['numero_os' => 'OS26010303', 'status' => 'entregue_reparado_garantia', 'valor_final' => 0],
+            ];
+
+            foreach ($entregasJaneiro as $entrega) {
+                $this->createOrderRecord([
+                    'numero_os' => $entrega['numero_os'],
+                    'cliente_id' => $clientId,
+                    'equipamento_id' => $equipmentId,
+                    'status' => $entrega['status'],
+                    'estado_fluxo' => 'encerrado',
+                    'data_abertura' => Carbon::parse('2026-01-05 09:00:00'),
+                    'data_entrada' => Carbon::parse('2026-01-05 09:05:00'),
+                    'data_conclusao' => Carbon::parse('2026-01-12 12:00:00'),
+                    'data_entrega' => Carbon::parse('2026-01-12 13:00:00'),
+                    'relato_cliente' => 'Entrega de teste.',
+                    'valor_final' => $entrega['valor_final'],
+                ]);
+            }
+
+            $user = $this->createUserRecord([
+                'nome' => 'Gerente Entrega',
+                'email' => 'gerente.entrega@example.com',
+                'perfil' => 'gerente',
+                'grupo_id' => 3,
+            ]);
+
+            Sanctum::actingAs($user, ['*']);
+
+            $this->getJson('/api/v1/dashboard/summary?ano=2026&equip_mes=1&equip_ano=2026')
+                ->assertOk()
+                // Os três contam como entrega (operacional).
+                ->assertJsonPath('data.stats.equipamento_entregue_total', 3)
+                ->assertJsonPath('data.stats.equipamento_entregue_mes_atual', 3)
+                // Só o pago (R$100) entra no faturamento.
+                ->assertJsonPath('data.stats.faturamento_mes', 100.0);
         } finally {
             Carbon::setTestNow();
         }
@@ -327,7 +381,7 @@ class DashboardSummaryTest extends TestCase
                 'cliente_id' => $clientId,
                 'equipamento_id' => $equipmentId,
                 'tecnico_id' => $technician->id,
-                'status' => 'entregue_reparado',
+                'status' => 'entregue_reparado_pago',
                 'estado_fluxo' => 'encerrado',
                 'data_abertura' => Carbon::parse('2026-01-12 08:30:00'),
                 'data_entrada' => Carbon::parse('2026-01-12 08:40:00'),

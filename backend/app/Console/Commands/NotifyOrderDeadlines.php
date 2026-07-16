@@ -44,9 +44,11 @@ class NotifyOrderDeadlines extends Command
         $orders = Order::query()
             ->with(['client'])
             ->whereDate('data_previsao', $deadline->toDateString())
-            // So OS ainda abertas: encerradas de verdade (closureCodes) e
-            // canceladas nao tem mais prazo a cumprir.
-            ->whereNotIn('status', array_merge(OrderStatus::closureCodes(), ['cancelado']))
+            // So OS ainda abertas: qualquer status que congela o prazo
+            // (OrderStatus::DEADLINE_FREEZE_CODES) ja nao tem mais prazo a
+            // cumprir — closureCodes()+cancelado sozinhos nao cobriam os
+            // demais status finais (Reparo Concluido, Garantia Concluida etc.).
+            ->whereNotIn('status', OrderStatus::DEADLINE_FREEZE_CODES)
             ->get();
 
         $admins = $dispatch->activeAdminIds();

@@ -32,6 +32,7 @@ class OrderEvent extends Model
     public const TIPO_OS_CRIADA = 'os_criada';
     public const TIPO_STATUS_ALTERADO = 'status_alterado';
     public const TIPO_STATUS_SINCRONIZADO_ORCAMENTO = 'status_sincronizado_orcamento';
+    public const TIPO_PRAZO_REDEFINIDO = 'prazo_redefinido';
     public const TIPO_FECHAMENTO_CANCELADO = 'fechamento_cancelado';
     public const TIPO_OS_ATUALIZADA = 'os_atualizada';
     public const TIPO_DADOS_TECNICOS_ATUALIZADOS = 'dados_tecnicos_atualizados';

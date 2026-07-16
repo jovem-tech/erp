@@ -7,6 +7,7 @@ use App\Models\FinanceiroMovimento;
 use App\Models\User;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -221,7 +222,7 @@ class OrderFlowTest extends TestCase
             'tecnico_id' => $techB->id,
             'status' => 'entregue_pagamento_pendente',
             'estado_fluxo' => 'pausado',
-            'status_final_pendente_pagamento' => 'entregue_reparado',
+            'status_final_pendente_pagamento' => 'entregue_reparado_pago',
         ]);
 
         $deliveredOrder = $this->createOrderRecord([
@@ -229,7 +230,7 @@ class OrderFlowTest extends TestCase
             'cliente_id' => $clientB,
             'equipamento_id' => $equipmentB,
             'tecnico_id' => $techB->id,
-            'status' => 'entregue_reparado',
+            'status' => 'entregue_reparado_pago',
             'estado_fluxo' => 'encerrado',
         ]);
 
@@ -789,7 +790,7 @@ class OrderFlowTest extends TestCase
         ]);
 
         // Destino fora das transições permitidas é recusado. Usa um status
-        // que nao seja um dos 3 closureCodes() (ex.: entregue_reparado) para
+        // que nao seja um dos closureCodes() (ex.: entregue_reparado_pago) para
         // isolar a rejeicao de catalogo de transicoes da regra separada de
         // "closure_status_requires_baixa_flow" (ver OrderWorkflowService::updateStatus()).
         $blocked = $this->withHeader('Authorization', 'Bearer ' . $token)
@@ -814,6 +815,100 @@ class OrderFlowTest extends TestCase
 
         $allowed->assertOk()
             ->assertJsonPath('data.status_novo', 'aguardando_reparo');
+    }
+
+    public function test_patch_status_freezes_deadline_when_entering_a_deadline_freeze_status(): void
+    {
+        [$user, $assignedOrder] = $this->seedTechnicianOrders();
+        $token = $this->loginAndGetToken($user->email);
+
+        $this->assertDatabaseHas('os', ['id' => $assignedOrder, 'data_conclusao' => null]);
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
+                'status' => 'entregue_pagamento_pendente',
+            ]);
+
+        $response->assertOk()->assertJsonPath('data.status_novo', 'entregue_pagamento_pendente');
+
+        $order = DB::table('os')->where('id', $assignedOrder)->first();
+        $this->assertNotNull($order->data_conclusao);
+    }
+
+    public function test_patch_status_requires_novo_prazo_to_leave_a_deadline_freeze_status(): void
+    {
+        [$user, $assignedOrder] = $this->seedTechnicianOrders();
+        $token = $this->loginAndGetToken($user->email);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson("/api/v1/orders/{$assignedOrder}/status", ['status' => 'entregue_pagamento_pendente'])
+            ->assertOk();
+
+        // Tentar sair do status congelado sem informar novo_prazo é bloqueado
+        // — o modal "Alterar status" no desktop deve mandar esse campo antes.
+        $blocked = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson("/api/v1/orders/{$assignedOrder}/status", ['status' => 'aguardando_reparo']);
+
+        $blocked->assertUnprocessable()
+            ->assertJsonPath('error.code', 'ORDER_PRAZO_REDEFINITION_REQUIRED')
+            ->assertJsonPath('error.details.status_atual', 'entregue_pagamento_pendente');
+
+        $this->assertDatabaseHas('os', ['id' => $assignedOrder, 'status' => 'entregue_pagamento_pendente']);
+    }
+
+    public function test_patch_status_redefines_prazo_when_leaving_a_deadline_freeze_status_with_novo_prazo(): void
+    {
+        [$user, $assignedOrder] = $this->seedTechnicianOrders();
+        $token = $this->loginAndGetToken($user->email);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson("/api/v1/orders/{$assignedOrder}/status", ['status' => 'entregue_pagamento_pendente'])
+            ->assertOk();
+
+        $novoPrazo = now()->addDays(7)->toDateString();
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
+                'status' => 'aguardando_reparo',
+                'novo_prazo' => $novoPrazo,
+            ]);
+
+        $response->assertOk()->assertJsonPath('data.status_novo', 'aguardando_reparo');
+
+        $order = DB::table('os')->where('id', $assignedOrder)->first();
+        $this->assertNull($order->data_conclusao);
+        $this->assertSame($novoPrazo, (string) $order->data_previsao);
+
+        $this->assertDatabaseHas('os_eventos', [
+            'os_id' => $assignedOrder,
+            'categoria' => 'status',
+            'tipo' => 'prazo_redefinido',
+        ]);
+    }
+
+    public function test_backfill_deadline_finalization_command_stamps_data_conclusao_and_is_idempotent(): void
+    {
+        [, $assignedOrder] = $this->seedTechnicianOrders();
+
+        // OS já parada num status final antes desta feature existir: nunca
+        // teve data_conclusao carimbada por nenhum fluxo (mecanismo novo).
+        DB::table('os')->where('id', $assignedOrder)->update([
+            'status' => 'cancelado',
+            'status_atualizado_em' => '2026-06-01 10:00:00',
+            'data_conclusao' => null,
+        ]);
+
+        Artisan::call('os:backfill-prazo-finalizacao');
+
+        $order = DB::table('os')->where('id', $assignedOrder)->first();
+        $this->assertSame('2026-06-01 10:00:00', (string) $order->data_conclusao);
+
+        // Idempotente: rodar de novo não muda nada (whereNull guarda a linha já preenchida).
+        DB::table('os')->where('id', $assignedOrder)->update(['status_atualizado_em' => '2026-06-15 08:00:00']);
+        Artisan::call('os:backfill-prazo-finalizacao');
+
+        $orderAfterSecondRun = DB::table('os')->where('id', $assignedOrder)->first();
+        $this->assertSame('2026-06-01 10:00:00', (string) $orderAfterSecondRun->data_conclusao);
     }
 
     public function test_admin_can_create_a_new_order(): void
@@ -1136,7 +1231,7 @@ class OrderFlowTest extends TestCase
             ->assertJsonPath('data.cliente_telefone', '(11) 3333-4444');
 
         $codigos = collect($response->json('data.opcoes_encerramento', []))->pluck('codigo');
-        $this->assertTrue($codigos->contains('entregue_reparado'));
+        $this->assertTrue($codigos->contains('entregue_reparado_pago'));
     }
 
     public function test_close_executes_status_change_and_registers_full_payment(): void
@@ -1147,7 +1242,7 @@ class OrderFlowTest extends TestCase
 
         $response = $this->withHeader('Authorization', 'Bearer ' . $token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
-                'encerrar_como' => 'entregue_reparado',
+                'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
                 'recebimentos' => [
                     ['valor' => 150.00, 'forma_pagamento' => 'pix'],
@@ -1156,13 +1251,13 @@ class OrderFlowTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('data.order.id', $orderId)
-            ->assertJsonPath('data.order.status', 'entregue_reparado')
+            ->assertJsonPath('data.order.status', 'entregue_reparado_pago')
             ->assertJsonPath('data.order.estado_fluxo', 'encerrado')
             ->assertJsonPath('data.notificacao_enviada', null);
 
         $this->assertDatabaseHas('os', [
             'id' => $orderId,
-            'status' => 'entregue_reparado',
+            'status' => 'entregue_reparado_pago',
             'estado_fluxo' => 'encerrado',
         ]);
 
@@ -1191,13 +1286,13 @@ class OrderFlowTest extends TestCase
         // Reproduz o cenário do bug real: DELIVERED_STATUS comparava com a
         // string errada ('equipamento_entregue') e nunca disparava — essa
         // trava nunca bloqueou nada até a correção. Ver skill
-        // sistema-erp-os-fluxo-fechamento: o código real é 'entregue_reparado'.
+        // sistema-erp-os-fluxo-fechamento: o código real é 'entregue_reparado_pago'.
         [$manager, $orderId] = $this->seedManagerOrderForUpdate();
         $token = $this->loginAndGetToken($manager->email);
 
         $response = $this->withHeader('Authorization', 'Bearer ' . $token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
-                'encerrar_como' => 'entregue_reparado',
+                'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
             ]);
 
@@ -1206,6 +1301,99 @@ class OrderFlowTest extends TestCase
 
         $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'triagem']);
         $this->assertDatabaseMissing('financeiro', ['os_id' => $orderId]);
+    }
+
+    public function test_close_as_pago_rejects_when_linked_budget_is_not_approved(): void
+    {
+        // OS com orçamento vinculado ainda em "aguardando_resposta" (nem
+        // aprovado nem rejeitado) — a baixa como pago não pode nem chegar a
+        // pedir pagamento, deve barrar antes disso.
+        [$manager, $orderId] = $this->seedManagerOrderForUpdate();
+        $this->createBudgetRecord(['os_id' => $orderId, 'status' => 'aguardando_resposta']);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson("/api/v1/orders/{$orderId}/closure", [
+                'encerrar_como' => 'entregue_reparado_pago',
+                'data_entrega' => now()->toDateString(),
+                'recebimentos' => [['valor' => 100.00, 'forma_pagamento' => 'pix']],
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'ORDER_CLOSURE_DELIVERY_REQUIRES_APPROVED_BUDGET');
+
+        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'triagem']);
+        $this->assertDatabaseMissing('financeiro', ['os_id' => $orderId]);
+    }
+
+    public function test_close_as_pago_rejects_when_linked_budget_was_rejected(): void
+    {
+        [$manager, $orderId] = $this->seedManagerOrderForUpdate();
+        $this->createBudgetRecord(['os_id' => $orderId, 'status' => 'rejeitado', 'rejeitado_em' => now()]);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson("/api/v1/orders/{$orderId}/closure", [
+                'encerrar_como' => 'entregue_reparado_pago',
+                'data_entrega' => now()->toDateString(),
+                'recebimentos' => [['valor' => 100.00, 'forma_pagamento' => 'pix']],
+            ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'ORDER_CLOSURE_DELIVERY_REQUIRES_APPROVED_BUDGET');
+    }
+
+    public function test_close_as_pago_succeeds_when_linked_budget_is_approved(): void
+    {
+        [$manager, $orderId] = $this->seedManagerOrderForUpdate();
+        DB::table('os')->where('id', $orderId)->update(['valor_final' => 100.00]);
+        $this->createBudgetRecord(['os_id' => $orderId, 'status' => 'aprovado', 'aprovado_em' => now()]);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson("/api/v1/orders/{$orderId}/closure", [
+                'encerrar_como' => 'entregue_reparado_pago',
+                'data_entrega' => now()->toDateString(),
+                'recebimentos' => [['valor' => 100.00, 'forma_pagamento' => 'pix']],
+            ]);
+
+        $response->assertOk()->assertJsonPath('data.order.status', 'entregue_reparado_pago');
+    }
+
+    public function test_close_as_pago_succeeds_when_order_has_no_budget_at_all(): void
+    {
+        // OS sem nenhum orçamento vinculado (ex.: serviço rápido cobrado
+        // direto) — a trava só vale quando existe orçamento não aprovado, não
+        // quando não existe orçamento nenhum.
+        [$manager, $orderId] = $this->seedManagerOrderForUpdate();
+        DB::table('os')->where('id', $orderId)->update(['valor_final' => 100.00]);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson("/api/v1/orders/{$orderId}/closure", [
+                'encerrar_como' => 'entregue_reparado_pago',
+                'data_entrega' => now()->toDateString(),
+                'recebimentos' => [['valor' => 100.00, 'forma_pagamento' => 'pix']],
+            ]);
+
+        $response->assertOk()->assertJsonPath('data.order.status', 'entregue_reparado_pago');
+    }
+
+    public function test_close_as_sem_custo_ignores_unapproved_budget(): void
+    {
+        // A trava de orçamento aprovado só vale para o encerramento pago —
+        // sem custo/garantia continuam livres mesmo com orçamento pendente.
+        [$manager, $orderId] = $this->seedManagerOrderForUpdate();
+        $this->createBudgetRecord(['os_id' => $orderId, 'status' => 'aguardando_resposta']);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson("/api/v1/orders/{$orderId}/closure", [
+                'encerrar_como' => 'entregue_reparado_sem_custo',
+                'data_entrega' => now()->toDateString(),
+            ]);
+
+        $response->assertOk()->assertJsonPath('data.order.status', 'entregue_reparado_sem_custo');
     }
 
     public function test_close_rejects_a_status_that_is_not_a_closure_status(): void
@@ -1238,7 +1426,7 @@ class OrderFlowTest extends TestCase
 
         $response = $this->withHeader('Authorization', 'Bearer ' . $token)
             ->postJson("/api/v1/orders/{$unassignedOrder}/closure", [
-                'encerrar_como' => 'entregue_reparado',
+                'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
             ]);
 
@@ -1258,7 +1446,7 @@ class OrderFlowTest extends TestCase
 
         $response = $this->withHeader('Authorization', 'Bearer ' . $token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
-                'encerrar_como' => 'entregue_reparado',
+                'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
                 'notificar_cliente' => true,
                 'recebimentos' => [
@@ -1267,10 +1455,10 @@ class OrderFlowTest extends TestCase
             ]);
 
         $response->assertOk()
-            ->assertJsonPath('data.order.status', 'entregue_reparado')
+            ->assertJsonPath('data.order.status', 'entregue_reparado_pago')
             ->assertJsonPath('data.notificacao_enviada', false);
 
-        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'entregue_reparado']);
+        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'entregue_reparado_pago']);
     }
 
     public function test_close_with_card_payment_registers_fee_metadata_and_expense(): void
@@ -1282,7 +1470,7 @@ class OrderFlowTest extends TestCase
 
         $response = $this->withHeader('Authorization', 'Bearer ' . $token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
-                'encerrar_como' => 'entregue_reparado',
+                'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
                 'recebimentos' => [
                     [
@@ -1295,7 +1483,7 @@ class OrderFlowTest extends TestCase
                 ],
             ]);
 
-        $response->assertOk()->assertJsonPath('data.order.status', 'entregue_reparado');
+        $response->assertOk()->assertJsonPath('data.order.status', 'entregue_reparado_pago');
 
         $titulo = DB::table('financeiro')->where('os_id', $orderId)->where('tipo', 'receber')->first();
         $movimento = DB::table('financeiro_movimentos')->where('financeiro_id', $titulo->id)->first();
@@ -1329,7 +1517,7 @@ class OrderFlowTest extends TestCase
 
         $response = $this->withHeader('Authorization', 'Bearer ' . $token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
-                'encerrar_como' => 'entregue_reparado',
+                'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
                 'recebimentos' => [
                     [
@@ -1357,7 +1545,7 @@ class OrderFlowTest extends TestCase
 
         $response = $this->withHeader('Authorization', 'Bearer ' . $token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
-                'encerrar_como' => 'entregue_reparado',
+                'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
                 'recebimentos' => [
                     ['valor' => 100.00, 'forma_pagamento' => 'pix'],
@@ -1366,12 +1554,12 @@ class OrderFlowTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('data.order.status', 'entregue_pagamento_pendente')
-            ->assertJsonPath('data.order.status_final_pendente_pagamento', 'entregue_reparado');
+            ->assertJsonPath('data.order.status_final_pendente_pagamento', 'entregue_reparado_pago');
 
         $this->assertDatabaseHas('os', [
             'id' => $orderId,
             'status' => 'entregue_pagamento_pendente',
-            'status_final_pendente_pagamento' => 'entregue_reparado',
+            'status_final_pendente_pagamento' => 'entregue_reparado_pago',
         ]);
 
         $agendamentos = DB::table('os_cobranca_agendamentos')->where('os_id', $orderId)->orderBy('prazo_dias')->get();
@@ -1391,7 +1579,7 @@ class OrderFlowTest extends TestCase
 
         $this->withHeader('Authorization', 'Bearer ' . $token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
-                'encerrar_como' => 'entregue_reparado',
+                'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
                 'recebimentos' => [['valor' => 100.00, 'forma_pagamento' => 'pix']],
             ])->assertOk();
@@ -1403,12 +1591,12 @@ class OrderFlowTest extends TestCase
 
         $response = $this->withHeader('Authorization', 'Bearer ' . $token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
-                'encerrar_como' => 'entregue_reparado',
+                'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
                 'recebimentos' => [['valor' => 200.00, 'forma_pagamento' => 'pix']],
             ]);
 
-        $response->assertOk()->assertJsonPath('data.order.status', 'entregue_reparado');
+        $response->assertOk()->assertJsonPath('data.order.status', 'entregue_reparado_pago');
 
         $this->assertSame(
             0,
@@ -1442,6 +1630,54 @@ class OrderFlowTest extends TestCase
         $this->assertSame(0, DB::table('os_cobranca_agendamentos')->where('os_id', $orderId)->count());
     }
 
+    public function test_close_as_sem_custo_needs_no_payment_and_creates_no_charge(): void
+    {
+        $this->assertFreeRepairedDeliveryClosesWithoutCharge('entregue_reparado_sem_custo');
+    }
+
+    public function test_close_as_garantia_needs_no_payment_and_creates_no_charge(): void
+    {
+        $this->assertFreeRepairedDeliveryClosesWithoutCharge('entregue_reparado_garantia');
+    }
+
+    /**
+     * Reparo entregue sem custo (sem custo ou garantia): encerra sem exigir
+     * pagamento, sem registrar movimento financeiro e sem deixar saldo
+     * pendente/cobrança agendada — mesmo se a OS tiver um valor_final. Só o
+     * 'entregue_reparado_pago' exige pagamento (ver
+     * test_close_rejects_delivery_without_any_payment).
+     */
+    private function assertFreeRepairedDeliveryClosesWithoutCharge(string $statusGratuito): void
+    {
+        [$manager, $orderId] = $this->seedManagerOrderForUpdate();
+        DB::table('os')->where('id', $orderId)->update(['valor_final' => 150.00]);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson("/api/v1/orders/{$orderId}/closure", [
+                'encerrar_como' => $statusGratuito,
+                'data_entrega' => now()->toDateString(),
+            ]);
+
+        $response->assertOk()->assertJsonPath('data.order.status', $statusGratuito);
+
+        $this->assertDatabaseHas('os', [
+            'id' => $orderId,
+            'status' => $statusGratuito,
+            'status_final_pendente_pagamento' => null,
+        ]);
+
+        // Nenhuma cobrança agendada e nenhum recebimento registrado (sem custo).
+        $this->assertSame(0, DB::table('os_cobranca_agendamentos')->where('os_id', $orderId)->count());
+        $this->assertSame(
+            0,
+            DB::table('financeiro_movimentos')
+                ->join('financeiro', 'financeiro.id', '=', 'financeiro_movimentos.financeiro_id')
+                ->where('financeiro.os_id', $orderId)
+                ->count()
+        );
+    }
+
     public function test_close_with_agendar_retorno_creates_crm_followup_and_dedups(): void
     {
         [$manager, $orderId] = $this->seedManagerOrderForUpdate();
@@ -1451,7 +1687,7 @@ class OrderFlowTest extends TestCase
 
         $response = $this->withHeader('Authorization', 'Bearer ' . $token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
-                'encerrar_como' => 'entregue_reparado',
+                'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
                 'agendar_retorno' => true,
                 'retorno_data' => $retornoData,
@@ -1482,7 +1718,7 @@ class OrderFlowTest extends TestCase
 
         DB::table('os')->where('id', $orderId)->update([
             'status' => 'entregue_pagamento_pendente',
-            'status_final_pendente_pagamento' => 'entregue_reparado',
+            'status_final_pendente_pagamento' => 'entregue_reparado_pago',
         ]);
 
         $tituloId = (int) DB::table('financeiro')->insertGetId([

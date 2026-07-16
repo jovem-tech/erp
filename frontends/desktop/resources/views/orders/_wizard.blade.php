@@ -773,17 +773,28 @@
                         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                     </div>
                     <div class="modal-body">
-                        <form method="post" action="{{ route('orders.status.update', $orderId) }}" class="d-grid gap-3">
+                        <form method="post" action="{{ route('orders.status.update', $orderId) }}" class="d-grid gap-3" id="orderWizardStatusForm" data-status-congela-prazo-atual="{{ data_get($order, 'status_congela_prazo', false) ? '1' : '0' }}">
                             @csrf
                             <div>
                                 <label for="orderStatusSelect">Novo status</label>
-                                <select name="status" id="orderStatusSelect" class="form-select" required>
+                                <select name="status" id="orderStatusSelect" class="form-select" data-select2="false" required>
                                     @foreach ($statusDisponiveis as $statusOption)
-                                        <option value="{{ $statusOption['codigo'] ?? '' }}" @selected($currentStatusCode === ($statusOption['codigo'] ?? ''))>
+                                        <option
+                                            value="{{ $statusOption['codigo'] ?? '' }}"
+                                            data-congela-prazo="{{ ($statusOption['congela_prazo'] ?? false) ? '1' : '0' }}"
+                                            @selected($currentStatusCode === ($statusOption['codigo'] ?? ''))
+                                        >
                                             {{ $statusOption['nome'] ?? ($statusOption['codigo'] ?? '') }} ({{ $statusOption['codigo'] ?? '' }})
                                         </option>
                                     @endforeach
                                 </select>
+                            </div>
+
+                            {{-- Reabertura de status congelado: só aparece quando o destino escolhido sai do congelamento --}}
+                            <div class="d-none" id="orderWizardNovoPrazoWrapper">
+                                <label for="orderWizardNovoPrazo">Novo prazo de entrega</label>
+                                <input type="date" name="novo_prazo" id="orderWizardNovoPrazo" class="form-control" disabled>
+                                <div class="form-text">Esta OS estava com o prazo congelado. Confirme ou ajuste o novo prazo de entrega.</div>
                             </div>
 
                             <div>
@@ -802,6 +813,43 @@
                 </div>
             </div>
         </div>
+        <script>
+            (function () {
+                const form = document.getElementById('orderWizardStatusForm');
+                const select = document.getElementById('orderStatusSelect');
+                const wrapper = document.getElementById('orderWizardNovoPrazoWrapper');
+                const input = document.getElementById('orderWizardNovoPrazo');
+                if (!form || !select || !wrapper || !input) return;
+
+                const statusCongelaPrazoAtual = form.dataset.statusCongelaPrazoAtual === '1';
+
+                const suggestedNovoPrazo = () => {
+                    const data = new Date();
+                    data.setDate(data.getDate() + 7);
+                    return data.getFullYear() + '-' + String(data.getMonth() + 1).padStart(2, '0') + '-' + String(data.getDate()).padStart(2, '0');
+                };
+
+                const syncNovoPrazoVisibility = () => {
+                    const destinoCongelaPrazo = select.selectedOptions[0]?.dataset.congelaPrazo === '1';
+                    const precisaRedefinir = statusCongelaPrazoAtual && select.value !== '' && !destinoCongelaPrazo;
+
+                    if (precisaRedefinir) {
+                        wrapper.classList.remove('d-none');
+                        input.disabled = false;
+                        input.required = true;
+                        if (!input.value) input.value = suggestedNovoPrazo();
+                    } else {
+                        wrapper.classList.add('d-none');
+                        input.disabled = true;
+                        input.required = false;
+                        input.value = '';
+                    }
+                };
+
+                select.addEventListener('change', syncNovoPrazoVisibility);
+                syncNovoPrazoVisibility();
+            })();
+        </script>
     @endpush
 @endif
 

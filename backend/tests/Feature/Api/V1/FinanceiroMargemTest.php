@@ -58,7 +58,7 @@ class FinanceiroMargemTest extends TestCase
             'percentual_padrao' => 10,
         ])->assertCreated();
 
-        app(OrderWorkflowService::class)->updateStatus($orderId, $admin, 'entregue_reparado');
+        app(OrderWorkflowService::class)->updateStatus($orderId, $admin, 'entregue_reparado_pago');
 
         $response = $this->getJson('/api/v1/financeiro/margem/' . $orderId);
 
@@ -90,7 +90,7 @@ class FinanceiroMargemTest extends TestCase
             'data_entrega' => now(),
         ]);
 
-        app(OrderWorkflowService::class)->updateStatus($orderId, $admin, 'entregue_reparado');
+        app(OrderWorkflowService::class)->updateStatus($orderId, $admin, 'entregue_reparado_pago');
 
         $mes = now()->format('Y-m');
         $response = $this->getJson('/api/v1/financeiro/margem?mes=' . $mes);
@@ -111,7 +111,7 @@ class FinanceiroMargemTest extends TestCase
         $orderId = $this->createOrderRecord([
             'cliente_id' => $clienteId,
             'equipamento_id' => $equipamentoId,
-            'status' => 'entregue_reparado',
+            'status' => 'entregue_reparado_pago',
             'valor_final' => 150,
         ]);
 

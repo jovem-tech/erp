@@ -602,7 +602,9 @@ class OrderController extends BaseApiController
             isset($validated['observacao']) ? (string) $validated['observacao'] : null,
             isset($validated['diagnostico_tecnico']) ? (string) $validated['diagnostico_tecnico'] : null,
             isset($validated['solucao_aplicada']) ? (string) $validated['solucao_aplicada'] : null,
-            filter_var($validated['comunicar_cliente'] ?? false, FILTER_VALIDATE_BOOL)
+            filter_var($validated['comunicar_cliente'] ?? false, FILTER_VALIDATE_BOOL),
+            viaClosureFlow: false,
+            novoPrazo: isset($validated['novo_prazo']) && $validated['novo_prazo'] !== '' ? (string) $validated['novo_prazo'] : null
         );
 
         if (($result['result'] ?? 'error') === 'ok') {
@@ -663,6 +665,16 @@ class OrderController extends BaseApiController
                 422,
                 'ORDER_IS_CLOSED',
                 null,
+                request: $request
+            ),
+            'prazo_redefinition_required' => $this->error(
+                'Esta OS estava com o prazo congelado. Informe o novo prazo de entrega para reabri-la.',
+                422,
+                'ORDER_PRAZO_REDEFINITION_REQUIRED',
+                [
+                    'status_atual' => $result['status_atual'] ?? null,
+                    'sugestao_prazo' => $result['sugestao_prazo'] ?? null,
+                ],
                 request: $request
             ),
             default => $this->error(
@@ -849,9 +861,16 @@ class OrderController extends BaseApiController
                 request: $request
             ),
             'delivery_requires_payment' => $this->error(
-                'Para encerrar como "Equipamento Entregue" registre ao menos um recebimento com valor maior que zero. O pagamento parcial é aceito e o saldo restante continua como pendência financeira.',
+                'Para encerrar como "Entregue - Reparado e Pago" registre ao menos um recebimento com valor maior que zero. O pagamento parcial é aceito e o saldo restante continua como pendência financeira.',
                 422,
                 'ORDER_CLOSURE_DELIVERY_REQUIRES_PAYMENT',
+                null,
+                request: $request
+            ),
+            'delivery_requires_approved_budget' => $this->error(
+                'Esta OS tem um orçamento vinculado que ainda não foi aprovado. Aguarde a aprovação do cliente (ou registre a aprovação manualmente) antes de encerrar como "Entregue - Reparado e Pago".',
+                422,
+                'ORDER_CLOSURE_DELIVERY_REQUIRES_APPROVED_BUDGET',
                 null,
                 request: $request
             ),

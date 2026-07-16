@@ -131,7 +131,8 @@ class OrderService
         ?string $observacao = null,
         ?string $diagnosticoTecnico = null,
         ?string $solucaoAplicada = null,
-        bool $comunicarCliente = false
+        bool $comunicarCliente = false,
+        ?string $novoPrazo = null
     ): array {
         $payload = ['comunicar_cliente' => $comunicarCliente];
         if ($status !== null && $status !== '') {
@@ -145,6 +146,9 @@ class OrderService
         }
         if ($solucaoAplicada !== null) {
             $payload['solucao_aplicada'] = $solucaoAplicada;
+        }
+        if ($novoPrazo !== null && $novoPrazo !== '') {
+            $payload['novo_prazo'] = $novoPrazo;
         }
 
         $response = $this->apiClient->patch('/orders/' . $id . '/status', $payload);

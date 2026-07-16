@@ -2282,10 +2282,13 @@ class DesktopFrontendTest extends TestCase
         ]));
 
         $response = $this
-            ->withSession($this->desktopSession([
-                'dashboard' => ['visualizar'],
-                'conhecimento' => ['visualizar', 'editar'],
-            ]))
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'conhecimento' => ['visualizar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
             ->get('/conhecimento/fluxo-os');
 
         $response
@@ -2301,6 +2304,24 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Aguardando Reparo')
             ->assertSee('Entregue Reparo')
             ->assertSee('Entregue Pagamento Pendente');
+
+        // Matriz operacional agrupada em dois níveis: super-grupo (Início /
+        // Execução / Término) + macrofase, refletindo os status da fixture.
+        $response
+            ->assertSee('Grupo 1 · Início')
+            ->assertSee('Grupo 2 · Execução')
+            ->assertSee('Grupo 3 · Término');
+
+        // As células continuam id-based (o agrupamento não pode quebrar o
+        // name/value nem o estado marcado): transição semeada 1 (Triagem) -> 2
+        // (Diagnóstico Técnico) tem que renderizar o checkbox marcado.
+        $response
+            ->assertSee('name="transitions[1][]"', false)
+            ->assertSeeInOrder([
+                'name="transitions[1][]"',
+                'value="2"',
+                'checked',
+            ], false);
     }
 
     public function test_knowledge_assistance_model_index_renders_visual_workflow_and_queue_rules(): void
@@ -4277,6 +4298,52 @@ class DesktopFrontendTest extends TestCase
             ->assertOk()
             ->assertSee('Ver lançamento financeiro')
             ->assertSee(route('financeiro.show', 63), false);
+    }
+
+    public function test_orders_status_context_exposes_deadline_freeze_flags(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/501' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'order' => [
+                        'id' => 501,
+                        'numero_os' => 'OS26070009',
+                        'status' => 'reparo_concluido',
+                        'status_nome' => 'Reparo Concluído',
+                        'status_cor' => '#64748b',
+                        'status_congela_prazo' => true,
+                        'is_encerrada' => false,
+                        'prioridade' => 'alta',
+                        'cliente' => ['id' => 201, 'nome_razao' => 'Cliente Alpha'],
+                        'equipamento' => ['id' => 301, 'resumo_tecnico' => 'Notebook Acer Nitro 5'],
+                        'tecnico' => ['id' => 51, 'nome' => 'Tecnico Banco'],
+                        'status_disponiveis' => [
+                            ['codigo' => 'aguardando_reparo', 'nome' => 'Aguardando Reparo', 'congela_prazo' => false],
+                        ],
+                        'proximas_etapas' => [
+                            ['codigo' => 'aguardando_reparo', 'nome' => 'Aguardando Reparo', 'congela_prazo' => false],
+                        ],
+                        'historico' => [],
+                        'procedimentos_historico' => [],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['os' => ['visualizar']]),
+                ['desktop_theme' => 'default']
+            ))
+            ->getJson('/os/501/status-context');
+
+        $response->assertOk()
+            ->assertJsonPath('status_congela_prazo', true)
+            ->assertJsonPath('proximas_etapas.0.congela_prazo', false)
+            ->assertJsonPath('status_disponiveis.0.congela_prazo', false);
     }
 
     public function test_orders_show_page_hides_financeiro_link_without_permission(): void

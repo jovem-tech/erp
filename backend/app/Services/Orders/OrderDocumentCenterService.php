@@ -758,7 +758,10 @@ class OrderDocumentCenterService
             }
 
             $status = mb_strtolower(trim((string) ($order->status ?? '')));
-            if ($status === OrderStatus::REVENUE_CLOSURE_CODE) {
+            // Os três "reparo entregue" (pago, sem custo, garantia) geram
+            // comprovante de entrega. A cobrança só sai quando há valor
+            // (valor_final > 0) — sem custo/garantia (R$0) não geram cobrança.
+            if (in_array($status, OrderStatus::REPAIRED_DELIVERY_CODES, true)) {
                 $this->generate($orderId, $actor, ['entrega']);
 
                 if ((float) ($order->valor_final ?? 0) > 0) {
@@ -770,7 +773,7 @@ class OrderDocumentCenterService
                 $this->generate($orderId, $actor, ['devolucao_sem_reparo']);
             }
 
-            if ($this->hasTechnicalContent($order) && in_array($status, ['reparo_concluido', OrderStatus::REVENUE_CLOSURE_CODE, 'devolvido_sem_reparo', 'irreparavel', 'cancelado'], true)) {
+            if ($this->hasTechnicalContent($order) && in_array($status, ['reparo_concluido', ...OrderStatus::REPAIRED_DELIVERY_CODES, 'devolvido_sem_reparo', 'irreparavel', 'cancelado'], true)) {
                 $this->generate($orderId, $actor, ['laudo']);
             }
         } catch (Throwable $exception) {
@@ -790,7 +793,7 @@ class OrderDocumentCenterService
                 ? mb_strtolower(trim($newStatus))
                 : mb_strtolower(trim((string) ($order->status ?? '')));
 
-            if ($this->hasTechnicalContent($order) && in_array($status, ['reparo_concluido', OrderStatus::REVENUE_CLOSURE_CODE, 'devolvido_sem_reparo', 'irreparavel'], true)) {
+            if ($this->hasTechnicalContent($order) && in_array($status, ['reparo_concluido', ...OrderStatus::REPAIRED_DELIVERY_CODES, 'devolvido_sem_reparo', 'irreparavel'], true)) {
                 $this->generate((int) $order->id, $actor, ['laudo']);
             }
         } catch (Throwable $exception) {
@@ -1245,9 +1248,9 @@ class OrderDocumentCenterService
             'cobranca_manutencao' => (float) ($order->valor_final ?? 0) > 0
                 ? ['ok' => true, 'reason' => '']
                 : ['ok' => false, 'reason' => 'A cobrança só pode ser gerada quando houver valor final positivo na OS.'],
-            'entrega' => mb_strtolower(trim((string) ($order->status ?? ''))) === OrderStatus::REVENUE_CLOSURE_CODE
+            'entrega' => in_array(mb_strtolower(trim((string) ($order->status ?? ''))), OrderStatus::REPAIRED_DELIVERY_CODES, true)
                 ? ['ok' => true, 'reason' => '']
-                : ['ok' => false, 'reason' => 'O comprovante de entrega só fica disponível quando a OS é encerrada como equipamento entregue.'],
+                : ['ok' => false, 'reason' => 'O comprovante de entrega só fica disponível quando a OS é encerrada como equipamento reparado entregue (pago, sem custo ou garantia).'],
             'devolucao_sem_reparo' => mb_strtolower(trim((string) ($order->status ?? ''))) === 'devolvido_sem_reparo'
                 ? ['ok' => true, 'reason' => '']
                 : ['ok' => false, 'reason' => 'A devolução sem reparo só fica disponível quando a OS é encerrada nesse status.'],

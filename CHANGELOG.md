@@ -1,5 +1,77 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.11.6.0 — 2026-07-16 10:48
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Alinha o rodapé do card 'Histórico da OS' (coluna lateral) com o rodapé do último card da coluna principal (Fotos) na tela de detalhe da OS. Antes, a coluna lateral (foto + histórico) tinha altura livre e terminava bem acima da coluna principal em qualquer OS com vários cards, deixando um vão vazio grande abaixo do histórico. Agora .os-detail-layout estica as duas colunas para a mesma altura (align-items:stretch), a coluna lateral vira flex column com o card de foto em tamanho fixo e o card de histórico crescendo (flex:1) até preencher a altura total, com o scroll ficando interno à lista de eventos (não ao card inteiro) — mantendo cabeçalho e chips de filtro sempre visíveis. Layout mobile (<=992px) inalterado, pois a coluna lateral já vira display:contents nesse breakpoint
+- **Arquivos:** frontends/desktop/public/assets/css/desktop.css
+
+## v4.11.5.0 — 2026-07-16 10:41
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Corrige alinhamento dos títulos de card na tela de detalhe da OS (Defeito e Solução, Valores e Orçamento, Documentos, Fotos): o ícone aparecia isolado à esquerda e o texto do título isolado à direita, bem afastados um do outro. Causa: .os-info-card-title usa display:flex+justify-content:space-between para separar título de botão de ação quando presente, mas nos títulos sem botão o ícone (elemento) e o texto (nó de texto solto) viravam dois itens flex anônimos distintos, que o space-between empurrava para as bordas opostas do card. Corrigido envolvendo ícone+texto num único <span>, mesmo padrão já usado nos cards Cliente/Equipamento, restando só um item flex (alinhado à esquerda) quando não há botão
+- **Arquivos:** frontends/desktop/resources/views/orders/show.blade.php
+
+## v4.11.4.0 — 2026-07-16 10:24
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** No card 'Valores e Orçamento' (v4.11.1.0), as seções 'Orçamento' e 'Datas e garantia' ficavam lado a lado mas sem separação visual entre si, misturando com o fundo do card externo. Nova classe .os-subcard (fundo levemente diferenciado, borda sutil, sem sombra própria) transforma as duas em caixas distintas lado a lado, mesma altura, deixando claro onde uma seção termina e a outra começa.
+- **Arquivos:** frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/public/assets/css/desktop.css
+
+## v4.11.3.0 — 2026-07-16 10:17
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Corrige a duração da OS no cabeçalho da tela de detalhe ('Aberta há X dias' / 'Concluída em X dias'), que exibia um float fracionário cru (ex.: 'Aberta há 4.170775462963 dias') em vez de um número inteiro de dias — Carbon::diffInDays() nesta versão retorna fração de dia por padrão, não inteiro. O mesmo bug também quebrava silenciosamente os casos-limite 'Aberta hoje' e a pluralização 'X dia'/'X dias', já que as comparações ===0/===1 nunca batiam com um valor fracionário. Corrigido com um cast (int) logo após diffInDays(), truncando para dias completos.
+- **Arquivos:** frontends/desktop/resources/views/orders/show.blade.php
+
+## v4.11.2.0 — 2026-07-16 10:11
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Move o campo 'Checklist' do card Equipamento para o card 'Defeito e Solução' (logo após Técnico responsável) na página de detalhe da OS, e adiciona o botão 'Ver checklist', que abre um modal com o resultado completo: todos os itens verificados (com rótulo de status OK/Discrepância/Não verificado), a observação registrada em cada item, o resumo textual e as observações gerais do estado do equipamento — antes só o resumo agregado ("Preenchido · 7 itens") ficava visível, sem acesso ao detalhe item a item pela tela de OS.
+- **Arquivos:** frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/resources/views/orders/_checklist_detail_modal.blade.php
+
+## v4.11.1.0 — 2026-07-16 10:02
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Ajusta o card 'Valores e Orçamento' (v4.11.0.0) para eliminar redundância: a seção 'Resumo financeiro' foi extinta — mão de obra e peças já apareciam detalhadas na tabela de peças e serviços do orçamento, e total/desconto/valor final já apareciam na seção Orçamento. Em seu lugar, na coluna esquerda do card, entra a seção 'Orçamento' (antes um bloco full-width abaixo), ficando lado a lado com 'Datas e garantia' na direita — que agora termina com 'Forma de pagamento' (movida de Resumo financeiro). A nota do título financeiro (recebido/saldo) e o alerta de auditoria de peças, que ficavam soltos sob Resumo financeiro, passam a ficar junto da seção Orçamento, já que são informações sobre ele.
+- **Arquivos:** frontends/desktop/resources/views/orders/show.blade.php
+
+## v4.11.0.0 — 2026-07-16 09:24
+- **Tier:** minor
+- **Autor/Agente:** Claude
+- **Descrição:** Reformula a página de detalhe da OS (/os/{id}): remove as 6 abas (Informações, Orçamento, Diagnóstico, Fotos, Documentos, Valores) — investigação confirmou que nenhuma delas tinha ação interativa própria, todas já duplicadas em "Mais ações" ou eram só exibição — e reorganiza tudo em cards sequenciais de leitura direta, sem clique extra: Cliente e Equipamento (dois cards lado a lado, cada um em tabela label→valor, linha só aparece se o campo não estiver vazio); Defeito e Solução (técnico, relato do cliente, diagnóstico, solução, procedimentos, acessórios, observações); Valores e Orçamento (resumo financeiro + datas/garantia lado a lado, bloco do orçamento vinculado com a nova lista de peças e serviços do orçamento aprovado); Documentos (tabela compacta com botão Visualizar, era cards grandes); e por último Fotos (grade por recepção/diagnóstico/entrega, mantendo a mesma lightbox). Backend (OrderWorkflowService::mapLinkedBudget) passa a expor os itens do orçamento vinculado (antes só o resumo agregado existia); mapEquipment() passa a expor o campo acessórios do equipamento, que existia na tabela mas nunca era mapeado. Nova classe de tabela .os-info-table no CSS (label/valor com linhas separadas por borda sutil), reaproveitando .desktop-grid-two e .table-stack já existentes para o layout de 2 colunas e as tabelas responsivas — sem duplicar padrões.
+- **Arquivos:** backend/app/Services/Orders/OrderWorkflowService.php,frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/public/assets/css/desktop.css
+
+## v4.10.3.0 — 2026-07-16 01:04
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Causa raiz real da trava de orçamento não aprovado (v4.10.0.0 a v4.10.2.0) nunca funcionar de fato para quem interage pela UI real do Select2: o listener 'change' de #encerrarComo usava só addEventListener nativo, sem o binding paralelo via jQuery que o Select2 exige (Select2 dispara change só via jQuery(el).trigger('change'), que não gera evento nativo — mesmo bug já documentado nesta sessão e corrigido para o select de Classificação e os campos de cartão, mas não para #encerrarComo). Resultado: escolher 'Entregue - Reparado e Pago' clicando na tela nunca desabilitava as abas/botão de verdade. Corrigido adicionando o mesmo binding jQuery paralelo. Validado com teste automatizado em Chrome headless clicando de fato na UI do Select2 (não via .value=): opção fica corretamente desabilitada/não-clicável no dropdown quando o orçamento está pendente, e no cenário de reenvio com valor antigo (old() do Laravel após rejeição do backend) as abas Financeiro/Confirmação e o botão Continuar carregam já desabilitados.
+- **Arquivos:** frontends/desktop/public/assets/js/orders-closure.js
+
+## v4.10.2.0 — 2026-07-16 00:46
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** A trava de orçamento não aprovado na tela de baixa (v4.10.1.0) só interceptava o clique no botão 'Continuar' — as abas 'Financeiro' e 'Confirmação' continuavam clicáveis diretamente, deixando o técnico pular a etapa 1 e navegar livre pelo resto do wizard. Agora, ao selecionar 'Entregue - Reparado e Pago' com orçamento vinculado ainda não aprovado, as abas Financeiro e Confirmação ficam de fato desabilitadas (mesmo padrão visual já usado para devolução sem reparo/descarte) e o próprio botão 'Continuar' da etapa 1 fica desabilitado — não é mais possível avançar por nenhum caminho até o orçamento ser aprovado ou outro tipo de encerramento ser escolhido.
+- **Arquivos:** frontends/desktop/public/assets/js/orders-closure.js
+
+## v4.10.1.0 — 2026-07-16 00:41
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** A trava de orçamento aprovado no encerramento como 'Entregue - Reparado e Pago' (v4.10.0.0) só desabilitava a opção no <select>, o que não impedia o técnico de avançar pelas etapas Financeiro/Confirmação do wizard de baixa e só descobrir o bloqueio no envio final, depois de preencher tudo. A tela de baixa (orders-closure.js) agora barra a navegação já na etapa 1 (Encerramento), com aviso inline imediato, assim que o orçamento pendente é detectado — e mantém o bloqueio no envio final como defesa adicional. O backend (OrderClosureService::close) continua sendo a barreira definitiva.
+- **Arquivos:** frontends/desktop/public/assets/js/orders-closure.js,frontends/desktop/resources/views/orders/closure.blade.php
+
+## v4.10.0.0 — 2026-07-16 00:31
+- **Tier:** minor
+- **Autor/Agente:** Claude
+- **Descrição:** Bloqueia o encerramento da OS como "Entregue - Reparado e Pago" quando existe um orçamento vinculado ainda não aprovado (aguardando resposta, rejeitado, etc.) — antes o fluxo de baixa ignorava completamente o status do orçamento, permitindo encerrar como entregue e pago mesmo com a OS ainda em "Aguardando Autorização". A trava só age quando HÁ orçamento vinculado à OS; OS sem orçamento nenhum (ex.: serviço rápido cobrado direto) continua fechando normalmente. Vale só para o encerramento pago — sem custo e garantia continuam livres mesmo com orçamento pendente, já que não exigem autorização de cobrança. Tela de baixa (orders/closure.blade.php) desabilita a opção "Entregue - Reparado e Pago" no select com aviso visual quando aplicável, além do bloqueio no backend (OrderClosureService::close, novo resultado delivery_requires_approved_budget → HTTP 422 ORDER_CLOSURE_DELIVERY_REQUIRES_APPROVED_BUDGET). Corrige também duas referências residuais ao nome antigo "Equipamento Entregue" nas mensagens de erro de fechamento.
+- **Arquivos:** backend/app/Services/Orders/OrderClosureService.php,backend/app/Http/Controllers/Api/V1/OrderController.php,frontends/desktop/resources/views/orders/closure.blade.php,backend/tests/Feature/Api/V1/OrderFlowTest.php
+
+## v4.9.0.0 — 2026-07-15 23:22
+- **Tier:** minor
+- **Autor/Agente:** Claude
+- **Descrição:** Divide o encerramento "Equipamento Entregue" (que era vago) em três status explícitos de reparo entregue, todos grupo_macro=encerrado: entregue_reparado_pago (renome de entregue_reparado — reparado, entregue e pago, único que gera receita/REVENUE_CLOSURE_CODE), entregue_reparado_sem_custo (cortesia, R$0 sem lançamentos) e entregue_reparado_garantia (cumprimento de garantia, R$0 sem lançamentos). Mantém devolvido_sem_reparo e descartado. Os três "entregue_reparado_*" contam como equipamento entregue nos indicadores operacionais (card do dashboard + gráfico mensal de entregues reparadas, via nova const OrderStatus::REPAIRED_DELIVERY_CODES) e geram os documentos de reparo (laudo + comprovante de entrega), mas só o pago entra em faturamento/DRE/fluxo de caixa/margem/comissão — o dashboard passou a separar a contagem operacional de entregas (3 códigos) da soma de receita (só o pago). No fechamento (OrderClosureService::close), cortesia e garantia entram no grupo "sem cobrança" junto com devolvido/descartado: não exigem pagamento, não registram movimento financeiro e não deixam saldo pendente/cobrança agendada — só o pago exige pagamento. Isso também preenche um buraco real: reparo em garantia (fluxo verificacao_garantia→cumprimento_garantia→garantia_concluida) antes não tinha como ser encerrado como entregue sem pagamento. Migração idempotente e reversível renomeia a linha do catálogo os_status e migra os dados existentes (os.status, os.status_final_pendente_pagamento, os_status_historico) de entregue_reparado para entregue_reparado_pago. Documentação (catálogo de status + skill sistema-erp-os-fluxo-fechamento) atualizada.
+- **Arquivos:** backend/database/migrations/2026_07_15_000001_split_entregue_reparado_status.php,backend/app/Models/OrderStatus.php,backend/app/Services/Orders/OrderClosureService.php,backend/app/Services/Orders/OrderDocumentCenterService.php,backend/app/Services/Dashboard/DashboardSummaryService.php,frontends/desktop/resources/views/orders/closure.blade.php,frontends/desktop/public/assets/js/orders-closure.js,frontends/desktop/app/Http/Controllers/AssistanceModelController.php,backend/tests/Concerns/BuildsLegacyErpSchema.php,backend/tests/Feature/Api/V1/OrderFlowTest.php,backend/tests/Feature/Api/V1/DashboardSummaryTest.php,documentacao/03-arquitetura-tecnica/catalogo-status-os.md,.agents/skills/sistema-erp-os-fluxo-fechamento/SKILL.md
+
 ## v4.8.2.0 — 2026-07-15 19:31
 - **Tier:** patch
 - **Autor/Agente:** Claude

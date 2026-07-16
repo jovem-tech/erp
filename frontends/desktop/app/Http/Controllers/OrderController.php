@@ -982,6 +982,7 @@ class OrderController extends DesktopController
             'status'                   => (string) ($data['status'] ?? ''),
             'status_nome'              => (string) ($data['status_nome'] ?? ''),
             'status_cor'               => (string) ($data['status_cor'] ?? '#64748b'),
+            'status_congela_prazo'     => (bool) ($data['status_congela_prazo'] ?? false),
             'cliente_nome'             => (string) ($data['cliente_nome'] ?? ''),
             'cliente_telefone'         => (string) ($data['cliente']['telefone1'] ?? ''),
             'cliente_email'            => (string) ($data['cliente']['email'] ?? ''),
@@ -1037,12 +1038,14 @@ class OrderController extends DesktopController
             'diagnostico_tecnico' => ['nullable', 'string'],
             'solucao_aplicada' => ['nullable', 'string'],
             'comunicar_cliente' => ['nullable', 'boolean'],
+            'novo_prazo' => ['nullable', 'date_format:Y-m-d'],
         ], [], [
             'status' => 'status',
             'observacao' => 'observação',
             'diagnostico_tecnico' => 'diagnóstico',
             'solucao_aplicada' => 'solução aplicada',
             'comunicar_cliente' => 'notificar cliente',
+            'novo_prazo' => 'novo prazo de entrega',
         ]);
 
         try {
@@ -1052,7 +1055,8 @@ class OrderController extends DesktopController
                 $validated['observacao'] ?? null,
                 $validated['diagnostico_tecnico'] ?? null,
                 $validated['solucao_aplicada'] ?? null,
-                filter_var($validated['comunicar_cliente'] ?? false, FILTER_VALIDATE_BOOL)
+                filter_var($validated['comunicar_cliente'] ?? false, FILTER_VALIDATE_BOOL),
+                $validated['novo_prazo'] ?? null
             );
         } catch (ApiAuthenticationException $exception) {
             if ($request->wantsJson()) {
