@@ -94,7 +94,11 @@
                     ? $order['data_conclusao']
                     : (($order['data_entrega'] ?? '') !== '' ? $order['data_entrega'] : null);
                 $fimCarbon = $referenciaFim !== null ? \Illuminate\Support\Carbon::parse($referenciaFim) : now();
-                $dias = $aberturaCarbon->diffInDays($fimCarbon);
+                // diffInDays() retorna float fracionário nesta versão do Carbon
+                // (ex.: 4.170775462963) — sem o cast, o rótulo exibia o valor cru
+                // e as comparações ===0/===1 abaixo nunca batiam para dias
+                // fracionários. (int) trunca para o número de dias completos.
+                $dias = (int) $aberturaCarbon->diffInDays($fimCarbon);
 
                 if ($dias === 0) {
                     $duracaoLabel = $isEncerrada ? 'Concluída hoje' : 'Aberta hoje';
@@ -249,311 +253,343 @@
             @include('orders._event_timeline')
         </aside>
 
-        {{-- Painel principal: resumo + abas --}}
+        {{-- Painel principal: cards agrupados (sem abas) --}}
         <div class="os-detail-main">
-            <section class="desktop-grid desktop-grid-two mb-4 os-summary-section">
-                <article class="summary-card">
-                    <span class="summary-card-eyebrow">Cliente</span>
-                    <div class="summary-card-value">{{ ($order['cliente_nome'] ?? '') !== '' ? $order['cliente_nome'] : 'Não informado' }}</div>
-                    <div class="summary-card-meta">
-                        {{ $client['telefone1'] ?? 'Telefone não informado' }}
-                        @if (($client['email'] ?? '') !== '')
-                            · {{ $client['email'] }}
-                        @endif
-                    </div>
+            
+
+            {{-- Cards: Cliente e Equipamento (lado a lado) --}}
+            <div class="desktop-grid desktop-grid-two mb-4">
+                <article class="surface-card">
+                        <h3 class="os-info-card-title">
+                            <span><i class="bi bi-person me-1"></i>Cliente</span>
+                            @if (($client['id'] ?? 0) > 0 && \App\Support\DesktopSession::can('clientes', 'visualizar'))
+                                <a href="{{ route('clients.show', $client['id']) }}" class="btn btn-soft btn-sm">Ver cliente</a>
+                            @endif
+                        </h3>
+                        @php
+                            $enderecoPartes = array_filter([
+                                trim(($client['endereco'] ?? '') . (($client['numero'] ?? '') !== '' ? ', ' . $client['numero'] : '')),
+                                $client['complemento'] ?? '',
+                                $client['bairro'] ?? '',
+                                trim(($client['cidade'] ?? '') . (($client['uf'] ?? '') !== '' ? '/' . $client['uf'] : '')),
+                                $client['cep'] ?? '',
+                            ], fn ($p) => trim((string) $p) !== '');
+                            $contato = trim(($client['nome_contato'] ?? '') . (($client['telefone_contato'] ?? '') !== '' ? ' · ' . $client['telefone_contato'] : ''));
+                            $clienteRows = array_filter([
+                                'Nome' => $client['nome_razao'] ?? ($order['cliente_nome'] ?? ''),
+                                'Telefone' => $client['telefone1'] ?? '',
+                                'Telefone 2' => $client['telefone2'] ?? '',
+                                'Contato' => $contato,
+                                'E-mail' => $client['email'] ?? '',
+                                'CPF/CNPJ' => $client['cpf_cnpj'] ?? '',
+                                'RG/IE' => $client['rg_ie'] ?? '',
+                                'Endereço' => implode(' · ', $enderecoPartes),
+                                'Observações' => $client['observacoes'] ?? '',
+                            ], fn ($v) => trim((string) $v) !== '');
+                        @endphp
+                        <table class="os-info-table">
+                            <tbody>
+                            @forelse ($clienteRows as $label => $value)
+                                <tr><th>{{ $label }}</th><td>{{ $value }}</td></tr>
+                            @empty
+                                <tr><td class="os-info-table-empty">Nenhum dado de cliente disponível.</td></tr>
+                            @endforelse
+                            </tbody>
+                        </table>
                 </article>
-
-                <article class="summary-card">
-                    <span class="summary-card-eyebrow">Equipamento</span>
-                    <div class="summary-card-value">{{ ($order['equipamento_resumo_curto'] ?? '') !== '' ? $order['equipamento_resumo_curto'] : 'Sem equipamento informado' }}</div>
-                    <div class="summary-card-meta">
-                        {{ ($order['equipamento_numero_serie'] ?? '') !== '' ? 'S/N ' . $order['equipamento_numero_serie'] : 'Série não informada' }}
-                        @if(($order['equipamento_resumo_tecnico'] ?? '') !== '')
-                            · {{ $order['equipamento_resumo_tecnico'] }}
-                        @endif
-                    </div>
+                <article class="surface-card">
+                        <h3 class="os-info-card-title">
+                            <span><i class="bi bi-laptop me-1"></i>Equipamento</span>
+                            @if (($equipment['id'] ?? 0) > 0 && \App\Support\DesktopSession::can('equipamentos', 'visualizar'))
+                                <a href="{{ route('equipments.show', $equipment['id']) }}" class="btn btn-soft btn-sm">Ver equipamento</a>
+                            @endif
+                        </h3>
+                        @php
+                            $equipamentoRows = array_filter([
+                                'Tipo' => $equipment['tipo_nome'] ?? ($order['equipamento_tipo_nome'] ?? ''),
+                                'Marca' => $equipment['marca_nome'] ?? '',
+                                'Modelo' => $equipment['modelo_nome'] ?? '',
+                                'Cor' => $equipment['cor'] ?? '',
+                                'N° de série' => $order['equipamento_numero_serie'] ?? ($equipment['numero_serie'] ?? ''),
+                                'IMEI' => $equipment['imei'] ?? '',
+                                'Acessórios' => $equipment['acessorios'] ?? '',
+                                'Observações' => $equipment['observacoes'] ?? '',
+                            ], fn ($v) => trim((string) $v) !== '');
+                        @endphp
+                        <table class="os-info-table">
+                            <tbody>
+                            @forelse ($equipamentoRows as $label => $value)
+                                <tr><th>{{ $label }}</th><td>{{ $value }}</td></tr>
+                            @empty
+                                <tr><td class="os-info-table-empty">Nenhum dado de equipamento disponível.</td></tr>
+                            @endforelse
+                            </tbody>
+                        </table>
                 </article>
-            </section>
+            </div>
 
-            <article class="surface-card os-tabs-card" data-os-tabs>
-                <div class="equipment-tabs" role="tablist" aria-label="Detalhes da ordem de serviço">
-                    <button type="button" class="equipment-tab is-active" data-os-tab="informacoes" aria-pressed="true">
-                        <i class="bi bi-info-circle"></i>Informações
-                    </button>
-                    <button type="button" class="equipment-tab" data-os-tab="orcamento" aria-pressed="false">
-                        <i class="bi bi-receipt"></i>Orçamento
-                    </button>
-                    <button type="button" class="equipment-tab" data-os-tab="diagnostico" aria-pressed="false">
-                        <i class="bi bi-clipboard2-pulse"></i>Diagnóstico
-                    </button>
-                    <button type="button" class="equipment-tab" data-os-tab="fotos" aria-pressed="false">
-                        <i class="bi bi-images"></i>Fotos
-                    </button>
-                    <button type="button" class="equipment-tab" data-os-tab="documentos" aria-pressed="false">
-                        <i class="bi bi-file-earmark-text"></i>Documentos
-                    </button>
-                    <button type="button" class="equipment-tab" data-os-tab="valores" aria-pressed="false">
-                        <i class="bi bi-cash-coin"></i>Valores
-                    </button>
-                </div>
-
-                {{-- Aba: Informações --}}
-                <div class="equipment-tab-panel is-active" data-os-panel="informacoes">
-                    @if ($nextSteps !== [])
-                        <div class="os-panel-block">
-                            <h3 class="os-panel-title"><i class="bi bi-signpost-split me-1"></i>Próximas etapas prováveis</h3>
-                            <div class="d-flex flex-wrap gap-2">
-                                @foreach ($nextSteps as $step)
-                                    <span class="os-next-step">{{ $step['nome'] ?? $step['codigo'] }}</span>
-                                @endforeach
-                            </div>
-                        </div>
+            {{-- Card: Defeito e Solução --}}
+            <article class="surface-card mb-4">
+                <h3 class="os-info-card-title"><span><i class="bi bi-clipboard2-pulse me-1"></i>Defeito e Solução</span></h3>
+                @php
+                    $tecnicoMeta = $technician['email'] ?? ($technician['perfil'] ?? '');
+                    $tecnicoValor = trim(($technician['nome'] ?? '') . (($tecnicoMeta ?? '') !== '' ? ' · ' . $tecnicoMeta : ''));
+                    $checklistResumo = '';
+                    if ($checklist) {
+                        $checklistResumo = ucfirst(str_replace('_', ' ', $checklist['status'] ?? 'rascunho'))
+                            . ' · ' . ($checklist['total_itens'] ?? 0) . ' itens';
+                        if (($checklist['total_discrepancias'] ?? 0) > 0) {
+                            $checklistResumo .= ' · ' . $checklist['total_discrepancias'] . ' discrepância(s)';
+                        }
+                    }
+                    $defeitoRows = array_filter([
+                        'Técnico responsável' => $tecnicoValor,
+                        'Defeito relatado pelo cliente' => $order['relato_cliente'] ?? '',
+                        'Diagnóstico técnico' => $order['diagnostico_tecnico'] ?? '',
+                        'Solução aplicada' => $order['solucao_aplicada'] ?? '',
+                        'Procedimentos executados' => $order['procedimentos_executados'] ?? '',
+                        'Acessórios' => $order['acessorios'] ?? '',
+                        'Observações internas' => $order['observacoes_internas'] ?? '',
+                        'Observações do cliente' => $order['observacoes_cliente'] ?? '',
+                    ], fn ($v) => trim((string) $v) !== '');
+                @endphp
+                <table class="os-info-table">
+                    <tbody>
+                    @if ($checklist)
+                        <tr>
+                            <th>Checklist</th>
+                            <td>
+                                {{ $checklistResumo }}
+                                <button type="button" class="btn btn-soft btn-sm ms-2" data-bs-toggle="modal" data-bs-target="#checklistDetailModal">
+                                    <i class="bi bi-eye me-1"></i>Ver checklist
+                                </button>
+                            </td>
+                        </tr>
                     @endif
-
-                    <div class="os-panel-block">
-                        <h3 class="os-panel-title"><i class="bi bi-arrow-repeat me-1"></i>Status atual</h3>
-                        <p class="surface-subtitle">A mudança de status deve ser feita pelo fluxo apropriado da OS.</p>
-                        <div class="d-flex flex-wrap gap-2 align-items-center">
-                            @include('layouts.partials.status-pill', [
-                                'label' => ($order['status_nome'] ?? '') !== '' ? $order['status_nome'] : 'Sem status',
-                                'color' => $order['status_cor'] ?? '#64748b',
-                            ])
-                        </div>
-                    </div>
-                    <div class="os-panel-block">
-                        <h3 class="os-panel-title"><i class="bi bi-chat-left-text me-1"></i>Relato do cliente</h3>
-                        <p class="mb-0">{{ ($order['relato_cliente'] ?? '') !== '' ? $order['relato_cliente'] : 'Nenhum relato registrado.' }}</p>
-                    </div>
-
-                    <div class="os-panel-block">
-                        <h3 class="os-panel-title"><i class="bi bi-ui-checks me-1"></i>Checklist de entrada</h3>
-                        @if ($checklist)
-                            <div class="d-flex flex-wrap gap-2 mb-2">
-                                <span class="desktop-chip">{{ ucfirst(str_replace('_', ' ', $checklist['status'] ?? 'rascunho')) }}</span>
-                                <span class="desktop-chip">{{ $checklist['total_itens'] ?? 0 }} itens</span>
-                                @if (($checklist['total_discrepancias'] ?? 0) > 0)
-                                    <span class="os-next-step">{{ $checklist['total_discrepancias'] }} discrepância(s)</span>
-                                @else
-                                    <span class="desktop-chip">Sem discrepâncias</span>
-                                @endif
-                            </div>
-                            <p class="mb-0">{{ ($checklist['resumo_texto'] ?? '') !== '' ? $checklist['resumo_texto'] : 'Checklist registrado, sem observações adicionais.' }}</p>
-                        @else
-                            <p class="surface-subtitle mb-0"><span class="desktop-chip">Checklist não preenchido</span></p>
+                    @forelse ($defeitoRows as $label => $value)
+                        <tr><th>{{ $label }}</th><td>{{ $value }}</td></tr>
+                    @empty
+                        @if (! $checklist)
+                            <tr><td class="os-info-table-empty">Nenhum dado de diagnóstico registrado ainda.</td></tr>
                         @endif
-                    </div>
-                </div>
+                    @endforelse
+                    </tbody>
+                </table>
+            </article>
 
-                {{-- Aba: Orçamento --}}
-                <div class="equipment-tab-panel" data-os-panel="orcamento">
-                    @if ($hasOrcamento)
-                        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-                            <div>
-                                <h3 class="os-panel-title mb-1">
-                                    <i class="bi bi-receipt me-1"></i>Orçamento
+            {{-- Card: Valores e Orçamento --}}
+            <article class="surface-card mb-4">
+                @php
+                    $financeiroResumo = is_array($order['financeiro_resumo'] ?? null) ? $order['financeiro_resumo'] : [];
+                    $formaPagamentoResolvida = trim((string) ($order['forma_pagamento_resolvida'] ?? ''));
+                    $formaPagamentoLegada = trim((string) ($order['forma_pagamento'] ?? ''));
+                    $formaPagamentoExibicao = $formaPagamentoResolvida !== '' ? $formaPagamentoResolvida : $formaPagamentoLegada;
+                    $custoAuditoria = is_array($order['custo_auditoria'] ?? null) ? $order['custo_auditoria'] : [];
+                    $formatMoney = static fn ($value): string => 'R$ ' . number_format((float) ($value ?? 0), 2, ',', '.');
+
+                    $datasRows = array_filter([
+                        'Abertura' => $order['data_abertura'] ?? '',
+                        'Entrada' => $order['data_entrada'] ?? '',
+                        'Previsão' => $order['data_previsao'] ?? '',
+                        'Conclusão' => $order['data_conclusao'] ?? '',
+                        'Garantia' => ($order['garantia_dias'] ?? 0) > 0 ? $order['garantia_dias'] . ' dias' : '',
+                        'Forma de pagamento' => $formaPagamentoExibicao,
+                    ], fn ($v) => trim((string) $v) !== '');
+
+                    $orcamentoRows = $hasOrcamento ? array_filter([
+                        'Status' => $orcamento['status_label'] ?? '',
+                        'Subtotal' => ($orcamento['subtotal'] ?? null) !== null ? 'R$ ' . $orcamento['subtotal'] : '',
+                        'Desconto' => ($orcamento['desconto'] ?? null) !== null ? 'R$ ' . $orcamento['desconto'] : '',
+                        'Total' => ($orcamento['total'] ?? null) !== null ? 'R$ ' . $orcamento['total'] : '',
+                        'Validade' => $orcamento['validade_data'] ?? '',
+                        'Enviado em' => $orcamento['enviado_em'] ?? '',
+                        'Aprovado em' => ($orcamento['aprovado_em'] ?? '') !== '' ? $orcamento['aprovado_em'] : 'Não aprovado',
+                    ], fn ($v) => trim((string) $v) !== '') : [];
+
+                    $orcamentoItens = $hasOrcamento ? ($orcamento['itens'] ?? []) : [];
+                @endphp
+
+                <h3 class="os-info-card-title"><span><i class="bi bi-cash-coin me-1"></i>Valores e Orçamento</span></h3>
+
+                <div class="desktop-grid desktop-grid-two">
+                    <div class="os-subcard">
+                        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                            <h4 class="os-panel-title mb-0">
+                                Orçamento
+                                @if ($hasOrcamento)
                                     {{ ($orcamento['numero'] ?? '') !== '' ? $orcamento['numero'] : '#' . ($orcamento['id'] ?? 0) }}
                                     <span class="os-count">v{{ $orcamento['versao'] ?? 1 }}</span>
-                                </h3>
-                                <span class="desktop-chip">{{ $orcamento['status_label'] ?? 'Sem status' }}</span>
-                                @if ($orcamento['aprovado'] ?? false)
-                                    <span class="os-next-step">Aprovado</span>
                                 @endif
-                            </div>
-                            @if (\App\Support\DesktopSession::can('orcamentos', 'visualizar'))
+                            </h4>
+                            @if ($hasOrcamento && \App\Support\DesktopSession::can('orcamentos', 'visualizar'))
                                 <a href="{{ route('orcamentos.show', $orcamento['id']) }}" class="btn btn-soft btn-sm">
                                     <i class="bi bi-box-arrow-up-right me-2"></i>Abrir orçamento
                                 </a>
-                            @endif
-                        </div>
-                        <div class="detail-list">
-                            <div class="detail-item"><strong>Subtotal</strong><span>{{ ($orcamento['subtotal'] ?? null) !== null ? 'R$ ' . $orcamento['subtotal'] : 'R$ 0,00' }}</span></div>
-                            <div class="detail-item"><strong>Desconto</strong><span>{{ ($orcamento['desconto'] ?? null) !== null ? 'R$ ' . $orcamento['desconto'] : 'R$ 0,00' }}</span></div>
-                            <div class="detail-item"><strong>Total</strong><span>{{ ($orcamento['total'] ?? null) !== null ? 'R$ ' . $orcamento['total'] : 'R$ 0,00' }}</span></div>
-                            <div class="detail-item"><strong>Validade</strong><span>{{ ($orcamento['validade_data'] ?? '') !== '' ? $orcamento['validade_data'] : 'Não definida' }}</span></div>
-                            <div class="detail-item"><strong>Enviado em</strong><span>{{ ($orcamento['enviado_em'] ?? '') !== '' ? $orcamento['enviado_em'] : 'Não enviado' }}</span></div>
-                            <div class="detail-item"><strong>Aprovado em</strong><span>{{ ($orcamento['aprovado_em'] ?? '') !== '' ? $orcamento['aprovado_em'] : 'Não aprovado' }}</span></div>
-                        </div>
-                    @else
-                        @include('layouts.partials.empty-state', [
-                            'icon' => 'bi-receipt',
-                            'title' => 'Sem orçamento vinculado',
-                            'message' => 'Esta OS ainda não possui um orçamento vinculado.',
-                        ])
-                        @if (\App\Support\DesktopSession::can('orcamentos', 'criar'))
-                            <div class="d-flex justify-content-center">
-                                <a href="{{ route('orcamentos.create', ['os_id' => $order['id']]) }}" class="btn btn-primary">
+                            @elseif (! $hasOrcamento && $canCreateBudget)
+                                <a href="{{ route('orcamentos.create', ['os_id' => $order['id']]) }}" class="btn btn-soft btn-sm">
                                     <i class="bi bi-plus-lg me-2"></i>Gerar orçamento
                                 </a>
+                            @endif
+                        </div>
+
+                        @if ($hasOrcamento)
+                            <table class="os-info-table">
+                                <tbody>
+                                @foreach ($orcamentoRows as $label => $value)
+                                    <tr><th>{{ $label }}</th><td>{{ $value }}</td></tr>
+                                @endforeach
+                                </tbody>
+                            </table>
+                        @else
+                            <p class="os-info-table-empty mb-0">Esta OS ainda não possui um orçamento vinculado.</p>
+                        @endif
+
+                        @if(($financeiroResumo['titulo_id'] ?? null) !== null)
+                            <div class="text-muted small mt-2">
+                                Título financeiro #{{ $financeiroResumo['titulo_id'] }} ·
+                                recebido {{ $formatMoney($financeiroResumo['valor_recebido'] ?? 0) }} de {{ $formatMoney($financeiroResumo['valor_titulo'] ?? 0) }} ·
+                                saldo {{ $formatMoney($financeiroResumo['saldo_aberto'] ?? 0) }}
                             </div>
                         @endif
-                    @endif
-                </div>
-
-                {{-- Aba: Diagnóstico --}}
-                <div class="equipment-tab-panel" data-os-panel="diagnostico">
-                    <div class="detail-list">
-                        <div class="detail-item">
-                            <strong>Técnico responsável</strong>
-                            <span>
-                                {{ ($technician['nome'] ?? '') !== '' ? $technician['nome'] : 'Não atribuído' }}
-                                @php $tecnicoMeta = $technician['email'] ?? ($technician['perfil'] ?? ''); @endphp
-                                @if (($tecnicoMeta ?? '') !== '')
-                                    · {{ $tecnicoMeta }}
+                        @if(($custoAuditoria['orcamento_id'] ?? null) !== null && (int) ($custoAuditoria['pecas_orcadas'] ?? 0) > 0)
+                            <div class="alert {{ ($custoAuditoria['pendencia_baixa_estoque'] ?? false) ? 'alert-warning' : 'alert-light' }} border mt-3 mb-0">
+                                <strong>Auditoria de peças</strong>
+                                <div class="small mt-1">
+                                    Orçamento {{ $custoAuditoria['orcamento_numero'] ?? ('#' . $custoAuditoria['orcamento_id']) }} ·
+                                    peças orçadas {{ $formatMoney($custoAuditoria['valor_pecas_orcado'] ?? 0) }} ·
+                                    custo previsto {{ $formatMoney($custoAuditoria['custo_pecas_previsto'] ?? 0) }} ·
+                                    custo real em estoque {{ $formatMoney($custoAuditoria['custo_pecas_real'] ?? 0) }}
+                                </div>
+                                @if(($custoAuditoria['pendencia_baixa_estoque'] ?? false) && ($custoAuditoria['mensagem'] ?? '') !== '')
+                                    <div class="small mt-2">{{ $custoAuditoria['mensagem'] }}</div>
                                 @endif
-                            </span>
-                        </div>
-                        <div class="detail-item">
-                            <strong>Defeito relatado pelo cliente</strong>
-                            <p>{{ ($order['relato_cliente'] ?? '') !== '' ? $order['relato_cliente'] : 'Nenhum relato registrado.' }}</p>
-                        </div>
-                        <div class="detail-item">
-                            <strong>Diagnóstico técnico</strong>
-                            <p>{{ ($order['diagnostico_tecnico'] ?? '') !== '' ? $order['diagnostico_tecnico'] : 'Não informado' }}</p>
-                        </div>
-                        <div class="detail-item">
-                            <strong>Solução aplicada</strong>
-                            <p>{{ ($order['solucao_aplicada'] ?? '') !== '' ? $order['solucao_aplicada'] : 'Não informada' }}</p>
-                        </div>
-                        <div class="detail-item">
-                            <strong>Procedimentos executados</strong>
-                            <p>{{ ($order['procedimentos_executados'] ?? '') !== '' ? $order['procedimentos_executados'] : 'Não informados' }}</p>
-                        </div>
-                        <div class="detail-item"><strong>Acessórios</strong><span>{{ ($order['acessorios'] ?? '') !== '' ? $order['acessorios'] : 'Não informados' }}</span></div>
-                        <div class="detail-item"><strong>Observações internas</strong><p>{{ ($order['observacoes_internas'] ?? '') !== '' ? $order['observacoes_internas'] : 'Sem observações' }}</p></div>
-                        <div class="detail-item"><strong>Observações do cliente</strong><p>{{ ($order['observacoes_cliente'] ?? '') !== '' ? $order['observacoes_cliente'] : 'Sem observações' }}</p></div>
+                            </div>
+                        @endif
+                    </div>
+                    <div class="os-subcard">
+                        <h4 class="os-panel-title">Datas e garantia</h4>
+                        <table class="os-info-table">
+                            <tbody>
+                            @forelse ($datasRows as $label => $value)
+                                <tr><th>{{ $label }}</th><td>{{ $value }}</td></tr>
+                            @empty
+                                <tr><td class="os-info-table-empty">Sem datas registradas.</td></tr>
+                            @endforelse
+                            </tbody>
+                        </table>
                     </div>
                 </div>
 
-                {{-- Aba: Fotos --}}
-                <div class="equipment-tab-panel" data-os-panel="fotos">
-                    @if ($photos !== [])
-                        @foreach (['Fotos de recepção' => $photosRecepcao, 'Fotos de diagnóstico' => $photosDiagnostico, 'Fotos de entrega' => $photosEntrega] as $groupLabel => $groupPhotos)
-                            @if ($groupPhotos !== [])
-                                <div class="os-panel-block">
-                                    <h3 class="os-panel-title">{{ $groupLabel }} <span class="os-count">{{ count($groupPhotos) }}</span></h3>
-                                    <div class="os-photo-grid">
-                                        @foreach ($groupPhotos as $photo)
-                                            <a href="{{ route('orders.photos.show', [$order['id'], $photo['id']]) }}"
-                                                class="os-photo-thumb"
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                title="{{ $photo['tipo_label'] ?? 'Foto' }}"
-                                                data-photo-viewer-trigger
-                                                data-photo-viewer-group="{{ $photoViewerGroup }}"
-                                                data-photo-viewer-title="{{ $photo['tipo_label'] ?? 'Foto' }}">
-                                                <img src="{{ route('orders.photos.show', [$order['id'], $photo['id']]) }}" alt="{{ $photo['tipo_label'] ?? 'Foto' }}">
-                                            </a>
-                                        @endforeach
-                                    </div>
-                                </div>
-                            @endif
-                        @endforeach
-                    @else
-                        @include('layouts.partials.empty-state', [
-                            'icon' => 'bi-images',
-                            'title' => 'Sem fotos vinculadas',
-                            'message' => 'Quando existirem imagens desta OS, o backend central fará a mediação do acesso.',
-                        ])
-                    @endif
+                @if ($hasOrcamento && $orcamentoItens !== [])
+                    <div class="os-panel-block">
+                        <h4 class="os-panel-title">Peças e serviços do orçamento</h4>
+                        <div class="table-responsive">
+                            <table class="table table-stack align-middle">
+                                <thead>
+                                <tr>
+                                    <th>Tipo</th>
+                                    <th>Descrição</th>
+                                    <th>Qtd</th>
+                                    <th>Valor unit.</th>
+                                    <th>Total</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach ($orcamentoItens as $item)
+                                    <tr>
+                                        <td data-label="Tipo">{{ ucfirst((string) ($item['tipo_item'] ?? 'servico')) }}</td>
+                                        <td data-label="Descrição">{{ ($item['descricao'] ?? '') !== '' ? $item['descricao'] : 'Sem descrição' }}</td>
+                                        <td data-label="Qtd">{{ number_format((float) ($item['quantidade'] ?? 0), 2, ',', '.') }}</td>
+                                        <td data-label="Valor unit.">R$ {{ number_format((float) ($item['valor_unitario'] ?? 0), 2, ',', '.') }}</td>
+                                        <td data-label="Total" class="fw-bold">R$ {{ number_format((float) ($item['total'] ?? 0), 2, ',', '.') }}</td>
+                                    </tr>
+                                @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                @endif
+            </article>
+
+            {{-- Card: Documentos --}}
+            <article class="surface-card mb-4">
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                    <h3 class="os-info-card-title mb-0"><span><i class="bi bi-file-earmark-text me-1"></i>Documentos</span></h3>
+                    <a href="{{ route('orders.documents.center', $order['id']) }}" class="btn btn-soft btn-sm">
+                        <i class="bi bi-folder-symlink me-2"></i>Abrir central de documentos
+                    </a>
                 </div>
 
-                {{-- Aba: Documentos --}}
-                <div class="equipment-tab-panel" data-os-panel="documentos">
-                    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
-                        <div>
-                            <h3 class="os-panel-title mb-1"><i class="bi bi-file-earmark-text me-1"></i>Acervo documental da OS</h3>
-                            <p class="surface-subtitle mb-0">Abra a central para gerar, versionar, compartilhar, reenviar e imprimir os documentos do cliente.</p>
-                        </div>
-                        <a href="{{ route('orders.documents.center', $order['id']) }}" class="btn btn-soft btn-sm">
-                            <i class="bi bi-folder-symlink me-2"></i>Abrir central de documentos
-                        </a>
-                    </div>
-
-                    @if ($documents !== [])
-                        <div class="attachment-grid">
+                @if ($documents !== [])
+                    <div class="table-responsive">
+                        <table class="table table-stack align-middle">
+                            <thead>
+                            <tr>
+                                <th>Tipo</th>
+                                <th>Arquivo</th>
+                                <th>Versão</th>
+                                <th>Gerado em</th>
+                                <th></th>
+                            </tr>
+                            </thead>
+                            <tbody>
                             @foreach ($documents as $document)
-                                <article class="attachment-card">
-                                    <div class="attachment-preview"><i class="bi bi-file-earmark-pdf"></i></div>
-                                    <div>
-                                        <strong>{{ ($document['tipo_label'] ?? '') !== '' ? $document['tipo_label'] : 'Documento' }}</strong>
-                                        <small>{{ ($document['nome_arquivo'] ?? '') !== '' ? $document['nome_arquivo'] : 'Arquivo sem nome' }}</small>
-                                    </div>
-                                    <a href="{{ route('orders.documents.show', [$order['id'], $document['id']]) }}" target="_blank" rel="noreferrer" class="btn btn-outline-light btn-sm">Abrir documento</a>
-                                </article>
+                                <tr>
+                                    <td data-label="Tipo">{{ ($document['tipo_label'] ?? '') !== '' ? $document['tipo_label'] : 'Documento' }}</td>
+                                    <td data-label="Arquivo">{{ ($document['nome_arquivo'] ?? '') !== '' ? $document['nome_arquivo'] : 'Arquivo sem nome' }}</td>
+                                    <td data-label="Versão">v{{ $document['versao'] ?? 1 }}</td>
+                                    <td data-label="Gerado em">{{ ($document['created_at'] ?? '') !== '' ? $document['created_at'] : '—' }}</td>
+                                    <td data-label="">
+                                        <a href="{{ route('orders.documents.show', [$order['id'], $document['id']]) }}" target="_blank" rel="noreferrer" class="btn btn-outline-light btn-sm">
+                                            <i class="bi bi-eye me-1"></i>Visualizar
+                                        </a>
+                                    </td>
+                                </tr>
                             @endforeach
-                        </div>
-                    @else
-                        @include('layouts.partials.empty-state', [
-                            'icon' => 'bi-file-earmark-x',
-                            'title' => 'Sem documentos vinculados',
-                            'message' => 'Os PDFs desta OS aparecerão aqui assim que existirem no repositório integrado.',
-                        ])
-                    @endif
-
-                    <div class="os-panel-block mt-3">
-                        <a href="{{ route('orders.preview', $order['id']) }}" target="_blank" rel="noreferrer" class="btn btn-soft">
-                            <i class="bi bi-printer me-2"></i>Gerar impressão consolidada (A4)
-                        </a>
+                            </tbody>
+                        </table>
                     </div>
-                </div>
+                @else
+                    @include('layouts.partials.empty-state', [
+                        'icon' => 'bi-file-earmark-x',
+                        'title' => 'Sem documentos vinculados',
+                        'message' => 'Os PDFs desta OS aparecerão aqui assim que existirem no repositório integrado.',
+                    ])
+                @endif
+            </article>
 
-                {{-- Aba: Valores --}}
-                <div class="equipment-tab-panel" data-os-panel="valores">
-                    @php
-                        $financeiroResumo = is_array($order['financeiro_resumo'] ?? null) ? $order['financeiro_resumo'] : [];
-                        $formaPagamentoResolvida = trim((string) ($order['forma_pagamento_resolvida'] ?? ''));
-                        $formaPagamentoLegada = trim((string) ($order['forma_pagamento'] ?? ''));
-                        $formaPagamentoExibicao = $formaPagamentoResolvida !== '' ? $formaPagamentoResolvida : $formaPagamentoLegada;
-                        $custoAuditoria = is_array($order['custo_auditoria'] ?? null) ? $order['custo_auditoria'] : [];
-                        $formatMoney = static fn ($value): string => 'R$ ' . number_format((float) ($value ?? 0), 2, ',', '.');
-                    @endphp
-                    <div class="desktop-grid desktop-grid-two">
-                        <div>
-                            <h3 class="os-panel-title"><i class="bi bi-cash-stack me-1"></i>Resumo financeiro</h3>
-                            <div class="detail-list">
-                                <div class="detail-item"><strong>Mão de obra</strong><span>{{ ($order['valor_mao_obra'] ?? '') !== '' ? 'R$ ' . $order['valor_mao_obra'] : 'R$ 0,00' }}</span></div>
-                                <div class="detail-item"><strong>Peças</strong><span>{{ ($order['valor_pecas'] ?? '') !== '' ? 'R$ ' . $order['valor_pecas'] : 'R$ 0,00' }}</span></div>
-                                <div class="detail-item"><strong>Total</strong><span>{{ ($order['valor_total'] ?? '') !== '' ? 'R$ ' . $order['valor_total'] : 'R$ 0,00' }}</span></div>
-                                <div class="detail-item"><strong>Desconto</strong><span>{{ ($order['desconto'] ?? '') !== '' ? 'R$ ' . $order['desconto'] : 'R$ 0,00' }}</span></div>
-                                <div class="detail-item"><strong>Valor final</strong><span>{{ ($order['valor_final'] ?? '') !== '' ? 'R$ ' . $order['valor_final'] : 'Não calculado' }}</span></div>
-                                <div class="detail-item"><strong>Forma de pagamento</strong><span>{{ $formaPagamentoExibicao !== '' ? $formaPagamentoExibicao : 'Não informada' }}</span></div>
-                            </div>
-
-                            @if(($financeiroResumo['titulo_id'] ?? null) !== null)
-                                <div class="text-muted small mt-2">
-                                    Título financeiro #{{ $financeiroResumo['titulo_id'] }} ·
-                                    recebido {{ $formatMoney($financeiroResumo['valor_recebido'] ?? 0) }} de {{ $formatMoney($financeiroResumo['valor_titulo'] ?? 0) }} ·
-                                    saldo {{ $formatMoney($financeiroResumo['saldo_aberto'] ?? 0) }}
+            {{-- Seção final: Fotos --}}
+            <article class="surface-card">
+                <h3 class="os-info-card-title mb-3"><span><i class="bi bi-images me-1"></i>Fotos</span></h3>
+                @if ($photos !== [])
+                    @foreach (['Recepção' => $photosRecepcao, 'Diagnóstico' => $photosDiagnostico, 'Entrega' => $photosEntrega] as $groupLabel => $groupPhotos)
+                        @if ($groupPhotos !== [])
+                            <div class="os-panel-block">
+                                <h4 class="os-panel-title">{{ $groupLabel }} <span class="os-count">{{ count($groupPhotos) }}</span></h4>
+                                <div class="os-photo-grid">
+                                    @foreach ($groupPhotos as $photo)
+                                        <a href="{{ route('orders.photos.show', [$order['id'], $photo['id']]) }}"
+                                            class="os-photo-thumb"
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            title="{{ $photo['tipo_label'] ?? 'Foto' }}"
+                                            data-photo-viewer-trigger
+                                            data-photo-viewer-group="{{ $photoViewerGroup }}"
+                                            data-photo-viewer-title="{{ $photo['tipo_label'] ?? 'Foto' }}">
+                                            <img src="{{ route('orders.photos.show', [$order['id'], $photo['id']]) }}" alt="{{ $photo['tipo_label'] ?? 'Foto' }}">
+                                        </a>
+                                    @endforeach
                                 </div>
-                            @endif
-
-                            @if(($custoAuditoria['orcamento_id'] ?? null) !== null && (int) ($custoAuditoria['pecas_orcadas'] ?? 0) > 0)
-                                <div class="alert {{ ($custoAuditoria['pendencia_baixa_estoque'] ?? false) ? 'alert-warning' : 'alert-light' }} border mt-3 mb-0">
-                                    <strong>Auditoria de peças</strong>
-                                    <div class="small mt-1">
-                                        Orçamento {{ $custoAuditoria['orcamento_numero'] ?? ('#' . $custoAuditoria['orcamento_id']) }} ·
-                                        peças orçadas {{ $formatMoney($custoAuditoria['valor_pecas_orcado'] ?? 0) }} ·
-                                        custo previsto {{ $formatMoney($custoAuditoria['custo_pecas_previsto'] ?? 0) }} ·
-                                        custo real em estoque {{ $formatMoney($custoAuditoria['custo_pecas_real'] ?? 0) }}
-                                    </div>
-                                    @if(($custoAuditoria['pendencia_baixa_estoque'] ?? false) && ($custoAuditoria['mensagem'] ?? '') !== '')
-                                        <div class="small mt-2">{{ $custoAuditoria['mensagem'] }}</div>
-                                    @endif
-                                </div>
-                            @endif
-                        </div>
-                        <div>
-                            <h3 class="os-panel-title"><i class="bi bi-calendar-event me-1"></i>Datas e garantia</h3>
-                            <div class="detail-list">
-                                <div class="detail-item"><strong>Abertura</strong><span>{{ ($order['data_abertura'] ?? '') !== '' ? $order['data_abertura'] : 'Não informada' }}</span></div>
-                                <div class="detail-item"><strong>Entrada</strong><span>{{ ($order['data_entrada'] ?? '') !== '' ? $order['data_entrada'] : 'Não informada' }}</span></div>
-                                <div class="detail-item"><strong>Previsão</strong><span>{{ ($order['data_previsao'] ?? '') !== '' ? $order['data_previsao'] : 'Não informada' }}</span></div>
-                                <div class="detail-item"><strong>Conclusão</strong><span>{{ ($order['data_conclusao'] ?? '') !== '' ? $order['data_conclusao'] : 'Não informada' }}</span></div>
-                                <div class="detail-item"><strong>Garantia</strong><span>{{ ($order['garantia_dias'] ?? 0) > 0 ? $order['garantia_dias'] . ' dias' : 'Não definida' }}</span></div>
                             </div>
-                        </div>
-                    </div>
-                </div>
+                        @endif
+                    @endforeach
+                @else
+                    @include('layouts.partials.empty-state', [
+                        'icon' => 'bi-images',
+                        'title' => 'Sem fotos vinculadas',
+                        'message' => 'Quando existirem imagens desta OS, o backend central fará a mediação do acesso.',
+                    ])
+                @endif
             </article>
         </div>
     </div>
@@ -563,6 +599,9 @@
     @include('orders._status_modal')
     @include('orders._cancel_closure_modal')
     @include('layouts.partials.photo-viewer-modal')
+    @if ($checklist)
+        @include('orders._checklist_detail_modal')
+    @endif
 @endpush
 
 @section('scripts')
@@ -581,45 +620,7 @@
     <script src="{{ asset('assets/js/orders-status-modal.js') }}"></script>
     <script src="{{ asset('assets/js/orders-cancel-closure-modal.js') }}"></script>
     <script>
-        (function () {
-            const root = document.querySelector('[data-os-tabs]');
-            if (!root) {
-                return;
-            }
-            const tabs = Array.from(root.querySelectorAll('[data-os-tab]'));
-            const panels = Array.from(root.querySelectorAll('[data-os-panel]'));
-
-            function activate(name) {
-                tabs.forEach((tab) => {
-                    const active = tab.dataset.osTab === name;
-                    tab.classList.toggle('is-active', active);
-                    tab.setAttribute('aria-pressed', active ? 'true' : 'false');
-                });
-                panels.forEach((panel) => {
-                    panel.classList.toggle('is-active', panel.dataset.osPanel === name);
-                });
-                if (history.replaceState) {
-                    history.replaceState(null, '', '#tab-' + name);
-                }
-            }
-
-            tabs.forEach((tab) => {
-                tab.addEventListener('click', () => activate(tab.dataset.osTab));
-            });
-
-            const initial = (window.location.hash || '').replace('#tab-', '');
-            if (initial && tabs.some((tab) => tab.dataset.osTab === initial)) {
-                activate(initial);
-            }
-
-            // Mantém a aba ativa visível na faixa rolável ao trocar (sem rolar a página).
-            tabs.forEach((tab) => tab.addEventListener('click', () => {
-                tab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-            }));
-        })();
-
-        // Filtro por categoria da timeline de eventos da OS (client-side,
-        // mesmo padrão dos toggles [data-os-tab] acima — sem reload).
+        // Filtro por categoria da timeline de eventos da OS (client-side, sem reload).
         (function () {
             const root = document.querySelector('[data-event-timeline]');
             if (!root) {

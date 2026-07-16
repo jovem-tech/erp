@@ -491,9 +491,16 @@
         $clienteTelefone = trim((string) ($closure['cliente_telefone'] ?? ''));
         $clienteEmail = trim((string) ($closure['cliente_email'] ?? ($order['cliente_email'] ?? '')));
         $retornoPadrao = (string) ($closure['retorno_padrao'] ?? now()->addDays(180)->toDateString());
-        $noRepairStatuses = $closure['status_sem_reparo'] ?? ['devolvido_sem_reparo', 'descartado'];
+        // "status_sem_reparo" = encerramentos SEM cobrança (o backend hoje inclui
+        // devolvido/descartado + reparo entregue sem custo/garantia). A chave
+        // mantém o nome histórico; funcionalmente é "esconder campos de pagamento".
+        $noRepairStatuses = $closure['status_sem_reparo'] ?? ['devolvido_sem_reparo', 'descartado', 'entregue_reparado_sem_custo', 'entregue_reparado_garantia'];
         $statusPagamentoPendente = $closure['status_pagamento_pendente'] ?? ['codigo' => 'entregue_pagamento_pendente', 'nome' => 'Entregue - Pendência Financeira'];
-        $statusEntregue = $closure['status_entregue'] ?? 'equipamento_entregue';
+        $statusEntregue = $closure['status_entregue'] ?? 'entregue_reparado_pago';
+        // OS com orçamento vinculado ainda não aprovado: bloqueia encerrar como
+        // "Entregue - Reparado e Pago" (o backend também bloqueia — ver
+        // OrderClosureService::close()). Não afeta sem custo/garantia.
+        $orcamentoPendenteAprovacao = (bool) ($closure['orcamento_pendente_aprovacao'] ?? false);
 
         $equipamentoNome = trim((string) ($order['equipamento_nome'] ?? ($order['equipamento']['nome'] ?? '')));
         $equipamentoTipo = trim((string) ($order['equipamento_tipo_nome'] ?? ($order['equipamento']['tipo_nome'] ?? ($order['equipamento']['tipo']['nome'] ?? ''))));
@@ -718,11 +725,25 @@
                                     <select id="encerrarComo" name="encerrar_como" class="form-select @error('encerrar_como') is-invalid @enderror" required>
                                         <option value="">Selecione</option>
                                         @foreach ($opcoesEncerramento as $opcao)
-                                            <option value="{{ $opcao['codigo'] }}" @selected(old('encerrar_como') === ($opcao['codigo'] ?? ''))>
-                                                {{ $opcao['nome'] ?? $opcao['codigo'] }}
+                                            @php
+                                                $opcaoCodigo = $opcao['codigo'] ?? '';
+                                                $bloqueiaPorOrcamento = $orcamentoPendenteAprovacao && $opcaoCodigo === $statusEntregue;
+                                            @endphp
+                                            <option
+                                                value="{{ $opcaoCodigo }}"
+                                                @selected(old('encerrar_como') === $opcaoCodigo)
+                                                @disabled($bloqueiaPorOrcamento)
+                                            >
+                                                {{ $opcao['nome'] ?? $opcaoCodigo }}{{ $bloqueiaPorOrcamento ? ' (orçamento pendente de aprovação)' : '' }}
                                             </option>
                                         @endforeach
                                     </select>
+                                    @if ($orcamentoPendenteAprovacao)
+                                        <div class="form-text text-warning">
+                                            <i class="bi bi-exclamation-triangle me-1"></i>
+                                            Esta OS tem um orçamento ainda não aprovado — "Entregue - Reparado e Pago" fica bloqueado até a aprovação.
+                                        </div>
+                                    @endif
                                     @error('encerrar_como')
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
@@ -1076,6 +1097,7 @@
             'noRepairStatuses' => $noRepairStatuses,
             'statusPagamentoPendente' => $statusPagamentoPendente,
             'deliveredStatusCode' => $statusEntregue,
+            'orcamentoPendenteAprovacao' => $orcamentoPendenteAprovacao,
             'statusAtualNome' => $order['status_nome'] ?? 'Sem status',
             'statusAtualCodigo' => $order['status'] ?? '',
             'cartao' => $cartaoDataset,

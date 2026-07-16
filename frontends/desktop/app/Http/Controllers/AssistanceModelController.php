@@ -508,9 +508,9 @@ class AssistanceModelController extends DesktopController
             ],
             [
                 'key' => 'entrega',
-                'label' => 'Equipamento Entregue',
-                'resolved_label' => 'Equipamento Entregue',
-                'code' => 'entregue_reparado',
+                'label' => 'Entregue - Reparado e Pago',
+                'resolved_label' => 'Entregue - Reparado e Pago',
+                'code' => 'entregue_reparado_pago',
                 'kind' => 'status',
                 'accent' => '#0f766e',
                 'timebox' => 'imediato',

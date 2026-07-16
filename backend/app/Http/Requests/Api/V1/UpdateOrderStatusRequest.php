@@ -41,6 +41,11 @@ class UpdateOrderStatusRequest extends BaseApiFormRequest
                 'nullable',
                 'boolean',
             ],
+            'novo_prazo' => [
+                'nullable',
+                'date_format:Y-m-d',
+                'after_or_equal:today',
+            ],
         ];
     }
 }

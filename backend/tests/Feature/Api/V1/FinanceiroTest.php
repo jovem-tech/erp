@@ -849,7 +849,7 @@ class FinanceiroTest extends TestCase
             ->assertJsonPath('error.code', 'FINANCEIRO_CANCEL_REQUIRES_REASON_AND_ADMIN');
 
         $this->assertDatabaseHas('financeiro', ['id' => $financeiroId, 'status' => 'pago']);
-        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'entregue_reparado']);
+        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'entregue_reparado_pago']);
     }
 
     public function test_cancel_with_sem_reparo_reclassifies_order_as_returned_without_repair(): void
@@ -872,7 +872,7 @@ class FinanceiroTest extends TestCase
         ]);
         $this->assertDatabaseHas('os_status_historico', [
             'os_id' => $orderId,
-            'status_anterior' => 'entregue_reparado',
+            'status_anterior' => 'entregue_reparado_pago',
             'status_novo' => 'devolvido_sem_reparo',
         ]);
     }
@@ -907,7 +907,7 @@ class FinanceiroTest extends TestCase
         $this->assertDatabaseHas('os', [
             'id' => $orderId,
             'status' => 'entregue_pagamento_pendente',
-            'status_final_pendente_pagamento' => 'entregue_reparado',
+            'status_final_pendente_pagamento' => 'entregue_reparado_pago',
         ]);
         $this->assertSame(
             0,
@@ -947,14 +947,14 @@ class FinanceiroTest extends TestCase
         $this->assertDatabaseHas('financeiro', ['id' => $financeiroId, 'status' => 'cancelado']);
 
         $response = $this->postJson("/api/v1/orders/{$orderId}/closure", [
-            'encerrar_como' => 'entregue_reparado',
+            'encerrar_como' => 'entregue_reparado_pago',
             'data_entrega' => now()->toDateString(),
             'recebimentos' => [
                 ['valor' => 130.00, 'forma_pagamento' => 'pix'],
             ],
         ]);
 
-        $response->assertOk()->assertJsonPath('data.order.status', 'entregue_reparado');
+        $response->assertOk()->assertJsonPath('data.order.status', 'entregue_reparado_pago');
 
         // O título cancelado continua intocado (auditoria preservada).
         $this->assertDatabaseHas('financeiro', ['id' => $financeiroId, 'status' => 'cancelado']);
@@ -976,7 +976,7 @@ class FinanceiroTest extends TestCase
 
     public function test_cancel_with_fechamento_indevido_reverts_order_to_pre_closure_status(): void
     {
-        [$actor, $orderId, $financeiroId] = $this->createClosedOrderReceivable();
+        [$actor, $orderId, $financeiroId] = $this->createClosedOrderReceivable(['data_conclusao' => now()]);
         $admin = $this->createUserRecord(['perfil' => 'admin', 'grupo_id' => 1]);
         Sanctum::actingAs($actor, ['*']);
 
@@ -994,6 +994,19 @@ class FinanceiroTest extends TestCase
         // listagem mostra "Concluída no prazo" com uma OS que nem está mais
         // encerrada, e a data de entrega de um fechamento que foi desfeito.
         $this->assertNull(DB::table('os')->where('id', $orderId)->value('data_entrega'));
+
+        // Prazo (SLA) também precisa sair do congelamento: "aguardando_reparo"
+        // não está em OrderStatus::DEADLINE_FREEZE_CODES, então data_conclusao
+        // é limpa e um novo prazo padrão (hoje+7) é aplicado, registrado no
+        // histórico (ver OrderClosureService::cancelClosure()).
+        $order = DB::table('os')->where('id', $orderId)->first();
+        $this->assertNull($order->data_conclusao);
+        $this->assertSame(now()->addDays(7)->toDateString(), (string) $order->data_previsao);
+        $this->assertDatabaseHas('os_eventos', [
+            'os_id' => $orderId,
+            'categoria' => 'status',
+            'tipo' => 'prazo_redefinido',
+        ]);
     }
 
     public function test_cancel_on_closed_order_with_invalid_admin_credentials_is_rejected(): void
@@ -1011,7 +1024,7 @@ class FinanceiroTest extends TestCase
             ->assertJsonPath('error.code', 'FINANCEIRO_ADMIN_AUTH_INVALID');
 
         $this->assertDatabaseHas('financeiro', ['id' => $financeiroId, 'status' => 'pago']);
-        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'entregue_reparado']);
+        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'entregue_reparado_pago']);
     }
 
     public function test_destroy_is_blocked_when_order_is_encerrada(): void
@@ -1030,7 +1043,7 @@ class FinanceiroTest extends TestCase
             ->assertJsonPath('error.code', 'FINANCEIRO_DELETE_BLOCKED_OS_ENCERRADA');
 
         $this->assertDatabaseHas('financeiro', ['id' => $financeiroId, 'status' => 'pago']);
-        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'entregue_reparado']);
+        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'entregue_reparado_pago']);
     }
 
     public function test_destroy_requires_admin_credentials_even_when_order_is_open(): void
@@ -1203,7 +1216,7 @@ class FinanceiroTest extends TestCase
     }
 
     /**
-     * Cria uma OS encerrada como "entregue_reparado" com um título "Serviço"
+     * Cria uma OS encerrada como "entregue_reparado_pago" com um título "Serviço"
      * já pago (R$130) — fixture compartilhada pelos testes de cancelamento
      * com motivo. Retorna [ator autenticado, os_id, financeiro_id].
      *
@@ -1220,7 +1233,7 @@ class FinanceiroTest extends TestCase
             'cliente_id' => $clienteId,
             'equipamento_id' => $equipamentoId,
             'numero_os' => 'OS26070300',
-            'status' => 'entregue_reparado',
+            'status' => 'entregue_reparado_pago',
             'estado_fluxo' => 'encerrado',
             'data_conclusao' => now()->toDateString(),
             'data_entrega' => now(),
@@ -1231,7 +1244,7 @@ class FinanceiroTest extends TestCase
         DB::table('os_status_historico')->insert([
             'os_id' => $orderId,
             'status_anterior' => 'aguardando_reparo',
-            'status_novo' => $orderOverrides['status'] ?? 'entregue_reparado',
+            'status_novo' => $orderOverrides['status'] ?? 'entregue_reparado_pago',
             'estado_fluxo' => 'encerrado',
             'usuario_id' => $actor->id,
             'observacao' => 'Baixa da OS.',

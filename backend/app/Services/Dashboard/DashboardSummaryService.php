@@ -269,20 +269,52 @@ class DashboardSummaryService
         return $query;
     }
 
-    private function deliveredTechnicalOrdersQuery(User $user): Builder
+    /**
+     * Entregas que geram RECEITA — só o reparo entregue e pago
+     * (OrderStatus::REVENUE_CLOSURE_CODE), mais o caso "entregue com pendência
+     * financeira" cujo encerramento final será o pago. Alimenta faturamento do
+     * mês, receita do mês anterior e comissão. NÃO usar para a contagem
+     * operacional de "entregue" — sem custo/garantia (R$0) não podem entrar aqui.
+     */
+    private function revenueDeliveredOrdersQuery(User $user): Builder
     {
         $query = $this->baseOrdersQuery($user);
-        $this->applyRepairedDeliveryScope($query);
+        $this->applyRevenueDeliveryScope($query);
 
         return $query;
     }
 
-    private function applyRepairedDeliveryScope(Builder $query): void
+    private function applyRevenueDeliveryScope(Builder $query): void
     {
         $query->where(static function (Builder $scopeQuery): void {
             $scopeQuery
                 ->where('os.status', OrderStatus::REVENUE_CLOSURE_CODE)
                 ->orWhere('os.status_final_pendente_pagamento', OrderStatus::REVENUE_CLOSURE_CODE);
+        });
+    }
+
+    /**
+     * Entregas OPERACIONAIS — todo reparo entregue ao cliente, com ou sem
+     * cobrança: pago, sem custo e garantia
+     * (OrderStatus::REPAIRED_DELIVERY_CODES), mais o caso entregue com pendência
+     * cujo encerramento final é um desses. Alimenta o card "Equipamento
+     * Entregue" e o gráfico mensal de entregues reparadas. NÃO usar para somar
+     * receita (sem custo/garantia são R$0).
+     */
+    private function deliveredOperationalOrdersQuery(User $user): Builder
+    {
+        $query = $this->baseOrdersQuery($user);
+        $this->applyDeliveredOperationalScope($query);
+
+        return $query;
+    }
+
+    private function applyDeliveredOperationalScope(Builder $query): void
+    {
+        $query->where(static function (Builder $scopeQuery): void {
+            $scopeQuery
+                ->whereIn('os.status', OrderStatus::REPAIRED_DELIVERY_CODES)
+                ->orWhereIn('os.status_final_pendente_pagamento', OrderStatus::REPAIRED_DELIVERY_CODES);
         });
     }
 
@@ -433,7 +465,7 @@ class DashboardSummaryService
                 ->first();
 
             $totalOrders = (int) ($row->total ?? 0);
-            $deliveredOrders = $this->deliveredTechnicalOrdersQuery($user)->count();
+            $deliveredOrders = $this->deliveredOperationalOrdersQuery($user)->count();
             $openOrders = $this->openOperationalOrdersQuery($user)->count();
         }
 
@@ -449,7 +481,7 @@ class DashboardSummaryService
             'total_os' => $totalOrders,
             'equipamento_entregue' => $deliveredOrders,
             'equipamento_entregue_total' => $deliveredOrders,
-            'equipamento_entregue_mes_atual' => $financialSummary['delivered_current_month_count'] ?? 0,
+            'equipamento_entregue_mes_atual' => $financialSummary['delivered_operational_current_month_count'] ?? 0,
             'faturamento_mes' => $financialSummary['receitas'] ?? 0.0,
             'faturamento_mes_anterior' => $financialSummary['previous_month_revenue'] ?? 0.0,
             'comissao_acumulada' => $technicianSummary['commission_total'] ?? 0.0,
@@ -559,7 +591,7 @@ class DashboardSummaryService
             ->groupByRaw($monthExpression)
             ->pluck('total', 'mes');
 
-        $delivered = $this->deliveredTechnicalOrdersQuery($user)
+        $delivered = $this->deliveredOperationalOrdersQuery($user)
             ->selectRaw($deliveryMonthExpression . ' as mes, COUNT(*) as total')
             ->whereRaw(
                 self::REPAIRED_DELIVERY_DATE_SQL . ' >= ? AND ' . self::REPAIRED_DELIVERY_DATE_SQL . ' < ?',
@@ -868,7 +900,7 @@ class DashboardSummaryService
         [$currentPeriodStart, $currentPeriodEnd] = $this->periodBounds($currentYear, $currentMonth);
         [$previousPeriodStart, $previousPeriodEnd] = $this->periodBounds($previousYear, $previousMonth);
 
-        $currentMonthRow = $this->deliveredTechnicalOrdersQuery($user)
+        $currentMonthRow = $this->revenueDeliveredOrdersQuery($user)
             ->selectRaw('COALESCE(SUM(os.valor_final), 0) as total, COUNT(*) as cnt')
             ->whereRaw(
                 self::REPAIRED_DELIVERY_DATE_SQL . ' >= ? AND ' . self::REPAIRED_DELIVERY_DATE_SQL . ' < ?',
@@ -876,13 +908,22 @@ class DashboardSummaryService
             )
             ->first();
 
-        $previousMonthRow = $this->deliveredTechnicalOrdersQuery($user)
+        $previousMonthRow = $this->revenueDeliveredOrdersQuery($user)
             ->selectRaw('COALESCE(SUM(os.valor_final), 0) as total')
             ->whereRaw(
                 self::REPAIRED_DELIVERY_DATE_SQL . ' >= ? AND ' . self::REPAIRED_DELIVERY_DATE_SQL . ' < ?',
                 [$previousPeriodStart, $previousPeriodEnd]
             )
             ->first();
+
+        // Contagem OPERACIONAL de entregas do mês (inclui sem custo/garantia,
+        // R$0) — para o card, separada da contagem de receita acima.
+        $deliveredOperationalCurrentMonth = $this->deliveredOperationalOrdersQuery($user)
+            ->whereRaw(
+                self::REPAIRED_DELIVERY_DATE_SQL . ' >= ? AND ' . self::REPAIRED_DELIVERY_DATE_SQL . ' < ?',
+                [$currentPeriodStart, $currentPeriodEnd]
+            )
+            ->count();
 
         $despesasRow = $this->openOperationalOrdersQuery($user)
             ->selectRaw('COALESCE(SUM(os.valor_mao_obra + os.valor_pecas), 0) as total')
@@ -905,6 +946,7 @@ class DashboardSummaryService
             'year' => $currentYear,
             'previous_month_revenue' => (float) ($previousMonthRow->total ?? 0),
             'delivered_current_month_count' => (int) ($currentMonthRow->cnt ?? 0),
+            'delivered_operational_current_month_count' => $deliveredOperationalCurrentMonth,
             'has_access' => (bool) $access['has_financial_access'],
         ];
     }
@@ -923,6 +965,7 @@ class DashboardSummaryService
             'year' => (int) now()->year,
             'previous_month_revenue' => 0.0,
             'delivered_current_month_count' => 0,
+            'delivered_operational_current_month_count' => 0,
             'has_access' => (bool) $access['has_financial_access'],
         ];
     }
@@ -964,7 +1007,7 @@ class DashboardSummaryService
         if ($access['is_technician']) {
             [$periodStart, $periodEnd] = $this->periodBounds($currentYear, $currentMonth);
 
-            $commissionRow = $this->deliveredTechnicalOrdersQuery($user)
+            $commissionRow = $this->revenueDeliveredOrdersQuery($user)
                 ->selectRaw('COALESCE(SUM(os.valor_final * 0.1), 0) as total')
                 ->whereRaw(
                     'os.tecnico_id = ? AND ' . self::REPAIRED_DELIVERY_DATE_SQL . ' >= ? AND ' . self::REPAIRED_DELIVERY_DATE_SQL . ' < ?',

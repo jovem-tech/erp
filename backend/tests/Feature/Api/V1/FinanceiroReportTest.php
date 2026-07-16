@@ -38,7 +38,7 @@ class FinanceiroReportTest extends TestCase
         $this->createOrderRecord([
             'cliente_id' => $clienteId,
             'equipamento_id' => $equipamentoId,
-            'status' => 'entregue_reparado',
+            'status' => 'entregue_reparado_pago',
             'data_entrega' => now()->startOfMonth()->addDays(2),
             'valor_total' => 500,
             'desconto' => 50,

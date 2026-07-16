@@ -51,7 +51,7 @@ orçamento → `mensagem` + `documento`).
 
 | Categoria | Cor | Ícone | Exemplos de tipos |
 |---|---|---|---|
-| Status | `#6f5afc` | bi-arrow-repeat | `os_criada`, `status_alterado`, `status_sincronizado_orcamento`, `fechamento_cancelado` |
+| Status | `#6f5afc` | bi-arrow-repeat | `os_criada`, `status_alterado`, `status_sincronizado_orcamento`, `prazo_redefinido`, `fechamento_cancelado` |
 | Orçamento | `#3b82f6` | bi-file-earmark-text | `orcamento_criado/atualizado/excluido/enviado/aprovado/recusado` |
 | Financeiro | `#22c55e` | bi-cash-coin | `titulo_criado/atualizado/excluido/cancelado`, `movimento_registrado`, `adiantamento_registrado`, `cobrancas_agendadas/canceladas`, `financeiro_fechamento_removido` |
 | Documentos | `#f59e0b` | bi-file-earmark-pdf | `orcamento_pdf_gerado`, `fechamento_pdf_gerado` |

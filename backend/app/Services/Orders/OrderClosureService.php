@@ -2,6 +2,7 @@
 
 namespace App\Services\Orders;
 
+use App\Models\Budget;
 use App\Models\CrmFollowup;
 use App\Models\Financeiro;
 use App\Models\FinanceiroMovimentoCartao;
@@ -23,7 +24,18 @@ use Throwable;
 
 class OrderClosureService
 {
-    private const NO_REPAIR_STATUSES = ['devolvido_sem_reparo', 'descartado'];
+    // Encerramentos SEM cobrança: close() ignora recebimentos, não exige
+    // pagamento e não deixa saldo pendente/cobrança agendada. Inclui os dois
+    // "sem reparo" (devolvido/descartado) e os dois reparos entregues sem
+    // custo (sem custo, garantia). O único encerramento COBRADO é
+    // OrderStatus::REVENUE_CLOSURE_CODE ('entregue_reparado_pago'). Ver skill
+    // sistema-erp-os-fluxo-fechamento.
+    private const NON_BILLED_CLOSURE_STATUSES = [
+        'devolvido_sem_reparo',
+        'descartado',
+        'entregue_reparado_sem_custo',
+        'entregue_reparado_garantia',
+    ];
 
     private const COLLECTION_SCHEDULE_DAYS = [1, 3, 5];
 
@@ -31,10 +43,10 @@ class OrderClosureService
 
     private const PENDING_PAYMENT_STATUS = 'entregue_pagamento_pendente';
 
-    // Encerramento como "Equipamento Entregue": exige ao menos algum valor
+    // Encerramento como "Entregue - Reparado e Pago": exige ao menos algum valor
     // recebido (antes desta baixa OU nesta ação). Ver close(). O código real
-    // (ver skill sistema-erp-os-fluxo-fechamento) é 'entregue_reparado' — é o
-    // único dos 3 OrderStatus::closureCodes() com REVENUE_CLOSURE_CODE.
+    // (ver skill sistema-erp-os-fluxo-fechamento) é 'entregue_reparado_pago' — é
+    // o único dos closureCodes() com REVENUE_CLOSURE_CODE (gera receita).
     private const DELIVERED_STATUS = OrderStatus::REVENUE_CLOSURE_CODE;
 
     public function __construct(
@@ -72,8 +84,16 @@ class OrderClosureService
             'retorno_padrao' => Carbon::now()->addDays(self::RETURN_FOLLOWUP_DEFAULT_DAYS)->toDateString(),
             'cartao' => $this->financeiroCartaoService->buildActiveDataset(),
             'status_pagamento_pendente' => $this->pendingPaymentStatusInfo(),
-            'status_sem_reparo' => self::NO_REPAIR_STATUSES,
+            // Contrato com o frontend (orders-closure.js): lista dos
+            // encerramentos que ESCONDEM os campos de pagamento (sem cobrança).
+            // Agora inclui também os reparos entregues sem custo (sem custo e
+            // garantia), não só os "sem reparo" — o nome da chave é histórico.
+            'status_sem_reparo' => self::NON_BILLED_CLOSURE_STATUSES,
             'status_entregue' => self::DELIVERED_STATUS,
+            // true quando a OS tem orçamento vinculado ainda não aprovado —
+            // orders-closure.js desabilita a opção "Entregue - Reparado e Pago"
+            // nesse caso (o backend também bloqueia; ver close()).
+            'orcamento_pendente_aprovacao' => $this->hasUnapprovedBudget((int) $order->id),
         ];
     }
 
@@ -130,13 +150,14 @@ class OrderClosureService
             return ['result' => 'invalid_date'];
         }
 
-        $isNoRepairClosure = in_array($encerrarComo, self::NO_REPAIR_STATUSES, true);
+        $isNonBilledClosure = in_array($encerrarComo, self::NON_BILLED_CLOSURE_STATUSES, true);
 
-        // Devolvido sem reparo / descartado nunca geram lancamento financeiro:
-        // ignora qualquer recebimento enviado (defesa em profundidade — o
-        // frontend ja bloqueia essa etapa, mas a regra de negocio precisa
-        // valer no backend independente do que o cliente HTTP mandar).
-        $recebimentos = $isNoRepairClosure
+        // Encerramentos sem cobrança (devolvido/descartado + reparo entregue
+        // sem custo/garantia) nunca geram lançamento financeiro: ignora
+        // qualquer recebimento enviado (defesa em profundidade — o frontend já
+        // esconde essa etapa, mas a regra de negócio precisa valer no backend
+        // independente do que o cliente HTTP mandar).
+        $recebimentos = $isNonBilledClosure
             ? []
             : $this->normalizeReceipts(is_array($payload['recebimentos'] ?? null) ? $payload['recebimentos'] : []);
 
@@ -149,11 +170,21 @@ class OrderClosureService
         }
         $recebimentos = $simulation['recebimentos'];
 
-        // Encerrar como "Equipamento Entregue" exige que a OS tenha algum valor
-        // recebido — seja de baixas/adiantamentos anteriores (valor_movimentado)
-        // ou nesta ação. Pagamento parcial é aceito (o saldo restante segue como
-        // pendência financeira); só bloqueia a entrega com ZERO recebido. Não se
-        // aplica a devolução sem reparo / descarte nem aos demais encerramentos.
+        // Encerrar como "Entregue - Reparado e Pago" exige que, SE a OS tiver
+        // algum orçamento vinculado, ele esteja aprovado — não se aplica a OS
+        // sem orçamento nenhum (nada a aprovar, ex.: serviço rápido cobrado
+        // direto) nem aos encerramentos sem custo/garantia (não exigem
+        // autorização de cobrança, já que não cobram nada).
+        if ($encerrarComo === self::DELIVERED_STATUS && $this->hasUnapprovedBudget((int) $order->id)) {
+            return ['result' => 'delivery_requires_approved_budget'];
+        }
+
+        // Encerrar como "Entregue - Reparado e Pago" exige que a OS tenha algum
+        // valor recebido — seja de baixas/adiantamentos anteriores
+        // (valor_movimentado) ou nesta ação. Pagamento parcial é aceito (o saldo
+        // restante segue como pendência financeira); só bloqueia a entrega com
+        // ZERO recebido. Não se aplica aos encerramentos sem cobrança (devolvido/
+        // descartado/sem custo/garantia) nem aos demais.
         if ($encerrarComo === self::DELIVERED_STATUS) {
             $recebidoAntes = round((float) ($this->financialSummary($order)['valor_movimentado'] ?? 0), 2);
             $recebidoNesta = array_reduce(
@@ -180,10 +211,10 @@ class OrderClosureService
                 $observacao,
                 $dataEntrega,
                 $recebimentos,
-                $isNoRepairClosure
+                $isNonBilledClosure
             ): array {
                 ['titulo' => $titulo, 'saldo_aberto' => $saldoAberto] = $this->processReceipts($order, $recebimentos, $dataEntrega);
-                $temSaldoPendente = $saldoAberto > 0.009 && ! $isNoRepairClosure;
+                $temSaldoPendente = $saldoAberto > 0.009 && ! $isNonBilledClosure;
 
                 $statusAplicado = $temSaldoPendente ? self::PENDING_PAYMENT_STATUS : $encerrarComo;
 
@@ -543,7 +574,18 @@ class OrderClosureService
                 // 3) Reverte a OS ao estado pre-baixa.
                 $now = Carbon::now();
                 $estadoFluxo = trim((string) ($previousStatusRow->estado_fluxo_padrao ?? '')) ?: 'em_atendimento';
-                Order::query()->whereKey($orderId)->update([
+
+                // Congelamento de prazo (SLA): $currentStatus e' sempre um dos 3
+                // closureCodes() (logo sempre esta em DEADLINE_FREEZE_CODES); ao
+                // reverter para $previousStatus (o estado pre-baixa, tipicamente
+                // fora da lista), o prazo precisa ser redefinido. Tratado como
+                // automatico/silencioso (sem modal) — "Cancelar baixa" ja tem sua
+                // propria tela de confirmacao (motivo + credenciais de admin).
+                $leavingDeadlineFreeze = ! in_array($previousStatus, OrderStatus::DEADLINE_FREEZE_CODES, true);
+                $prazoAnterior = $order->data_previsao;
+                $novoPrazo = $leavingDeadlineFreeze ? $now->copy()->addDays(7)->toDateString() : null;
+
+                $orderUpdate = [
                     'status' => $previousStatus,
                     'estado_fluxo' => $estadoFluxo,
                     'data_entrega' => null,
@@ -552,7 +594,14 @@ class OrderClosureService
                     'status_final_pendente_pagamento' => null,
                     'status_atualizado_em' => $now,
                     'updated_at' => $now,
-                ]);
+                ];
+
+                if ($leavingDeadlineFreeze) {
+                    $orderUpdate['data_conclusao'] = null;
+                    $orderUpdate['data_previsao'] = $novoPrazo;
+                }
+
+                Order::query()->whereKey($orderId)->update($orderUpdate);
 
                 // 4) Registra a reversao no historico da OS (trilha de auditoria).
                 OrderStatusHistory::query()->create([
@@ -579,6 +628,24 @@ class OrderClosureService
                     OrderEvent::ORIGEM_USUARIO,
                     $now
                 );
+
+                if ($leavingDeadlineFreeze) {
+                    $this->orderEventService->record(
+                        $orderId,
+                        OrderEvent::CATEGORIA_STATUS,
+                        OrderEvent::TIPO_PRAZO_REDEFINIDO,
+                        'Prazo redefinido',
+                        null,
+                        [
+                            'prazo_anterior' => $prazoAnterior !== null ? $prazoAnterior->toDateString() : null,
+                            'prazo_novo' => $novoPrazo,
+                            'motivo' => 'reabertura_cancelamento_baixa',
+                        ],
+                        (int) $actor->id,
+                        OrderEvent::ORIGEM_USUARIO,
+                        $now
+                    );
+                }
             });
         } catch (Throwable $exception) {
             logger()->error('[API V1][ORDERS][CLOSURE] Falha ao cancelar a baixa', [
@@ -1461,6 +1528,33 @@ class OrderClosureService
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * true quando a OS tem ao menos um orçamento vinculado e NENHUM deles está
+     * aprovado (mesmo critério de "orçamento vigente aprovado" já usado por
+     * OrderWorkflowService::resolveDetailCostAudit() — status aprovado/
+     * convertido, ou com aprovado_em preenchido). OS sem orçamento nenhum
+     * retorna false (nada a aprovar).
+     */
+    private function hasUnapprovedBudget(int $orderId): bool
+    {
+        $hasAnyBudget = Budget::query()->where('os_id', $orderId)->exists();
+
+        if (! $hasAnyBudget) {
+            return false;
+        }
+
+        $hasApprovedBudget = Budget::query()
+            ->where('os_id', $orderId)
+            ->where(static function ($query): void {
+                $query
+                    ->whereIn('status', [Budget::STATUS_APPROVED, Budget::STATUS_CONVERTED])
+                    ->orWhereNotNull('aprovado_em');
+            })
+            ->exists();
+
+        return ! $hasApprovedBudget;
     }
 
     /**

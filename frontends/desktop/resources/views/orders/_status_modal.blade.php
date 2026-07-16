@@ -238,6 +238,19 @@
                                                 <div class="form-text">A lista respeita o fluxo de trabalho configurado para avançar, retornar etapas ou cancelar o atendimento.</div>
                                             </div>
 
+                                            {{-- Redefinição de prazo (só aparece ao sair de um status com prazo congelado) --}}
+                                            <div class="os-status-modal-section d-none" id="orderStatusModalNovoPrazoWrapper">
+                                                <label class="form-label" for="orderStatusModalNovoPrazo">Novo prazo de entrega</label>
+                                                <input
+                                                    type="date"
+                                                    id="orderStatusModalNovoPrazo"
+                                                    name="novo_prazo"
+                                                    class="form-control"
+                                                    disabled
+                                                >
+                                                <div class="form-text">Esta OS estava com o prazo congelado. Confirme ou ajuste o novo prazo de entrega.</div>
+                                            </div>
+
                                             {{-- Observações --}}
                                             <div class="os-status-modal-section">
                                                 <label class="form-label" for="orderStatusModalObservacao">Observações</label>

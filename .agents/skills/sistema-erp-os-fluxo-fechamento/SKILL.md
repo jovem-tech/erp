@@ -7,19 +7,39 @@ description: Regra de negocio sobre quais status realmente encerram uma Ordem de
 
 ## Regra central (nao negociavel sem decisao explicita do usuario)
 
-Existem exatamente **3 status** que de fato encerram o atendimento de uma OS —
-`OrderStatus::closureCodes()` (backend), coluna `os_status.grupo_macro = 'encerrado'`:
+Existem **5 status** (fora `cancelado`) que de fato encerram o atendimento de uma
+OS — `OrderStatus::closureCodes()` (backend), coluna
+`os_status.grupo_macro = 'encerrado'`:
 
-| Codigo | Nome | Gera receita? |
-|---|---|---|
-| `entregue_reparado` | Equipamento Entregue | **Sim** — unico com `OrderStatus::REVENUE_CLOSURE_CODE` |
-| `devolvido_sem_reparo` | Devolvido Sem Reparo | Nao |
-| `descartado` | Equipamento Descartado | Nao |
+| Codigo | Nome | Reparo entregue? | Gera receita? |
+|---|---|---|---|
+| `entregue_reparado_pago` | Entregue - Reparado e Pago | Sim | **Sim** — unico com `OrderStatus::REVENUE_CLOSURE_CODE` |
+| `entregue_reparado_sem_custo` | Entregue - Reparado Sem Custo | Sim | Nao (R$0, sem lancamentos) |
+| `entregue_reparado_garantia` | Entregue - Reparado em Garantia | Sim | Nao (R$0, sem lancamentos) |
+| `devolvido_sem_reparo` | Devolvido Sem Reparo | Nao | Nao |
+| `descartado` | Equipamento Descartado | Nao | Nao |
 
-Esses 3 codigos **so podem ser aplicados por `OrderClosureService::close()`**
+**Duas dimensoes independentes** (nao confundir):
+- **Reparo entregue** (`OrderStatus::REPAIRED_DELIVERY_CODES` = os 3
+  `entregue_reparado_*`): equipamento reparado e devolvido ao cliente. Contam
+  como "entregue" nos indicadores OPERACIONAIS (card "Equipamento Entregue" do
+  dashboard, grafico mensal de entregues) e geram os documentos de reparo
+  (laudo + comprovante de entrega).
+- **Gera receita** (`OrderStatus::REVENUE_CLOSURE_CODE` = so
+  `entregue_reparado_pago`): unico que entra em faturamento/DRE/fluxo de
+  caixa/margem/comissao. Sem custo e garantia sao reparo entregue mas R$0 —
+  nunca entram em receita.
+
+Esses 5 codigos **so podem ser aplicados por `OrderClosureService::close()`**
 (o fluxo de baixa/encerramento da OS, tela `orders/closure.blade.php` no
 desktop). Nenhum outro caminho — modal "Alterar status", edicao direta da OS,
-chamada de API generica — pode setar `os.status` para um desses 3 valores.
+chamada de API generica — pode setar `os.status` para um desses valores.
+
+**Encerramentos SEM cobranca** (`OrderClosureService::NON_BILLED_CLOSURE_STATUSES`
+= `devolvido_sem_reparo`, `descartado`, `entregue_reparado_sem_custo`,
+`entregue_reparado_garantia`): `close()` ignora recebimentos, nao exige
+pagamento e nao deixa saldo pendente/cobranca agendada. So
+`entregue_reparado_pago` exige pagamento (guard `DELIVERED_STATUS`).
 
 ## Por que essa regra existe
 
@@ -45,11 +65,14 @@ ficam incoerentes.
 
 ## Onde a regra e' aplicada em codigo (2026-07-08)
 
-- `App\Models\OrderStatus::closureCodes()` — fonte unica da verdade dos 3
-  codigos (query por `grupo_macro = 'encerrado'`). Nunca hardcode os 3 strings
-  em outro lugar; sempre chame este metodo.
-- `App\Models\OrderStatus::REVENUE_CLOSURE_CODE` — qual dos 3 gera receita
-  (`entregue_reparado`). Usado por relatorios financeiros.
+- `App\Models\OrderStatus::closureCodes()` — fonte unica da verdade dos
+  codigos de encerramento (query por `grupo_macro = 'encerrado'`). Nunca
+  hardcode essas strings em outro lugar; sempre chame este metodo.
+- `App\Models\OrderStatus::REVENUE_CLOSURE_CODE` — qual encerramento gera
+  receita (`entregue_reparado_pago`). Usado por relatorios financeiros.
+- `App\Models\OrderStatus::REPAIRED_DELIVERY_CODES` — os 3 encerramentos de
+  reparo entregue (pago/sem custo/garantia). Usado pela contagem operacional
+  de "entregue" (dashboard) e pela geracao de documentos de reparo.
 - `OrderWorkflowService::updateStatus(..., bool $viaClosureFlow = false)` —
   rejeita com `result => 'closure_status_requires_baixa_flow'` se o destino
   estiver em `closureCodes()` e `$viaClosureFlow` nao for `true`. Tambem usa
@@ -132,7 +155,7 @@ aberto.
     qualquer registro de os_margem cujo os_id nao esteja mais em
     REVENUE_CLOSURE_CODE (mantem a invariante da tabela cache).
   - Limpeza unica aplicada em 2026-07-08: removidos 1.358 registros stale de
-    os_margem (OS que nao eram entregue_reparado, ~R$ 96.8k de receita fantasma).
+    os_margem (OS que nao eram entregue_reparado_pago, ~R$ 96.8k de receita fantasma).
 
 ## OS encerrada: mudança de status bloqueada + "Cancelar baixa" (2026-07-08)
 

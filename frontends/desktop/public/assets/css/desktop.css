@@ -6767,21 +6767,31 @@ a {
     display: grid;
     grid-template-columns: minmax(320px, 360px) minmax(0, 1fr);
     gap: 1.25rem;
-    align-items: start;
+    align-items: stretch;
 }
 
 .os-detail-aside {
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 1.25rem;
-    align-content: start;
+    height: 100%;
+}
+
+.os-photo-card {
+    flex: 0 0 auto;
 }
 
 /* O histórico da OS vive na coluna lateral (feed de atividades). Anula o mt-4
-   do partial — o espaçamento vem do gap da própria coluna — e limita a altura
-   num scroll interno para as duas colunas não descolarem em OS com muitos
-   eventos. */
+   do partial — o espaçamento vem do gap da própria coluna — e cresce (flex:1)
+   até a altura da coluna principal, para o rodapé do card alinhar com o
+   rodapé do último card da coluna principal (Fotos); o scroll fica interno
+   à lista de eventos, não ao card inteiro. */
 .os-detail-aside .os-history-section {
     margin-top: 0 !important;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
 /* A coluna lateral (~320-360px) é estreita demais para os 6 chips de filtro
@@ -6804,7 +6814,8 @@ a {
 }
 
 .os-detail-aside .os-history-section .timeline {
-    max-height: 60vh;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     padding-right: 0.35rem;
 }
@@ -6970,6 +6981,76 @@ a {
     color: var(--desktop-primary);
     font-weight: 700;
     font-size: 0.85rem;
+}
+
+/* Tabela label→valor — cards Cliente/Equipamento, Defeito e Solução,
+   Resumo financeiro/Datas do detalhe da OS (substitui a antiga .detail-list,
+   que empilhava tudo em coluna única sem alinhamento). Linha só aparece se
+   o blade decidir renderizá-la — vazio é omitido no PHP, não escondido aqui. */
+.os-info-card-title {
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--desktop-heading);
+    margin: 0 0 0.6rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+/* Sub-card — caixa aninhada dentro de um card (ex.: Orçamento e Datas e
+   garantia lado a lado dentro de "Valores e Orçamento"), mais leve que
+   .surface-card (sem sombra, fundo levemente diferenciado do card externo)
+   para não competir visualmente com o card que a contém. */
+.os-subcard {
+    background: var(--desktop-surface-soft);
+    border: 1px solid var(--desktop-border);
+    border-radius: var(--desktop-radius-md);
+    padding: 1rem 1.15rem;
+    height: 100%;
+}
+
+.os-info-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.os-info-table tr {
+    border-bottom: 1px solid var(--desktop-border);
+}
+
+.os-info-table tr:last-child {
+    border-bottom: none;
+}
+
+.os-info-table th,
+.os-info-table td {
+    padding: 0.55rem 0.5rem;
+    text-align: left;
+    vertical-align: top;
+}
+
+.os-info-table th {
+    width: 42%;
+    max-width: 190px;
+    color: var(--desktop-text-soft);
+    font-size: 0.76rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    white-space: normal;
+}
+
+.os-info-table td {
+    color: var(--desktop-text);
+    font-size: 0.92rem;
+    word-break: break-word;
+}
+
+.os-info-table-empty {
+    color: var(--desktop-text-soft);
+    font-size: 0.88rem;
+    margin: 0;
 }
 
 /* Grade de miniaturas de fotos */
@@ -7434,4 +7515,127 @@ a {
     .budget-review-footer-copy {
         max-width: none;
     }
+}
+
+/* ===== Matriz operacional de transições (agrupada por super-grupo + macrofase) ===== */
+.matrix-scroll {
+    max-height: 72vh;
+    overflow: auto;
+}
+
+.matrix-transitions {
+    border-collapse: separate;
+    border-spacing: 0;
+    min-width: max-content;
+}
+
+/* Cabeçalho fixo no topo: 3 faixas empilhadas com offsets fixos. */
+.matrix-transitions thead th {
+    position: sticky;
+    z-index: 2;
+    background: var(--desktop-surface);
+    box-shadow: inset 0 -1px 0 var(--desktop-border);
+}
+
+.matrix-transitions thead .matrix-supergroup {
+    top: 0;
+    height: 36px;
+    padding: 0.35rem 0.5rem;
+    background-color: var(--desktop-surface);
+    background-image: linear-gradient(var(--matrix-soft-accent, rgba(111, 90, 252, 0.12)), var(--matrix-soft-accent, rgba(111, 90, 252, 0.12)));
+    border-bottom: 2px solid var(--matrix-accent, #6f5afc);
+    color: #1f2937;
+    font-weight: 700;
+    font-size: 0.72rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.matrix-transitions thead .matrix-macro {
+    top: 36px;
+    height: 30px;
+    padding: 0.3rem 0.5rem;
+    background-color: var(--desktop-surface);
+    background-image: linear-gradient(var(--matrix-soft-accent, rgba(111, 90, 252, 0.12)), var(--matrix-soft-accent, rgba(111, 90, 252, 0.12)));
+    border-bottom: 2px solid var(--matrix-accent, #6f5afc);
+    color: #374151;
+    font-weight: 600;
+    font-size: 0.68rem;
+    white-space: nowrap;
+}
+
+.matrix-transitions thead .matrix-status-col {
+    top: 66px;
+    min-width: 84px;
+    max-width: 96px;
+    background: var(--desktop-surface-soft);
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--desktop-text-soft, #475569);
+    line-height: 1.15;
+    vertical-align: bottom;
+}
+
+/* Canto e coluna de origem fixos à esquerda. */
+.matrix-transitions .matrix-corner {
+    left: 0;
+    top: 0;
+    z-index: 5;
+    min-width: 200px;
+    background: var(--desktop-surface);
+    vertical-align: bottom;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--desktop-text-soft, #475569);
+}
+
+.matrix-transitions tbody .matrix-row-head {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    min-width: 200px;
+    background: var(--desktop-surface);
+    box-shadow: inset -1px 0 0 var(--desktop-border);
+}
+
+/* Faixas separadoras de linha (super-grupo e macrofase). */
+.matrix-transitions .matrix-band td {
+    background-color: var(--desktop-surface);
+    background-image: linear-gradient(var(--matrix-soft-accent, rgba(111, 90, 252, 0.12)), var(--matrix-soft-accent, rgba(111, 90, 252, 0.12)));
+    border-left: 4px solid var(--matrix-accent, #6f5afc);
+    color: #1f2937;
+}
+
+.matrix-transitions .matrix-band-super td {
+    font-weight: 700;
+    font-size: 0.74rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding-top: 0.6rem;
+    padding-bottom: 0.6rem;
+}
+
+.matrix-transitions .matrix-band-macro td {
+    font-weight: 600;
+    font-size: 0.7rem;
+    padding-left: 1.5rem;
+    color: #374151;
+}
+
+/* A faixa separadora também fica presa à esquerda ao rolar na horizontal. */
+.matrix-transitions .matrix-band td {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+}
+
+.matrix-transitions .matrix-diagonal {
+    color: var(--desktop-text-muted, #94a3b8);
+    background: var(--desktop-surface-soft);
+}
+
+.matrix-transitions tbody td {
+    border-top: 1px solid var(--desktop-border);
 }

@@ -25,9 +25,33 @@
     const diagnosisEl = document.getElementById('orderStatusModalDiagnosis');
     const solutionEl = document.getElementById('orderStatusModalSolution');
     const proceduresSaveBtn = document.getElementById('orderStatusModalProceduresSave');
+    const novoPrazoWrapper = document.getElementById('orderStatusModalNovoPrazoWrapper');
+    const novoPrazoInput = document.getElementById('orderStatusModalNovoPrazo');
 
     let currentOrderId = null;
     let statusLabelsByCode = {};
+    let statusCongelaPrazoAtual = false;
+
+    // Sugestão padrão: hoje + 7 dias, no formato aceito pelo <input type="date">.
+    const suggestedNovoPrazo = () => {
+        const data = new Date();
+        data.setDate(data.getDate() + 7);
+        const ano = data.getFullYear();
+        const mes = String(data.getMonth() + 1).padStart(2, '0');
+        const dia = String(data.getDate()).padStart(2, '0');
+        return `${ano}-${mes}-${dia}`;
+    };
+
+    // Esconde/desabilita a seção de redefinição de prazo (input disabled não
+    // entra no FormData do submit, então não precisa de guarda extra nesse caso).
+    const hideNovoPrazoSection = () => {
+        novoPrazoWrapper?.classList.add('d-none');
+        if (novoPrazoInput) {
+            novoPrazoInput.disabled = true;
+            novoPrazoInput.required = false;
+            novoPrazoInput.value = '';
+        }
+    };
 
     const setText = (id, text) => {
         const el = document.getElementById(id);
@@ -125,6 +149,9 @@
         const numeroOs = String(data.numero_os || '');
         setText('orderStatusModalNumero', numeroOs);
 
+        statusCongelaPrazoAtual = Boolean(data.status_congela_prazo);
+        hideNovoPrazoSection();
+
         // Catálogo de status (código → nome), usado pra traduzir o histórico
         // e evitar mostrar códigos crus tipo "aguardando_reparo" na tela.
         statusLabelsByCode = {};
@@ -170,6 +197,7 @@
                 const opt = document.createElement('option');
                 opt.value = code;
                 opt.textContent = String(etapa.nome || code);
+                opt.dataset.congelaPrazo = etapa.congela_prazo ? '1' : '0';
                 selectEl.appendChild(opt);
             });
             selectEl.value = '';
@@ -270,6 +298,7 @@
         showState('loading');
         if (submitBtn) submitBtn.disabled = true;
         setText('orderStatusModalNumero', '-');
+        hideNovoPrazoSection();
 
         const statusTabBtn = document.getElementById('orderStatusModalTabStatusBtn');
         if (statusTabBtn && typeof bootstrap !== 'undefined') {
@@ -295,14 +324,40 @@
         }
     });
 
-    // Ao mudar o select (o botão "Salvar status" já fica sempre liberado)
-    selectEl?.addEventListener('change', () => {
+    // Ao mudar o select (o botão "Salvar status" já fica sempre liberado).
+    // O select vira Select2 (ver desktop.js): escolher uma opção pela UI do
+    // Select2 dispara `change` só via jQuery, não propaga pro addEventListener
+    // nativo — por isso o binding duplo abaixo (nativo cobre o dispatchEvent
+    // programático dos botões de ação rápida; jQuery cobre a UI de verdade).
+    const handleStatusSelectChange = () => {
         const selectedName = selectEl.selectedOptions[0]?.text || '';
         setText(
             'orderStatusModalTargetHint',
             selectEl.value ? `Fluxo selecionado: ${selectedName}.` : 'Selecione um fluxo para continuar.'
         );
-    });
+
+        // A OS estava com o prazo congelado e o destino escolhido não congela
+        // mais — é uma reabertura manual, então pede confirmação do novo prazo
+        // (ver OrderStatus::DEADLINE_FREEZE_CODES no backend).
+        const destinoCongelaPrazo = selectEl.selectedOptions[0]?.dataset.congelaPrazo === '1';
+        const precisaRedefinirPrazo = statusCongelaPrazoAtual && selectEl.value !== '' && !destinoCongelaPrazo;
+
+        if (precisaRedefinirPrazo) {
+            novoPrazoWrapper?.classList.remove('d-none');
+            if (novoPrazoInput) {
+                novoPrazoInput.disabled = false;
+                novoPrazoInput.required = true;
+                if (!novoPrazoInput.value) novoPrazoInput.value = suggestedNovoPrazo();
+            }
+        } else {
+            hideNovoPrazoSection();
+        }
+    };
+
+    selectEl?.addEventListener('change', handleStatusSelectChange);
+    if (selectEl && typeof window.jQuery !== 'undefined') {
+        window.jQuery(selectEl).on('change', handleStatusSelectChange);
+    }
 
     // Salvar um novo procedimento executado (aba "Procedimentos"): cada clique
     // cria uma entrada nova no histórico, com data e técnico responsável.
@@ -353,6 +408,12 @@
         e.preventDefault();
 
         if (!currentOrderId) return;
+
+        const novoPrazoVisivel = novoPrazoWrapper && !novoPrazoWrapper.classList.contains('d-none');
+        if (novoPrazoVisivel && !novoPrazoInput?.value) {
+            showToast('Informe o novo prazo de entrega para reabrir esta OS.', 'error');
+            return;
+        }
 
         if (submitBtn) {
             submitBtn.disabled = true;

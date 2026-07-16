@@ -3,6 +3,7 @@
 namespace App\Services\Orders;
 
 use App\Models\Budget;
+use App\Models\BudgetItem;
 use App\Models\ChecklistModelo;
 use App\Models\ChecklistTipo;
 use App\Models\Client;
@@ -642,7 +643,8 @@ class OrderWorkflowService
         ?string $diagnosticoTecnico = null,
         ?string $solucaoAplicada = null,
         bool $comunicarCliente = false,
-        bool $viaClosureFlow = false
+        bool $viaClosureFlow = false,
+        ?string $novoPrazo = null
     ): array {
         $order = Order::query()->find($orderId);
 
@@ -674,6 +676,27 @@ class OrderWorkflowService
 
         $now = Carbon::now();
         $statusChanged = $previousStatus !== '' && $newStatus !== $previousStatus;
+
+        // Congelamento de prazo (SLA): entrar num dos DEADLINE_FREEZE_CODES
+        // carimba data_conclusao (resolveDeadlineState() já para de contar
+        // quando ela está preenchida); sair de um desses para um status fora
+        // da lista exige um novo prazo (reabertura manual da OS) — ver
+        // OrderStatus::DEADLINE_FREEZE_CODES para o porquê desta lista ser
+        // separada de status_final/closureCodes().
+        $enteringDeadlineFreeze = $statusChanged
+            && in_array($newStatus, OrderStatus::DEADLINE_FREEZE_CODES, true)
+            && ! in_array($previousStatus, OrderStatus::DEADLINE_FREEZE_CODES, true);
+        $leavingDeadlineFreeze = $statusChanged
+            && in_array($previousStatus, OrderStatus::DEADLINE_FREEZE_CODES, true)
+            && ! in_array($newStatus, OrderStatus::DEADLINE_FREEZE_CODES, true);
+
+        if ($leavingDeadlineFreeze && ($novoPrazo === null || trim($novoPrazo) === '')) {
+            return [
+                'result' => 'prazo_redefinition_required',
+                'status_atual' => $previousStatus,
+                'sugestao_prazo' => $now->copy()->addDays(7)->toDateString(),
+            ];
+        }
 
         // Regra de projeto (ver skill sistema-erp-os-fluxo-fechamento): os 3
         // status que de fato encerram a OS (OrderStatus::closureCodes()) só
@@ -720,6 +743,8 @@ class OrderWorkflowService
 
         $estadoFluxo = trim((string) ($statusRow->estado_fluxo_padrao ?? '')) ?: 'em_atendimento';
 
+        $prazoAnterior = $order->data_previsao;
+
         DB::transaction(function () use (
             $orderId,
             $previousStatus,
@@ -730,7 +755,11 @@ class OrderWorkflowService
             $observacao,
             $diagnosticoTecnico,
             $solucaoAplicada,
-            $now
+            $now,
+            $enteringDeadlineFreeze,
+            $leavingDeadlineFreeze,
+            $novoPrazo,
+            $prazoAnterior
         ): void {
             $updateData = ['updated_at' => $now];
 
@@ -738,6 +767,15 @@ class OrderWorkflowService
                 $updateData['status'] = $newStatus;
                 $updateData['estado_fluxo'] = $estadoFluxo;
                 $updateData['status_atualizado_em'] = $now;
+            }
+
+            if ($enteringDeadlineFreeze) {
+                $updateData['data_conclusao'] = $now;
+            }
+
+            if ($leavingDeadlineFreeze) {
+                $updateData['data_conclusao'] = null;
+                $updateData['data_previsao'] = $novoPrazo;
             }
 
             if ($diagnosticoTecnico !== null) {
@@ -752,6 +790,24 @@ class OrderWorkflowService
 
             if ($statusChanged) {
                 $this->createStatusHistory($orderId, $previousStatus, $newStatus, $estadoFluxo, $actor, $observacao, $now);
+            }
+
+            if ($leavingDeadlineFreeze) {
+                $this->orderEventService->record(
+                    $orderId,
+                    OrderEvent::CATEGORIA_STATUS,
+                    OrderEvent::TIPO_PRAZO_REDEFINIDO,
+                    'Prazo redefinido',
+                    null,
+                    [
+                        'prazo_anterior' => $prazoAnterior instanceof Carbon ? $prazoAnterior->toDateString() : null,
+                        'prazo_novo' => $novoPrazo,
+                        'motivo' => 'reabertura_manual',
+                    ],
+                    (int) $actor->id,
+                    OrderEvent::ORIGEM_USUARIO,
+                    $now
+                );
             }
 
             if ($diagnosticoTecnico !== null || $solucaoAplicada !== null) {
@@ -1479,6 +1535,10 @@ class OrderWorkflowService
             // (skill sistema-erp-os-fluxo-fechamento). A UI usa para bloquear
             // "Alterar status" e oferecer "Cancelar baixa".
             'is_encerrada' => in_array((string) ($order->status ?? ''), OrderStatus::closureCodes(), true),
+            // Espelha OrderStatus::DEADLINE_FREEZE_CODES — usado pelo modal
+            // "Alterar status" para saber se sair do status atual exige pedir
+            // um novo prazo de entrega (ver mapNextStatusOptionsFromCatalog()).
+            'status_congela_prazo' => in_array((string) ($order->status ?? ''), OrderStatus::DEADLINE_FREEZE_CODES, true),
             'estado_fluxo' => (string) ($order->estado_fluxo ?? ''),
             'prioridade' => (string) ($order->prioridade ?? ''),
             'status_atualizado_em' => $this->formatDateTime($order->status_atualizado_em ?? null),
@@ -1878,6 +1938,21 @@ class OrderWorkflowService
             'enviado_em' => $this->formatDateTime($budget->enviado_em ?? null),
             'aprovado_em' => $this->formatDateTime($budget->aprovado_em ?? null),
             'created_at' => $this->formatDateTime($budget->created_at ?? null),
+            // Itens do orçamento — usado pela seção "Peças e serviços" do
+            // detalhe da OS. Versão enxuta do mapper completo de
+            // BudgetWorkflowService (que inclui encargos/margem, irrelevantes
+            // aqui); mesmos campos exibidos hoje em orcamentos/show.blade.php.
+            'itens' => $budget->items->sortBy('ordem')->values()->map(fn (BudgetItem $item): array => [
+                'id' => (int) $item->id,
+                'tipo_item' => (string) ($item->tipo_item ?? 'servico'),
+                'descricao' => (string) ($item->descricao ?? ''),
+                'quantidade' => (float) ($item->quantidade ?? 0),
+                'valor_unitario' => (float) ($item->valor_unitario ?? 0),
+                'desconto' => (float) ($item->desconto ?? 0),
+                'acrescimo' => (float) ($item->acrescimo ?? 0),
+                'total' => (float) ($item->total ?? 0),
+                'observacoes' => (string) ($item->observacoes ?? ''),
+            ])->all(),
         ];
     }
 
@@ -2093,6 +2168,12 @@ class OrderWorkflowService
             'imei' => (string) ($equipment->imei ?? ''),
             'desktop_modalidade' => (string) ($equipment->desktop_modalidade ?? ''),
             'resumo_tecnico' => (string) ($equipment->resumo_tecnico ?? ''),
+            // Acessórios que o cliente trouxe junto com o aparelho (nível
+            // equipamento) — diferente de $order->acessorios (nível OS,
+            // observação específica deste atendimento), exposto separadamente
+            // em mapDetail(). Ambos aparecem no detalhe da OS, em cards
+            // diferentes.
+            'acessorios' => (string) ($equipment->acessorios ?? ''),
             'observacoes' => (string) ($equipment->observacoes ?? ''),
             'status_operacional' => (string) ($equipment->status_operacional ?? ''),
             'status' => (string) ($equipment->status ?? ''),
@@ -2437,6 +2518,7 @@ class OrderWorkflowService
                     'status_final' => (bool) ($status->status_final ?? false),
                     'status_pausa' => (bool) ($status->status_pausa ?? false),
                     'estado_fluxo_padrao' => (string) ($status->estado_fluxo_padrao ?? ''),
+                    'congela_prazo' => in_array((string) ($status->codigo ?? ''), OrderStatus::DEADLINE_FREEZE_CODES, true),
                 ];
             })
             ->values()
@@ -2582,6 +2664,7 @@ class OrderWorkflowService
                     'status_pausa' => (bool) ($targetStatus['status_pausa'] ?? false),
                     'estado_fluxo_padrao' => (string) ($targetStatus['estado_fluxo_padrao'] ?? ''),
                     'ativo' => (bool) ($targetStatus['ativo'] ?? false),
+                    'congela_prazo' => in_array((string) ($targetStatus['codigo'] ?? ''), OrderStatus::DEADLINE_FREEZE_CODES, true),
                 ];
             })
             ->filter(static fn (?array $target): bool => is_array($target))

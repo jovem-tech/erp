@@ -1,6 +1,6 @@
 # Catálogo de status das Ordens de Serviço
 
-Atualizado em: `2026-07-08`
+Atualizado em: `2026-07-15`
 
 Fonte de verdade: catálogo ativo `os_status` do backend central.
 
@@ -29,7 +29,9 @@ Fonte de verdade: catálogo ativo `os_status` do backend central.
 | 190 | `irreparavel` | Irreparável | `finalizado_sem_reparo` | Sim | Não | Sim |
 | 200 | `irreparavel_disponivel_loja` | Irreparável, Disponível para Retirada | `finalizado_sem_reparo` | Sim | Não | Sim |
 | 210 | `reparo_recusado` | Reparo Recusado | `finalizado_sem_reparo` | Sim | Não | Sim |
-| 220 | `entregue_reparado` | Equipamento Entregue | `encerrado` | Sim | Não | Sim |
+| 220 | `entregue_reparado_pago` | Entregue - Reparado e Pago | `encerrado` | Sim | Não | Sim |
+| 221 | `entregue_reparado_sem_custo` | Entregue - Reparado Sem Custo | `encerrado` | Sim | Não | Sim |
+| 222 | `entregue_reparado_garantia` | Entregue - Reparado em Garantia | `encerrado` | Sim | Não | Sim |
 | 230 | `devolvido_sem_reparo` | Devolvido Sem Reparo | `encerrado` | Sim | Não | Sim |
 | 240 | `descartado` | Equipamento Descartado | `encerrado` | Sim | Não | Sim |
 | 250 | `cancelado` | Cancelado | `cancelado` | Sim | Não | Sim |
@@ -41,8 +43,9 @@ Fonte de verdade: catálogo ativo `os_status` do backend central.
 - `grupo_macro` organiza a leitura do fluxo, mas o catálogo real deve continuar sendo validado pelo backend.
 - `aguardando_orcamento` fica entre `aguardando_avaliacao` e `aguardando_autorizacao` no fluxo natural da assistência técnica.
 - A listagem inicial de OS (`/os`, `status_scope=open`) mostra a fila operacional
-  em posse/pendente da assistência: por padrão exclui os três encerramentos
-  canônicos (`entregue_reparado`, `devolvido_sem_reparo`, `descartado`) e também
+  em posse/pendente da assistência: por padrão exclui os encerramentos canônicos
+  (`grupo_macro='encerrado'`: `entregue_reparado_pago`, `entregue_reparado_sem_custo`,
+  `entregue_reparado_garantia`, `devolvido_sem_reparo`, `descartado`) e também
   OS em `entregue_pagamento_pendente` quando `status_final_pendente_pagamento`
   aponta para um desses encerramentos, pois o equipamento já foi entregue e resta
   apenas cobrança financeira.
@@ -59,7 +62,14 @@ Fonte de verdade: catálogo ativo `os_status` do backend central.
 
 ### Caminho principal
 
-`triagem -> aguardando_avaliacao -> diagnostico -> aguardando_orcamento -> aguardando_autorizacao -> aguardando_reparo -> reparo_execucao -> testes_operacionais -> testes_finais -> reparo_concluido -> entregue_reparado`
+`triagem -> aguardando_avaliacao -> diagnostico -> aguardando_orcamento -> aguardando_autorizacao -> aguardando_reparo -> reparo_execucao -> testes_operacionais -> testes_finais -> reparo_concluido -> entregue_reparado_pago`
+
+O encerramento de reparo entregue tem **três variações** conforme a cobrança:
+`entregue_reparado_pago` (com pagamento, único que gera receita),
+`entregue_reparado_sem_custo` (sem custo, R$0) e `entregue_reparado_garantia`
+(cumprimento de garantia, R$0). Todos são encerramentos (`grupo_macro='encerrado'`)
+e contam como "equipamento entregue" nos indicadores operacionais; só o pago
+entra em faturamento/DRE/margem. Ver skill `sistema-erp-os-fluxo-fechamento`.
 
 ### Ramos reais do diagrama
 
@@ -68,6 +78,7 @@ Fonte de verdade: catálogo ativo `os_status` do backend central.
 - `reparo_execucao -> retrabalho -> reparo_execucao`
 - `reparo_recusado -> descartado`
 - `irreparavel -> irreparavel_disponivel_loja -> devolvido_sem_reparo`
-- `reparo_concluido -> entregue_pagamento_pendente -> entregue_reparado`
+- `reparo_concluido -> entregue_pagamento_pendente -> entregue_reparado_pago`
+- `garantia_concluida -> entregue_reparado_garantia` (reparo em garantia, sem cobrança)
 - `reparo_concluido -> reparado_disponivel_loja`
 - `cancelado` como terminal de encerramento administrativo
