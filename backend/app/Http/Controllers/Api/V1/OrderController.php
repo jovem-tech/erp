@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\Api\V1\CancelOrderClosureRequest;
 use App\Http\Requests\Api\V1\CloseOrderRequest;
+use App\Http\Requests\Api\V1\OrderEventIndexRequest;
 use App\Http\Requests\Api\V1\StoreOrderProcedureRequest;
 use App\Http\Requests\Api\V1\UpdateOrderStatusRequest;
 use App\Http\Requests\Api\V1\UpsertOrderRequest;
@@ -114,6 +115,64 @@ class OrderController extends BaseApiController
                 request: $request
             ),
         };
+    }
+
+    public function events(OrderEventIndexRequest $request, int $order): JsonResponse
+    {
+        $this->authorize('os:visualizar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $result = $this->orderWorkflowService->paginateEventsForUser(
+            $user,
+            $order,
+            $request->validated()
+        );
+
+        if (($result['result'] ?? 'error') === 'forbidden') {
+            return $this->error(
+                'Você não tem permissão para acessar o histórico desta OS.',
+                403,
+                'ORDER_EVENTS_FORBIDDEN',
+                null,
+                request: $request
+            );
+        }
+
+        if (($result['result'] ?? 'error') === 'not_found') {
+            return $this->error(
+                'OS não encontrada.',
+                404,
+                'ORDER_NOT_FOUND',
+                null,
+                request: $request
+            );
+        }
+
+        if (($result['result'] ?? 'error') !== 'ok' || ! isset($result['paginator'])) {
+            return $this->error(
+                'Falha ao carregar o histórico completo da OS.',
+                500,
+                'ORDER_EVENTS_FAILED',
+                null,
+                request: $request
+            );
+        }
+
+        $paginator = $result['paginator'];
+
+        return $this->success(
+            [
+                'order' => $result['order'] ?? null,
+                'events' => $paginator->items(),
+                'stats' => $result['stats'] ?? [],
+            ],
+            meta: $this->paginationMeta($paginator),
+            request: $request
+        );
     }
 
     public function store(UpsertOrderRequest $request): JsonResponse

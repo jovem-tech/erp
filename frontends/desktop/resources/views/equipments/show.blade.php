@@ -4,12 +4,21 @@
     @php
         $client = $equipment['client'] ?? null;
         $equipmentName = trim((string) ($equipment['resumo_tecnico'] ?? ''));
+        $equipmentIdentity = implode(' · ', array_values(array_filter([
+            trim((string) ($equipment['tipo_nome'] ?? '')),
+            trim((string) ($equipment['marca_nome'] ?? '')),
+            trim((string) ($equipment['modelo_nome'] ?? '')),
+        ], static fn (string $value): bool => $value !== '')));
+        $equipmentTitle = $equipmentName !== ''
+            ? $equipmentName
+            : ($equipmentIdentity !== '' ? $equipmentIdentity : 'Equipamento #' . (int) ($equipment['id'] ?? 0));
         $statusLabel = trim((string) ($equipment['status_operacional'] ?? ''));
         $modality = trim((string) ($equipment['desktop_modalidade'] ?? ''));
         $serial = trim((string) ($equipment['numero_serie'] ?? ''));
         $imei = trim((string) ($equipment['imei'] ?? ''));
         $ordersCount = max(0, (int) ($equipment['orders_count'] ?? 0));
         $clientId = (int) ($equipment['cliente_id'] ?? 0);
+        $canCreateOrder = \App\Support\DesktopSession::can('os', 'criar');
         $photos = is_array($equipment['photos'] ?? null) ? $equipment['photos'] : [];
         $primaryPhotoUrl = trim((string) ($equipment['primary_photo_url'] ?? ''));
         if ($primaryPhotoUrl === '' && $photos !== []) {
@@ -22,7 +31,7 @@
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
         <div>
             <p class="desktop-eyebrow">Equipamento</p>
-            <h2 class="surface-title fs-3 mb-2">{{ $equipmentName !== '' ? $equipmentName : 'Sem resumo tecnico' }}</h2>
+            <h2 class="surface-title fs-3 mb-2">{{ $equipmentTitle }}</h2>
             <div class="d-flex flex-wrap gap-2">
                 @include('layouts.partials.status-pill', [
                     'label' => $statusLabel !== '' ? $statusLabel : 'Sem status operacional',
@@ -38,14 +47,14 @@
                 <i class="bi bi-arrow-left me-2"></i>
                 Voltar
             </a>
-            @if ($clientId > 0 && \App\Support\DesktopSession::can('os', 'criar'))
+            @if ($clientId > 0 && $canCreateOrder)
                 <a href="{{ $newOrderUrl }}" class="btn btn-primary">
                     <i class="bi bi-plus-lg me-2"></i>
                     Nova OS
                 </a>
             @endif
 
-            @if (\App\Support\DesktopSession::can('equipamentos', 'editar') || ($clientId > 0 && \App\Support\DesktopSession::can('clientes', 'visualizar')))
+            @if (($clientId > 0 && $canCreateOrder) || \App\Support\DesktopSession::can('equipamentos', 'editar') || ($clientId > 0 && \App\Support\DesktopSession::can('clientes', 'visualizar')))
                 <div class="dropdown os-actions-dropdown">
                     <button type="button"
                         class="btn btn-outline-light dropdown-toggle os-actions-toggle"
@@ -55,6 +64,11 @@
                     </button>
 
                     <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                        @if ($clientId > 0 && $canCreateOrder)
+                            <a href="{{ $newOrderUrl }}" class="dropdown-item" data-new-order-action="equipment">
+                                <i class="bi bi-plus-circle me-2"></i>Nova OS
+                            </a>
+                        @endif
                         @if (\App\Support\DesktopSession::can('equipamentos', 'editar'))
                             <a href="{{ route('equipments.edit', (int) ($equipment['id'] ?? 0)) }}" class="dropdown-item">
                                 <i class="bi bi-pencil-square me-2"></i>Editar

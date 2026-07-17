@@ -117,10 +117,11 @@ class RbacAdministrationTest extends TestCase
         ]);
 
         $alphaEquipment = $this->createEquipmentRecord($alphaClient, [
+            'tipo_id' => 2,
             'resumo_tecnico' => 'MacBook Pro 14',
             'numero_serie' => 'MAC-001',
         ]);
-        $this->createEquipmentRecord($betaClient, [
+        $betaEquipment = $this->createEquipmentRecord($betaClient, [
             'resumo_tecnico' => 'All-in-one Office',
             'numero_serie' => 'DESK-002',
             'desktop_modalidade' => 'mobile',
@@ -158,13 +159,23 @@ class RbacAdministrationTest extends TestCase
             ->assertOk()
             ->assertJsonPath('meta.pagination.total', 1)
             ->assertJsonPath('data.equipments.0.id', $alphaEquipment)
+            ->assertJsonPath('data.equipments.0.cliente_nome', 'Cliente Alpha')
+            ->assertJsonPath('data.equipments.0.tipo_nome', 'Notebook')
+            ->assertJsonPath('data.equipments.0.marca_nome', 'Dell')
+            ->assertJsonPath('data.equipments.0.modelo_nome', 'Inspiron 15')
             ->assertJsonPath('data.equipments.0.orders_count', 1);
 
         $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->getJson('/api/v1/equipments?search=desktop')
+            ->getJson('/api/v1/equipments?search=Notebook')
             ->assertOk()
             ->assertJsonPath('meta.pagination.total', 1)
             ->assertJsonPath('data.equipments.0.id', $alphaEquipment);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->getJson('/api/v1/equipments?search=mobile')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.equipments.0.id', $betaEquipment);
 
         $this->withHeader('Authorization', 'Bearer ' . $token)
             ->getJson('/api/v1/equipments?client_id=' . $alphaClient)

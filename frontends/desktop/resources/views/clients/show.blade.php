@@ -35,6 +35,7 @@
         $canViewOrders = (bool) ($canViewOrders ?? false);
         $canViewEquipments = (bool) ($canViewEquipments ?? false);
         $canViewFinanceiro = (bool) ($canViewFinanceiro ?? false);
+        $canCreateOrder = \App\Support\DesktopSession::can('os', 'criar');
         $clientFinanceiro = $financeiro ?? [];
         $financeiroTotal = (int) ($financeiroPagination['total'] ?? 0);
     @endphp
@@ -57,14 +58,14 @@
                 <i class="bi bi-arrow-left me-2"></i>
                 Voltar
             </a>
-            @if (\App\Support\DesktopSession::can('os', 'criar'))
+            @if ($canCreateOrder)
                 <a href="{{ $newOrderUrl }}" class="btn btn-primary">
                     <i class="bi bi-plus-lg me-2"></i>
                     Nova OS
                 </a>
             @endif
 
-            @if (\App\Support\DesktopSession::can('clientes', 'editar') || $canViewOrders || $canViewEquipments)
+            @if ($canCreateOrder || \App\Support\DesktopSession::can('clientes', 'editar') || $canViewOrders || $canViewEquipments)
                 <div class="dropdown os-actions-dropdown">
                     <button type="button"
                         class="btn btn-outline-light dropdown-toggle os-actions-toggle"
@@ -74,6 +75,11 @@
                     </button>
 
                     <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                        @if ($canCreateOrder)
+                            <a href="{{ $newOrderUrl }}" class="dropdown-item" data-new-order-action="client">
+                                <i class="bi bi-plus-circle me-2"></i>Nova OS
+                            </a>
+                        @endif
                         @if (\App\Support\DesktopSession::can('clientes', 'editar'))
                             <a href="{{ $editUrl }}" class="dropdown-item">
                                 <i class="bi bi-pencil-square me-2"></i>Editar cliente

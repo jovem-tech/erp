@@ -73,15 +73,35 @@
 
                     <div class="desktop-result-stack">
                         @foreach (($section['items'] ?? []) as $item)
-                            <a href="{{ $item['url'] ?? '#' }}" class="desktop-result-card">
-                                <div class="desktop-result-card-icon">
-                                    <i class="bi {{ $item['icon'] ?? 'bi-grid' }}"></i>
+                            @php
+                                $imageUrl = trim((string) ($item['image_url'] ?? ''));
+                                $facts = is_array($item['facts'] ?? null) ? array_slice($item['facts'], 0, 4) : [];
+                            @endphp
+                            <a href="{{ $item['url'] ?? '#' }}" class="desktop-result-card {{ $facts !== [] ? 'has-equipment-details' : '' }}">
+                                <div class="desktop-result-card-media {{ $imageUrl !== '' ? 'has-image' : '' }}">
+                                    @if ($imageUrl !== '')
+                                        <img src="{{ $imageUrl }}" alt="" loading="lazy">
+                                    @elseif ($facts !== [])
+                                        <i class="bi bi-camera"></i>
+                                        <small>Sem foto</small>
+                                    @else
+                                        <i class="bi {{ $item['icon'] ?? 'bi-grid' }}"></i>
+                                    @endif
                                 </div>
 
                                 <div class="desktop-result-card-copy">
                                     <strong>{{ $item['label'] ?? 'Resultado' }}</strong>
+                                    @if ($facts !== [])
+                                        <span class="desktop-result-equipment-facts">
+                                            @foreach ($facts as $fact)
+                                                <span><b>{{ $fact['label'] ?? 'Dado' }}:</b> {{ $fact['value'] ?? 'Não informado' }}</span>
+                                            @endforeach
+                                        </span>
+                                    @endif
                                     <span>{{ $item['subtitle'] ?? '' }}</span>
-                                    <small>{{ $item['meta'] ?? '' }}</small>
+                                    @if (trim((string) ($item['meta'] ?? '')) !== '')
+                                        <small>{{ $item['meta'] }}</small>
+                                    @endif
                                 </div>
 
                                 <i class="bi bi-arrow-right-short desktop-result-card-arrow"></i>

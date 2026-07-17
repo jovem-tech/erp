@@ -94,9 +94,24 @@ Notas de decisão:
 O detalhe da OS (`GET /api/v1/orders/{order}`) traz `eventos` (máx. 200, mais
 recentes primeiro) via `OrderWorkflowService::mapEventCollection()`. Os campos
 legados `historico` e `procedimentos_historico` continuam presentes e
-inalterados (outros consumidores). Não há endpoint dedicado — se alguma OS
-estourar o cap de 200 na prática, criar `GET orders/{order}/events` paginado é
-uma mudança aditiva.
+inalterados para os demais consumidores.
+
+A auditoria integral usa o endpoint dedicado
+`GET /api/v1/orders/{order}/events`, paginado em 25, 50 ou 100 itens. Não há
+corte absoluto: todos os eventos permanecem navegáveis. A consulta aceita os
+filtros `category`, `origin`, `type`, `search`, `date_from` e `date_to`, sempre
+depois da mesma verificação de acesso da OS (incluindo o escopo do técnico).
+O retorno inclui:
+
+- resumo atual da OS para contextualizar a trilha;
+- eventos com autoria, payload técnico completo e proveniência nativa/legada;
+- contagens globais por categoria, origem e tipo;
+- metadados de paginação no envelope padrão da API.
+
+No desktop, a rota `GET /os/{order}/historico` renderiza a página "Auditoria
+completa da OS". O acesso fica no menu "Mais ações" do detalhe. Todo valor do
+payload é renderizado com escaping do Blade; nenhum JSON auditável é injetado
+como HTML bruto.
 
 ## Backfill do histórico legado
 

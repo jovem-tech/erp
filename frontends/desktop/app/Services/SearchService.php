@@ -234,14 +234,37 @@ class SearchService
         ]);
 
         return array_map(function (array $equipment): array {
+            $id = (int) ($equipment['id'] ?? 0);
+            $type = trim((string) ($equipment['tipo_nome'] ?? ''));
+            $brand = trim((string) ($equipment['marca_nome'] ?? ''));
+            $model = trim((string) ($equipment['modelo_nome'] ?? ''));
+            $client = trim((string) ($equipment['cliente_nome'] ?? ''));
+            $serial = trim((string) ($equipment['numero_serie'] ?? ''));
+            $summary = trim((string) ($equipment['resumo_tecnico'] ?? ''));
+            $identity = implode(' · ', array_values(array_filter(
+                [$type, $brand, $model],
+                static fn (string $value): bool => $value !== ''
+            )));
+            $label = $identity !== '' ? $identity : ($summary !== '' ? $summary : ('Equipamento #' . $id));
+            $primaryPhotoId = (int) ($equipment['primary_photo_id'] ?? 0);
+
             return [
-                'id' => (int) ($equipment['id'] ?? 0),
-                'label' => trim((string) ($equipment['resumo_tecnico'] ?? 'Equipamento')),
-                'subtitle' => trim((string) ($equipment['numero_serie'] ?? ($equipment['cliente_nome'] ?? ''))),
-                'meta' => trim((string) ($equipment['marca'] ?? '')),
-                'url' => route('equipments.show', (int) ($equipment['id'] ?? 0)),
+                'id' => $id,
+                'label' => $label,
+                'subtitle' => $serial !== '' ? ('Nº de série: ' . $serial) : 'Número de série não informado',
+                'meta' => $summary !== '' && $summary !== $label ? $summary : '',
+                'url' => route('equipments.show', $id),
                 'icon' => 'bi-laptop',
                 'kind' => 'Equipamento',
+                'image_url' => $primaryPhotoId > 0
+                    ? route('equipments.photos.show', ['equipment' => $id, 'photo' => $primaryPhotoId])
+                    : '',
+                'facts' => [
+                    ['label' => 'Tipo', 'value' => $type !== '' ? $type : 'Não informado'],
+                    ['label' => 'Marca', 'value' => $brand !== '' ? $brand : 'Não informada'],
+                    ['label' => 'Modelo', 'value' => $model !== '' ? $model : 'Não informado'],
+                    ['label' => 'Cliente', 'value' => $client !== '' ? $client : 'Não informado'],
+                ],
             ];
         }, $result['items']);
     }

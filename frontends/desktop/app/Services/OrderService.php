@@ -36,6 +36,22 @@ class OrderService
     }
 
     /**
+     * @param array<string, mixed> $filters
+     * @return array{order: array<string, mixed>, events: array<int, array<string, mixed>>, stats: array<string, mixed>, pagination: array<string, mixed>}
+     */
+    public function auditTrail(int $id, array $filters = []): array
+    {
+        $response = $this->apiClient->get('/orders/' . $id . '/events', $filters);
+
+        return [
+            'order' => is_array($response['data']['order'] ?? null) ? $response['data']['order'] : [],
+            'events' => is_array($response['data']['events'] ?? null) ? $response['data']['events'] : [],
+            'stats' => is_array($response['data']['stats'] ?? null) ? $response['data']['stats'] : [],
+            'pagination' => is_array($response['meta']['pagination'] ?? null) ? $response['meta']['pagination'] : [],
+        ];
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     public function entryChecklistModel(int $tipoEquipamentoId): ?array

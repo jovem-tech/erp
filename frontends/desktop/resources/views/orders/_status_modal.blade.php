@@ -63,17 +63,102 @@
         margin-bottom: 0.75rem;
     }
 
-    .os-status-modal-quick-actions {
+    .os-status-chip-groups {
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+    }
+
+    .os-status-chip-group-label {
+        font-size: 0.68rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.07em;
+        color: var(--desktop-text-muted);
+        margin-bottom: 0.4rem;
+    }
+
+    .os-status-chip-row {
         display: flex;
         flex-wrap: wrap;
         gap: 0.5rem;
-        margin-bottom: 0.75rem;
     }
 
-    .os-status-modal-flow-hints {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
+    .os-status-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.5rem 0.9rem;
+        border-radius: 999px;
+        border: 1.5px solid var(--desktop-border);
+        background: var(--desktop-surface);
+        color: var(--desktop-text);
+        font-size: 0.83rem;
+        font-weight: 700;
+        line-height: 1.2;
+        cursor: pointer;
+        transition: var(--desktop-transition);
+    }
+
+    .os-status-chip i {
+        font-size: 0.95rem;
+    }
+
+    .os-status-chip:hover {
+        border-color: var(--desktop-border-strong);
+        transform: translateY(-1px);
+    }
+
+    .os-status-chip:focus-visible {
+        outline: 2px solid var(--desktop-primary);
+        outline-offset: 2px;
+    }
+
+    .os-status-chip--avancar {
+        border-color: rgba(111, 90, 252, 0.28);
+        background: var(--desktop-primary-soft);
+        color: var(--desktop-primary);
+    }
+
+    .os-status-chip--retornar {
+        border-style: dashed;
+        background: var(--desktop-surface-soft);
+        color: var(--desktop-text-soft);
+    }
+
+    .os-status-chip--cancelar {
+        border-color: rgba(239, 68, 68, 0.28);
+        background: rgba(239, 68, 68, 0.06);
+        color: var(--desktop-danger-text);
+    }
+
+    .os-status-chip.is-selected {
+        color: #fff;
+        border-color: transparent;
+        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.16);
+    }
+
+    .os-status-chip.is-selected i {
+        color: #fff;
+    }
+
+    .os-status-chip--avancar.is-selected {
+        background: linear-gradient(135deg, var(--desktop-primary), #8b7bfd);
+    }
+
+    .os-status-chip--retornar.is-selected {
+        background: var(--desktop-text-soft);
+        border-style: solid;
+    }
+
+    .os-status-chip--cancelar.is-selected {
+        background: linear-gradient(135deg, #ef4444, #f87171);
+    }
+
+    .os-status-chip-empty {
+        font-size: 0.82rem;
+        color: var(--desktop-text-muted);
+        margin-bottom: 0;
     }
 
     .os-status-modal-workflow {
@@ -211,31 +296,24 @@
                                     {{-- Coluna esquerda: formulário de mudança --}}
                                     <div class="col-12 col-xl-7">
                                         <div class="os-status-modal-panel">
-                                            {{-- Ações rápidas --}}
+                                            {{-- Próxima etapa (chips clicáveis) --}}
                                             <div class="os-status-modal-section">
-                                                <div class="os-status-modal-section-title">Ações rápidas</div>
-                                                <div class="os-status-modal-quick-actions">
-                                                    <button type="button" class="btn btn-primary btn-sm" id="orderStatusModalQuickNext" disabled>
-                                                        <i class="bi bi-arrow-right-circle me-1"></i>Próxima etapa
-                                                    </button>
-                                                    <button type="button" class="btn btn-outline-danger btn-sm" id="orderStatusModalQuickCancel" disabled>
-                                                        <i class="bi bi-x-circle me-1"></i>Cancelar OS
-                                                    </button>
-                                                </div>
-                                                <div class="os-status-modal-flow-hints">
-                                                    <div class="small text-muted" id="orderStatusModalCurrentHint">Status atual da OS: aguardando contexto.</div>
-                                                    <div class="small text-muted" id="orderStatusModalFlowHint">Fluxo normal sugerido: aguardando contexto.</div>
-                                                    <div class="small text-muted" id="orderStatusModalTargetHint">Selecione um fluxo para continuar.</div>
-                                                </div>
-                                            </div>
+                                                <div class="os-status-modal-section-title">Próxima etapa</div>
+                                                <div class="small text-muted mb-2" id="orderStatusModalCurrentHint">Status atual da OS: aguardando contexto.</div>
 
-                                            {{-- Status de destino --}}
-                                            <div class="os-status-modal-section">
-                                                <label class="form-label" for="orderStatusModalSelect">Status de destino</label>
-                                                <select id="orderStatusModalSelect" name="status" class="form-select" required>
+                                                <div class="os-status-chip-groups" id="orderStatusModalChipGroups">
+                                                    <p class="os-status-chip-empty">Carregando opções de status...</p>
+                                                </div>
+
+                                                <div class="small text-muted mt-2" id="orderStatusModalTargetHint">Selecione um fluxo para continuar.</div>
+                                                <div class="form-text">Clique numa etapa para selecioná-la; a mudança só é aplicada ao salvar. Status de encerramento (equipamento entregue, devolvido, descartado) não aparecem aqui — são feitos pela tela de baixa da OS.</div>
+
+                                                {{-- Campo real do form; escondido, a fonte de verdade é a
+                                                    seleção via chip. Segue existindo pra manter toda a lógica
+                                                    de submit/validação inalterada. --}}
+                                                <select id="orderStatusModalSelect" name="status" class="d-none" data-select2="false" required>
                                                     <option value="">Selecione um status</option>
                                                 </select>
-                                                <div class="form-text">A lista respeita o fluxo de trabalho configurado para avançar, retornar etapas ou cancelar o atendimento.</div>
                                             </div>
 
                                             {{-- Redefinição de prazo (só aparece ao sair de um status com prazo congelado) --}}
