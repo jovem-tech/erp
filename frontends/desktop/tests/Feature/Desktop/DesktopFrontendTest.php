@@ -4536,8 +4536,9 @@ class DesktopFrontendTest extends TestCase
             'status_congela_prazo' => false,
             'status_ordem_fluxo' => 80,
             'is_encerrada' => false,
-            'cliente' => ['id' => 201, 'nome_razao' => 'Cliente Alpha'],
-            'equipamento' => ['id' => 301, 'resumo_tecnico' => 'Notebook Acer Nitro 5'],
+            'cliente' => ['id' => 201, 'nome_razao' => 'Cliente Alpha', 'telefone1' => '(11) 99999-0000'],
+            'equipamento' => ['id' => 301, 'resumo_tecnico' => 'Notebook Acer Nitro 5', 'tipo_nome' => 'Notebook', 'marca_nome' => 'Acer', 'modelo_nome' => 'Nitro 5'],
+            'relato_cliente' => 'Não liga mais desde ontem.',
             'status_disponiveis' => [
                 ['codigo' => 'triagem', 'nome' => 'Triagem', 'congela_prazo' => false],
                 ['codigo' => 'diagnostico', 'nome' => 'Diagnóstico Técnico', 'congela_prazo' => false],
@@ -4622,7 +4623,17 @@ class DesktopFrontendTest extends TestCase
             // Controles de tela cheia (entrar pela toolbar, sair pelo X/Esc).
             ->assertSee('id="osMapFullscreen"', false)
             ->assertSee('id="osMapExitFullscreen"', false)
-            ->assertSee('assets/js/orders-map.js', false);
+            ->assertSee('assets/js/orders-map.js', false)
+            // Contexto de cliente e equipamento no painel lateral.
+            ->assertSee('Cliente Alpha')
+            ->assertSee('(11) 99999-0000')
+            ->assertSee('Acer')
+            ->assertSee('Nitro 5')
+            ->assertSee('Não liga mais desde ontem.')
+            // Resumo da OS + equipamento dentro da moldura do mapa (visível
+            // mesmo em tela cheia, onde cabeçalho/painel lateral somem).
+            ->assertSee('id="osMapLegendOs"', false)
+            ->assertSee('Notebook Acer Nitro 5');
 
         Http::assertSent(static function ($request): bool {
             if (! str_contains($request->url(), '/api/v1/orders/501/events')) {

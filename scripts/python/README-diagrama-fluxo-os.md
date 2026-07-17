@@ -55,8 +55,8 @@ quebra, pois vem de `proximas_etapas` da API, mas setas novas não aparecem).
 
 ## Auto-verificação (por que dá erro ao mexer)
 
-O script embute as 87 transições reais (`REAL_TRANSITIONS`) e **falha na
-geração** se o conjunto de setas desenhadas (70) divergir do conjunto de
+O script embute as 95 transições reais (`REAL_TRANSITIONS`) e **falha na
+geração** se o conjunto de setas desenhadas (73) divergir do conjunto de
 transições utilizáveis. Se o catálogo mudar (tela Conhecimento > Fluxo da
 OS), re-extraia as transições e atualize `REAL_TRANSITIONS` + o roteamento:
 
@@ -101,3 +101,31 @@ da OS, roteadas manualmente neste script logo em seguida:
 
 Nenhuma das 10 aponta para um encerramento, então todas viraram seta
 (nenhuma passa pela porta de baixa).
+
+## Ajustes manuais em 2026-07-17 (87 → 95 transições)
+
+O usuário cadastrou mais 8 transições direto na tela Conhecimento > Fluxo da
+OS, em duas levas:
+
+**3 de volta pra `retrabalho`** a partir de etapas da raia G3 · CONCLUÍDO:
+`reparo_concluido → retrabalho`, `reparado_disponivel_loja → retrabalho` e
+`garantia_concluida → retrabalho`. Cobrem o caso de a OS já ter chegado
+perto do fim (reparo concluído, disponível na loja ou até garantia
+concluída) e precisar voltar pra retrabalho antes de entregar. Roteadas
+como retorno (tracejado), saindo pelo lado esquerdo de cada card de origem
+e entrando pelo lado direito de `retrabalho`, em três novos corredores
+verticais (x=836/848/860) paralelos aos já existentes da região
+(x=872/884/896/908).
+
+**5 apontando para um encerramento** (`grupo_macro='encerrado'`):
+`garantia_concluida → entregue_reparado_garantia`,
+`irreparavel_disponivel_loja → descartado`, `reparado_disponivel_loja →
+entregue_reparado_sem_custo`, `reparo_concluido → entregue_reparado_sem_custo`
+e `reparo_recusado → descartado`. Assim como as 17 linhas equivalentes já
+existentes no catálogo, são **inertes** no fluxo normal (bloqueadas por
+`closure_status_requires_baixa_flow` — só a baixa da OS aplica um
+encerramento) e por isso não viram seta; entram em `REAL_TRANSITIONS` só
+para o script continuar espelhando o banco fielmente.
+
+Nenhuma das 3 primeiras aponta para um encerramento, então viraram seta; as
+outras 5 não.

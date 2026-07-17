@@ -1,5 +1,23 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.18.4.0 — 2026-07-17 03:53
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Fluxo da OS: catálogo de transições cresce de 87 para 95 (8 cadastradas manualmente em Conhecimento > Fluxo da OS) — 3 voltas de retrabalho a partir de etapas avançadas da raia CONCLUÍDO (reparo_concluido/reparado_disponivel_loja/garantia_concluida -> retrabalho, roteadas como novas setas tracejadas) e 5 transições inertes com destino de encerramento (garantia_concluida/reparado_disponivel_loja/reparo_concluido/reparo_recusado/irreparavel_disponivel_loja -> entregue_reparado_garantia/entregue_reparado_sem_custo/descartado), formalizadas em REAL_TRANSITIONS só pro diagrama continuar espelhando o banco fielmente (sem seta própria, mesma regra das demais 17 transições de encerramento). Nova migration idempotente (2026_07_17_000002) leva as 8 pra qualquer ambiente via php artisan migrate, testada com ciclo completo de rollback+reaplicação sem duplicar linhas
+- **Arquivos:** scripts/python/diagrama_fluxo_os_organizado.py,scripts/python/diagrama_fluxo_os_organizado.svg,scripts/python/diagrama_fluxo_os_organizado.png,scripts/python/README-diagrama-fluxo-os.md,frontends/desktop/resources/views/orders/_flow_map_svg.blade.php,backend/database/migrations/2026_07_17_000002_add_retrabalho_return_and_closure_transitions.php
+
+## v4.18.3.0 — 2026-07-17 03:34
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Mapa da OS: adiciona nº da OS e resumo do equipamento (tipo/marca/modelo) na barra de legenda, dentro da moldura do mapa — visível mesmo em tela cheia, onde o cabeçalho da página e o painel lateral (que ficam fora de .os-map-frame) somem. Sem isso, em tela cheia não tinha como saber de qual OS/equipamento se tratava sem sair do fullscreen
+- **Arquivos:** frontends/desktop/resources/views/orders/map.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.18.2.0 — 2026-07-17 03:27
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Mapa da OS: adiciona cards de contexto no painel lateral com dados do cliente (nome, telefone) e do equipamento (tipo, marca, modelo, defeito relatado pelo cliente), antes do trajeto percorrido — evita precisar voltar pra tela de detalhe da OS só pra lembrar quem é o cliente ou o que foi relatado. Reaproveita os mesmos campos já usados na tela de detalhe ($order['cliente']/$order['equipamento']), sem mudança de backend. Defeito relatado com truncamento em 3 linhas (title com o texto completo)
+- **Arquivos:** frontends/desktop/resources/views/orders/map.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
 ## v4.18.1.0 — 2026-07-17 02:51
 - **Tier:** patch
 - **Autor/Agente:** Codex
