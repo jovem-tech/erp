@@ -2,15 +2,21 @@
 
 Fontes da verdade (levantadas em 2026-07-17 no banco sistema_hml e no código;
 inclui as 8 transições adicionadas pela migration
-2026_07_16_000001_add_missing_os_status_transitions, mais 10 transições
+2026_07_16_000001_add_missing_os_status_transitions, 10 transições
 cadastradas manualmente em Conhecimento > Fluxo da OS em 2026-07-17 — dando a
 `testes_operacionais` saídas pra verificação de garantia/orçamento/conclusão
 direta/garantia concluída/cancelamento, e a `irreparavel` um caminho de volta
 pra diagnóstico/orçamento/reparo/execução/retrabalho, ou seja, uma OS marcada
-irreparável deixou de ser (quase) definitiva):
+irreparável deixou de ser (quase) definitiva —, mais 8 transições cadastradas
+manualmente logo em seguida: 3 dando a `reparo_concluido`,
+`reparado_disponivel_loja` e `garantia_concluida` um caminho de volta pra
+`retrabalho` (a OS já tinha chegado perto do fim, mas precisou ser
+retrabalhada antes de entregar), e 5 apontando pra um encerramento
+(`entregue_reparado_garantia`/`entregue_reparado_sem_custo`/`descartado`) —
+inertes, como as demais 17 do gênero, e por isso sem seta própria:
 
   - Tabela `os_status` (27 status ativos, agrupados por `grupo_macro`).
-  - Tabela `os_status_transicoes` (87 transições ativas) — embutida abaixo em
+  - Tabela `os_status_transicoes` (95 transições ativas) — embutida abaixo em
     REAL_TRANSITIONS para o script se auto-verificar.
   - Regra de negócio (OrderWorkflowService::updateStatus): mover PARA um dos 5
     status de encerramento (grupo_macro='encerrado') é bloqueado no fluxo
@@ -62,7 +68,7 @@ CLOSURE_CODES = {
     "descartado",
 }
 
-# As 87 linhas ativas de os_status_transicoes (origem -> destino).
+# As 95 linhas ativas de os_status_transicoes (origem -> destino).
 REAL_TRANSITIONS = [
     ("triagem", "diagnostico"),
     ("triagem", "irreparavel"),
@@ -139,7 +145,13 @@ REAL_TRANSITIONS = [
     ("reparo_concluido", "entregue_pagamento_pendente"),
     ("reparo_concluido", "reparado_disponivel_loja"),
     ("reparo_concluido", "entregue_reparado_pago"),
+    ("reparo_concluido", "retrabalho"),
+    ("reparo_concluido", "entregue_reparado_sem_custo"),
     ("reparado_disponivel_loja", "entregue_reparado_pago"),
+    ("reparado_disponivel_loja", "retrabalho"),
+    ("reparado_disponivel_loja", "entregue_reparado_sem_custo"),
+    ("garantia_concluida", "retrabalho"),
+    ("garantia_concluida", "entregue_reparado_garantia"),
     ("irreparavel", "diagnostico"),
     ("irreparavel", "aguardando_orcamento"),
     ("irreparavel", "aguardando_reparo"),
@@ -149,7 +161,9 @@ REAL_TRANSITIONS = [
     ("irreparavel", "devolvido_sem_reparo"),
     ("irreparavel", "descartado"),
     ("irreparavel_disponivel_loja", "devolvido_sem_reparo"),
+    ("irreparavel_disponivel_loja", "descartado"),
     ("reparo_recusado", "devolvido_sem_reparo"),
+    ("reparo_recusado", "descartado"),
     ("cancelado", "triagem"),
 ]
 
@@ -345,6 +359,9 @@ EDGES = [
     {"from": "irreparavel", "to": "aguardando_reparo", "kind": "return", "route": [(696, 1000), (868, 1000), (868, 541), (780, 541)]},
     {"from": "irreparavel", "to": "reparo_execucao", "kind": "return", "route": [(724, 1000), (880, 1000), (880, 646), (780, 646)]},
     {"from": "irreparavel", "to": "retrabalho", "kind": "return", "route": [(752, 1000), (752, 887), (710, 887)]},
+    {"from": "reparo_concluido", "to": "retrabalho", "kind": "return", "route": [(930, 1010), (860, 1010), (860, 831), (780, 831)]},
+    {"from": "reparado_disponivel_loja", "to": "retrabalho", "kind": "return", "route": [(920, 1130), (848, 1130), (848, 843), (780, 843)]},
+    {"from": "garantia_concluida", "to": "retrabalho", "kind": "return", "route": [(930, 1240), (836, 1240), (836, 879), (780, 879)]},
     {"from": "cancelado", "to": "triagem", "kind": "return", "route": [(1590, 1020), (1590, 48), (40, 48), (40, 151), (80, 151)]},
 ]
 
