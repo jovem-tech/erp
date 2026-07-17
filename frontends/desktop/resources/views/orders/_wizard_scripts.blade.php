@@ -3,6 +3,7 @@
     $existingPhotosCount = $isEditing ? count((array) data_get($order, 'fotos', [])) : 0;
     $canCreateClient = \App\Support\DesktopSession::can('clientes', 'criar');
 @endphp
+<script src="{{ asset('assets/libs/cropperjs/cropper.min.js') }}"></script>
 <script>
     window.__DESKTOP_ORDER_CREATE = {!! json_encode([
         'quickClientStoreUrl' => route('clients.quick.store'),
@@ -31,6 +32,9 @@
             'checklist' => '[data-order-create-summary-checklist]',
         ],
         'maxPhotos' => 4,
+        'maxPhotoUploadBytes' => 2 * 1024 * 1024,
+        'maxPhotoSourceBytes' => 20 * 1024 * 1024,
+        'maxPhotoSourcePixels' => 32000000,
         'lockStatus' => $isEditing,
         'existingPhotosCount' => $existingPhotosCount,
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};

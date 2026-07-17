@@ -414,6 +414,13 @@
                                             </a>
                                         </li>
 
+                                        <li>
+                                            <a href="{{ route('orders.map', $orderId) }}" class="dropdown-item">
+                                                <i class="bi bi-map me-2"></i>
+                                                Mapa da OS
+                                            </a>
+                                        </li>
+
                                         @if ($budgetActionUrl !== '')
                                             <li>
                                                 <a href="{{ $budgetActionUrl }}" class="dropdown-item">

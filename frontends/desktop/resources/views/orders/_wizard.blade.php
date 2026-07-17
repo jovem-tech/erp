@@ -699,7 +699,7 @@
                         >
 
                         <div class="order-create-photo-preview-grid" data-order-create-photos-preview></div>
-                        <div class="text-secondary small mt-2">Maximo de 4 fotos por envio, ate 2MB cada. A visualizacao eh local antes do envio para o backend central.</div>
+                        <div class="text-secondary small mt-2">Máximo de 4 fotos por envio. Cada imagem será cortada antes do envio e o arquivo final terá até 2 MB.</div>
                         @error('fotos')<div class="invalid-feedback d-block mt-2">{{ $message }}</div>@enderror
                         @error('fotos.*')<div class="invalid-feedback d-block mt-2">{{ $message }}</div>@enderror
                     </div>
@@ -853,16 +853,17 @@
     @endpush
 @endif
 
-@if ($canCreateClient || $canCreateEquipment)
-    @push('modals')
-        @if ($canCreateClient)
-            @include('clients.quick-modal', [
-                'fullCreateUrl' => route('clients.create'),
-            ])
-        @endif
+@push('modals')
+    @include('orders._photo_crop_modal')
 
-        @if ($canCreateEquipment)
-            <div
+    @if ($canCreateClient)
+        @include('clients.quick-modal', [
+            'fullCreateUrl' => route('clients.create'),
+        ])
+    @endif
+
+    @if ($canCreateEquipment)
+        <div
                 class="modal fade"
                 id="quickEquipmentModal"
                 tabindex="-1"
@@ -890,7 +891,6 @@
                         </div>
                     </div>
                 </div>
-            </div>
-        @endif
-    @endpush
-@endif
+        </div>
+    @endif
+@endpush

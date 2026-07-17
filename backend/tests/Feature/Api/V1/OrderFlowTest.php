@@ -74,6 +74,99 @@ class OrderFlowTest extends TestCase
         );
     }
 
+    public function test_events_endpoint_returns_the_complete_paginated_audit_trail_with_filters_and_provenance(): void
+    {
+        [$manager, $technician, , $clientId, , $equipmentId] = $this->seedAdminOrderActors();
+        $orderId = $this->createOrderRecord([
+            'numero_os' => 'OS26070077',
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'tecnico_id' => $technician->id,
+            'status' => 'triagem',
+            'estado_fluxo' => 'em_atendimento',
+        ]);
+
+        DB::table('os_eventos')->insert([
+            [
+                'os_id' => $orderId,
+                'categoria' => 'status',
+                'tipo' => 'os_criada',
+                'titulo' => 'OS criada',
+                'descricao' => 'Abertura registrada.',
+                'dados' => json_encode(['status_novo' => 'triagem'], JSON_THROW_ON_ERROR),
+                'usuario_id' => $manager->id,
+                'origem' => 'usuario',
+                'legacy_tabela' => null,
+                'legacy_id' => null,
+                'created_at' => '2026-07-16 08:00:00',
+            ],
+            [
+                'os_id' => $orderId,
+                'categoria' => 'financeiro',
+                'tipo' => 'titulo_criado',
+                'titulo' => 'Título financeiro criado',
+                'descricao' => 'Cobrança vinculada à OS.',
+                'dados' => json_encode(['valor' => '150.00'], JSON_THROW_ON_ERROR),
+                'usuario_id' => $manager->id,
+                'origem' => 'usuario',
+                'legacy_tabela' => null,
+                'legacy_id' => null,
+                'created_at' => '2026-07-16 09:00:00',
+            ],
+            [
+                'os_id' => $orderId,
+                'categoria' => 'status',
+                'tipo' => 'status_alterado',
+                'titulo' => 'Status alterado',
+                'descricao' => 'triagem → aguardando_reparo',
+                'dados' => json_encode([
+                    'status_anterior' => 'triagem',
+                    'status_novo' => 'aguardando_reparo',
+                ], JSON_THROW_ON_ERROR),
+                'usuario_id' => $manager->id,
+                'origem' => 'usuario',
+                'legacy_tabela' => 'os_status_historico',
+                'legacy_id' => 991,
+                'created_at' => '2026-07-16 10:00:00',
+            ],
+        ]);
+
+        $token = $this->loginAndGetToken($manager->email);
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->getJson("/api/v1/orders/{$orderId}/events?category=status&per_page=25");
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.order.id', $orderId)
+            ->assertJsonPath('data.order.numero_os', 'OS26070077')
+            ->assertJsonPath('data.events.0.type', 'status_alterado')
+            ->assertJsonPath('data.events.0.data.status_anterior', 'triagem')
+            ->assertJsonPath('data.events.0.provenance.kind', 'legacy')
+            ->assertJsonPath('data.events.0.provenance.legacy_table', 'os_status_historico')
+            ->assertJsonPath('data.stats.total', 3)
+            ->assertJsonPath('data.stats.categories.status', 2)
+            ->assertJsonPath('data.stats.categories.financeiro', 1)
+            ->assertJsonPath('meta.pagination.total', 2)
+            ->assertJsonCount(2, 'data.events');
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->getJson("/api/v1/orders/{$orderId}/events?category=../../etc")
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+    }
+
+    public function test_events_endpoint_does_not_expose_an_unassigned_order_to_a_technician(): void
+    {
+        [$technician, , $unassignedOrder] = $this->seedTechnicianOrders();
+        $token = $this->loginAndGetToken($technician->email);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->getJson("/api/v1/orders/{$unassignedOrder}/events")
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'ORDER_EVENTS_FORBIDDEN')
+            ->assertJsonMissingPath('data.events');
+    }
+
     public function test_admin_index_returns_general_listing_with_filters(): void
     {
         [$manager, $techA, $techB, $clientA, $clientB, $equipmentA, $equipmentB] = $this->seedAdminOrderActors();
@@ -815,6 +908,84 @@ class OrderFlowTest extends TestCase
 
         $allowed->assertOk()
             ->assertJsonPath('data.status_novo', 'aguardando_reparo');
+    }
+
+    public function test_migration_adds_missing_transitions_and_runtime_honors_them(): void
+    {
+        [$user, $assignedOrder] = $this->seedTechnicianOrders();
+        $token = $this->loginAndGetToken($user->email);
+
+        // O catálogo do fixture não tem testes_finais/retrabalho — insere os
+        // dois para provar que a migration cadastra o par novo e que o runtime
+        // passa a aceitar a transição (teste reprovado -> retrabalho).
+        DB::table('os_status')->insert([
+            [
+                'codigo' => 'testes_finais',
+                'nome' => 'Testes Finais',
+                'grupo_macro' => 'qualidade',
+                'icone' => null,
+                'cor' => 'info',
+                'ordem_fluxo' => 150,
+                'status_final' => 0,
+                'status_pausa' => 0,
+                'gera_evento_crm' => 1,
+                'estado_fluxo_padrao' => 'em_execucao',
+                'ativo' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'codigo' => 'retrabalho',
+                'nome' => 'Retrabalho',
+                'grupo_macro' => 'execucao',
+                'icone' => null,
+                'cor' => 'warning',
+                'ordem_fluxo' => 100,
+                'status_final' => 0,
+                'status_pausa' => 0,
+                'gera_evento_crm' => 1,
+                'estado_fluxo_padrao' => 'em_execucao',
+                'ativo' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        $migration = require base_path('database/migrations/2026_07_16_000001_add_missing_os_status_transitions.php');
+        $migration->up();
+        $migration->up(); // idempotente: segunda rodada não duplica
+
+        $testesFinaisId = (int) DB::table('os_status')->where('codigo', 'testes_finais')->value('id');
+        $retrabalhoId = (int) DB::table('os_status')->where('codigo', 'retrabalho')->value('id');
+
+        $this->assertSame(1, DB::table('os_status_transicoes')
+            ->where('status_origem_id', $testesFinaisId)
+            ->where('status_destino_id', $retrabalhoId)
+            ->where('ativo', 1)
+            ->count());
+
+        // Pares cujos códigos não existem no fixture são pulados sem erro.
+        $this->assertSame(0, DB::table('os_status')->where('codigo', 'cumprimento_garantia')->count());
+
+        DB::table('os')->where('id', $assignedOrder)->update(['status' => 'testes_finais']);
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
+                'status' => 'retrabalho',
+                'observacao' => 'Checklist de saída reprovou.',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.status_anterior', 'testes_finais')
+            ->assertJsonPath('data.status_novo', 'retrabalho');
+
+        $migration->down();
+
+        $this->assertSame(0, DB::table('os_status_transicoes')
+            ->where('status_origem_id', $testesFinaisId)
+            ->where('status_destino_id', $retrabalhoId)
+            ->where('ativo', 1)
+            ->count());
     }
 
     public function test_patch_status_freezes_deadline_when_entering_a_deadline_freeze_status(): void

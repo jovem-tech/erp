@@ -1,9 +1,16 @@
 """Gera o diagrama SVG do fluxo de status da OS espelhando o sistema real.
 
-Fontes da verdade (levantadas em 2026-07-16 no banco sistema_hml e no código):
+Fontes da verdade (levantadas em 2026-07-17 no banco sistema_hml e no código;
+inclui as 8 transições adicionadas pela migration
+2026_07_16_000001_add_missing_os_status_transitions, mais 10 transições
+cadastradas manualmente em Conhecimento > Fluxo da OS em 2026-07-17 — dando a
+`testes_operacionais` saídas pra verificação de garantia/orçamento/conclusão
+direta/garantia concluída/cancelamento, e a `irreparavel` um caminho de volta
+pra diagnóstico/orçamento/reparo/execução/retrabalho, ou seja, uma OS marcada
+irreparável deixou de ser (quase) definitiva):
 
   - Tabela `os_status` (27 status ativos, agrupados por `grupo_macro`).
-  - Tabela `os_status_transicoes` (69 transições ativas) — embutida abaixo em
+  - Tabela `os_status_transicoes` (87 transições ativas) — embutida abaixo em
     REAL_TRANSITIONS para o script se auto-verificar.
   - Regra de negócio (OrderWorkflowService::updateStatus): mover PARA um dos 5
     status de encerramento (grupo_macro='encerrado') é bloqueado no fluxo
@@ -34,6 +41,9 @@ from xml.sax.saxutils import escape
 ROOT = Path(__file__).resolve().parent
 OUTPUT = ROOT / "diagrama_fluxo_os_organizado.svg"
 OUTPUT_PNG = ROOT / "diagrama_fluxo_os_organizado.png"
+# Variante embed consumida pela página "Mapa da OS" do frontend desktop
+# (via @include); regenerar com --embed sempre que o fluxo mudar.
+EMBED_OUTPUT = ROOT.parent.parent / "frontends/desktop/resources/views/orders/_flow_map_svg.blade.php"
 
 WIDTH = 1780
 HEIGHT = 1560
@@ -52,7 +62,7 @@ CLOSURE_CODES = {
     "descartado",
 }
 
-# As 69 linhas ativas de os_status_transicoes (origem -> destino).
+# As 87 linhas ativas de os_status_transicoes (origem -> destino).
 REAL_TRANSITIONS = [
     ("triagem", "diagnostico"),
     ("triagem", "irreparavel"),
@@ -100,11 +110,23 @@ REAL_TRANSITIONS = [
     ("reparo_execucao", "reparo_concluido"),
     ("reparo_execucao", "irreparavel"),
     ("reparo_execucao", "cancelado"),
+    ("cumprimento_garantia", "garantia_concluida"),
+    ("cumprimento_garantia", "irreparavel"),
+    ("retrabalho", "aguardando_reparo"),
     ("retrabalho", "testes_operacionais"),
+    ("testes_operacionais", "verificacao_garantia"),
+    ("testes_operacionais", "aguardando_orcamento"),
     ("testes_operacionais", "aguardando_peca"),
     ("testes_operacionais", "testes_finais"),
+    ("testes_operacionais", "reparo_concluido"),
+    ("testes_operacionais", "garantia_concluida"),
+    ("testes_operacionais", "irreparavel"),
+    ("testes_operacionais", "cancelado"),
+    ("aguardando_peca", "aguardando_reparo"),
     ("aguardando_peca", "reparo_execucao"),
+    ("aguardando_peca", "pagamento_pendente"),
     ("aguardando_peca", "cancelado"),
+    ("pagamento_pendente", "aguardando_reparo"),
     ("pagamento_pendente", "entregue_pagamento_pendente"),
     ("pagamento_pendente", "reparado_disponivel_loja"),
     ("pagamento_pendente", "entregue_reparado_pago"),
@@ -112,11 +134,17 @@ REAL_TRANSITIONS = [
     ("entregue_pagamento_pendente", "entregue_reparado_pago"),
     ("entregue_pagamento_pendente", "devolvido_sem_reparo"),
     ("entregue_pagamento_pendente", "descartado"),
+    ("testes_finais", "retrabalho"),
     ("testes_finais", "reparo_concluido"),
     ("reparo_concluido", "entregue_pagamento_pendente"),
     ("reparo_concluido", "reparado_disponivel_loja"),
     ("reparo_concluido", "entregue_reparado_pago"),
     ("reparado_disponivel_loja", "entregue_reparado_pago"),
+    ("irreparavel", "diagnostico"),
+    ("irreparavel", "aguardando_orcamento"),
+    ("irreparavel", "aguardando_reparo"),
+    ("irreparavel", "reparo_execucao"),
+    ("irreparavel", "retrabalho"),
     ("irreparavel", "irreparavel_disponivel_loja"),
     ("irreparavel", "devolvido_sem_reparo"),
     ("irreparavel", "descartado"),
@@ -195,7 +223,7 @@ LANES = [
 CARDS = {
     "triagem": {"x": 80, "y": 120, "w": 120, "h": 62, "lines": ["Triagem"], "kind": "primary"},
     "diagnostico": {"x": 340, "y": 120, "w": 140, "h": 62, "lines": ["Diagnóstico", "técnico"], "kind": "primary"},
-    "aguardando_avaliacao": {"x": 340, "y": 225, "w": 140, "h": 62, "lines": ["Aguardando", "avaliação"], "kind": "secondary"},
+    "aguardando_avaliacao": {"x": 340, "y": 225, "w": 140, "h": 62, "lines": ["Aguardando", "avaliação"], "kind": "primary"},
     "verificacao_garantia": {"x": 340, "y": 320, "w": 140, "h": 62, "lines": ["Verificação", "de garantia"], "kind": "secondary"},
     "aguardando_orcamento": {"x": 640, "y": 120, "w": 140, "h": 62, "lines": ["Aguardando", "orçamento"], "kind": "primary"},
     "aguardando_autorizacao": {"x": 640, "y": 225, "w": 140, "h": 62, "lines": ["Aguardando", "autorização"], "kind": "primary"},
@@ -242,8 +270,11 @@ BAIXA_PORT = {"x": 1200, "y": 995, "w": 220, "h": 50}
 
 EDGES = [
     # --- caminho feliz -----------------------------------------------------
+    # (passa por "Aguardando avaliação", conforme o caso clássico da bancada:
+    #  triagem -> diagnóstico -> avaliação -> orçamento -> autorização -> ...)
     {"from": "triagem", "to": "diagnostico", "kind": "main", "route": [(200, 151), (340, 151)]},
-    {"from": "diagnostico", "to": "aguardando_orcamento", "kind": "main", "route": [(480, 143), (640, 143)]},
+    {"from": "diagnostico", "to": "aguardando_avaliacao", "kind": "main", "route": [(410, 182), (410, 225)]},
+    {"from": "aguardando_avaliacao", "to": "aguardando_orcamento", "kind": "main", "route": [(480, 230), (548, 230), (548, 159), (640, 159)]},
     {"from": "aguardando_orcamento", "to": "aguardando_autorizacao", "kind": "main", "route": [(710, 182), (710, 225)]},
     {"from": "aguardando_autorizacao", "to": "aguardando_reparo", "kind": "main", "route": [(710, 287), (710, 510)]},
     {"from": "aguardando_reparo", "to": "reparo_execucao", "kind": "main", "route": [(710, 572), (710, 615)]},
@@ -256,13 +287,12 @@ EDGES = [
     {"from": "triagem", "to": "irreparavel_disponivel_loja", "kind": "alt", "route": [(152, 182), (152, 1142), (620, 1142)]},
     {"from": "triagem", "to": "reparo_recusado", "kind": "alt", "route": [(128, 182), (128, 1263), (640, 1263)]},
     {"from": "triagem", "to": "cancelado", "kind": "alt", "route": [(156, 120), (156, 36), (1700, 36), (1700, 1032), (1660, 1032)]},
-    {"from": "diagnostico", "to": "aguardando_avaliacao", "kind": "alt", "route": [(410, 182), (410, 225)]},
+    {"from": "diagnostico", "to": "aguardando_orcamento", "kind": "alt", "route": [(480, 143), (640, 143)]},
     {"from": "diagnostico", "to": "verificacao_garantia", "kind": "alt", "route": [(340, 163), (316, 163), (316, 363), (340, 363)]},
     {"from": "diagnostico", "to": "irreparavel", "kind": "alt", "route": [(340, 135), (252, 135), (252, 1031), (640, 1031)]},
     {"from": "diagnostico", "to": "cancelado", "kind": "alt", "route": [(424, 120), (424, 72), (1714, 72), (1714, 1060), (1660, 1060)]},
     {"from": "diagnostico", "to": "aguardando_reparo", "kind": "alt", "route": [(480, 165), (584, 165), (584, 529), (640, 529)]},
     {"from": "aguardando_avaliacao", "to": "verificacao_garantia", "kind": "alt", "route": [(380, 287), (380, 320)]},
-    {"from": "aguardando_avaliacao", "to": "aguardando_orcamento", "kind": "alt", "route": [(480, 230), (548, 230), (548, 159), (640, 159)]},
     {"from": "aguardando_avaliacao", "to": "retrabalho", "kind": "alt", "route": [(480, 240), (572, 240), (572, 856), (640, 856)]},
     {"from": "aguardando_avaliacao", "to": "aguardando_reparo", "kind": "alt", "route": [(480, 250), (524, 250), (524, 553), (640, 553)]},
     {"from": "aguardando_avaliacao", "to": "aguardando_autorizacao", "kind": "alt", "route": [(480, 262), (640, 262)]},
@@ -280,10 +310,17 @@ EDGES = [
     {"from": "reparo_execucao", "to": "aguardando_peca", "kind": "alt", "route": [(780, 622), (1116, 622), (1116, 553), (1230, 553)]},
     {"from": "reparo_execucao", "to": "pagamento_pendente", "kind": "alt", "route": [(690, 677), (690, 704), (848, 704), (848, 604), (1310, 604), (1310, 615)]},
     {"from": "reparo_execucao", "to": "cancelado", "kind": "alt", "route": [(780, 666), (860, 666), (860, 915), (1474, 915), (1474, 1049), (1520, 1049)]},
-    {"from": "reparo_execucao", "to": "irreparavel", "kind": "alt", "route": [(640, 662), (606, 662), (606, 1050), (640, 1050)]},
+    {"from": "reparo_execucao", "to": "irreparavel", "kind": "alt", "route": [(640, 662), (606, 662), (606, 1056), (640, 1056)]},
     {"from": "reparo_execucao", "to": "reparo_concluido", "kind": "alt", "route": [(730, 677), (730, 708), (908, 708), (908, 951), (1030, 951), (1030, 1000)]},
+    {"from": "cumprimento_garantia", "to": "garantia_concluida", "kind": "alt", "route": [(780, 739), (884, 739), (884, 1208), (1000, 1208), (1000, 1220)]},
+    {"from": "cumprimento_garantia", "to": "irreparavel", "kind": "alt", "route": [(640, 763), (624, 763), (624, 1043), (640, 1043)]},
     {"from": "retrabalho", "to": "testes_operacionais", "kind": "alt", "route": [(780, 856), (824, 856), (824, 573), (930, 573)]},
     {"from": "testes_operacionais", "to": "aguardando_peca", "kind": "alt", "route": [(1070, 565), (1230, 565)]},
+    {"from": "testes_operacionais", "to": "irreparavel", "kind": "alt", "route": [(930, 585), (896, 585), (896, 1031), (780, 1031)]},
+    {"from": "testes_operacionais", "to": "reparo_concluido", "kind": "alt", "route": [(1070, 570), (1100, 570), (1100, 935), (1000, 935), (1000, 1000)]},
+    {"from": "testes_operacionais", "to": "garantia_concluida", "kind": "alt", "route": [(1070, 580), (1150, 580), (1150, 1251), (1070, 1251)]},
+    {"from": "testes_operacionais", "to": "cancelado", "kind": "alt", "route": [(1000, 530), (1000, 440), (1494, 440), (1494, 1051), (1520, 1051)]},
+    {"from": "aguardando_peca", "to": "pagamento_pendente", "kind": "alt", "route": [(1330, 572), (1330, 615)]},
     {"from": "pagamento_pendente", "to": "entregue_pagamento_pendente", "kind": "alt", "route": [(1310, 677), (1310, 720)]},
     {"from": "pagamento_pendente", "to": "reparado_disponivel_loja", "kind": "alt", "route": [(1230, 622), (1176, 622), (1176, 1142), (1080, 1142)]},
     {"from": "reparo_concluido", "to": "entregue_pagamento_pendente", "kind": "alt", "route": [(1070, 1043), (1140, 1043), (1140, 806), (1310, 806), (1310, 794)]},
@@ -297,6 +334,17 @@ EDGES = [
     {"from": "verificacao_garantia", "to": "diagnostico", "kind": "return", "route": [(340, 339), (292, 339), (292, 177), (340, 177)]},
     {"from": "entregue_pagamento_pendente", "to": "aguardando_avaliacao", "kind": "return", "route": [(1220, 745), (1128, 745), (1128, 444), (304, 444), (304, 268), (340, 268)]},
     {"from": "aguardando_peca", "to": "reparo_execucao", "kind": "return", "route": [(1290, 572), (1290, 588), (884, 588), (884, 652), (780, 652)]},
+    {"from": "testes_finais", "to": "retrabalho", "kind": "return", "route": [(966, 697), (966, 742), (806, 742), (806, 868), (780, 868)]},
+    {"from": "retrabalho", "to": "aguardando_reparo", "kind": "return", "route": [(640, 832), (524, 832), (524, 565), (640, 565)]},
+    {"from": "pagamento_pendente", "to": "aguardando_reparo", "kind": "return", "route": [(1230, 634), (1164, 634), (1164, 598), (806, 598), (806, 529), (780, 529)]},
+    {"from": "aguardando_peca", "to": "aguardando_reparo", "kind": "return", "route": [(1270, 510), (1270, 504), (772, 504), (772, 510)]},
+    {"from": "testes_operacionais", "to": "verificacao_garantia", "kind": "return", "route": [(930, 561), (900, 561), (900, 415), (440, 415), (440, 382)]},
+    {"from": "testes_operacionais", "to": "aguardando_orcamento", "kind": "return", "route": [(990, 530), (990, 450), (810, 450), (810, 151), (780, 151)]},
+    {"from": "irreparavel", "to": "diagnostico", "kind": "return", "route": [(640, 1005), (286, 1005), (286, 140), (340, 140)]},
+    {"from": "irreparavel", "to": "aguardando_orcamento", "kind": "return", "route": [(668, 1000), (856, 1000), (856, 151), (780, 151)]},
+    {"from": "irreparavel", "to": "aguardando_reparo", "kind": "return", "route": [(696, 1000), (868, 1000), (868, 541), (780, 541)]},
+    {"from": "irreparavel", "to": "reparo_execucao", "kind": "return", "route": [(724, 1000), (880, 1000), (880, 646), (780, 646)]},
+    {"from": "irreparavel", "to": "retrabalho", "kind": "return", "route": [(752, 1000), (752, 887), (710, 887)]},
     {"from": "cancelado", "to": "triagem", "kind": "return", "route": [(1590, 1020), (1590, 48), (40, 48), (40, 151), (80, 151)]},
 ]
 
@@ -356,7 +404,7 @@ def svg_text(x, y, lines, font_size=16, weight=700, fill=COLORS["ink"], anchor="
     return "\n".join(parts)
 
 
-def draw_card(card):
+def draw_card(card, code=None):
     if card["kind"] == "primary":
         fill, stroke, text = COLORS["primary_fill"], COLORS["primary_stroke"], COLORS["primary_text"]
     elif card["kind"] == "success":
@@ -364,12 +412,19 @@ def draw_card(card):
     else:
         fill, stroke, text = COLORS["secondary_fill"], COLORS["secondary_stroke"], COLORS["secondary_text"]
 
-    return "\n".join(
+    body = "\n".join(
         [
             svg_rect(card["x"], card["y"], card["w"], card["h"], 14, fill, stroke, 2, 'filter="url(#shadow)"'),
             svg_text(card["x"] + card["w"] / 2, card["y"] + card["h"] / 2 + 5, card["lines"], 15, 700, text, line_gap=18),
         ]
     )
+
+    # No modo embed, cada card vira um <g> endereçável por JS/CSS (página
+    # "Mapa da OS" do frontend desktop decora nós por data-status).
+    if code is not None:
+        return f'<g class="os-map-node" data-status="{escape(code)}" data-kind="{card["kind"]}">\n{body}\n</g>'
+
+    return body
 
 
 def draw_lane(lane):
@@ -426,12 +481,13 @@ def rounded_path(points, radius=10) -> str:
     return " ".join(d)
 
 
-def polyline(points, stroke, width, marker, dashed=False):
+def polyline(points, stroke, width, marker, dashed=False, extra_attrs=""):
     d = rounded_path(points)
     dash = ' stroke-dasharray="8 8"' if dashed else ""
+    attrs = f" {extra_attrs}" if extra_attrs else ""
     return (
         f'<path d="{d}" fill="none" stroke="{stroke}" stroke-width="{width}" '
-        f'stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-{marker})"{dash}/>'
+        f'stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-{marker})"{dash}{attrs}/>'
     )
 
 
@@ -466,11 +522,17 @@ def legend() -> str:
 """
 
 
-def build_svg() -> str:
+def build_svg(embed: bool = False) -> str:
+    """Gera o SVG completo (padrão) ou a variante EMBED para a página
+    "Mapa da OS" do frontend desktop: sem título/legenda/dimensões fixas
+    (só viewBox, para escalar no container) e com atributos data-status/
+    data-edge/data-port para o JS da página decorar trajeto, posição atual
+    e rota provável."""
     verify_against_catalog()
 
+    dimensions = "" if embed else f' width="{WIDTH}" height="{HEIGHT}"'
     lines: list[str] = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{WIDTH}" height="{HEIGHT}" viewBox="0 0 {WIDTH} {HEIGHT}">',
+        f'<svg xmlns="http://www.w3.org/2000/svg"{dimensions} viewBox="0 0 {WIDTH} {HEIGHT}">',
         "<defs>",
         """
         <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
@@ -490,37 +552,54 @@ def build_svg() -> str:
         """,
         "</defs>",
         f'<rect width="{WIDTH}" height="{HEIGHT}" fill="{COLORS["page"]}"/>',
-        svg_text(40, 26, ["FLUXO DE STATUS DA OS — espelho do catálogo real (os_status / os_status_transicoes)"], 15, 800, COLORS["muted"], anchor="start"),
     ]
+
+    if not embed:
+        lines.append(svg_text(40, 26, ["FLUXO DE STATUS DA OS — espelho do catálogo real (os_status / os_status_transicoes)"], 15, 800, COLORS["muted"], anchor="start"))
 
     for lane in LANES:
         lines.append(draw_lane(lane))
 
-    lines.append(legend())
+    if not embed:
+        lines.append(legend())
 
     for edge in EDGES:
         style = EDGE_STYLES[edge["kind"]]
-        lines.append(polyline(edge["route"], style["stroke"], style["width"], style["marker"], style["dashed"]))
+        extra = (
+            f'class="os-map-edge" data-edge="{edge["from"]}:{edge["to"]}" data-edge-kind="{edge["kind"]}"'
+            if embed
+            else ""
+        )
+        lines.append(polyline(edge["route"], style["stroke"], style["width"], style["marker"], style["dashed"], extra_attrs=extra))
 
-    for edge in BAIXA_EDGES:
-        lines.append(polyline(edge["route"], COLORS["line_purple"], edge["width"], "purple"))
+    for index, edge in enumerate(BAIXA_EDGES):
+        extra = (
+            'class="os-map-edge" data-edge="reparo_concluido:__baixa__" data-edge-kind="baixa"'
+            if embed and index == 0
+            else ""
+        )
+        lines.append(polyline(edge["route"], COLORS["line_purple"], edge["width"], "purple", extra_attrs=extra))
 
-    for card in CARDS.values():
-        lines.append(draw_card(card))
+    for code, card in CARDS.items():
+        lines.append(draw_card(card, code=code if embed else None))
 
     for lane in LANES:
         lines.append(draw_lane_title(lane))
 
     # Porta única de entrada da raia ENCERRADO (baixa da OS).
-    lines.append(svg_rect(BAIXA_PORT["x"], BAIXA_PORT["y"], BAIXA_PORT["w"], BAIXA_PORT["h"], 12, COLORS["port_fill"], COLORS["line_purple"], 2, 'filter="url(#shadow)"'))
-    lines.append(svg_text(BAIXA_PORT["x"] + BAIXA_PORT["w"] / 2, BAIXA_PORT["y"] + 20, ["BAIXA DA OS"], 15, 800, COLORS["line_purple"]))
-    lines.append(svg_text(BAIXA_PORT["x"] + BAIXA_PORT["w"] / 2, BAIXA_PORT["y"] + 38, ["porta única de encerramento"], 11, 600, COLORS["muted"]))
+    port_body = "\n".join([
+        svg_rect(BAIXA_PORT["x"], BAIXA_PORT["y"], BAIXA_PORT["w"], BAIXA_PORT["h"], 12, COLORS["port_fill"], COLORS["line_purple"], 2, 'filter="url(#shadow)"'),
+        svg_text(BAIXA_PORT["x"] + BAIXA_PORT["w"] / 2, BAIXA_PORT["y"] + 20, ["BAIXA DA OS"], 15, 800, COLORS["line_purple"]),
+        svg_text(BAIXA_PORT["x"] + BAIXA_PORT["w"] / 2, BAIXA_PORT["y"] + 38, ["porta única de encerramento"], 11, 600, COLORS["muted"]),
+    ])
+    if embed:
+        port_body = f'<g class="os-map-port" data-port="baixa">\n{port_body}\n</g>'
+    lines.append(port_body)
 
     # Rótulos de contexto.
     lines.append(svg_text(1310, 952, ["baixa a partir de qualquer etapa aberta"], 12, 600, COLORS["line_purple"], style="italic", halo=True))
     lines.append(svg_text(1132, 1010, ["baixa"], 12, 700, COLORS["line_purple"], halo=True))
     lines.append(svg_text(900, 61, ["reabertura"], 12, 600, COLORS["muted"], style="italic", halo=True))
-    lines.append(svg_text(710, 799, ["(sem transição de saída cadastrada;", "sai apenas pela baixa da OS)"], 10.5, 500, COLORS["muted"], line_gap=12, style="italic", halo=True))
 
     lines.append("</svg>")
     return "\n".join(lines)
@@ -553,11 +632,32 @@ def export_png(scale: int = 2) -> None:
     print(f"PNG de apresentação gerado em: {OUTPUT_PNG} ({WIDTH * scale}x{HEIGHT * scale})")
 
 
+def export_embed() -> None:
+    """Gera a variante embed como partial Blade do frontend desktop."""
+    svg = build_svg(embed=True)
+
+    # O conteúdo é só SVG (coordenadas + rótulos), mas como o arquivo vai ser
+    # compilado pelo Blade, garante que nenhum token significativo escapou.
+    for token in ("{{", "}}", "{!!", "@if", "@php", "@end", "@section", "@include"):
+        if token in svg:
+            raise ValueError(f"Variante embed contém token Blade inesperado: {token}")
+
+    header = (
+        "{{-- ARQUIVO GERADO por scripts/python/diagrama_fluxo_os_organizado.py --embed"
+        " — NÃO EDITAR À MÃO. Regenerar sempre que o catálogo de transições mudar. --}}\n"
+    )
+    EMBED_OUTPUT.write_text(header + svg + "\n", encoding="utf-8")
+    print(f"Variante embed gerada em: {EMBED_OUTPUT}")
+
+
 if __name__ == "__main__":
     svg = build_svg()
     OUTPUT.write_text(svg, encoding="utf-8")
     print(f"Arquivo gerado em: {OUTPUT}")
     print(f"Status: {len(CARDS)} | transições do banco: {len(REAL_TRANSITIONS)} | setas de fluxo: {len(EDGES)} (utilizáveis: {len(USABLE_TRANSITIONS)})")
+
+    if "--embed" in sys.argv:
+        export_embed()
 
     if "--png" in sys.argv:
         export_png()

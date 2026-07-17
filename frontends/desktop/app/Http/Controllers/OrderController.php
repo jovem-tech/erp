@@ -12,6 +12,7 @@ use App\Services\OrderService;
 use App\Services\ReportedDefectService;
 use App\Services\TeamMemberService;
 use App\Services\UserService;
+use App\Support\DesktopSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -223,8 +224,9 @@ class OrderController extends DesktopController
 
         $selectedEquipment = $this->resolveSelectedEquipment($selectedEquipmentId);
 
-        if ($selectedClientId <= 0 && (int) ($selectedEquipment['cliente_id'] ?? 0) > 0) {
-            $selectedClientId = (int) $selectedEquipment['cliente_id'];
+        $equipmentClientId = (int) ($selectedEquipment['cliente_id'] ?? 0);
+        if ($equipmentClientId > 0) {
+            $selectedClientId = $equipmentClientId;
         }
 
         $selectedClient = $this->resolveSelectedClient($selectedClientId);
@@ -697,10 +699,175 @@ class OrderController extends DesktopController
 
     public function show(int $order): View
     {
+        $orderData = $this->orderService->find($order);
+        $clientId = (int) data_get($orderData, 'cliente_id', data_get($orderData, 'cliente.id', 0));
+        $equipmentId = (int) data_get($orderData, 'equipamento_id', data_get($orderData, 'equipamento.id', 0));
+
         return view('orders.show', [
             'pageTitle' => 'Detalhe da OS',
-            'order' => $this->orderService->find($order),
+            'order' => $orderData,
+            'newOrderClientUrl' => $clientId > 0
+                ? route('orders.create', ['cliente_id' => $clientId])
+                : null,
+            'newOrderSameEquipmentUrl' => $clientId > 0 && $equipmentId > 0
+                ? route('orders.create', [
+                    'cliente_id' => $clientId,
+                    'equipamento_id' => $equipmentId,
+                ])
+                : null,
         ]);
+    }
+
+    public function audit(Request $request, int $order): View
+    {
+        $filters = $request->validate([
+            'category' => ['nullable', 'string', 'in:status,orcamento,financeiro,documento,mensagem,registro'],
+            'origin' => ['nullable', 'string', 'in:sistema,usuario,cliente,automacao'],
+            'type' => ['nullable', 'string', 'max:60', 'regex:/^[a-z0-9_]+$/'],
+            'search' => ['nullable', 'string', 'max:100'],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'date_format:Y-m-d'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'in:25,50,100'],
+        ]);
+        $filters['per_page'] = (int) ($filters['per_page'] ?? 50);
+
+        $audit = $this->orderService->auditTrail($order, $filters);
+        $auditOrder = $audit['order'];
+        $orderLabel = trim((string) ($auditOrder['numero_os'] ?? ''));
+
+        return view('orders.audit', [
+            'pageTitle' => 'Auditoria da OS ' . ($orderLabel !== '' ? $orderLabel : ('#' . $order)),
+            'order' => $auditOrder,
+            'events' => $audit['events'],
+            'stats' => $audit['stats'],
+            'pagination' => $audit['pagination'],
+            'filters' => $filters,
+        ]);
+    }
+
+    /**
+     * Mapa da OS: visão "GPS" do ciclo de vida — trajeto percorrido, posição
+     * atual e rota provável até o encerramento, sobre o fluxograma real do
+     * catálogo (partial gerado por scripts/python/diagrama_fluxo_os_organizado.py --embed).
+     */
+    public function map(int $order): View
+    {
+        $mapData = $this->resolveMapData($order);
+
+        $orderLabel = trim((string) ($mapData['order']['numero_os'] ?? ''));
+
+        return view('orders.map', [
+            'pageTitle' => 'Mapa da OS ' . ($orderLabel !== '' ? $orderLabel : ('#' . $order)),
+            'order' => $mapData['order'],
+            'path' => $mapData['path'],
+            'pathTruncated' => $mapData['pathTruncated'],
+            'canEditStatus' => $mapData['canEditStatus'],
+            'statusNames' => $this->buildStatusNameMap($mapData['order']),
+        ]);
+    }
+
+    /**
+     * Dados frescos do Mapa da OS em JSON — usado pelo JS (orders-map.js)
+     * pra atualizar o mapa depois de mover o status SEM recarregar a
+     * página, o que sairia da tela cheia (a navegação sempre encerra o
+     * fullscreen do navegador). Mesma fonte de dados de map(), só que
+     * devolvendo o parcial do trajeto já renderizado (evita duplicar a
+     * lógica de rótulo de status em JS).
+     */
+    public function mapData(int $order): JsonResponse
+    {
+        $mapData = $this->resolveMapData($order);
+        $statusNames = $this->buildStatusNameMap($mapData['order']);
+
+        return response()->json([
+            'order' => $mapData['order'],
+            'path' => $mapData['path'],
+            'pathTruncated' => $mapData['pathTruncated'],
+            'canEditStatus' => $mapData['canEditStatus'],
+            'trailHtml' => view('orders._map_trail', [
+                'path' => $mapData['path'],
+                'pathTruncated' => $mapData['pathTruncated'],
+                'statusNames' => $statusNames,
+            ])->render(),
+        ]);
+    }
+
+    /**
+     * @return array{order: array<string, mixed>, path: array<int, array<string, mixed>>, pathTruncated: bool, canEditStatus: bool}
+     */
+    private function resolveMapData(int $order): array
+    {
+        $orderData = $this->orderService->find($order);
+
+        // Trajeto COMPLETO: o campo 'historico' do payload é limitado às 5
+        // últimas transições — a fonte íntegra é a trilha de eventos com
+        // category=status (paginada em ordem decrescente; revertemos para
+        // cronológica). Teto de 5 páginas (500 transições) por sanidade.
+        $events = [];
+        $page = 1;
+        $truncated = false;
+
+        do {
+            $audit = $this->orderService->auditTrail($order, [
+                'category' => 'status',
+                'per_page' => 100,
+                'page' => $page,
+            ]);
+
+            $events = array_merge($events, is_array($audit['events'] ?? null) ? $audit['events'] : []);
+            $lastPage = (int) data_get($audit, 'pagination.last_page', 1);
+
+            if ($page >= 5 && $lastPage > $page) {
+                $truncated = true;
+                break;
+            }
+
+            $page++;
+        } while ($page <= $lastPage);
+
+        $path = [];
+        foreach (array_reverse($events) as $event) {
+            $para = trim((string) data_get($event, 'data.status_novo', ''));
+            if ($para === '') {
+                continue;
+            }
+
+            $path[] = [
+                'de' => trim((string) data_get($event, 'data.status_anterior', '')),
+                'para' => $para,
+                'em' => (string) ($event['created_at'] ?? ''),
+                'por' => (string) data_get($event, 'user.name', ''),
+            ];
+        }
+
+        return [
+            'order' => $orderData,
+            'path' => $path,
+            'pathTruncated' => $truncated,
+            'canEditStatus' => DesktopSession::can('os', 'editar'),
+        ];
+    }
+
+    /**
+     * Código -> nome do status, para o painel de trajeto do Mapa da OS
+     * (códigos legados/sem card no fluxo aparecem crus).
+     *
+     * @param array<string, mixed> $orderData
+     * @return array<string, string>
+     */
+    private function buildStatusNameMap(array $orderData): array
+    {
+        $statusNames = [];
+
+        foreach ((is_array($orderData['status_disponiveis'] ?? null) ? $orderData['status_disponiveis'] : []) as $statusRow) {
+            $codigo = trim((string) ($statusRow['codigo'] ?? ''));
+            if ($codigo !== '') {
+                $statusNames[$codigo] = (string) ($statusRow['nome'] ?? $codigo);
+            }
+        }
+
+        return $statusNames;
     }
 
     /**
@@ -983,6 +1150,7 @@ class OrderController extends DesktopController
             'status_nome'              => (string) ($data['status_nome'] ?? ''),
             'status_cor'               => (string) ($data['status_cor'] ?? '#64748b'),
             'status_congela_prazo'     => (bool) ($data['status_congela_prazo'] ?? false),
+            'status_ordem_fluxo'       => (int) ($data['status_ordem_fluxo'] ?? 0),
             'cliente_nome'             => (string) ($data['cliente_nome'] ?? ''),
             'cliente_telefone'         => (string) ($data['cliente']['telefone1'] ?? ''),
             'cliente_email'            => (string) ($data['cliente']['email'] ?? ''),

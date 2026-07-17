@@ -757,6 +757,15 @@ const DesktopUi = (() => {
             main.classList.add('is-expanded');
         }
 
+        // Um grupo ativo chega renderizado pelo servidor com `is-open`. No
+        // modo recolhido essa classe transforma o submenu em popover fixo, por
+        // isso o estado aberto precisa ser descartado antes da primeira
+        // sincronizacao visual. O usuario ainda pode abri-lo deliberadamente
+        // clicando no icone do grupo.
+        if (sidebar.classList.contains('is-collapsed')) {
+            closeCollapsedSidebarPopovers();
+        }
+
         syncSidebarToggleState();
 
         sidebarToggle?.addEventListener('click', () => {
@@ -764,9 +773,14 @@ const DesktopUi = (() => {
                 return;
             }
 
-            sidebar.classList.toggle('is-collapsed');
-            main.classList.toggle('is-expanded');
-            localStorage.setItem(collapseStorageKey, sidebar.classList.contains('is-collapsed') ? '1' : '0');
+            const collapsed = sidebar.classList.toggle('is-collapsed');
+            main.classList.toggle('is-expanded', collapsed);
+
+            if (collapsed) {
+                closeCollapsedSidebarPopovers();
+            }
+
+            localStorage.setItem(collapseStorageKey, collapsed ? '1' : '0');
             syncSidebarToggleState();
             window.requestAnimationFrame(syncCollapsedSidebarGroupPopovers);
         });
@@ -850,6 +864,27 @@ const DesktopUi = (() => {
             }
 
             closeCollapsedSidebarPopovers();
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key !== 'Escape' || !(sidebar instanceof HTMLElement) || !sidebar.classList.contains('is-collapsed')) {
+                return;
+            }
+
+            const openGroup = sidebar.querySelector('.desktop-nav-group.is-open');
+            if (!(openGroup instanceof HTMLElement)) {
+                return;
+            }
+
+            const target = event.target;
+            const shouldRestoreFocus = target instanceof Node && openGroup.contains(target);
+            const toggle = openGroup.querySelector('[data-desktop-nav-group-toggle]');
+
+            closeCollapsedSidebarPopovers();
+
+            if (shouldRestoreFocus && toggle instanceof HTMLElement) {
+                toggle.focus({ preventScroll: true });
+            }
         });
 
         syncCollapsedSidebarGroupPopovers();
@@ -1460,16 +1495,36 @@ const DesktopUi = (() => {
                         <span>${items.length}</span>
                     </div>
                     <div class="desktop-search-group-items">
-                        ${items.map((item) => `
-                            <a href="${escapeHtml(item.url || '#')}" class="desktop-search-item">
-                                <span class="desktop-search-item-icon"><i class="bi ${escapeHtml(item.icon || 'bi-grid')}"></i></span>
+                        ${items.map((item) => {
+                            const imageUrl = String(item?.image_url || '').trim();
+                            const facts = Array.isArray(item?.facts) ? item.facts.slice(0, 4) : [];
+                            const media = imageUrl !== ''
+                                ? `<span class="desktop-search-item-media has-image"><img src="${escapeHtml(imageUrl)}" alt="" loading="lazy"></span>`
+                                : facts.length > 0
+                                    ? `<span class="desktop-search-item-media is-empty" title="Sem foto principal"><i class="bi bi-camera"></i><small>Sem foto</small></span>`
+                                    : `<span class="desktop-search-item-media"><i class="bi ${escapeHtml(item.icon || 'bi-grid')}"></i></span>`;
+                            const factsHtml = facts.length > 0
+                                ? `<span class="desktop-search-equipment-facts">${facts.map((fact) => `
+                                    <span><b>${escapeHtml(fact?.label || 'Dado')}:</b> ${escapeHtml(fact?.value || 'Não informado')}</span>
+                                `).join('')}</span>`
+                                : '';
+                            const metaHtml = String(item?.meta || '').trim() !== ''
+                                ? `<small class="desktop-search-item-meta">${escapeHtml(item.meta)}</small>`
+                                : '';
+
+                            return `
+                            <a href="${escapeHtml(item.url || '#')}" class="desktop-search-item ${facts.length > 0 ? 'has-equipment-details' : ''}">
+                                ${media}
                                 <span class="desktop-search-item-copy">
                                     <strong>${escapeHtml(item.label || 'Resultado')}</strong>
+                                    ${factsHtml}
                                     <small>${escapeHtml(item.subtitle || '')}</small>
+                                    ${metaHtml}
                                 </span>
                                 <i class="bi bi-arrow-right-short"></i>
                             </a>
-                        `).join('')}
+                        `;
+                        }).join('')}
                     </div>
                 </div>
             `;

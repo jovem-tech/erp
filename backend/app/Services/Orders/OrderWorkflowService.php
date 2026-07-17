@@ -423,6 +423,187 @@ class OrderWorkflowService
         ];
     }
 
+    /**
+     * Consulta paginada da trilha append-only completa da OS.
+     *
+     * O detalhe operacional mantém apenas os 200 eventos mais recentes para
+     * proteger tempo de resposta e memória. Este endpoint dedicado não possui
+     * corte absoluto: toda a coleção permanece navegável por páginas.
+     *
+     * @param array<string, mixed> $filters
+     * @return array<string, mixed>
+     */
+    public function paginateEventsForUser(User $actor, int $orderId, array $filters = []): array
+    {
+        $order = $this->baseSummaryQuery()
+            ->addSelect([
+                'audit_technician.nome as tecnico_nome',
+                'audit_technician.email as tecnico_email',
+            ])
+            ->leftJoin('usuarios as audit_technician', 'audit_technician.id', '=', 'os.tecnico_id')
+            ->where('os.id', $orderId)
+            ->first();
+
+        if (! $order instanceof Order) {
+            return ['result' => 'not_found'];
+        }
+
+        if (! $this->canAccessOrder($actor, $order)) {
+            return ['result' => 'forbidden'];
+        }
+
+        $statsRows = OrderEvent::query()
+            ->where('os_id', $orderId)
+            ->selectRaw('categoria, origem, tipo, COUNT(*) as total')
+            ->groupBy('categoria', 'origem', 'tipo')
+            ->get();
+
+        $query = OrderEvent::query()
+            ->with(['user:id,nome,email'])
+            ->where('os_id', $orderId);
+
+        $category = trim((string) ($filters['category'] ?? ''));
+        if ($category !== '') {
+            $query->where('categoria', $category);
+        }
+
+        $origin = trim((string) ($filters['origin'] ?? ''));
+        if ($origin !== '') {
+            $query->where('origem', $origin);
+        }
+
+        $type = trim((string) ($filters['type'] ?? ''));
+        if ($type !== '') {
+            $query->where('tipo', $type);
+        }
+
+        $dateFrom = $this->normalizeDateValue($filters['date_from'] ?? null);
+        if ($dateFrom !== null) {
+            $query->whereDate('created_at', '>=', $dateFrom);
+        }
+
+        $dateTo = $this->normalizeDateValue($filters['date_to'] ?? null);
+        if ($dateTo !== null) {
+            $query->whereDate('created_at', '<=', $dateTo);
+        }
+
+        $search = mb_strtolower(trim((string) ($filters['search'] ?? '')));
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $query->where(static function (Builder $searchQuery) use ($like): void {
+                $searchQuery
+                    ->whereRaw("LOWER(COALESCE(titulo, '')) LIKE ?", [$like])
+                    ->orWhereRaw("LOWER(COALESCE(descricao, '')) LIKE ?", [$like])
+                    ->orWhereRaw("LOWER(COALESCE(tipo, '')) LIKE ?", [$like])
+                    ->orWhereRaw("LOWER(COALESCE(origem, '')) LIKE ?", [$like])
+                    ->orWhereRaw("LOWER(COALESCE(CAST(dados AS CHAR), '')) LIKE ?", [$like]);
+            });
+        }
+
+        $perPage = in_array((int) ($filters['per_page'] ?? 50), [25, 50, 100], true)
+            ? (int) ($filters['per_page'] ?? 50)
+            : 50;
+        $paginator = $query
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->paginate($perPage)
+            ->withQueryString();
+
+        $paginator->setCollection(
+            $paginator->getCollection()
+                ->map(fn (OrderEvent $event): array => $this->mapAuditEvent($event))
+        );
+
+        $summary = $this->mapSummary($order);
+        $summary['tecnico'] = [
+            'id' => (int) ($order->tecnico_id ?? 0),
+            'nome' => trim((string) ($order->tecnico_nome ?? '')),
+            'email' => trim((string) ($order->tecnico_email ?? '')),
+        ];
+
+        return [
+            'result' => 'ok',
+            'order' => $summary,
+            'paginator' => $paginator,
+            'stats' => $this->mapAuditStats($statsRows),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function mapAuditEvent(OrderEvent $event): array
+    {
+        $legacyTable = trim((string) ($event->legacy_tabela ?? ''));
+        $user = $event->user;
+
+        return [
+            'id' => (int) ($event->id ?? 0),
+            'category' => (string) ($event->categoria ?? ''),
+            'type' => (string) ($event->tipo ?? ''),
+            'title' => (string) ($event->titulo ?? ''),
+            'description' => $event->descricao !== null ? (string) $event->descricao : null,
+            'data' => is_array($event->dados) ? $event->dados : [],
+            'origin' => (string) ($event->origem ?? OrderEvent::ORIGEM_SISTEMA),
+            'created_at' => $this->formatDateTime($event->created_at ?? null),
+            'user' => $user instanceof User ? [
+                'id' => (int) ($user->id ?? 0),
+                'name' => (string) ($user->nome ?? ''),
+                'email' => (string) ($user->email ?? ''),
+            ] : null,
+            'provenance' => [
+                'kind' => $legacyTable !== '' ? 'legacy' : 'native',
+                'legacy_table' => $legacyTable !== '' ? $legacyTable : null,
+                'legacy_id' => $legacyTable !== '' ? (int) ($event->legacy_id ?? 0) : null,
+                'append_only' => true,
+            ],
+        ];
+    }
+
+    /**
+     * @param iterable<mixed> $rows
+     * @return array<string, mixed>
+     */
+    private function mapAuditStats(iterable $rows): array
+    {
+        $categories = array_fill_keys(OrderEvent::categorias(), 0);
+        $origins = array_fill_keys([
+            OrderEvent::ORIGEM_SISTEMA,
+            OrderEvent::ORIGEM_USUARIO,
+            OrderEvent::ORIGEM_CLIENTE,
+            OrderEvent::ORIGEM_AUTOMACAO,
+        ], 0);
+        $types = [];
+        $total = 0;
+
+        foreach ($rows as $row) {
+            $count = (int) ($row->total ?? 0);
+            $category = trim((string) ($row->categoria ?? ''));
+            $origin = trim((string) ($row->origem ?? ''));
+            $type = trim((string) ($row->tipo ?? ''));
+
+            $total += $count;
+            if ($category !== '') {
+                $categories[$category] = (int) ($categories[$category] ?? 0) + $count;
+            }
+            if ($origin !== '') {
+                $origins[$origin] = (int) ($origins[$origin] ?? 0) + $count;
+            }
+            if ($type !== '') {
+                $types[$type] = (int) ($types[$type] ?? 0) + $count;
+            }
+        }
+
+        ksort($types);
+
+        return [
+            'total' => $total,
+            'categories' => $categories,
+            'origins' => $origins,
+            'types' => $types,
+        ];
+    }
+
     public function resolvePhotoAccess(int $orderId, int $photoId, User $actor): array
     {
         $order = Order::query()
@@ -1531,6 +1712,11 @@ class OrderWorkflowService
             'status_nome' => (string) ($statusRow?->nome ?? ''),
             'status_cor' => (string) ($statusRow?->cor ?? ''),
             'status_grupo_macro' => (string) ($statusRow?->grupo_macro ?? ''),
+            // Posição do status atual no fluxo; usado pelo modal "Alterar
+            // status" pra agrupar as próximas etapas em avançar/retornar
+            // comparando com o ordem_fluxo de cada uma (já presente em cada
+            // item de proximas_etapas, ver mapNextStatusOptionsFromCatalog()).
+            'status_ordem_fluxo' => (int) ($statusRow?->ordem_fluxo ?? 0),
             // OS encerrada = status num dos 3 codigos de fechamento
             // (skill sistema-erp-os-fluxo-fechamento). A UI usa para bloquear
             // "Alterar status" e oferecer "Cancelar baixa".

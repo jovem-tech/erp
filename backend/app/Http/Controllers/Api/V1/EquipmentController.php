@@ -238,6 +238,9 @@ class EquipmentController extends BaseApiController
                     ->orWhereRaw('LOWER(COALESCE(desktop_modalidade, \'\')) LIKE ?', [$term])
                     ->orWhereRaw('LOWER(COALESCE(status_operacional, \'\')) LIKE ?', [$term])
                     ->orWhereRaw('LOWER(COALESCE(status, \'\')) LIKE ?', [$term])
+                    ->orWhereHas('type', static function ($typeQuery) use ($term): void {
+                        $typeQuery->whereRaw('LOWER(COALESCE(nome, \'\')) LIKE ?', [$term]);
+                    })
                     ->orWhereHas('brand', static function ($brandQuery) use ($term): void {
                         $brandQuery->whereRaw('LOWER(COALESCE(nome, \'\')) LIKE ?', [$term]);
                     })

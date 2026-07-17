@@ -60,7 +60,8 @@
 </g>
 
 <path d="M 200 151 L 340 151" fill="none" stroke="#1864AB" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
-<path d="M 480 143 L 640 143" fill="none" stroke="#1864AB" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
+<path d="M 410 182 L 410 225" fill="none" stroke="#1864AB" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
+<path d="M 480 230 L 538 230 Q 548 230 548 220 L 548 169 Q 548 159 558 159 L 640 159" fill="none" stroke="#1864AB" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
 <path d="M 710 182 L 710 225" fill="none" stroke="#1864AB" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
 <path d="M 710 287 L 710 510" fill="none" stroke="#1864AB" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
 <path d="M 710 572 L 710 615" fill="none" stroke="#1864AB" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-blue)"/>
@@ -71,13 +72,12 @@
 <path d="M 152 182 L 152 1132 Q 152 1142 162 1142 L 620 1142" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 128 182 L 128 1253 Q 128 1263 138 1263 L 640 1263" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 156 120 L 156 46 Q 156 36 166 36 L 1690 36 Q 1700 36 1700 46 L 1700 1022 Q 1700 1032 1690 1032 L 1660 1032" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
-<path d="M 410 182 L 410 225" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
+<path d="M 480 143 L 640 143" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 340 163 L 326 163 Q 316 163 316 173 L 316 353 Q 316 363 326 363 L 340 363" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 340 135 L 262 135 Q 252 135 252 145 L 252 1021 Q 252 1031 262 1031 L 640 1031" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 424 120 L 424 82 Q 424 72 434 72 L 1704 72 Q 1714 72 1714 82 L 1714 1050 Q 1714 1060 1704 1060 L 1660 1060" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 480 165 L 574 165 Q 584 165 584 175 L 584 519 Q 584 529 594 529 L 640 529" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 380 287 L 380 320" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
-<path d="M 480 230 L 538 230 Q 548 230 548 220 L 548 169 Q 548 159 558 159 L 640 159" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 480 240 L 562 240 Q 572 240 572 250 L 572 846 Q 572 856 582 856 L 640 856" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 480 250 L 514 250 Q 524 250 524 260 L 524 543 Q 524 553 534 553 L 640 553" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 480 262 L 640 262" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
@@ -95,10 +95,17 @@
 <path d="M 780 622 L 1106 622 Q 1116 622 1116 612 L 1116 563 Q 1116 553 1126 553 L 1230 553" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 690 677 L 690 694 Q 690 704 700 704 L 838 704 Q 848 704 848 694 L 848 614 Q 848 604 858 604 L 1304.5 604 Q 1310 604 1310 609.5 L 1310 615" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 780 666 L 850 666 Q 860 666 860 676 L 860 905 Q 860 915 870 915 L 1464 915 Q 1474 915 1474 925 L 1474 1039 Q 1474 1049 1484 1049 L 1520 1049" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
-<path d="M 640 662 L 616 662 Q 606 662 606 672 L 606 1040 Q 606 1050 616 1050 L 640 1050" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
+<path d="M 640 662 L 616 662 Q 606 662 606 672 L 606 1046 Q 606 1056 616 1056 L 640 1056" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 730 677 L 730 698 Q 730 708 740 708 L 898 708 Q 908 708 908 718 L 908 941 Q 908 951 918 951 L 1020 951 Q 1030 951 1030 961 L 1030 1000" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
+<path d="M 780 739 L 874 739 Q 884 739 884 749 L 884 1198 Q 884 1208 894 1208 L 994 1208 Q 1000 1208 1000 1214 L 1000 1220" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
+<path d="M 640 763 L 632 763 Q 624 763 624 771 L 624 1035 Q 624 1043 632 1043 L 640 1043" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 780 856 L 814 856 Q 824 856 824 846 L 824 583 Q 824 573 834 573 L 930 573" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 1070 565 L 1230 565" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
+<path d="M 930 585 L 906 585 Q 896 585 896 595 L 896 1021 Q 896 1031 886 1031 L 780 1031" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
+<path d="M 1070 570 L 1090 570 Q 1100 570 1100 580 L 1100 925 Q 1100 935 1090 935 L 1010 935 Q 1000 935 1000 945 L 1000 1000" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
+<path d="M 1070 580 L 1140 580 Q 1150 580 1150 590 L 1150 1241 Q 1150 1251 1140 1251 L 1070 1251" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
+<path d="M 1000 530 L 1000 450 Q 1000 440 1010 440 L 1484 440 Q 1494 440 1494 450 L 1494 1041 Q 1494 1051 1504 1051 L 1520 1051" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
+<path d="M 1330 572 L 1330 615" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 1310 677 L 1310 720" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 1230 622 L 1186 622 Q 1176 622 1176 632 L 1176 1132 Q 1176 1142 1166 1142 L 1080 1142" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
 <path d="M 1070 1043 L 1130 1043 Q 1140 1043 1140 1033 L 1140 816 Q 1140 806 1150 806 L 1304 806 Q 1310 806 1310 800 L 1310 794" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)"/>
@@ -110,6 +117,17 @@
 <path d="M 340 339 L 302 339 Q 292 339 292 329 L 292 187 Q 292 177 302 177 L 340 177" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)" stroke-dasharray="8 8"/>
 <path d="M 1220 745 L 1138 745 Q 1128 745 1128 735 L 1128 454 Q 1128 444 1118 444 L 314 444 Q 304 444 304 434 L 304 278 Q 304 268 314 268 L 340 268" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)" stroke-dasharray="8 8"/>
 <path d="M 1290 572 L 1290 580 Q 1290 588 1282 588 L 894 588 Q 884 588 884 598 L 884 642 Q 884 652 874 652 L 780 652" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)" stroke-dasharray="8 8"/>
+<path d="M 966 697 L 966 732 Q 966 742 956 742 L 816 742 Q 806 742 806 752 L 806 858 Q 806 868 796 868 L 780 868" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)" stroke-dasharray="8 8"/>
+<path d="M 640 832 L 534 832 Q 524 832 524 822 L 524 575 Q 524 565 534 565 L 640 565" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)" stroke-dasharray="8 8"/>
+<path d="M 1230 634 L 1174 634 Q 1164 634 1164 624 L 1164 608 Q 1164 598 1154 598 L 816 598 Q 806 598 806 588 L 806 539 Q 806 529 796 529 L 780 529" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)" stroke-dasharray="8 8"/>
+<path d="M 1270 510 L 1270 507 Q 1270 504 1267 504 L 775 504 Q 772 504 772 507 L 772 510" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)" stroke-dasharray="8 8"/>
+<path d="M 930 561 L 910 561 Q 900 561 900 551 L 900 425 Q 900 415 890 415 L 450 415 Q 440 415 440 405 L 440 382" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)" stroke-dasharray="8 8"/>
+<path d="M 990 530 L 990 460 Q 990 450 980 450 L 820 450 Q 810 450 810 440 L 810 161 Q 810 151 800 151 L 780 151" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)" stroke-dasharray="8 8"/>
+<path d="M 640 1005 L 296 1005 Q 286 1005 286 995 L 286 150 Q 286 140 296 140 L 340 140" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)" stroke-dasharray="8 8"/>
+<path d="M 668 1000 L 846 1000 Q 856 1000 856 990 L 856 161 Q 856 151 846 151 L 780 151" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)" stroke-dasharray="8 8"/>
+<path d="M 696 1000 L 858 1000 Q 868 1000 868 990 L 868 551 Q 868 541 858 541 L 780 541" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)" stroke-dasharray="8 8"/>
+<path d="M 724 1000 L 870 1000 Q 880 1000 880 990 L 880 656 Q 880 646 870 646 L 780 646" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)" stroke-dasharray="8 8"/>
+<path d="M 752 1000 L 752 897 Q 752 887 742 887 L 710 887" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)" stroke-dasharray="8 8"/>
 <path d="M 1590 1020 L 1590 58 Q 1590 48 1580 48 L 50 48 Q 40 48 40 58 L 40 141 Q 40 151 50 151 L 80 151" fill="none" stroke="#AAB4C0" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-gray)" stroke-dasharray="8 8"/>
 <path d="M 1070 1020 L 1200 1020" fill="none" stroke="#7048E8" stroke-width="5" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-purple)"/>
 <rect x="80" y="120" width="120" height="62" rx="14" fill="#4DABF7" stroke="#1864AB" stroke-width="2" filter="url(#shadow)"/>
@@ -117,9 +135,9 @@
 <rect x="340" y="120" width="140" height="62" rx="14" fill="#4DABF7" stroke="#1864AB" stroke-width="2" filter="url(#shadow)"/>
 <text x="410.0" y="147.0" text-anchor="middle" font-size="15" font-weight="700" fill="#FFFFFF" font-family="Segoe UI, Arial, sans-serif">Diagnóstico</text>
 <text x="410.0" y="165.0" text-anchor="middle" font-size="15" font-weight="700" fill="#FFFFFF" font-family="Segoe UI, Arial, sans-serif">técnico</text>
-<rect x="340" y="225" width="140" height="62" rx="14" fill="#F8F9FA" stroke="#ADB5BD" stroke-width="2" filter="url(#shadow)"/>
-<text x="410.0" y="252.0" text-anchor="middle" font-size="15" font-weight="700" fill="#495057" font-family="Segoe UI, Arial, sans-serif">Aguardando</text>
-<text x="410.0" y="270.0" text-anchor="middle" font-size="15" font-weight="700" fill="#495057" font-family="Segoe UI, Arial, sans-serif">avaliação</text>
+<rect x="340" y="225" width="140" height="62" rx="14" fill="#4DABF7" stroke="#1864AB" stroke-width="2" filter="url(#shadow)"/>
+<text x="410.0" y="252.0" text-anchor="middle" font-size="15" font-weight="700" fill="#FFFFFF" font-family="Segoe UI, Arial, sans-serif">Aguardando</text>
+<text x="410.0" y="270.0" text-anchor="middle" font-size="15" font-weight="700" fill="#FFFFFF" font-family="Segoe UI, Arial, sans-serif">avaliação</text>
 <rect x="340" y="320" width="140" height="62" rx="14" fill="#F8F9FA" stroke="#ADB5BD" stroke-width="2" filter="url(#shadow)"/>
 <text x="410.0" y="347.0" text-anchor="middle" font-size="15" font-weight="700" fill="#495057" font-family="Segoe UI, Arial, sans-serif">Verificação</text>
 <text x="410.0" y="365.0" text-anchor="middle" font-size="15" font-weight="700" fill="#495057" font-family="Segoe UI, Arial, sans-serif">de garantia</text>
@@ -206,6 +224,4 @@
 <text x="1310" y="952.0" text-anchor="middle" font-size="12" font-weight="600" fill="#7048E8" font-style="italic" paint-order="stroke" stroke="#FFFFFF" stroke-width="4" font-family="Segoe UI, Arial, sans-serif">baixa a partir de qualquer etapa aberta</text>
 <text x="1132" y="1010.0" text-anchor="middle" font-size="12" font-weight="700" fill="#7048E8" paint-order="stroke" stroke="#FFFFFF" stroke-width="4" font-family="Segoe UI, Arial, sans-serif">baixa</text>
 <text x="900" y="61.0" text-anchor="middle" font-size="12" font-weight="600" fill="#495057" font-style="italic" paint-order="stroke" stroke="#FFFFFF" stroke-width="4" font-family="Segoe UI, Arial, sans-serif">reabertura</text>
-<text x="710" y="793.0" text-anchor="middle" font-size="10.5" font-weight="500" fill="#495057" font-style="italic" paint-order="stroke" stroke="#FFFFFF" stroke-width="4" font-family="Segoe UI, Arial, sans-serif">(sem transição de saída cadastrada;</text>
-<text x="710" y="805.0" text-anchor="middle" font-size="10.5" font-weight="500" fill="#495057" font-style="italic" paint-order="stroke" stroke="#FFFFFF" stroke-width="4" font-family="Segoe UI, Arial, sans-serif">sai apenas pela baixa da OS)</text>
 </svg>

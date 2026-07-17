@@ -169,6 +169,7 @@ Route::prefix('v1')->group(function (): void {
             ->whereNumber('tipoEquipamento')
             ->name('api.v1.orders.entry_checklist_model');
         Route::get('orders/{order}', [OrderController::class, 'show'])->name('api.v1.orders.show');
+        Route::get('orders/{order}/events', [OrderController::class, 'events'])->name('api.v1.orders.events.index');
         Route::post('orders', [OrderController::class, 'store'])->name('api.v1.orders.store');
         Route::match(['put', 'patch'], 'orders/{order}', [OrderController::class, 'update'])->name('api.v1.orders.update');
         Route::get('orders/{order}/photos/{photo}', [OrderController::class, 'photo'])->name('api.v1.orders.photos.show');

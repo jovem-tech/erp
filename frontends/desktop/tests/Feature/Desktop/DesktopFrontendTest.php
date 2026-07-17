@@ -498,6 +498,7 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Gerar orçamento')
             ->assertSee('Alterar status')
             ->assertSee('Documentos da OS')
+            ->assertSee('Mapa da OS')
             ->assertSee('Aguardando Reparo')
             ->assertSee('<select id="status" name="status"', false)
             ->assertSee('<option value="triagem"', false)
@@ -512,6 +513,7 @@ class DesktopFrontendTest extends TestCase
             ], false)
             ->assertSee(route('orcamentos.create', ['os_id' => 3578]), false)
             ->assertSee(route('orders.documents.center', 3578), false)
+            ->assertSee(route('orders.map', 3578), false)
             ->assertSee(route('orders.status.update', 3578), false);
 
         Http::assertSent(static function ($request): bool {
@@ -541,6 +543,8 @@ class DesktopFrontendTest extends TestCase
 
         $response
             ->assertOk()
+            ->assertSee('Auditoria completa')
+            ->assertSee(route('orders.audit', 501), false)
             ->assertSee('Ver lançamento financeiro')
             ->assertSee(route('financeiro.show', 63), false);
     }
@@ -2813,7 +2817,10 @@ class DesktopFrontendTest extends TestCase
                             'resumo_tecnico' => 'Notebook Acer Nitro',
                             'numero_serie' => 'SN-12345',
                             'cliente_nome' => 'Ana Comércio LTDA',
-                            'marca' => 'Acer',
+                            'tipo_nome' => 'Notebook',
+                            'marca_nome' => 'Acer',
+                            'modelo_nome' => 'Nitro 5',
+                            'primary_photo_id' => 91,
                         ],
                     ],
                 ],
@@ -2893,14 +2900,17 @@ class DesktopFrontendTest extends TestCase
         ]);
 
         $response = $this
-            ->withSession($this->desktopSession([
-                'dashboard' => ['visualizar'],
-                'os' => ['visualizar'],
-                'clientes' => ['visualizar'],
-                'equipamentos' => ['visualizar'],
-                'usuarios' => ['visualizar'],
-                'grupos' => ['visualizar'],
-            ]))
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'os' => ['visualizar'],
+                    'clientes' => ['visualizar'],
+                    'equipamentos' => ['visualizar'],
+                    'usuarios' => ['visualizar'],
+                    'grupos' => ['visualizar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
             ->get('/buscar?q=ana&scope=tudo');
 
         $response
@@ -2908,10 +2918,67 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Ordens de Serviço')
             ->assertSee('OS1001')
             ->assertSee('Ana Comércio LTDA')
-            ->assertSee('Busque por nome, serie ou cliente')
-            ->assertSee(route('orders.equipments.search'), false)
+            ->assertSee('Notebook · Acer · Nitro 5')
+            ->assertSee('Tipo:')
+            ->assertSee('Marca:')
+            ->assertSee('Modelo:')
+            ->assertSee('Cliente:')
+            ->assertSee(route('equipments.photos.show', ['equipment' => 301, 'photo' => 91]), false)
+            ->assertSee('desktop-result-card has-equipment-details', false)
             ->assertSee('Ana Gestora')
             ->assertSee('Ana Equipe');
+    }
+
+    public function test_search_suggestions_expose_equipment_photo_identity_and_client(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/equipments*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'equipments' => [
+                        [
+                            'id' => 3080,
+                            'resumo_tecnico' => '',
+                            'numero_serie' => '',
+                            'cliente_nome' => 'Guilherme Conti Padrão',
+                            'tipo_nome' => 'Notebook',
+                            'marca_nome' => 'Lenovo',
+                            'modelo_nome' => 'IdeaPad 3',
+                            'primary_photo_id' => 77,
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'equipamentos' => ['visualizar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->getJson('/buscar/sugestoes?q=padrao&scope=equipamentos');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.sections.0.key', 'equipamentos')
+            ->assertJsonPath('data.sections.0.items.0.label', 'Notebook · Lenovo · IdeaPad 3')
+            ->assertJsonPath('data.sections.0.items.0.image_url', route('equipments.photos.show', [
+                'equipment' => 3080,
+                'photo' => 77,
+            ]))
+            ->assertJsonPath('data.sections.0.items.0.facts.0.label', 'Tipo')
+            ->assertJsonPath('data.sections.0.items.0.facts.0.value', 'Notebook')
+            ->assertJsonPath('data.sections.0.items.0.facts.1.value', 'Lenovo')
+            ->assertJsonPath('data.sections.0.items.0.facts.2.value', 'IdeaPad 3')
+            ->assertJsonPath('data.sections.0.items.0.facts.3.label', 'Cliente')
+            ->assertJsonPath('data.sections.0.items.0.facts.3.value', 'Guilherme Conti Padrão')
+            ->assertJsonPath('data.sections.0.items.0.subtitle', 'Número de série não informado');
     }
 
     public function test_search_suggestions_endpoint_returns_json(): void
@@ -3446,9 +3513,12 @@ class DesktopFrontendTest extends TestCase
         ]);
 
         $response = $this
-            ->withSession($this->desktopSession([
-                'os' => ['criar'],
-            ]))
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'os' => ['criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
             ->post('/os', [
                 'cliente_id' => 11,
                 'equipamento_id' => 21,
@@ -3589,11 +3659,14 @@ class DesktopFrontendTest extends TestCase
         ]);
 
         $response = $this
-            ->withSession($this->desktopSession([
-                'clientes' => ['visualizar'],
-                'os' => ['visualizar', 'criar'],
-                'equipamentos' => ['visualizar'],
-            ]))
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'clientes' => ['visualizar'],
+                    'os' => ['visualizar', 'criar'],
+                    'equipamentos' => ['visualizar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
             ->get('/clientes/201');
 
         $response
@@ -3603,7 +3676,8 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Equipamentos do cliente')
             ->assertSee('OS1001')
             ->assertSee('Notebook Acer Nitro')
-            ->assertSee(route('orders.create', ['cliente_id' => 201]), false);
+            ->assertSee(route('orders.create', ['cliente_id' => 201]), false)
+            ->assertSee('data-new-order-action="client"', false);
     }
 
     public function test_client_detail_page_renders_quick_actions_and_edit_link(): void
@@ -4214,13 +4288,16 @@ class DesktopFrontendTest extends TestCase
         ]);
 
         $response = $this
-            ->withSession($this->desktopSession([
-                'dashboard' => ['visualizar'],
-                'os' => ['visualizar', 'criar'],
-                'clientes' => ['visualizar', 'editar'],
-                'equipamentos' => ['visualizar', 'criar', 'editar'],
-            ]))
-            ->get('/os/criar?cliente_id=201&equipamento_id=301');
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'os' => ['visualizar', 'criar'],
+                    'clientes' => ['visualizar', 'editar'],
+                    'equipamentos' => ['visualizar', 'criar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os/criar?cliente_id=202&equipamento_id=301');
 
         $response
             ->assertOk()
@@ -4241,6 +4318,7 @@ class DesktopFrontendTest extends TestCase
             ->assertSee(route('orders.clients.search'), false)
             ->assertSee(route('orders.equipments.search'), false)
             ->assertSee('value="201"', false)
+            ->assertDontSee('value="202"', false)
             ->assertSee('value="301"', false);
 
         Http::assertSent(static function ($request): bool {
@@ -4248,7 +4326,7 @@ class DesktopFrontendTest extends TestCase
         });
     }
 
-    public function test_orders_show_page_links_to_linked_financeiro_lancamento_when_permitted(): void
+    public function test_orders_show_page_renders_summary_grid_and_full_width_operational_cards(): void
     {
         Http::fake(array_merge($this->notificationsFixture(), [
             'http://127.0.0.1:8000/api/v1/orders/501' => Http::response([
@@ -4287,7 +4365,7 @@ class DesktopFrontendTest extends TestCase
             ->withSession(array_merge(
                 $this->desktopSession([
                     'dashboard' => ['visualizar'],
-                    'os' => ['visualizar'],
+                    'os' => ['visualizar', 'criar'],
                     'financeiro' => ['visualizar'],
                 ]),
                 ['desktop_theme' => 'default']
@@ -4297,7 +4375,342 @@ class DesktopFrontendTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('Ver lançamento financeiro')
-            ->assertSee(route('financeiro.show', 63), false);
+            ->assertSee(route('financeiro.show', 63), false)
+            ->assertSee('data-new-order-context-trigger', false)
+            ->assertSee('newOrderFromOrderModal', false)
+            ->assertSee('Mesmo equipamento')
+            ->assertSee('Equipamento novo')
+            ->assertSee(route('orders.create', ['cliente_id' => 201, 'equipamento_id' => 301]))
+            ->assertSee(route('orders.create', ['cliente_id' => 201]), false);
+
+        $html = $response->getContent();
+        $photosPosition = strpos($html, '<i class="bi bi-images me-1"></i>Fotos');
+        $historyPosition = strpos($html, 'data-event-timeline');
+
+        $this->assertNotFalse($photosPosition);
+        $this->assertNotFalse($historyPosition);
+        $this->assertGreaterThan($photosPosition, $historyPosition);
+
+        $document = new \DOMDocument();
+        @$document->loadHTML($html);
+        $xpath = new \DOMXPath($document);
+
+        $summaryGrid = $xpath->query('//*[@data-os-top-grid]')->item(0);
+        $fullWidthContainer = $xpath->query('//*[@data-os-full-width-cards]')->item(0);
+
+        $this->assertInstanceOf(\DOMElement::class, $summaryGrid);
+        $this->assertInstanceOf(\DOMElement::class, $fullWidthContainer);
+        $this->assertCount(3, $xpath->query('./article[@data-os-summary-card]', $summaryGrid));
+        $this->assertCount(5, $xpath->query('./article | ./section[@data-event-timeline]', $fullWidthContainer));
+
+        foreach (['Defeito e Solução', 'Valores e Orçamento', 'Documentos', 'Fotos', 'Histórico da OS'] as $cardTitle) {
+            $this->assertStringContainsString($cardTitle, $fullWidthContainer->textContent);
+        }
+    }
+
+    public function test_orders_audit_page_renders_complete_paginated_events_and_forwards_filters(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/501/events*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'order' => [
+                        'id' => 501,
+                        'numero_os' => 'OS26070009',
+                        'status' => 'em_execucao',
+                        'status_nome' => 'Em execução do serviço',
+                        'status_cor' => '#64748b',
+                        'cliente_id' => 201,
+                        'cliente_nome' => 'Cliente Alpha',
+                        'equipamento_id' => 301,
+                        'equipamento_resumo_curto' => 'Notebook Acer Nitro 5',
+                        'equipamento_numero_serie' => 'SN-12345',
+                        'tecnico' => [
+                            'id' => 51,
+                            'nome' => 'Técnico Banco',
+                            'email' => 'tecnico@empresa.com',
+                        ],
+                        'data_abertura' => '2026-07-16T08:00:00-03:00',
+                        'status_atualizado_em' => '2026-07-16T10:00:00-03:00',
+                    ],
+                    'events' => [
+                        [
+                            'id' => 91,
+                            'category' => 'status',
+                            'type' => 'status_alterado',
+                            'title' => 'Status alterado',
+                            'description' => 'triagem → em_execucao',
+                            'data' => [
+                                'status_anterior' => 'triagem',
+                                'status_novo' => 'em_execucao',
+                                'contexto' => ['canal' => 'painel'],
+                            ],
+                            'origin' => 'usuario',
+                            'created_at' => '2026-07-16T10:00:00-03:00',
+                            'user' => [
+                                'id' => 51,
+                                'name' => 'Técnico Banco',
+                                'email' => 'tecnico@empresa.com',
+                            ],
+                            'provenance' => [
+                                'kind' => 'legacy',
+                                'legacy_table' => 'os_status_historico',
+                                'legacy_id' => 44,
+                                'append_only' => true,
+                            ],
+                        ],
+                    ],
+                    'stats' => [
+                        'total' => 251,
+                        'categories' => [
+                            'status' => 80,
+                            'orcamento' => 40,
+                            'financeiro' => 50,
+                            'documento' => 30,
+                            'mensagem' => 20,
+                            'registro' => 31,
+                        ],
+                        'origins' => ['usuario' => 180, 'sistema' => 71],
+                        'types' => ['status_alterado' => 79, 'os_criada' => 1],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [
+                    'pagination' => [
+                        'current_page' => 2,
+                        'per_page' => 25,
+                        'total' => 80,
+                        'last_page' => 4,
+                        'from' => 26,
+                        'to' => 50,
+                    ],
+                ],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['os' => ['visualizar']]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os/501/historico?category=status&per_page=25&page=2');
+
+        $response
+            ->assertOk()
+            ->assertSee('Auditoria completa da ordem de serviço')
+            ->assertSee('<strong>251</strong> registros append-only', false)
+            ->assertSee('Status alterado')
+            ->assertSee('status anterior')
+            ->assertSee('triagem')
+            ->assertSee('Importado de os_status_historico #44')
+            ->assertSee('Exibindo 26–50 de 80 registros encontrados.')
+            ->assertSee(route('orders.show', 501), false)
+            ->assertSee('aria-current="page"', false)
+            ->assertSee('>2</a>', false);
+
+        Http::assertSent(static function ($request): bool {
+            if (! str_contains($request->url(), '/api/v1/orders/501/events')) {
+                return false;
+            }
+
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            return ($query['category'] ?? null) === 'status'
+                && ($query['per_page'] ?? null) === '25'
+                && ($query['page'] ?? null) === '2';
+        });
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function orderMapFixtures(array $orderOverrides = []): array
+    {
+        $order = array_merge([
+            'id' => 501,
+            'numero_os' => 'OS26070009',
+            'status' => 'reparo_execucao',
+            'status_nome' => 'Em execução do serviço',
+            'status_cor' => '#4DABF7',
+            'status_congela_prazo' => false,
+            'status_ordem_fluxo' => 80,
+            'is_encerrada' => false,
+            'cliente' => ['id' => 201, 'nome_razao' => 'Cliente Alpha'],
+            'equipamento' => ['id' => 301, 'resumo_tecnico' => 'Notebook Acer Nitro 5'],
+            'status_disponiveis' => [
+                ['codigo' => 'triagem', 'nome' => 'Triagem', 'congela_prazo' => false],
+                ['codigo' => 'diagnostico', 'nome' => 'Diagnóstico Técnico', 'congela_prazo' => false],
+                ['codigo' => 'reparo_execucao', 'nome' => 'Em execução do serviço', 'congela_prazo' => false],
+                ['codigo' => 'testes_operacionais', 'nome' => 'Testes Operacionais', 'congela_prazo' => false],
+            ],
+            'proximas_etapas' => [
+                ['codigo' => 'testes_operacionais', 'nome' => 'Testes Operacionais', 'congela_prazo' => false, 'grupo_macro' => 'qualidade', 'ordem_fluxo' => 110],
+            ],
+            'historico' => [],
+            'procedimentos_historico' => [],
+        ], $orderOverrides);
+
+        return array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/501/events*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'order' => ['id' => 501, 'numero_os' => 'OS26070009'],
+                    'events' => [
+                        [
+                            'id' => 92,
+                            'category' => 'status',
+                            'type' => 'status_alterado',
+                            'title' => 'Status alterado',
+                            'description' => 'diagnostico → reparo_execucao',
+                            'data' => ['status_anterior' => 'diagnostico', 'status_novo' => 'reparo_execucao'],
+                            'origin' => 'usuario',
+                            'created_at' => '2026-07-16T10:00:00-03:00',
+                            'user' => ['id' => 51, 'name' => 'Técnico Banco'],
+                        ],
+                        [
+                            'id' => 91,
+                            'category' => 'status',
+                            'type' => 'status_alterado',
+                            'title' => 'Status alterado',
+                            'description' => 'triagem → diagnostico',
+                            'data' => ['status_anterior' => 'triagem', 'status_novo' => 'diagnostico'],
+                            'origin' => 'usuario',
+                            'created_at' => '2026-07-16T09:00:00-03:00',
+                            'user' => ['id' => 51, 'name' => 'Técnico Banco'],
+                        ],
+                    ],
+                    'stats' => [],
+                ],
+                'error' => null,
+                'meta' => [
+                    'pagination' => ['current_page' => 1, 'per_page' => 100, 'total' => 2, 'last_page' => 1],
+                ],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orders/501' => Http::response([
+                'status' => 'success',
+                'data' => ['order' => $order],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]);
+    }
+
+    public function test_order_map_page_renders_flow_svg_trail_and_config(): void
+    {
+        Http::fake($this->orderMapFixtures());
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['os' => ['visualizar', 'editar']]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os/501/mapa');
+
+        $response
+            ->assertOk()
+            ->assertSee('Mapa da ordem de serviço')
+            ->assertSee('OS26070009')
+            // SVG embed com nós endereçáveis presente na página.
+            ->assertSee('data-status="triagem"', false)
+            ->assertSee('data-edge="reparo_concluido:__baixa__"', false)
+            // Painel de trajeto renderizado no servidor, em ordem cronológica.
+            ->assertSeeInOrder(['Triagem', 'Diagnóstico Técnico', 'Em execução do serviço'])
+            // Config para o JS do mapa (Js::from escapa aspas como ").
+            ->assertSee('window.__DESKTOP_OS_MAP', false)
+            ->assertSee('\\u0022canEditStatus\\u0022:true', false)
+            // Controles de tela cheia (entrar pela toolbar, sair pelo X/Esc).
+            ->assertSee('id="osMapFullscreen"', false)
+            ->assertSee('id="osMapExitFullscreen"', false)
+            ->assertSee('assets/js/orders-map.js', false);
+
+        Http::assertSent(static function ($request): bool {
+            if (! str_contains($request->url(), '/api/v1/orders/501/events')) {
+                return false;
+            }
+
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            return ($query['category'] ?? null) === 'status'
+                && ($query['per_page'] ?? null) === '100';
+        });
+    }
+
+    public function test_order_map_page_marks_closed_order_read_only(): void
+    {
+        Http::fake($this->orderMapFixtures([
+            'status' => 'entregue_reparado_pago',
+            'status_nome' => 'Entregue - Reparado e Pago',
+            'is_encerrada' => true,
+            'proximas_etapas' => [],
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['os' => ['visualizar', 'editar']]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os/501/mapa');
+
+        $response
+            ->assertOk()
+            ->assertSee('OS encerrada — o mapa é somente leitura')
+            ->assertSee('\\u0022isEncerrada\\u0022:true', false);
+    }
+
+    public function test_order_map_page_requires_view_permission(): void
+    {
+        Http::fake($this->orderMapFixtures());
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['clientes' => ['visualizar']]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os/501/mapa');
+
+        $response->assertRedirect();
+    }
+
+    public function test_order_map_data_endpoint_returns_json_with_rendered_trail(): void
+    {
+        Http::fake($this->orderMapFixtures());
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['os' => ['visualizar', 'editar']]),
+                ['desktop_theme' => 'default']
+            ))
+            ->getJson('/os/501/mapa/dados');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('order.status', 'reparo_execucao')
+            ->assertJsonPath('canEditStatus', true)
+            ->assertJsonPath('pathTruncated', false)
+            ->assertJsonCount(2, 'path');
+
+        // trailHtml é o mesmo partial usado no carregamento normal da
+        // página — sem isso o JS teria que duplicar a lógica de rótulo.
+        $this->assertStringContainsString('Triagem', $response->json('trailHtml'));
+        $this->assertStringContainsString('Diagnóstico Técnico', $response->json('trailHtml'));
+    }
+
+    public function test_order_map_data_endpoint_requires_view_permission(): void
+    {
+        Http::fake($this->orderMapFixtures());
+
+        // EnsureRoutePermission não distingue JSON de navegação normal —
+        // sempre redireciona pra primeira rota permitida (mesmo com Accept:
+        // json), igual ao teste da página HTML do mapa.
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['clientes' => ['visualizar']]),
+                ['desktop_theme' => 'default']
+            ))
+            ->getJson('/os/501/mapa/dados');
+
+        $response->assertRedirect();
     }
 
     public function test_orders_status_context_exposes_deadline_freeze_flags(): void
@@ -4313,6 +4726,7 @@ class DesktopFrontendTest extends TestCase
                         'status_nome' => 'Reparo Concluído',
                         'status_cor' => '#64748b',
                         'status_congela_prazo' => true,
+                        'status_ordem_fluxo' => 160,
                         'is_encerrada' => false,
                         'prioridade' => 'alta',
                         'cliente' => ['id' => 201, 'nome_razao' => 'Cliente Alpha'],
@@ -4322,7 +4736,15 @@ class DesktopFrontendTest extends TestCase
                             ['codigo' => 'aguardando_reparo', 'nome' => 'Aguardando Reparo', 'congela_prazo' => false],
                         ],
                         'proximas_etapas' => [
-                            ['codigo' => 'aguardando_reparo', 'nome' => 'Aguardando Reparo', 'congela_prazo' => false],
+                            [
+                                'codigo' => 'aguardando_reparo',
+                                'nome' => 'Aguardando Reparo',
+                                'congela_prazo' => false,
+                                'grupo_macro' => 'execucao',
+                                'ordem_fluxo' => 70,
+                                'cor' => '#4DABF7',
+                                'icone' => 'bi-arrow-counterclockwise',
+                            ],
                         ],
                         'historico' => [],
                         'procedimentos_historico' => [],
@@ -4342,7 +4764,10 @@ class DesktopFrontendTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('status_congela_prazo', true)
+            ->assertJsonPath('status_ordem_fluxo', 160)
             ->assertJsonPath('proximas_etapas.0.congela_prazo', false)
+            ->assertJsonPath('proximas_etapas.0.ordem_fluxo', 70)
+            ->assertJsonPath('proximas_etapas.0.grupo_macro', 'execucao')
             ->assertJsonPath('status_disponiveis.0.congela_prazo', false);
     }
 
@@ -4536,6 +4961,12 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Em execução do serviço')
             ->assertSee('cooler do processador', false)
             ->assertSee('Fotos ja anexadas', false)
+            ->assertSee(asset('assets/libs/cropperjs/cropper.min.css'), false)
+            ->assertSee(asset('assets/libs/cropperjs/cropper.min.js'), false)
+            ->assertSee('orderPhotoCropModal', false)
+            ->assertSee('data-order-photo-crop-confirm', false)
+            ->assertSee('data-order-photo-crop-action="rotate-left"', false)
+            ->assertSee('Cada imagem será cortada antes do envio')
             ->assertSee('Alterar status', false)
             ->assertSee('Testes finais')
             ->assertSee('Aguardando peças')
@@ -4548,6 +4979,30 @@ class DesktopFrontendTest extends TestCase
             ->assertSee(route('orcamentos.show', 777), false)
             ->assertDontSee('Gerar orçamento', false)
             ->assertDontSee('Fluxo inicial');
+    }
+
+    public function test_order_photo_upload_script_replaces_original_files_with_cropped_files(): void
+    {
+        $script = file_get_contents(public_path('assets/js/orders-create.js'));
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('state.photoCropQueue', $script);
+        $this->assertStringContainsString('getCroppedCanvas', $script);
+        $this->assertStringContainsString('commitCroppedPhoto(croppedFile', $script);
+        $this->assertStringContainsString('transfer.items.add(entry.file)', $script);
+        $this->assertStringContainsString('maxPhotoUploadBytes', $script);
+    }
+
+    public function test_collapsed_sidebar_closes_implicitly_open_group_popovers(): void
+    {
+        $script = file_get_contents(public_path('assets/js/desktop.js'));
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString("if (sidebar.classList.contains('is-collapsed')) {\n            closeCollapsedSidebarPopovers();", $script);
+        $this->assertStringContainsString("const collapsed = sidebar.classList.toggle('is-collapsed');", $script);
+        $this->assertStringContainsString("if (collapsed) {\n                closeCollapsedSidebarPopovers();", $script);
+        $this->assertStringContainsString("event.key !== 'Escape'", $script);
+        $this->assertStringContainsString("toggle.focus({ preventScroll: true });", $script);
     }
 
 
@@ -4786,14 +5241,17 @@ class DesktopFrontendTest extends TestCase
                             'uf' => 'RJ',
                         ],
                         'tipo_id' => 1,
+                        'tipo_nome' => 'Notebook',
                         'marca_id' => 1,
+                        'marca_nome' => 'Acer',
                         'modelo_id' => 1,
+                        'modelo_nome' => 'Nitro 5',
                         'cor' => 'Preto',
                         'numero_serie' => 'SN-12345',
                         'imei' => '',
                         'observacoes' => 'Observação técnica',
                         'desktop_modalidade' => 'desktop',
-                        'resumo_tecnico' => 'Notebook Acer Nitro',
+                        'resumo_tecnico' => '',
                         'status_operacional' => 'Ativo',
                         'status' => 'ativo',
                         'orders_count' => 8,
@@ -4872,7 +5330,8 @@ class DesktopFrontendTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertSee('Notebook Acer Nitro')
+            ->assertSee('Notebook · Acer · Nitro 5')
+            ->assertDontSee('Sem resumo tecnico')
             ->assertSee('Foto principal do equipamento')
             ->assertSee(route('equipments.photos.show', [301, 91]), false)
             ->assertSee('data-photo-viewer-trigger', false)
@@ -4882,6 +5341,8 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('OS1001')
             ->assertSee('Nova OS')
             ->assertSee('Mais ações')
+            ->assertSee('data-new-order-action="equipment"', false)
+            ->assertSee(route('orders.create', ['cliente_id' => 201, 'equipamento_id' => 301]))
             ->assertSee('Abrir cliente');
 
         Http::assertSent(static function ($request): bool {

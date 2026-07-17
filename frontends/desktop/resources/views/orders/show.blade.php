@@ -45,6 +45,7 @@
         // só "Cancelar baixa" pode tirar a OS desse estado.
         $isEncerrada = (bool) ($order['is_encerrada'] ?? false);
         $canEditOrder = \App\Support\DesktopSession::can('os', 'editar');
+        $canCreateOrder = \App\Support\DesktopSession::can('os', 'criar');
         $canCreateBudget = \App\Support\DesktopSession::can('orcamentos', 'criar');
         $canCloseOrder = $canEditOrder && ! $isEncerrada;
 
@@ -144,7 +145,10 @@
         </div>
 
         <div class="d-flex flex-wrap gap-2 align-items-start os-header-actions">
-            
+            <a href="{{ route('orders.map', $order['id']) }}" class="btn btn-outline-light">
+                <i class="bi bi-map me-1"></i>Mapa da OS
+            </a>
+
             <div class="dropdown os-actions-dropdown">
                 <button type="button"
                     class="btn btn-outline-light dropdown-toggle os-actions-toggle"
@@ -154,6 +158,30 @@
                 </button>
 
                 <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                    @if ($canCreateOrder && $newOrderClientUrl !== null)
+                        @if ($newOrderSameEquipmentUrl !== null)
+                            <button type="button"
+                                class="dropdown-item"
+                                data-bs-toggle="modal"
+                                data-bs-target="#newOrderFromOrderModal"
+                                data-new-order-context-trigger>
+                                <i class="bi bi-plus-circle me-2"></i>Nova OS
+                            </button>
+                        @else
+                            <a href="{{ $newOrderClientUrl }}" class="dropdown-item" data-new-order-action="order-client">
+                                <i class="bi bi-plus-circle me-2"></i>Nova OS
+                            </a>
+                        @endif
+                    @endif
+
+                    <a href="{{ route('orders.audit', $order['id']) }}" class="dropdown-item">
+                        <i class="bi bi-shield-check me-2"></i>Auditoria completa
+                    </a>
+
+                    <a href="{{ route('orders.map', $order['id']) }}" class="dropdown-item">
+                        <i class="bi bi-map me-2"></i>Mapa da OS
+                    </a>
+
                     <a href="{{ route('orders.documents.center', $order['id']) }}" class="dropdown-item">
                         <i class="bi bi-folder-symlink me-2"></i>Documentos da OS
                     </a>
@@ -221,9 +249,9 @@
     </div>
 
     <div class="os-detail-layout">
-        {{-- Coluna lateral: foto do equipamento + progresso do fluxo --}}
-        <aside class="os-detail-aside">
-            <article class="surface-card os-photo-card">
+        {{-- Resumo superior: foto, cliente e equipamento na mesma linha/altura --}}
+        <div class="os-detail-top-grid" data-os-top-grid>
+            <article class="surface-card os-photo-card" data-os-summary-card="photo">
                 <span class="summary-card-eyebrow"><i class="bi bi-image me-1"></i>Fotos do equipamento</span>
                 @if ($equipmentPhoto && ($equipmentPhoto['id'] ?? 0) > 0)
                     <a href="{{ route('equipments.photos.show', [$equipmentPhoto['equipamento_id'], $equipmentPhoto['id']]) }}"
@@ -249,17 +277,7 @@
                 </div>
             </article>
 
-            {{-- Histórico unificado e categorizado de movimentações (os_eventos) --}}
-            @include('orders._event_timeline')
-        </aside>
-
-        {{-- Painel principal: cards agrupados (sem abas) --}}
-        <div class="os-detail-main">
-            
-
-            {{-- Cards: Cliente e Equipamento (lado a lado) --}}
-            <div class="desktop-grid desktop-grid-two mb-4">
-                <article class="surface-card">
+            <article class="surface-card" data-os-summary-card="client">
                         <h3 class="os-info-card-title">
                             <span><i class="bi bi-person me-1"></i>Cliente</span>
                             @if (($client['id'] ?? 0) > 0 && \App\Support\DesktopSession::can('clientes', 'visualizar'))
@@ -297,7 +315,7 @@
                             </tbody>
                         </table>
                 </article>
-                <article class="surface-card">
+            <article class="surface-card" data-os-summary-card="equipment">
                         <h3 class="os-info-card-title">
                             <span><i class="bi bi-laptop me-1"></i>Equipamento</span>
                             @if (($equipment['id'] ?? 0) > 0 && \App\Support\DesktopSession::can('equipamentos', 'visualizar'))
@@ -325,8 +343,11 @@
                             @endforelse
                             </tbody>
                         </table>
-                </article>
-            </div>
+            </article>
+        </div>
+
+        {{-- Cards operacionais em coluna única e largura total --}}
+        <div class="os-detail-main" data-os-full-width-cards>
 
             {{-- Card: Defeito e Solução --}}
             <article class="surface-card mb-4">
@@ -591,11 +612,17 @@
                     ])
                 @endif
             </article>
+
+            {{-- Histórico unificado e categorizado de movimentações (os_eventos) --}}
+            @include('orders._event_timeline')
         </div>
     </div>
 @endsection
 
 @push('modals')
+    @if ($canCreateOrder && $newOrderClientUrl !== null && $newOrderSameEquipmentUrl !== null)
+        @include('orders._new_order_context_modal')
+    @endif
     @include('orders._status_modal')
     @include('orders._cancel_closure_modal')
     @include('layouts.partials.photo-viewer-modal')

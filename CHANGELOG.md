@@ -1,5 +1,95 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.18.1.0 — 2026-07-17 02:51
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige o submenu de navegação exibido inadvertidamente ao recolher a sidebar: grupos abertos pelo contexto da página agora são fechados no carregamento recolhido e no clique de recolher; popovers deliberadamente abertos continuam fechando por clique externo ou Esc com restauração de foco.
+- **Arquivos:** frontends/desktop/public/assets/js/desktop.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.18.0.0 — 2026-07-17 02:51
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Adiciona editor de corte às fotos de entrada da OS, com recorte individual, zoom, rotação, reedição e substituição segura do arquivo original antes do envio multipart, mantendo o limite de até quatro imagens e 2 MB por foto.
+- **Arquivos:** frontends/desktop/public/assets/js/orders-create.js,frontends/desktop/resources/views/orders/_wizard.blade.php,frontends/desktop/resources/views/orders/_wizard_scripts.blade.php,frontends/desktop/resources/views/orders/create.blade.php,frontends/desktop/resources/views/orders/edit.blade.php,frontends/desktop/resources/views/orders/_photo_crop_modal.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.17.1.0 — 2026-07-17 02:07
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Adiciona o botão 'Mapa da OS' no dropdown de ações de cada linha da listagem de OS (/os), ao lado de 'Documentos da OS' — antes só existia na tela de detalhe da OS. Mesmo link (rota orders.map) usado em ambos os lugares
+- **Arquivos:** frontends/desktop/resources/views/orders/index.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.17.0.0 — 2026-07-17 02:01
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Formaliza como migration as 10 transições que haviam sido cadastradas só pela tela Conhecimento > Fluxo da OS nesta máquina (homologação): testes_operacionais → verificacao_garantia/aguardando_orcamento/reparo_concluido/garantia_concluida/cancelado, e irreparavel → diagnostico/aguardando_orcamento/aguardando_reparo/reparo_execucao/retrabalho. Antes, essas 10 só existiam no banco local — 'php artisan migrate' não sincroniza dados entre ambientes, só executa migrations versionadas, então elas nunca chegariam à VPS de produção sem esse arquivo. Mesmo padrão idempotente e reversível das migrations anteriores de transições (resolve código→id em runtime, down() desativa sem deletar); testada localmente com rollback + reaplicação, confirmando 87 transições ativas, 87 pares distintos, zero duplicata
+- **Arquivos:** backend/database/migrations/2026_07_17_000001_add_testes_operacionais_e_irreparavel_transitions.php
+
+## v4.16.0.0 — 2026-07-17 01:36
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Diagrama do fluxo da OS: adiciona as 10 transições que o usuário cadastrou em Conhecimento > Fluxo da OS (77 → 87 na tabela os_status_transicoes), roteadas à mão seguindo as convenções de corredor já usadas no script. 'Testes Operacionais' ganha 5 saídas novas — retorno pra Verificação de Garantia e Aguardando Orçamento (quando o teste revela algo que precisa reavaliar), e atalhos direto pra Reparo Concluído, Garantia Concluída ou Cancelado, pulando Testes Finais. 'Irreparável' deixa de ser (quase) definitivo: ganha volta pra Diagnóstico, Aguardando Orçamento, Aguardando Reparo, Em Execução e Retrabalho, permitindo reavaliar um equipamento antes marcado como sem conserto. Nenhuma das 10 aponta pra um encerramento, então todas viraram seta (60 → 70 setas desenhadas, auto-verificado contra as 70 transições utilizáveis do banco)
+- **Arquivos:** scripts/python/diagrama_fluxo_os_organizado.py,scripts/python/diagrama_fluxo_os_organizado.svg,scripts/python/diagrama_fluxo_os_organizado.png,scripts/python/README-diagrama-fluxo-os.md,frontends/desktop/resources/views/orders/_flow_map_svg.blade.php
+
+## v4.15.1.0 — 2026-07-17 00:46
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige o pan (arrastar pra navegar) do Mapa da OS disparando seleção de texto do navegador em vez de mover o mapa: os rótulos dentro do SVG e da legenda são texto selecionável por padrão, e um user-select:none isolado só no viewport não bastava — o navegador 'pulava' a seleção pro texto selecionável mais próximo fora dele (legenda, e até a pílula de status no cabeçalho, que fica bem acima do quadro do mapa). Amplia user-select:none para o quadro inteiro (.os-map-frame: legenda + viewport + toolbar) e para a pílula de status isoladamente, mantendo o número da OS e o painel 'Trajeto percorrido' normalmente selecionáveis. Reforça também no JS com preventDefault() no início do arrasto (pointerdown), para os casos em que o CSS sozinho não é respeitado
+- **Arquivos:** frontends/desktop/resources/views/orders/map.blade.php,frontends/desktop/public/assets/js/orders-map.js
+
+## v4.15.0.0 — 2026-07-16 23:52
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Mapa da OS: trocar de status agora atualiza o mapa no próprio lugar (novo endpoint JSON orders.map.data + redecoração do mesmo SVG) em vez de recarregar a página inteira — um location.reload() sempre encerrava a tela cheia, já que qualquer navegação sai do modo fullscreen do navegador por padrão de segurança. Depois de confirmar a mudança no modal, o JS busca o estado fresco da OS (status, trajeto completo, próximas etapas), atualiza a pílula de status, o banner de encerrada/cancelada e o painel 'Trajeto percorrido' (HTML já renderizado pelo servidor via partial orders._map_trail, reaproveitado tanto no carregamento normal quanto nesse endpoint), e redecora o mesmo SVG: marcador de posição migra para o novo nó, trajeto/rota provável são recalculados, e as próximas etapas clicáveis são atualizadas — tudo sem sair da tela cheia. Cliques nos nós passam a ser delegados no <svg> (um único listener) em vez de um por nó, então a lista de etapas clicáveis muda com o estado sem precisar desligar/religar handlers a cada atualização
+- **Arquivos:** frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/routes/web.php,frontends/desktop/resources/views/orders/map.blade.php,frontends/desktop/resources/views/orders/_map_trail.blade.php,frontends/desktop/public/assets/js/orders-map.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.14.2.0 — 2026-07-16 23:34
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige os modais de mudança de status (confirmação de mover etapa, aviso de encerramento/baixa e toasts) somerem em tela cheia no Mapa da OS: SweetAlert2 anexa seu container a document.body por padrão, que fica fora da 'camada' da Fullscreen API nativa quando .os-map-frame está em tela cheia — só o próprio elemento em fullscreen e seus descendentes são renderizados pelo navegador. Todos os Swal.fire() do mapa agora recebem target dinâmico (document.fullscreenElement || document.body), então o modal passa a ser filho do elemento em tela cheia e continua visível e utilizável; fora de tela cheia o comportamento não muda
+- **Arquivos:** frontends/desktop/public/assets/js/orders-map.js
+
+## v4.14.1.0 — 2026-07-16 23:22
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Adiciona modo tela cheia à página Mapa da OS: botão na toolbar do mapa entra em fullscreen (API nativa do navegador, com fallback de overlay fixo quando indisponível); sai com Esc ou pelo X no canto superior direito (visível só em tela cheia). Zoom é reajustado automaticamente ao entrar/sair, e a toolbar desce para não disputar o canto com o X
+- **Arquivos:** frontends/desktop/resources/views/orders/map.blade.php,frontends/desktop/public/assets/js/orders-map.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.14.0.0 — 2026-07-16 22:57
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Adiciona a página Mapa da OS (/os/{id}/mapa): visão GPS do ciclo de vida da ordem de serviço sobre o fluxograma real do catálogo, com trajeto percorrido em verde (reconstruído da trilha completa de eventos category=status, não do histórico limitado a 5), posição atual pulsando, rota provável até 'Entregue — Reparado e Pago' calculada por Dijkstra preferindo o caminho feliz, e próximas etapas clicáveis (confirmação com observação e, quando sai de status com prazo congelado, novo prazo) aplicando a mudança pelo endpoint existente de status; encerramentos nunca são clicáveis — apontam para a tela de baixa. Pan/zoom com roda/arrasto/botões e 'centralizar na posição atual'. Botão 'Mapa da OS' no cabeçalho e no menu Mais ações da tela da OS. Antes disso, a migration add_missing_os_status_transitions fecha as duas lacunas de processo documentadas no README do diagrama (cumprimento_garantia sem saída; teste reprovado sem caminho para retrabalho) e formaliza o fluxo de peça com sinal: 8 transições novas (69→77) — cumprimento_garantia→garantia_concluida/irreparavel, testes_finais→retrabalho, testes_operacionais→irreparavel, retrabalho→aguardando_reparo, aguardando_peca→pagamento_pendente/aguardando_reparo e pagamento_pendente→aguardando_reparo — que aparecem automaticamente também no modal Alterar Status (chips). O gerador do fluxograma (scripts/python) foi atualizado: caminho feliz agora passa por Aguardando Avaliação (caso clássico da bancada), 60 setas auto-verificadas contra as 77 transições, e novo modo --embed que gera o partial SVG endereçável (data-status/data-edge) consumido pela página do mapa
+- **Arquivos:** backend/database/migrations/2026_07_16_000001_add_missing_os_status_transitions.php,backend/tests/Feature/Api/V1/OrderFlowTest.php,scripts/python/diagrama_fluxo_os_organizado.py,scripts/python/diagrama_fluxo_os_organizado.svg,scripts/python/diagrama_fluxo_os_organizado.png,scripts/python/README-diagrama-fluxo-os.md,frontends/desktop/routes/web.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/resources/views/orders/map.blade.php,frontends/desktop/resources/views/orders/_flow_map_svg.blade.php,frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/public/assets/js/orders-map.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.13.0.0 — 2026-07-16 21:43
+- **Tier:** minor
+- **Autor/Agente:** jovem-tech
+- **Descrição:** Adiciona criação contextual de Nova OS nas páginas de cliente, equipamento e OS, com modal para reutilizar o equipamento atual ou iniciar com equipamento novo e preenchimento seguro do proprietário.
+- **Arquivos:** frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/resources/views/clients/show.blade.php,frontends/desktop/resources/views/equipments/show.blade.php,frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/resources/views/orders/_new_order_context_modal.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.12.2.0 — 2026-07-16 21:25
+- **Tier:** patch
+- **Autor/Agente:** jovem-tech
+- **Descrição:** Substitui o título Sem resumo técnico no detalhe do equipamento pela identificação formada por tipo, marca e modelo, com fallback para o ID.
+- **Arquivos:** frontends/desktop/resources/views/equipments/show.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.12.1.0 — 2026-07-16 21:14
+- **Tier:** patch
+- **Autor/Agente:** jovem-tech
+- **Descrição:** Corrige a busca de equipamentos para exibir foto, tipo, marca, modelo, cliente e número de série, com fallback para cadastros legados e pesquisa pelo tipo.
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/EquipmentController.php,backend/tests/Feature/Api/V1/RbacAdministrationTest.php,frontends/desktop/app/Services/SearchService.php,frontends/desktop/public/assets/js/desktop.js,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/resources/views/search/index.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.12.0.0 — 2026-07-16 18:26
+- **Tier:** minor
+- **Autor/Agente:** jovem-tech
+- **Descrição:** Adiciona auditoria completa e paginada da OS, com filtros, autoria, proveniência, resumo atual, endpoint protegido e acesso pelo menu Mais ações.
+- **Arquivos:** backend/app/Http/Requests/Api/V1/OrderEventIndexRequest.php,backend/app/Http/Controllers/Api/V1/OrderController.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/routes/api.php,backend/tests/Feature/Api/V1/OrderFlowTest.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/app/Services/OrderService.php,frontends/desktop/routes/web.php,frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/resources/views/orders/audit.blade.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/03-arquitetura-tecnica/eventos-os.md
+
+## v4.11.7.0 — 2026-07-16 12:53
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Move o Histórico da OS para abaixo do card Fotos na coluna principal, removendo o layout lateral com rolagem interna e cobrindo a nova ordem com teste de regressão.
+- **Arquivos:** frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
 ## v4.11.6.0 — 2026-07-16 10:48
 - **Tier:** patch
 - **Autor/Agente:** Claude

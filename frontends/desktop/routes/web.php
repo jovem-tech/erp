@@ -197,6 +197,15 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/os/{order}', [OrderController::class, 'show'])
         ->middleware('desktop.permission:os,visualizar')
         ->name('orders.show');
+    Route::get('/os/{order}/historico', [OrderController::class, 'audit'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('orders.audit');
+    Route::get('/os/{order}/mapa', [OrderController::class, 'map'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('orders.map');
+    Route::get('/os/{order}/mapa/dados', [OrderController::class, 'mapData'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('orders.map.data');
     Route::get('/os/{order}/editar', [OrderController::class, 'edit'])
         ->middleware('desktop.permission:os,editar')
         ->name('orders.edit');

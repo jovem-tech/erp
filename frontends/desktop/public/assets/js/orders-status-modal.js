@@ -19,8 +19,7 @@
     const errorTextEl = document.getElementById('orderStatusModalErrorText');
     const submitBtn = document.getElementById('orderStatusModalSubmit');
     const selectEl = document.getElementById('orderStatusModalSelect');
-    const nextBtn = document.getElementById('orderStatusModalQuickNext');
-    const cancelBtn = document.getElementById('orderStatusModalQuickCancel');
+    const chipGroupsEl = document.getElementById('orderStatusModalChipGroups');
     const proceduresEl = document.getElementById('orderStatusModalProcedures');
     const diagnosisEl = document.getElementById('orderStatusModalDiagnosis');
     const solutionEl = document.getElementById('orderStatusModalSolution');
@@ -145,6 +144,93 @@
         `;
     };
 
+    // Uma etapa vira chip clicável. O grupo (avançar/retornar/cancelar) é
+    // decidido comparando o ordem_fluxo da etapa com o do status atual —
+    // mesma leitura usada no diagrama de fluxo da OS (azul = avançar, cinza
+    // tracejado = retornar). Encerramentos (equipamento entregue/devolvido/
+    // descartado) nunca aparecem aqui: o backend já os filtra de
+    // proximas_etapas (grupo_macro='encerrado' só é alcançável pela baixa da
+    // OS, ver OrderWorkflowService::mapNextStatusOptionsFromCatalog).
+    const buildChipGroup = (label, modifierClass, etapas) => {
+        if (etapas.length === 0) return '';
+
+        const chips = etapas.map((etapa) => {
+            const code = String(etapa.codigo || '').trim();
+            if (!code) return '';
+            const nome = String(etapa.nome || code);
+            const icone = String(etapa.icone || '').trim();
+            const cor = String(etapa.cor || '').trim();
+            const style = cor ? ` style="--status-color: ${cor}"` : '';
+
+            return `
+                <button type="button" class="os-status-chip ${modifierClass}" data-status-code="${code}"${style}>
+                    ${icone ? `<i class="bi ${icone}"></i>` : ''}
+                    <span>${nome}</span>
+                </button>
+            `;
+        }).join('');
+
+        return `
+            <div>
+                <div class="os-status-chip-group-label">${label}</div>
+                <div class="os-status-chip-row">${chips}</div>
+            </div>
+        `;
+    };
+
+    const renderChipGroups = (etapas, currentOrdemFluxo) => {
+        if (!chipGroupsEl) return;
+
+        if (etapas.length === 0) {
+            chipGroupsEl.innerHTML = '<p class="os-status-chip-empty">Sem próxima etapa definida no fluxo.</p>';
+            return;
+        }
+
+        const avancar = [];
+        const retornar = [];
+        const cancelar = [];
+
+        etapas.forEach((etapa) => {
+            if (String(etapa.grupo_macro || '') === 'cancelado') {
+                cancelar.push(etapa);
+                return;
+            }
+
+            const ordemEtapa = Number(etapa.ordem_fluxo);
+            const ehRetorno = Number.isFinite(ordemEtapa)
+                && Number.isFinite(currentOrdemFluxo)
+                && currentOrdemFluxo > 0
+                && ordemEtapa < currentOrdemFluxo;
+
+            (ehRetorno ? retornar : avancar).push(etapa);
+        });
+
+        chipGroupsEl.innerHTML = [
+            buildChipGroup('Avançar', 'os-status-chip--avancar', avancar),
+            buildChipGroup('Retornar etapa', 'os-status-chip--retornar', retornar),
+            buildChipGroup('Cancelar atendimento', 'os-status-chip--cancelar', cancelar),
+        ].join('');
+    };
+
+    // Clique no chip: só seleciona (preenche o <select> escondido e dispara
+    // change), quem efetivamente aplica é o "Salvar status" no rodapé — mesmo
+    // padrão que os antigos botões de ação rápida já usavam.
+    chipGroupsEl?.addEventListener('click', (event) => {
+        const chip = event.target.closest('.os-status-chip');
+        if (!chip || !chipGroupsEl.contains(chip)) return;
+
+        const code = chip.dataset.statusCode || '';
+        if (!code || !selectEl) return;
+
+        chipGroupsEl.querySelectorAll('.os-status-chip.is-selected').forEach((el) => {
+            el.classList.remove('is-selected');
+        });
+        chip.classList.add('is-selected');
+
+        selectEl.value = code;
+        selectEl.dispatchEvent(new Event('change'));
+    });
+
     const populateModal = (data) => {
         const numeroOs = String(data.numero_os || '');
         setText('orderStatusModalNumero', numeroOs);
@@ -188,7 +274,8 @@
         // Próximas etapas
         const etapas = Array.isArray(data.proximas_etapas) ? data.proximas_etapas : [];
 
-        // Preenche o select
+        // Preenche o select escondido (fonte de verdade do form; os chips só
+        // escrevem nele) e a fileira de chips clicáveis.
         if (selectEl) {
             selectEl.innerHTML = '<option value="">Selecione um status</option>';
             etapas.forEach((etapa) => {
@@ -203,34 +290,7 @@
             selectEl.value = '';
         }
 
-        // Botão de ação rápida "Próxima etapa": primeira opção que não seja de cancelamento
-        const cancelCodes = ['cancelado', 'devolvido', 'devolvido_sem_reparo', 'descartado'];
-        const primaryStep = etapas.find((e) => !cancelCodes.includes(String(e.codigo || '')));
-        const cancelStep = etapas.find((e) => cancelCodes.includes(String(e.codigo || '')));
-
-        if (nextBtn) {
-            if (primaryStep) {
-                nextBtn.disabled = false;
-                nextBtn.dataset.statusCode = primaryStep.codigo;
-                nextBtn.dataset.statusName = primaryStep.nome || primaryStep.codigo;
-                setText('orderStatusModalFlowHint', `Fluxo normal sugerido: ${primaryStep.nome || primaryStep.codigo}.`);
-            } else {
-                nextBtn.disabled = true;
-                nextBtn.dataset.statusCode = '';
-                setText('orderStatusModalFlowHint', 'Sem próxima etapa definida no fluxo.');
-            }
-        }
-
-        if (cancelBtn) {
-            if (cancelStep) {
-                cancelBtn.disabled = false;
-                cancelBtn.dataset.statusCode = cancelStep.codigo;
-                cancelBtn.dataset.statusName = cancelStep.nome || cancelStep.codigo;
-            } else {
-                cancelBtn.disabled = true;
-                cancelBtn.dataset.statusCode = '';
-            }
-        }
+        renderChipGroups(etapas, Number(data.status_ordem_fluxo));
 
         setText('orderStatusModalTargetHint', 'Selecione um fluxo para continuar.');
         // "Salvar status" fica sempre liberado: também é usado para salvar
@@ -306,29 +366,10 @@
         }
     });
 
-    // Botão "Próxima etapa"
-    nextBtn?.addEventListener('click', () => {
-        const code = nextBtn.dataset.statusCode;
-        if (code && selectEl) {
-            selectEl.value = code;
-            selectEl.dispatchEvent(new Event('change'));
-        }
-    });
-
-    // Botão "Cancelar" (quick action)
-    cancelBtn?.addEventListener('click', () => {
-        const code = cancelBtn.dataset.statusCode;
-        if (code && selectEl) {
-            selectEl.value = code;
-            selectEl.dispatchEvent(new Event('change'));
-        }
-    });
-
     // Ao mudar o select (o botão "Salvar status" já fica sempre liberado).
-    // O select vira Select2 (ver desktop.js): escolher uma opção pela UI do
-    // Select2 dispara `change` só via jQuery, não propaga pro addEventListener
-    // nativo — por isso o binding duplo abaixo (nativo cobre o dispatchEvent
-    // programático dos botões de ação rápida; jQuery cobre a UI de verdade).
+    // O select fica escondido (data-select2="false", ver desktop.js) e só é
+    // alterado programaticamente pelo clique nos chips — um addEventListener
+    // nativo já basta, não passa mais pela UI do Select2.
     const handleStatusSelectChange = () => {
         const selectedName = selectEl.selectedOptions[0]?.text || '';
         setText(
@@ -355,9 +396,6 @@
     };
 
     selectEl?.addEventListener('change', handleStatusSelectChange);
-    if (selectEl && typeof window.jQuery !== 'undefined') {
-        window.jQuery(selectEl).on('change', handleStatusSelectChange);
-    }
 
     // Salvar um novo procedimento executado (aba "Procedimentos"): cada clique
     // cria uma entrada nova no histórico, com data e técnico responsável.
