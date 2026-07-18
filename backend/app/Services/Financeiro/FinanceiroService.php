@@ -151,32 +151,34 @@ class FinanceiroService
      */
     public function create(array $payload): Financeiro
     {
-        $resolved = $this->resolveClassification($payload, null);
+        return DB::transaction(function () use ($payload): Financeiro {
+            $resolved = $this->resolveClassification($payload, null);
 
-        $financeiro = Financeiro::create($resolved);
-        $this->finalizeAfterSave($financeiro, $payload);
-        $financeiro = $financeiro->refresh();
+            $financeiro = Financeiro::create($resolved);
+            $this->finalizeAfterSave($financeiro, $payload);
+            $financeiro = $financeiro->refresh();
 
-        // Timeline da OS: todo titulo vinculado a uma OS vira evento auditavel
-        // (cobre tambem ensureReceivableTitle da baixa, que passa por aqui).
-        if ((int) ($financeiro->os_id ?? 0) > 0) {
-            $this->orderEventService->record(
-                (int) $financeiro->os_id,
-                OrderEvent::CATEGORIA_FINANCEIRO,
-                OrderEvent::TIPO_TITULO_CRIADO,
-                'Título financeiro criado',
-                trim((string) $financeiro->descricao) !== '' ? (string) $financeiro->descricao : null,
-                [
-                    'financeiro_id' => (int) $financeiro->id,
-                    'tipo' => (string) $financeiro->tipo,
-                    'categoria' => (string) $financeiro->categoria,
-                    'valor' => round((float) $financeiro->valor, 2),
-                    'origem_tipo' => $financeiro->origem_tipo,
-                ]
-            );
-        }
+            // Timeline da OS: todo titulo vinculado a uma OS vira evento auditavel
+            // (cobre tambem ensureReceivableTitle da baixa, que passa por aqui).
+            if ((int) ($financeiro->os_id ?? 0) > 0) {
+                $this->orderEventService->record(
+                    (int) $financeiro->os_id,
+                    OrderEvent::CATEGORIA_FINANCEIRO,
+                    OrderEvent::TIPO_TITULO_CRIADO,
+                    'Título financeiro criado',
+                    trim((string) $financeiro->descricao) !== '' ? (string) $financeiro->descricao : null,
+                    [
+                        'financeiro_id' => (int) $financeiro->id,
+                        'tipo' => (string) $financeiro->tipo,
+                        'categoria' => (string) $financeiro->categoria,
+                        'valor' => round((float) $financeiro->valor, 2),
+                        'origem_tipo' => $financeiro->origem_tipo,
+                    ]
+                );
+            }
 
-        return $financeiro;
+            return $financeiro;
+        });
     }
 
     /**
@@ -184,47 +186,50 @@ class FinanceiroService
      */
     public function update(Financeiro $financeiro, array $payload): Financeiro
     {
-        $this->guardMutationAgainstMovements($financeiro, $payload);
+        return DB::transaction(function () use ($financeiro, $payload): Financeiro {
+            $financeiro = Financeiro::query()->lockForUpdate()->findOrFail($financeiro->id);
+            $this->guardMutationAgainstMovements($financeiro, $payload);
 
-        $antes = [
-            'valor' => round((float) $financeiro->valor, 2),
-            'status' => (string) $financeiro->status,
-            'data_vencimento' => $financeiro->data_vencimento?->toDateString(),
-            'descricao' => (string) $financeiro->descricao,
-        ];
-
-        $resolved = $this->resolveClassification($payload, $financeiro);
-        $financeiro->update($resolved);
-        $this->finalizeAfterSave($financeiro, $payload);
-        $financeiro = $financeiro->refresh();
-
-        if ((int) ($financeiro->os_id ?? 0) > 0) {
-            $depois = [
+            $antes = [
                 'valor' => round((float) $financeiro->valor, 2),
                 'status' => (string) $financeiro->status,
                 'data_vencimento' => $financeiro->data_vencimento?->toDateString(),
                 'descricao' => (string) $financeiro->descricao,
             ];
-            $diff = [];
-            foreach ($antes as $campo => $valorAntes) {
-                if ($valorAntes !== $depois[$campo]) {
-                    $diff[$campo] = ['antes' => $valorAntes, 'depois' => $depois[$campo]];
+
+            $resolved = $this->resolveClassification($payload, $financeiro);
+            $financeiro->update($resolved);
+            $this->finalizeAfterSave($financeiro, $payload);
+            $financeiro = $financeiro->refresh();
+
+            if ((int) ($financeiro->os_id ?? 0) > 0) {
+                $depois = [
+                    'valor' => round((float) $financeiro->valor, 2),
+                    'status' => (string) $financeiro->status,
+                    'data_vencimento' => $financeiro->data_vencimento?->toDateString(),
+                    'descricao' => (string) $financeiro->descricao,
+                ];
+                $diff = [];
+                foreach ($antes as $campo => $valorAntes) {
+                    if ($valorAntes !== $depois[$campo]) {
+                        $diff[$campo] = ['antes' => $valorAntes, 'depois' => $depois[$campo]];
+                    }
+                }
+
+                if ($diff !== []) {
+                    $this->orderEventService->record(
+                        (int) $financeiro->os_id,
+                        OrderEvent::CATEGORIA_FINANCEIRO,
+                        OrderEvent::TIPO_TITULO_ATUALIZADO,
+                        'Título financeiro atualizado',
+                        'Campos alterados: '.implode(', ', array_keys($diff)).'.',
+                        ['financeiro_id' => (int) $financeiro->id, 'campos' => $diff]
+                    );
                 }
             }
 
-            if ($diff !== []) {
-                $this->orderEventService->record(
-                    (int) $financeiro->os_id,
-                    OrderEvent::CATEGORIA_FINANCEIRO,
-                    OrderEvent::TIPO_TITULO_ATUALIZADO,
-                    'Título financeiro atualizado',
-                    'Campos alterados: '.implode(', ', array_keys($diff)).'.',
-                    ['financeiro_id' => (int) $financeiro->id, 'campos' => $diff]
-                );
-            }
-        }
-
-        return $financeiro;
+            return $financeiro;
+        });
     }
 
     public function delete(Financeiro $financeiro): void
@@ -1139,6 +1144,10 @@ class FinanceiroService
             : null;
 
         $resolved = $payload;
+        // A conta identifica onde a baixa foi liquidada e pertence somente a
+        // financeiro_movimentos. Mantê-la no payload do título tentaria gravar
+        // uma coluna inexistente em financeiro e duplicaria a fonte de verdade.
+        unset($resolved['conta_financeira_id']);
 
         $resolved['tipo'] = $tipo;
         $resolved['status'] = trim((string) ($payload['status'] ?? $existing?->status ?? '')) !== ''

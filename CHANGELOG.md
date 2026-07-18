@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.20.0.1 — 2026-07-18 08:18
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige conta financeira em lançamento pago
+- **Arquivos:** backend/app/Services/Financeiro/FinanceiroService.php,backend/tests/Feature/Api/V1/FinanceiroTest.php
+
 ## v4.20.0.0 — 2026-07-18 04:03
 - **Tier:** minor
 - **Autor/Agente:** Codex
