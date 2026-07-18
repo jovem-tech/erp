@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.20.0.2 — 2026-07-18 08:36
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige collation do extrato e protege erros SQL
+- **Arquivos:** backend/app/Services/Financeiro/FinanceiroContaService.php,backend/app/Http/Controllers/Api/V1/FinanceiroContaController.php,backend/tests/Feature/Api/V1/FinanceiroContaTest.php
+
 ## v4.20.0.1 — 2026-07-18 08:18
 - **Tier:** hotfix
 - **Autor/Agente:** Codex

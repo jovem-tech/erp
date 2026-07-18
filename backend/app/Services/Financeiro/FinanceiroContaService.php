@@ -491,7 +491,18 @@ class FinanceiroContaService
             ->where('pcm.conta_financeira_id', $account->id)
             ->whereDate('pcm.data_movimento', '>=', $start->toDateString())
             ->whereDate('pcm.data_movimento', '<=', $end->toDateString())
-            ->selectRaw("pcm.id as source_id, 'patrimonial' as source_type, pcm.data_movimento as data, pcm.natureza, pcm.valor, pcm.descricao, pcm.documento_ref, pcm.status, pcm.tipo as subtipo, pcm.created_at");
+            ->selectRaw(implode(', ', [
+                'pcm.id as source_id',
+                $this->statementTextColumn("'patrimonial'", 'source_type'),
+                'pcm.data_movimento as data',
+                $this->statementTextColumn('pcm.natureza', 'natureza'),
+                'pcm.valor',
+                $this->statementTextColumn('pcm.descricao', 'descricao'),
+                $this->statementTextColumn('pcm.documento_ref', 'documento_ref'),
+                $this->statementTextColumn('pcm.status', 'status'),
+                $this->statementTextColumn('pcm.tipo', 'subtipo'),
+                'pcm.created_at',
+            ]));
 
         $financial = DB::table('financeiro_movimentos as fm')
             ->join('financeiro as f', 'f.id', '=', 'fm.financeiro_id')
@@ -499,7 +510,18 @@ class FinanceiroContaService
             ->where('fm.conta_financeira_id', $account->id)
             ->where('f.impacta_fluxo_caixa', true)
             ->whereRaw("DATE(CASE WHEN f.tipo = 'receber' AND fc.id IS NOT NULL THEN COALESCE(fc.data_credito_efetivo, fc.data_prevista_recebimento, fm.data_movimento) ELSE fm.data_movimento END) BETWEEN ? AND ?", [$start->toDateString(), $end->toDateString()])
-            ->selectRaw("fm.id as source_id, 'financeiro' as source_type, CASE WHEN f.tipo = 'receber' AND fc.id IS NOT NULL THEN COALESCE(fc.data_credito_efetivo, fc.data_prevista_recebimento, fm.data_movimento) ELSE fm.data_movimento END as data, CASE WHEN f.tipo = 'receber' THEN 'entrada' ELSE 'saida' END as natureza, CASE WHEN f.tipo = 'receber' AND fc.id IS NOT NULL THEN fc.valor_liquido ELSE fm.valor_movimento END as valor, f.descricao, fm.documento_ref, CASE WHEN f.status = 'cancelado' THEN 'cancelado' WHEN f.tipo = 'receber' AND fc.id IS NOT NULL AND fc.data_credito_efetivo IS NULL THEN 'previsto' ELSE 'realizado' END as status, CASE WHEN fc.id IS NOT NULL THEN 'cartao' ELSE COALESCE(fm.forma_pagamento, 'movimento') END as subtipo, fm.created_at");
+            ->selectRaw(implode(', ', [
+                'fm.id as source_id',
+                $this->statementTextColumn("'financeiro'", 'source_type'),
+                "CASE WHEN f.tipo = 'receber' AND fc.id IS NOT NULL THEN COALESCE(fc.data_credito_efetivo, fc.data_prevista_recebimento, fm.data_movimento) ELSE fm.data_movimento END as data",
+                $this->statementTextColumn("CASE WHEN f.tipo = 'receber' THEN 'entrada' ELSE 'saida' END", 'natureza'),
+                "CASE WHEN f.tipo = 'receber' AND fc.id IS NOT NULL THEN fc.valor_liquido ELSE fm.valor_movimento END as valor",
+                $this->statementTextColumn('f.descricao', 'descricao'),
+                $this->statementTextColumn('fm.documento_ref', 'documento_ref'),
+                $this->statementTextColumn("CASE WHEN f.status = 'cancelado' THEN 'cancelado' WHEN f.tipo = 'receber' AND fc.id IS NOT NULL AND fc.data_credito_efetivo IS NULL THEN 'previsto' ELSE 'realizado' END", 'status'),
+                $this->statementTextColumn("CASE WHEN fc.id IS NOT NULL THEN 'cartao' ELSE COALESCE(fm.forma_pagamento, 'movimento') END", 'subtipo'),
+                'fm.created_at',
+            ]));
 
         // Query Builder aplica aggregate apenas ao primeiro braço de um UNION
         // em alguns drivers. Contar cada fonte antes de uni-las mantém a
@@ -755,6 +777,32 @@ class FinanceiroContaService
     private function accountBalance(int $accountId): float
     {
         return $this->net($this->flowTotals(null, CarbonImmutable::today())[$accountId] ?? []);
+    }
+
+    /**
+     * Uniformiza textos dos dois braços do UNION. A tabela legada
+     * financeiro_movimentos usa utf8mb4_general_ci, enquanto as tabelas novas
+     * usam a collation configurada pela conexão.
+     */
+    private function statementTextColumn(string $expression, string $alias): string
+    {
+        if (! preg_match('/\A[a-z_][a-z0-9_]*\z/i', $alias)) {
+            throw new RuntimeException('Alias SQL inválido no extrato financeiro.');
+        }
+
+        $connection = DB::connection();
+        if ($connection->getDriverName() !== 'mysql') {
+            return "{$expression} as {$alias}";
+        }
+
+        $charset = (string) $connection->getConfig('charset');
+        $collation = (string) $connection->getConfig('collation');
+        if (! preg_match('/\A[a-z0-9_]+\z/i', $charset)
+            || ! preg_match('/\A[a-z0-9_]+\z/i', $collation)) {
+            throw new RuntimeException('Charset ou collation inválidos na conexão financeira.');
+        }
+
+        return "CONVERT(({$expression}) USING {$charset}) COLLATE {$collation} as {$alias}";
     }
 
     /** @param array<string, mixed> $totals */

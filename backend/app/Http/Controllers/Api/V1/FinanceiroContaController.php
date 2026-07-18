@@ -11,6 +11,7 @@ use App\Models\FinanceiroConta;
 use App\Models\FinanceiroMovimentoCartao;
 use App\Models\FinanceiroTransferencia;
 use App\Services\Financeiro\FinanceiroContaService;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use RuntimeException;
@@ -28,6 +29,8 @@ class FinanceiroContaController extends BaseApiController
 
         try {
             $dashboard = $this->financeiroContaService->dashboard($request->query('mes'));
+        } catch (QueryException $exception) {
+            return $this->databaseFailure($exception, $request, 'FINANCEIRO_CONTAS_QUERY_FAILED');
         } catch (RuntimeException $exception) {
             return $this->error($exception->getMessage(), 422, 'FINANCEIRO_CONTAS_QUERY_FAILED', request: $request);
         } catch (Throwable $exception) {
@@ -45,6 +48,8 @@ class FinanceiroContaController extends BaseApiController
 
         try {
             $report = $this->financeiroContaService->consolidatedReport($request->query('mes'));
+        } catch (QueryException $exception) {
+            return $this->databaseFailure($exception, $request, 'FINANCEIRO_CONTAS_CONSOLIDADO_FAILED');
         } catch (RuntimeException $exception) {
             return $this->error($exception->getMessage(), 422, 'FINANCEIRO_CONTAS_CONSOLIDADO_FAILED', request: $request);
         } catch (Throwable $exception) {
@@ -65,6 +70,8 @@ class FinanceiroContaController extends BaseApiController
                 $request->validated(),
                 $this->authenticatedUser($request)?->id
             );
+        } catch (QueryException $exception) {
+            return $this->databaseFailure($exception, $request, 'FINANCEIRO_CONTA_SAVE_FAILED');
         } catch (RuntimeException $exception) {
             return $this->error($exception->getMessage(), 422, 'FINANCEIRO_CONTA_SAVE_FAILED', request: $request);
         } catch (Throwable $exception) {
@@ -86,6 +93,8 @@ class FinanceiroContaController extends BaseApiController
                 $request->validated(),
                 $this->authenticatedUser($request)?->id
             );
+        } catch (QueryException $exception) {
+            return $this->databaseFailure($exception, $request, 'FINANCEIRO_CONTA_SAVE_FAILED');
         } catch (RuntimeException $exception) {
             return $this->error($exception->getMessage(), 422, 'FINANCEIRO_CONTA_SAVE_FAILED', request: $request);
         } catch (Throwable $exception) {
@@ -109,6 +118,8 @@ class FinanceiroContaController extends BaseApiController
 
         try {
             $statement = $this->financeiroContaService->statement($conta, $filters);
+        } catch (QueryException $exception) {
+            return $this->databaseFailure($exception, $request, 'FINANCEIRO_EXTRATO_FAILED');
         } catch (RuntimeException $exception) {
             return $this->error($exception->getMessage(), 422, 'FINANCEIRO_EXTRATO_FAILED', request: $request);
         } catch (Throwable $exception) {
@@ -132,6 +143,8 @@ class FinanceiroContaController extends BaseApiController
                 $request->validated(),
                 $this->authenticatedUser($request)?->id
             );
+        } catch (QueryException $exception) {
+            return $this->databaseFailure($exception, $request, 'FINANCEIRO_AJUSTE_FAILED');
         } catch (RuntimeException $exception) {
             return $this->error($exception->getMessage(), 422, 'FINANCEIRO_AJUSTE_FAILED', request: $request);
         } catch (Throwable $exception) {
@@ -152,6 +165,8 @@ class FinanceiroContaController extends BaseApiController
                 $request->validated(),
                 $this->authenticatedUser($request)?->id
             );
+        } catch (QueryException $exception) {
+            return $this->databaseFailure($exception, $request, 'FINANCEIRO_TRANSFERENCIA_FAILED');
         } catch (RuntimeException $exception) {
             return $this->error($exception->getMessage(), 422, 'FINANCEIRO_TRANSFERENCIA_FAILED', request: $request);
         } catch (Throwable $exception) {
@@ -175,6 +190,8 @@ class FinanceiroContaController extends BaseApiController
                 (string) $request->validated('motivo'),
                 $this->authenticatedUser($request)?->id
             );
+        } catch (QueryException $exception) {
+            return $this->databaseFailure($exception, $request, 'FINANCEIRO_TRANSFERENCIA_CANCEL_FAILED');
         } catch (RuntimeException $exception) {
             return $this->error($exception->getMessage(), 422, 'FINANCEIRO_TRANSFERENCIA_CANCEL_FAILED', request: $request);
         } catch (Throwable $exception) {
@@ -198,6 +215,8 @@ class FinanceiroContaController extends BaseApiController
                 (string) $request->validated('data_credito_efetivo'),
                 $this->authenticatedUser($request)?->id
             );
+        } catch (QueryException $exception) {
+            return $this->databaseFailure($exception, $request, 'FINANCEIRO_CARTAO_CONFIRM_FAILED');
         } catch (RuntimeException $exception) {
             return $this->error($exception->getMessage(), 422, 'FINANCEIRO_CARTAO_CONFIRM_FAILED', request: $request);
         } catch (Throwable $exception) {
@@ -207,5 +226,20 @@ class FinanceiroContaController extends BaseApiController
         }
 
         return $this->success(['cartao' => $card], request: $request);
+    }
+
+    private function databaseFailure(
+        QueryException $exception,
+        Request $request,
+        string $code
+    ): JsonResponse {
+        report($exception);
+
+        return $this->error(
+            'Não foi possível concluir a operação financeira.',
+            500,
+            $code,
+            request: $request
+        );
     }
 }

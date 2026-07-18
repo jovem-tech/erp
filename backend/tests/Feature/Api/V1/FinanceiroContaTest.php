@@ -6,9 +6,12 @@ use App\Models\Financeiro;
 use App\Models\FinanceiroMovimento;
 use App\Models\FinanceiroMovimentoCartao;
 use App\Services\Auth\RbacAuthorizationService;
+use App\Services\Financeiro\FinanceiroContaService;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
+use PDOException;
 use Tests\Concerns\BuildsLegacyErpSchema;
 use Tests\TestCase;
 
@@ -196,6 +199,33 @@ class FinanceiroContaTest extends TestCase
             ->assertJsonPath('data.periodo.entradas', 1100.0)
             ->assertJsonPath('data.periodo.saidas', 0.0)
             ->assertJsonPath('data.paginacao.total', 2);
+        $this->assertSame(
+            ['financeiro', 'patrimonial'],
+            collect($statement->json('data.movimentos'))->pluck('origem')->sort()->values()->all()
+        );
+    }
+
+    public function test_database_errors_are_logged_without_exposing_sql_to_the_client(): void
+    {
+        $service = \Mockery::mock(FinanceiroContaService::class);
+        $service->shouldReceive('dashboard')
+            ->once()
+            ->andThrow(new QueryException(
+                'mysql',
+                'select segredo_interno from tabela_privada',
+                [],
+                new PDOException('Falha confidencial do banco')
+            ));
+        $this->app->instance(FinanceiroContaService::class, $service);
+
+        $response = $this->getJson('/api/v1/financeiro/contas');
+
+        $response->assertStatus(500)
+            ->assertJsonPath('error.code', 'FINANCEIRO_CONTAS_QUERY_FAILED')
+            ->assertJsonPath('error.message', 'Não foi possível concluir a operação financeira.');
+        $this->assertStringNotContainsString('segredo_interno', (string) $response->getContent());
+        $this->assertStringNotContainsString('tabela_privada', (string) $response->getContent());
+        $this->assertStringNotContainsString('Falha confidencial', (string) $response->getContent());
     }
 
     public function test_card_is_pending_until_effective_credit_and_enters_at_net_value(): void
