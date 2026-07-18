@@ -5004,6 +5004,27 @@ class DesktopFrontendTest extends TestCase
         $this->assertStringContainsString('maxPhotoUploadBytes', $script);
     }
 
+    public function test_orders_closure_receipt_validator_reads_account_from_current_row(): void
+    {
+        $script = file_get_contents(public_path('assets/js/orders-closure.js'));
+
+        $this->assertIsString($script);
+
+        $validatorStart = strpos($script, 'const validateReceiptRow = (row) => {');
+        $validatorEnd = strpos($script, 'const validateFinancialStep = () => {');
+
+        $this->assertNotFalse($validatorStart);
+        $this->assertNotFalse($validatorEnd);
+
+        $validator = substr($script, $validatorStart, $validatorEnd - $validatorStart);
+
+        $this->assertStringContainsString(
+            'const accountId = row.querySelector(\'[data-field="conta_financeira_id"]\')?.value || \'\';',
+            $validator
+        );
+        $this->assertStringContainsString("financialAccounts.length > 0 && accountId === ''", $validator);
+    }
+
     public function test_collapsed_sidebar_closes_implicitly_open_group_popovers(): void
     {
         $script = file_get_contents(public_path('assets/js/desktop.js'));

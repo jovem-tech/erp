@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.19.2.0 — 2026-07-18 03:35
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige validacao da conta financeira no fechamento da OS
+- **Arquivos:** frontends/desktop/public/assets/js/orders-closure.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
 ## v4.19.1.0 — 2026-07-18 03:25
 - **Tier:** patch
 - **Autor/Agente:** Codex

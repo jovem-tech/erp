@@ -369,7 +369,6 @@
             if (!(parcelasInput instanceof HTMLInputElement)) return;
 
             const operadoraId = row.querySelector('[data-field="operadora_id"]')?.value || '';
-            const accountId = row.querySelector('[data-field="conta_financeira_id"]')?.value || '';
             const bandeiraId = row.querySelector('[data-field="bandeira_id"]')?.value || '';
             const modalidade = row.querySelector('[data-field="modalidade"]')?.value || '';
 
@@ -465,6 +464,7 @@
             const valor = parseMoney(row.querySelector('[data-field="valor"]')?.value || '0');
             const formaPagamento = row.querySelector('[data-field="forma_pagamento"]')?.value || '';
             const operadoraId = row.querySelector('[data-field="operadora_id"]')?.value || '';
+            const accountId = row.querySelector('[data-field="conta_financeira_id"]')?.value || '';
 
             if (valor <= 0) {
                 errors.push('Informe um valor maior que zero para todos os recebimentos lançados.');
