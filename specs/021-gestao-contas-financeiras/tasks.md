@@ -44,3 +44,4 @@
 - [x] T025 Validar visualmente a implantação LAN a partir das telas fornecidas pelo usuário e concluir a auditoria funcional com testes automatizados de backend e desktop.
 - [x] T026 Sincronizar contexto vivo e versionar como `minor` (`4.19.0.0`).
 - [x] T027 Integrar Contas e Saldos ao catálogo RBAC com permissões independentes de visualizar, criar e editar, incluindo migração compatível e testes de backend/desktop.
+- [x] T028 Implementar o Consolidado de Contas e Saldos por mês, com reconciliação geral/por conta, cartão a receber histórico, invariância das transferências, RBAC, API, desktop, testes e contrato OpenAPI.

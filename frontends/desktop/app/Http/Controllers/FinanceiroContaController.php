@@ -24,10 +24,7 @@ class FinanceiroContaController extends DesktopController
 
     public function index(Request $request): View|RedirectResponse
     {
-        $month = trim((string) $request->query('mes', now()->format('Y-m')));
-        if (! preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month)) {
-            $month = now()->format('Y-m');
-        }
+        $month = $this->normalizedMonth($request);
 
         try {
             $dashboard = $this->financeiroContaService->dashboard($month);
@@ -44,6 +41,29 @@ class FinanceiroContaController extends DesktopController
         return view('financeiro.contas.index', [
             'pageTitle' => 'Contas e Saldos',
             'dashboard' => $dashboard,
+            'month' => $month,
+        ]);
+    }
+
+    public function consolidated(Request $request): View|RedirectResponse
+    {
+        $month = $this->normalizedMonth($request);
+
+        try {
+            $report = $this->financeiroContaService->consolidated($month);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return redirect()->route('financeiro.contas.index')->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return redirect()->route('financeiro.contas.index')->with('error', 'NÃ£o foi possÃ­vel carregar o consolidado de contas e saldos agora.');
+        }
+
+        return view('financeiro.contas.consolidado', [
+            'pageTitle' => 'Consolidado de Contas e Saldos',
+            'report' => $report,
             'month' => $month,
         ]);
     }
@@ -201,5 +221,14 @@ class FinanceiroContaController extends DesktopController
         }
 
         return back()->with('success', $success);
+    }
+
+    private function normalizedMonth(Request $request): string
+    {
+        $month = trim((string) $request->query('mes', now()->format('Y-m')));
+
+        return preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month)
+            ? $month
+            : now()->format('Y-m');
     }
 }

@@ -140,6 +140,7 @@ Route::prefix('v1')->group(function (): void {
                 Route::post('margem/{os}/recalcular', [FinanceiroMargemController::class, 'recalcular'])->name('margem.recalcular');
 
                 Route::get('contas', [FinanceiroContaController::class, 'index'])->name('contas.index');
+                Route::get('contas/relatorios/consolidado', [FinanceiroContaController::class, 'consolidated'])->name('contas.relatorios.consolidado');
                 Route::post('contas', [FinanceiroContaController::class, 'store'])->name('contas.store');
                 Route::match(['put', 'patch'], 'contas/{conta}', [FinanceiroContaController::class, 'update'])->name('contas.update');
                 Route::get('contas/{conta}/extrato', [FinanceiroContaController::class, 'statement'])->name('contas.extrato');

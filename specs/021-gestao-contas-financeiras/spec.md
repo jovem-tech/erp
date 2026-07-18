@@ -98,6 +98,7 @@ Como gerente, quero comparar saldo inicial, entradas, saídas, transferências e
 - **FR-013**: O painel e o extrato MUST respeitar `contas_saldos:visualizar`, o cadastro MUST respeitar `contas_saldos:criar` e as demais mutações MUST respeitar `contas_saldos:editar`, de forma independente do módulo `financeiro`.
 - **FR-014**: A API e o desktop MUST continuar funcionando sem contas cadastradas, preservando compatibilidade com o fluxo legado.
 - **FR-015**: O fechamento de OS MUST continuar sendo o único fluxo autorizado a aplicar status de encerramento e MUST reaproveitar a regra financeira existente.
+- **FR-016**: O sistema MUST oferecer um consolidado mensal de tesouraria que reconcilie saldo anterior, saldos de implantação, recebimentos, pagamentos, ajustes, transferências, saldo final e cartão líquido a receber, no total e por conta, sem classificar transferências como faturamento.
 
 ### Key Entities
 
@@ -123,6 +124,7 @@ Como gerente, quero comparar saldo inicial, entradas, saídas, transferências e
 - **SC-003**: Uma transferência altera as contas de origem/destino e mantém o total consolidado e as DREs inalterados.
 - **SC-004**: Baixas de Financeiro e OS possuem testes de conta explícita, conta padrão, cartão líquido e ausência de mapeamento.
 - **SC-005**: O painel e formulários permanecem utilizáveis nos breakpoints definidos pela constituição.
+- **SC-006**: No consolidado, transferências realizadas no período apresentam entradas iguais às saídas e diferença geral de zero, enquanto cada conta preserva seu efeito individual.
 
 ## Assumptions
 

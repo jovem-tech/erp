@@ -39,6 +39,23 @@ class FinanceiroContaController extends BaseApiController
         return $this->success($dashboard, request: $request);
     }
 
+    public function consolidated(Request $request): JsonResponse
+    {
+        $this->authorize('contas_saldos:visualizar');
+
+        try {
+            $report = $this->financeiroContaService->consolidatedReport($request->query('mes'));
+        } catch (RuntimeException $exception) {
+            return $this->error($exception->getMessage(), 422, 'FINANCEIRO_CONTAS_CONSOLIDADO_FAILED', request: $request);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->error('NÃ£o foi possÃ­vel consultar o consolidado de contas e saldos.', 500, 'FINANCEIRO_CONTAS_CONSOLIDADO_FAILED', request: $request);
+        }
+
+        return $this->success($report, request: $request);
+    }
+
     public function store(UpsertFinanceiroContaRequest $request): JsonResponse
     {
         $this->authorize('contas_saldos:criar');

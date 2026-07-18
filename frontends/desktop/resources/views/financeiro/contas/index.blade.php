@@ -53,6 +53,9 @@
         </div>
 
         <div class="d-flex flex-wrap gap-2 align-self-start">
+            <a href="{{ route('financeiro.contas.consolidado', ['mes' => $month]) }}" class="btn btn-outline-info">
+                <i class="bi bi-table me-2"></i>Consolidado geral
+            </a>
             @if ($canViewFinanceiro)
                 <a href="{{ route('financeiro.index') }}" class="btn btn-outline-light">
                     <i class="bi bi-arrow-left me-2"></i>Lançamentos

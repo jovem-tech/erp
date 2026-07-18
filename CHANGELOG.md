@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.20.0.0 — 2026-07-18 04:03
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Consolidado mensal de contas e saldos
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/FinanceiroContaController.php,backend/app/Services/Financeiro/FinanceiroContaService.php,backend/openapi.yaml,backend/routes/api.php,backend/tests/Feature/Api/V1/FinanceiroContaTest.php,frontends/desktop/app/Http/Controllers/FinanceiroContaController.php,frontends/desktop/app/Services/FinanceiroContaService.php,frontends/desktop/resources/views/financeiro/contas/consolidado.blade.php,frontends/desktop/resources/views/financeiro/contas/index.blade.php,frontends/desktop/routes/web.php,frontends/desktop/tests/Feature/Desktop/FinanceiroContaTest.php,specs/021-gestao-contas-financeiras/contracts/api.md,specs/021-gestao-contas-financeiras/spec.md,specs/021-gestao-contas-financeiras/tasks.md
+
 ## v4.19.2.0 — 2026-07-18 03:35
 - **Tier:** patch
 - **Autor/Agente:** Codex

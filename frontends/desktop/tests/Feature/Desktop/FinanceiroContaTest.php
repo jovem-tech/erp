@@ -32,6 +32,7 @@ class FinanceiroContaTest extends TestCase
             ->assertSee('TOM')
             ->assertSee('Cartões aguardando crédito')
             ->assertSee('Lançamentos')
+            ->assertSee('Consolidado geral')
             ->assertSee('Nova conta')
             ->assertSee('Transferir')
             ->assertSee(route('financeiro.contas.extrato', ['conta' => 1]), false);
@@ -134,6 +135,28 @@ class FinanceiroContaTest extends TestCase
             ->assertSee('R$ 2.000,00');
     }
 
+    public function test_consolidated_report_renders_reconciliation_and_account_closing(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/financeiro/contas/relatorios/consolidado*' => Http::response($this->consolidatedPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->notificationsPayload(), 200),
+        ]);
+
+        $this->withSession($this->desktopSession([
+            'financeiro' => ['visualizar'],
+            'contas_saldos' => ['visualizar'],
+        ]))
+            ->get('/financeiro/contas/relatorios/consolidado?mes=2026-07')
+            ->assertOk()
+            ->assertSee('Consolidado de Contas e Saldos')
+            ->assertSee('Este relatório não é uma DRE')
+            ->assertSee('Movimentação consolidada')
+            ->assertSee('Transferências conciliadas')
+            ->assertSee('Conta Inter')
+            ->assertSee('R$ 4.975,00')
+            ->assertSee(route('financeiro.contas.index', ['mes' => '2026-07']), false);
+    }
+
     public function test_user_without_accounts_permission_cannot_open_accounts(): void
     {
         $response = $this
@@ -141,6 +164,9 @@ class FinanceiroContaTest extends TestCase
             ->get('/financeiro/contas');
 
         $response->assertRedirect();
+        $this->withSession($this->desktopSession(['financeiro' => ['visualizar']]))
+            ->get('/financeiro/contas/relatorios/consolidado')
+            ->assertRedirect();
         Http::assertNothingSent();
     }
 
@@ -242,6 +268,59 @@ class FinanceiroContaTest extends TestCase
                     ],
                     'contas_padrao' => ['pix' => 1, 'cartao_credito' => 2],
                 ],
+            ],
+            'error' => null,
+            'meta' => [],
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function consolidatedPayload(): array
+    {
+        return [
+            'status' => 'success',
+            'data' => [
+                'referencia' => '2026-07',
+                'data_inicio' => '2026-07-01',
+                'data_fim' => '2026-07-18',
+                'resumo' => [
+                    'saldo_anterior' => 0.0,
+                    'saldos_iniciais_periodo' => 4900.0,
+                    'entradas_operacionais' => 100.0,
+                    'saidas_operacionais' => 0.0,
+                    'ajustes_entrada' => 0.0,
+                    'ajustes_saida' => 25.0,
+                    'saldo_antes_transferencias' => 4975.0,
+                    'transferencias_entrada' => 900.0,
+                    'transferencias_saida' => 900.0,
+                    'conferencia_transferencias' => 0.0,
+                    'saldo_final' => 4975.0,
+                    'disponivel_operacional' => 4075.0,
+                    'reservado' => 900.0,
+                    'cartao_a_receber' => 0.0,
+                    'posicao_total' => 4975.0,
+                ],
+                'contas' => [[
+                    'id' => 1,
+                    'nome' => 'Conta Inter',
+                    'tipo' => 'banco',
+                    'instituicao' => 'Banco Inter',
+                    'considera_disponivel' => true,
+                    'ativo' => true,
+                    'cor' => '#FF7A00',
+                    'saldo_anterior' => 0.0,
+                    'saldos_iniciais_periodo' => 1900.0,
+                    'entradas_operacionais' => 100.0,
+                    'saidas_operacionais' => 0.0,
+                    'ajustes_entrada' => 0.0,
+                    'ajustes_saida' => 0.0,
+                    'transferencias_entrada' => 0.0,
+                    'transferencias_saida' => 900.0,
+                    'saldo_final' => 1100.0,
+                    'cartao_a_receber' => 0.0,
+                    'posicao_total' => 1100.0,
+                ]],
+                'sem_conta' => ['quantidade' => 0, 'valor' => 0.0],
             ],
             'error' => null,
             'meta' => [],

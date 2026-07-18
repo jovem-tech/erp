@@ -51,6 +51,7 @@ class FinanceiroContaTest extends TestCase
 
         $this->getJson('/api/v1/financeiro')->assertOk();
         $this->getJson('/api/v1/financeiro/contas')->assertForbidden();
+        $this->getJson('/api/v1/financeiro/contas/relatorios/consolidado')->assertForbidden();
         $this->postJson('/api/v1/financeiro/contas', [
             'nome' => 'Conta sem acesso',
             'tipo' => 'banco',
@@ -80,6 +81,7 @@ class FinanceiroContaTest extends TestCase
         app(RbacAuthorizationService::class)->forgetUser($this->authenticatedUserId);
 
         $this->getJson('/api/v1/financeiro/contas')->assertOk();
+        $this->getJson('/api/v1/financeiro/contas/relatorios/consolidado')->assertOk();
         $this->postJson('/api/v1/financeiro/contas', [
             'nome' => 'Conta bloqueada',
             'tipo' => 'banco',
@@ -108,6 +110,53 @@ class FinanceiroContaTest extends TestCase
             ->assertJsonPath('data.opcoes.contas_padrao.dinheiro', $cash)
             ->assertJsonPath('data.opcoes.contas_padrao.pix', $inter)
             ->assertJsonPath('data.opcoes.contas_padrao.cartao_credito', $tom);
+    }
+
+    public function test_consolidated_report_reconciles_operations_adjustments_and_internal_transfers(): void
+    {
+        $cash = $this->createAccount('Caixa fÃ­sico', 'caixa', 3000, ['dinheiro']);
+        $inter = $this->createAccount('Conta Inter', 'banco', 1900, ['pix']);
+        $reserve = $this->createAccount('Reserva de lucro', 'reserva', 0, [], false);
+        $clientId = $this->createClientRecord();
+        $title = $this->createReceivable($clientId, 100);
+
+        $this->postJson("/api/v1/financeiro/{$title}/baixar", [
+            'valor_movimento' => 100,
+            'forma_pagamento' => 'pix',
+        ])->assertOk();
+        $this->postJson('/api/v1/financeiro/contas/'.$cash.'/ajustes', [
+            'natureza' => 'saida',
+            'valor' => 25,
+            'data_movimento' => now()->toDateString(),
+            'descricao' => 'DiferenÃ§a da contagem fÃ­sica',
+        ])->assertCreated();
+        $this->postJson('/api/v1/financeiro/contas-transferencias', [
+            'conta_origem_id' => $inter,
+            'conta_destino_id' => $reserve,
+            'valor' => 900,
+            'data_transferencia' => now()->toDateString(),
+            'descricao' => 'SeparaÃ§Ã£o do lucro lÃ­quido',
+        ])->assertCreated();
+
+        $response = $this->getJson('/api/v1/financeiro/contas/relatorios/consolidado?mes='.now()->format('Y-m'));
+        $response->assertOk()
+            ->assertJsonPath('data.resumo.saldo_anterior', 0.0)
+            ->assertJsonPath('data.resumo.saldos_iniciais_periodo', 4900.0)
+            ->assertJsonPath('data.resumo.entradas_operacionais', 100.0)
+            ->assertJsonPath('data.resumo.saidas_operacionais', 0.0)
+            ->assertJsonPath('data.resumo.ajustes_saida', 25.0)
+            ->assertJsonPath('data.resumo.transferencias_entrada', 900.0)
+            ->assertJsonPath('data.resumo.transferencias_saida', 900.0)
+            ->assertJsonPath('data.resumo.conferencia_transferencias', 0.0)
+            ->assertJsonPath('data.resumo.saldo_final', 4975.0)
+            ->assertJsonPath('data.resumo.disponivel_operacional', 4075.0)
+            ->assertJsonPath('data.resumo.reservado', 900.0)
+            ->assertJsonPath('data.resumo.posicao_total', 4975.0);
+
+        $accounts = collect($response->json('data.contas'));
+        $this->assertSame(2975.0, $accounts->firstWhere('id', $cash)['saldo_final']);
+        $this->assertSame(1100.0, $accounts->firstWhere('id', $inter)['saldo_final']);
+        $this->assertSame(900.0, $accounts->firstWhere('id', $reserve)['saldo_final']);
     }
 
     public function test_payment_uses_default_account_and_requires_account_when_no_default_exists(): void
@@ -173,6 +222,11 @@ class FinanceiroContaTest extends TestCase
             ->assertJsonPath('data.resumo.total_em_contas', 0.0)
             ->assertJsonPath('data.resumo.cartao_a_receber', 96.81)
             ->assertJsonPath('data.resumo.posicao_total', 96.81);
+        $this->getJson('/api/v1/financeiro/contas/relatorios/consolidado')
+            ->assertOk()
+            ->assertJsonPath('data.resumo.entradas_operacionais', 0.0)
+            ->assertJsonPath('data.resumo.cartao_a_receber', 96.81)
+            ->assertJsonPath('data.resumo.posicao_total', 96.81);
 
         $this->postJson('/api/v1/financeiro/contas-cartoes/'.$card->id.'/confirmar', [
             'data_credito_efetivo' => now()->toDateString(),
@@ -181,6 +235,11 @@ class FinanceiroContaTest extends TestCase
         $available = $this->getJson('/api/v1/financeiro/contas');
         $available->assertOk()
             ->assertJsonPath('data.resumo.total_em_contas', 96.81)
+            ->assertJsonPath('data.resumo.cartao_a_receber', 0.0)
+            ->assertJsonPath('data.resumo.posicao_total', 96.81);
+        $this->getJson('/api/v1/financeiro/contas/relatorios/consolidado')
+            ->assertOk()
+            ->assertJsonPath('data.resumo.entradas_operacionais', 96.81)
             ->assertJsonPath('data.resumo.cartao_a_receber', 0.0)
             ->assertJsonPath('data.resumo.posicao_total', 96.81);
     }

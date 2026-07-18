@@ -340,6 +340,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/financeiro/contas', [FinanceiroContaController::class, 'index'])
         ->middleware('desktop.permission:contas_saldos,visualizar')
         ->name('financeiro.contas.index');
+    Route::get('/financeiro/contas/relatorios/consolidado', [FinanceiroContaController::class, 'consolidated'])
+        ->middleware('desktop.permission:contas_saldos,visualizar')
+        ->name('financeiro.contas.consolidado');
     Route::post('/financeiro/contas', [FinanceiroContaController::class, 'store'])
         ->middleware('desktop.permission:contas_saldos,criar')
         ->name('financeiro.contas.store');

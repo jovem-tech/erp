@@ -2811,6 +2811,60 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
+  /financeiro/contas/relatorios/consolidado:
+    get:
+      tags: [Financeiro]
+      summary: Consultar consolidado mensal de contas e saldos.
+      x-required-permission: contas_saldos:visualizar
+      description: Explica a evolução patrimonial entre saldo anterior e saldo final, separando operações, saldos de implantação, ajustes, transferências internas e cartão líquido a receber. Não altera nem substitui a DRE.
+      parameters:
+        - name: mes
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+            example: '2026-07'
+      responses:
+        "200":
+          description: Consolidado geral e fechamento por conta.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required: [referencia, data_inicio, data_fim, resumo, contas, sem_conta]
+                        properties:
+                          referencia:
+                            type: string
+                            example: '2026-07'
+                          data_inicio:
+                            type: string
+                            format: date
+                          data_fim:
+                            type: string
+                            format: date
+                          resumo:
+                            type: object
+                            additionalProperties: true
+                          contas:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+                          sem_conta:
+                            type: object
+                            additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
   /financeiro/contas/{conta}:
     patch:
       tags: [Financeiro]

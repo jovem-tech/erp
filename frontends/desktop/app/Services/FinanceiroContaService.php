@@ -16,6 +16,14 @@ class FinanceiroContaService
         return $response['data'] ?? [];
     }
 
+    /** @return array<string, mixed> */
+    public function consolidated(string $month): array
+    {
+        $response = $this->apiClient->get('/financeiro/contas/relatorios/consolidado', ['mes' => $month]);
+
+        return $response['data'] ?? [];
+    }
+
     /** @param array<string, mixed> $payload */
     public function create(array $payload): array
     {

@@ -61,7 +61,7 @@ class FinanceiroContaService
         $current = $this->flowTotals(null, $asOf);
         $opening = $this->flowTotals(null, $start->subDay());
         $monthly = $this->flowTotals($start, $asOf);
-        $pending = $this->pendingTotals();
+        $pending = $this->pendingTotals($asOf);
 
         $serialized = $accounts->map(function (FinanceiroConta $account) use ($current, $opening, $monthly, $pending): array {
             $id = (int) $account->id;
@@ -111,6 +111,88 @@ class FinanceiroContaService
                 ->map(fn (FinanceiroTransferencia $transfer): array => $this->serializeTransfer($transfer))
                 ->all(),
             'opcoes' => $this->options(),
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    public function consolidatedReport(?string $month = null): array
+    {
+        $reference = $this->parseMonth($month);
+        $start = $reference->startOfMonth();
+        $end = $reference->endOfMonth();
+        $today = CarbonImmutable::today();
+        $asOf = $end->greaterThan($today) ? $today : $end;
+
+        $accounts = FinanceiroConta::query()
+            ->with('defaults')
+            ->whereDate('data_inicio_controle', '<=', $asOf->toDateString())
+            ->orderByDesc('considera_disponivel')
+            ->orderBy('nome')
+            ->get();
+
+        $opening = $this->flowTotals(null, $start->subDay());
+        $period = $this->categorizedFlowTotals($start, $asOf);
+        $pending = $this->pendingTotals($asOf);
+
+        $serialized = $accounts->map(function (FinanceiroConta $account) use ($opening, $period, $pending): array {
+            $id = (int) $account->id;
+            $categories = array_merge($this->emptyFlowCategories(), $period[$id] ?? []);
+            $openingBalance = $this->net($opening[$id] ?? []);
+            $registeredOpening = round($categories['saldo_inicial_entrada'] - $categories['saldo_inicial_saida'], 2);
+            $operationalVariation = round($categories['operacional_entrada'] - $categories['operacional_saida'], 2);
+            $adjustmentVariation = round($categories['ajuste_entrada'] - $categories['ajuste_saida'], 2);
+            $transferVariation = round($categories['transferencia_entrada'] - $categories['transferencia_saida'], 2);
+            $beforeTransfers = round($openingBalance + $registeredOpening + $operationalVariation + $adjustmentVariation, 2);
+            $closingBalance = round($beforeTransfers + $transferVariation, 2);
+            $pendingTotal = round((float) ($pending[$id]['valor'] ?? 0), 2);
+
+            return array_merge($this->serializeAccount($account), [
+                'saldo_anterior' => $openingBalance,
+                'saldos_iniciais_periodo' => $registeredOpening,
+                'entradas_operacionais' => round($categories['operacional_entrada'], 2),
+                'saidas_operacionais' => round($categories['operacional_saida'], 2),
+                'ajustes_entrada' => round($categories['ajuste_entrada'], 2),
+                'ajustes_saida' => round($categories['ajuste_saida'], 2),
+                'saldo_antes_transferencias' => $beforeTransfers,
+                'transferencias_entrada' => round($categories['transferencia_entrada'], 2),
+                'transferencias_saida' => round($categories['transferencia_saida'], 2),
+                'saldo_final' => $closingBalance,
+                'cartao_a_receber' => $pendingTotal,
+                'posicao_total' => round($closingBalance + $pendingTotal, 2),
+            ]);
+        })->values();
+
+        $sum = static fn (string $key): float => round((float) $serialized->sum($key), 2);
+        $totalAccounts = $sum('saldo_final');
+        $pendingCards = $sum('cartao_a_receber');
+        $available = round((float) $serialized->where('considera_disponivel', true)->sum('saldo_final'), 2);
+        $reserved = round((float) $serialized->where('considera_disponivel', false)->sum('saldo_final'), 2);
+        $transferIn = $sum('transferencias_entrada');
+        $transferOut = $sum('transferencias_saida');
+
+        return [
+            'referencia' => $reference->format('Y-m'),
+            'data_inicio' => $start->toDateString(),
+            'data_fim' => $asOf->toDateString(),
+            'resumo' => [
+                'saldo_anterior' => $sum('saldo_anterior'),
+                'saldos_iniciais_periodo' => $sum('saldos_iniciais_periodo'),
+                'entradas_operacionais' => $sum('entradas_operacionais'),
+                'saidas_operacionais' => $sum('saidas_operacionais'),
+                'ajustes_entrada' => $sum('ajustes_entrada'),
+                'ajustes_saida' => $sum('ajustes_saida'),
+                'saldo_antes_transferencias' => $sum('saldo_antes_transferencias'),
+                'transferencias_entrada' => $transferIn,
+                'transferencias_saida' => $transferOut,
+                'conferencia_transferencias' => round($transferIn - $transferOut, 2),
+                'saldo_final' => $totalAccounts,
+                'disponivel_operacional' => $available,
+                'reservado' => $reserved,
+                'cartao_a_receber' => $pendingCards,
+                'posicao_total' => round($totalAccounts + $pendingCards, 2),
+            ],
+            'contas' => $serialized->all(),
+            'sem_conta' => $this->unclassifiedSummary($accounts, $start, $asOf),
         ];
     }
 
@@ -464,10 +546,38 @@ class FinanceiroContaService
     /** @return array<int, array{entradas: float, saidas: float}> */
     private function flowTotals(?CarbonImmutable $start, CarbonImmutable $end): array
     {
+        return collect($this->categorizedFlowTotals($start, $end))
+            ->map(function (array $categories): array {
+                $categories = array_merge($this->emptyFlowCategories(), $categories);
+
+                return [
+                    'entradas' => round(
+                        $categories['saldo_inicial_entrada']
+                        + $categories['operacional_entrada']
+                        + $categories['ajuste_entrada']
+                        + $categories['transferencia_entrada'],
+                        2
+                    ),
+                    'saidas' => round(
+                        $categories['saldo_inicial_saida']
+                        + $categories['operacional_saida']
+                        + $categories['ajuste_saida']
+                        + $categories['transferencia_saida'],
+                        2
+                    ),
+                ];
+            })
+            ->all();
+    }
+
+    /** @return array<int, array<string, float>> */
+    private function categorizedFlowTotals(?CarbonImmutable $start, CarbonImmutable $end): array
+    {
         $totals = [];
-        $merge = static function (array &$target, int $accountId, string $nature, float $value): void {
-            $target[$accountId] ??= ['entradas' => 0.0, 'saidas' => 0.0];
-            $key = $nature === FinanceiroContaMovimento::NATUREZA_ENTRADA ? 'entradas' : 'saidas';
+        $merge = function (array &$target, int $accountId, string $category, string $nature, float $value): void {
+            $target[$accountId] ??= $this->emptyFlowCategories();
+            $suffix = $nature === FinanceiroContaMovimento::NATUREZA_ENTRADA ? 'entrada' : 'saida';
+            $key = $category.'_'.$suffix;
             $target[$accountId][$key] = round($target[$accountId][$key] + $value, 2);
         };
 
@@ -479,9 +589,14 @@ class FinanceiroContaService
         if ($start) {
             $manual->whereDate('pcm.data_movimento', '>=', $start->toDateString());
         }
-        foreach ($manual->groupBy('pcm.conta_financeira_id', 'pcm.natureza')
-            ->selectRaw('pcm.conta_financeira_id, pcm.natureza, SUM(pcm.valor) as total')->get() as $row) {
-            $merge($totals, (int) $row->conta_financeira_id, (string) $row->natureza, (float) $row->total);
+        foreach ($manual->groupBy('pcm.conta_financeira_id', 'pcm.tipo', 'pcm.natureza')
+            ->selectRaw('pcm.conta_financeira_id, pcm.tipo, pcm.natureza, SUM(pcm.valor) as total')->get() as $row) {
+            $category = match ((string) $row->tipo) {
+                FinanceiroContaMovimento::TIPO_SALDO_INICIAL => 'saldo_inicial',
+                FinanceiroContaMovimento::TIPO_TRANSFERENCIA => 'transferencia',
+                default => 'ajuste',
+            };
+            $merge($totals, (int) $row->conta_financeira_id, $category, (string) $row->natureza, (float) $row->total);
         }
 
         $immediate = DB::table('financeiro_movimentos as fm')
@@ -501,7 +616,7 @@ class FinanceiroContaService
             $nature = $row->tipo === Financeiro::TIPO_RECEBER
                 ? FinanceiroContaMovimento::NATUREZA_ENTRADA
                 : FinanceiroContaMovimento::NATUREZA_SAIDA;
-            $merge($totals, (int) $row->conta_financeira_id, $nature, (float) $row->total);
+            $merge($totals, (int) $row->conta_financeira_id, 'operacional', $nature, (float) $row->total);
         }
 
         $cards = DB::table('financeiro_movimentos_cartao as fc')
@@ -519,15 +634,23 @@ class FinanceiroContaService
         }
         foreach ($cards->groupBy('fm.conta_financeira_id')
             ->selectRaw('fm.conta_financeira_id, SUM(fc.valor_liquido) as total')->get() as $row) {
-            $merge($totals, (int) $row->conta_financeira_id, FinanceiroContaMovimento::NATUREZA_ENTRADA, (float) $row->total);
+            $merge(
+                $totals,
+                (int) $row->conta_financeira_id,
+                'operacional',
+                FinanceiroContaMovimento::NATUREZA_ENTRADA,
+                (float) $row->total
+            );
         }
 
         return $totals;
     }
 
     /** @return array<int, array{valor: float, quantidade: int}> */
-    private function pendingTotals(): array
+    private function pendingTotals(?CarbonImmutable $asOf = null): array
     {
+        $asOf ??= CarbonImmutable::today();
+
         return DB::table('financeiro_movimentos_cartao as fc')
             ->join('financeiro_movimentos as fm', 'fm.id', '=', 'fc.movimento_id')
             ->join('financeiro as f', 'f.id', '=', 'fm.financeiro_id')
@@ -535,7 +658,11 @@ class FinanceiroContaService
             ->where('f.tipo', Financeiro::TIPO_RECEBER)
             ->where('f.impacta_fluxo_caixa', true)
             ->where('f.status', '!=', Financeiro::STATUS_CANCELADO)
-            ->whereNull('fc.data_credito_efetivo')
+            ->whereDate('fm.data_movimento', '<=', $asOf->toDateString())
+            ->where(function ($query) use ($asOf): void {
+                $query->whereNull('fc.data_credito_efetivo')
+                    ->orWhereDate('fc.data_credito_efetivo', '>', $asOf->toDateString());
+            })
             ->whereColumn('fm.data_movimento', '>=', 'c.data_inicio_controle')
             ->groupBy('fm.conta_financeira_id')
             ->selectRaw('fm.conta_financeira_id, SUM(fc.valor_liquido) as valor, COUNT(*) as quantidade')
@@ -578,8 +705,11 @@ class FinanceiroContaService
     }
 
     /** @return array<string, int|float> */
-    private function unclassifiedSummary(EloquentCollection $accounts): array
-    {
+    private function unclassifiedSummary(
+        EloquentCollection $accounts,
+        ?CarbonImmutable $periodStart = null,
+        ?CarbonImmutable $periodEnd = null
+    ): array {
         if ($accounts->isEmpty()) {
             return ['quantidade' => 0, 'valor' => 0.0];
         }
@@ -592,12 +722,33 @@ class FinanceiroContaService
             ->where('f.status', '!=', Financeiro::STATUS_CANCELADO)
             ->whereDate('fm.data_movimento', '>=', $start)
             ->whereNotIn('f.origem_tipo', ['os_recebimento_cartao', 'financeiro_movimento_cartao'])
-            ->selectRaw('COUNT(*) as quantidade, COALESCE(SUM(fm.valor_movimento), 0) as valor')
-            ->first();
+            ->selectRaw('COUNT(*) as quantidade, COALESCE(SUM(fm.valor_movimento), 0) as valor');
+        if ($periodStart) {
+            $query->whereDate('fm.data_movimento', '>=', $periodStart->toDateString());
+        }
+        if ($periodEnd) {
+            $query->whereDate('fm.data_movimento', '<=', $periodEnd->toDateString());
+        }
+        $summary = $query->first();
 
         return [
-            'quantidade' => (int) ($query->quantidade ?? 0),
-            'valor' => round((float) ($query->valor ?? 0), 2),
+            'quantidade' => (int) ($summary->quantidade ?? 0),
+            'valor' => round((float) ($summary->valor ?? 0), 2),
+        ];
+    }
+
+    /** @return array<string, float> */
+    private function emptyFlowCategories(): array
+    {
+        return [
+            'saldo_inicial_entrada' => 0.0,
+            'saldo_inicial_saida' => 0.0,
+            'operacional_entrada' => 0.0,
+            'operacional_saida' => 0.0,
+            'ajuste_entrada' => 0.0,
+            'ajuste_saida' => 0.0,
+            'transferencia_entrada' => 0.0,
+            'transferencia_saida' => 0.0,
         ];
     }
 

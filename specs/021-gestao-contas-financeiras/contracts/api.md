@@ -7,6 +7,7 @@ Todas as rotas usam `/api/v1`, autenticação Sanctum e o módulo RBAC independe
 - edição, conciliação, transferência, cancelamento e confirmação de crédito exigem `contas_saldos:editar`.
 
 - `GET /financeiro/contas?mes=YYYY-MM`: posição, fechamento, pendências e defaults.
+- `GET /financeiro/contas/relatorios/consolidado?mes=YYYY-MM`: reconciliação patrimonial geral e por conta, incluindo cartão líquido a receber na data final do período.
 - `POST /financeiro/contas`: cria conta e saldo inicial.
 - `PATCH /financeiro/contas/{conta}`: altera metadados, atividade e defaults.
 - `GET /financeiro/contas/{conta}/extrato?inicio=YYYY-MM-DD&fim=YYYY-MM-DD&page=1`: extrato paginado.
