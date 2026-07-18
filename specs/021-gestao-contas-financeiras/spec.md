@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-18
 
-**Status**: In Progress
+**Status**: Complete
 
 **Input**: controlar automaticamente quanto existe em Caixa, Banco Inter, adquirente TOM e contas de reserva, separando saldo disponível, recebíveis de cartão, faturamento e transferências internas.
 
@@ -95,7 +95,7 @@ Como gerente, quero comparar saldo inicial, entradas, saídas, transferências e
 - **FR-010**: Cancelamentos MUST preservar motivo, autor e horário e retirar os dois lados do cálculo.
 - **FR-011**: O painel MUST exibir posição por conta, total disponível, recebíveis, posição total, fechamento mensal e movimentos não classificados.
 - **FR-012**: O extrato MUST ser filtrável por período e paginado.
-- **FR-013**: Todas as mutações MUST respeitar RBAC `financeiro:editar`; leitura MUST respeitar `financeiro:visualizar`.
+- **FR-013**: O painel e o extrato MUST respeitar `contas_saldos:visualizar`, o cadastro MUST respeitar `contas_saldos:criar` e as demais mutações MUST respeitar `contas_saldos:editar`, de forma independente do módulo `financeiro`.
 - **FR-014**: A API e o desktop MUST continuar funcionando sem contas cadastradas, preservando compatibilidade com o fluxo legado.
 - **FR-015**: O fechamento de OS MUST continuar sendo o único fluxo autorizado a aplicar status de encerramento e MUST reaproveitar a regra financeira existente.
 

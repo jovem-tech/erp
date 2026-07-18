@@ -5,6 +5,7 @@ namespace Tests\Feature\Api\V1;
 use App\Models\Financeiro;
 use App\Models\FinanceiroMovimento;
 use App\Models\FinanceiroMovimentoCartao;
+use App\Services\Auth\RbacAuthorizationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
@@ -16,6 +17,8 @@ class FinanceiroContaTest extends TestCase
     use BuildsLegacyErpSchema;
     use RefreshDatabase;
 
+    private int $authenticatedUserId;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -25,10 +28,64 @@ class FinanceiroContaTest extends TestCase
         $this->seedOrderCatalog();
         $this->grantGroupPermissions(1, [
             'financeiro' => ['visualizar', 'criar', 'editar', 'excluir'],
+            'contas_saldos' => ['visualizar', 'criar', 'editar'],
             'os' => ['visualizar'],
         ]);
 
-        Sanctum::actingAs($this->createUserRecord(['grupo_id' => 1]), ['*']);
+        $user = $this->createUserRecord(['grupo_id' => 1]);
+        $this->authenticatedUserId = (int) $user->id;
+        Sanctum::actingAs($user, ['*']);
+    }
+
+    public function test_finance_permissions_do_not_unlock_accounts_module(): void
+    {
+        $moduleId = (int) DB::table('modulos')
+            ->where('slug', 'contas_saldos')
+            ->value('id');
+
+        DB::table('grupo_permissoes')
+            ->where('grupo_id', 1)
+            ->where('modulo_id', $moduleId)
+            ->delete();
+        app(RbacAuthorizationService::class)->forgetUser($this->authenticatedUserId);
+
+        $this->getJson('/api/v1/financeiro')->assertOk();
+        $this->getJson('/api/v1/financeiro/contas')->assertForbidden();
+        $this->postJson('/api/v1/financeiro/contas', [
+            'nome' => 'Conta sem acesso',
+            'tipo' => 'banco',
+            'data_inicio_controle' => now()->toDateString(),
+            'saldo_inicial' => 0,
+        ])->assertForbidden();
+    }
+
+    public function test_accounts_view_permission_does_not_allow_mutations(): void
+    {
+        $moduleId = (int) DB::table('modulos')
+            ->where('slug', 'contas_saldos')
+            ->value('id');
+        $viewPermissionId = (int) DB::table('permissoes')
+            ->where('slug', 'visualizar')
+            ->value('id');
+
+        DB::table('grupo_permissoes')
+            ->where('grupo_id', 1)
+            ->where('modulo_id', $moduleId)
+            ->delete();
+        DB::table('grupo_permissoes')->insert([
+            'grupo_id' => 1,
+            'modulo_id' => $moduleId,
+            'permissao_id' => $viewPermissionId,
+        ]);
+        app(RbacAuthorizationService::class)->forgetUser($this->authenticatedUserId);
+
+        $this->getJson('/api/v1/financeiro/contas')->assertOk();
+        $this->postJson('/api/v1/financeiro/contas', [
+            'nome' => 'Conta bloqueada',
+            'tipo' => 'banco',
+            'data_inicio_controle' => now()->toDateString(),
+            'saldo_inicial' => 0,
+        ])->assertForbidden();
     }
 
     public function test_opening_balances_build_position_without_creating_revenue(): void

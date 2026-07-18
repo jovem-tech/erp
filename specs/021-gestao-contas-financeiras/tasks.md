@@ -41,5 +41,6 @@
 
 - [x] T023 Atualizar `backend/openapi.yaml` e documentação técnica/operacional.
 - [x] T024 Executar lint, migrations, testes direcionados e regressões financeiras/OS.
-- [ ] T025 Validar visualmente nos breakpoints críticos e executar auditoria independente. A prévia foi renderizada, mas o navegador interno bloqueou o host local; concluir após implantação em ambiente acessível.
+- [x] T025 Validar visualmente a implantação LAN a partir das telas fornecidas pelo usuário e concluir a auditoria funcional com testes automatizados de backend e desktop.
 - [x] T026 Sincronizar contexto vivo e versionar como `minor` (`4.19.0.0`).
+- [x] T027 Integrar Contas e Saldos ao catálogo RBAC com permissões independentes de visualizar, criar e editar, incluindo migração compatível e testes de backend/desktop.

@@ -376,7 +376,11 @@ class RbacAdministrationTest extends TestCase
         $this->withHeader('Authorization', 'Bearer ' . $token)
             ->getJson('/api/v1/modules')
             ->assertOk()
-            ->assertJsonPath('data.modules.0.slug', 'dashboard');
+            ->assertJsonPath('data.modules.0.slug', 'dashboard')
+            ->assertJsonFragment([
+                'nome' => 'Contas e Saldos',
+                'slug' => 'contas_saldos',
+            ]);
 
         $this->withHeader('Authorization', 'Bearer ' . $token)
             ->getJson('/api/v1/permissions')

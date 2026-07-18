@@ -18,7 +18,10 @@ class FinanceiroContaTest extends TestCase
         ]);
 
         $response = $this
-            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'editar']]))
+            ->withSession($this->desktopSession([
+                'financeiro' => ['visualizar'],
+                'contas_saldos' => ['visualizar', 'criar', 'editar'],
+            ]))
             ->get('/financeiro/contas?mes=2026-07');
 
         $response->assertOk()
@@ -28,6 +31,7 @@ class FinanceiroContaTest extends TestCase
             ->assertSee('Conta Inter')
             ->assertSee('TOM')
             ->assertSee('Cartões aguardando crédito')
+            ->assertSee('Lançamentos')
             ->assertSee('Nova conta')
             ->assertSee('Transferir')
             ->assertSee(route('financeiro.contas.extrato', ['conta' => 1]), false);
@@ -45,7 +49,7 @@ class FinanceiroContaTest extends TestCase
         ]);
 
         $response = $this
-            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'editar']]))
+            ->withSession($this->desktopSession(['contas_saldos' => ['visualizar', 'criar']]))
             ->from('/financeiro/contas')
             ->post('/financeiro/contas', [
                 'nome' => 'Caixa físico',
@@ -78,7 +82,7 @@ class FinanceiroContaTest extends TestCase
             ], 201),
         ]);
 
-        $this->withSession($this->desktopSession(['financeiro' => ['visualizar', 'editar']]))
+        $this->withSession($this->desktopSession(['contas_saldos' => ['visualizar', 'editar']]))
             ->from('/financeiro/contas')
             ->post('/financeiro/contas-transferencias', [
                 'conta_origem_id' => 1,
@@ -122,7 +126,7 @@ class FinanceiroContaTest extends TestCase
             'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->notificationsPayload(), 200),
         ]);
 
-        $this->withSession($this->desktopSession(['financeiro' => ['visualizar']]))
+        $this->withSession($this->desktopSession(['contas_saldos' => ['visualizar']]))
             ->get('/financeiro/contas/1/extrato?data_inicio=2026-07-01&data_fim=2026-07-18')
             ->assertOk()
             ->assertSee('Extrato — Conta Inter')
@@ -130,14 +134,46 @@ class FinanceiroContaTest extends TestCase
             ->assertSee('R$ 2.000,00');
     }
 
-    public function test_user_without_finance_permission_cannot_open_accounts(): void
+    public function test_user_without_accounts_permission_cannot_open_accounts(): void
     {
         $response = $this
-            ->withSession($this->desktopSession(['dashboard' => ['visualizar']]))
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar', 'editar']]))
             ->get('/financeiro/contas');
 
         $response->assertRedirect();
         Http::assertNothingSent();
+    }
+
+    public function test_view_only_permission_hides_account_mutation_controls(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/financeiro/contas*' => Http::response($this->dashboardPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->notificationsPayload(), 200),
+        ]);
+
+        $this->withSession($this->desktopSession(['contas_saldos' => ['visualizar']]))
+            ->get('/financeiro/contas')
+            ->assertOk()
+            ->assertSee('Extrato')
+            ->assertDontSee('Lançamentos')
+            ->assertDontSee('Nova conta')
+            ->assertDontSee('Transferir')
+            ->assertDontSee('Conciliar');
+    }
+
+    public function test_create_permission_does_not_expose_edit_or_transfer_controls(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/financeiro/contas*' => Http::response($this->dashboardPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->notificationsPayload(), 200),
+        ]);
+
+        $this->withSession($this->desktopSession(['contas_saldos' => ['visualizar', 'criar']]))
+            ->get('/financeiro/contas')
+            ->assertOk()
+            ->assertSee('Nova conta')
+            ->assertDontSee('Transferir')
+            ->assertDontSee('Conciliar');
     }
 
     /** @return array<string, mixed> */

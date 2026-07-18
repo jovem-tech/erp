@@ -1,6 +1,10 @@
 # API Contract: Contas financeiras
 
-Todas as rotas usam `/api/v1`, autenticação Sanctum e RBAC financeiro.
+Todas as rotas usam `/api/v1`, autenticação Sanctum e o módulo RBAC independente `contas_saldos`.
+
+- consultas exigem `contas_saldos:visualizar`;
+- criação de conta exige `contas_saldos:criar`;
+- edição, conciliação, transferência, cancelamento e confirmação de crédito exigem `contas_saldos:editar`.
 
 - `GET /financeiro/contas?mes=YYYY-MM`: posição, fechamento, pendências e defaults.
 - `POST /financeiro/contas`: cria conta e saldo inicial.

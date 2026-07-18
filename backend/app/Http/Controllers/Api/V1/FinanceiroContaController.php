@@ -24,7 +24,7 @@ class FinanceiroContaController extends BaseApiController
 
     public function index(Request $request): JsonResponse
     {
-        $this->authorize('financeiro:visualizar');
+        $this->authorize('contas_saldos:visualizar');
 
         try {
             $dashboard = $this->financeiroContaService->dashboard($request->query('mes'));
@@ -41,7 +41,7 @@ class FinanceiroContaController extends BaseApiController
 
     public function store(UpsertFinanceiroContaRequest $request): JsonResponse
     {
-        $this->authorize('financeiro:editar');
+        $this->authorize('contas_saldos:criar');
 
         try {
             $account = $this->financeiroContaService->createAccount(
@@ -61,7 +61,7 @@ class FinanceiroContaController extends BaseApiController
 
     public function update(UpsertFinanceiroContaRequest $request, FinanceiroConta $conta): JsonResponse
     {
-        $this->authorize('financeiro:editar');
+        $this->authorize('contas_saldos:editar');
 
         try {
             $account = $this->financeiroContaService->updateAccount(
@@ -82,7 +82,7 @@ class FinanceiroContaController extends BaseApiController
 
     public function statement(Request $request, FinanceiroConta $conta): JsonResponse
     {
-        $this->authorize('financeiro:visualizar');
+        $this->authorize('contas_saldos:visualizar');
         $filters = $request->validate([
             'data_inicio' => ['nullable', 'date'],
             'data_fim' => ['nullable', 'date'],
@@ -107,7 +107,7 @@ class FinanceiroContaController extends BaseApiController
         StoreFinanceiroContaAdjustmentRequest $request,
         FinanceiroConta $conta
     ): JsonResponse {
-        $this->authorize('financeiro:editar');
+        $this->authorize('contas_saldos:editar');
 
         try {
             $movement = $this->financeiroContaService->createAdjustment(
@@ -128,7 +128,7 @@ class FinanceiroContaController extends BaseApiController
 
     public function transfer(StoreFinanceiroTransferRequest $request): JsonResponse
     {
-        $this->authorize('financeiro:editar');
+        $this->authorize('contas_saldos:editar');
 
         try {
             $transfer = $this->financeiroContaService->createTransfer(
@@ -150,7 +150,7 @@ class FinanceiroContaController extends BaseApiController
         CancelFinanceiroTransferRequest $request,
         FinanceiroTransferencia $transferencia
     ): JsonResponse {
-        $this->authorize('financeiro:editar');
+        $this->authorize('contas_saldos:editar');
 
         try {
             $transfer = $this->financeiroContaService->cancelTransfer(
@@ -173,7 +173,7 @@ class FinanceiroContaController extends BaseApiController
         ConfirmFinanceiroCardCreditRequest $request,
         FinanceiroMovimentoCartao $cartao
     ): JsonResponse {
-        $this->authorize('financeiro:editar');
+        $this->authorize('contas_saldos:editar');
 
         try {
             $card = $this->financeiroContaService->confirmCardCredit(

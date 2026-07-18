@@ -338,28 +338,28 @@ Route::middleware('desktop.auth')->group(function (): void {
         ->middleware('desktop.permission:financeiro,criar')
         ->name('financeiro.store');
     Route::get('/financeiro/contas', [FinanceiroContaController::class, 'index'])
-        ->middleware('desktop.permission:financeiro,visualizar')
+        ->middleware('desktop.permission:contas_saldos,visualizar')
         ->name('financeiro.contas.index');
     Route::post('/financeiro/contas', [FinanceiroContaController::class, 'store'])
-        ->middleware('desktop.permission:financeiro,editar')
+        ->middleware('desktop.permission:contas_saldos,criar')
         ->name('financeiro.contas.store');
     Route::patch('/financeiro/contas/{conta}', [FinanceiroContaController::class, 'update'])
-        ->middleware('desktop.permission:financeiro,editar')
+        ->middleware('desktop.permission:contas_saldos,editar')
         ->name('financeiro.contas.update');
     Route::get('/financeiro/contas/{conta}/extrato', [FinanceiroContaController::class, 'statement'])
-        ->middleware('desktop.permission:financeiro,visualizar')
+        ->middleware('desktop.permission:contas_saldos,visualizar')
         ->name('financeiro.contas.extrato');
     Route::post('/financeiro/contas/{conta}/ajustes', [FinanceiroContaController::class, 'adjust'])
-        ->middleware('desktop.permission:financeiro,editar')
+        ->middleware('desktop.permission:contas_saldos,editar')
         ->name('financeiro.contas.ajustes.store');
     Route::post('/financeiro/contas-transferencias', [FinanceiroContaController::class, 'transfer'])
-        ->middleware('desktop.permission:financeiro,editar')
+        ->middleware('desktop.permission:contas_saldos,editar')
         ->name('financeiro.contas.transferencias.store');
     Route::post('/financeiro/contas-transferencias/{transferencia}/cancelar', [FinanceiroContaController::class, 'cancelTransfer'])
-        ->middleware('desktop.permission:financeiro,editar')
+        ->middleware('desktop.permission:contas_saldos,editar')
         ->name('financeiro.contas.transferencias.cancelar');
     Route::post('/financeiro/contas-cartoes/{cartao}/confirmar', [FinanceiroContaController::class, 'confirmCard'])
-        ->middleware('desktop.permission:financeiro,editar')
+        ->middleware('desktop.permission:contas_saldos,editar')
         ->name('financeiro.contas.cartoes.confirmar');
     Route::get('/financeiro/configuracoes', [FinanceiroCatalogController::class, 'index'])
         ->middleware('desktop.permission:financeiro,visualizar')

@@ -12,7 +12,9 @@
     $unclassified = is_array($dashboard['sem_conta'] ?? null) ? $dashboard['sem_conta'] : [];
     $options = is_array($dashboard['opcoes'] ?? null) ? $dashboard['opcoes'] : [];
     $typeOptions = is_array($options['tipos'] ?? null) ? $options['tipos'] : [];
-    $canEdit = DesktopSession::can('financeiro', 'editar');
+    $canViewFinanceiro = DesktopSession::can('financeiro', 'visualizar');
+    $canCreate = DesktopSession::can('contas_saldos', 'criar');
+    $canEdit = DesktopSession::can('contas_saldos', 'editar');
     $money = static fn ($value): string => 'R$ ' . number_format((float) $value, 2, ',', '.');
     $date = static fn ($value): string => $value ? date('d/m/Y', strtotime((string) $value)) : '—';
     $paymentLabels = [
@@ -51,13 +53,17 @@
         </div>
 
         <div class="d-flex flex-wrap gap-2 align-self-start">
-            <a href="{{ route('financeiro.index') }}" class="btn btn-outline-light">
-                <i class="bi bi-arrow-left me-2"></i>Lançamentos
-            </a>
+            @if ($canViewFinanceiro)
+                <a href="{{ route('financeiro.index') }}" class="btn btn-outline-light">
+                    <i class="bi bi-arrow-left me-2"></i>Lançamentos
+                </a>
+            @endif
             @if ($canEdit)
                 <button class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#transferModal" @disabled(count($activeAccounts) < 2)>
                     <i class="bi bi-arrow-left-right me-2"></i>Transferir
                 </button>
+            @endif
+            @if ($canCreate)
                 <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#accountCreateModal">
                     <i class="bi bi-plus-lg me-2"></i>Nova conta
                 </button>
@@ -135,7 +141,7 @@
             <i class="bi bi-wallet2 fs-1 text-info"></i>
             <h3 class="surface-title fs-5 mt-3">Comece cadastrando onde o dinheiro está hoje</h3>
             <p class="surface-subtitle mx-auto" style="max-width: 680px">Exemplo: Caixa físico R$ 3.000, Conta Inter R$ 1.900, TOM a receber R$ 3.000 líquido e Reserva de lucro. Os valores entram como saldo inicial patrimonial.</p>
-            @if ($canEdit)
+            @if ($canCreate)
                 <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#accountCreateModal">Cadastrar primeira conta</button>
             @endif
         </section>
@@ -262,8 +268,9 @@
     </div>
 @endsection
 
-@if ($canEdit)
+@if ($canCreate || $canEdit)
     @push('modals')
+        @if ($canCreate)
         <div class="modal fade" id="accountCreateModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-lg modal-dialog-scrollable"><form method="POST" action="{{ route('financeiro.contas.store') }}" class="modal-content">@csrf
                 <div class="modal-header"><div><h5 class="modal-title">Nova conta financeira</h5><small class="text-body-secondary">Cadastre onde o dinheiro já está; não informe faturamento histórico.</small></div><button class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -284,7 +291,9 @@
                 <div class="modal-footer"><button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancelar</button><button class="btn btn-primary">Criar conta</button></div>
             </form></div>
         </div>
+        @endif
 
+        @if ($canEdit)
         <div class="modal fade" id="transferModal" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog"><form method="POST" action="{{ route('financeiro.contas.transferencias.store') }}" class="modal-content">@csrf
                 <div class="modal-header"><div><h5 class="modal-title">Transferir entre contas</h5><small class="text-body-secondary">Não impacta faturamento nem DRE.</small></div><button class="btn-close" data-bs-dismiss="modal"></button></div>
@@ -335,5 +344,6 @@
                 </div>
             @endif
         @endforeach
+        @endif
     @endpush
 @endif

@@ -1,5 +1,10 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.19.1.0 — 2026-07-18 03:25
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Contas e Saldos integrado ao RBAC com permissões independentes
+
 ## v4.19.0.0 — 2026-07-18 02:26
 - **Tier:** minor
 - **Autor/Agente:** Codex

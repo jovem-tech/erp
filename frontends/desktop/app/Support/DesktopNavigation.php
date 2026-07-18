@@ -149,7 +149,7 @@ class DesktopNavigation
                     [
                         'label' => 'Contas e Saldos',
                         'route' => 'financeiro.contas.index',
-                        'module' => 'financeiro',
+                        'module' => 'contas_saldos',
                         'icon' => 'bi-wallet2',
                     ],
                 ],

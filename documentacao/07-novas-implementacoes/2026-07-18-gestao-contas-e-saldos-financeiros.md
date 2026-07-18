@@ -128,8 +128,12 @@ O contrato completo está em `backend/openapi.yaml` e em `specs/021-gestao-conta
 
 ## Segurança e integridade
 
-- leitura exige `financeiro:visualizar`;
-- criação, edição, conciliação, transferência e confirmação exigem `financeiro:editar`;
+- o módulo independente `contas_saldos` aparece na matriz central de permissões;
+- painel e extrato exigem `contas_saldos:visualizar`;
+- cadastro de conta exige `contas_saldos:criar`;
+- edição, conciliação, transferência, cancelamento e confirmação de cartão exigem `contas_saldos:editar`;
+- permissões gerais de `financeiro` não liberam o painel nem as mutações de Contas e Saldos;
+- a migration preserva o acesso existente: grupos com `financeiro:visualizar` recebem inicialmente `contas_saldos:visualizar`, e grupos com `financeiro:editar` recebem `contas_saldos:criar` e `contas_saldos:editar`;
 - validação de IDs é repetida no backend, sem confiar nos selects do desktop;
 - contas inativas não recebem novas movimentações;
 - datas anteriores ao início de controle da conta são rejeitadas;
@@ -150,6 +154,9 @@ Cobertura automatizada adicionada em `FinanceiroContaTest` e `OrderFlowTest`:
 - conciliação sem impacto em DRE;
 - extrato e paginação;
 - fechamento de OS usando a conta padrão.
+- segregação entre as permissões de Financeiro e Contas e Saldos;
+- diferenciação entre visualizar, criar e editar, validada na API e no desktop;
+- cadastro do módulo na matriz RBAC e migração compatível com os acessos existentes.
 
 ## Limitações conhecidas e evolução
 
@@ -158,5 +165,7 @@ Esta entrega não importa automaticamente extratos do Banco Inter ou da TOM. A c
 ## Ativação no ambiente LAN
 
 Em 18/07/2026, a migration `2026_07_18_000001_create_financeiro_contas_tables` foi aplicada no servidor de desenvolvimento LAN como batch 19, após backup completo e validado do banco. As quatro tabelas patrimoniais e as colunas de vínculo/auditoria foram verificadas diretamente no schema.
+
+A migration `2026_07_18_000002_seed_contas_saldos_module` registra o módulo na matriz RBAC e cria uma transição compatível dos acessos existentes. Depois da implantação, cada grupo pode ser configurado de forma independente em **Grupos > Permissões > Contas e Saldos**.
 
 Também foram reconstruídos autoload, assets Vite e caches de configuração, rotas e views. O smoke test HTTP confirmou a nova rota na API e no desktop. Nenhuma conta ou saldo ilustrativo foi criado automaticamente: a gerente deve cadastrar os saldos reais conciliados na data escolhida para início do controle.

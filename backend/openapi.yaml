@@ -2754,6 +2754,7 @@ paths:
     get:
       tags: [Financeiro]
       summary: Consultar posição patrimonial por conta.
+      x-required-permission: contas_saldos:visualizar
       description: Retorna saldo efetivamente disponível, cartão líquido pendente, posição total, movimentos mensais, transferências recentes e baixas sem conta. Não usa saldo inicial, ajustes ou transferências no DRE.
       parameters:
         - name: mes
@@ -2782,6 +2783,7 @@ paths:
     post:
       tags: [Financeiro]
       summary: Criar conta financeira com saldo inicial patrimonial.
+      x-required-permission: contas_saldos:criar
       requestBody:
         required: true
         content:
@@ -2813,6 +2815,7 @@ paths:
     patch:
       tags: [Financeiro]
       summary: Atualizar uma conta financeira e seus padrões por forma de pagamento.
+      x-required-permission: contas_saldos:editar
       parameters:
         - name: conta
           in: path
@@ -2836,6 +2839,7 @@ paths:
     get:
       tags: [Financeiro]
       summary: Consultar extrato patrimonial paginado de uma conta.
+      x-required-permission: contas_saldos:visualizar
       parameters:
         - name: conta
           in: path
@@ -2870,6 +2874,7 @@ paths:
     post:
       tags: [Financeiro]
       summary: Registrar ajuste patrimonial de conciliação.
+      x-required-permission: contas_saldos:editar
       description: Altera o saldo da conta, exige justificativa e não afeta faturamento nem DRE.
       parameters:
         - name: conta
@@ -2894,6 +2899,7 @@ paths:
     post:
       tags: [Financeiro]
       summary: Transferir saldo entre contas sem afetar o DRE.
+      x-required-permission: contas_saldos:editar
       requestBody:
         required: true
         content:
@@ -2910,6 +2916,7 @@ paths:
     post:
       tags: [Financeiro]
       summary: Cancelar e estornar uma transferência entre contas.
+      x-required-permission: contas_saldos:editar
       parameters:
         - name: transferencia
           in: path
@@ -2939,6 +2946,7 @@ paths:
     post:
       tags: [Financeiro]
       summary: Confirmar crédito líquido de um recebimento em cartão.
+      x-required-permission: contas_saldos:editar
       parameters:
         - name: cartao
           in: path

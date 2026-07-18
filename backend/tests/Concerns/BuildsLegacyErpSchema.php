@@ -139,6 +139,7 @@ trait BuildsLegacyErpSchema
             ['id' => 12, 'nome' => 'Atendimento WhatsApp', 'slug' => 'atendimento_whatsapp', 'icone' => 'bi-chat-dots', 'ordem_menu' => 70, 'ativo' => 1],
             ['id' => 13, 'nome' => 'Precificação', 'slug' => 'precificacao', 'icone' => 'bi-calculator', 'ordem_menu' => 46, 'ativo' => 1],
             ['id' => 14, 'nome' => 'Conhecimento', 'slug' => 'conhecimento', 'icone' => 'bi-journal-bookmark-fill', 'ordem_menu' => 75, 'ativo' => 1],
+            ['id' => 15, 'nome' => 'Contas e Saldos', 'slug' => 'contas_saldos', 'icone' => 'bi-wallet2', 'ordem_menu' => 47, 'ativo' => 1],
         ]);
 
         DB::table('permissoes')->insert([
