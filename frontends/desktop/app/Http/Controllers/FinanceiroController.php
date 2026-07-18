@@ -86,22 +86,28 @@ class FinanceiroController extends DesktopController
             static fn ($value): bool => $value !== '' && $value !== 0
         ));
 
+        $catalog = $this->financeiroService->catalogo();
+
         return view('financeiro.index', [
             'pageTitle' => 'Financeiro',
             'lancamentos' => $result['items'],
             'pagination' => $result['pagination'],
             'statusOptions' => $result['status_options'],
             'filters' => $filters,
-            'cartaoDataset' => $this->financeiroService->catalogo()['cartao'],
+            'cartaoDataset' => $catalog['cartao'],
+            'accountDataset' => $catalog['contas_financeiras'],
         ]);
     }
 
     public function create(): View
     {
+        $catalog = $this->financeiroService->catalogo();
+
         return view('financeiro.create', [
             'pageTitle' => 'Novo lançamento',
             'lancamento' => $this->formDefaults(),
-            'categorias' => $this->financeiroService->catalogo()['categorias'],
+            'categorias' => $catalog['categorias'],
+            'accountDataset' => $catalog['contas_financeiras'],
             'canQuickClient' => \App\Support\DesktopSession::can('clientes', 'criar'),
         ]);
     }
@@ -130,10 +136,13 @@ class FinanceiroController extends DesktopController
         // "Registrar baixa" pode aparecer (título em aberto + permissão).
         $status = (string) ($data['lancamento']['status'] ?? 'pendente');
         $cartaoDataset = ['operadoras' => [], 'bandeiras' => [], 'taxas' => []];
+        $accountDataset = ['contas' => [], 'contas_padrao' => [], 'tipos' => []];
 
         if (in_array($status, ['pendente', 'parcial'], true) && \App\Support\DesktopSession::can('financeiro', 'editar')) {
             try {
-                $cartaoDataset = $this->financeiroService->catalogo()['cartao'];
+                $catalog = $this->financeiroService->catalogo();
+                $cartaoDataset = $catalog['cartao'];
+                $accountDataset = $catalog['contas_financeiras'];
             } catch (Throwable $exception) {
                 report($exception);
             }
@@ -145,6 +154,7 @@ class FinanceiroController extends DesktopController
             'resumo' => $data['resumo'] ?? [],
             'detalhes' => $data['detalhes'] ?? [],
             'cartaoDataset' => $cartaoDataset,
+            'accountDataset' => $accountDataset,
         ]);
     }
 
@@ -201,11 +211,14 @@ class FinanceiroController extends DesktopController
             abort(404);
         }
 
+        $catalog = $this->financeiroService->catalogo();
+
         return view('financeiro.edit', [
             'pageTitle' => 'Editar lançamento',
             'lancamento' => $data['lancamento'],
             'resumo' => $data['resumo'] ?? [],
-            'categorias' => $this->financeiroService->catalogo()['categorias'],
+            'categorias' => $catalog['categorias'],
+            'accountDataset' => $catalog['contas_financeiras'],
             'canQuickClient' => \App\Support\DesktopSession::can('clientes', 'criar'),
         ]);
     }
@@ -305,6 +318,7 @@ class FinanceiroController extends DesktopController
             'valor_movimento' => ['required', 'numeric', 'min:0.01'],
             'data_movimento' => ['nullable', 'date'],
             'forma_pagamento' => ['nullable', 'string', 'max:40'],
+            'conta_financeira_id' => ['nullable', 'integer', 'min:1'],
             'observacoes' => ['nullable', 'string'],
             'operadora_id' => ['nullable', 'integer', 'min:1', 'required_if:forma_pagamento,cartao_credito,cartao_debito'],
             'bandeira_id' => ['nullable', 'integer', 'min:1'],
@@ -383,6 +397,7 @@ class FinanceiroController extends DesktopController
             'valor' => ['required', 'numeric', 'min:0.01', 'max:99999999.99'],
             'status' => ['nullable', 'string', 'in:pendente,parcial,pago,cancelado'],
             'forma_pagamento' => ['nullable', 'string', 'in:dinheiro,cartao_credito,cartao_debito,pix,boleto,transferencia'],
+            'conta_financeira_id' => ['nullable', 'integer', 'min:1'],
             'data_vencimento' => ['required', 'date'],
             'data_pagamento' => ['nullable', 'date'],
             'observacoes' => ['nullable', 'string'],

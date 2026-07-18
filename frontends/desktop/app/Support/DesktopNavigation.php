@@ -146,6 +146,12 @@ class DesktopNavigation
                         'module' => 'financeiro',
                         'icon' => 'bi-cash-coin',
                     ],
+                    [
+                        'label' => 'Contas e Saldos',
+                        'route' => 'financeiro.contas.index',
+                        'module' => 'financeiro',
+                        'icon' => 'bi-wallet2',
+                    ],
                 ],
             ],
             [

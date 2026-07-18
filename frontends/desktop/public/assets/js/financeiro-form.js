@@ -13,6 +13,10 @@
         quickClientForm: document.getElementById('quickClientForm'),
         quickClientSubmit: document.getElementById('quickClientSubmit'),
         quickClientButton: document.getElementById('btnNovoClienteFinanceiro'),
+        statusSelect: document.getElementById('financeiroStatus'),
+        paymentMethodSelect: document.getElementById('financeiroFormaPagamento'),
+        accountWrapper: document.getElementById('financeiroContaWrapper'),
+        accountSelect: document.getElementById('financeiroConta'),
     };
 
     const escapeHtml = (unsafe) => String(unsafe ?? '')
@@ -23,6 +27,33 @@
         .replace(/'/g, '&#039;');
 
     const normalizeText = (value) => String(value ?? '').trim();
+
+    const initFinancialAccount = () => {
+        if (!(els.accountSelect instanceof HTMLSelectElement) || !(els.statusSelect instanceof HTMLSelectElement)) { return; }
+
+        const defaults = config.contasFinanceiras?.contas_padrao || {};
+        const syncVisibility = () => {
+            const required = els.statusSelect.value === 'pago';
+            els.accountWrapper?.classList.toggle('d-none', !required);
+            els.accountSelect.required = required;
+        };
+        const syncDefault = () => {
+            if (!(els.paymentMethodSelect instanceof HTMLSelectElement) || els.statusSelect.value !== 'pago') { return; }
+            const defaultId = defaults[els.paymentMethodSelect.value];
+            if (!defaultId || !Array.from(els.accountSelect.options).some((option) => Number(option.value) === Number(defaultId))) { return; }
+            els.accountSelect.value = String(defaultId);
+            if (window.jQuery) { window.jQuery(els.accountSelect).trigger('change'); }
+        };
+
+        els.statusSelect.addEventListener('change', () => { syncVisibility(); syncDefault(); });
+        els.paymentMethodSelect?.addEventListener('change', syncDefault);
+        if (window.jQuery) {
+            window.jQuery(els.statusSelect).on('change', () => { syncVisibility(); syncDefault(); });
+            window.jQuery(els.paymentMethodSelect).on('change', syncDefault);
+        }
+        syncVisibility();
+        syncDefault();
+    };
 
     const select2Language = {
         errorLoading: () => 'Os resultados nao puderam ser carregados.',
@@ -429,6 +460,7 @@
 
     initValorMask();
     initCategoriaSelect();
+    initFinancialAccount();
     initClientSelect();
     initQuickClient();
 })();

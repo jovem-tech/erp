@@ -1262,6 +1262,11 @@ components:
           type: string
           nullable: true
           enum: [dinheiro, cartao_credito, cartao_debito, pix, boleto, transferencia]
+        conta_financeira_id:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Conta patrimonial que recebe o valor. Obrigatória, explícita ou por padrão da forma, depois que o módulo de contas estiver ativo.
         data_pagamento:
           type: string
           format: date
@@ -1660,6 +1665,11 @@ components:
           type: string
           nullable: true
           enum: [dinheiro, cartao_credito, cartao_debito, pix, boleto, transferencia]
+        conta_financeira_id:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: Conta usada pela baixa automática quando o título for criado como pago.
         data_vencimento:
           type: string
           format: date
@@ -1708,6 +1718,130 @@ components:
           nullable: true
         dre_fixo_mensal:
           type: boolean
+          nullable: true
+
+    FinanceiroConta:
+      type: object
+      required: [id, nome, tipo, data_inicio_controle, considera_disponivel, ativo]
+      properties:
+        id:
+          type: integer
+        nome:
+          type: string
+          maxLength: 100
+        tipo:
+          type: string
+          enum: [caixa, banco, adquirente, reserva, carteira_digital, outra]
+        instituicao:
+          type: string
+          nullable: true
+        data_inicio_controle:
+          type: string
+          format: date
+        considera_disponivel:
+          type: boolean
+        ativo:
+          type: boolean
+        cor:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+        formas_padrao:
+          type: array
+          items:
+            type: string
+            enum: [dinheiro, cartao_credito, cartao_debito, pix, boleto, transferencia]
+        saldo_disponivel:
+          type: number
+          format: double
+          readOnly: true
+        cartao_pendente:
+          type: number
+          format: double
+          readOnly: true
+        posicao_total:
+          type: number
+          format: double
+          readOnly: true
+
+    FinanceiroContaUpsertRequest:
+      type: object
+      properties:
+        nome:
+          type: string
+          maxLength: 100
+        tipo:
+          type: string
+          enum: [caixa, banco, adquirente, reserva, carteira_digital, outra]
+        instituicao:
+          type: string
+          nullable: true
+        data_inicio_controle:
+          type: string
+          format: date
+        saldo_inicial:
+          type: number
+          description: Patrimonial; nunca cria receita, despesa ou linha no DRE.
+        considera_disponivel:
+          type: boolean
+          default: true
+        ativo:
+          type: boolean
+          default: true
+        cor:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+        observacoes:
+          type: string
+          nullable: true
+        formas_padrao:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [dinheiro, cartao_credito, cartao_debito, pix, boleto, transferencia]
+
+    FinanceiroContaAdjustmentRequest:
+      type: object
+      required: [natureza, valor, data_movimento, descricao]
+      properties:
+        natureza:
+          type: string
+          enum: [entrada, saida]
+        valor:
+          type: number
+          minimum: 0.01
+        data_movimento:
+          type: string
+          format: date
+        descricao:
+          type: string
+          minLength: 5
+          maxLength: 255
+        documento_ref:
+          type: string
+          nullable: true
+
+    FinanceiroContaTransferRequest:
+      type: object
+      required: [conta_origem_id, conta_destino_id, valor, data_transferencia, descricao]
+      properties:
+        conta_origem_id:
+          type: integer
+          minimum: 1
+        conta_destino_id:
+          type: integer
+          minimum: 1
+        valor:
+          type: number
+          minimum: 0.01
+        data_transferencia:
+          type: string
+          format: date
+        descricao:
+          type: string
+          maxLength: 255
+        documento_ref:
+          type: string
           nullable: true
 
     FinanceiroCartoesDataset:
@@ -2615,6 +2749,219 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /financeiro/contas:
+    get:
+      tags: [Financeiro]
+      summary: Consultar posição patrimonial por conta.
+      description: Retorna saldo efetivamente disponível, cartão líquido pendente, posição total, movimentos mensais, transferências recentes e baixas sem conta. Não usa saldo inicial, ajustes ou transferências no DRE.
+      parameters:
+        - name: mes
+          in: query
+          schema:
+            type: string
+            pattern: '^\d{4}-(0[1-9]|1[0-2])$'
+            example: '2026-07'
+      responses:
+        "200":
+          description: Painel de contas e saldos.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags: [Financeiro]
+      summary: Criar conta financeira com saldo inicial patrimonial.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/FinanceiroContaUpsertRequest"
+                - type: object
+                  required: [nome, tipo, data_inicio_controle]
+      responses:
+        "201":
+          description: Conta criada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          conta:
+                            $ref: "#/components/schemas/FinanceiroConta"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /financeiro/contas/{conta}:
+    patch:
+      tags: [Financeiro]
+      summary: Atualizar uma conta financeira e seus padrões por forma de pagamento.
+      parameters:
+        - name: conta
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinanceiroContaUpsertRequest"
+      responses:
+        "200":
+          description: Conta atualizada.
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /financeiro/contas/{conta}/extrato:
+    get:
+      tags: [Financeiro]
+      summary: Consultar extrato patrimonial paginado de uma conta.
+      parameters:
+        - name: conta
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: data_inicio
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: data_fim
+          in: query
+          schema:
+            type: string
+            format: date
+        - $ref: "#/components/parameters/PageParam"
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          description: Extrato com movimentos e resumo do período, limitado a 366 dias.
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /financeiro/contas/{conta}/ajustes:
+    post:
+      tags: [Financeiro]
+      summary: Registrar ajuste patrimonial de conciliação.
+      description: Altera o saldo da conta, exige justificativa e não afeta faturamento nem DRE.
+      parameters:
+        - name: conta
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinanceiroContaAdjustmentRequest"
+      responses:
+        "201":
+          description: Ajuste registrado.
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /financeiro/contas-transferencias:
+    post:
+      tags: [Financeiro]
+      summary: Transferir saldo entre contas sem afetar o DRE.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FinanceiroContaTransferRequest"
+      responses:
+        "201":
+          description: Transferência atômica registrada.
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /financeiro/contas-transferencias/{transferencia}/cancelar:
+    post:
+      tags: [Financeiro]
+      summary: Cancelar e estornar uma transferência entre contas.
+      parameters:
+        - name: transferencia
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [motivo]
+              properties:
+                motivo:
+                  type: string
+                  minLength: 5
+                  maxLength: 500
+      responses:
+        "200":
+          description: Transferência cancelada e saldos estornados.
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /financeiro/contas-cartoes/{cartao}/confirmar:
+    post:
+      tags: [Financeiro]
+      summary: Confirmar crédito líquido de um recebimento em cartão.
+      parameters:
+        - name: cartao
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [data_credito_efetivo]
+              properties:
+                data_credito_efetivo:
+                  type: string
+                  format: date
+      responses:
+        "200":
+          description: Crédito confirmado e valor líquido incorporado ao saldo disponível.
+        "422":
+          $ref: "#/components/responses/ValidationError"
 
   /financeiro:
     get:

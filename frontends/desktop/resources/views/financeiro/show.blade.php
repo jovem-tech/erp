@@ -428,6 +428,9 @@
                                     <td data-label="Tipo">{{ $text($movimento['tipo_label'] ?? null) }}</td>
                                     <td data-label="Forma">
                                         <div class="fw-semibold">{{ $text($movimento['forma_pagamento_label'] ?? null, 'Não informada') }}</div>
+                                        @if (! empty($movimento['conta_financeira']['nome']))
+                                            <small class="text-secondary d-block">Conta: {{ $movimento['conta_financeira']['nome'] }}</small>
+                                        @endif
                                         @if (! empty($movimento['documento_ref']))
                                             <small class="text-secondary">Doc.: {{ $movimento['documento_ref'] }}</small>
                                         @endif
@@ -549,6 +552,7 @@
                                     <option value="transferencia">Transferência</option>
                                 </select>
                             </div>
+                            @include('financeiro._account_select', ['accountDataset' => $accountDataset ?? []])
                             <div class="d-none mb-3 pt-2 border-top" data-card-fields>
                                 <div class="desktop-grid desktop-grid-two">
                                     <div>
@@ -603,6 +607,7 @@
         <script>
             window.__DESKTOP_FINANCEIRO_INDEX = {!! json_encode([
                 'cartao' => $cartaoDataset ?? ['operadoras' => [], 'bandeiras' => [], 'taxas' => []],
+                'contasFinanceiras' => $accountDataset ?? ['contas' => [], 'contas_padrao' => []],
             ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
         </script>
         @if ($canPay ?? false)

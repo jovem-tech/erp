@@ -18,6 +18,7 @@ class UpsertFinanceiroRequest extends BaseApiFormRequest
             'valor' => [$requiredOrSometimes, 'numeric', 'min:0.01', 'max:99999999.99'],
             'status' => ['nullable', 'string', Rule::in(array_column(Financeiro::statusOptions(), 'value'))],
             'forma_pagamento' => ['nullable', 'string', Rule::in(Financeiro::FORMAS_PAGAMENTO)],
+            'conta_financeira_id' => ['nullable', 'integer', Rule::exists('financeiro_contas', 'id')],
             'data_vencimento' => [$requiredOrSometimes, 'date'],
             'data_pagamento' => ['nullable', 'date'],
             'data_competencia' => ['nullable', 'date'],

@@ -1029,6 +1029,7 @@ class OrderController extends DesktopController
             'recebimentos' => [$isBaixa ? 'nullable' : 'required', 'array', $isBaixa ? 'sometimes' : 'min:1'],
             'recebimentos.*.valor' => ['required', 'numeric', 'min:0.01'],
             'recebimentos.*.forma_pagamento' => ['required', 'string'],
+            'recebimentos.*.conta_financeira_id' => ['nullable', 'integer', 'min:1'],
             'recebimentos.*.data_pagamento' => ['nullable', 'date'],
             'recebimentos.*.observacoes' => ['nullable', 'string'],
             'recebimentos.*.operadora_id' => ['nullable', 'integer'],
@@ -1043,6 +1044,7 @@ class OrderController extends DesktopController
             'recebimentos' => 'recebimentos',
             'recebimentos.*.valor' => 'valor do recebimento',
             'recebimentos.*.forma_pagamento' => 'forma de pagamento do recebimento',
+            'recebimentos.*.conta_financeira_id' => 'conta financeira do recebimento',
         ]);
 
         $payload = array_filter([

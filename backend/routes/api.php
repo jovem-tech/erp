@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\V1\BudgetController;
 use App\Http\Controllers\Api\V1\ConfigurationController;
 use App\Http\Controllers\Api\V1\FinanceiroCatalogController;
 use App\Http\Controllers\Api\V1\FinanceiroCartaoController;
+use App\Http\Controllers\Api\V1\FinanceiroContaController;
 use App\Http\Controllers\Api\V1\FinanceiroPrecificacaoController;
 use App\Http\Controllers\Api\V1\FinanceiroController;
 use App\Http\Controllers\Api\V1\FinanceiroMargemController;
@@ -137,6 +138,15 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('margem', [FinanceiroMargemController::class, 'index'])->name('margem.index');
                 Route::get('margem/{os}', [FinanceiroMargemController::class, 'show'])->name('margem.show');
                 Route::post('margem/{os}/recalcular', [FinanceiroMargemController::class, 'recalcular'])->name('margem.recalcular');
+
+                Route::get('contas', [FinanceiroContaController::class, 'index'])->name('contas.index');
+                Route::post('contas', [FinanceiroContaController::class, 'store'])->name('contas.store');
+                Route::match(['put', 'patch'], 'contas/{conta}', [FinanceiroContaController::class, 'update'])->name('contas.update');
+                Route::get('contas/{conta}/extrato', [FinanceiroContaController::class, 'statement'])->name('contas.extrato');
+                Route::post('contas/{conta}/ajustes', [FinanceiroContaController::class, 'adjust'])->name('contas.ajustes.store');
+                Route::post('contas-transferencias', [FinanceiroContaController::class, 'transfer'])->name('contas.transferencias.store');
+                Route::post('contas-transferencias/{transferencia}/cancelar', [FinanceiroContaController::class, 'cancelTransfer'])->name('contas.transferencias.cancelar');
+                Route::post('contas-cartoes/{cartao}/confirmar', [FinanceiroContaController::class, 'confirmCard'])->name('contas.cartoes.confirmar');
 
                 Route::get('/', [FinanceiroController::class, 'index'])->name('index');
                 Route::post('/', [FinanceiroController::class, 'store'])->name('store');

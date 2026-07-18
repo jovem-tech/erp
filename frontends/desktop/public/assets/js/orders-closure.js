@@ -1,6 +1,8 @@
 (function () {
     const config = window.__DESKTOP_ORDER_CLOSURE || {};
     const cartaoTaxas = Array.isArray(config.cartao?.taxas) ? config.cartao.taxas : [];
+    const financialAccounts = Array.isArray(config.contasFinanceiras?.contas) ? config.contasFinanceiras.contas : [];
+    const accountDefaults = config.contasFinanceiras?.contas_padrao || {};
     const noRepairStatuses = Array.isArray(config.noRepairStatuses) ? config.noRepairStatuses : [];
     const orcamentoPendenteAprovacao = Boolean(config.orcamentoPendenteAprovacao);
 
@@ -344,6 +346,19 @@
             }
         };
 
+        const syncDefaultAccount = (row) => {
+            if (!(row instanceof HTMLElement)) return;
+            const paymentMethod = row.querySelector('[data-field="forma_pagamento"]')?.value || '';
+            const accountSelect = row.querySelector('[data-field="conta_financeira_id"]');
+            if (!(accountSelect instanceof HTMLSelectElement) || accountSelect.value) return;
+
+            const defaultId = accountDefaults[paymentMethod];
+            if (!defaultId || !Array.from(accountSelect.options).some((option) => Number(option.value) === Number(defaultId))) return;
+
+            accountSelect.value = String(defaultId);
+            if (window.jQuery) window.jQuery(accountSelect).trigger('change');
+        };
+
         // Ajusta min/max do campo "Parcelas" para a faixa realmente cadastrada
         // em Financeiro > Cartões > Taxas para a operadora/modalidade/bandeira
         // selecionadas — sem isso o campo aceitava qualquer valor de 1 a 99,
@@ -354,6 +369,7 @@
             if (!(parcelasInput instanceof HTMLInputElement)) return;
 
             const operadoraId = row.querySelector('[data-field="operadora_id"]')?.value || '';
+            const accountId = row.querySelector('[data-field="conta_financeira_id"]')?.value || '';
             const bandeiraId = row.querySelector('[data-field="bandeira_id"]')?.value || '';
             const modalidade = row.querySelector('[data-field="modalidade"]')?.value || '';
 
@@ -456,6 +472,10 @@
 
             if (formaPagamento === '') {
                 errors.push('Selecione a forma de pagamento de todos os recebimentos lançados.');
+            }
+
+            if (financialAccounts.length > 0 && accountId === '') {
+                errors.push('Selecione a conta financeira de todos os recebimentos lançados.');
             }
 
             if (formaPagamento.startsWith('cartao')) {
@@ -620,6 +640,7 @@
             bindMoneyInput(row.querySelector('[data-field="valor"]'));
 
             toggleCardFields(row);
+            syncDefaultAccount(row);
             reindexRows();
             updateEmptyHint();
             recalcTotals();
@@ -770,6 +791,7 @@
 
             if (target.matches('[data-field="forma_pagamento"]')) {
                 toggleCardFields(row);
+                syncDefaultAccount(row);
             }
 
             if (row && target.matches('[data-field="operadora_id"], [data-field="bandeira_id"], [data-field="modalidade"], [data-field="forma_pagamento"]')) {

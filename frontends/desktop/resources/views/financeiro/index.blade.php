@@ -64,6 +64,10 @@
                 </button>
 
                 <div class="dropdown-menu dropdown-menu-end os-actions-menu">
+                    <a href="{{ route('financeiro.contas.index') }}" class="dropdown-item">
+                        <i class="bi bi-wallet2 me-2"></i>Contas e Saldos
+                    </a>
+
                     <a href="{{ route('financeiro.cartoes.index') }}" class="dropdown-item">
                         <i class="bi bi-credit-card-2-front me-2"></i>Cartões e Taxas
                     </a>
@@ -351,6 +355,7 @@
                                                 <option value="transferencia">Transferência</option>
                                             </select>
                                         </div>
+                                        @include('financeiro._account_select', ['accountDataset' => $accountDataset ?? []])
                                         <div class="d-none mb-3 pt-2 border-top" data-card-fields>
                                             <div class="desktop-grid desktop-grid-two">
                                                 <div>
@@ -419,6 +424,7 @@
     <script>
         window.__DESKTOP_FINANCEIRO_INDEX = {!! json_encode([
             'cartao' => $cartaoDataset ?? ['operadoras' => [], 'bandeiras' => [], 'taxas' => []],
+            'contasFinanceiras' => $accountDataset ?? ['contas' => [], 'contas_padrao' => []],
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
     </script>
     <script src="{{ asset('assets/js/financeiro-pay.js') }}?v={{ filemtime(public_path('assets/js/financeiro-pay.js')) }}"></script>

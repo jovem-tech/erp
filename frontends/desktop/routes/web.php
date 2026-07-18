@@ -10,6 +10,7 @@ use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\FinanceiroCartaoController;
 use App\Http\Controllers\FinanceiroCatalogController;
 use App\Http\Controllers\FinanceiroController;
+use App\Http\Controllers\FinanceiroContaController;
 use App\Http\Controllers\FinanceiroPrecificacaoController;
 use App\Http\Controllers\FinanceiroMargemController;
 use App\Http\Controllers\FinanceiroReportController;
@@ -336,6 +337,30 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/financeiro', [FinanceiroController::class, 'store'])
         ->middleware('desktop.permission:financeiro,criar')
         ->name('financeiro.store');
+    Route::get('/financeiro/contas', [FinanceiroContaController::class, 'index'])
+        ->middleware('desktop.permission:financeiro,visualizar')
+        ->name('financeiro.contas.index');
+    Route::post('/financeiro/contas', [FinanceiroContaController::class, 'store'])
+        ->middleware('desktop.permission:financeiro,editar')
+        ->name('financeiro.contas.store');
+    Route::patch('/financeiro/contas/{conta}', [FinanceiroContaController::class, 'update'])
+        ->middleware('desktop.permission:financeiro,editar')
+        ->name('financeiro.contas.update');
+    Route::get('/financeiro/contas/{conta}/extrato', [FinanceiroContaController::class, 'statement'])
+        ->middleware('desktop.permission:financeiro,visualizar')
+        ->name('financeiro.contas.extrato');
+    Route::post('/financeiro/contas/{conta}/ajustes', [FinanceiroContaController::class, 'adjust'])
+        ->middleware('desktop.permission:financeiro,editar')
+        ->name('financeiro.contas.ajustes.store');
+    Route::post('/financeiro/contas-transferencias', [FinanceiroContaController::class, 'transfer'])
+        ->middleware('desktop.permission:financeiro,editar')
+        ->name('financeiro.contas.transferencias.store');
+    Route::post('/financeiro/contas-transferencias/{transferencia}/cancelar', [FinanceiroContaController::class, 'cancelTransfer'])
+        ->middleware('desktop.permission:financeiro,editar')
+        ->name('financeiro.contas.transferencias.cancelar');
+    Route::post('/financeiro/contas-cartoes/{cartao}/confirmar', [FinanceiroContaController::class, 'confirmCard'])
+        ->middleware('desktop.permission:financeiro,editar')
+        ->name('financeiro.contas.cartoes.confirmar');
     Route::get('/financeiro/configuracoes', [FinanceiroCatalogController::class, 'index'])
         ->middleware('desktop.permission:financeiro,visualizar')
         ->name('financeiro.configuracoes');

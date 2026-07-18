@@ -1,5 +1,10 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.19.0.0 — 2026-07-18 02:26
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Gestão de contas, saldos disponíveis, transferências e conciliação patrimonial
+
 ## v4.18.4.0 — 2026-07-17 03:53
 - **Tier:** patch
 - **Autor/Agente:** Codex

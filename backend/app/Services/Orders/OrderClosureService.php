@@ -16,6 +16,7 @@ use App\Models\OsMargem;
 use App\Models\User;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
 use App\Services\Financeiro\FinanceiroCartaoService;
+use App\Services\Financeiro\FinanceiroContaService;
 use App\Services\Financeiro\FinanceiroService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
@@ -53,6 +54,7 @@ class OrderClosureService
         private readonly OrderWorkflowService $orderWorkflowService,
         private readonly FinanceiroService $financeiroService,
         private readonly FinanceiroCartaoService $financeiroCartaoService,
+        private readonly FinanceiroContaService $financeiroContaService,
         private readonly WhatsappMessagingService $whatsappMessagingService,
         private readonly OrderClosurePdfService $orderClosurePdfService,
         private readonly OrderEventService $orderEventService
@@ -83,6 +85,7 @@ class OrderClosureService
             'custo_summary' => $this->buildCostSummary((int) $order->id),
             'retorno_padrao' => Carbon::now()->addDays(self::RETURN_FOLLOWUP_DEFAULT_DAYS)->toDateString(),
             'cartao' => $this->financeiroCartaoService->buildActiveDataset(),
+            'contas_financeiras' => $this->financeiroContaService->options(),
             'status_pagamento_pendente' => $this->pendingPaymentStatusInfo(),
             // Contrato com o frontend (orders-closure.js): lista dos
             // encerramentos que ESCONDEM os campos de pagamento (sem cobrança).
@@ -1006,6 +1009,9 @@ class OrderClosureService
             $normalized[] = [
                 'valor' => $valor,
                 'forma_pagamento' => trim((string) ($raw['forma_pagamento'] ?? '')),
+                'conta_financeira_id' => (int) ($raw['conta_financeira_id'] ?? 0) > 0
+                    ? (int) $raw['conta_financeira_id']
+                    : null,
                 'data_pagamento' => $this->normalizeDate($raw['data_pagamento'] ?? null),
                 'observacoes' => trim((string) ($raw['observacoes'] ?? '')),
                 'operadora_id' => (int) ($raw['operadora_id'] ?? 0) > 0 ? (int) $raw['operadora_id'] : null,
@@ -1074,6 +1080,7 @@ class OrderClosureService
                 'valor_movimento' => $recebimento['valor'],
                 'data_movimento' => $recebimento['data_pagamento'] ?? $dataReferencia,
                 'forma_pagamento' => $recebimento['forma_pagamento'] !== '' ? $recebimento['forma_pagamento'] : null,
+                'conta_financeira_id' => $recebimento['conta_financeira_id'] ?? null,
                 'observacoes' => $recebimento['observacoes'] !== '' ? $recebimento['observacoes'] : null,
             ]);
 
