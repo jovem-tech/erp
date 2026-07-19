@@ -180,6 +180,15 @@ components:
       schema:
         type: integer
         minimum: 1
+    NotificationBox:
+      name: box
+      in: query
+      required: false
+      description: Separa avisos operacionais da caixa de mensagens e documentos.
+      schema:
+        type: string
+        enum: [all, operational, correspondence]
+        default: all
     ConversationId:
       name: conversation
       in: path
@@ -682,6 +691,9 @@ components:
           type: integer
         tipo_evento:
           type: string
+        caixa:
+          type: string
+          enum: [operational, correspondence]
         titulo:
           type: string
         corpo:
@@ -4148,6 +4160,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/PageParam"
         - $ref: "#/components/parameters/PerPageParam"
+        - $ref: "#/components/parameters/NotificationBox"
         - $ref: "#/components/parameters/SearchParam"
         - name: status
           in: query
@@ -4407,6 +4420,8 @@ paths:
       tags:
         - Notificações
       summary: Marcar todas as notificações como lidas.
+      parameters:
+        - $ref: "#/components/parameters/NotificationBox"
       responses:
         "200":
           $ref: "#/components/responses/Success"
@@ -4418,6 +4433,8 @@ paths:
       tags:
         - Notificações
       summary: Remover todas as notificações já lidas do usuário autenticado.
+      parameters:
+        - $ref: "#/components/parameters/NotificationBox"
       responses:
         "200":
           $ref: "#/components/responses/Success"

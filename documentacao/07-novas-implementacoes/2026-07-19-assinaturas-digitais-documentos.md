@@ -1,7 +1,7 @@
 # Assinaturas digitais e rastreabilidade documental
 
 **Data:** 19/07/2026  
-**Versão:** `4.24.1.0`  
+**Versão:** `4.26.0.0`  
 **Status:** migration aplicada e módulo ativo no ambiente de desenvolvimento LAN; não publicado na VPS de produção
 
 ## Objetivo
@@ -47,6 +47,20 @@ O criador atribui o documento a outro usuário. O PDF só é emitido quando o re
 
 As solicitações aparecem tanto na Central de Documentos quanto em **Perfil > Configurações > Documentos aguardando assinatura**. O responsável assina na própria sessão; o solicitante pode concluir no mesmo terminal somente após reautenticar o responsável.
 
+#### Ciência multicanal da designação
+
+Ao designar um documento para um usuário, o sistema cria três formas independentes de ciência:
+
+- notificação em tempo real na caixa **Mensagens e documentos**, representada pelo ícone de carta ao lado do sino;
+- e-mail para o endereço cadastrado do responsável;
+- mensagem de WhatsApp para o telefone do usuário ou, como fallback, do seu cadastro funcional na equipe.
+
+O sino permanece reservado aos avisos operacionais. Eventos `message.*` e `document.*` são direcionados exclusivamente à carta, com contador próprio. Ao abrir a notificação, ela é marcada como lida e o usuário é levado diretamente ao bloco **Assinaturas pendentes** da Central Documental da OS.
+
+E-mail e WhatsApp são processados pela fila `default`, sem bloquear a criação da solicitação. Cada canal possui registro em `documento_assinatura_notificacoes`, com estado, quantidade de tentativas, provedor, referência e horário de entrega. Destinatários são armazenados somente de forma mascarada e com HMAC; falhas transitórias têm até três tentativas e uma rotina agendada recupera itens que não chegaram à fila.
+
+A rotina também recupera solicitações de assinatura criadas antes da implantação da caixa de correspondências. O controle idempotente por solicitação e canal impede que o aviso interno, o e-mail ou o WhatsApp sejam duplicados durante reprocessamentos.
+
 ### Assinatura do cliente
 
 O sistema cria um token aleatório de 64 caracteres, persiste apenas o SHA-256 e disponibiliza um link válido por sete dias. O cliente informa o nome, aceita o consentimento e desenha a rubrica. Um lock impede submissões simultâneas do mesmo link; após o uso, o token é invalidado.
@@ -63,14 +77,18 @@ O sistema cria um token aleatório de 64 caracteres, persiste apenas o SHA-256 e
 - token do cliente é de uso único e expira;
 - locks por solicitação impedem duas emissões concorrentes, tanto no fluxo interno quanto no link do cliente;
 - autorização específica por pendência, evitando conceder acesso amplo à OS.
+- links enviados aos funcionários exigem autenticação normal no ERP e não carregam tokens de sessão;
+- e-mail e telefone não são persistidos em texto aberto no histórico de entregas externas;
 
 ## Performance e escalabilidade
 
 Os índices compostos atendem as consultas de pendências por usuário e por OS. A listagem administrativa usa `withExists`, evitando N+1 e sem ler os binários. Imagens são normalizadas para no máximo 1200 px de largura antes de entrarem no PDF, reduzindo memória do Dompdf. O fluxo é stateless, exceto pelo lock distribuído do cache, compatível com Redis em múltiplas instâncias.
 
+A caixa de correspondências reutiliza `mobile_notifications`, filtrada por prefixos indexáveis de `tipo_evento`. Os canais externos são assíncronos, deduplicados por solicitação/canal e executados pelos workers existentes; após o sucesso, novas tentativas ignoram o canal já entregue. Isso permite escalabilidade horizontal sem aumentar a latência da geração documental.
+
 ## Operação e deploy
 
-Executar a migration `2026_07_19_000002_create_document_signature_infrastructure.php`, limpar caches do backend e do desktop e confirmar que o driver de cache compartilhado é Redis em produção. Os arquivos de assinatura devem fazer parte da rotina de backup do armazenamento privado, com acesso restrito ao usuário do serviço.
+Executar as migrations `2026_07_19_000002_create_document_signature_infrastructure.php` e `2026_07_19_000003_create_document_signature_notification_deliveries.php`, limpar caches do backend e do desktop e confirmar que o driver de cache compartilhado é Redis em produção. Os arquivos de assinatura devem fazer parte da rotina de backup do armazenamento privado, com acesso restrito ao usuário do serviço.
 
 A administração deve conferir a coluna **Assinatura** e concluir o cadastro dos usuários ativos. Por padrão, `DOCUMENT_SIGNATURES_REQUIRED=true`: todo PDF atribuído a um usuário é recusado enquanto ele não tiver assinatura ativa. Processos puramente sistêmicos, sem ator humano, continuam permitidos e são identificados como **Sistema** na auditoria. Em uma janela de migração controlada, a exigência pode ser temporariamente desativada com `DOCUMENT_SIGNATURES_REQUIRED=false`.
 

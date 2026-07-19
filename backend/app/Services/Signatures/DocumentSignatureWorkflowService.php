@@ -13,11 +13,13 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use Throwable;
 
 class DocumentSignatureWorkflowService
 {
     public function __construct(
-        private readonly SignatureImageService $signatureImageService
+        private readonly SignatureImageService $signatureImageService,
+        private readonly DocumentSignatureAssignmentNotifier $assignmentNotifier
     ) {
     }
 
@@ -75,7 +77,7 @@ class DocumentSignatureWorkflowService
         $this->requireActiveSignature($responsible);
         $snapshotHash = $this->orderSnapshotHash($order);
 
-        return DB::transaction(function () use ($order, $actor, $responsible, $types, $snapshotHash): array {
+        $requests = DB::transaction(function () use ($order, $actor, $responsible, $types, $snapshotHash): array {
             $requests = [];
             foreach (array_values(array_unique($types)) as $type) {
                 $requests[] = DocumentSignatureRequest::query()->create([
@@ -93,6 +95,22 @@ class DocumentSignatureWorkflowService
 
             return $requests;
         }, 3);
+
+        // A pendência já está confirmada antes dos avisos. Falhas de SMTP,
+        // WhatsApp, Redis ou broadcast nunca desfazem a solicitação; ficam
+        // registradas para retentativa e auditoria.
+        try {
+            $this->assignmentNotifier->notifyAssignments($requests, $order, $actor, $responsible);
+        } catch (Throwable $exception) {
+            logger()->error('[SIGNATURE][NOTIFY] Falha ao preparar avisos de designação', [
+                'order_id' => (int) $order->id,
+                'responsible_user_id' => (int) $responsible->id,
+                'request_ids' => array_map(static fn (DocumentSignatureRequest $item): int => (int) $item->id, $requests),
+                'message' => $exception->getMessage(),
+            ]);
+        }
+
+        return $requests;
     }
 
     /**

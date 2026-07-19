@@ -23,13 +23,15 @@ class NotificationController extends BaseApiController
 
         $onlyUnread = filter_var($request->query('only_unread', false), FILTER_VALIDATE_BOOL);
         $perPage = max(1, min(50, (int) $request->query('per_page', 6)));
-        $paginator = $this->inboxService->paginateForUser($user, $onlyUnread, $perPage);
+        $box = $this->inboxService->normalizeBox((string) $request->query('box', 'all'));
+        $paginator = $this->inboxService->paginateForUser($user, $onlyUnread, $perPage, $box);
 
         return $this->success(
             [
                 'items' => $paginator->items(),
-                'unread_count' => $this->inboxService->unreadCountForUser($user),
-                'last_notification_id' => $this->inboxService->lastNotificationIdForUser($user),
+                'box' => $box,
+                'unread_count' => $this->inboxService->unreadCountForUser($user, $box),
+                'last_notification_id' => $this->inboxService->lastNotificationIdForUser($user, $box),
             ],
             meta: $this->paginationMeta($paginator),
             request: $request
@@ -54,10 +56,12 @@ class NotificationController extends BaseApiController
             );
         }
 
+        $mapped = $this->inboxService->map($item);
+
         return $this->success(
             [
-                'notification' => $this->inboxService->map($item),
-                'unread_count' => $this->inboxService->unreadCountForUser($user),
+                'notification' => $mapped,
+                'unread_count' => $this->inboxService->unreadCountForUser($user, (string) ($mapped['caixa'] ?? 'all')),
             ],
             request: $request
         );
@@ -71,7 +75,10 @@ class NotificationController extends BaseApiController
         }
 
         return $this->success(
-            $this->inboxService->markAllRead($user),
+            $this->inboxService->markAllRead(
+                $user,
+                $this->inboxService->normalizeBox((string) $request->query('box', 'all'))
+            ),
             request: $request
         );
     }
@@ -84,7 +91,10 @@ class NotificationController extends BaseApiController
         }
 
         return $this->success(
-            $this->inboxService->clearRead($user),
+            $this->inboxService->clearRead(
+                $user,
+                $this->inboxService->normalizeBox((string) $request->query('box', 'all'))
+            ),
             request: $request
         );
     }

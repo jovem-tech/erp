@@ -162,4 +162,75 @@ class NotificationInboxTest extends TestCase
 
         $this->assertSame(0, $remaining);
     }
+
+    public function test_operational_and_correspondence_boxes_are_isolated(): void
+    {
+        $user = $this->createUserRecord([
+            'nome' => 'Usuário das Caixas',
+            'email' => 'boxes@example.com',
+            'grupo_id' => 3,
+        ]);
+
+        DB::table('mobile_notifications')->insert([
+            [
+                'usuario_id' => $user->id,
+                'tipo_evento' => 'message.inbound',
+                'titulo' => 'Mensagem recebida',
+                'corpo' => 'Mensagem para a caixa de correspondências.',
+                'rota_destino' => '/atendimento-whatsapp',
+                'payload_json' => null,
+                'lida_em' => null,
+                'created_at' => now()->subMinute(),
+                'updated_at' => now()->subMinute(),
+            ],
+            [
+                'usuario_id' => $user->id,
+                'tipo_evento' => 'document.signature.requested',
+                'titulo' => 'Assinatura pendente',
+                'corpo' => 'Documento aguardando assinatura.',
+                'rota_destino' => '/os/88/documentos#assinaturas-pendentes',
+                'payload_json' => json_encode(['signature_request_id' => 9]),
+                'lida_em' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'usuario_id' => $user->id,
+                'tipo_evento' => 'order.updated',
+                'titulo' => 'OS atualizada',
+                'corpo' => 'Aviso operacional.',
+                'rota_destino' => '/os/88',
+                'payload_json' => null,
+                'lida_em' => null,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        Sanctum::actingAs($user, ['*']);
+
+        $this->getJson('/api/v1/notifications?box=correspondence&per_page=10')
+            ->assertOk()
+            ->assertJsonPath('data.box', 'correspondence')
+            ->assertJsonPath('data.unread_count', 2)
+            ->assertJsonCount(2, 'data.items')
+            ->assertJsonPath('data.items.0.caixa', 'correspondence');
+
+        $this->getJson('/api/v1/notifications?box=operational&per_page=10')
+            ->assertOk()
+            ->assertJsonPath('data.box', 'operational')
+            ->assertJsonPath('data.unread_count', 1)
+            ->assertJsonCount(1, 'data.items')
+            ->assertJsonPath('data.items.0.tipo_evento', 'order.updated');
+
+        $this->patchJson('/api/v1/notifications/read-all?box=correspondence')
+            ->assertOk()
+            ->assertJsonPath('data.updated_count', 2)
+            ->assertJsonPath('data.unread_count', 0);
+
+        $this->assertSame(1, DB::table('mobile_notifications')
+            ->where('usuario_id', $user->id)
+            ->whereNull('lida_em')
+            ->count());
+    }
 }

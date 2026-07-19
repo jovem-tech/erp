@@ -139,7 +139,7 @@
     </section>
 
     @if ($pendingSignatures !== [])
-        <article class="surface-card mb-4">
+        <article class="surface-card mb-4 document-signature-pending-anchor" id="assinaturas-pendentes">
             <div class="d-flex flex-wrap justify-content-between gap-2 align-items-center mb-3">
                 <div>
                     <h3 class="surface-title fs-5 mb-1">Assinaturas pendentes</h3>

@@ -46,19 +46,22 @@ class NotificationService
     /**
      * @return array{items: array<int, array<string, mixed>>, unread_count: int, pagination: array<string, mixed>}
      */
-    public function summary(int $perPage = 6): array
+    public function summary(string $box = 'all', int $perPage = 6): array
     {
-        $cacheKey = $this->summaryCacheKey($perPage);
+        $box = $this->normalizeBox($box);
+        $cacheKey = $this->summaryCacheKey($box, $perPage);
 
         if ($cacheKey === null) {
             return $this->paginate([
                 'per_page' => $perPage,
+                'box' => $box,
             ]);
         }
 
-        return Cache::remember($cacheKey, now()->addSeconds(30), function () use ($perPage): array {
+        return Cache::remember($cacheKey, now()->addSeconds(30), function () use ($box, $perPage): array {
             return $this->paginate([
                 'per_page' => $perPage,
+                'box' => $box,
             ]);
         });
     }
@@ -80,9 +83,10 @@ class NotificationService
     /**
      * @return array<string, mixed>
      */
-    public function markAllRead(): array
+    public function markAllRead(string $box = 'all'): array
     {
-        $response = $this->apiClient->patch('/notifications/read-all');
+        $box = $this->normalizeBox($box);
+        $response = $this->apiClient->patch('/notifications/read-all?box=' . rawurlencode($box));
         $this->forgetSummaryCache();
 
         return $response['data'] ?? [];
@@ -93,9 +97,10 @@ class NotificationService
      *
      * @return array<string, mixed>
      */
-    public function clearRead(): array
+    public function clearRead(string $box = 'all'): array
     {
-        $response = $this->apiClient->delete('/notifications/read');
+        $box = $this->normalizeBox($box);
+        $response = $this->apiClient->delete('/notifications/read?box=' . rawurlencode($box));
         $this->forgetSummaryCache();
 
         return $response['data'] ?? [];
@@ -123,6 +128,7 @@ class NotificationService
             // usado pelo dropdown do sino (o link direto nao marcava leitura).
             'open_url' => $id !== '' ? route('notifications.open', ['notification' => $id]) : $url,
             'tipo' => (string) ($notification['tipo_evento'] ?? 'notificacao'),
+            'caixa' => $this->normalizeBox((string) ($notification['caixa'] ?? 'all')),
             'titulo' => (string) ($notification['titulo'] ?? 'Notificação'),
             'corpo' => (string) ($notification['corpo'] ?? ''),
             'rota_destino' => $route,
@@ -187,7 +193,7 @@ class NotificationService
         }
     }
 
-    private function summaryCacheKey(int $perPage = 6): ?string
+    private function summaryCacheKey(string $box, int $perPage = 6): ?string
     {
         $userId = (int) (DesktopSession::user()['id'] ?? 0);
 
@@ -195,15 +201,26 @@ class NotificationService
             return null;
         }
 
-        return 'desktop_notifications_summary:' . $userId . ':' . $perPage;
+        return 'desktop_notifications_summary:' . $userId . ':' . $this->normalizeBox($box) . ':' . $perPage;
     }
 
     private function forgetSummaryCache(int $perPage = 6): void
     {
-        $cacheKey = $this->summaryCacheKey($perPage);
+        foreach (['all', 'operational', 'correspondence'] as $box) {
+            $cacheKey = $this->summaryCacheKey($box, $perPage);
 
-        if ($cacheKey !== null) {
-            Cache::forget($cacheKey);
+            if ($cacheKey !== null) {
+                Cache::forget($cacheKey);
+            }
         }
+    }
+
+    private function normalizeBox(string $box): string
+    {
+        $normalized = strtolower(trim($box));
+
+        return in_array($normalized, ['operational', 'correspondence'], true)
+            ? $normalized
+            : 'all';
     }
 }

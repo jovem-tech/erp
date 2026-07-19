@@ -34,7 +34,7 @@
         <div
             class="dropdown desktop-notification-dropdown"
             data-desktop-notification-root
-            data-desktop-notification-summary-url="{{ route('notifications.summary') }}"
+            data-desktop-notification-summary-url="{{ route('notifications.summary', ['box' => 'operational']) }}"
         >
             <button
                 type="button"
@@ -58,6 +58,7 @@
                     <div class="d-flex gap-1">
                         <form method="post" action="{{ route('notifications.mark-all') }}">
                             @csrf
+                            <input type="hidden" name="box" value="operational">
                             <button type="submit" class="btn btn-sm btn-soft" title="Marcar todas como lidas">
                                 Marcar todas
                             </button>
@@ -65,6 +66,7 @@
 
                         <form method="post" action="{{ route('notifications.clear-read') }}">
                             @csrf
+                            <input type="hidden" name="box" value="operational">
                             <button type="submit" class="btn btn-sm btn-soft" title="Remover as notificações já lidas">
                                 <i class="bi bi-trash3 me-1"></i>Limpar lidas
                             </button>
@@ -78,8 +80,64 @@
                     </div>
                 </div>
 
-                <a href="{{ route('notifications.index') }}" class="desktop-notification-footer" data-desktop-notification-footer>
+                <a href="{{ route('notifications.index', ['box' => 'operational']) }}" class="desktop-notification-footer" data-desktop-notification-footer>
                     Ver todas
+                </a>
+            </div>
+        </div>
+
+        <div
+            class="dropdown desktop-notification-dropdown desktop-correspondence-dropdown"
+            data-desktop-correspondence-root
+            data-desktop-correspondence-summary-url="{{ route('notifications.summary', ['box' => 'correspondence']) }}"
+        >
+            <button
+                type="button"
+                class="desktop-icon-button position-relative"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+                aria-label="Mensagens e documentos"
+                title="Mensagens e documentos"
+                data-desktop-correspondence-toggle
+            >
+                <i class="bi bi-envelope"></i>
+                <span class="desktop-notification-badge d-none" data-desktop-correspondence-badge></span>
+            </button>
+
+            <div class="dropdown-menu dropdown-menu-end desktop-notification-menu" data-desktop-correspondence-menu>
+                <div class="desktop-dropdown-head">
+                    <div>
+                        <strong>Mensagens e documentos</strong>
+                        <small data-desktop-correspondence-unread>Resumo carregado sob demanda.</small>
+                    </div>
+
+                    <div class="d-flex gap-1">
+                        <form method="post" action="{{ route('notifications.mark-all') }}">
+                            @csrf
+                            <input type="hidden" name="box" value="correspondence">
+                            <button type="submit" class="btn btn-sm btn-soft" title="Marcar todas como lidas">
+                                Marcar todas
+                            </button>
+                        </form>
+
+                        <form method="post" action="{{ route('notifications.clear-read') }}">
+                            @csrf
+                            <input type="hidden" name="box" value="correspondence">
+                            <button type="submit" class="btn btn-sm btn-soft" title="Remover mensagens e documentos já lidos">
+                                <i class="bi bi-trash3 me-1"></i>Limpar lidas
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="desktop-notification-list" data-desktop-correspondence-list>
+                    <div class="desktop-notification-empty" data-desktop-correspondence-placeholder>
+                        Abra este menu para carregar mensagens e documentos recentes.
+                    </div>
+                </div>
+
+                <a href="{{ route('notifications.index', ['box' => 'correspondence']) }}" class="desktop-notification-footer" data-desktop-correspondence-footer>
+                    Ver mensagens e documentos
                 </a>
             </div>
         </div>
