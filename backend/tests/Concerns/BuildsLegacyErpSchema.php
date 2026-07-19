@@ -22,6 +22,7 @@ trait BuildsLegacyErpSchema
             'grupo_permissoes',
             'permissoes',
             'modulos',
+            'equipe_membros',
             'usuarios',
             'grupos',
             'mobile_notifications',
@@ -31,7 +32,11 @@ trait BuildsLegacyErpSchema
             'checklist_modelos',
             'checklist_tipos',
             'whatsapp_templates',
+            'pdf_template_versoes',
+            'pdf_templates',
             'os_pdf_templates',
+            'documento_solicitacoes_assinatura',
+            'usuario_assinaturas',
             'os_documento_link_itens',
             'os_documento_links',
             'os_documento_envios',
@@ -75,11 +80,13 @@ trait BuildsLegacyErpSchema
 
         $this->createRbacTables();
         $this->createUsersTable();
+        $this->createTeamMembersTable();
         $this->createPasswordResetTokensTable();
         $this->createConfigurationsTable();
         $this->createFinanceiroCartaoTables();
         $this->createWhatsappTemplatesTable();
         $this->createOsPdfTemplatesTable();
+        $this->createPdfEngineTemplateTables();
         $this->createClientsTable();
         $this->createSuppliersTable();
         $this->createServicesTable();
@@ -101,6 +108,7 @@ trait BuildsLegacyErpSchema
         $this->createOrderPhotosTable();
         $this->createOrderDocumentsTable();
         $this->createOrderDocumentSupportTables();
+        $this->createDocumentSignatureTables();
         $this->createOrderItemsTable();
         $this->createChecklistTables();
         $this->createBudgetTables();
@@ -139,6 +147,7 @@ trait BuildsLegacyErpSchema
             ['id' => 12, 'nome' => 'Atendimento WhatsApp', 'slug' => 'atendimento_whatsapp', 'icone' => 'bi-chat-dots', 'ordem_menu' => 70, 'ativo' => 1],
             ['id' => 13, 'nome' => 'Precificação', 'slug' => 'precificacao', 'icone' => 'bi-calculator', 'ordem_menu' => 46, 'ativo' => 1],
             ['id' => 14, 'nome' => 'Conhecimento', 'slug' => 'conhecimento', 'icone' => 'bi-journal-bookmark-fill', 'ordem_menu' => 75, 'ativo' => 1],
+            ['id' => 15, 'nome' => 'Contas e Saldos', 'slug' => 'contas_saldos', 'icone' => 'bi-wallet2', 'ordem_menu' => 47, 'ativo' => 1],
         ]);
 
         DB::table('permissoes')->insert([
@@ -634,6 +643,27 @@ trait BuildsLegacyErpSchema
             $table->dateTime('remember_token_expires_at')->nullable();
             $table->timestamps();
             $table->foreign('grupo_id')->references('id')->on('grupos')->nullOnDelete();
+        });
+    }
+
+    private function createTeamMembersTable(): void
+    {
+        Schema::create('equipe_membros', function (Blueprint $table): void {
+            $table->id();
+            $table->string('nome', 100);
+            $table->string('email', 100)->nullable();
+            $table->string('telefone', 20)->nullable();
+            $table->string('cargo', 100)->nullable();
+            $table->unsignedBigInteger('usuario_id')->nullable()->unique();
+            $table->boolean('atua_tecnico')->default(false);
+            $table->boolean('atua_vendas')->default(false);
+            $table->boolean('atua_administrativo')->default(false);
+            $table->boolean('ativo')->default(true);
+            $table->text('observacoes')->nullable();
+            $table->timestamps();
+
+            $table->foreign('usuario_id')->references('id')->on('usuarios')->nullOnDelete();
+            $table->index(['ativo', 'atua_tecnico']);
         });
     }
 
@@ -1196,6 +1226,48 @@ trait BuildsLegacyErpSchema
         });
     }
 
+    private function createPdfEngineTemplateTables(): void
+    {
+        // Espelho fiel de 2026_07_18_000010_create_pdf_templates_tables.php
+        // (motor central de documentos PDF).
+        Schema::create('pdf_templates', function (Blueprint $table): void {
+            $table->id();
+            $table->string('tipo_codigo', 80)->unique();
+            $table->string('nome', 255);
+            $table->text('descricao')->nullable();
+            $table->boolean('arquivado')->default(false);
+            $table->boolean('personalizado')->default(false)->index('idx_pdf_templates_personalizado');
+            $table->string('tipo_base_codigo', 80)->nullable()->index('idx_pdf_templates_tipo_base');
+            $table->unsignedBigInteger('origem_template_id')->nullable()->index('idx_pdf_templates_origem');
+            $table->unsignedBigInteger('criado_por')->nullable();
+            $table->unsignedBigInteger('atualizado_por')->nullable();
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
+        });
+
+        Schema::create('pdf_template_versoes', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('template_id');
+            $table->integer('versao');
+            $table->string('status', 20)->default('rascunho');
+            $table->longText('schema_json');
+            $table->string('papel', 20)->default('a4');
+            $table->string('orientacao', 20)->default('retrato');
+            $table->string('margens_json', 255)->nullable();
+            $table->string('fonte', 120)->nullable();
+            $table->string('hash_schema', 64)->nullable();
+            $table->dateTime('publicado_em')->nullable();
+            $table->unsignedBigInteger('publicado_por')->nullable();
+            $table->unsignedBigInteger('criado_por')->nullable();
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
+
+            $table->unique(['template_id', 'versao'], 'uq_pdf_template_versao');
+            $table->index(['template_id', 'status'], 'idx_pdf_template_status');
+            $table->foreign('template_id')->references('id')->on('pdf_templates')->cascadeOnDelete();
+        });
+    }
+
     private function createOrderDocumentsTable(): void
     {
         Schema::create('os_documentos', function (Blueprint $table): void {
@@ -1210,12 +1282,17 @@ trait BuildsLegacyErpSchema
             $table->string('idempotency_key', 120)->nullable();
             $table->longText('metadados_json')->nullable();
             $table->integer('gerado_por')->nullable();
+            $table->integer('assinado_por')->nullable();
+            $table->string('assinatura_hash', 64)->nullable();
+            $table->dateTime('assinado_em')->nullable();
+            $table->string('metodo_assinatura', 30)->nullable();
             $table->dateTime('created_at')->nullable();
             $table->dateTime('updated_at')->nullable();
             $table->dateTime('arquivado_em')->nullable();
             $table->integer('arquivado_por')->nullable();
             $table->foreign('os_id')->references('id')->on('os')->cascadeOnDelete();
             $table->foreign('gerado_por')->references('id')->on('usuarios')->nullOnDelete();
+            $table->foreign('assinado_por')->references('id')->on('usuarios')->nullOnDelete();
             $table->foreign('arquivado_por')->references('id')->on('usuarios')->nullOnDelete();
         });
     }
@@ -1288,6 +1365,53 @@ trait BuildsLegacyErpSchema
             $table->unique(['link_id', 'documento_id'], 'ux_os_doc_link_documento');
             $table->foreign('link_id')->references('id')->on('os_documento_links')->cascadeOnDelete();
             $table->foreign('documento_id')->references('id')->on('os_documentos')->cascadeOnDelete();
+        });
+    }
+
+    private function createDocumentSignatureTables(): void
+    {
+        Schema::create('usuario_assinaturas', function (Blueprint $table): void {
+            $table->id();
+            $table->integer('usuario_id');
+            $table->string('arquivo', 255);
+            $table->string('hash_sha256', 64);
+            $table->string('origem', 20);
+            $table->unsignedInteger('largura');
+            $table->unsignedInteger('altura');
+            $table->boolean('ativa')->default(true);
+            $table->integer('criada_por')->nullable();
+            $table->string('ip_hash', 64)->nullable();
+            $table->dateTime('revogada_em')->nullable();
+            $table->timestamps();
+            $table->index(['usuario_id', 'ativa']);
+        });
+
+        Schema::create('documento_solicitacoes_assinatura', function (Blueprint $table): void {
+            $table->id();
+            $table->integer('os_id');
+            $table->string('tipo_documento', 80);
+            $table->string('tipo_signatario', 20)->default('usuario');
+            $table->string('papel', 40)->default('responsavel');
+            $table->string('status', 20)->default('pendente');
+            $table->integer('solicitada_por');
+            $table->integer('usuario_responsavel_id')->nullable();
+            $table->unsignedBigInteger('assinatura_solicitante_id')->nullable();
+            $table->unsignedBigInteger('documento_id')->nullable();
+            $table->string('token_hash', 64)->nullable()->unique();
+            $table->string('snapshot_os_hash', 64);
+            $table->string('assinatura_hash', 64)->nullable();
+            $table->string('assinatura_arquivo', 255)->nullable();
+            $table->string('signatario_nome', 160)->nullable();
+            $table->string('metodo_assinatura', 30)->nullable();
+            $table->string('ip_hash', 64)->nullable();
+            $table->string('user_agent_hash', 64)->nullable();
+            $table->string('consentimento_versao', 30)->nullable();
+            $table->dateTime('expira_em')->nullable();
+            $table->dateTime('assinada_em')->nullable();
+            $table->dateTime('cancelada_em')->nullable();
+            $table->timestamps();
+            $table->index(['usuario_responsavel_id', 'status']);
+            $table->index(['os_id', 'status']);
         });
     }
 

@@ -27,6 +27,8 @@ class FinanceiroMovimentoCartao extends Model
         'data_prevista_repasse' => 'date',
         'data_prevista_recebimento' => 'date',
         'data_credito_efetivo' => 'date',
+        'credito_confirmado_por' => 'integer',
+        'credito_confirmado_em' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

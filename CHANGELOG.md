@@ -1,5 +1,155 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.25.1.0 — 2026-07-19 03:29
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Fotos de entrada no PDF sempre em paisagem e sem cortes: rotaciona automaticamente fotos em retrato antes de embutir no documento (só nesse bloco; orientação original é mantida em todo o resto do sistema) e troca o recorte (cover) por exibição completa (contain), já que object-fit não é suportado pelo dompdf
+- **Arquivos:** backend/app/Services/Pdf/Contexts/OrderPdfContextFactory.php,backend/resources/views/pdf-engine/document.blade.php,backend/resources/views/pdf-engine/blocks/fotos-entrada.blade.php
+
+## v4.25.0.0 — 2026-07-19 03:29
+- **Tier:** minor
+- **Autor/Agente:** Claude
+- **Descrição:** Novo bloco 'Galeria de fotos de entrada' no motor de modelos PDF: até 4 fotos de recepção (check-in) da OS lado a lado, adicionável a qualquer tipo de documento (não só abertura); fotos convertidas para base64 sob demanda (só quando o schema usa o bloco), com allowlist de MIME e limite de tamanho
+- **Arquivos:** backend/app/Services/Pdf/PdfGenerationService.php,backend/app/Services/Pdf/PdfSchemaValidator.php,backend/app/Services/Pdf/PdfTemplateRenderer.php,backend/app/Services/Pdf/Contexts/OrderPdfContextFactory.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/resources/views/pdf-engine/blocks/fotos-entrada.blade.php,backend/resources/views/pdf-engine/document.blade.php,frontends/desktop/public/assets/js/pdf-template-editor.js
+
+## v4.24.6.0 — 2026-07-19 03:29
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Adiciona teto de segurança de recursão (condicional/colunas) direto no PdfTemplateRenderer: a prévia do editor renderiza rascunhos não publicados sem os limites de profundidade que o publish exige, então um schema fora do padrão podia causar recursão excessiva
+- **Arquivos:** backend/app/Services/Pdf/PdfTemplateRenderer.php
+
+## v4.24.5.0 — 2026-07-19 03:28
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Corrige formatação de data ausente na coluna 'Data' da tabela de recebimentos do comprovante de encerramento (imprimia a string bruta do banco); migration idempotente promove a versão publicada sem afetar customizações
+- **Arquivos:** backend/app/Services/Pdf/PdfDefaultTemplates.php,backend/database/migrations/2026_07_18_000014_fix_encerramento_recebimentos_data_format.php
+
+## v4.24.4.1 — 2026-07-19 03:28
+- **Tier:** hotfix
+- **Autor/Agente:** Claude
+- **Descrição:** Corrige encoding quebrado ('Ol?!' -> 'Olá!') na mensagem padrão de envio de documentos quando não há template de WhatsApp configurado
+- **Arquivos:** backend/app/Services/Orders/OrderDocumentCenterService.php
+
+## v4.24.4.0 — 2026-07-19 03:28
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** RBAC granular de publicar/restaurar no motor de modelos PDF do desktop: rotas e botões usavam a permissão genérica 'editar', divergindo do que o backend já exige ('publicar'/'restaurar'); usuário via os botões habilitados e só descobria a falta de permissão após clicar
+- **Arquivos:** frontends/desktop/routes/web.php,frontends/desktop/resources/views/knowledge/pdf-templates/engine-edit.blade.php,frontends/desktop/tests/Feature/Desktop/PdfTemplateEngineTest.php
+
+## v4.24.3.0 — 2026-07-19 03:28
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Invalida o cache do logo institucional (usado nos PDFs) ao trocar ou remover a logo em Configurações da Empresa; antes o cache de 10min mantinha a logo antiga/removida em qualquer PDF gerado nesse intervalo
+- **Arquivos:** backend/app/Services/Company/CompanyProfileService.php
+
+## v4.24.2.0 — 2026-07-19 03:28
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Corrige botões de ação inertes na central de documentos (ZIP/imprimir/link/enviar): remove poda de seleção que dependia de checkboxes já removidos na reforma da tela de versão-por-linha, reescreve leitura de metadados via dataset da linha, e impede que o polling de 5s reset e a versão selecionada ou feche o menu de Ações aberto
+- **Arquivos:** frontends/desktop/public/assets/js/orders-documents-center.js,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/resources/views/orders/documents-center/_catalog.blade.php,frontends/desktop/resources/views/orders/documents-center.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.24.1.0 — 2026-07-19 03:22
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Exibe nome, função e data efetiva do signatário e mantém as linhas de assinatura alinhadas nos PDFs
+- **Arquivos:** backend/app/Models/User.php,backend/app/Services/Pdf/PdfGenerationService.php,backend/app/Services/Pdf/PdfTemplateRenderer.php,backend/resources/views/pdf-engine/blocks/assinatura.blade.php,backend/resources/views/pdf-engine/document.blade.php,backend/app/Http/Controllers/Api/V1/OrderController.php,backend/app/Http/Controllers/Api/V1/DocumentSignatureController.php,backend/app/Http/Controllers/Api/V1/PublicDocumentSignatureController.php,backend/app/Services/Orders/OrderDocumentCenterService.php,backend/tests/Concerns/BuildsLegacyErpSchema.php,backend/tests/Feature/Api/V1/PdfGenerationServiceTest.php,documentacao/07-novas-implementacoes/2026-07-19-assinaturas-digitais-documentos.md
+
+## v4.24.0.0 — 2026-07-19 03:00
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Módulo de assinaturas digitais com cadastro por imagem ou tela, Apple Pencil, assinatura própria, reautenticação de outro usuário, pendências e rubrica do cliente por link seguro
+- **Segurança:** armazenamento privado, rasterização PNG, confirmação de senha, rate limit, token público armazenado somente como hash, bloqueio de corrida e trilha separada de criador/signatário
+- **Documentação:** consolidado executivo/técnico de 18 e 19/07, histórico de versões, índice principal, checklist de deploy e contexto estruturado para agentes atualizados
+- **Arquivos:** backend/app/Services/Signatures,backend/app/Http/Controllers/Api/V1/UserSignatureController.php,backend/app/Http/Controllers/Api/V1/DocumentSignatureController.php,backend/app/Http/Controllers/Api/V1/PublicDocumentSignatureController.php,backend/database/migrations/2026_07_19_000002_create_document_signature_infrastructure.php,frontends/desktop/resources/views/profile/edit.blade.php,frontends/desktop/resources/views/signatures/public.blade.php,frontends/desktop/resources/views/orders/documents-center/_signature-modal.blade.php,documentacao/07-novas-implementacoes/2026-07-19-assinaturas-digitais-documentos.md,documentacao/07-novas-implementacoes/2026-07-19-consolidado-implementacoes-18-19-julho.md,documentacao/README.md,documentacao/10-deploy/README.md
+
+## v4.23.0.2 — 2026-07-19 00:36
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Exibe assinaturas do responsável e do cliente lado a lado, substitui o JSON bruto por campos amigáveis no editor e versiona modelos existentes com segurança
+- **Arquivos:** backend/app/Services/Pdf/PdfDefaultTemplates.php,backend/app/Services/Pdf/PdfSchemaValidator.php,backend/resources/views/pdf-engine/blocks/assinatura.blade.php,backend/database/migrations/2026_07_19_000001_add_client_to_pdf_signature_blocks.php,backend/tests/Feature/Api/V1/PdfGenerationServiceTest.php,backend/tests/Feature/Database/AddClientToPdfSignatureBlocksMigrationTest.php,frontends/desktop/public/assets/js/pdf-template-editor.js,frontends/desktop/tests/Feature/Desktop/PdfTemplateEngineTest.php,documentacao/07-novas-implementacoes/2026-07-18-motor-central-documentos-pdf.md
+
+## v4.23.0.1 — 2026-07-18 21:32
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Promove o Termo de Garantia aprovado para todos os ambientes por migration idempotente, sem sobrescrever personalizações existentes
+- **Arquivos:** backend/database/migrations/2026_07_18_000016_seed_termo_garantia_template.php,backend/tests/Feature/Database/SeedTermoGarantiaTemplateMigrationTest.php,documentacao/07-novas-implementacoes/2026-07-18-motor-central-documentos-pdf.md
+
+## v4.23.0.0 — 2026-07-18 20:57
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Padroniza o cabeçalho institucional em três colunas para todos os modelos PDF atuais, novos e clonados, e fixa o rodapé A4 na margem reservada para evitar páginas geradas apenas pelo rodapé
+- **Arquivos:** backend/app/Services/Pdf/PdfDefaultTemplates.php,backend/app/Services/Pdf/PdfTemplateAdminService.php,backend/app/Services/Pdf/PdfGenerationService.php,backend/resources/views/pdf-engine/document.blade.php,backend/database/migrations/2026_07_18_000015_standardize_pdf_template_headers.php,backend/tests/Feature/Api/V1/PdfTemplateEngineControllerTest.php,documentacao/07-novas-implementacoes/2026-07-18-motor-central-documentos-pdf.md
+
+## v4.22.4.0 — 2026-07-18 20:15
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Suporte a cabeçalho PDF em três colunas com foto segura do equipamento
+- **Arquivos:** backend/app/Services/Pdf/PdfSchemaValidator.php,backend/app/Services/Pdf/PdfTemplateRenderer.php,backend/app/Services/Pdf/PdfTemplateRegistry.php,backend/app/Services/Pdf/PdfGenerationService.php,backend/app/Services/Pdf/Contexts/OrderPdfContextFactory.php,backend/app/Services/Pdf/Contexts/BudgetPdfContextFactory.php,backend/app/Services/Pdf/PdfDefaultTemplates.php,backend/app/Services/EquipmentWorkflowService.php,backend/resources/views/pdf-engine/blocks/colunas.blade.php,backend/tests/Feature/Api/V1/PdfTemplateEngineControllerTest.php,backend/tests/Feature/Api/V1/PdfGenerationServiceTest.php,frontends/desktop/public/assets/js/pdf-template-editor.js,frontends/desktop/tests/Feature/Desktop/PdfTemplateEngineTest.php,documentacao/07-novas-implementacoes/2026-07-18-motor-central-documentos-pdf.md
+
+## v4.22.3.0 — 2026-07-18 18:45
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Amplia a coluna e a área de texto da configuração dos blocos no editor de templates PDF
+- **Arquivos:** frontends/desktop/resources/views/knowledge/pdf-templates/engine-edit.blade.php,frontends/desktop/tests/Feature/Desktop/PdfTemplateEngineTest.php
+
+## v4.22.2.0 — 2026-07-18 18:05
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Audita o contrato de variáveis PDF, aplica fallback seguro ao nome fantasia e separa entrega real da previsão da OS
+- **Arquivos:** backend/app/Services/Pdf/Contexts/CompanyContextProvider.php,backend/app/Services/Pdf/Contexts/OrderPdfContextFactory.php,backend/tests/Feature/Api/V1/PdfEngineGuardTest.php,backend/tests/Feature/Api/V1/PdfEngineDocumentCenterParityTest.php
+
+## v4.22.1.0 — 2026-07-18 17:35
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Preserva quebras de linha em parágrafos PDF e organiza textos colados em títulos, seções, parágrafos e listas editáveis
+- **Arquivos:** backend/app/Services/Pdf/PdfVariableResolver.php,backend/app/Services/Pdf/PdfTemplateRenderer.php,backend/resources/views/pdf-engine/blocks/paragrafo.blade.php,backend/tests/Feature/Api/V1/PdfEngineDocumentCenterParityTest.php,backend/tests/Feature/Api/V1/PdfEngineGuardTest.php,frontends/desktop/public/assets/js/pdf-template-editor.js,frontends/desktop/tests/Feature/Desktop/PdfTemplateEngineTest.php
+
+## v4.22.0.0 — 2026-07-18 17:05
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Permite criar e clonar documentos PDF personalizados, publicá-los e gerá-los manualmente na Central Documental
+- **Arquivos:** backend/app/Models/PdfTemplate.php,backend/app/Services/Pdf/PdfTemplateRegistry.php,backend/app/Services/Pdf/PdfTemplateAdminService.php,backend/app/Services/Orders/OrderDocumentCenterService.php,backend/app/Http/Controllers/Api/V1/PdfTemplateEngineController.php,backend/database/migrations/2026_07_18_000014_add_custom_pdf_template_support.php,backend/routes/api.php,backend/openapi.yaml,backend/tests/Concerns/BuildsLegacyErpSchema.php,backend/tests/Feature/Api/V1/PdfTemplateEngineControllerTest.php,backend/tests/Feature/Api/V1/PdfEngineDocumentCenterParityTest.php,frontends/desktop/app/Services/PdfTemplateEngineService.php,frontends/desktop/app/Http/Controllers/PdfTemplateEngineController.php,frontends/desktop/resources/views/knowledge/pdf-templates/engine-index.blade.php,frontends/desktop/routes/web.php,frontends/desktop/tests/Feature/Desktop/PdfTemplateEngineTest.php,documentacao/07-novas-implementacoes/2026-07-18-motor-central-documentos-pdf.md
+
+## v4.21.0.0 — 2026-07-18 16:07
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Unifica os PDFs no editor versionado e publica tema leve e moderno em A4 e 80mm
+- **Arquivos:** backend/app/Services/Pdf/PdfDefaultTemplates.php,backend/app/Services/Pdf/PdfTemplateRenderer.php,backend/resources/views/pdf-engine/document.blade.php,backend/app/Services/Orders/OrderDocumentCenterService.php,backend/app/Services/Orders/OrderOpeningPdfService.php,backend/app/Services/Orders/OrderClosurePdfService.php,backend/app/Services/Budgets/BudgetPdfService.php,backend/app/Services/Budgets/BudgetApprovalService.php,backend/database/migrations/2026_07_18_000013_publish_light_pdf_templates_v2.php,backend/tests/Feature/Api/V1/PdfEngineDocumentCenterParityTest.php,backend/tests/Feature/Api/V1/PdfEngineGuardTest.php,frontends/desktop/app/Support/DesktopNavigation.php,frontends/desktop/app/Http/Controllers/PdfTemplateEngineController.php,frontends/desktop/resources/views/knowledge/pdf-templates/engine-index.blade.php,frontends/desktop/routes/web.php,frontends/desktop/tests/Feature/Desktop/PdfTemplateEngineTest.php,documentacao/07-novas-implementacoes/2026-07-18-motor-central-documentos-pdf.md
+
+## v4.20.0.2 — 2026-07-18 08:36
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige collation do extrato e protege erros SQL
+- **Arquivos:** backend/app/Services/Financeiro/FinanceiroContaService.php,backend/app/Http/Controllers/Api/V1/FinanceiroContaController.php,backend/tests/Feature/Api/V1/FinanceiroContaTest.php
+
+## v4.20.0.1 — 2026-07-18 08:18
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige conta financeira em lançamento pago
+- **Arquivos:** backend/app/Services/Financeiro/FinanceiroService.php,backend/tests/Feature/Api/V1/FinanceiroTest.php
+
+## v4.20.0.0 — 2026-07-18 04:03
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Consolidado mensal de contas e saldos
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/FinanceiroContaController.php,backend/app/Services/Financeiro/FinanceiroContaService.php,backend/openapi.yaml,backend/routes/api.php,backend/tests/Feature/Api/V1/FinanceiroContaTest.php,frontends/desktop/app/Http/Controllers/FinanceiroContaController.php,frontends/desktop/app/Services/FinanceiroContaService.php,frontends/desktop/resources/views/financeiro/contas/consolidado.blade.php,frontends/desktop/resources/views/financeiro/contas/index.blade.php,frontends/desktop/routes/web.php,frontends/desktop/tests/Feature/Desktop/FinanceiroContaTest.php,specs/021-gestao-contas-financeiras/contracts/api.md,specs/021-gestao-contas-financeiras/spec.md,specs/021-gestao-contas-financeiras/tasks.md
+
+## v4.19.2.0 — 2026-07-18 03:35
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige validacao da conta financeira no fechamento da OS
+- **Arquivos:** frontends/desktop/public/assets/js/orders-closure.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v4.19.1.0 — 2026-07-18 03:25
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Contas e Saldos integrado ao RBAC com permissões independentes
+
+## v4.19.0.0 — 2026-07-18 02:26
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Gestão de contas, saldos disponíveis, transferências e conciliação patrimonial
+
 ## v4.18.4.0 — 2026-07-17 03:53
 - **Tier:** patch
 - **Autor/Agente:** Codex

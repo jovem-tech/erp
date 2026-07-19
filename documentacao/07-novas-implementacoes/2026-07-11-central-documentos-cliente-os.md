@@ -49,6 +49,28 @@ Também foram adicionados atalhos em:
 - menu `Mais ações` do detalhe da OS;
 - aba `Documentos` do detalhe.
 
+### Seleção de versão por linha (19/07/2026)
+
+A tabela separada "Todas as versões geradas" (acervo, com checkboxes de
+seleção múltipla e uma barra de ações fixa) foi removida. A versão passou a
+ser escolhida por um `<select>` na própria linha do tipo documental, na
+tabela "Tipos documentais disponíveis"; trocar a versão atualiza chip de
+status, links de visualização e o alvo das ações (ZIP/imprimir/link/enviar/
+arquivar) sem reload. Cada ação de linha já carrega o id do documento
+explicitamente — não existe mais seleção via checkbox para reler.
+
+Essa reforma quebrou temporariamente os botões ZIP/Imprimir/Gerar link/Enviar:
+a lógica de poda de seleção (`applySelectionToDom()`) continuava checando
+checkboxes que não existem mais no DOM, esvaziando a seleção logo depois dela
+ser definida (Visualizar e Arquivar não dependiam dessa seleção, por isso
+continuavam funcionando). Corrigido removendo o código morto e lendo os
+metadados de template/mensagem sugerida do próprio `<tr>` da linha
+(`data-document-template-code`, `data-document-suggested-message`,
+`data-document-label`). O polling de 5s que acompanha envios pendentes também
+foi ajustado para não recriar mais a tabela de catálogo inteira a cada ciclo —
+isso resetava silenciosamente a versão escolhida no `<select>` e fechava
+qualquer menu de Ações aberto no meio da interação do usuário.
+
 ### Fluxos automáticos conectados
 
 - criação da OS continua gerando `abertura`;

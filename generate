@@ -1,0 +1,8 @@
+backend/app/Services/Orders/OrderOpeningPdfService.php:56:                $engineResults[$formato] = $this->pdfGenerationService->generate(
+backend/app/Services/Orders/OrderDocumentCenterService.php:926:        $pdf = $this->budgetPdfService->generate($budget, $approvalLink, array_merge($options, ['actor' => $actor]));
+backend/app/Services/Orders/OrderDocumentCenterService.php:1649:        $result = $this->pdfGenerationService->generate($codigo, $subject, $generationOptions);
+backend/app/Services/Orders/OrderClosurePdfService.php:41:                $engineResults[$formato] = $this->pdfGenerationService->generate('os_encerramento', ['order' => $order], [
+backend/app/Services/Orders/OrderDocumentCenterService.php.bak-codex-20260712-dispatch-defaults:867:        $pdf = $this->budgetPdfService->generate($budget, $approvalLink);
+backend/app/Services/Budgets/BudgetPdfService.php:34:            $engineResult = $this->pdfGenerationService->generate('os_orcamento', ['budget' => $budget], array_merge($options, [
+backend/app/Services/Budgets/BudgetApprovalService.php:81:        $pdf = $this->budgetPdfService->generate($budget, $approvalLink);
+backend/app/Services/Budgets/BudgetApprovalService.php:523:        return $this->budgetPdfService->generate($budget, $this->publicUrl((string) ($budget->token_publico ?? '')));

@@ -484,6 +484,11 @@
         $financeiro = $closure['financeiro'] ?? [];
         $custoSummary = $closure['custo_summary'] ?? ['pecas' => 0, 'servicos' => 0, 'total' => 0];
         $cartaoDataset = $closure['cartao'] ?? ['operadoras' => [], 'bandeiras' => [], 'taxas' => []];
+        $accountDataset = $closure['contas_financeiras'] ?? ['contas' => [], 'contas_padrao' => []];
+        $financialAccounts = array_values(array_filter(
+            is_array($accountDataset['contas'] ?? null) ? $accountDataset['contas'] : [],
+            static fn (array $account): bool => (bool) ($account['ativo'] ?? false)
+        ));
         $valorFinal = (float) ($order['valor_final'] ?? 0);
         $valorAberto = (float) ($financeiro['valor_aberto'] ?? $valorFinal);
         $temSaldoAberto = $valorAberto > 0.0;
@@ -1034,6 +1039,18 @@
                         <label class="form-label">Data do pagamento</label>
                         <input type="date" class="form-control" data-field="data_pagamento">
                     </div>
+                    @if ($financialAccounts !== [])
+                        <div>
+                            <label class="form-label">Conta financeira <span class="text-danger">*</span></label>
+                            <select class="form-select" data-field="conta_financeira_id" required>
+                                <option value="">Selecione onde o valor entra</option>
+                                @foreach ($financialAccounts as $account)
+                                    <option value="{{ (int) $account['id'] }}">{{ $account['nome'] }}{{ !(bool) ($account['considera_disponivel'] ?? true) ? ' (reserva)' : '' }}</option>
+                                @endforeach
+                            </select>
+                            <small class="text-secondary d-block mt-1">A forma informa como pagou; a conta informa onde o dinheiro ficou.</small>
+                        </div>
+                    @endif
                     <div class="desktop-grid-span-2">
                         <label class="form-label">Observações</label>
                         <input type="text" class="form-control" data-field="observacoes" maxlength="2000">
@@ -1101,6 +1118,7 @@
             'statusAtualNome' => $order['status_nome'] ?? 'Sem status',
             'statusAtualCodigo' => $order['status'] ?? '',
             'cartao' => $cartaoDataset,
+            'contasFinanceiras' => $accountDataset,
             'clienteTelefone' => $clienteTelefone,
             'initialStep' => (int) old('current_step', 1),
             'recebimentoErrors' => collect($errors->keys())

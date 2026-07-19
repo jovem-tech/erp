@@ -42,7 +42,7 @@ $payload = [
         'app_version' => $appVersion,
         'api_version' => $apiVersion,
         'production_target' => 'Ubuntu VPS',
-        'development_target' => 'Windows/XAMPP',
+        'development_target' => 'Ubuntu Server LAN - BANCADA-02 (192.168.1.100)',
     ],
     'architecture' => [
         'backend' => 'Laravel 13.x em backend/ como fonte unica de verdade',

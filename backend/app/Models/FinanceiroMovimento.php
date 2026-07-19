@@ -19,6 +19,7 @@ class FinanceiroMovimento extends Model
 
     protected $casts = [
         'financeiro_id' => 'integer',
+        'conta_financeira_id' => 'integer',
         'data_movimento' => 'date',
         'valor_movimento' => 'float',
         'created_at' => 'datetime',
@@ -28,6 +29,11 @@ class FinanceiroMovimento extends Model
     public function financeiro(): BelongsTo
     {
         return $this->belongsTo(Financeiro::class, 'financeiro_id', 'id');
+    }
+
+    public function conta(): BelongsTo
+    {
+        return $this->belongsTo(FinanceiroConta::class, 'conta_financeira_id');
     }
 
     public function cartao(): HasOne

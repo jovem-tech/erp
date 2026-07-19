@@ -3,6 +3,7 @@
 namespace App\Services\Company;
 
 use App\Models\Configuration;
+use App\Services\Pdf\Contexts\CompanyContextProvider;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
@@ -106,12 +107,16 @@ class CompanyProfileService
             filenamePrefix: 'logo',
             allowedExtensions: self::ALLOWED_LOGO_EXTENSIONS
         );
+
+        CompanyContextProvider::forgetLogoCache();
     }
 
     public function removeLogo(): void
     {
         $this->deleteStoredImage(self::LOGO_CONFIG_KEY, self::LOGO_DIRECTORY);
         $this->upsert(self::LOGO_CONFIG_KEY, '');
+
+        CompanyContextProvider::forgetLogoCache();
     }
 
     public function storeLoginBackground(UploadedFile $file): void

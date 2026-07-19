@@ -146,6 +146,12 @@ class DesktopNavigation
                         'module' => 'financeiro',
                         'icon' => 'bi-cash-coin',
                     ],
+                    [
+                        'label' => 'Contas e Saldos',
+                        'route' => 'financeiro.contas.index',
+                        'module' => 'contas_saldos',
+                        'icon' => 'bi-wallet2',
+                    ],
                 ],
             ],
             [
@@ -205,7 +211,7 @@ class DesktopNavigation
                             ],
                             [
                                 'label' => 'Modelos PDF',
-                                'route' => 'knowledge.pdf-templates.index',
+                                'route' => 'knowledge.pdf-engine.index',
                                 'module' => 'conhecimento',
                                 'icon' => 'bi-file-earmark-pdf-fill',
                             ],

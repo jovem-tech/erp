@@ -100,6 +100,15 @@ class ApiClient
         );
     }
 
+    /** @param array<string, mixed> $payload */
+    public function guestPost(string $uri, array $payload = []): array
+    {
+        return $this->parseResponse(
+            $this->retryRequest(fn() => $this->guestRequest('post', $uri, $payload)),
+            false
+        );
+    }
+
     public function post(string $uri, array $payload = []): array
     {
         return $this->parseResponse(
@@ -143,11 +152,34 @@ class ApiClient
     }
 
     /**
+     * @param array<string, mixed> $query
      * @return array{body: string, headers: array<string, string>, status: int}
      */
-    public function download(string $uri): array
+    public function download(string $uri, array $query = []): array
     {
-        $response = $this->authenticatedRequest('get', $uri);
+        $response = $this->authenticatedRequest('get', $uri, [], $query);
+
+        if ($response->failed()) {
+            $this->parseResponse($response);
+        }
+
+        return [
+            'body' => $response->body(),
+            'headers' => $this->downloadHeaders($response),
+            'status' => $response->status(),
+        ];
+    }
+
+    /**
+     * Download via POST (ex.: prévia de PDF do motor de templates, que envia
+     * o schema no corpo e recebe bytes de PDF).
+     *
+     * @param array<string, mixed> $payload
+     * @return array{body: string, headers: array<string, string>, status: int}
+     */
+    public function postDownload(string $uri, array $payload = []): array
+    {
+        $response = $this->authenticatedRequest('post', $uri, $payload);
 
         if ($response->failed()) {
             $this->parseResponse($response);

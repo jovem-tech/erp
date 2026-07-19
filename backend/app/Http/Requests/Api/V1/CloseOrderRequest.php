@@ -83,6 +83,11 @@ class CloseOrderRequest extends BaseApiFormRequest
                 'string',
                 Rule::in(Financeiro::FORMAS_PAGAMENTO),
             ],
+            'recebimentos.*.conta_financeira_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('financeiro_contas', 'id'),
+            ],
             'recebimentos.*.data_pagamento' => [
                 'nullable',
                 'date',

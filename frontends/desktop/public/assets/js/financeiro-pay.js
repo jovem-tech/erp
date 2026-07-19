@@ -1,6 +1,7 @@
 (function () {
     const config = window.__DESKTOP_FINANCEIRO_INDEX || {};
     const cartaoTaxas = Array.isArray(config.cartao?.taxas) ? config.cartao.taxas : [];
+    const accountDefaults = config.contasFinanceiras?.contas_padrao || {};
 
     const formatMoney = (value) => Number(value || 0).toLocaleString('pt-BR', {
         minimumFractionDigits: 2,
@@ -54,6 +55,7 @@
     const initPayForm = (form) => {
         const valorInput = form.querySelector('[data-field="valor_movimento"]');
         const formaPagamentoSelect = form.querySelector('[data-field="forma_pagamento"]');
+        const accountSelect = form.querySelector('[data-field="conta_financeira_id"]');
         const cardFields = form.querySelector('[data-card-fields]');
         const operadoraSelect = form.querySelector('[data-field="operadora_id"]');
         const bandeiraSelect = form.querySelector('[data-field="bandeira_id"]');
@@ -85,6 +87,20 @@
 
             if (isCard && modalidadeSelect instanceof HTMLSelectElement) {
                 modalidadeSelect.value = formaPagamento === 'cartao_debito' ? 'debito' : 'credito';
+            }
+        };
+
+        const syncDefaultAccount = () => {
+            if (!(formaPagamentoSelect instanceof HTMLSelectElement) || !(accountSelect instanceof HTMLSelectElement)) { return; }
+
+            const defaultId = accountDefaults[formaPagamentoSelect.value];
+            if (!defaultId || !Array.from(accountSelect.options).some((option) => Number(option.value) === Number(defaultId))) { return; }
+
+            accountSelect.value = String(defaultId);
+            if (window.jQuery) {
+                window.jQuery(accountSelect).trigger('change');
+            } else {
+                accountSelect.dispatchEvent(new Event('change', { bubbles: true }));
             }
         };
 
@@ -120,6 +136,7 @@
 
         bindChange(formaPagamentoSelect, () => {
             toggleCardFields();
+            syncDefaultAccount();
             updatePreview();
         });
 
@@ -129,6 +146,7 @@
         });
 
         toggleCardFields();
+        syncDefaultAccount();
     };
 
     document.addEventListener('DOMContentLoaded', () => {

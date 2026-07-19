@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\V1\BudgetController;
 use App\Http\Controllers\Api\V1\ConfigurationController;
 use App\Http\Controllers\Api\V1\FinanceiroCatalogController;
 use App\Http\Controllers\Api\V1\FinanceiroCartaoController;
+use App\Http\Controllers\Api\V1\FinanceiroContaController;
 use App\Http\Controllers\Api\V1\FinanceiroPrecificacaoController;
 use App\Http\Controllers\Api\V1\FinanceiroController;
 use App\Http\Controllers\Api\V1\FinanceiroMargemController;
@@ -29,10 +30,14 @@ use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\OrderStatusFlowController;
 use App\Http\Controllers\Api\V1\OsPdfTemplateController;
+use App\Http\Controllers\Api\V1\PdfTemplateEngineController;
 use App\Http\Controllers\Api\V1\ServicoController;
 use App\Http\Controllers\Api\V1\SupplierController;
 use App\Http\Controllers\Api\V1\TeamMemberController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\UserSignatureController;
+use App\Http\Controllers\Api\V1\DocumentSignatureController;
+use App\Http\Controllers\Api\V1\PublicDocumentSignatureController;
 use App\Http\Controllers\Api\V1\WhatsappTemplateController;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
@@ -55,11 +60,25 @@ Route::prefix('v1')->group(function (): void {
     Route::get('configuracoes/empresa/login-background-publico', [ConfigurationController::class, 'publicLoginBackground'])
         ->middleware('throttle:60,1')
         ->name('api.v1.configuracoes.empresa.login_background_publico');
+    Route::get('public/document-signatures/{token}', [PublicDocumentSignatureController::class, 'show'])
+        ->where('token', '[A-Za-z0-9]{64}')
+        ->middleware('throttle:60,1');
+    Route::post('public/document-signatures/{token}', [PublicDocumentSignatureController::class, 'store'])
+        ->where('token', '[A-Za-z0-9]{64}')
+        ->middleware('throttle:10,1');
 
     Route::middleware('auth:sanctum')->group(function (): void {
         Route::get('auth/me', [AuthController::class, 'me']);
         Route::patch('auth/me', [AuthController::class, 'updateProfile']);
         Route::put('auth/password', [AuthController::class, 'updatePassword']);
+        Route::get('auth/signature', [UserSignatureController::class, 'show']);
+        Route::post('auth/signature', [UserSignatureController::class, 'store'])->middleware('throttle:10,1');
+        Route::get('auth/signature/image', [UserSignatureController::class, 'image'])->middleware('throttle:60,1');
+        Route::get('document-signatures/signers', [DocumentSignatureController::class, 'signers']);
+        Route::get('document-signatures/pending', [DocumentSignatureController::class, 'pending']);
+        Route::post('document-signatures/{signatureRequest}/sign', [DocumentSignatureController::class, 'sign'])
+            ->whereNumber('signatureRequest')
+            ->middleware('throttle:20,1');
         Route::post('auth/refresh', [AuthController::class, 'refresh'])->middleware('throttle:60,1');
         Route::post('auth/logout', [AuthController::class, 'logout']);
 
@@ -137,6 +156,16 @@ Route::prefix('v1')->group(function (): void {
                 Route::get('margem', [FinanceiroMargemController::class, 'index'])->name('margem.index');
                 Route::get('margem/{os}', [FinanceiroMargemController::class, 'show'])->name('margem.show');
                 Route::post('margem/{os}/recalcular', [FinanceiroMargemController::class, 'recalcular'])->name('margem.recalcular');
+
+                Route::get('contas', [FinanceiroContaController::class, 'index'])->name('contas.index');
+                Route::get('contas/relatorios/consolidado', [FinanceiroContaController::class, 'consolidated'])->name('contas.relatorios.consolidado');
+                Route::post('contas', [FinanceiroContaController::class, 'store'])->name('contas.store');
+                Route::match(['put', 'patch'], 'contas/{conta}', [FinanceiroContaController::class, 'update'])->name('contas.update');
+                Route::get('contas/{conta}/extrato', [FinanceiroContaController::class, 'statement'])->name('contas.extrato');
+                Route::post('contas/{conta}/ajustes', [FinanceiroContaController::class, 'adjust'])->name('contas.ajustes.store');
+                Route::post('contas-transferencias', [FinanceiroContaController::class, 'transfer'])->name('contas.transferencias.store');
+                Route::post('contas-transferencias/{transferencia}/cancelar', [FinanceiroContaController::class, 'cancelTransfer'])->name('contas.transferencias.cancelar');
+                Route::post('contas-cartoes/{cartao}/confirmar', [FinanceiroContaController::class, 'confirmCard'])->name('contas.cartoes.confirmar');
 
                 Route::get('/', [FinanceiroController::class, 'index'])->name('index');
                 Route::post('/', [FinanceiroController::class, 'store'])->name('store');
@@ -274,11 +303,26 @@ Route::prefix('v1')->group(function (): void {
 
         Route::get('knowledge/pdf-templates', [OsPdfTemplateController::class, 'index'])->name('api.v1.knowledge.pdf_templates.index');
         Route::get('knowledge/pdf-templates/placeholders', [OsPdfTemplateController::class, 'placeholders'])->name('api.v1.knowledge.pdf_templates.placeholders');
+        Route::get('knowledge/pdf-templates/{template}/preview', [OsPdfTemplateController::class, 'preview'])->whereNumber('template')->name('api.v1.knowledge.pdf_templates.preview');
         Route::post('knowledge/pdf-templates', [OsPdfTemplateController::class, 'store'])->name('api.v1.knowledge.pdf_templates.store');
         Route::get('knowledge/pdf-templates/{template}', [OsPdfTemplateController::class, 'show'])->whereNumber('template')->name('api.v1.knowledge.pdf_templates.show');
         Route::match(['put', 'patch'], 'knowledge/pdf-templates/{template}', [OsPdfTemplateController::class, 'update'])->whereNumber('template')->name('api.v1.knowledge.pdf_templates.update');
         Route::patch('knowledge/pdf-templates/{template}/ativo', [OsPdfTemplateController::class, 'toggleActive'])->whereNumber('template')->name('api.v1.knowledge.pdf_templates.toggle_active');
         Route::delete('knowledge/pdf-templates/{template}', [OsPdfTemplateController::class, 'destroy'])->whereNumber('template')->name('api.v1.knowledge.pdf_templates.destroy');
+
+        // Motor central de templates PDF (tipos registrados + versões
+        // rascunho/publicado/arquivado; página Modelos PDF).
+        Route::get('knowledge/pdf-engine/types', [PdfTemplateEngineController::class, 'types'])->name('api.v1.knowledge.pdf_engine.types');
+        Route::get('knowledge/pdf-engine/types/{codigo}/variables', [PdfTemplateEngineController::class, 'typeMetadata'])->name('api.v1.knowledge.pdf_engine.type_variables');
+        Route::post('knowledge/pdf-engine/templates', [PdfTemplateEngineController::class, 'store'])->name('api.v1.knowledge.pdf_engine.store');
+        Route::get('knowledge/pdf-engine/templates/{template}', [PdfTemplateEngineController::class, 'show'])->whereNumber('template')->name('api.v1.knowledge.pdf_engine.show');
+        Route::post('knowledge/pdf-engine/templates/{template}/clone', [PdfTemplateEngineController::class, 'cloneTemplate'])->whereNumber('template')->name('api.v1.knowledge.pdf_engine.clone');
+        Route::put('knowledge/pdf-engine/templates/{template}/draft', [PdfTemplateEngineController::class, 'saveDraft'])->whereNumber('template')->name('api.v1.knowledge.pdf_engine.draft');
+        Route::post('knowledge/pdf-engine/templates/{template}/preview', [PdfTemplateEngineController::class, 'preview'])->whereNumber('template')->name('api.v1.knowledge.pdf_engine.preview');
+        Route::post('knowledge/pdf-engine/templates/{template}/publish', [PdfTemplateEngineController::class, 'publish'])->whereNumber('template')->name('api.v1.knowledge.pdf_engine.publish');
+        Route::get('knowledge/pdf-engine/templates/{template}/versions/compare', [PdfTemplateEngineController::class, 'compare'])->whereNumber('template')->name('api.v1.knowledge.pdf_engine.versions.compare');
+        Route::get('knowledge/pdf-engine/templates/{template}/versions/{versao}', [PdfTemplateEngineController::class, 'versionDetail'])->whereNumber('template')->whereNumber('versao')->name('api.v1.knowledge.pdf_engine.versions.show');
+        Route::post('knowledge/pdf-engine/templates/{template}/versions/{versao}/restore', [PdfTemplateEngineController::class, 'restore'])->whereNumber('template')->whereNumber('versao')->name('api.v1.knowledge.pdf_engine.versions.restore');
 
         Route::get('knowledge/whatsapp-templates', [WhatsappTemplateController::class, 'index'])->name('api.v1.knowledge.whatsapp_templates.index');
         Route::get('knowledge/whatsapp-templates/placeholders', [WhatsappTemplateController::class, 'placeholders'])->name('api.v1.knowledge.whatsapp_templates.placeholders');

@@ -1452,6 +1452,52 @@ class OrderFlowTest extends TestCase
         ]);
     }
 
+    public function test_close_assigns_receipt_to_default_financial_account(): void
+    {
+        [$manager, $orderId] = $this->seedManagerOrderForUpdate();
+        DB::table('os')->where('id', $orderId)->update(['valor_final' => 150.00]);
+        $accountId = (int) DB::table('financeiro_contas')->insertGetId([
+            'nome' => 'Conta Inter',
+            'tipo' => 'banco',
+            'instituicao' => 'Banco Inter',
+            'data_inicio_controle' => now()->toDateString(),
+            'considera_disponivel' => true,
+            'ativo' => true,
+            'cor' => '#FF7A00',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('financeiro_conta_defaults')->insert([
+            'forma_pagamento' => 'pix',
+            'conta_financeira_id' => $accountId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->getJson("/api/v1/orders/{$orderId}/closure")
+            ->assertOk()
+            ->assertJsonPath('data.contas_financeiras.contas.0.id', $accountId)
+            ->assertJsonPath('data.contas_financeiras.contas_padrao.pix', $accountId);
+
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->postJson("/api/v1/orders/{$orderId}/closure", [
+                'encerrar_como' => 'entregue_reparado_pago',
+                'data_entrega' => now()->toDateString(),
+                'recebimentos' => [
+                    ['valor' => 150.00, 'forma_pagamento' => 'pix'],
+                ],
+            ])->assertOk();
+
+        $this->assertDatabaseHas('financeiro_movimentos', [
+            'conta_financeira_id' => $accountId,
+            'tipo_movimento' => 'entrada',
+            'valor_movimento' => 150.00,
+            'forma_pagamento' => 'pix',
+        ]);
+    }
+
     public function test_close_rejects_delivery_without_any_payment(): void
     {
         // Reproduz o cenário do bug real: DELIVERED_STATUS comparava com a

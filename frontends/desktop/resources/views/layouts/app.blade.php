@@ -8,6 +8,9 @@
     $desktopSidebarHidden = $desktopSidebarHidden ?? request()->routeIs('orders.index', 'orders.create');
     $desktopSidebarCollapsed = $desktopSidebarCollapsed ?? false;
     $desktopEmbedded = (bool) ($desktopEmbedded ?? $embedded ?? request()->boolean('embedded'));
+    $desktopAuthenticatedUser = \App\Support\DesktopSession::user();
+    $desktopSignaturePending = (int) ($desktopAuthenticatedUser['id'] ?? 0) > 0
+        && empty($desktopAuthenticatedUser['assinatura_cadastrada']);
 @endphp
 <!DOCTYPE html>
 <html lang="pt-BR" @if(session('desktop_theme') && session('desktop_theme') !== 'default') data-theme="{{ session('desktop_theme') }}"@endif>
@@ -33,6 +36,7 @@
     @if ($desktopEmbedded)
         <main class="desktop-embedded-shell">
             @include('layouts.partials.flash')
+            @include('layouts.partials.signature-registration-alert')
             @yield('content')
         </main>
     @else
@@ -44,6 +48,7 @@
 
                 <main class="desktop-content">
                     @include('layouts.partials.flash')
+                    @include('layouts.partials.signature-registration-alert')
                     @yield('content')
                 </main>
 

@@ -104,6 +104,11 @@ class FinanceiroService
                 'bandeiras' => $response['data']['cartao']['bandeiras'] ?? [],
                 'taxas' => $response['data']['cartao']['taxas'] ?? [],
             ],
+            'contas_financeiras' => $response['data']['contas_financeiras'] ?? [
+                'contas' => [],
+                'contas_padrao' => [],
+                'tipos' => [],
+            ],
         ];
     }
 

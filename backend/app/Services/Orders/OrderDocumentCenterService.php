@@ -10,11 +10,14 @@ use App\Models\OrderDocumentSend;
 use App\Models\OrderDocumentShareLink;
 use App\Models\OrderDocumentShareLinkItem;
 use App\Models\OrderStatus;
+use App\Models\PdfTemplate;
+use App\Models\PdfTemplateVersao;
 use App\Models\User;
 use App\Models\WhatsappTemplate;
 use App\Services\Budgets\BudgetPdfService;
 use App\Services\Integrations\IntegrationSettingsService;
-use Barryvdh\DomPDF\Facade\Pdf;
+use App\Services\Pdf\PdfGenerationService;
+use App\Services\Pdf\PdfTemplateRegistry;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Crypt;
@@ -33,39 +36,45 @@ class OrderDocumentCenterService
     private const DOCUMENT_TYPES = [
         'abertura' => [
             'label' => 'Comprovante de abertura',
-            'template_code' => 'abertura',
+            'template_code' => 'os_abertura',
             'message_template_code' => 'os_aberta',
             'automatic_triggers' => ['criacao_os'],
         ],
         'orcamento' => [
             'label' => 'Orçamento',
-            'template_code' => 'orcamento_enviado',
+            'template_code' => 'os_orcamento',
             'message_template_code' => 'orcamento_enviado',
             'automatic_triggers' => ['envio_orcamento'],
         ],
         'laudo' => [
             'label' => 'Laudo técnico',
-            'template_code' => 'laudo_concluido',
+            'template_code' => 'os_laudo_tecnico',
             'message_template_code' => 'laudo_concluido',
             'automatic_triggers' => ['status_tecnico'],
         ],
         'cobranca_manutencao' => [
             'label' => 'Cobrança / manutenção',
-            'template_code' => 'cobranca_manutencao',
+            'template_code' => 'os_cobranca_manutencao',
             'message_template_code' => 'cobranca_manutencao',
             'automatic_triggers' => ['baixa_cobranca'],
         ],
         'entrega' => [
             'label' => 'Comprovante de entrega',
-            'template_code' => 'entrega_concluida',
+            'template_code' => 'os_comprovante_entrega',
             'message_template_code' => 'entrega_concluida',
             'automatic_triggers' => ['baixa_entrega'],
         ],
         'devolucao_sem_reparo' => [
             'label' => 'Devolução sem reparo',
-            'template_code' => 'devolucao_sem_reparo',
+            'template_code' => 'os_devolucao_sem_reparo',
             'message_template_code' => 'devolucao_sem_reparo',
             'automatic_triggers' => ['baixa_sem_reparo'],
+        ],
+        'encerramento' => [
+            'label' => 'Comprovante de encerramento',
+            'template_code' => 'os_encerramento',
+            'message_template_code' => 'entrega_concluida',
+            'automatic_triggers' => ['baixa_os'],
         ],
     ];
 
@@ -83,9 +92,22 @@ class OrderDocumentCenterService
         private readonly OrderOpeningPdfService $orderOpeningPdfService,
         private readonly OrderClosurePdfService $orderClosurePdfService,
         private readonly BudgetPdfService $budgetPdfService,
-        private readonly IntegrationSettingsService $integrationSettingsService
+        private readonly IntegrationSettingsService $integrationSettingsService,
+        private readonly PdfGenerationService $pdfGenerationService,
+        private readonly PdfTemplateRegistry $pdfTemplateRegistry
     ) {
     }
+
+    /**
+     * Último resultado do motor central por tipo (layout A4) — alimenta os
+     * metadados de auditoria (template/versão) gravados na versão documental.
+     *
+     * @var array<string, array<string, mixed>>
+     */
+    private array $lastEngineResults = [];
+
+    /** @var array<string, array<string, mixed>>|null */
+    private ?array $documentTypesCache = null;
 
     /**
      * @return array<string, mixed>
@@ -155,6 +177,15 @@ class OrderDocumentCenterService
 
             try {
                 $results[] = $this->generateSingleType($order, $actor, $type, $options);
+            } catch (\RuntimeException $exception) {
+                report($exception);
+
+                $results[] = [
+                    'type' => $type,
+                    'ok' => false,
+                    'blocked' => true,
+                    'message' => $exception->getMessage(),
+                ];
             } catch (Throwable $exception) {
                 report($exception);
 
@@ -699,7 +730,17 @@ class OrderDocumentCenterService
         return $this->resolveDocumentFilePayload($order, $document, $format);
     }
 
-    public function syncAfterBudgetDispatch(int $orderId, int $budgetId, string $absolutePath, User $actor, ?string $approvalLink = null): void
+    /**
+     * @param array<string, mixed> $engineResult
+     */
+    public function syncAfterBudgetDispatch(
+        int $orderId,
+        int $budgetId,
+        string $absolutePath,
+        User $actor,
+        ?string $approvalLink = null,
+        array $engineResult = []
+    ): void
     {
         try {
             $order = Order::query()->with(['client', 'equipment', 'equipment.type', 'equipment.brand', 'equipment.model', 'technician'])->find($orderId);
@@ -736,12 +777,17 @@ class OrderDocumentCenterService
                 ],
                 $actor,
                 [
-                    'template_codigo' => 'orcamento_enviado',
+                    'template_codigo' => 'os_orcamento',
                     'idempotency_key' => 'budget:' . $budgetId . ':dispatch',
-                    'metadata' => [
-                        'budget_id' => $budgetId,
-                        'approval_link' => $approvalLink,
-                    ],
+                    'metadata' => array_merge(
+                        [
+                            'budget_id' => $budgetId,
+                            'approval_link' => $approvalLink,
+                        ],
+                        $engineResult !== []
+                            ? PdfGenerationService::auditMetadata($engineResult, 'budget_pdf_service')
+                            : []
+                    ),
                 ]
             );
         } catch (Throwable $exception) {
@@ -807,15 +853,15 @@ class OrderDocumentCenterService
     private function generateSingleType(Order $order, User $actor, string $type, array $options = []): array
     {
         return match ($type) {
-            'abertura' => $this->generateOpeningDocument($order, $actor),
-            'orcamento' => $this->generateBudgetDocument($order, $actor),
+            'abertura' => $this->generateOpeningDocument($order, $actor, $options),
+            'orcamento' => $this->generateBudgetDocument($order, $actor, $options),
             default => $this->generateGenericOrderDocument($order, $actor, $type, $options),
         };
     }
 
-    private function generateOpeningDocument(Order $order, User $actor): array
+    private function generateOpeningDocument(Order $order, User $actor, array $options = []): array
     {
-        $result = $this->orderOpeningPdfService->generate($order, $actor);
+        $result = $this->orderOpeningPdfService->generate($order, $actor, $options);
         if (! ($result['ok'] ?? false)) {
             return [
                 'type' => 'abertura',
@@ -842,7 +888,7 @@ class OrderDocumentCenterService
         ];
     }
 
-    private function generateBudgetDocument(Order $order, User $actor): array
+    private function generateBudgetDocument(Order $order, User $actor, array $options = []): array
     {
         $budgetRow = $this->latestBudgetRow((int) $order->id);
         if ($budgetRow === null) {
@@ -877,7 +923,7 @@ class OrderDocumentCenterService
         $approvalLink = trim((string) ($budgetRow->token_publico ?? '')) !== ''
             ? url('/orcamento/' . rawurlencode((string) $budgetRow->token_publico))
             : '';
-        $pdf = $this->budgetPdfService->generate($budget, $approvalLink);
+        $pdf = $this->budgetPdfService->generate($budget, $approvalLink, array_merge($options, ['actor' => $actor]));
 
         if (! ($pdf['ok'] ?? false)) {
             return [
@@ -887,7 +933,14 @@ class OrderDocumentCenterService
             ];
         }
 
-        $this->syncAfterBudgetDispatch((int) $order->id, (int) $budgetRow->id, (string) ($pdf['absolute_path'] ?? ''), $actor, $approvalLink);
+        $this->syncAfterBudgetDispatch(
+            (int) $order->id,
+            (int) $budgetRow->id,
+            (string) ($pdf['absolute_path'] ?? ''),
+            $actor,
+            $approvalLink,
+            is_array($pdf['engine_result'] ?? null) ? $pdf['engine_result'] : []
+        );
 
         $document = OrderDocument::query()
             ->where('os_id', (int) $order->id)
@@ -908,6 +961,7 @@ class OrderDocumentCenterService
 
     private function generateGenericOrderDocument(Order $order, User $actor, string $type, array $options = []): array
     {
+        $options['actor'] = $actor;
         $a4Bytes = $this->renderGenericPdfBytes($order, $type, 'a4', $options);
         $thermalBytes = $this->renderGenericPdfBytes($order, $type, '80mm', $options);
 
@@ -926,11 +980,16 @@ class OrderDocumentCenterService
             ],
             $actor,
             [
-                'template_codigo' => (string) (self::DOCUMENT_TYPES[$type]['template_code'] ?? $type),
-                'metadata' => [
-                    'generated_from' => 'order_document_center',
-                    'layout_padrao' => 'a4',
-                ],
+                'template_codigo' => (string) ($this->pdfTemplateRegistry->codeForLegacyType($type) ?? $type),
+                'metadata' => array_merge(
+                    [
+                        'generated_from' => 'order_document_center',
+                        'layout_padrao' => 'a4',
+                    ],
+                    isset($this->lastEngineResults[$type])
+                        ? PdfGenerationService::auditMetadata($this->lastEngineResults[$type], 'order_document_center')
+                        : []
+                ),
             ]
         );
 
@@ -1084,7 +1143,10 @@ class OrderDocumentCenterService
                 }
 
                 if (Schema::hasColumn('os_documentos', 'metadados_json')) {
-                    $documentPayload['metadados_json'] = json_encode($metadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    // O cast 'array' do model já serializa — passar o array
+                    // direto (json_encode manual aqui dupla-codificava e o
+                    // metadado voltava como string ao ler).
+                    $documentPayload['metadados_json'] = $metadata;
                 }
 
                 /** @var OrderDocument $document */
@@ -1173,7 +1235,7 @@ class OrderDocumentCenterService
     private function loadDocuments(int $orderId): Collection
     {
         return OrderDocument::query()
-            ->with(['generatedBy', 'files'])
+            ->with(['generatedBy', 'signedBy', 'files'])
             ->where('os_id', $orderId)
             ->orderBy('tipo_documento')
             ->orderByDesc('versao')
@@ -1189,7 +1251,9 @@ class OrderDocumentCenterService
     {
         $catalog = [];
 
-        foreach (self::DOCUMENT_TYPES as $type => $definition) {
+        $documentTypes = $this->documentTypes();
+
+        foreach ($documentTypes as $type => $definition) {
             $versions = $documents->filter(fn (OrderDocument $document): bool => (string) $document->tipo_documento === $type)->values();
             $latest = $versions->first();
             $precondition = $this->generationPrecondition($order, $type);
@@ -1210,7 +1274,7 @@ class OrderDocumentCenterService
             ->pluck('tipo_documento')
             ->map(fn ($type): string => (string) $type)
             ->unique()
-            ->filter(fn (string $type): bool => ! array_key_exists($type, self::DOCUMENT_TYPES))
+            ->filter(fn (string $type): bool => ! array_key_exists($type, $documentTypes))
             ->values();
 
         foreach ($legacyTypes as $legacyType) {
@@ -1237,6 +1301,15 @@ class OrderDocumentCenterService
      */
     private function generationPrecondition(Order $order, string $type): array
     {
+        $definition = $this->documentTypes()[$type] ?? null;
+        if (($definition['personalizado'] ?? false) === true) {
+            return ($definition['tipo_base_codigo'] ?? '') === 'os_orcamento'
+                ? ($this->latestBudgetRow((int) $order->id) !== null
+                    ? ['ok' => true, 'reason' => '']
+                    : ['ok' => false, 'reason' => 'A OS ainda não possui orçamento vinculado.'])
+                : ['ok' => true, 'reason' => ''];
+        }
+
         return match ($type) {
             'abertura' => ['ok' => true, 'reason' => ''],
             'orcamento' => $this->latestBudgetRow((int) $order->id) !== null
@@ -1254,6 +1327,7 @@ class OrderDocumentCenterService
             'devolucao_sem_reparo' => mb_strtolower(trim((string) ($order->status ?? ''))) === 'devolvido_sem_reparo'
                 ? ['ok' => true, 'reason' => '']
                 : ['ok' => false, 'reason' => 'A devolução sem reparo só fica disponível quando a OS é encerrada nesse status.'],
+            'encerramento' => ['ok' => false, 'reason' => 'O comprovante de encerramento é gerado automaticamente durante a baixa da OS.'],
             default => ['ok' => false, 'reason' => 'Tipo de documento não suportado para geração.'],
         };
     }
@@ -1509,107 +1583,92 @@ class OrderDocumentCenterService
 
     private function renderGenericPdfBytes(Order $order, string $type, string $layout, array $options = []): string
     {
-        $html = $this->renderGenericDocumentHtml($order, $type, $layout, $options);
-
-        $pdf = Pdf::loadHTML($html)
-            ->setOption('isRemoteEnabled', false)
-            ->setOption('isPhpEnabled', false);
-
-        if ($layout === '80mm') {
-            $pdf->setPaper([0, 0, 226.77, 1200], 'portrait');
-        } else {
-            $pdf->setPaper('a4', 'portrait');
+        $engineBytes = $this->renderViaPdfEngine($order, $type, $layout, $options);
+        if ($engineBytes === null) {
+            throw new \RuntimeException(sprintf(
+                'O template publicado de "%s" não pôde ser renderizado no formato %s.',
+                $type,
+                $layout
+            ));
         }
 
-        return $pdf->output();
+        return $engineBytes;
     }
 
     /**
+     * Delegação exclusiva ao motor central. Abertura e orçamento também usam
+     * este caminho para produzir a variação 80mm do mesmo template publicado.
+     *
      * @param array<string, mixed> $options
      */
-    private function renderGenericDocumentHtml(Order $order, string $type, string $layout, array $options = []): string
+    private function renderViaPdfEngine(Order $order, string $type, string $layout, array $options = []): ?string
     {
-        $title = $this->documentTypeLabel($type);
-        $clientName = $this->escape($order->client?->nome_razao ?? 'Não informado');
-        $equipment = $this->escape($this->resolveEquipmentLabel($order));
-        $serial = $this->escape((string) ($order->equipment?->numero_serie ?? 'Não informada'));
-        $status = $this->escape((string) ($order->status ?? ''));
-        $generatedAt = now()->format('d/m/Y H:i');
-        $body = $this->documentNarrative($order, $type, $options);
-
-        if ($layout === '80mm') {
-            return '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><style>
-                *{box-sizing:border-box} body{font-family:DejaVu Sans,sans-serif;font-size:10px;color:#0f172a;margin:0;padding:10px}
-                h1{font-size:14px;margin:0 0 8px} h2{font-size:11px;margin:10px 0 4px}
-                .muted{color:#475569}.divider{border-top:1px dashed #94a3b8;margin:8px 0}
-                .row{margin-bottom:4px}.label{font-weight:700}
-                table{width:100%;border-collapse:collapse;margin-top:6px} td{padding:3px 0;vertical-align:top}
-            </style></head><body>
-                <h1>' . $this->escape($title) . '</h1>
-                <div class="row"><span class="label">OS:</span> ' . $this->escape((string) ($order->numero_os ?? ('#' . $order->id))) . '</div>
-                <div class="row"><span class="label">Cliente:</span> ' . $clientName . '</div>
-                <div class="row"><span class="label">Equipamento:</span> ' . $equipment . '</div>
-                <div class="row"><span class="label">S/N:</span> ' . $serial . '</div>
-                <div class="row"><span class="label">Status:</span> ' . $status . '</div>
-                <div class="divider"></div>
-                ' . $body . '
-                <div class="divider"></div>
-                <div class="muted">Gerado em ' . $this->escape($generatedAt) . '</div>
-            </body></html>';
+        $codigo = $this->pdfTemplateRegistry->codeForLegacyType($type);
+        if ($codigo === null) {
+            return null;
         }
 
-        return '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><style>
-            *{box-sizing:border-box} body{font-family:DejaVu Sans,sans-serif;color:#0f172a;font-size:12px;line-height:1.5;margin:0;padding:24px}
-            .header{display:flex;justify-content:space-between;gap:16px;margin-bottom:20px}.eyebrow{font-size:11px;color:#1d4ed8;text-transform:uppercase;letter-spacing:.08em;font-weight:700}
-            h1{margin:0;font-size:24px;line-height:1.15}.chip{display:inline-block;padding:8px 12px;border:1px solid #bfdbfe;border-radius:999px;background:#eff6ff;color:#1e3a8a;font-size:11px;font-weight:700}
-            table{width:100%;border-collapse:collapse;margin-top:14px} td{border:1px solid #dbe4f0;padding:8px 10px;vertical-align:top}.label{width:28%;font-weight:700;background:#f8fbff;color:#334155}
-            .section{margin-top:20px}.section h2{margin:0 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#1e293b}
-            .box{padding:12px;border:1px solid #dbeafe;border-radius:14px;background:#f8fbff}.muted{color:#475569}
-        </style></head><body>
-            <div class="header">
-                <div>
-                    <div class="eyebrow">Central documental da OS</div>
-                    <h1>' . $this->escape($title) . '</h1>
-                </div>
-                <div class="chip">Gerado em ' . $this->escape($generatedAt) . '</div>
-            </div>
-            <table>
-                <tr><td class="label">OS</td><td>' . $this->escape((string) ($order->numero_os ?? ('#' . $order->id))) . '</td></tr>
-                <tr><td class="label">Cliente</td><td>' . $clientName . '</td></tr>
-                <tr><td class="label">Equipamento</td><td>' . $equipment . '</td></tr>
-                <tr><td class="label">S/N</td><td>' . $serial . '</td></tr>
-                <tr><td class="label">Status</td><td>' . $status . '</td></tr>
-                <tr><td class="label">Valor final</td><td>' . $this->escape($this->money((float) ($order->valor_final ?? 0))) . '</td></tr>
-            </table>
-            <div class="section">
-                <h2>Resumo</h2>
-                <div class="box">' . $body . '</div>
-            </div>
-        </body></html>';
-    }
+        $subject = ['order' => $order];
+        $generationOptions = [
+            'formato' => $layout === '80mm' ? '80mm' : 'a4',
+        ];
 
-    /**
-     * @param array<string, mixed> $options
-     */
-    private function documentNarrative(Order $order, string $type, array $options = []): string
-    {
-        $diagnosis = trim((string) ($order->diagnostico_tecnico ?? ''));
-        $solution = trim((string) ($order->solucao_aplicada ?? ''));
-        $report = trim((string) ($order->relato_cliente ?? ''));
-        $formattedReport = $report !== '' ? nl2br($this->escape($report), false) : '<span class="muted">Não informado.</span>';
-        $formattedDiagnosis = $diagnosis !== '' ? nl2br($this->escape($diagnosis), false) : '<span class="muted">Não informado.</span>';
-        $formattedSolution = $solution !== '' ? nl2br($this->escape($solution), false) : '<span class="muted">Não informado.</span>';
+        $descriptor = $this->pdfTemplateRegistry->get($codigo);
+        if (($descriptor['tipo_base_codigo'] ?? $codigo) === 'os_orcamento') {
+            $budgetId = max(0, (int) ($options['budget_id'] ?? 0));
+            if ($budgetId === 0) {
+                $budgetId = (int) ($this->latestBudgetRow((int) $order->id)?->id ?? 0);
+            }
 
-        return match ($type) {
-            'abertura' => '<strong>Relato do cliente:</strong><br>' . $formattedReport,
-            'orcamento' => '<strong>Orçamento vinculado:</strong><br>Esta versão registra o PDF comercial associado à OS para envio e histórico do cliente.'
-                . (trim((string) ($options['approval_link'] ?? '')) !== '' ? '<br><br><strong>Link de aprovação:</strong><br>' . $this->escape((string) $options['approval_link']) : ''),
-            'laudo' => '<strong>Diagnóstico técnico:</strong><br>' . $formattedDiagnosis . '<br><br><strong>Solução aplicada:</strong><br>' . $formattedSolution,
-            'cobranca_manutencao' => '<strong>Resumo financeiro:</strong><br>Valor final consolidado da OS: ' . $this->escape($this->money((float) ($order->valor_final ?? 0))) . '.<br><br><strong>Forma de pagamento:</strong><br>' . $this->escape((string) ($order->forma_pagamento ?? 'Não informada')),
-            'entrega' => '<strong>Entrega concluída:</strong><br>OS encerrada com status de equipamento entregue.<br><br><strong>Observações do atendimento:</strong><br>' . $formattedSolution,
-            'devolucao_sem_reparo' => '<strong>Devolução sem reparo:</strong><br>A OS foi encerrada sem execução de reparo.<br><br><strong>Justificativa / diagnóstico:</strong><br>' . $formattedDiagnosis,
-            default => '<span class="muted">Documento sem narrativa específica.</span>',
-        };
+            $budget = $budgetId > 0 ? \App\Models\Budget::query()->find($budgetId) : null;
+            if (! $budget instanceof \App\Models\Budget) {
+                return null;
+            }
+
+            $subject = ['budget' => $budget];
+            $generationOptions['approval_link'] = (string) ($options['approval_link'] ?? '');
+        }
+
+        if (($options['actor'] ?? null) instanceof User) {
+            $generationOptions['actor'] = $options['actor'];
+        }
+
+        if (($options['signature_signer'] ?? null) instanceof User) {
+            $generationOptions['signature_signer'] = $options['signature_signer'];
+        }
+        if (($options['responsible_signature'] ?? null) instanceof \App\Models\UserSignature) {
+            $generationOptions['responsible_signature'] = $options['responsible_signature'];
+        }
+        if (isset($options['signature_method'])) {
+            $generationOptions['signature_method'] = (string) $options['signature_method'];
+        }
+        if (isset($options['signature_signed_at'])) {
+            $generationOptions['signature_signed_at'] = $options['signature_signed_at'];
+        }
+        if (isset($options['responsible_signed_at'])) {
+            $generationOptions['responsible_signed_at'] = $options['responsible_signed_at'];
+        }
+        if (is_array($options['customer_signature'] ?? null)) {
+            $generationOptions['customer_signature'] = $options['customer_signature'];
+        }
+
+        $result = $this->pdfGenerationService->generate($codigo, $subject, $generationOptions);
+
+        if (! ($result['ok'] ?? false)) {
+            logger()->error('[PDF ENGINE] Emissão bloqueada: template central indisponível', [
+                'tipo' => $type,
+                'layout' => $layout,
+                'motivo' => (string) ($result['message'] ?? ''),
+            ]);
+
+            return null;
+        }
+
+        if ($layout !== '80mm') {
+            $this->lastEngineResults[$type] = $result;
+        }
+
+        return (string) ($result['bytes'] ?? '') ?: null;
     }
 
     /**
@@ -1638,7 +1697,9 @@ class OrderDocumentCenterService
 
     private function resolveTemplateCodeForDocumentType(string $type): string
     {
-        return (string) (self::DOCUMENT_TYPES[$type]['message_template_code'] ?? self::DOCUMENT_TYPES[$type]['template_code'] ?? '');
+        $definition = $this->documentTypes()[$type] ?? [];
+
+        return (string) ($definition['message_template_code'] ?? $definition['template_code'] ?? '');
     }
 
     /**
@@ -1690,7 +1751,7 @@ class OrderDocumentCenterService
 
         $labels = $documents->map(fn (OrderDocument $document): string => $this->documentTypeLabel((string) $document->tipo_documento))->values()->all();
 
-        return 'Ol?! Seguem os documentos da sua OS ' . (string) ($order->numero_os ?? '') . ': ' . implode(', ', $labels) . '.';
+        return 'Olá! Seguem os documentos da sua OS ' . (string) ($order->numero_os ?? '') . ': ' . implode(', ', $labels) . '.';
     }
 
     private function resolveWhatsappTemplateBody(string $templateCode): string
@@ -2042,9 +2103,11 @@ class OrderDocumentCenterService
      */
     private function normalizeDocumentTypes(iterable $documents): array
     {
+        $documentTypes = $this->documentTypes();
+
         return collect($documents)
             ->map(fn ($type): string => mb_strtolower(trim((string) $type)))
-            ->filter(fn (string $type): bool => $type !== '' && array_key_exists($type, self::DOCUMENT_TYPES))
+            ->filter(fn (string $type): bool => $type !== '' && array_key_exists($type, $documentTypes))
             ->unique()
             ->values()
             ->all();
@@ -2075,7 +2138,49 @@ class OrderDocumentCenterService
 
     private function documentTypeLabel(string $type): string
     {
-        return (string) (self::DOCUMENT_TYPES[$type]['label'] ?? ucwords(str_replace('_', ' ', $type)));
+        return (string) ($this->documentTypes()[$type]['label'] ?? ucwords(str_replace('_', ' ', $type)));
+    }
+
+    /**
+     * Tipos nativos + documentos personalizados publicados. A consulta é
+     * executada uma única vez por instância para evitar N+1 no catálogo.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private function documentTypes(): array
+    {
+        if (is_array($this->documentTypesCache)) {
+            return $this->documentTypesCache;
+        }
+
+        $types = self::DOCUMENT_TYPES;
+        if (! Schema::hasTable('pdf_templates') || ! Schema::hasColumn('pdf_templates', 'personalizado')) {
+            return $this->documentTypesCache = $types;
+        }
+
+        $families = PdfTemplate::query()
+            ->where('personalizado', true)
+            ->where('arquivado', false)
+            ->whereHas('versoes', fn ($query) => $query->where('status', PdfTemplateVersao::STATUS_PUBLICADO))
+            ->get(['id', 'tipo_codigo', 'tipo_base_codigo', 'nome']);
+
+        foreach ($families as $family) {
+            $codigo = (string) $family->tipo_codigo;
+            if (! array_key_exists((string) $family->tipo_base_codigo, $this->pdfTemplateRegistry->types())) {
+                continue;
+            }
+
+            $types[$codigo] = [
+                'label' => (string) $family->nome,
+                'template_code' => $codigo,
+                'message_template_code' => '',
+                'automatic_triggers' => [],
+                'personalizado' => true,
+                'tipo_base_codigo' => (string) $family->tipo_base_codigo,
+            ];
+        }
+
+        return $this->documentTypesCache = $types;
     }
 
     /**
@@ -2107,6 +2212,15 @@ class OrderDocumentCenterService
             'generated_by' => [
                 'id' => (int) ($document->generatedBy?->id ?? 0),
                 'name' => (string) ($document->generatedBy?->nome ?? ''),
+            ],
+            'signature' => [
+                'signed' => trim((string) ($document->assinatura_hash ?? '')) !== '',
+                'signed_at' => optional($document->assinado_em)->toIso8601String(),
+                'method' => (string) ($document->metodo_assinatura ?? ''),
+                'signer' => [
+                    'id' => (int) ($document->signedBy?->id ?? 0),
+                    'name' => (string) ($document->signedBy?->nome ?? ''),
+                ],
             ],
             'files' => $availableFormats,
             'template_code' => $templateCode,

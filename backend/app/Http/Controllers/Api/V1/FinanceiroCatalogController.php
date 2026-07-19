@@ -12,13 +12,15 @@ use App\Models\FinanceiroCategoria;
 use App\Models\FinanceiroDreGrupo;
 use App\Models\FinanceiroDreSubgrupo;
 use App\Services\Financeiro\FinanceiroCartaoService;
+use App\Services\Financeiro\FinanceiroContaService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class FinanceiroCatalogController extends BaseApiController
 {
     public function __construct(
-        private readonly FinanceiroCartaoService $financeiroCartaoService
+        private readonly FinanceiroCartaoService $financeiroCartaoService,
+        private readonly FinanceiroContaService $financeiroContaService
     ) {
     }
 
@@ -50,6 +52,7 @@ class FinanceiroCatalogController extends BaseApiController
                     ->where('chave', 'comissao_tecnico_percentual_padrao')
                     ->value('valor') ?? 0),
                 'cartao' => $this->financeiroCartaoService->buildActiveDataset(),
+                'contas_financeiras' => $this->financeiroContaService->options(),
             ],
             request: $request
         );

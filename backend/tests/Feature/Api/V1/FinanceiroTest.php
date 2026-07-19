@@ -272,6 +272,105 @@ class FinanceiroTest extends TestCase
         ]);
     }
 
+    public function test_creating_paid_title_with_financial_account_records_account_only_on_movement(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+        $accountId = $this->createFinancialAccount([
+            'nome' => 'Conta Inter',
+            'instituicao' => 'Banco Inter',
+            'cor' => '#FF7A00',
+        ]);
+
+        $store = $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'pagar',
+            'categoria' => 'Venda de peças',
+            'descricao' => 'Tela A05',
+            'valor' => 100.00,
+            'status' => 'pago',
+            'forma_pagamento' => 'pix',
+            'conta_financeira_id' => $accountId,
+            'data_vencimento' => now()->toDateString(),
+            'data_pagamento' => now()->toDateString(),
+        ]);
+
+        $store->assertCreated()
+            ->assertJsonPath('data.lancamento.status', 'pago');
+        $financeiroId = (int) $store->json('data.lancamento.id');
+
+        $this->assertDatabaseHas('financeiro', [
+            'id' => $financeiroId,
+            'descricao' => 'Tela A05',
+            'status' => 'pago',
+        ]);
+        $this->assertDatabaseHas('financeiro_movimentos', [
+            'financeiro_id' => $financeiroId,
+            'conta_financeira_id' => $accountId,
+            'tipo_movimento' => FinanceiroMovimento::TIPO_SAIDA,
+            'valor_movimento' => 100.00,
+        ]);
+    }
+
+    public function test_paid_title_creation_rolls_back_when_account_settlement_fails(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+        $accountId = $this->createFinancialAccount([
+            'nome' => 'Conta com controle iniciado hoje',
+        ]);
+        $titlesBefore = Financeiro::query()->count();
+        $movementsBefore = FinanceiroMovimento::query()->count();
+
+        $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'pagar',
+            'categoria' => 'Venda de peças',
+            'descricao' => 'Pagamento com data inválida para a conta',
+            'valor' => 100.00,
+            'status' => 'pago',
+            'forma_pagamento' => 'pix',
+            'conta_financeira_id' => $accountId,
+            'data_vencimento' => now()->subDay()->toDateString(),
+            'data_pagamento' => now()->subDay()->toDateString(),
+        ])->assertStatus(422)
+            ->assertJsonPath('error.code', 'FINANCEIRO_SAVE_FAILED');
+
+        $this->assertSame($titlesBefore, Financeiro::query()->count());
+        $this->assertSame($movementsBefore, FinanceiroMovimento::query()->count());
+    }
+
+    public function test_updating_title_to_paid_records_selected_financial_account_on_movement(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+        $accountId = $this->createFinancialAccount([
+            'nome' => 'Caixa físico',
+            'tipo' => 'caixa',
+        ]);
+        $store = $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'pagar',
+            'categoria' => 'Venda de peças',
+            'descricao' => 'Título inicialmente pendente',
+            'valor' => 80.00,
+            'data_vencimento' => now()->toDateString(),
+        ])->assertCreated();
+        $financeiroId = (int) $store->json('data.lancamento.id');
+
+        $this->patchJson('/api/v1/financeiro/'.$financeiroId, [
+            'status' => 'pago',
+            'forma_pagamento' => 'dinheiro',
+            'conta_financeira_id' => $accountId,
+            'data_pagamento' => now()->toDateString(),
+        ])->assertOk()
+            ->assertJsonPath('data.lancamento.status', 'pago');
+
+        $this->assertDatabaseHas('financeiro_movimentos', [
+            'financeiro_id' => $financeiroId,
+            'conta_financeira_id' => $accountId,
+            'tipo_movimento' => FinanceiroMovimento::TIPO_SAIDA,
+            'valor_movimento' => 80.00,
+        ]);
+    }
+
     public function test_show_returns_operational_details_for_order_receivable_with_card_fee(): void
     {
         $admin = $this->createUserRecord(['grupo_id' => 1]);
@@ -1213,6 +1312,23 @@ class FinanceiroTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('data.orders.0.valor_recebido', null)
             ->assertJsonPath('data.orders.0.saldo', null);
+    }
+
+    /**
+     * @param  array<string, mixed>  $overrides
+     */
+    private function createFinancialAccount(array $overrides): int
+    {
+        return (int) DB::table('financeiro_contas')->insertGetId(array_merge([
+            'tipo' => 'banco',
+            'instituicao' => null,
+            'data_inicio_controle' => now()->toDateString(),
+            'considera_disponivel' => true,
+            'ativo' => true,
+            'cor' => '#3868B0',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ], $overrides));
     }
 
     /**

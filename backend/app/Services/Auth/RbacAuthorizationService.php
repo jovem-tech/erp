@@ -29,6 +29,7 @@ class RbacAuthorizationService
         'os',
         'estoque',
         'financeiro',
+        'contas_saldos',
         'relatorios',
         'configuracoes',
         'defeitos',

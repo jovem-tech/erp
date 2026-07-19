@@ -23,6 +23,7 @@
     @include('financeiro.form', [
         'lancamento' => $lancamento ?? [],
         'categorias' => $categorias ?? [],
+        'accountDataset' => $accountDataset ?? [],
         'canQuickClient' => $canQuickClient ?? false,
         'formAction' => route('financeiro.store'),
         'formMethod' => 'POST',
@@ -37,6 +38,7 @@
         window.__DESKTOP_FINANCEIRO_FORM = {!! json_encode([
             'clientSearchUrl' => route('financeiro.clients.search'),
             'quickClientStoreUrl' => route('clients.quick.store'),
+            'contasFinanceiras' => $accountDataset ?? ['contas' => [], 'contas_padrao' => []],
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
     </script>
     <script src="{{ asset('assets/js/financeiro-form.js') }}?v={{ filemtime(public_path('assets/js/financeiro-form.js')) }}"></script>

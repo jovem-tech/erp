@@ -19,7 +19,8 @@ Este diretorio concentra os guias operacionais para subir, validar e publicar o 
 
 ## Ordem recomendada para um deploy novo
 
-1. Ler o [runbook de deploy Ubuntu](deploy-producao-lan-ubuntu.md) por inteiro antes de comecar.
-2. Conferir a secao "Tabela de problemas × solucoes" — quase todos os erros de primeira execucao ja estao mapeados la.
-3. Executar as fases na ordem do runbook (SSH → pacotes → codigo → banco → .env → permissoes → TLS → Nginx → Supervisor/cron → storage → desktop).
-4. Fechar com o "Checklist de verificacao pos-deploy".
+1. Para a release `4.24`, ler o [consolidado de 18 e 19/07/2026](../07-novas-implementacoes/2026-07-19-consolidado-implementacoes-18-19-julho.md), principalmente migrations, Redis, storage privado e cadastro das assinaturas.
+2. Ler o [runbook de deploy Ubuntu](deploy-producao-lan-ubuntu.md) por inteiro antes de comecar.
+3. Conferir a secao "Tabela de problemas × solucoes" — quase todos os erros de primeira execucao ja estao mapeados la.
+4. Executar as fases na ordem do runbook (SSH → pacotes → codigo → banco → .env → permissoes → TLS → Nginx → Supervisor/cron → storage → desktop).
+5. Fechar com o "Checklist de verificacao pos-deploy" e os smoke tests documentais/financeiros da release.

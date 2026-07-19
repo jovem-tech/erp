@@ -645,6 +645,23 @@ class DesktopFrontendTest extends TestCase
                             'latest_document' => [
                                 'id' => 9001,
                                 'version' => 1,
+                                'archived_at' => null,
+                                'files' => [
+                                    'a4' => ['available' => true, 'url' => 'http://127.0.0.1:8000/api/v1/orders/501/documents/9001/files/a4'],
+                                    '80mm' => ['available' => true, 'url' => 'http://127.0.0.1:8000/api/v1/orders/501/documents/9001/files/80mm'],
+                                ],
+                            ],
+                            'versions' => [
+                                [
+                                    'id' => 9001,
+                                    'version' => 1,
+                                    'created_at' => '2026-07-11T15:00:00-03:00',
+                                    'archived_at' => null,
+                                    'files' => [
+                                        'a4' => ['available' => true, 'url' => 'http://127.0.0.1:8000/api/v1/orders/501/documents/9001/files/a4'],
+                                        '80mm' => ['available' => true, 'url' => 'http://127.0.0.1:8000/api/v1/orders/501/documents/9001/files/80mm'],
+                                    ],
+                                ],
                             ],
                         ],
                         [
@@ -654,6 +671,7 @@ class DesktopFrontendTest extends TestCase
                             'blocked_reason' => 'DiagnÃ³stico tÃ©cnico pendente.',
                             'automatic_triggers' => ['status_tecnico'],
                             'latest_document' => null,
+                            'versions' => [],
                         ],
                     ],
                     'documents' => [
@@ -724,7 +742,10 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Laudo tÃ©cnico')
             ->assertSee('Gerar link público')
             ->assertSee('Enviar para cliente')
-            ->assertSee('doc-action-bar', false)
+            // O acervo/versões vive só no dropdown por linha do catálogo agora
+            // — não há mais uma tabela/barra de ações em lote separada.
+            ->assertDontSee('doc-action-bar', false)
+            ->assertSee('data-doc-version-select', false)
             ->assertSee('docSendModal', false)
             ->assertSee('docShareModal', false)
             ->assertSee('window.__ORDER_DOCUMENTS_CENTER', false)
@@ -773,6 +794,18 @@ class DesktopFrontendTest extends TestCase
                                     '80mm' => ['available' => false, 'url' => null],
                                 ],
                             ],
+                            'versions' => [
+                                [
+                                    'id' => 9001,
+                                    'version' => 1,
+                                    'created_at' => '2026-07-11T15:00:00-03:00',
+                                    'archived_at' => null,
+                                    'files' => [
+                                        'a4' => ['available' => true, 'url' => 'http://127.0.0.1:8000/api/v1/orders/501/documents/9001/files/a4'],
+                                        '80mm' => ['available' => false, 'url' => null],
+                                    ],
+                                ],
+                            ],
                         ],
                         [
                             'type' => 'laudo',
@@ -781,6 +814,7 @@ class DesktopFrontendTest extends TestCase
                             'blocked_reason' => 'Diagnóstico técnico pendente.',
                             'automatic_triggers' => ['status_tecnico'],
                             'latest_document' => null,
+                            'versions' => [],
                         ],
                     ],
                     'documents' => [],
@@ -809,18 +843,24 @@ class DesktopFrontendTest extends TestCase
             // Documento já gerado: ganha o dropdown de ações por linha.
             ->assertSee('Gerar nova versão')
             ->assertSee('Visualizar A4')
-            ->assertDontSee('Visualizar 80mm')
+            // 80mm indisponível nesta versão: o item continua no DOM (a
+            // seleção de versão pode trocar para uma que tenha 80mm), mas
+            // escondido via d-none — não mais omitido do HTML.
+            ->assertSee('class="dropdown-item d-none"', false)
             ->assertSee(route('orders.documents.files.show', ['order' => 501, 'document' => 9001, 'format' => 'a4']), false)
             ->assertSee('data-doc-row-zip="9001"', false)
             ->assertSee('data-doc-row-print="9001"', false)
             ->assertSee('data-doc-row-share="9001"', false)
             ->assertSee('data-doc-row-send="9001"', false)
             ->assertSee('data-doc-archive-toggle="9001"', false)
+            // A versão vira dropdown na própria linha do catálogo — não há
+            // mais uma tabela de acervo separada.
+            ->assertSee('data-doc-version-select', false)
+            ->assertSee('v1 — 11/07/2026 15:00', false)
+            ->assertDontSee('Todas as versões geradas')
             // Tipo ainda não gerado: só o botão de gerar, sem dropdown de ações.
             ->assertSee('Laudo técnico')
-            ->assertDontSee('data-doc-row-zip=""', false)
-            // Tabela do acervo agora vive acoplada, na mesma seção.
-            ->assertSee('Todas as versões geradas');
+            ->assertDontSee('data-doc-row-zip=""', false);
     }
 
     public function test_order_documents_center_state_endpoint_returns_rendered_fragments_and_pending_sends(): void
@@ -855,7 +895,7 @@ class DesktopFrontendTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('meta.pending_sends', 1)
             ->assertJsonPath('meta.documents_count', 0)
-            ->assertJsonStructure(['success', 'fragments' => ['catalog', 'documents', 'sends', 'links'], 'meta' => ['pending_sends', 'documents_count']]);
+            ->assertJsonStructure(['success', 'fragments' => ['catalog', 'sends', 'links'], 'meta' => ['pending_sends', 'documents_count']]);
 
         $this->assertStringContainsString('Comprovante de abertura', $response->json('fragments.catalog'));
         $this->assertStringContainsString('Na fila', $response->json('fragments.sends'));
@@ -5002,6 +5042,27 @@ class DesktopFrontendTest extends TestCase
         $this->assertStringContainsString('commitCroppedPhoto(croppedFile', $script);
         $this->assertStringContainsString('transfer.items.add(entry.file)', $script);
         $this->assertStringContainsString('maxPhotoUploadBytes', $script);
+    }
+
+    public function test_orders_closure_receipt_validator_reads_account_from_current_row(): void
+    {
+        $script = file_get_contents(public_path('assets/js/orders-closure.js'));
+
+        $this->assertIsString($script);
+
+        $validatorStart = strpos($script, 'const validateReceiptRow = (row) => {');
+        $validatorEnd = strpos($script, 'const validateFinancialStep = () => {');
+
+        $this->assertNotFalse($validatorStart);
+        $this->assertNotFalse($validatorEnd);
+
+        $validator = substr($script, $validatorStart, $validatorEnd - $validatorStart);
+
+        $this->assertStringContainsString(
+            'const accountId = row.querySelector(\'[data-field="conta_financeira_id"]\')?.value || \'\';',
+            $validator
+        );
+        $this->assertStringContainsString("financialAccounts.length > 0 && accountId === ''", $validator);
     }
 
     public function test_collapsed_sidebar_closes_implicitly_open_group_popovers(): void

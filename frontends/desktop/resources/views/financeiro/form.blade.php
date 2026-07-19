@@ -15,6 +15,11 @@
     $catalogNomes = array_filter(array_map(fn($c) => (string) ($c['nome'] ?? ''), $categorias ?? []));
     $valorRaw = old('valor', (string) ($lancamento['valor'] ?? ''));
     $defaultDataVencimento = old('data_vencimento') ?: ($lancamento['data_vencimento'] ?: date('Y-m-d'));
+    $accountDataset = is_array($accountDataset ?? null) ? $accountDataset : [];
+    $financialAccounts = array_values(array_filter(
+        is_array($accountDataset['contas'] ?? null) ? $accountDataset['contas'] : [],
+        static fn (array $account): bool => (bool) ($account['ativo'] ?? false)
+    ));
 @endphp
 
 <section class="desktop-form-card">
@@ -133,6 +138,19 @@
                         <option value="transferencia" @selected($formaPagamento === 'transferencia')>Transferência</option>
                     </select>
                 </div>
+
+                @if ($financialAccounts !== [] && ! $hasMovements)
+                    <div id="financeiroContaWrapper" @class(['d-none' => $status !== 'pago'])>
+                        <label for="financeiroConta">Conta financeira *</label>
+                        <select id="financeiroConta" name="conta_financeira_id" class="form-select" @required($status === 'pago')>
+                            <option value="">Selecione onde o valor entra ou sai</option>
+                            @foreach ($financialAccounts as $account)
+                                <option value="{{ (int) $account['id'] }}" @selected((int) old('conta_financeira_id', 0) === (int) $account['id'])>{{ $account['nome'] }}</option>
+                            @endforeach
+                        </select>
+                        <small class="text-muted d-block mt-1">Obrigatória quando o título já for criado como pago.</small>
+                    </div>
+                @endif
             </div>
         </div>
 

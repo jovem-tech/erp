@@ -12,6 +12,17 @@ Este índice organiza a documentação da nova plataforma `sistema-erp`.
 - `07-novas-implementacoes/`: notas de entrega por fase e histórico executivo.
 - `10-deploy/`: orientações de instalação, publicação e operação.
 
+## Atualizações recentes
+
+- [Consolidado de 18 e 19/07/2026 — Financeiro, PDFs e assinaturas](07-novas-implementacoes/2026-07-19-consolidado-implementacoes-18-19-julho.md)
+- [Gestão de contas e saldos financeiros](07-novas-implementacoes/2026-07-18-gestao-contas-e-saldos-financeiros.md)
+- [Motor central e templates modernos de PDF](07-novas-implementacoes/2026-07-18-motor-central-documentos-pdf.md)
+- [Assinaturas digitais e rastreabilidade documental](07-novas-implementacoes/2026-07-19-assinaturas-digitais-documentos.md)
+
+O consolidado é o ponto de entrada recomendado para manutenção e deploy das
+versões `4.19.0.0` a `4.24.0.0`. O `CHANGELOG.md` permanece como fonte
+cronológica detalhada por versão.
+
 ## Deploy em produção
 
 1. [Runbook de produção na VPS Contabo (subdomínios + dados reais)](10-deploy/deploy-producao-contabo-vps.md) — **produção atual** (`erp.` desktop + `api-erp.` backend), em paralelo ao legado.

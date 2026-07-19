@@ -14,18 +14,19 @@ use App\Models\Supplier;
 use App\Services\Orders\OrderEventService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
 class FinanceiroService
 {
     public function __construct(
         private readonly FinanceiroCartaoService $financeiroCartaoService,
+        private readonly FinanceiroContaService $financeiroContaService,
         private readonly OrderEventService $orderEventService
-    ) {
-    }
+    ) {}
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     public function list(array $filters): LengthAwarePaginator
     {
@@ -88,12 +89,12 @@ class FinanceiroService
                 $segments[] = (string) $tituloOrigem->client->nome_razao;
             }
             if ($tituloOrigem->order instanceof Order) {
-                $segments[] = 'OS ' . (string) $tituloOrigem->order->numero_os;
+                $segments[] = 'OS '.(string) $tituloOrigem->order->numero_os;
             }
             // Sempre inclui o id do título de origem — é o "mínimo" que
             // identifica a taxa mesmo quando o título pai também é avulso
             // (sem cliente/OS vinculado).
-            $segments[] = 'Título #' . (int) $tituloOrigem->id;
+            $segments[] = 'Título #'.(int) $tituloOrigem->id;
 
             return $segments;
         }
@@ -106,7 +107,7 @@ class FinanceiroService
                 $segments[] = (string) $client->nome_razao;
             }
 
-            $segments[] = 'OS ' . (string) $financeiro->order->numero_os;
+            $segments[] = 'OS '.(string) $financeiro->order->numero_os;
 
             $equipment = $financeiro->order->equipment;
             $equipmentLabel = trim(implode(' ', array_filter([
@@ -146,84 +147,89 @@ class FinanceiroService
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      */
     public function create(array $payload): Financeiro
     {
-        $resolved = $this->resolveClassification($payload, null);
+        return DB::transaction(function () use ($payload): Financeiro {
+            $resolved = $this->resolveClassification($payload, null);
 
-        $financeiro = Financeiro::create($resolved);
-        $this->finalizeAfterSave($financeiro, $payload);
-        $financeiro = $financeiro->refresh();
+            $financeiro = Financeiro::create($resolved);
+            $this->finalizeAfterSave($financeiro, $payload);
+            $financeiro = $financeiro->refresh();
 
-        // Timeline da OS: todo titulo vinculado a uma OS vira evento auditavel
-        // (cobre tambem ensureReceivableTitle da baixa, que passa por aqui).
-        if ((int) ($financeiro->os_id ?? 0) > 0) {
-            $this->orderEventService->record(
-                (int) $financeiro->os_id,
-                OrderEvent::CATEGORIA_FINANCEIRO,
-                OrderEvent::TIPO_TITULO_CRIADO,
-                'Título financeiro criado',
-                trim((string) $financeiro->descricao) !== '' ? (string) $financeiro->descricao : null,
-                [
-                    'financeiro_id' => (int) $financeiro->id,
-                    'tipo' => (string) $financeiro->tipo,
-                    'categoria' => (string) $financeiro->categoria,
-                    'valor' => round((float) $financeiro->valor, 2),
-                    'origem_tipo' => $financeiro->origem_tipo,
-                ]
-            );
-        }
+            // Timeline da OS: todo titulo vinculado a uma OS vira evento auditavel
+            // (cobre tambem ensureReceivableTitle da baixa, que passa por aqui).
+            if ((int) ($financeiro->os_id ?? 0) > 0) {
+                $this->orderEventService->record(
+                    (int) $financeiro->os_id,
+                    OrderEvent::CATEGORIA_FINANCEIRO,
+                    OrderEvent::TIPO_TITULO_CRIADO,
+                    'Título financeiro criado',
+                    trim((string) $financeiro->descricao) !== '' ? (string) $financeiro->descricao : null,
+                    [
+                        'financeiro_id' => (int) $financeiro->id,
+                        'tipo' => (string) $financeiro->tipo,
+                        'categoria' => (string) $financeiro->categoria,
+                        'valor' => round((float) $financeiro->valor, 2),
+                        'origem_tipo' => $financeiro->origem_tipo,
+                    ]
+                );
+            }
 
-        return $financeiro;
+            return $financeiro;
+        });
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      */
     public function update(Financeiro $financeiro, array $payload): Financeiro
     {
-        $this->guardMutationAgainstMovements($financeiro, $payload);
+        return DB::transaction(function () use ($financeiro, $payload): Financeiro {
+            $financeiro = Financeiro::query()->lockForUpdate()->findOrFail($financeiro->id);
+            $this->guardMutationAgainstMovements($financeiro, $payload);
 
-        $antes = [
-            'valor' => round((float) $financeiro->valor, 2),
-            'status' => (string) $financeiro->status,
-            'data_vencimento' => $financeiro->data_vencimento?->toDateString(),
-            'descricao' => (string) $financeiro->descricao,
-        ];
-
-        $resolved = $this->resolveClassification($payload, $financeiro);
-        $financeiro->update($resolved);
-        $this->finalizeAfterSave($financeiro, $payload);
-        $financeiro = $financeiro->refresh();
-
-        if ((int) ($financeiro->os_id ?? 0) > 0) {
-            $depois = [
+            $antes = [
                 'valor' => round((float) $financeiro->valor, 2),
                 'status' => (string) $financeiro->status,
                 'data_vencimento' => $financeiro->data_vencimento?->toDateString(),
                 'descricao' => (string) $financeiro->descricao,
             ];
-            $diff = [];
-            foreach ($antes as $campo => $valorAntes) {
-                if ($valorAntes !== $depois[$campo]) {
-                    $diff[$campo] = ['antes' => $valorAntes, 'depois' => $depois[$campo]];
+
+            $resolved = $this->resolveClassification($payload, $financeiro);
+            $financeiro->update($resolved);
+            $this->finalizeAfterSave($financeiro, $payload);
+            $financeiro = $financeiro->refresh();
+
+            if ((int) ($financeiro->os_id ?? 0) > 0) {
+                $depois = [
+                    'valor' => round((float) $financeiro->valor, 2),
+                    'status' => (string) $financeiro->status,
+                    'data_vencimento' => $financeiro->data_vencimento?->toDateString(),
+                    'descricao' => (string) $financeiro->descricao,
+                ];
+                $diff = [];
+                foreach ($antes as $campo => $valorAntes) {
+                    if ($valorAntes !== $depois[$campo]) {
+                        $diff[$campo] = ['antes' => $valorAntes, 'depois' => $depois[$campo]];
+                    }
+                }
+
+                if ($diff !== []) {
+                    $this->orderEventService->record(
+                        (int) $financeiro->os_id,
+                        OrderEvent::CATEGORIA_FINANCEIRO,
+                        OrderEvent::TIPO_TITULO_ATUALIZADO,
+                        'Título financeiro atualizado',
+                        'Campos alterados: '.implode(', ', array_keys($diff)).'.',
+                        ['financeiro_id' => (int) $financeiro->id, 'campos' => $diff]
+                    );
                 }
             }
 
-            if ($diff !== []) {
-                $this->orderEventService->record(
-                    (int) $financeiro->os_id,
-                    OrderEvent::CATEGORIA_FINANCEIRO,
-                    OrderEvent::TIPO_TITULO_ATUALIZADO,
-                    'Título financeiro atualizado',
-                    'Campos alterados: ' . implode(', ', array_keys($diff)) . '.',
-                    ['financeiro_id' => (int) $financeiro->id, 'campos' => $diff]
-                );
-            }
-        }
-
-        return $financeiro;
+            return $financeiro;
+        });
     }
 
     public function delete(Financeiro $financeiro): void
@@ -276,6 +282,7 @@ class FinanceiroService
             'order.statusCatalog',
             'movimentos.cartao.operadora',
             'movimentos.cartao.bandeira',
+            'movimentos.conta',
             'origemMovimento.financeiro.client',
             'origemMovimento.financeiro.order.equipment.type',
             'origemMovimento.financeiro.order.equipment.brand',
@@ -453,10 +460,23 @@ class FinanceiroService
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
     public function registerMovement(Financeiro $financeiro, array $payload): array
+    {
+        return DB::transaction(function () use ($financeiro, $payload): array {
+            $lockedFinanceiro = Financeiro::query()->lockForUpdate()->findOrFail($financeiro->id);
+
+            return $this->registerMovementLocked($lockedFinanceiro, $payload);
+        });
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function registerMovementLocked(Financeiro $financeiro, array $payload): array
     {
         if ($financeiro->status === Financeiro::STATUS_CANCELADO) {
             throw new RuntimeException('Não é possível registrar baixa em título cancelado.');
@@ -484,9 +504,17 @@ class FinanceiroService
         $documentoRef = trim((string) ($payload['documento_ref'] ?? ''));
 
         $dataMovimento = $this->normalizeDate($payload['data_movimento'] ?? $payload['data_pagamento'] ?? null) ?? now()->toDateString();
+        $contaFinanceiraId = (bool) $financeiro->impacta_fluxo_caixa
+            ? $this->financeiroContaService->resolveAccountId(
+                ! empty($payload['conta_financeira_id']) ? (int) $payload['conta_financeira_id'] : null,
+                $formaPagamento !== '' ? $formaPagamento : null,
+                $dataMovimento
+            )
+            : null;
 
         $movimento = FinanceiroMovimento::create([
             'financeiro_id' => $financeiro->id,
+            'conta_financeira_id' => $contaFinanceiraId,
             'tipo_movimento' => $financeiro->tipo === Financeiro::TIPO_RECEBER
                 ? FinanceiroMovimento::TIPO_ENTRADA
                 : FinanceiroMovimento::TIPO_SAIDA,
@@ -537,7 +565,7 @@ class FinanceiroService
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
     private function registerCardMovementMeta(
@@ -598,7 +626,7 @@ class FinanceiroService
      * (a data prevista de repasse continua registrada em
      * financeiro_movimentos_cartao.data_prevista_repasse, só não é usada aqui).
      *
-     * @param array<string, mixed> $simulation
+     * @param  array<string, mixed>  $simulation
      */
     private function registerCardFeeExpense(Financeiro $financeiro, array $simulation, FinanceiroMovimento $movimento): void
     {
@@ -626,7 +654,7 @@ class FinanceiroService
                 (string) ($simulation['operadora_nome'] ?? ''),
                 $financeiro->id,
                 (string) ($simulation['modalidade_label'] ?? ''),
-                $parcelas > 1 ? ' em ' . $parcelas . 'x' : ''
+                $parcelas > 1 ? ' em '.$parcelas.'x' : ''
             ),
             'valor' => $valorTaxa,
             'status' => Financeiro::STATUS_PAGO,
@@ -650,7 +678,7 @@ class FinanceiroService
             'data_movimento' => $dataMovimento,
             'valor_movimento' => $valorTaxa,
             'forma_pagamento' => $taxaFinanceiro->forma_pagamento,
-            'observacoes' => 'Taxa da operadora referente ao movimento #' . $movimento->id . '.',
+            'observacoes' => 'Taxa da operadora referente ao movimento #'.$movimento->id.'.',
         ]);
     }
 
@@ -875,6 +903,10 @@ class FinanceiroService
             'valor' => round((float) $movimento->valor_movimento, 2),
             'forma_pagamento' => $movimento->forma_pagamento,
             'forma_pagamento_label' => $this->paymentMethodLabel($movimento->forma_pagamento),
+            'conta_financeira' => $movimento->conta ? [
+                'id' => (int) $movimento->conta->id,
+                'nome' => $movimento->conta->nome,
+            ] : null,
             'documento_ref' => $movimento->documento_ref,
             'observacoes' => $movimento->observacoes,
             'cartao' => $cartao instanceof FinanceiroMovimentoCartao ? [
@@ -892,6 +924,7 @@ class FinanceiroService
                 'data_prevista_repasse' => $this->dateForDetail($cartao->data_prevista_repasse),
                 'data_prevista_recebimento' => $this->dateForDetail($cartao->data_prevista_recebimento),
                 'data_credito_efetivo' => $this->dateForDetail($cartao->data_credito_efetivo),
+                'credito_confirmado_em' => $this->dateTimeForDetail($cartao->credito_confirmado_em),
             ] : null,
         ];
     }
@@ -1014,7 +1047,7 @@ class FinanceiroService
      * "pago" sem movimento cria a baixa total automaticamente; "parcial" sem
      * movimento volta para "pendente").
      *
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      */
     private function finalizeAfterSave(Financeiro $financeiro, array $payload): void
     {
@@ -1039,6 +1072,7 @@ class FinanceiroService
                 'valor_movimento' => $financeiro->valor,
                 'data_movimento' => $payload['data_pagamento'] ?? $financeiro->data_pagamento,
                 'forma_pagamento' => $payload['forma_pagamento'] ?? $financeiro->forma_pagamento,
+                'conta_financeira_id' => $payload['conta_financeira_id'] ?? null,
                 'observacoes' => $payload['observacoes'] ?? null,
             ]);
 
@@ -1057,7 +1091,7 @@ class FinanceiroService
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      */
     private function guardMutationAgainstMovements(Financeiro $financeiro, array $payload): void
     {
@@ -1092,7 +1126,7 @@ class FinanceiroService
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
     private function resolveClassification(array $payload, ?Financeiro $existing): array
@@ -1110,6 +1144,10 @@ class FinanceiroService
             : null;
 
         $resolved = $payload;
+        // A conta identifica onde a baixa foi liquidada e pertence somente a
+        // financeiro_movimentos. Mantê-la no payload do título tentaria gravar
+        // uma coluna inexistente em financeiro e duplicaria a fonte de verdade.
+        unset($resolved['conta_financeira_id']);
 
         $resolved['tipo'] = $tipo;
         $resolved['status'] = trim((string) ($payload['status'] ?? $existing?->status ?? '')) !== ''

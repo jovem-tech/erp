@@ -126,6 +126,18 @@
                                     </button>
 
                                     <ul class="dropdown-menu dropdown-menu-end supplier-actions-menu">
+                                        <li>
+                                            <a
+                                                href="{{ route('knowledge.pdf-templates.preview', $templateId) }}"
+                                                class="dropdown-item"
+                                                target="_blank"
+                                                rel="noopener"
+                                            >
+                                                <i class="bi bi-eye me-2"></i>
+                                                Visualizar layout
+                                            </a>
+                                        </li>
+
                                         @if (\App\Support\DesktopSession::can('conhecimento', 'editar'))
                                             <li>
                                                 <a href="{{ route('knowledge.pdf-templates.edit', $templateId) }}" class="dropdown-item">

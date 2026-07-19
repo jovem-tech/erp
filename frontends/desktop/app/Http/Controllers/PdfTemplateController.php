@@ -177,6 +177,28 @@ class PdfTemplateController extends DesktopController
             ->with('success', 'Modelo de PDF excluido com sucesso.');
     }
 
+    public function preview(Request $request, int $template): \Illuminate\Http\Response|RedirectResponse
+    {
+        $validated = $request->validate([
+            'formato' => ['nullable', 'in:a4,80mm'],
+            'entidade_id' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        try {
+            $download = $this->pdfTemplateService->preview($template, array_filter($validated, static fn ($value): bool => $value !== null));
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException $exception) {
+            return redirect()->route('knowledge.pdf-templates.index')->with('error', $exception->getMessage());
+        } catch (ApiRequestException $exception) {
+            return redirect()
+                ->route('knowledge.pdf-templates.index')
+                ->with('error', $exception->getMessage());
+        }
+
+        return response($download['body'], $download['status'], $download['headers']);
+    }
+
     /**
      * @return array<string, mixed>
      */
