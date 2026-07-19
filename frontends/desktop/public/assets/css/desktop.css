@@ -1816,6 +1816,18 @@ a {
     box-shadow: 0 0 0 2px #fff;
 }
 
+.desktop-correspondence-dropdown .desktop-icon-button {
+    color: var(--desktop-primary);
+}
+
+.desktop-correspondence-dropdown .desktop-notification-badge {
+    background: #4f46e5;
+}
+
+.document-signature-pending-anchor {
+    scroll-margin-top: 110px;
+}
+
 .desktop-notification-menu,
 .desktop-profile-menu,
 .desktop-search-scope-menu {

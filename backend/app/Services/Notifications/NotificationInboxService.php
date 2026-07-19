@@ -5,15 +5,20 @@ namespace App\Services\Notifications;
 use App\Models\MobileNotification;
 use App\Models\User;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 
 class NotificationInboxService
 {
-    public function paginateForUser(User $user, bool $onlyUnread, int $perPage): LengthAwarePaginator
+    public const BOX_ALL = 'all';
+
+    public const BOX_OPERATIONAL = 'operational';
+
+    public const BOX_CORRESPONDENCE = 'correspondence';
+
+    public function paginateForUser(User $user, bool $onlyUnread, int $perPage, string $box = self::BOX_ALL): LengthAwarePaginator
     {
-        $query = MobileNotification::query()
-            ->where('usuario_id', (int) $user->id)
-            ->orderByDesc('id');
+        $query = $this->queryForUser($user, $box)->orderByDesc('id');
 
         if ($onlyUnread) {
             $query->whereNull('lida_em');
@@ -30,18 +35,16 @@ class NotificationInboxService
         return $paginator;
     }
 
-    public function unreadCountForUser(User $user): int
+    public function unreadCountForUser(User $user, string $box = self::BOX_ALL): int
     {
-        return (int) MobileNotification::query()
-            ->where('usuario_id', (int) $user->id)
+        return (int) $this->queryForUser($user, $box)
             ->whereNull('lida_em')
             ->count();
     }
 
-    public function lastNotificationIdForUser(User $user): int
+    public function lastNotificationIdForUser(User $user, string $box = self::BOX_ALL): int
     {
-        return (int) (MobileNotification::query()
-            ->where('usuario_id', (int) $user->id)
+        return (int) ($this->queryForUser($user, $box)
             ->max('id') ?? 0);
     }
 
@@ -61,12 +64,11 @@ class NotificationInboxService
         return $item->refresh();
     }
 
-    public function markAllRead(User $user): array
+    public function markAllRead(User $user, string $box = self::BOX_ALL): array
     {
         $timestamp = Carbon::now();
 
-        $updatedCount = (int) MobileNotification::query()
-            ->where('usuario_id', (int) $user->id)
+        $updatedCount = (int) $this->queryForUser($user, $box)
             ->whereNull('lida_em')
             ->update([
                 'lida_em' => $timestamp,
@@ -80,16 +82,15 @@ class NotificationInboxService
         ];
     }
 
-    public function clearRead(User $user): array
+    public function clearRead(User $user, string $box = self::BOX_ALL): array
     {
-        $deletedCount = (int) MobileNotification::query()
-            ->where('usuario_id', (int) $user->id)
+        $deletedCount = (int) $this->queryForUser($user, $box)
             ->whereNotNull('lida_em')
             ->delete();
 
         return [
             'deleted_count' => $deletedCount,
-            'unread_count' => $this->unreadCountForUser($user),
+            'unread_count' => $this->unreadCountForUser($user, $box),
         ];
     }
 
@@ -100,6 +101,7 @@ class NotificationInboxService
         return [
             'id' => (int) $notification->id,
             'tipo_evento' => (string) ($notification->tipo_evento ?? ''),
+            'caixa' => $this->boxForEvent((string) ($notification->tipo_evento ?? '')),
             'titulo' => (string) ($notification->titulo ?? ''),
             'corpo' => (string) ($notification->corpo ?? ''),
             'rota_destino' => $this->normalizeDestinationRoute($notification->rota_destino, $payload),
@@ -119,6 +121,49 @@ class NotificationInboxService
             ->where('usuario_id', (int) $user->id)
             ->whereKey($notificationId)
             ->first();
+    }
+
+    public function normalizeBox(string $box): string
+    {
+        $normalized = strtolower(trim($box));
+
+        return in_array($normalized, [self::BOX_OPERATIONAL, self::BOX_CORRESPONDENCE], true)
+            ? $normalized
+            : self::BOX_ALL;
+    }
+
+    private function queryForUser(User $user, string $box): Builder
+    {
+        $query = MobileNotification::query()->where('usuario_id', (int) $user->id);
+
+        return $this->applyBox($query, $this->normalizeBox($box));
+    }
+
+    private function applyBox(Builder $query, string $box): Builder
+    {
+        if ($box === self::BOX_CORRESPONDENCE) {
+            return $query->where(static function (Builder $builder): void {
+                $builder->where('tipo_evento', 'like', 'message.%')
+                    ->orWhere('tipo_evento', 'like', 'document.%');
+            });
+        }
+
+        if ($box === self::BOX_OPERATIONAL) {
+            return $query
+                ->where('tipo_evento', 'not like', 'message.%')
+                ->where('tipo_evento', 'not like', 'document.%');
+        }
+
+        return $query;
+    }
+
+    private function boxForEvent(string $eventType): string
+    {
+        $normalized = strtolower(trim($eventType));
+
+        return str_starts_with($normalized, 'message.') || str_starts_with($normalized, 'document.')
+            ? self::BOX_CORRESPONDENCE
+            : self::BOX_OPERATIONAL;
     }
 
     /**

@@ -35,6 +35,7 @@ trait BuildsLegacyErpSchema
             'pdf_template_versoes',
             'pdf_templates',
             'os_pdf_templates',
+            'documento_assinatura_notificacoes',
             'documento_solicitacoes_assinatura',
             'usuario_assinaturas',
             'os_documento_link_itens',
@@ -1412,6 +1413,24 @@ trait BuildsLegacyErpSchema
             $table->timestamps();
             $table->index(['usuario_responsavel_id', 'status']);
             $table->index(['os_id', 'status']);
+        });
+
+        Schema::create('documento_assinatura_notificacoes', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('solicitacao_id');
+            $table->string('canal', 20);
+            $table->string('status', 20)->default('pendente');
+            $table->string('destinatario_hash', 64)->nullable();
+            $table->string('destinatario_resumo', 180)->nullable();
+            $table->unsignedSmallInteger('tentativas')->default(0);
+            $table->string('provider', 60)->nullable();
+            $table->string('referencia', 190)->nullable();
+            $table->text('erro')->nullable();
+            $table->dateTime('ultima_tentativa_em')->nullable();
+            $table->dateTime('enviada_em')->nullable();
+            $table->timestamps();
+            $table->unique(['solicitacao_id', 'canal']);
+            $table->index(['status', 'tentativas', 'updated_at']);
         });
     }
 

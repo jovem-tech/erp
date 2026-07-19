@@ -2,15 +2,21 @@
 
 namespace Tests\Feature\Api\V1;
 
+use App\Jobs\DispatchDocumentSignatureAssignmentJob;
 use App\Models\Order;
 use App\Models\OrderDocument;
 use App\Models\User;
+use App\Services\Integrations\EmailIntegrationSettingsService;
+use App\Services\Integrations\IntegrationSettingsService;
+use App\Services\Signatures\DocumentSignatureAssignmentNotifier;
 use App\Services\Signatures\DocumentSignatureWorkflowService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\BuildsLegacyErpSchema;
@@ -103,6 +109,108 @@ class DocumentSignatureSecurityTest extends TestCase
         $this->assertSame((int) $target->id, (int) $result['signer']->id);
         $this->assertSame('reautenticacao', $result['method']);
         $this->assertSame((int) $actor->id, (int) $actor->id, 'A sessão/ator original permanece separado do signatário.');
+    }
+
+    public function test_pending_assignment_creates_letter_notification_and_audited_external_deliveries(): void
+    {
+        Queue::fake();
+        Mail::fake();
+
+        $actor = $this->user('Atendente', 'atendente@example.test', 'SenhaAtendente123!');
+        $responsible = $this->user('Técnico Responsável', 'tecnico@example.test', 'SenhaTecnico123!');
+        $responsible->forceFill(['telefone' => '(22) 99999-1234'])->save();
+
+        Sanctum::actingAs($responsible);
+        $this->post('/api/v1/auth/signature', [
+            'current_password' => 'SenhaTecnico123!',
+            'origin' => 'upload',
+            'signature_file' => UploadedFile::fake()->image('assinatura.png', 500, 160),
+        ])->assertOk();
+
+        $clientId = DB::table('clientes')->insertGetId([
+            'nome_razao' => 'Cliente da Designação',
+            'telefone1' => '(22) 98888-0000',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $equipmentId = DB::table('equipamentos')->insertGetId([
+            'cliente_id' => $clientId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $orderId = DB::table('os')->insertGetId([
+            'numero_os' => 'OS-NOTIFY-1',
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'relato_cliente' => 'Teste de aviso de assinatura',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $order = Order::query()->findOrFail($orderId);
+
+        $pending = app(DocumentSignatureWorkflowService::class)
+            ->createPending($order, $actor, $responsible, ['os_laudo_tecnico'])[0];
+
+        $this->assertDatabaseHas('mobile_notifications', [
+            'usuario_id' => (int) $responsible->id,
+            'tipo_evento' => 'document.signature.requested',
+            'rota_destino' => '/os/' . $orderId . '/documentos#assinaturas-pendentes',
+        ]);
+        $this->assertDatabaseHas('documento_assinatura_notificacoes', [
+            'solicitacao_id' => (int) $pending->id,
+            'canal' => 'in_app',
+            'status' => 'enviada',
+        ]);
+        $this->assertDatabaseHas('documento_assinatura_notificacoes', [
+            'solicitacao_id' => (int) $pending->id,
+            'canal' => 'email',
+            'status' => 'pendente',
+        ]);
+        $this->assertDatabaseHas('documento_assinatura_notificacoes', [
+            'solicitacao_id' => (int) $pending->id,
+            'canal' => 'whatsapp',
+            'status' => 'pendente',
+        ]);
+        Queue::assertPushed(
+            DispatchDocumentSignatureAssignmentJob::class,
+            static fn (DispatchDocumentSignatureAssignmentJob $job): bool => $job->signatureRequestId === (int) $pending->id
+        );
+
+        $this->mock(EmailIntegrationSettingsService::class, function ($mock): void {
+            $mock->shouldReceive('operationalMailerAvailable')->once()->andReturn(true);
+        });
+        $this->mock(IntegrationSettingsService::class, function ($mock): void {
+            $mock->shouldReceive('sendDirectMessage')
+                ->once()
+                ->withArgs(static fn (string $phone, string $message): bool => str_contains($phone, '99999-1234')
+                    && str_contains($message, 'OS-NOTIFY-1'))
+                ->andReturn([
+                    'ok' => true,
+                    'provider' => 'provider-test',
+                    'reference' => 'wa-123',
+                    'message' => 'Enviado.',
+                ]);
+        });
+
+        app(DocumentSignatureAssignmentNotifier::class)->dispatchExternal((int) $pending->id);
+
+        $this->assertDatabaseHas('documento_assinatura_notificacoes', [
+            'solicitacao_id' => (int) $pending->id,
+            'canal' => 'email',
+            'status' => 'enviada',
+            'tentativas' => 1,
+        ]);
+        $this->assertDatabaseHas('documento_assinatura_notificacoes', [
+            'solicitacao_id' => (int) $pending->id,
+            'canal' => 'whatsapp',
+            'status' => 'enviada',
+            'provider' => 'provider-test',
+            'referencia' => 'wa-123',
+            'tentativas' => 1,
+        ]);
+        $this->assertDatabaseMissing('documento_assinatura_notificacoes', [
+            'destinatario_resumo' => 'tecnico@example.test',
+        ]);
     }
 
     public function test_client_link_uses_one_time_hashed_token_and_records_consent_audit(): void

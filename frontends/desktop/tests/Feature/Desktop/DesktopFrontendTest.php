@@ -2,12 +2,15 @@
 
 namespace Tests\Feature\Desktop;
 
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class DesktopFrontendTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_login_stores_backend_token_in_server_session(): void
     {
         Http::fake([
@@ -2709,6 +2712,10 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Nova OS')
             ->assertSee('Abrir página cheia')
             ->assertSee(route('notifications.summary'), false)
+            ->assertSee('data-desktop-correspondence-root', false)
+            ->assertSee('data-desktop-correspondence-badge', false)
+            ->assertSee('bi bi-envelope', false)
+            ->assertSee('Mensagens e documentos')
             ->assertSee('Resumo carregado sob demanda.')
             ->assertSee('Abra este menu para carregar as notificações mais recentes.')
             ->assertDontSee('Configurações do sistema');
@@ -3242,6 +3249,55 @@ class DesktopFrontendTest extends TestCase
             ->assertJsonPath('data.items.0.url', route('orders.show', 1001));
     }
 
+    public function test_correspondence_summary_and_page_forward_the_isolated_box_filter(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'box' => 'correspondence',
+                    'items' => [[
+                        'id' => 'doc-1',
+                        'tipo_evento' => 'document.signature.requested',
+                        'caixa' => 'correspondence',
+                        'titulo' => 'Documento aguardando sua assinatura',
+                        'corpo' => 'Laudo técnico da OS1001.',
+                        'rota_destino' => '/os/1001/documentos#assinaturas-pendentes',
+                        'payload' => ['icon' => 'envelope-paper'],
+                        'lida_em' => null,
+                        'created_at' => '2026-07-19T10:00:00-03:00',
+                    ]],
+                    'unread_count' => 1,
+                ],
+                'error' => null,
+                'meta' => ['pagination' => [
+                    'current_page' => 1,
+                    'per_page' => 20,
+                    'total' => 1,
+                    'last_page' => 1,
+                    'from' => 1,
+                    'to' => 1,
+                ]],
+            ]),
+        ]);
+
+        $session = $this->desktopSession(['dashboard' => ['visualizar']]);
+
+        $this->withSession($session)
+            ->get('/notificacoes/resumo?box=correspondence')
+            ->assertOk()
+            ->assertJsonPath('data.unread_count', 1)
+            ->assertJsonPath('data.items.0.caixa', 'correspondence');
+
+        $this->withSession($session)
+            ->get('/notificacoes?box=correspondence')
+            ->assertOk()
+            ->assertSee('Mensagens e documentos')
+            ->assertSee('Documento aguardando sua assinatura');
+
+        Http::assertSent(static fn ($request): bool => str_contains($request->url(), 'box=correspondence'));
+    }
+
     public function test_dashboard_render_does_not_hit_notifications_api(): void
     {
         Http::fake([
@@ -3273,7 +3329,10 @@ class DesktopFrontendTest extends TestCase
 
         $response->assertOk();
 
-        Http::assertNothingSent();
+        Http::assertNotSent(static fn ($request): bool => str_contains(
+            $request->url(),
+            '/api/v1/notifications'
+        ));
     }
 
     public function test_desktop_layout_exposes_page_transition_loader(): void

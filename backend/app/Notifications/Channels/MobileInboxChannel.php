@@ -31,6 +31,10 @@ class MobileInboxChannel
         $corpo = trim((string) ($rawPayload['corpo'] ?? ''));
         $rotaDestino = trim((string) ($rawPayload['rota_destino'] ?? ''));
         $payload = is_array($rawPayload['payload'] ?? null) ? $rawPayload['payload'] : [];
+        $normalizedEventType = strtolower($tipoEvento);
+        $box = str_starts_with($normalizedEventType, 'message.') || str_starts_with($normalizedEventType, 'document.')
+            ? 'correspondence'
+            : 'operational';
 
         $model = MobileNotificationModel::query()->create([
             'usuario_id' => $userId,
@@ -53,6 +57,7 @@ class MobileInboxChannel
                 'corpo' => (string) $model->corpo,
                 'rota_destino' => $model->rota_destino,
                 'icon' => (string) ($payload['icon'] ?? ''),
+                'box' => $box,
             ]));
         } catch (Throwable $exception) {
             logger()->warning('[NOTIFICACOES] Falha ao transmitir notificacao em tempo real', [

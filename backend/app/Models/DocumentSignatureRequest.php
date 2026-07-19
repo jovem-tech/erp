@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class DocumentSignatureRequest extends Model
 {
@@ -45,5 +46,10 @@ class DocumentSignatureRequest extends Model
     public function requesterSignature(): BelongsTo
     {
         return $this->belongsTo(UserSignature::class, 'assinatura_solicitante_id', 'id');
+    }
+
+    public function notificationDeliveries(): HasMany
+    {
+        return $this->hasMany(DocumentSignatureDelivery::class, 'solicitacao_id', 'id');
     }
 }

@@ -23,12 +23,19 @@ const DesktopUi = (() => {
     const notificationUnread = notificationRoot?.querySelector('[data-desktop-notification-unread]');
     const notificationBadge = notificationRoot?.querySelector('[data-desktop-notification-badge]');
 
+    const correspondenceRoot = document.querySelector('[data-desktop-correspondence-root]');
+    const correspondenceSummaryUrl = correspondenceRoot?.dataset.desktopCorrespondenceSummaryUrl || '';
+    const correspondenceList = correspondenceRoot?.querySelector('[data-desktop-correspondence-list]');
+    const correspondenceUnread = correspondenceRoot?.querySelector('[data-desktop-correspondence-unread]');
+    const correspondenceBadge = correspondenceRoot?.querySelector('[data-desktop-correspondence-badge]');
+
     const pageLoaderRoot = document.querySelector('[data-desktop-page-loader]');
     const pageLoaderMessage = pageLoaderRoot?.querySelector('.desktop-page-loader-copy span');
 
     let searchTimer = null;
     let searchAbortController = null;
     let notificationSummaryPromise = null;
+    let correspondenceSummaryPromise = null;
     let pageLoaderTimer = null;
     let pageLoaderVisible = false;
 
@@ -477,6 +484,155 @@ const DesktopUi = (() => {
         window.setTimeout(scheduleLoad, 500);
     };
 
+    const renderCorrespondenceBadge = (unreadCount) => {
+        if (!(correspondenceBadge instanceof HTMLElement)) {
+            return;
+        }
+
+        if (unreadCount > 0) {
+            correspondenceBadge.textContent = String(unreadCount);
+            correspondenceBadge.classList.remove('d-none');
+            return;
+        }
+
+        correspondenceBadge.textContent = '';
+        correspondenceBadge.classList.add('d-none');
+    };
+
+    const renderCorrespondenceEmptyState = (message) => {
+        if (!(correspondenceList instanceof HTMLElement)) {
+            return;
+        }
+
+        correspondenceList.innerHTML = `
+            <div class="desktop-notification-empty">
+                ${escapeHtml(message)}
+            </div>
+        `;
+    };
+
+    const renderCorrespondenceSummary = (summary) => {
+        if (!(correspondenceList instanceof HTMLElement)) {
+            return;
+        }
+
+        const items = Array.isArray(summary?.items) ? summary.items : [];
+        const unreadCount = Math.max(0, Number(summary?.unread_count ?? 0));
+
+        if (correspondenceUnread instanceof HTMLElement) {
+            correspondenceUnread.textContent = `${unreadCount} não lidas`;
+        }
+        renderCorrespondenceBadge(unreadCount);
+
+        if (items.length === 0) {
+            renderCorrespondenceEmptyState('Nenhuma mensagem ou documento disponível.');
+            return;
+        }
+
+        correspondenceList.innerHTML = items.map((notification) => {
+            const unreadClass = notification?.lida_em ? 'is-read' : 'is-unread';
+            const icon = escapeHtml(notification?.icone || 'bi bi-envelope');
+            const title = escapeHtml(notification?.titulo || 'Mensagem ou documento');
+            const body = escapeHtml(notification?.corpo || '');
+            const humanTime = escapeHtml(notification?.criada_em_humano || 'Agora');
+            const url = escapeHtml(notification?.open_url || notification?.url || '#');
+
+            return `
+                <a href="${url}" class="desktop-notification-item ${unreadClass}">
+                    <span class="desktop-notification-icon">
+                        <i class="${icon}"></i>
+                    </span>
+
+                    <span class="desktop-notification-copy">
+                        <strong>${title}</strong>
+                        <small>${body}</small>
+                        <span>${humanTime}</span>
+                    </span>
+                </a>
+            `;
+        }).join('');
+    };
+
+    const loadCorrespondenceSummary = () => {
+        if (!(correspondenceRoot instanceof HTMLElement) || correspondenceSummaryUrl === '') {
+            return Promise.resolve(null);
+        }
+        if (correspondenceSummaryPromise !== null) {
+            return correspondenceSummaryPromise;
+        }
+
+        correspondenceRoot.dataset.correspondenceLoading = '1';
+        if (correspondenceUnread instanceof HTMLElement) {
+            correspondenceUnread.textContent = 'Carregando resumo...';
+        }
+        renderCorrespondenceEmptyState('Carregando mensagens e documentos...');
+
+        correspondenceSummaryPromise = fetch(correspondenceSummaryUrl, {
+            headers: { Accept: 'application/json' },
+            credentials: 'same-origin',
+        })
+            .then((response) => {
+                if (response.status === 401) {
+                    window.location.href = '/login';
+                    return null;
+                }
+                if (!response.ok) {
+                    throw new Error('Não foi possível carregar mensagens e documentos.');
+                }
+
+                return response.json();
+            })
+            .then((payload) => {
+                if (payload === null) {
+                    return null;
+                }
+
+                const summary = payload?.data || payload;
+                renderCorrespondenceSummary(summary);
+                correspondenceRoot.dataset.correspondenceLoaded = '1';
+
+                return summary;
+            })
+            .catch((error) => {
+                logError('correspondence', error, { url: correspondenceSummaryUrl });
+                if (correspondenceUnread instanceof HTMLElement) {
+                    correspondenceUnread.textContent = 'Resumo indisponível';
+                }
+                renderCorrespondenceEmptyState('Não foi possível carregar mensagens e documentos agora.');
+                return null;
+            })
+            .finally(() => {
+                correspondenceRoot.dataset.correspondenceLoading = '0';
+                correspondenceSummaryPromise = null;
+            });
+
+        return correspondenceSummaryPromise;
+    };
+
+    const initCorrespondence = () => {
+        if (!(correspondenceRoot instanceof HTMLElement) || correspondenceSummaryUrl === '') {
+            return;
+        }
+
+        const scheduleLoad = () => {
+            if (correspondenceRoot.dataset.correspondenceLoaded === '1'
+                || correspondenceRoot.dataset.correspondenceLoading === '1') {
+                return;
+            }
+
+            loadCorrespondenceSummary();
+        };
+
+        correspondenceRoot.addEventListener('show.bs.dropdown', scheduleLoad);
+
+        if (typeof window.requestIdleCallback === 'function') {
+            window.requestIdleCallback(scheduleLoad, { timeout: 1400 });
+            return;
+        }
+
+        window.setTimeout(scheduleLoad, 650);
+    };
+
     let notificationRealtimePusher = null;
     let notificationRealtimeInitTimer = null;
     let notificationRealtimeStarted = false;
@@ -525,9 +681,15 @@ const DesktopUi = (() => {
             return Number.isFinite(parsed) ? parsed : 0;
         };
 
-        const normalizeIcon = (icon) => {
+        const currentCorrespondenceUnreadCount = () => {
+            const raw = correspondenceBadge instanceof HTMLElement ? correspondenceBadge.textContent.trim() : '';
+            const parsed = Number.parseInt(raw, 10);
+            return Number.isFinite(parsed) ? parsed : 0;
+        };
+
+        const normalizeIcon = (icon, fallback = 'bell') => {
             const trimmed = String(icon || '').trim().replaceAll('_', '-');
-            return trimmed !== '' ? `bi bi-${trimmed}` : 'bi bi-bell';
+            return trimmed !== '' ? `bi bi-${trimmed}` : `bi bi-${fallback}`;
         };
 
         const prependNotificationItem = (payload) => {
@@ -563,6 +725,35 @@ const DesktopUi = (() => {
                 </span>
             `;
             notificationList.prepend(item);
+        };
+
+        const prependCorrespondenceItem = (payload) => {
+            if (!(correspondenceList instanceof HTMLElement)
+                || correspondenceRoot?.dataset.correspondenceLoaded !== '1') {
+                return;
+            }
+
+            correspondenceList.querySelector('.desktop-notification-empty')?.remove();
+
+            const id = String(payload?.id || '');
+            const url = id !== '' && openUrlTemplate !== ''
+                ? openUrlTemplate.replaceAll('__ID__', id)
+                : '#';
+            const item = document.createElement('a');
+            item.href = url;
+            item.className = 'desktop-notification-item is-unread';
+            item.innerHTML = `
+                <span class="desktop-notification-icon">
+                    <i class="${escapeHtml(normalizeIcon(payload?.icon, 'envelope'))}"></i>
+                </span>
+
+                <span class="desktop-notification-copy">
+                    <strong>${escapeHtml(payload?.titulo || 'Mensagem ou documento')}</strong>
+                    <small>${escapeHtml(payload?.corpo || '')}</small>
+                    <span>Agora</span>
+                </span>
+            `;
+            correspondenceList.prepend(item);
         };
 
         const showNotificationToast = (payload) => {
@@ -620,10 +811,21 @@ const DesktopUi = (() => {
 
                 const channel = pusher.subscribe('private-notifications.' + userId);
                 channel.bind('notification.created', (payload) => {
+                    if (String(payload?.box || '') === 'correspondence') {
+                        const unread = currentCorrespondenceUnreadCount() + 1;
+                        renderCorrespondenceBadge(unread);
+                        if (correspondenceUnread instanceof HTMLElement) {
+                            correspondenceUnread.textContent = `${unread} não lidas`;
+                        }
+                        prependCorrespondenceItem(payload);
+                        showNotificationToast(payload);
+                        return;
+                    }
+
                     const unread = currentUnreadCount() + 1;
                     renderNotificationBadge(unread);
                     if (notificationUnread instanceof HTMLElement) {
-                        notificationUnread.textContent = `${unread} nao lidas`;
+                        notificationUnread.textContent = `${unread} não lidas`;
                     }
                     prependNotificationItem(payload);
                     showNotificationToast(payload);
@@ -1733,6 +1935,7 @@ const DesktopUi = (() => {
         initPasswordToggles();
         initFlash();
         initNotifications();
+        initCorrespondence();
         initNotificationRealtime();
         initConfirmForms();
         initPageTransitions();

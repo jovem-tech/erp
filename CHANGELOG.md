@@ -1,5 +1,12 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.26.0.0 — 2026-07-19 09:28
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Cria a caixa isolada de Mensagens e documentos ao lado do sino e passa a avisar designações de assinatura pelo sistema, e-mail e WhatsApp, com fila assíncrona, auditoria mascarada, retentativas idempotentes e recuperação de pendências anteriores à implantação
+- **Segurança:** autorização preservada na abertura do documento; destinatários persistidos somente de forma mascarada e com HMAC; erros externos sanitizados; falhas de canais externos não revertem a designação transacional
+- **Arquivos:** backend/app/Services/Notifications/NotificationInboxService.php,backend/app/Http/Controllers/Api/V1/NotificationController.php,backend/app/Notifications/Channels/MobileInboxChannel.php,backend/app/Services/Signatures/DocumentSignatureAssignmentNotifier.php,backend/app/Jobs/DispatchDocumentSignatureAssignmentJob.php,backend/app/Models/DocumentSignatureDelivery.php,backend/database/migrations/2026_07_19_000003_create_document_signature_notification_deliveries.php,backend/routes/console.php,backend/openapi.yaml,frontends/desktop/resources/views/layouts/partials/navbar.blade.php,frontends/desktop/public/assets/js/desktop.js,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/app/Services/NotificationService.php,frontends/desktop/app/Http/Controllers/NotificationController.php,frontends/desktop/resources/views/notifications/index.blade.php,frontends/desktop/resources/views/orders/documents-center.blade.php,documentacao/07-novas-implementacoes/2026-07-19-assinaturas-digitais-documentos.md
+
 ## v4.25.2.0 — 2026-07-19 04:03
 - **Tier:** patch
 - **Autor/Agente:** Claude
