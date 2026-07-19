@@ -301,7 +301,8 @@ class OrderClosureService
                 $observacao,
                 $recebimentos,
                 (float) $result['saldo_aberto'],
-                (float) $result['titulo_valor']
+                (float) $result['titulo_valor'],
+                $actor
             );
         }
 
@@ -1340,7 +1341,8 @@ class OrderClosureService
         string $observacaoEncerramento,
         array $recebimentos,
         float $saldoRestante,
-        float $valorTitulo
+        float $valorTitulo,
+        User $actor
     ): bool {
         $order->loadMissing('client');
         $telefone = trim((string) ($order->client?->telefone1 ?? ''));
@@ -1366,6 +1368,7 @@ class OrderClosureService
                 'valorTitulo' => round($valorTitulo, 2),
                 'saldoRestante' => round($saldoRestante, 2),
                 'recebimentos' => $recebimentos,
+                'actor' => $actor,
             ]);
         } catch (Throwable $exception) {
             logger()->warning('[API V1][ORDERS][CLOSURE] Falha ao gerar PDF de encerramento', [

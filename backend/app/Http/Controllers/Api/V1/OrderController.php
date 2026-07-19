@@ -12,6 +12,10 @@ use App\Services\Auth\AdminCredentialVerifier;
 use App\Services\Orders\OrderClosureService;
 use App\Services\Orders\OrderDocumentCenterService;
 use App\Services\Orders\OrderWorkflowService;
+use App\Services\Signatures\DocumentSignatureWorkflowService;
+use App\Models\Order;
+use App\Models\OrderDocument;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -25,7 +29,8 @@ class OrderController extends BaseApiController
         private readonly OrderWorkflowService $orderWorkflowService,
         private readonly OrderClosureService $orderClosureService,
         private readonly OrderDocumentCenterService $orderDocumentCenterService,
-        private readonly AdminCredentialVerifier $adminCredentialVerifier
+        private readonly AdminCredentialVerifier $adminCredentialVerifier,
+        private readonly DocumentSignatureWorkflowService $documentSignatureWorkflowService
     ) {
     }
 
@@ -419,13 +424,103 @@ class OrderController extends BaseApiController
         $validated = $request->validate([
             'tipos' => ['required', 'array', 'min:1'],
             'tipos.*' => ['required', 'string', 'max:80'],
+            'signature_mode' => ['nullable', 'string', 'in:self,reauth,pending,client'],
+            'signature_user_id' => ['nullable', 'integer', 'min:1'],
+            'signature_email' => ['nullable', 'email:rfc', 'max:160'],
+            'signature_password' => ['nullable', 'string', 'max:200'],
         ]);
 
+        try {
+            $signatureContext = $this->documentSignatureWorkflowService->resolveImmediateSigner($user, $validated, $request);
+        } catch (\InvalidArgumentException $exception) {
+            return $this->error($exception->getMessage(), 422, 'DOCUMENT_SIGNATURE_INVALID', request: $request);
+        }
+
+        if (($signatureContext['mode'] ?? '') === 'pending') {
+            $responsible = User::query()
+                ->whereKey(max(0, (int) ($validated['signature_user_id'] ?? 0)))
+                ->where('ativo', true)
+                ->first();
+            $orderModel = Order::query()->find($order);
+            if (! $responsible instanceof User || ! $orderModel instanceof Order) {
+                return $this->error('Selecione um usuário ativo para receber a solicitação.', 422, 'DOCUMENT_SIGNATURE_USER_REQUIRED', request: $request);
+            }
+
+            try {
+                $pending = $this->documentSignatureWorkflowService->createPending(
+                    $orderModel,
+                    $user,
+                    $responsible,
+                    array_values($validated['tipos'] ?? [])
+                );
+            } catch (\InvalidArgumentException $exception) {
+                return $this->error($exception->getMessage(), 422, 'DOCUMENT_SIGNATURE_PENDING_FAILED', request: $request);
+            }
+
+            return $this->success([
+                'documents' => array_map(static fn ($item): array => [
+                    'type' => (string) $item->tipo_documento,
+                    'ok' => true,
+                    'pending_signature' => true,
+                    'signature_request_id' => (int) $item->id,
+                    'message' => 'Documento encaminhado para assinatura.',
+                ], $pending),
+            ], request: $request);
+        }
+
+        if (($signatureContext['mode'] ?? '') === 'client') {
+            $orderModel = Order::query()->find($order);
+            if (! $orderModel instanceof Order) {
+                return $this->error('OS não encontrada.', 404, 'ORDER_NOT_FOUND', request: $request);
+            }
+
+            try {
+                $pending = $this->documentSignatureWorkflowService->createClientPending(
+                    $orderModel,
+                    $user,
+                    array_values($validated['tipos'] ?? [])
+                );
+            } catch (\InvalidArgumentException $exception) {
+                return $this->error($exception->getMessage(), 422, 'CLIENT_SIGNATURE_PENDING_FAILED', request: $request);
+            }
+
+            return $this->success([
+                'documents' => array_map(static fn (array $item): array => [
+                    'type' => (string) $item['request']->tipo_documento,
+                    'ok' => true,
+                    'pending_signature' => true,
+                    'signature_request_id' => (int) $item['request']->id,
+                    'signature_url' => '/assinar-documento/' . $item['token'],
+                    'message' => 'Link seguro de assinatura do cliente criado.',
+                ], $pending),
+            ], request: $request);
+        }
+
+        $signedAt = now();
         $result = $this->orderDocumentCenterService->generate(
             $order,
             $user,
-            array_values($validated['tipos'] ?? [])
+            array_values($validated['tipos'] ?? []),
+            [
+                'signature_signer' => $signatureContext['signer'] ?? $user,
+                'signature_method' => (string) ($signatureContext['method'] ?? 'sessao'),
+                'signature_signed_at' => $signedAt,
+            ]
         );
+
+        if (($signatureContext['signer'] ?? null) instanceof User && isset($signatureContext['signature'])) {
+            foreach ($result['documents'] ?? [] as $generated) {
+                $document = OrderDocument::query()->find((int) ($generated['document_id'] ?? 0));
+                if ($document instanceof OrderDocument) {
+                    $this->documentSignatureWorkflowService->recordImmediate(
+                        $document,
+                        $signatureContext['signer'],
+                        $signatureContext['signature'],
+                        (string) ($signatureContext['method'] ?? 'sessao')
+                    );
+                }
+            }
+        }
 
         $documents = is_array($result['documents'] ?? null) ? $result['documents'] : [];
         $successfulDocuments = array_values(array_filter(

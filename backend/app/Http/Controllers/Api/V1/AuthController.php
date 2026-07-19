@@ -486,6 +486,7 @@ class AuthController extends BaseApiController
             'foto' => (string) ($user->foto ?? ''),
             'ativo' => (bool) $user->ativo,
             'ultimo_acesso' => $user->ultimo_acesso?->toIso8601String(),
+            'assinatura_cadastrada' => $user->activeSignature()->exists(),
         ];
     }
 }

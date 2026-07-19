@@ -1319,7 +1319,7 @@ class OrderController extends DesktopController
 
     /**
      * Estado atual da central documental para o AJAX de refresh
-     * (sem reload): devolve os 4 fragments (catalogo/acervo/envios/links)
+     * (sem reload): devolve os 3 fragments (catalogo/envios/links)
      * já renderizados, para o JS trocar o innerHTML dos wrappers estáveis.
      */
     public function documentsCenterState(int $order): JsonResponse
@@ -1351,10 +1351,6 @@ class OrderController extends DesktopController
                     'catalog' => $viewData['catalog'],
                     'orderId' => $orderId,
                 ])->render(),
-                'documents' => view('orders.documents-center._documents-table', [
-                    'documents' => $viewData['documents'],
-                    'orderId' => $orderId,
-                ])->render(),
                 'sends' => view('orders.documents-center._send-history', [
                     'sendHistory' => $viewData['sendHistory'],
                 ])->render(),
@@ -1376,6 +1372,14 @@ class OrderController extends DesktopController
     private function documentsCenterViewData(int $order): array
     {
         $context = $this->orderService->documentsCenter($order);
+        $signatureUsers = [];
+        $pendingSignatures = [];
+        try {
+            $signatureUsers = $this->orderService->documentSignatureUsers();
+            $pendingSignatures = $this->orderService->pendingDocumentSignatures();
+        } catch (Throwable $exception) {
+            report($exception);
+        }
 
         return [
             'orderId' => $order,
@@ -1387,6 +1391,8 @@ class OrderController extends DesktopController
             'sendHistory' => is_array($context['send_history'] ?? null) ? $context['send_history'] : [],
             'shareLinks' => is_array($context['share_links'] ?? null) ? $context['share_links'] : [],
             'limits' => is_array($context['limits'] ?? null) ? $context['limits'] : [],
+            'signatureUsers' => $signatureUsers,
+            'pendingSignatures' => $pendingSignatures,
         ];
     }
 
@@ -1395,6 +1401,10 @@ class OrderController extends DesktopController
         $validated = $request->validate([
             'tipos' => ['required', 'array', 'min:1'],
             'tipos.*' => ['required', 'string', 'max:80'],
+            'signature_mode' => ['nullable', 'string', 'in:self,reauth,pending,client'],
+            'signature_user_id' => ['nullable', 'integer', 'min:1'],
+            'signature_email' => ['nullable', 'email', 'max:160'],
+            'signature_password' => ['nullable', 'string', 'max:200'],
         ], [], [
             'tipos' => 'tipos documentais',
             'tipos.*' => 'tipo documental',
@@ -1403,7 +1413,16 @@ class OrderController extends DesktopController
         $wantsJson = $request->expectsJson();
 
         try {
-            $result = $this->orderService->generateDocuments($order, array_values($validated['tipos'] ?? []));
+            $result = $this->orderService->generateDocuments(
+                $order,
+                array_values($validated['tipos'] ?? []),
+                [
+                    'signature_mode' => (string) ($validated['signature_mode'] ?? 'self'),
+                    'signature_user_id' => $validated['signature_user_id'] ?? null,
+                    'signature_email' => $validated['signature_email'] ?? null,
+                    'signature_password' => $validated['signature_password'] ?? null,
+                ]
+            );
         } catch (ApiAuthenticationException $exception) {
             if ($wantsJson) {
                 return $this->jsonFailure($exception->getMessage(), 401);
@@ -1470,6 +1489,26 @@ class OrderController extends DesktopController
         return redirect()
             ->route('orders.documents.center', $order)
             ->with('success', $successMessage);
+    }
+
+    public function signPendingDocument(Request $request, int $signatureRequest): RedirectResponse
+    {
+        $validated = $request->validate([
+            'signature_email' => ['nullable', 'email', 'max:160'],
+            'signature_password' => ['nullable', 'string', 'max:200'],
+        ]);
+
+        try {
+            $result = $this->orderService->signPendingDocument($signatureRequest, $validated);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
+
+        return redirect()
+            ->route('orders.documents.center', (int) ($result['order_id'] ?? $request->input('order_id', 0)))
+            ->with('success', 'Documento assinado e emitido com sucesso.');
     }
 
     public function documentsCenterDispatch(Request $request, int $order): RedirectResponse

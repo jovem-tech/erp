@@ -37,7 +37,9 @@ class UserController extends BaseApiController
         $perPage = max(1, min(50, (int) $request->query('per_page', 15)));
         $active = $request->query('active');
 
-        $query = User::query()->with('group');
+        $query = User::query()
+            ->with('group')
+            ->withExists(['activeSignature as assinatura_cadastrada']);
 
         if ($search !== '') {
             $term = '%' . mb_strtolower($search) . '%';
@@ -192,6 +194,7 @@ class UserController extends BaseApiController
             'grupo_id' => (int) ($user->grupo_id ?? 0),
             'group' => $this->rbacAuthorizationService->formatGroup($user->group),
             'foto' => (string) ($user->foto ?? ''),
+            'assinatura_cadastrada' => (bool) ($user->assinatura_cadastrada ?? false),
             'ativo' => (bool) ($user->ativo ?? false),
             'ultimo_acesso' => $user->ultimo_acesso?->toIso8601String(),
         ];

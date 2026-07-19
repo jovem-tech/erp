@@ -1,5 +1,45 @@
 # Historico de versoes
 
+> Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
+> executivo das entregas mais relevantes e links para a documentação técnica.
+
+## v4.24.0.0 - 2026-07-19
+
+- cadastro versionado de assinatura por imagem ou desenho em tela, incluindo toque e Apple Pencil;
+- assinatura própria, reautenticação de outro responsável sem troca de sessão, encaminhamento pendente e rubrica do cliente por link de uso único;
+- separação auditável entre criador, usuário da sessão e signatário;
+- bloqueio de PDFs atribuídos a usuário sem assinatura ativa;
+- armazenamento privado, rasterização segura, token público em hash, expiração e locks contra processamento concorrente;
+- nota: `2026-07-19-assinaturas-digitais-documentos.md`.
+
+## v4.23.0.0 a v4.23.0.2 - 2026-07-18/19
+
+- cabeçalho institucional padronizado em três colunas para documentos atuais, novos e clonados;
+- Termo de Garantia promovido por migration idempotente, preservando personalizações do destino;
+- bloco de assinatura ampliado para responsável e cliente lado a lado;
+- nota: `2026-07-18-motor-central-documentos-pdf.md`.
+
+## v4.21.0.0 a v4.22.4.0 - 2026-07-18
+
+- unificação dos PDFs operacionais no motor central versionado;
+- criação do zero e clonagem de documentos personalizados;
+- publicação imutável, rascunhos, prévia A4/80 mm e geração pela Central Documental;
+- editor ampliado, texto formatado, variáveis validadas e foto privada do equipamento;
+- correções de paginação, rodapé, nome fantasia e data real de entrega;
+- nota: `2026-07-18-motor-central-documentos-pdf.md`.
+
+## v4.19.0.0 a v4.20.0.2 - 2026-07-18
+
+- contas financeiras, saldos, transferências, conciliação e cartões líquidos a receber;
+- módulo RBAC independente de Financeiro;
+- consolidado mensal por conta e correções de vínculo de conta/collation;
+- nota: `2026-07-18-gestao-contas-e-saldos-financeiros.md`.
+
+## Consolidado operacional
+
+Consulte `2026-07-19-consolidado-implementacoes-18-19-julho.md` para migrations,
+ordem de deploy, validações, segurança, riscos e estado por ambiente.
+
 ## v3.14.1.0 - 2026-07-07
 
 - listagem de OS (`orders/index.blade.php`): botao "Filtrar" adicionado ao lado do campo de busca no cabecalho (input-group);

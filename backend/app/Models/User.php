@@ -5,6 +5,8 @@ namespace App\Models;
 use App\Notifications\FrontendPasswordResetNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -57,6 +59,23 @@ class User extends Authenticatable
     public function group(): BelongsTo
     {
         return $this->belongsTo(Group::class, 'grupo_id', 'id');
+    }
+
+    public function teamMember(): HasOne
+    {
+        return $this->hasOne(TeamMember::class, 'usuario_id', 'id');
+    }
+
+    public function signatures(): HasMany
+    {
+        return $this->hasMany(UserSignature::class, 'usuario_id', 'id');
+    }
+
+    public function activeSignature(): HasOne
+    {
+        return $this->hasOne(UserSignature::class, 'usuario_id', 'id')
+            ->where('ativa', true)
+            ->latestOfMany();
     }
 
     public function sendPasswordResetNotification($token, ?string $frontend = null): void

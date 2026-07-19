@@ -78,7 +78,7 @@ class BudgetApprovalService
 
         $token = $this->ensurePublicToken($budget);
         $approvalLink = $this->publicUrl($token);
-        $pdf = $this->budgetPdfService->generate($budget, $approvalLink);
+        $pdf = $this->budgetPdfService->generate($budget, $approvalLink, ['actor' => $user]);
 
         if (! ($pdf['ok'] ?? false)) {
             return [
@@ -220,7 +220,8 @@ class BudgetApprovalService
                     (int) $budget->id,
                     (string) ($pdf['absolute_path'] ?? ''),
                     $user,
-                    $approvalLink
+                    $approvalLink,
+                    is_array($pdf['engine_result'] ?? null) ? $pdf['engine_result'] : []
                 );
             } catch (Throwable $exception) {
                 report($exception);
@@ -519,7 +520,13 @@ class BudgetApprovalService
             ];
         }
 
-        return $this->budgetPdfService->generate($budget, $this->publicUrl((string) ($budget->token_publico ?? '')));
+        $actor = User::query()->whereKey((int) ($budget->criado_por ?? 0))->where('ativo', true)->first();
+
+        return $this->budgetPdfService->generate(
+            $budget,
+            $this->publicUrl((string) ($budget->token_publico ?? '')),
+            $actor instanceof User ? ['actor' => $actor] : []
+        );
     }
 
     private function loadBudget(int $budgetId): ?Budget

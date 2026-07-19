@@ -604,6 +604,43 @@ class OrderWorkflowService
         ];
     }
 
+    /**
+     * Fotos de recepção (check-in) da OS para o bloco "fotos_entrada" do
+     * motor de PDF. Sem checagem de ator: a autorização de gerar o documento
+     * já aconteceu numa camada acima (mesmo padrão que
+     * EquipmentWorkflowService::resolvePhotoAccess usa para a foto principal
+     * do equipamento).
+     *
+     * @return array<int, array{absolute_path: string, mime_type: string}>
+     */
+    public function resolveEntryPhotosForPdf(int $orderId, int $limit = 4): array
+    {
+        if ($orderId <= 0) {
+            return [];
+        }
+
+        $photos = OrderPhoto::query()
+            ->where('os_id', $orderId)
+            ->where('tipo', 'recepcao')
+            ->orderBy('id')
+            ->limit(max(1, $limit))
+            ->get(['id', 'arquivo', 'tipo']);
+
+        $resolved = [];
+        foreach ($photos as $photo) {
+            $file = $this->resolveManagedPhotoFile((string) ($photo->arquivo ?? ''));
+            if (! is_array($file)) {
+                $file = $this->resolveLegacyPhotoFile((string) ($photo->arquivo ?? ''), (string) ($photo->tipo ?? ''));
+            }
+
+            if (is_array($file)) {
+                $resolved[] = $file;
+            }
+        }
+
+        return $resolved;
+    }
+
     public function resolvePhotoAccess(int $orderId, int $photoId, User $actor): array
     {
         $order = Order::query()

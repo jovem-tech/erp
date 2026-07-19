@@ -69,6 +69,7 @@
                     <th>Perfil</th>
                     <th>Grupo</th>
                     <th>Contato</th>
+                    <th>Assinatura</th>
                     <th>Status</th>
                     <th>Último acesso</th>
                     <th class="text-end">Ações</th>
@@ -88,6 +89,13 @@
                         <td data-label="Perfil">{{ $profileLabel !== '' ? $profileLabel : 'Não informado' }}</td>
                         <td data-label="Grupo">{{ $user['group']['nome'] ?? 'Sem grupo' }}</td>
                         <td data-label="Contato">{{ $user['telefone'] !== '' ? $user['telefone'] : 'Não informado' }}</td>
+                        <td data-label="Assinatura">
+                            @include('layouts.partials.status-pill', [
+                                'label' => !empty($user['assinatura_cadastrada']) ? 'Cadastrada' : 'Pendente',
+                                'color' => !empty($user['assinatura_cadastrada']) ? '#29c384' : '#ff9f1c',
+                                'small' => true,
+                            ])
+                        </td>
                         <td data-label="Status">
                             @include('layouts.partials.status-pill', [
                                 'label' => $isActive ? 'Ativo' : 'Inativo',

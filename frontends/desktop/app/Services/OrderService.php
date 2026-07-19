@@ -212,11 +212,35 @@ class OrderService
      * @param array<int, string> $types
      * @return array<string, mixed>
      */
-    public function generateDocuments(int $orderId, array $types): array
+    public function generateDocuments(int $orderId, array $types, array $signature = []): array
     {
-        $response = $this->apiClient->post('/orders/' . $orderId . '/documents/generate', [
+        $response = $this->apiClient->post('/orders/' . $orderId . '/documents/generate', array_merge($signature, [
             'tipos' => array_values($types),
-        ]);
+        ]));
+
+        return $response['data'] ?? [];
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    public function documentSignatureUsers(): array
+    {
+        $response = $this->apiClient->get('/document-signatures/signers');
+
+        return $response['data']['users'] ?? [];
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    public function pendingDocumentSignatures(): array
+    {
+        $response = $this->apiClient->get('/document-signatures/pending');
+
+        return $response['data']['requests'] ?? [];
+    }
+
+    /** @param array<string, mixed> $payload @return array<string, mixed> */
+    public function signPendingDocument(int $requestId, array $payload = []): array
+    {
+        $response = $this->apiClient->post('/document-signatures/' . $requestId . '/sign', $payload);
 
         return $response['data'] ?? [];
     }

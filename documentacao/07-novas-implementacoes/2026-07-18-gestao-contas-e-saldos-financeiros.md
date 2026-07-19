@@ -162,6 +162,16 @@ Cobertura automatizada adicionada em `FinanceiroContaTest` e `OrderFlowTest`:
 
 Esta entrega não importa automaticamente extratos do Banco Inter ou da TOM. A conciliação e a confirmação de cartão são manuais, porém centralizadas e auditáveis. Uma evolução futura pode adicionar integração bancária/adquirente com importação idempotente e fila de conciliação, sem mudar o modelo patrimonial desta feature.
 
+## Correções posteriores de 18/07/2026
+
+- `v4.19.1.0`: o módulo **Contas e Saldos** passou a possuir permissões RBAC independentes de Financeiro.
+- `v4.19.2.0`: o fechamento da OS passou a validar corretamente a conta financeira selecionada.
+- `v4.20.0.0`: foi adicionado o consolidado mensal de contas e saldos.
+- `v4.20.0.1`: lançamentos já pagos passaram a preservar corretamente a conta financeira vinculada.
+- `v4.20.0.2`: a consulta do extrato recebeu correção de collation e as falhas SQL deixaram de expor detalhes internos ao cliente da API.
+
+Essas correções não alteram a separação entre resultado e patrimônio descrita neste documento.
+
 ## Ativação no ambiente LAN
 
 Em 18/07/2026, a migration `2026_07_18_000001_create_financeiro_contas_tables` foi aplicada no servidor de desenvolvimento LAN como batch 19, após backup completo e validado do banco. As quatro tabelas patrimoniais e as colunas de vínculo/auditoria foram verificadas diretamente no schema.

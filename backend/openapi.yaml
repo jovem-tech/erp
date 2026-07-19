@@ -1,7 +1,7 @@
 ﻿openapi: 3.0.3
 info:
   title: Sistema ERP API
-  version: 1.2.0
+  version: 1.3.0
   description: |
     Contrato técnico oficial da API v1 do backend central do Sistema ERP.
 
@@ -59,6 +59,8 @@ tags:
     description: Catálogos centrais de módulos e permissões.
   - name: Central de Atendimento
     description: Inbox de conversas multicanal (Fase 1 - WhatsApp via Evolution API) com tempo real via Reverb.
+  - name: Conhecimento
+    description: Templates versionados e documentos PDF personalizados.
 
 components:
   securitySchemes:
@@ -2162,6 +2164,48 @@ components:
             items:
               type: string
 
+    CreatePdfDocumentTemplateRequest:
+      type: object
+      required:
+        - nome
+        - tipo_base_codigo
+      properties:
+        nome:
+          type: string
+          minLength: 3
+          maxLength: 120
+          example: Termo de garantia especial
+        descricao:
+          type: string
+          maxLength: 1000
+          nullable: true
+        tipo_base_codigo:
+          type: string
+          description: Fonte de dados segura registrada no motor de PDF.
+          enum:
+            - os_abertura
+            - os_orcamento
+            - os_laudo_tecnico
+            - os_cobranca_manutencao
+            - os_comprovante_entrega
+            - os_devolucao_sem_reparo
+            - os_encerramento
+
+    ClonePdfDocumentTemplateRequest:
+      type: object
+      required:
+        - nome
+      properties:
+        nome:
+          type: string
+          minLength: 3
+          maxLength: 120
+          example: Laudo técnico para seguradora
+        descricao:
+          type: string
+          maxLength: 1000
+          nullable: true
+
   requestBodies:
     Login:
       required: true
@@ -2314,6 +2358,59 @@ components:
             $ref: "#/components/schemas/ApiError"
 
 paths:
+  /knowledge/pdf-engine/templates:
+    post:
+      tags:
+        - Conhecimento
+      summary: Criar documento PDF personalizado.
+      description: Cria uma família independente em rascunho com cabeçalho e rodapé institucionais. Exige conhecimento:editar.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePdfDocumentTemplateRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /knowledge/pdf-engine/templates/{template}/clone:
+    post:
+      tags:
+        - Conhecimento
+      summary: Clonar documento PDF existente.
+      description: Copia o rascunho atual ou a versão publicada para uma nova família independente em v1. Exige conhecimento:editar.
+      parameters:
+        - name: template
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClonePdfDocumentTemplateRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
   /health:
     get:
       tags:

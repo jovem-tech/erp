@@ -2,11 +2,11 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-15T22:31:56+00:00`
-- Versao do sistema: `4.8.2`
-- Versao da API: `1.2.0`
+- Gerado em: `2026-07-19T06:32:05+00:00`
+- Versao do sistema: `4.25.1`
+- Versao da API: `1.3.0`
 - Ambiente oficial de producao: `Ubuntu VPS`
-- Ambiente local de referencia: `Windows/XAMPP`
+- Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
 
 ## Arquitetura resumida
 
@@ -149,6 +149,10 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-11-central-documentos-cliente-os.md` - OS — central de documentos do cliente
 - `documentacao/07-novas-implementacoes/2026-07-11-fotos-sem-corte-e-visualizador-modal.md` - Fotos sem corte e visualizador modal no desktop
 - `documentacao/07-novas-implementacoes/2026-07-11-os-abertura-pdf-e-envio-whatsapp.md` - OS — PDF de abertura e envio opcional ao cliente
+- `documentacao/07-novas-implementacoes/2026-07-18-gestao-contas-e-saldos-financeiros.md` - Gestão de contas e saldos financeiros
+- `documentacao/07-novas-implementacoes/2026-07-18-motor-central-documentos-pdf.md` - Motor central e templates modernos de PDF
+- `documentacao/07-novas-implementacoes/2026-07-19-assinaturas-digitais-documentos.md` - Assinaturas digitais e rastreabilidade documental
+- `documentacao/07-novas-implementacoes/2026-07-19-consolidado-implementacoes-18-19-julho.md` - Consolidado das implementações de 18 e 19 de julho de 2026
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 
 ### `documentacao/10-deploy`
@@ -182,4 +186,5 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/018-orcamentos-ajustes-percentuais-desktop` - Feature Specification: Orcamentos - Ajustes Monetarios ou Percentuais | artefatos: spec, plan, tasks
 - `specs/019-aprovacao-orcamento-desktop` - Feature Specification: Orcamentos - Revisao antes de salvar e envio para aprovacao | artefatos: spec, plan, tasks
 - `specs/020-lancamentos-avulsos-financeiro-cliente` - Feature Specification: Lançamentos avulsos com histórico financeiro do cliente | artefatos: spec, plan, tasks
+- `specs/021-gestao-contas-financeiras` - Feature Specification: Gestão de contas financeiras e disponibilidade de caixa | artefatos: spec, plan, tasks, quickstart, data_model, contracts
 

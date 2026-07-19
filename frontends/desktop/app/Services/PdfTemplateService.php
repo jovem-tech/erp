@@ -84,4 +84,15 @@ class PdfTemplateService
 
         return $response['data']['placeholders'] ?? [];
     }
+
+    /**
+     * Prévia do layout deste modelo legado (motor central de PDF).
+     *
+     * @param array<string, mixed> $query formato (a4|80mm), entidade_id (OS real, opcional)
+     * @return array{body: string, headers: array<string, string>, status: int}
+     */
+    public function preview(int $id, array $query = []): array
+    {
+        return $this->apiClient->download('/knowledge/pdf-templates/' . $id . '/preview', $query);
+    }
 }

@@ -141,55 +141,11 @@
         box.innerHTML = '';
     };
 
-    // --- seleção do acervo ----------------------------------------------------
-
-    const updateActionBar = () => {
-        const count = state.selected.size;
-        const countEl = document.querySelector('[data-doc-selection-count]');
-        if (countEl) {
-            countEl.textContent = count === 0
-                ? 'Nenhum documento selecionado'
-                : count === 1
-                    ? '1 documento selecionado'
-                    : `${count} documentos selecionados`;
-        }
-
-        ['zip', 'print', 'share', 'send'].forEach((action) => {
-            const button = document.querySelector(`[data-doc-action-${action}]`);
-            if (button instanceof HTMLButtonElement) {
-                button.disabled = count === 0;
-            }
-        });
-    };
-
-    const applySelectionToDom = () => {
-        const checkboxes = Array.from(document.querySelectorAll('[data-document-row-checkbox]'));
-        const availableIds = new Set(checkboxes.map((checkbox) => checkbox.value));
-
-        Array.from(state.selected).forEach((id) => {
-            if (!availableIds.has(id)) {
-                state.selected.delete(id);
-            }
-        });
-
-        checkboxes.forEach((checkbox) => {
-            checkbox.checked = state.selected.has(checkbox.value);
-        });
-
-        updateActionBar();
-    };
-
-    // Recalcula state.selected direto dos checkboxes marcados agora, em vez
-    // de confiar no Set acumulado — chamado antes de qualquer ação crítica
-    // (ZIP/imprimir/enviar/link) pra nunca disparar com ids fantasmas caso
-    // algum evento de change tenha sido perdido em algum swap de fragment.
-    const resyncSelectionFromLiveDom = () => {
-        const checkboxes = Array.from(document.querySelectorAll('[data-document-row-checkbox]'));
-        state.selected = new Set(
-            checkboxes.filter((checkbox) => checkbox.checked).map((checkbox) => checkbox.value)
-        );
-        updateActionBar();
-    };
+    // --- seleção de documento (ações por linha do catálogo) --------------------
+    // A tabela de acervo com checkboxes foi removida (a versão agora se
+    // escolhe direto na linha do tipo, via data-doc-version-select) — cada
+    // ação de linha (ZIP/imprimir/link/enviar) passa sempre um id explícito,
+    // sem depender de nenhum checkbox existir no DOM.
 
     // --- seleção do catálogo ---------------------------------------------------
 
@@ -219,6 +175,58 @@
         updateCatalogBar();
     };
 
+    // --- seleção de versão por linha (coluna "Versão" do catálogo) -------------
+
+    // Troca qual documento (versão) é "o atual" da linha: atualiza o chip de
+    // status, os links Visualizar A4/80mm e o alvo das ações (ZIP/imprimir/
+    // link/enviar/arquivar) para a versão escolhida no <select>, sem reload.
+    const applyVersionSelection = (selectEl) => {
+        const row = selectEl.closest('[data-doc-type-card]');
+        const option = selectEl.selectedOptions[0];
+        if (!row || !option) return;
+
+        const documentId = selectEl.value;
+        const archived = option.dataset.archived === '1';
+        const a4Available = option.dataset.a4Available === '1';
+        const thermalAvailable = option.dataset.thermalAvailable === '1';
+
+        row.dataset.documentSuggestedMessage = option.dataset.suggestedMessage || '';
+
+        const statusBadge = row.querySelector('[data-doc-status-badge]');
+        if (statusBadge) {
+            statusBadge.classList.toggle('d-none', !archived);
+        }
+
+        const viewA4 = row.querySelector('[data-doc-view-a4]');
+        if (viewA4 instanceof HTMLAnchorElement) {
+            viewA4.classList.toggle('d-none', !a4Available);
+            viewA4.setAttribute('href', option.dataset.a4Url || '#');
+        }
+
+        const view80mm = row.querySelector('[data-doc-view-80mm]');
+        if (view80mm instanceof HTMLAnchorElement) {
+            view80mm.classList.toggle('d-none', !thermalAvailable);
+            view80mm.setAttribute('href', option.dataset.thermalUrl || '#');
+        }
+
+        ['data-doc-row-zip', 'data-doc-row-print', 'data-doc-row-share', 'data-doc-row-send'].forEach((attr) => {
+            const button = row.querySelector('[' + attr + ']');
+            if (button) button.setAttribute(attr, documentId);
+        });
+
+        const archiveButton = row.querySelector('[data-doc-archive-toggle]');
+        if (archiveButton) {
+            archiveButton.setAttribute('data-doc-archive-toggle', documentId);
+            archiveButton.setAttribute('data-archive', archived ? '0' : '1');
+
+            const icon = archiveButton.querySelector('i');
+            if (icon) icon.className = 'bi ' + (archived ? 'bi-box-arrow-up' : 'bi-archive') + ' me-2';
+
+            const label = archiveButton.querySelector('[data-doc-archive-label]');
+            if (label) label.textContent = archived ? 'Reativar' : 'Arquivar';
+        }
+    };
+
     // --- refresh sem reload -----------------------------------------------------
 
     const toggleLiveIndicator = (visible) => {
@@ -228,7 +236,14 @@
         }
     };
 
-    const refreshState = async () => {
+    // `skipCatalog`: o polling periódico (a cada 5s, enquanto há envio na
+    // fila) só precisa refletir o status dos envios/links — recriar o
+    // innerHTML da tabela de catálogo nesse meio tempo reseta silenciosamente
+    // qualquer interação em andamento do usuário ali (versão escolhida no
+    // <select>, dropdown de Ações aberto). As ações que realmente alteram o
+    // catálogo (gerar/enviar/compartilhar/arquivar) continuam atualizando-o
+    // normalmente, pois chamam refreshState() sem essa flag.
+    const refreshState = async ({ skipCatalog = false } = {}) => {
         if (state.refreshing) {
             return;
         }
@@ -239,6 +254,10 @@
             const payload = await requestJson(config.routes.state);
 
             Object.entries(payload.fragments || {}).forEach(([key, html]) => {
+                if (skipCatalog && key === 'catalog') {
+                    return;
+                }
+
                 const target = document.querySelector(`[data-fragment="${key}"]`);
                 if (target) {
                     target.innerHTML = html;
@@ -246,8 +265,9 @@
             });
 
             state.pendingSends = Number(payload.meta?.pending_sends || 0);
-            applySelectionToDom();
-            applyCatalogSelectionToDom();
+            if (!skipCatalog) {
+                applyCatalogSelectionToDom();
+            }
             evaluatePolling();
         } catch (error) {
             console.error('[Documentos] Falha ao atualizar a central documental', error);
@@ -284,7 +304,7 @@
                 return;
             }
 
-            refreshState();
+            refreshState({ skipCatalog: true });
         }, 5000);
     };
 
@@ -309,7 +329,18 @@
 
     // --- geração de documentos ---------------------------------------------------
 
-    const generateTypes = async (types) => {
+    const signatureModalElement = document.getElementById('documentSignatureModal');
+    const signatureModal = getModal(signatureModalElement);
+    let pendingGenerationTypes = [];
+
+    const generateTypes = (types) => {
+        const uniqueTypes = Array.from(new Set(types.filter(Boolean)));
+        if (uniqueTypes.length === 0 || state.busy.generate) return;
+        pendingGenerationTypes = uniqueTypes;
+        signatureModal?.show();
+    };
+
+    const submitGeneration = async (types, signaturePayload = {}) => {
         const uniqueTypes = Array.from(new Set(types.filter(Boolean)));
         if (uniqueTypes.length === 0 || state.busy.generate) {
             return;
@@ -335,7 +366,7 @@
         try {
             const payload = await requestJson(config.routes.generate, {
                 method: 'POST',
-                body: { tipos: uniqueTypes },
+                body: { tipos: uniqueTypes, ...signaturePayload },
             });
 
             showToast('success', payload.message || 'Documentos gerados com sucesso.');
@@ -346,6 +377,21 @@
                     'warning',
                     'Alguns documentos não foram gerados',
                     failed.map((item) => item.message).filter(Boolean).join('\n')
+                );
+            }
+
+            const clientLinks = (payload.results || []).filter((item) => item.signature_url);
+            if (clientLinks.length > 0) {
+                const absoluteLinks = clientLinks.map((item) => new URL(item.signature_url, window.location.origin).toString());
+                if (navigator.clipboard && absoluteLinks.length === 1) {
+                    await navigator.clipboard.writeText(absoluteLinks[0]).catch(() => {});
+                }
+                showAlert(
+                    'success',
+                    'Link de assinatura criado',
+                    absoluteLinks.length === 1
+                        ? `Envie este link ao cliente (ele também foi copiado): ${absoluteLinks[0]}`
+                        : absoluteLinks.join('\n')
                 );
             }
 
@@ -362,16 +408,74 @@
         }
     };
 
+    if (signatureModalElement) {
+        const modeInputs = Array.from(signatureModalElement.querySelectorAll('input[name="document_signature_mode"]'));
+        const userFields = signatureModalElement.querySelector('[data-signature-user-fields]');
+        const credentials = signatureModalElement.querySelector('[data-signature-credentials]');
+        const userSelect = signatureModalElement.querySelector('[data-signature-user]');
+        const emailInput = signatureModalElement.querySelector('[data-signature-email]');
+        const passwordInput = signatureModalElement.querySelector('[data-signature-password]');
+
+        const syncSignatureMode = () => {
+            const mode = modeInputs.find((input) => input.checked)?.value || 'self';
+            userFields?.classList.toggle('d-none', mode === 'self' || mode === 'client');
+            credentials?.classList.toggle('d-none', mode !== 'reauth');
+            if (mode !== 'reauth' && passwordInput) passwordInput.value = '';
+        };
+
+        modeInputs.forEach((input) => input.addEventListener('change', syncSignatureMode));
+        userSelect?.addEventListener('change', () => {
+            const selected = userSelect.selectedOptions[0];
+            if (emailInput) emailInput.value = selected?.dataset.email || '';
+        });
+
+        signatureModalElement.querySelector('[data-signature-confirm]')?.addEventListener('click', async () => {
+            const mode = modeInputs.find((input) => input.checked)?.value || 'self';
+            const userId = Number(userSelect?.value || 0);
+            if (mode !== 'self' && mode !== 'client' && userId <= 0) {
+                showAlert('warning', 'Selecione o responsável', 'Escolha um usuário com assinatura cadastrada.');
+                return;
+            }
+            if (mode === 'reauth' && (!emailInput?.value || !passwordInput?.value)) {
+                showAlert('warning', 'Confirme as credenciais', 'Informe o e-mail e a senha do usuário que assinará.');
+                return;
+            }
+
+            const payload = {
+                signature_mode: mode,
+                signature_user_id: mode === 'self' ? null : userId,
+                signature_email: mode === 'reauth' ? emailInput.value : null,
+                signature_password: mode === 'reauth' ? passwordInput.value : null,
+            };
+            signatureModal.hide();
+            if (passwordInput) passwordInput.value = '';
+            await submitGeneration(pendingGenerationTypes, payload);
+            pendingGenerationTypes = [];
+        });
+
+        signatureModalElement.addEventListener('hidden.bs.modal', () => {
+            if (passwordInput) passwordInput.value = '';
+        });
+        syncSignatureMode();
+    }
+
     // --- modal de envio ------------------------------------------------------------
 
-    const getSelectedDocumentMeta = () => Array.from(document.querySelectorAll('[data-document-row-checkbox]'))
-        .filter((checkbox) => state.selected.has(checkbox.value))
-        .map((checkbox) => ({
-            id: checkbox.value,
-            templateCode: checkbox.dataset.documentTemplateCode || '',
-            suggestedMessage: checkbox.dataset.documentSuggestedMessage || '',
-            label: checkbox.dataset.documentLabel || 'Documento',
-        }));
+    // Metadados (template sugerido/mensagem/rótulo) vivem no <tr> da linha do
+    // catálogo — atualizados por applyVersionSelection() a cada troca de
+    // versão — e são localizados a partir do id selecionado via o botão de
+    // ação daquela linha (qualquer um dos data-doc-row-* serve de âncora).
+    const getSelectedDocumentMeta = () => Array.from(state.selected).map((id) => {
+        const trigger = document.querySelector(`[data-doc-row-send="${id}"], [data-doc-row-zip="${id}"]`);
+        const row = trigger?.closest('[data-doc-type-card]');
+
+        return {
+            id,
+            templateCode: row?.dataset.documentTemplateCode || '',
+            suggestedMessage: row?.dataset.documentSuggestedMessage || '',
+            label: row?.dataset.documentLabel || 'Documento',
+        };
+    });
 
     const buildGenericMessage = (labels) => {
         if (labels.length === 0) {
@@ -701,27 +805,21 @@
 
     // --- ZIP / impressão -----------------------------------------------------------------
 
+    // ZIP/impressão de uma linha do catálogo sempre pega o A4 como formato
+    // (não há mais um seletor de formato na tela — quem quiser o 80mm usa
+    // "Visualizar 80mm" direto).
     const buildSelectionUrl = (baseUrl) => {
-        const format = document.getElementById('docActionFormat')?.value || 'a4';
         const params = new URLSearchParams();
         state.selected.forEach((id) => params.append('document_ids[]', id));
-        params.set('format', format);
+        params.set('format', 'a4');
 
         return `${baseUrl}?${params.toString()}`;
     };
 
-    // Ação de uma linha específica do catálogo (um só documento, o mais
-    // recente daquele tipo) não deve depender da seleção via checkbox do
-    // acervo — troca state.selected pelo id explícito, sem reler os
-    // checkboxes (resyncSelectionFromLiveDom reverteria essa troca).
+    // Cada ação de linha do catálogo (ZIP/imprimir/link/enviar) sempre passa
+    // um id explícito — não existe mais seleção via checkbox para reler.
     const applyExplicitSelection = (explicitIds) => {
-        if (!explicitIds) {
-            resyncSelectionFromLiveDom();
-            return;
-        }
-
-        state.selected = new Set(explicitIds.map(String));
-        applySelectionToDom();
+        state.selected = new Set((explicitIds || []).map(String));
     };
 
     const downloadZip = (explicitIds = null) => {
@@ -787,44 +885,6 @@
             return;
         }
 
-        if (event.target.closest('[data-doc-select-all]')) {
-            document.querySelectorAll('[data-document-row-checkbox]').forEach((checkbox) => {
-                checkbox.checked = true;
-                state.selected.add(checkbox.value);
-            });
-            updateActionBar();
-            return;
-        }
-
-        if (event.target.closest('[data-doc-clear-all]')) {
-            document.querySelectorAll('[data-document-row-checkbox]').forEach((checkbox) => {
-                checkbox.checked = false;
-            });
-            state.selected.clear();
-            updateActionBar();
-            return;
-        }
-
-        if (event.target.closest('[data-doc-action-zip]')) {
-            downloadZip();
-            return;
-        }
-
-        if (event.target.closest('[data-doc-action-print]')) {
-            openPrint();
-            return;
-        }
-
-        if (event.target.closest('[data-doc-action-share]')) {
-            openShareModal();
-            return;
-        }
-
-        if (event.target.closest('[data-doc-action-send]')) {
-            openSendModal();
-            return;
-        }
-
         const archiveButton = event.target.closest('[data-doc-archive-toggle]');
         if (archiveButton) {
             const documentId = archiveButton.getAttribute('data-doc-archive-toggle');
@@ -845,14 +905,8 @@
     });
 
     document.addEventListener('change', (event) => {
-        if (event.target.matches?.('[data-document-row-checkbox]')) {
-            const checkbox = event.target;
-            if (checkbox.checked) {
-                state.selected.add(checkbox.value);
-            } else {
-                state.selected.delete(checkbox.value);
-            }
-            updateActionBar();
+        if (event.target.matches?.('[data-doc-version-select]')) {
+            applyVersionSelection(event.target);
             return;
         }
 

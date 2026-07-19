@@ -1620,7 +1620,23 @@ class EquipmentWorkflowService
 
     private function normalizeStoredPath(string $path): string
     {
-        return trim(str_replace('\\', '/', $path));
+        $normalized = trim(str_replace('\\', '/', $path));
+        if (
+            $normalized === ''
+            || str_contains($normalized, "\0")
+            || str_starts_with($normalized, '/')
+            || (bool) preg_match('/^[a-z]:\//i', $normalized)
+            || (bool) preg_match('#(^|/)\.\.(/|$)#', $normalized)
+        ) {
+            return '';
+        }
+
+        $segments = array_values(array_filter(
+            explode('/', $normalized),
+            static fn (string $segment): bool => $segment !== '' && $segment !== '.'
+        ));
+
+        return implode('/', $segments);
     }
 
     private function resolveTypeName(int $typeId): string

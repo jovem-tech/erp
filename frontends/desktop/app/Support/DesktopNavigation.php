@@ -211,7 +211,7 @@ class DesktopNavigation
                             ],
                             [
                                 'label' => 'Modelos PDF',
-                                'route' => 'knowledge.pdf-templates.index',
+                                'route' => 'knowledge.pdf-engine.index',
                                 'module' => 'conhecimento',
                                 'icon' => 'bi-file-earmark-pdf-fill',
                             ],

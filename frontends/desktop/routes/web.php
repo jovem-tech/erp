@@ -24,8 +24,9 @@ use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\OrcamentoController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderStatusFlowController;
-use App\Http\Controllers\PdfTemplateController;
+use App\Http\Controllers\PdfTemplateEngineController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PublicDocumentSignatureController;
 use App\Http\Controllers\ReportedDefectController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\ServicoController;
@@ -48,6 +49,13 @@ Route::get('/branding/empresa/logo', [ConfigurationController::class, 'publicCom
     ->name('branding.company.logo');
 Route::get('/branding/login/background', [ConfigurationController::class, 'publicLoginBackground'])
     ->name('branding.login.background');
+Route::get('/assinar-documento/{token}', [PublicDocumentSignatureController::class, 'show'])
+    ->where('token', '[A-Za-z0-9]{64}')
+    ->name('document-signatures.public.show');
+Route::post('/assinar-documento/{token}', [PublicDocumentSignatureController::class, 'store'])
+    ->where('token', '[A-Za-z0-9]{64}')
+    ->middleware('throttle:10,1')
+    ->name('document-signatures.public.store');
 
 Route::middleware('guest')->group(function (): void {
     Route::get('/login', [AuthController::class, 'create'])->name('login');
@@ -78,6 +86,8 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/perfil/configuracoes', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/perfil', [ProfileController::class, 'update'])->name('profile.update');
     Route::patch('/perfil/senha', [ProfileController::class, 'updatePassword'])->name('profile.password.update');
+    Route::post('/perfil/assinatura', [ProfileController::class, 'updateSignature'])->name('profile.signature.update');
+    Route::get('/perfil/assinatura/imagem', [ProfileController::class, 'signatureImage'])->name('profile.signature.image');
 
     Route::get('/configuracoes/sistema', [ConfigurationController::class, 'system'])
         ->middleware('desktop.permission:configuracoes,visualizar')
@@ -243,6 +253,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/os/{order}/documentos/gerar', [OrderController::class, 'documentsCenterGenerate'])
         ->middleware('desktop.permission:os,editar')
         ->name('orders.documents.generate');
+    Route::post('/documentos/assinaturas/{signatureRequest}/assinar', [OrderController::class, 'signPendingDocument'])
+        ->whereNumber('signatureRequest')
+        ->name('document-signatures.sign');
     Route::post('/os/{order}/documentos/enviar', [OrderController::class, 'documentsCenterSend'])
         ->middleware('desktop.permission:os,editar')
         ->name('orders.documents.send');
@@ -526,25 +539,70 @@ Route::middleware('desktop.auth')->group(function (): void {
         ->middleware('desktop.permission:conhecimento,editar')
         ->name('knowledge.defects.procedures.move');
 
-    Route::get('/conhecimento/modelos-pdf', [PdfTemplateController::class, 'index'])
+    // Motor central de documentos PDF: a página Modelos PDF agora lista os
+    // tipos documentais registrados e edita templates por blocos (rascunho /
+    // publicação / versões / prévia). As rotas legadas permanecem somente
+    // como redirecionamentos para preservar favoritos sem manter dois
+    // editores concorrentes.
+    Route::get('/conhecimento/modelos-pdf', [PdfTemplateEngineController::class, 'index'])
+        ->middleware('desktop.permission:conhecimento,visualizar')
+        ->name('knowledge.pdf-engine.index');
+    Route::post('/conhecimento/modelos-pdf', [PdfTemplateEngineController::class, 'store'])
+        ->middleware('desktop.permission:conhecimento,editar')
+        ->name('knowledge.pdf-engine.store');
+    Route::get('/conhecimento/modelos-pdf/motor/{template}', [PdfTemplateEngineController::class, 'edit'])
+        ->whereNumber('template')
+        ->middleware('desktop.permission:conhecimento,visualizar')
+        ->name('knowledge.pdf-engine.edit');
+    Route::post('/conhecimento/modelos-pdf/motor/{template}/clonar', [PdfTemplateEngineController::class, 'cloneTemplate'])
+        ->whereNumber('template')
+        ->middleware('desktop.permission:conhecimento,editar')
+        ->name('knowledge.pdf-engine.clone');
+    Route::put('/conhecimento/modelos-pdf/motor/{template}/rascunho', [PdfTemplateEngineController::class, 'saveDraft'])
+        ->whereNumber('template')
+        ->middleware('desktop.permission:conhecimento,editar')
+        ->name('knowledge.pdf-engine.draft');
+    Route::post('/conhecimento/modelos-pdf/motor/{template}/publicar', [PdfTemplateEngineController::class, 'publish'])
+        ->whereNumber('template')
+        ->middleware('desktop.permission:conhecimento,publicar')
+        ->name('knowledge.pdf-engine.publish');
+    Route::post('/conhecimento/modelos-pdf/motor/{template}/versoes/{versao}/restaurar', [PdfTemplateEngineController::class, 'restore'])
+        ->whereNumber('template')
+        ->whereNumber('versao')
+        ->middleware('desktop.permission:conhecimento,restaurar')
+        ->name('knowledge.pdf-engine.restore');
+    Route::post('/conhecimento/modelos-pdf/motor/{template}/previa', [PdfTemplateEngineController::class, 'preview'])
+        ->whereNumber('template')
+        ->middleware('desktop.permission:conhecimento,visualizar')
+        ->name('knowledge.pdf-engine.preview');
+
+    Route::get('/conhecimento/modelos-pdf/legado', [PdfTemplateEngineController::class, 'legacyRetired'])
         ->middleware('desktop.permission:conhecimento,visualizar')
         ->name('knowledge.pdf-templates.index');
-    Route::get('/conhecimento/modelos-pdf/novo', [PdfTemplateController::class, 'create'])
+    Route::get('/conhecimento/modelos-pdf/novo', [PdfTemplateEngineController::class, 'legacyRetired'])
         ->middleware('desktop.permission:conhecimento,criar')
         ->name('knowledge.pdf-templates.create');
-    Route::post('/conhecimento/modelos-pdf', [PdfTemplateController::class, 'store'])
+    Route::post('/conhecimento/modelos-pdf/legado', [PdfTemplateEngineController::class, 'legacyRetired'])
         ->middleware('desktop.permission:conhecimento,criar')
         ->name('knowledge.pdf-templates.store');
-    Route::get('/conhecimento/modelos-pdf/{template}/editar', [PdfTemplateController::class, 'edit'])
+    Route::get('/conhecimento/modelos-pdf/{template}/editar', [PdfTemplateEngineController::class, 'legacyRetired'])
+        ->whereNumber('template')
         ->middleware('desktop.permission:conhecimento,editar')
         ->name('knowledge.pdf-templates.edit');
-    Route::match(['put', 'patch'], '/conhecimento/modelos-pdf/{template}', [PdfTemplateController::class, 'update'])
+    Route::get('/conhecimento/modelos-pdf/{template}/previa', [PdfTemplateEngineController::class, 'legacyRetired'])
+        ->whereNumber('template')
+        ->middleware('desktop.permission:conhecimento,visualizar')
+        ->name('knowledge.pdf-templates.preview');
+    Route::match(['put', 'patch'], '/conhecimento/modelos-pdf/{template}', [PdfTemplateEngineController::class, 'legacyRetired'])
+        ->whereNumber('template')
         ->middleware('desktop.permission:conhecimento,editar')
         ->name('knowledge.pdf-templates.update');
-    Route::patch('/conhecimento/modelos-pdf/{template}/ativo', [PdfTemplateController::class, 'toggleActive'])
+    Route::patch('/conhecimento/modelos-pdf/{template}/ativo', [PdfTemplateEngineController::class, 'legacyRetired'])
+        ->whereNumber('template')
         ->middleware('desktop.permission:conhecimento,editar')
         ->name('knowledge.pdf-templates.toggle-active');
-    Route::delete('/conhecimento/modelos-pdf/{template}', [PdfTemplateController::class, 'destroy'])
+    Route::delete('/conhecimento/modelos-pdf/{template}', [PdfTemplateEngineController::class, 'legacyRetired'])
+        ->whereNumber('template')
         ->middleware('desktop.permission:conhecimento,excluir')
         ->name('knowledge.pdf-templates.destroy');
 

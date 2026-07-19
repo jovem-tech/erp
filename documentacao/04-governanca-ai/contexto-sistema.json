@@ -1,11 +1,11 @@
 {
-    "generated_at": "2026-07-15T22:31:56+00:00",
+    "generated_at": "2026-07-19T06:32:05+00:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "4.8.2",
-        "api_version": "1.2.0",
+        "app_version": "4.25.1",
+        "api_version": "1.3.0",
         "production_target": "Ubuntu VPS",
-        "development_target": "Windows/XAMPP"
+        "development_target": "Ubuntu Server LAN - BANCADA-02 (192.168.1.100)"
     },
     "architecture": {
         "backend": "Laravel 13.x em backend/ como fonte unica de verdade",
@@ -426,6 +426,22 @@
                     "title": "OS — PDF de abertura e envio opcional ao cliente"
                 },
                 {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-18-gestao-contas-e-saldos-financeiros.md",
+                    "title": "Gestão de contas e saldos financeiros"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-18-motor-central-documentos-pdf.md",
+                    "title": "Motor central e templates modernos de PDF"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-19-assinaturas-digitais-documentos.md",
+                    "title": "Assinaturas digitais e rastreabilidade documental"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-19-consolidado-implementacoes-18-19-julho.md",
+                    "title": "Consolidado das implementações de 18 e 19 de julho de 2026"
+                },
+                {
                     "file": "documentacao/07-novas-implementacoes/historico-de-versoes.md",
                     "title": "Historico de versoes"
                 }
@@ -759,6 +775,21 @@
                 "analysis": false,
                 "data_model": false,
                 "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/021-gestao-contas-financeiras",
+            "title": "Feature Specification: Gestão de contas financeiras e disponibilidade de caixa",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": true,
+                "analysis": false,
+                "data_model": true,
+                "contracts": true,
                 "checklists": false
             }
         }
