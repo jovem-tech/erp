@@ -1073,6 +1073,68 @@ class FinanceiroTest extends TestCase
         ]);
     }
 
+    public function test_closure_preview_ignores_cancelled_title_even_when_more_recent_than_active_one(): void
+    {
+        // Reproduz bug relatado em produção: a prévia da baixa (GET
+        // /orders/{id}/closure) buscava "o" título a receber mais recente da
+        // OS sem filtrar status cancelado — igual ao bug original de
+        // ensureReceivableTitle(), mas na tela que MOSTRA o saldo antes de
+        // confirmar. Se o título cancelado for mais recente que o ativo, a
+        // prévia exibia "saldo em aberto" do título ERRADO (o cancelado);
+        // o usuário via um valor que fechava certinho na tela, mas a
+        // confirmação falhava com "O valor da baixa não pode ser maior que o
+        // saldo em aberto do título" porque close()/processReceipts() usa o
+        // título ativo de verdade (ensureReceivableTitle(), que já filtra
+        // cancelado corretamente).
+        $actor = $this->createUserRecord(['grupo_id' => 1]);
+        $this->grantGroupPermissions(1, ['os' => ['editar']]);
+        $clienteId = $this->createClientRecord(['nome_razao' => 'Cliente Preview']);
+        $equipamentoId = $this->createEquipmentRecord($clienteId);
+
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clienteId,
+            'equipamento_id' => $equipamentoId,
+            'numero_os' => 'OS26070301',
+            'status' => 'entregue_pagamento_pendente',
+            'valor_final' => 486.00,
+        ]);
+
+        $tituloAtivoId = (int) Financeiro::query()->create([
+            'os_id' => $orderId,
+            'cliente_id' => $clienteId,
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'categoria' => 'Serviço',
+            'descricao' => 'Cobrança da OS',
+            'valor' => 486.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->toDateString(),
+            'created_at' => now(),
+        ])->id;
+
+        // Título cancelado criado DEPOIS do ativo (created_at mais recente) —
+        // é exatamente essa ordenação que expõe o bug do "orderByDesc" sem
+        // filtro de status.
+        Financeiro::query()->create([
+            'os_id' => $orderId,
+            'cliente_id' => $clienteId,
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'categoria' => 'Serviço',
+            'descricao' => 'Cobrança cancelada por erro',
+            'valor' => 150.00,
+            'status' => Financeiro::STATUS_CANCELADO,
+            'data_vencimento' => now()->toDateString(),
+            'created_at' => now()->addMinutes(10),
+        ]);
+
+        Sanctum::actingAs($actor, ['*']);
+
+        $response = $this->getJson("/api/v1/orders/{$orderId}/closure");
+
+        $response->assertOk()
+            ->assertJsonPath('data.financeiro.titulo_id', $tituloAtivoId)
+            ->assertJsonPath('data.financeiro.valor_aberto', 486.0);
+    }
+
     public function test_cancel_with_fechamento_indevido_reverts_order_to_pre_closure_status(): void
     {
         [$actor, $orderId, $financeiroId] = $this->createClosedOrderReceivable(['data_conclusao' => now()]);
