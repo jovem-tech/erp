@@ -330,7 +330,6 @@
                                 'Cor' => $equipment['cor'] ?? '',
                                 'N° de série' => $order['equipamento_numero_serie'] ?? ($equipment['numero_serie'] ?? ''),
                                 'IMEI' => $equipment['imei'] ?? '',
-                                'Acessórios' => $equipment['acessorios'] ?? '',
                                 'Observações' => $equipment['observacoes'] ?? '',
                             ], fn ($v) => trim((string) $v) !== '');
                         @endphp

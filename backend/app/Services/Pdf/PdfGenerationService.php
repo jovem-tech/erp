@@ -36,6 +36,20 @@ class PdfGenerationService
     ) {
     }
 
+    public function publishedTemplateFingerprint(string $tipoCodigo): ?string
+    {
+        $version = $this->resolvePublishedVersion($tipoCodigo);
+        if (! $version instanceof PdfTemplateVersao) {
+            return null;
+        }
+
+        return hash('sha256', implode('|', [
+            (string) $version->template_id,
+            (string) $version->versao,
+            (string) ($version->hash_schema ?? ''),
+        ]));
+    }
+
     /**
      * @param array<string, mixed> $subject ex.: ['order' => Order] | ['budget' => Budget]
      * @param array<string, mixed> $options formato (a4|80mm), actor (User), approval_link, dados do encerramento...
@@ -78,9 +92,17 @@ class PdfGenerationService
                 'versao_template' => 'v' . (int) $versao->versao,
             ];
 
-            $signatureMetadata = $this->signatureContext($actor, $options);
-            $hasHumanSigner = $actor instanceof User
-                || ($options['signature_signer'] ?? null) instanceof User;
+            $unsignedReview = (bool) ($options['unsigned_review'] ?? false);
+            $signatureMetadata = $unsignedReview
+                ? [
+                    'context' => ['responsavel' => null, 'cliente' => null],
+                    'audit' => ['modo' => 'previa_sem_assinatura'],
+                ]
+                : $this->signatureContext($actor, $options);
+            $hasHumanSigner = ! $unsignedReview && (
+                $actor instanceof User
+                || ($options['signature_signer'] ?? null) instanceof User
+            );
             if (
                 $hasHumanSigner
                 && (bool) config('document-signatures.require_user_signature', true)

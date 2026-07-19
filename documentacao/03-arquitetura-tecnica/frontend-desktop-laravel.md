@@ -128,6 +128,7 @@ A navbar do desktop já transpôs as funções principais do topo do legado:
 - busca completa com autocomplete e filtro por escopo, incluindo texto livre em OS, clientes, equipamentos e orçamentos;
 - ação rápida `Nova OS`, visível apenas com `os:criar`;
 - notificações com contador, abertura do item, marcação individual e marcação geral, carregadas sob demanda para não travar o render inicial;
+- caixa separada de `Mensagens e documentos`, posicionada a partir da borda inicial do ícone e limitada à viewport para nunca ficar oculta sob a sidebar, tanto expandida quanto recolhida;
 - loader visual de transição de página no desktop, exibido antes de navegações e submits para reduzir a sensação de travamento;
 - menu do usuário com `Meu Perfil`, `Configurações do perfil`, `Sair` e `Sair e Esquecer Login`.
 - recuperação de senha pública com envio de link para o e-mail cadastrado e tela de redefinição no desktop, sempre dependente de um canal seguro de e-mail configurado no backend central.
@@ -328,7 +329,8 @@ Módulos entregues nesta fase:
 - cadastro rápido de peças ou serviços em modal, sem sair do fluxo do orçamento e com aplicação imediata ao item atual
 - cadastro completo em `/equipamentos/novo` com abas `Informações`, `Cor` e `Fotos`
 - edicao completa em `/equipamentos/{id}/editar`, reutilizando o mesmo Blade e o mesmo JavaScript operacional do cadastro
-- na aba `Informações`, o layout operacional fica em um único bloco: `Cliente` em largura total, linha corrida com `Tipo`, `Marca`, `Modelo` e `Nº Série ou IMEI`, senha logo abaixo, `Acessórios` e `Estado físico` lado a lado, e `Observações` fechando a seção
+- na aba `Informações`, o layout operacional fica em um único bloco: `Cliente` em largura total, linha corrida com `Tipo`, `Marca`, `Modelo` e `Nº Série ou IMEI`, senha logo abaixo, `Estado físico` e `Observações`; acessórios recebidos não fazem parte do cadastro permanente do equipamento e são registrados exclusivamente na OS
+- no assistente de criação/edição da OS, `Acessórios recebidos nesta OS` mantém o snapshot da recepção, sem alterar o equipamento e alimentando detalhes, auditoria e PDFs da própria ordem
 - em viewport móvel, os campos inline com ação rápida (`select/input + botão +`) continuam ocupando largura útil do container, sem colapsar o Select2 nem empurrar o input para largura zero
 - criação exige ao menos uma foto no submit local e no backend, mantendo placeholder seguro para equipamentos legados sem imagem
 - edicao exige ao menos uma foto no estado final, combinando fotos existentes e novas no mesmo preview antes do submit

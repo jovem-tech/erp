@@ -21,6 +21,9 @@ class DocumentSignatureRequest extends Model
         'expira_em' => 'datetime',
         'assinada_em' => 'datetime',
         'cancelada_em' => 'datetime',
+        'revisada_por' => 'integer',
+        'revisada_em' => 'datetime',
+        'revisao_confirmada_em' => 'datetime',
     ];
 
     public function order(): BelongsTo
@@ -36,6 +39,11 @@ class DocumentSignatureRequest extends Model
     public function responsibleUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'usuario_responsavel_id', 'id');
+    }
+
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'revisada_por', 'id');
     }
 
     public function document(): BelongsTo

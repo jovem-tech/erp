@@ -1,7 +1,7 @@
 # Assinaturas digitais e rastreabilidade documental
 
 **Data:** 19/07/2026  
-**Versão:** `4.26.0.0`  
+**Versão:** `4.26.3.0`
 **Status:** migration aplicada e módulo ativo no ambiente de desenvolvimento LAN; não publicado na VPS de produção
 
 ## Objetivo
@@ -45,6 +45,10 @@ Enquanto não houver assinatura ativa, o desktop exibe um aviso permanente com a
 
 O criador atribui o documento a outro usuário. O PDF só é emitido quando o responsável assina. Se a OS for alterada entre solicitação e assinatura, a pendência é recusada para impedir que alguém assine conteúdo diferente do revisado.
 
+Antes da assinatura, o botão da pendência abre **Visualizar e analisar**. Essa tela renderiza o PDF A4 completo sem a imagem da assinatura e sem criar uma versão no acervo. Somente depois de a prévia carregar o usuário pode confirmar que leu todas as páginas e acionar **Assinar e emitir documento**.
+
+O backend não confia apenas no estado do botão: registra o usuário revisor, data, snapshot da OS, fingerprint da versão publicada do template e fingerprints de IP/user-agent. A assinatura direta pela API é recusada sem revisão do mesmo usuário nos últimos 30 minutos. Uma alteração na OS ou a publicação de outra versão do template invalida a revisão.
+
 As solicitações aparecem tanto na Central de Documentos quanto em **Perfil > Configurações > Documentos aguardando assinatura**. O responsável assina na própria sessão; o solicitante pode concluir no mesmo terminal somente após reautenticar o responsável.
 
 #### Ciência multicanal da designação
@@ -77,6 +81,8 @@ O sistema cria um token aleatório de 64 caracteres, persiste apenas o SHA-256 e
 - token do cliente é de uso único e expira;
 - locks por solicitação impedem duas emissões concorrentes, tanto no fluxo interno quanto no link do cliente;
 - autorização específica por pendência, evitando conceder acesso amplo à OS.
+- revisão obrigatória, vinculada ao usuário e ao snapshot da OS, validada novamente no endpoint de assinatura;
+- prévias privadas usam `no-store`, não incluem a assinatura e não geram uma versão documental imutável;
 - links enviados aos funcionários exigem autenticação normal no ERP e não carregam tokens de sessão;
 - e-mail e telefone não são persistidos em texto aberto no histórico de entregas externas;
 
@@ -88,7 +94,7 @@ A caixa de correspondências reutiliza `mobile_notifications`, filtrada por pref
 
 ## Operação e deploy
 
-Executar as migrations `2026_07_19_000002_create_document_signature_infrastructure.php` e `2026_07_19_000003_create_document_signature_notification_deliveries.php`, limpar caches do backend e do desktop e confirmar que o driver de cache compartilhado é Redis em produção. Os arquivos de assinatura devem fazer parte da rotina de backup do armazenamento privado, com acesso restrito ao usuário do serviço.
+Executar as migrations `2026_07_19_000002_create_document_signature_infrastructure.php`, `2026_07_19_000003_create_document_signature_notification_deliveries.php`, `2026_07_19_000005_require_document_review_before_signature.php` e `2026_07_19_000006_bind_signature_review_to_pdf_template.php`, limpar caches do backend e do desktop e confirmar que o driver de cache compartilhado é Redis em produção. Os arquivos de assinatura devem fazer parte da rotina de backup do armazenamento privado, com acesso restrito ao usuário do serviço.
 
 A administração deve conferir a coluna **Assinatura** e concluir o cadastro dos usuários ativos. Por padrão, `DOCUMENT_SIGNATURES_REQUIRED=true`: todo PDF atribuído a um usuário é recusado enquanto ele não tiver assinatura ativa. Processos puramente sistêmicos, sem ator humano, continuam permitidos e são identificados como **Sistema** na auditoria. Em uma janela de migração controlada, a exigência pode ser temporariamente desativada com `DOCUMENT_SIGNATURES_REQUIRED=false`.
 
@@ -99,11 +105,13 @@ A administração deve conferir a coluna **Assinatura** e concluir o cadastro do
 - reautenticação com atribuição ao signatário correto sem trocar o ator da sessão;
 - token do cliente armazenado em hash, uso único e consentimento auditado;
 - bloqueio de documento humano sem assinatura ativa;
+- bloqueio de assinatura direta sem prévia revisada e confirmação explícita;
+- auditoria da revisão e entrega da prévia como PDF privado sem cache;
 - renderização dos tipos PDF em A4 e 80 mm;
 - identificação do signatário por nome, função e data efetiva da assinatura;
 - alinhamento estável das duas linhas com uma ou duas assinaturas presentes;
 - paridade da Central Documental e guarda contra geradores paralelos;
-- 24 testes focados aprovados, com 197 asserções, nas suítes de assinatura, motor PDF e paridade da Central Documental.
+- 32 testes focados aprovados, com 260 asserções, nas suítes de assinatura, motor PDF e paridade da Central Documental.
 
 A compilação dos templates Blade e a listagem de rotas também foram validadas.
 A automação visual pelo navegador interno não conseguiu atravessar o certificado

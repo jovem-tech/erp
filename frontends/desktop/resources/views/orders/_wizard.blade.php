@@ -66,6 +66,7 @@
 
     $canCreateClient = \App\Support\DesktopSession::can('clientes', 'criar');
     $selectedRelato = trim((string) old('relato_cliente', data_get($order, 'relato_cliente', '')));
+    $selectedAccessories = trim((string) old('acessorios', data_get($order, 'acessorios', '')));
     $selectedOperacionaisNote = trim((string) old('observacoes_internas', data_get($order, 'observacoes_internas', '')));
     $selectedPrevisao = trim((string) old('data_previsao', data_get($order, 'data_previsao', '')));
 
@@ -454,6 +455,26 @@
                         </select>
                         @error('equipamento_id')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
                         <small class="text-secondary d-block mt-2">Busque por nome, serie ou cliente. Se o equipamento nao estiver cadastrado, abra o modal de cadastro sem sair da OS.</small>
+                    </div>
+
+                    <div class="order-create-field order-create-field-span-2">
+                        <label for="orderAccessories">Acessórios recebidos nesta OS</label>
+                        <textarea
+                            id="orderAccessories"
+                            name="acessorios"
+                            class="form-control @error('acessorios') is-invalid @enderror"
+                            rows="3"
+                            maxlength="2000"
+                            placeholder="Ex.: carregador, fonte, mouse, cabo HDMI ou bolsa"
+                            data-order-create-accessories
+                        >{{ $selectedAccessories }}</textarea>
+                        @error('acessorios')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                        <div class="equipment-chip-preset mt-2" aria-label="Atalhos de acessórios recebidos">
+                            @foreach (['Carregador', 'Fonte', 'Mouse', 'Teclado', 'Cabo HDMI', 'Bolsa'] as $preset)
+                                <button type="button" class="equipment-chip-button" data-order-accessory-preset="{{ $preset }}">{{ $preset }}</button>
+                            @endforeach
+                        </div>
+                        <small class="text-secondary d-block mt-2">Este registro pertence somente a esta ordem de serviço e não altera o cadastro permanente do equipamento.</small>
                     </div>
 
                     <div class="order-create-field order-create-field-span-2">

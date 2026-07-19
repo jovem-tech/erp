@@ -40,6 +40,7 @@
                 type="button"
                 class="desktop-icon-button position-relative"
                 data-bs-toggle="dropdown"
+                data-bs-boundary="viewport"
                 aria-expanded="false"
                 aria-label="Notificações"
                 data-desktop-notification-toggle
@@ -48,7 +49,7 @@
                 <span class="desktop-notification-badge d-none" data-desktop-notification-badge></span>
             </button>
 
-            <div class="dropdown-menu dropdown-menu-end desktop-notification-menu" data-desktop-notification-menu>
+            <div class="dropdown-menu dropdown-menu-start desktop-notification-menu" data-desktop-notification-menu>
                 <div class="desktop-dropdown-head">
                     <div>
                         <strong>Notificações</strong>
@@ -95,6 +96,7 @@
                 type="button"
                 class="desktop-icon-button position-relative"
                 data-bs-toggle="dropdown"
+                data-bs-boundary="viewport"
                 aria-expanded="false"
                 aria-label="Mensagens e documentos"
                 title="Mensagens e documentos"
@@ -104,7 +106,7 @@
                 <span class="desktop-notification-badge d-none" data-desktop-correspondence-badge></span>
             </button>
 
-            <div class="dropdown-menu dropdown-menu-end desktop-notification-menu" data-desktop-correspondence-menu>
+            <div class="dropdown-menu dropdown-menu-start desktop-notification-menu" data-desktop-correspondence-menu>
                 <div class="desktop-dropdown-head">
                     <div>
                         <strong>Mensagens e documentos</strong>

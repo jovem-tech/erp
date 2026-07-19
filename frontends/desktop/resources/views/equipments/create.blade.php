@@ -457,17 +457,7 @@
                 </section>
 
                 <div class="desktop-filter-grid equipment-create-grid mt-4">
-                    <div class="field-span-2">
-                        <label for="equipmentAccessories">Acessórios</label>
-                        <textarea name="acessorios" id="equipmentAccessories" class="form-control" rows="2" placeholder="Ex.: carregador, mouse, cabo HDMI">{{ $fieldValue('acessorios') }}</textarea>
-                        <div class="equipment-chip-preset mt-2">
-                            @foreach (['Carregador', 'Fonte', 'Mouse', 'Teclado', 'Cabo HDMI', 'Bolsa'] as $preset)
-                                <button type="button" class="equipment-chip-button" data-fill-target="equipmentAccessories" data-fill-value="{{ $preset }}">{{ $preset }}</button>
-                            @endforeach
-                        </div>
-                    </div>
-
-                    <div class="field-span-2">
+                    <div class="field-span-4">
                         <label for="equipmentPhysicalState">Estado físico</label>
                         <textarea name="estado_fisico" id="equipmentPhysicalState" class="form-control" rows="3" placeholder="Descreva avarias, faltas de peças, riscos ou estado geral">{{ $fieldValue('estado_fisico') }}</textarea>
                     </div>

@@ -224,12 +224,19 @@ class DocumentSignatureWorkflowService
                 'responsible_email' => (string) ($item->responsibleUser?->email ?? ''),
                 'requested_at' => $item->created_at?->toIso8601String(),
                 'expires_at' => $item->expira_em?->toIso8601String(),
+                'reviewed_at' => $item->revisada_em?->toIso8601String(),
             ])
             ->values()
             ->all();
     }
 
-    public function assertCanSign(DocumentSignatureRequest $signatureRequest, User $sessionUser, array $payload, Request $request): User
+    public function assertCanSign(
+        DocumentSignatureRequest $signatureRequest,
+        User $sessionUser,
+        array $payload,
+        Request $request,
+        string $templateFingerprint
+    ): User
     {
         if ((string) $signatureRequest->status !== 'pendente') {
             throw new InvalidArgumentException('Esta solicitação não está mais pendente.');
@@ -237,6 +244,8 @@ class DocumentSignatureWorkflowService
         if ($signatureRequest->expira_em !== null && $signatureRequest->expira_em->isPast()) {
             throw new InvalidArgumentException('Esta solicitação de assinatura expirou.');
         }
+
+        $this->assertReviewCompleted($signatureRequest, $sessionUser, $templateFingerprint);
 
         $target = $signatureRequest->responsibleUser()->where('ativo', true)->first();
         if (! $target instanceof User) {
@@ -256,6 +265,85 @@ class DocumentSignatureWorkflowService
         $this->requireActiveSignature($target);
 
         return $target;
+    }
+
+    public function assertCanReview(DocumentSignatureRequest $signatureRequest, User $sessionUser): void
+    {
+        if ((string) $signatureRequest->status !== 'pendente') {
+            throw new InvalidArgumentException('Esta solicitação não está mais pendente.');
+        }
+        if ($signatureRequest->expira_em !== null && $signatureRequest->expira_em->isPast()) {
+            throw new InvalidArgumentException('Esta solicitação de assinatura expirou.');
+        }
+
+        $allowed = in_array((int) $sessionUser->id, [
+            (int) $signatureRequest->solicitada_por,
+            (int) $signatureRequest->usuario_responsavel_id,
+        ], true);
+        if (! $allowed) {
+            throw new InvalidArgumentException('Você não possui acesso a esta solicitação de assinatura.');
+        }
+    }
+
+    public function recordReview(
+        DocumentSignatureRequest $signatureRequest,
+        User $sessionUser,
+        string $templateFingerprint,
+        ?string $ip,
+        ?string $userAgent
+    ): void {
+        $this->assertCanReview($signatureRequest, $sessionUser);
+        if (! preg_match('/^[a-f0-9]{64}$/', $templateFingerprint)) {
+            throw new InvalidArgumentException('Não foi possível identificar a versão do template revisado.');
+        }
+        $signatureRequest->loadMissing('order');
+        if (! $signatureRequest->order instanceof Order) {
+            throw new InvalidArgumentException('A OS vinculada à solicitação não foi encontrada.');
+        }
+
+        $snapshotHash = $this->orderSnapshotHash($signatureRequest->order);
+        if (! hash_equals((string) $signatureRequest->snapshot_os_hash, $snapshotHash)) {
+            throw new InvalidArgumentException('A OS foi alterada. Gere uma nova solicitação antes da revisão.');
+        }
+
+        DB::transaction(function () use ($signatureRequest, $sessionUser, $snapshotHash, $templateFingerprint, $ip, $userAgent): void {
+            $locked = DocumentSignatureRequest::query()->lockForUpdate()->findOrFail((int) $signatureRequest->id);
+            $this->assertCanReview($locked, $sessionUser);
+            $locked->forceFill([
+                'revisada_por' => (int) $sessionUser->id,
+                'revisao_snapshot_hash' => $snapshotHash,
+                'revisao_template_hash' => $templateFingerprint,
+                'revisao_ip_hash' => $this->fingerprint($ip),
+                'revisao_user_agent_hash' => $this->fingerprint($userAgent),
+                'revisada_em' => now(),
+                'revisao_confirmada_em' => null,
+            ])->save();
+        }, 3);
+    }
+
+    private function assertReviewCompleted(
+        DocumentSignatureRequest $signatureRequest,
+        User $sessionUser,
+        string $templateFingerprint
+    ): void
+    {
+        $reviewedAt = $signatureRequest->revisada_em;
+        $reviewIsCurrent = $reviewedAt !== null && $reviewedAt->greaterThanOrEqualTo(now()->subMinutes(30));
+        $sameReviewer = (int) $signatureRequest->revisada_por === (int) $sessionUser->id;
+        $sameSnapshot = hash_equals(
+            (string) ($signatureRequest->revisao_snapshot_hash ?? ''),
+            (string) $signatureRequest->snapshot_os_hash
+        );
+        $sameTemplate = hash_equals(
+            (string) ($signatureRequest->revisao_template_hash ?? ''),
+            $templateFingerprint
+        );
+
+        if (! $reviewIsCurrent || ! $sameReviewer || ! $sameSnapshot || ! $sameTemplate) {
+            throw new InvalidArgumentException(
+                'Visualize e analise o documento antes de assinar. A revisão é válida por 30 minutos.'
+            );
+        }
     }
 
     public function complete(
@@ -290,6 +378,7 @@ class DocumentSignatureWorkflowService
                 'ip_hash' => $this->fingerprint($ip),
                 'user_agent_hash' => $this->fingerprint($userAgent),
                 'assinada_em' => now(),
+                'revisao_confirmada_em' => now(),
             ])->save();
         }, 3);
     }

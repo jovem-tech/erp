@@ -25,7 +25,7 @@ class StoreEquipmentRequest extends BaseApiFormRequest
             'senha_acesso' => ['nullable', 'string', 'max:255'],
             'senha_desenho' => ['nullable', 'string', 'max:255'],
             'estado_fisico' => ['nullable', 'string'],
-            'acessorios' => ['nullable', 'string'],
+            'acessorios' => ['prohibited'],
             'observacoes' => ['nullable', 'string'],
             'desktop_modalidade' => ['nullable', 'string', Rule::in(['montado', 'oem'])],
             'gabinete_tipo' => ['nullable', 'string', 'max:120'],
@@ -44,6 +44,13 @@ class StoreEquipmentRequest extends BaseApiFormRequest
             'collector_pairing_code' => ['nullable', 'string', 'max:32'],
             'fotos' => ['required', 'array', 'min:1', 'max:4'],
             'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'acessorios.prohibited' => 'Registre os acessórios recebidos na ordem de serviço, não no equipamento.',
         ];
     }
 

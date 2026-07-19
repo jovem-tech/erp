@@ -76,6 +76,9 @@ Route::prefix('v1')->group(function (): void {
         Route::get('auth/signature/image', [UserSignatureController::class, 'image'])->middleware('throttle:60,1');
         Route::get('document-signatures/signers', [DocumentSignatureController::class, 'signers']);
         Route::get('document-signatures/pending', [DocumentSignatureController::class, 'pending']);
+        Route::get('document-signatures/{signatureRequest}/preview', [DocumentSignatureController::class, 'preview'])
+            ->whereNumber('signatureRequest')
+            ->middleware('throttle:30,1');
         Route::post('document-signatures/{signatureRequest}/sign', [DocumentSignatureController::class, 'sign'])
             ->whereNumber('signatureRequest')
             ->middleware('throttle:20,1');

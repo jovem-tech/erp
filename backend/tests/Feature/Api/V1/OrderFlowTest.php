@@ -246,6 +246,7 @@ class OrderFlowTest extends TestCase
                 'cliente_id' => $clientId,
                 'equipamento_id' => $equipmentId,
                 'relato_cliente' => 'Notebook liga sem apresentar imagem.',
+                'acessorios' => 'Carregador original, bolsa de transporte',
                 'garantia_dias' => 90,
                 'checklist_entrada' => [
                     'observacoes_estado' => 'Fonte original acompanha o equipamento.',
@@ -265,12 +266,19 @@ class OrderFlowTest extends TestCase
             ]);
 
         $createResponse->assertCreated()
+            ->assertJsonPath('data.order.acessorios', 'Carregador original, bolsa de transporte')
             ->assertJsonPath('data.order.checklist.total_itens', 2)
             ->assertJsonPath('data.order.checklist.total_discrepancias', 1)
             ->assertJsonPath('data.order.checklist.respostas.1.status', 'discrepancia')
             ->assertJsonPath('data.order.checklist_modelo_entrada.id', $modelId);
 
         $orderId = (int) $createResponse->json('data.order.id');
+
+        $this->assertDatabaseHas('os', [
+            'id' => $orderId,
+            'equipamento_id' => $equipmentId,
+            'acessorios' => 'Carregador original, bolsa de transporte',
+        ]);
 
         $this->assertDatabaseHas('checklist_execucoes', [
             'os_id' => $orderId,

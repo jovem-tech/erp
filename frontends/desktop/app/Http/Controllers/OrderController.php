@@ -625,6 +625,7 @@ class OrderController extends DesktopController
             'enviar_pdf_cliente' => ['nullable', 'boolean'],
             'tecnico_id' => ['nullable', 'integer', 'min:1'],
             'data_previsao' => ['nullable', 'date'],
+            'acessorios' => ['nullable', 'string', 'max:2000'],
             'observacoes_internas' => ['nullable', 'string'],
             'checklist_entrada' => ['nullable', 'array'],
             'checklist_entrada.observacoes_estado' => ['nullable', 'string', 'max:2000'],
@@ -641,6 +642,7 @@ class OrderController extends DesktopController
             'prioridade' => 'prioridade',
             'tecnico_id' => 'técnico',
             'data_previsao' => 'data de previsão',
+            'acessorios' => 'acessórios recebidos',
             'observacoes_internas' => 'observações internas',
         ]);
 
@@ -651,6 +653,7 @@ class OrderController extends DesktopController
             'prioridade' => $validated['prioridade'] ?? null,
             'tecnico_id' => isset($validated['tecnico_id']) ? (int) $validated['tecnico_id'] : null,
             'data_previsao' => $validated['data_previsao'] ?? null,
+            'acessorios' => trim((string) ($validated['acessorios'] ?? '')),
             'observacoes_internas' => trim((string) ($validated['observacoes_internas'] ?? '')),
         ], static fn ($value): bool => $value !== null && $value !== '');
         $payload['enviar_pdf_cliente'] = $request->boolean('enviar_pdf_cliente');
@@ -955,6 +958,7 @@ class OrderController extends DesktopController
             'prioridade' => ['nullable', 'string', 'in:baixa,normal,alta,urgente'],
             'tecnico_id' => ['nullable', 'integer', 'min:1'],
             'data_previsao' => ['nullable', 'date'],
+            'acessorios' => ['nullable', 'string', 'max:2000'],
             'observacoes_internas' => ['nullable', 'string'],
             'checklist_entrada' => ['nullable', 'array'],
             'checklist_entrada.observacoes_estado' => ['nullable', 'string', 'max:2000'],
@@ -971,6 +975,7 @@ class OrderController extends DesktopController
             'prioridade' => 'prioridade',
             'tecnico_id' => 'técnico',
             'data_previsao' => 'data de previsão',
+            'acessorios' => 'acessórios recebidos',
             'observacoes_internas' => 'observações internas',
         ]);
 
@@ -981,6 +986,7 @@ class OrderController extends DesktopController
             'prioridade' => $validated['prioridade'] ?? null,
             'tecnico_id' => isset($validated['tecnico_id']) ? (int) $validated['tecnico_id'] : null,
             'data_previsao' => $validated['data_previsao'] ?? null,
+            'acessorios' => trim((string) ($validated['acessorios'] ?? '')),
             'observacoes_internas' => trim((string) ($validated['observacoes_internas'] ?? '')),
         ];
 
@@ -1491,11 +1497,51 @@ class OrderController extends DesktopController
             ->with('success', $successMessage);
     }
 
+    public function reviewPendingDocument(int $signatureRequest): View|RedirectResponse
+    {
+        try {
+            $pending = collect($this->orderService->pendingDocumentSignatures())
+                ->first(static fn (array $item): bool => (int) ($item['id'] ?? 0) === $signatureRequest);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
+
+        if (! is_array($pending)) {
+            return back()->with('error', 'A solicitação de assinatura não está mais disponível.');
+        }
+
+        return view('orders.document-signature-review', [
+            'pageTitle' => 'Revisar documento antes de assinar',
+            'pending' => $pending,
+            'isResponsible' => (int) ($pending['responsible_user_id'] ?? 0)
+                === (int) (DesktopSession::user()['id'] ?? 0),
+        ]);
+    }
+
+    public function previewPendingDocument(int $signatureRequest): Response|RedirectResponse
+    {
+        try {
+            $file = $this->orderService->previewPendingDocumentSignature($signatureRequest);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return response($exception->getMessage(), max(400, min(599, $exception->statusCode() ?: 422)), [
+                'Content-Type' => 'text/plain; charset=UTF-8',
+                'Cache-Control' => 'private, no-store, max-age=0',
+            ]);
+        }
+
+        return response($file['body'], $file['status'])->withHeaders($file['headers']);
+    }
+
     public function signPendingDocument(Request $request, int $signatureRequest): RedirectResponse
     {
         $validated = $request->validate([
             'signature_email' => ['nullable', 'email', 'max:160'],
             'signature_password' => ['nullable', 'string', 'max:200'],
+            'review_confirmed' => ['accepted'],
         ]);
 
         try {

@@ -31,6 +31,8 @@
         relatoField: document.getElementById('relatoCliente'),
         defectSuggestions: document.querySelector('[data-order-create-defect-suggestions]'),
         observacoesField: document.getElementById('observacoesInternas'),
+        accessoriesField: document.querySelector('[data-order-create-accessories]'),
+        accessoryPresetButtons: Array.from(document.querySelectorAll('[data-order-accessory-preset]')),
         previsaoField: document.getElementById('dataPrevisao'),
         prazoEntregaSelect: document.getElementById('prazoEntrega'),
         photosInput: document.getElementById(config.photosInputId || 'orderPhotos'),
@@ -2067,6 +2069,35 @@
         window.addEventListener('message', handleEmbeddedEquipmentCreated);
     };
 
+    const initAccessoryPresets = () => {
+        if (!(els.accessoriesField instanceof HTMLTextAreaElement)) {
+            return;
+        }
+
+        els.accessoryPresetButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+                const preset = normalizeText(button.dataset.orderAccessoryPreset || '');
+                if (preset === '') {
+                    return;
+                }
+
+                const accessories = els.accessoriesField.value
+                    .split(',')
+                    .map((item) => normalizeText(item))
+                    .filter((item) => item !== '');
+                const alreadyIncluded = accessories.some((item) => item.toLocaleLowerCase('pt-BR') === preset.toLocaleLowerCase('pt-BR'));
+
+                if (! alreadyIncluded) {
+                    accessories.push(preset);
+                    els.accessoriesField.value = accessories.join(', ');
+                    els.accessoriesField.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+
+                els.accessoriesField.focus();
+            });
+        });
+    };
+
     const initSelectors = () => {
         if (!hasWizardForm || (!(els.clientSelect instanceof HTMLSelectElement) && !(els.equipmentSelect instanceof HTMLSelectElement))) {
             return;
@@ -2136,6 +2167,7 @@
     initPhotos();
     initQuickClient();
     initQuickEquipment();
+    initAccessoryPresets();
     initFormValidation();
     initSubmitButton();
     updateSummary();

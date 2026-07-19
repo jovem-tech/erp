@@ -545,7 +545,6 @@ class EquipmentController extends BaseApiController
             'senha_acesso' => '',
             'senha_acesso_configurada' => trim((string) ($equipment->senha_acesso ?? '')) !== '',
             'estado_fisico' => (string) ($equipment->estado_fisico ?? ''),
-            'acessorios' => (string) ($equipment->acessorios ?? ''),
             'observacoes' => (string) ($equipment->observacoes ?? ''),
             'desktop_modalidade' => (string) ($equipment->desktop_modalidade ?? ''),
             'gabinete_tipo' => (string) ($equipment->gabinete_tipo ?? ''),
