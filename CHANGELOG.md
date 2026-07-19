@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.25.2.0 — 2026-07-19 04:03
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Corrige prévia da baixa da OS (GET /orders/{id}/closure) mostrando o saldo em aberto de um título já cancelado em vez do título ativo, quando o cancelado é mais recente; a tela dizia 'Saldo em aberto R$0,00' mas a confirmação falhava com 'O valor da baixa não pode ser maior que o saldo em aberto do título' porque close() usa o título ativo de verdade. Mesmo filtro que ensureReceivableTitle() já aplicava, agora também em financialSummary()
+- **Arquivos:** backend/app/Services/Orders/OrderClosureService.php,backend/tests/Feature/Api/V1/FinanceiroTest.php
+
 ## v4.25.1.0 — 2026-07-19 03:29
 - **Tier:** patch
 - **Autor/Agente:** Claude

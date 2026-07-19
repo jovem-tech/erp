@@ -1572,9 +1572,17 @@ class OrderClosureService
      */
     private function financialSummary(Order $order): array
     {
+        // Mesmo filtro de ensureReceivableTitle(): um título cancelado (ex.:
+        // motivo "erro_cobranca") não pode ser o que aparece na prévia da
+        // baixa. Sem esse filtro, se o título cancelado for o mais recente,
+        // a prévia mostra o saldo em aberto DELE — divergindo do título ativo
+        // que close()/processReceipts() de fato usa — e o usuário vê "Saldo em
+        // aberto R$0,00" na tela mas a confirmação falha com "O valor da baixa
+        // não pode ser maior que o saldo em aberto do título".
         $titulo = Financeiro::query()
             ->where('os_id', $order->id)
             ->where('tipo', Financeiro::TIPO_RECEBER)
+            ->where('status', '!=', Financeiro::STATUS_CANCELADO)
             ->orderByDesc('created_at')
             ->orderByDesc('id')
             ->first();
