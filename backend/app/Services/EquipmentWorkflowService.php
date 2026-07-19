@@ -734,7 +734,6 @@ class EquipmentWorkflowService
             'senha_acesso',
             'senha_desenho',
             'estado_fisico',
-            'acessorios',
             'observacoes',
             'desktop_modalidade',
             'gabinete_tipo',
@@ -775,7 +774,6 @@ class EquipmentWorkflowService
         $normalized['senha_acesso'] = $this->nullableString($normalized['senha_acesso'] ?? null);
         $normalized['senha_desenho'] = $this->nullableString($normalized['senha_desenho'] ?? null);
         $normalized['estado_fisico'] = $this->nullableString($normalized['estado_fisico'] ?? null);
-        $normalized['acessorios'] = $this->nullableString($normalized['acessorios'] ?? null);
         $normalized['observacoes'] = $this->nullableString($normalized['observacoes'] ?? null);
         $normalized['desktop_modalidade'] = $this->normalizeDesktopMode($normalized['desktop_modalidade'] ?? null);
         $normalized['gabinete_tipo'] = $this->nullableString($normalized['gabinete_tipo'] ?? null);

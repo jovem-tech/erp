@@ -149,10 +149,7 @@
             </div>
             <div class="d-grid gap-2">
                 @foreach ($pendingSignatures as $pendingSignature)
-                    @php $isMySignature = (int) ($pendingSignature['responsible_user_id'] ?? 0) === (int) (\App\Support\DesktopSession::user()['id'] ?? 0); @endphp
-                    <form method="post" action="{{ route('document-signatures.sign', (int) ($pendingSignature['id'] ?? 0)) }}" class="border rounded-4 p-3 d-grid gap-3">
-                        @csrf
-                        <input type="hidden" name="order_id" value="{{ (int) ($pendingSignature['order_id'] ?? 0) }}">
+                    <div class="border rounded-4 p-3 d-grid gap-3">
                         <div class="d-flex flex-wrap justify-content-between gap-2">
                             <div>
                                 <strong>{{ $pendingSignature['order_number'] ?? 'OS' }} · {{ $pendingSignature['document_type'] ?? 'Documento' }}</strong>
@@ -160,14 +157,12 @@
                             </div>
                             <span class="desktop-chip">Aguardando assinatura</span>
                         </div>
-                        @unless ($isMySignature)
-                            <div class="desktop-grid desktop-grid-two">
-                                <div><label>E-mail do responsável</label><input type="email" name="signature_email" class="form-control" value="{{ $pendingSignature['responsible_email'] ?? '' }}" required></div>
-                                <div><label>Senha do responsável</label><input type="password" name="signature_password" class="form-control" maxlength="200" autocomplete="current-password" required></div>
-                            </div>
-                        @endunless
-                        <div class="d-flex justify-content-end"><button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-pen me-2"></i>Assinar e emitir</button></div>
-                    </form>
+                        <div class="d-flex justify-content-end">
+                            <a href="{{ route('document-signatures.review', (int) ($pendingSignature['id'] ?? 0)) }}" class="btn btn-primary btn-sm">
+                                <i class="bi bi-eye me-2"></i>Visualizar e analisar
+                            </a>
+                        </div>
+                    </div>
                 @endforeach
             </div>
         </article>

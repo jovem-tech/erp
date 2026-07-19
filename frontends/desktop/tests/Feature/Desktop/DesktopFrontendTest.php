@@ -2718,7 +2718,13 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Mensagens e documentos')
             ->assertSee('Resumo carregado sob demanda.')
             ->assertSee('Abra este menu para carregar as notificações mais recentes.')
+            ->assertSee('dropdown-menu-start desktop-notification-menu', false)
+            ->assertSee('data-bs-boundary="viewport"', false)
+            ->assertDontSee('dropdown-menu-end desktop-notification-menu', false)
             ->assertDontSee('Configurações do sistema');
+
+        $this->assertSame(2, substr_count($response->getContent(), 'dropdown-menu-start desktop-notification-menu'));
+        $this->assertSame(2, substr_count($response->getContent(), 'data-bs-boundary="viewport"'));
     }
 
     public function test_dashboard_data_route_returns_expanded_summary_json(): void
@@ -3485,6 +3491,9 @@ class DesktopFrontendTest extends TestCase
             ->assertDontSee('data-select2="false"', false)
             ->assertSee('Busque por nome, serie ou cliente')
             ->assertSee(route('orders.equipments.search'), false)
+            ->assertSee('Acessórios recebidos nesta OS')
+            ->assertSee('name="acessorios"', false)
+            ->assertSee('Este registro pertence somente a esta ordem de serviço')
             ->assertSee('Relato do cliente')
             ->assertSee('Enviar PDF ao cliente');
     }
@@ -3579,6 +3588,7 @@ class DesktopFrontendTest extends TestCase
                 'cliente_id' => 11,
                 'equipamento_id' => 21,
                 'relato_cliente' => 'Notebook não liga.',
+                'acessorios' => 'Carregador original, Bolsa',
                 'prioridade' => 'alta',
                 'data_previsao' => '2026-06-24',
                 'observacoes_internas' => 'Prioridade do balcão.',
@@ -3591,6 +3601,7 @@ class DesktopFrontendTest extends TestCase
 
         Http::assertSent(static function ($request): bool {
             return $request->url() === 'http://127.0.0.1:8000/api/v1/orders'
+                && $request['acessorios'] === 'Carregador original, Bolsa'
                 && $request['enviar_pdf_cliente'] === true;
         });
     }
@@ -4990,6 +5001,7 @@ class DesktopFrontendTest extends TestCase
                         'data_entrada' => '01/07/2026 09:00',
                         'data_previsao' => '2026-07-15',
                         'relato_cliente' => 'cooler do processador com mal funcionamento.',
+                        'acessorios' => 'Carregador original',
                         'observacoes_internas' => 'Cliente avisado sobre orcamento.',
                         'fotos' => [
                             ['id' => 91, 'tipo_label' => 'Entrada', 'nome_arquivo' => 'foto1.jpg'],
@@ -5070,6 +5082,7 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Tecnico Banco')
             ->assertSee('Em execução do serviço')
             ->assertSee('cooler do processador', false)
+            ->assertSee('Carregador original')
             ->assertSee('Fotos ja anexadas', false)
             ->assertSee(asset('assets/libs/cropperjs/cropper.min.css'), false)
             ->assertSee(asset('assets/libs/cropperjs/cropper.min.js'), false)
@@ -5101,6 +5114,8 @@ class DesktopFrontendTest extends TestCase
         $this->assertStringContainsString('commitCroppedPhoto(croppedFile', $script);
         $this->assertStringContainsString('transfer.items.add(entry.file)', $script);
         $this->assertStringContainsString('maxPhotoUploadBytes', $script);
+        $this->assertStringContainsString('initAccessoryPresets', $script);
+        $this->assertStringContainsString('accessoriesField', $script);
     }
 
     public function test_orders_closure_receipt_validator_reads_account_from_current_row(): void
@@ -5251,6 +5266,7 @@ class DesktopFrontendTest extends TestCase
                 'cliente_id' => 201,
                 'equipamento_id' => 301,
                 'relato_cliente' => 'Cooler trocado, aguardando testes finais.',
+                'acessorios' => 'Fonte ATX, Cabo de força',
                 'prioridade' => 'alta',
                 'data_previsao' => '2026-07-20',
                 'observacoes_internas' => 'Peca chegou no prazo.',
@@ -5271,6 +5287,8 @@ class DesktopFrontendTest extends TestCase
                 && str_contains($contentType, 'multipart/form-data')
                 && str_contains($body, 'name="_method"')
                 && str_contains($body, "\r\n\r\nPATCH\r\n")
+                && str_contains($body, 'name="acessorios"')
+                && str_contains($body, 'Fonte ATX, Cabo de força')
                 && str_contains($body, 'name="fotos[]"')
                 && str_contains($body, 'reparo.jpg');
         });
@@ -5603,10 +5621,12 @@ class DesktopFrontendTest extends TestCase
             'Marca',
             'Modelo',
             'Senha de acesso',
-            'Acess',
             'Estado f',
             'Observa',
         ]);
+        $response
+            ->assertDontSee('id="equipmentAccessories"', false)
+            ->assertDontSee('name="acessorios"', false);
 
         /*
             ->assertSee('Cadastro rÃ¡pido de cliente')
@@ -6515,6 +6535,67 @@ class DesktopFrontendTest extends TestCase
             'error' => null,
             'meta' => [],
         ], $overrides);
+    }
+
+    public function test_pending_signature_requires_document_review_page_before_signing(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/document-signatures/pending' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'requests' => [[
+                        'id' => 73,
+                        'order_id' => 501,
+                        'order_number' => 'OS26070009',
+                        'document_type' => 'abertura',
+                        'requested_by' => 'Atendente',
+                        'responsible_user_id' => 99,
+                        'responsible_user' => 'Usuário de Teste',
+                        'responsible_email' => 'usuario@teste.local',
+                    ]],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession($this->desktopSession(['os' => ['visualizar']]))
+            ->get('/documentos/assinaturas/73/revisar');
+
+        $response
+            ->assertOk()
+            ->assertSee('Visualize e analise antes de assinar')
+            ->assertSee('Prévia completa do documento')
+            ->assertSee(route('document-signatures.preview', 73), false)
+            ->assertSee('name="review_confirmed"', false)
+            ->assertSee('data-review-confirmation', false)
+            ->assertSee('Assinar e emitir documento');
+    }
+
+    public function test_pending_signature_preview_is_proxied_as_private_pdf(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/document-signatures/73/preview' => Http::response(
+                '%PDF-1.4 preview',
+                200,
+                [
+                    'Content-Type' => 'application/pdf',
+                    'Content-Disposition' => 'inline; filename="preview.pdf"',
+                    'Cache-Control' => 'private, no-store, max-age=0',
+                ]
+            ),
+        ]));
+
+        $response = $this
+            ->withSession($this->desktopSession(['os' => ['visualizar']]))
+            ->get('/documentos/assinaturas/73/previa');
+
+        $response
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf')
+            ->assertSee('%PDF-1.4 preview', false);
+        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
     }
 
     private function desktopSession(array $permissions, ?int $syncedAt = null): array

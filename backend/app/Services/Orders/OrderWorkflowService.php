@@ -2391,12 +2391,6 @@ class OrderWorkflowService
             'imei' => (string) ($equipment->imei ?? ''),
             'desktop_modalidade' => (string) ($equipment->desktop_modalidade ?? ''),
             'resumo_tecnico' => (string) ($equipment->resumo_tecnico ?? ''),
-            // Acessórios que o cliente trouxe junto com o aparelho (nível
-            // equipamento) — diferente de $order->acessorios (nível OS,
-            // observação específica deste atendimento), exposto separadamente
-            // em mapDetail(). Ambos aparecem no detalhe da OS, em cards
-            // diferentes.
-            'acessorios' => (string) ($equipment->acessorios ?? ''),
             'observacoes' => (string) ($equipment->observacoes ?? ''),
             'status_operacional' => (string) ($equipment->status_operacional ?? ''),
             'status' => (string) ($equipment->status ?? ''),

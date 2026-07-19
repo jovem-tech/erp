@@ -167,9 +167,6 @@
             </div>
 
             @forelse (($pendingSignatures ?? []) as $pending)
-                @php
-                    $isResponsible = (int) ($pending['responsible_user_id'] ?? 0) === (int) ($profile['id'] ?? 0);
-                @endphp
                 <div class="signature-pending-row">
                     <div>
                         <strong>{{ $pending['document_type'] ?? 'Documento' }} · {{ $pending['order_number'] ?? 'OS' }}</strong>
@@ -178,15 +175,11 @@
                             @if (!empty($pending['requested_by'])) · Solicitado por {{ $pending['requested_by'] }} @endif
                         </div>
                     </div>
-                    <form method="post" action="{{ route('document-signatures.sign', (int) ($pending['id'] ?? 0)) }}" class="signature-pending-action">
-                        @csrf
-                        <input type="hidden" name="order_id" value="{{ (int) ($pending['order_id'] ?? 0) }}">
-                        @unless ($isResponsible)
-                            <input type="email" name="signature_email" class="form-control form-control-sm" value="{{ $pending['responsible_email'] ?? '' }}" autocomplete="username" readonly aria-label="E-mail do responsável">
-                            <input type="password" name="signature_password" class="form-control form-control-sm" maxlength="200" autocomplete="current-password" placeholder="Senha do responsável" required aria-label="Senha do responsável">
-                        @endunless
-                        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-pen me-1"></i>Assinar e emitir</button>
-                    </form>
+                    <div class="signature-pending-action">
+                        <a href="{{ route('document-signatures.review', (int) ($pending['id'] ?? 0)) }}" class="btn btn-primary btn-sm">
+                            <i class="bi bi-eye me-1"></i>Visualizar e analisar
+                        </a>
+                    </div>
                 </div>
             @empty
                 <div class="signature-pending-empty">

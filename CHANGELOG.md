@@ -1,5 +1,29 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v4.26.3.0 — 2026-07-19 18:10
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** substitui a assinatura direta de documentos pendentes por um fluxo obrigatório de visualização e análise da prévia completa, com confirmação explícita antes de assinar e emitir
+- **Segurança:** o backend rejeita assinatura sem revisão recente do mesmo usuário, do mesmo snapshot da OS e da mesma versão/hash do template PDF; prévia sem assinatura, privada, sem cache, com autorização por solicitação e auditoria de data/IP/user-agent em hash
+- **Performance:** a prévia é renderizada sob demanda sem persistir versão documental; consulta de pendências permanece limitada e indexada
+- **Arquivos:** backend/database/migrations/2026_07_19_000005_require_document_review_before_signature.php,backend/database/migrations/2026_07_19_000006_bind_signature_review_to_pdf_template.php,backend/app/Models/DocumentSignatureRequest.php,backend/app/Services/Pdf/PdfGenerationService.php,backend/app/Services/Orders/OrderDocumentCenterService.php,backend/app/Services/Signatures/DocumentSignatureWorkflowService.php,backend/app/Http/Controllers/Api/V1/DocumentSignatureController.php,backend/routes/api.php,backend/openapi.yaml,backend/tests/Concerns/BuildsLegacyErpSchema.php,backend/tests/Feature/Api/V1/DocumentSignatureSecurityTest.php,frontends/desktop/app/Services/OrderService.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/routes/web.php,frontends/desktop/resources/views/orders/document-signature-review.blade.php,frontends/desktop/resources/views/orders/documents-center.blade.php,frontends/desktop/resources/views/profile/edit.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/07-novas-implementacoes/2026-07-19-assinaturas-digitais-documentos.md,VERSION,CHANGELOG.md
+
+## v4.26.2.0 — 2026-07-19 17:21
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige as caixas de Notificações e Mensagens e documentos para abrirem à direita dos respectivos ícones, sem ficarem ocultas sob a sidebar expandida ou recolhida
+- **Segurança:** mantém o posicionamento calculado pelo Bootstrap limitado à viewport, sem introduzir HTML dinâmico ou alterar os controles de autorização das mensagens
+- **Performance:** correção declarativa no posicionamento do dropdown, sem listeners, consultas ou processamento adicional no navegador
+- **Arquivos:** frontends/desktop/resources/views/layouts/partials/navbar.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/03-arquitetura-tecnica/frontend-desktop-laravel.md,VERSION,CHANGELOG.md
+
+## v4.26.1.0 — 2026-07-19 14:01
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Move o registro de acessórios do cadastro permanente do equipamento para a criação e edição da OS, mantém detalhes e PDFs ligados ao snapshot da recepção e migra os valores legados de forma conservadora e auditável
+- **Segurança:** backend rejeita acessórios no agregado de equipamento; validação de tamanho na OS; migration não sobrescreve valores existentes e mantém arquivo reversível dos dados legados
+- **Performance:** migração processada em lotes de 200 registros e consulta as OS mais recentes em lote, sem N+1
+- **Arquivos:** backend/database/migrations/2026_07_19_000004_move_equipment_accessories_to_orders.php,backend/app/Http/Requests/Api/V1/StoreEquipmentRequest.php,backend/app/Http/Requests/Api/V1/UpsertOrderRequest.php,backend/app/Http/Controllers/Api/V1/EquipmentController.php,backend/app/Services/EquipmentWorkflowService.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/openapi.yaml,backend/tests/Feature/Api/V1/EquipmentCreationTest.php,backend/tests/Feature/Api/V1/OrderFlowTest.php,backend/tests/Feature/Database/MoveEquipmentAccessoriesToOrdersMigrationTest.php,frontends/desktop/app/Http/Controllers/EquipmentController.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/resources/views/equipments/create.blade.php,frontends/desktop/resources/views/orders/_wizard.blade.php,frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/public/assets/js/orders-create.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/03-arquitetura-tecnica/frontend-desktop-laravel.md,documentacao/07-novas-implementacoes/2026-07-19-acessorios-por-ordem-servico.md
+
 ## v4.26.0.0 — 2026-07-19 09:28
 - **Tier:** minor
 - **Autor/Agente:** Codex

@@ -6,6 +6,7 @@ use App\Jobs\DispatchDocumentSignatureAssignmentJob;
 use App\Models\Order;
 use App\Models\OrderDocument;
 use App\Models\User;
+use App\Services\Orders\OrderDocumentCenterService;
 use App\Services\Integrations\EmailIntegrationSettingsService;
 use App\Services\Integrations\IntegrationSettingsService;
 use App\Services\Signatures\DocumentSignatureAssignmentNotifier;
@@ -278,6 +279,102 @@ class DocumentSignatureSecurityTest extends TestCase
         $this->assertSame('cliente_canvas', (string) $request->metodo_assinatura);
         $this->assertSame('cliente_link', (string) $document->metodo_assinatura);
         $this->assertNull($workflow->resolvePublic($token), 'O token deixa de ser utilizável após a assinatura.');
+    }
+
+    public function test_staff_signature_is_rejected_until_the_assigned_document_was_reviewed(): void
+    {
+        Queue::fake();
+        $responsible = $this->user('Técnico Revisor', 'revisor@example.test', 'SenhaTecnico123!');
+        Sanctum::actingAs($responsible);
+        $this->post('/api/v1/auth/signature', [
+            'current_password' => 'SenhaTecnico123!',
+            'origin' => 'upload',
+            'signature_file' => UploadedFile::fake()->image('assinatura.png', 500, 160),
+        ])->assertOk();
+
+        $order = $this->signatureReviewOrder('OS-REVIEW-BLOCK');
+        $pending = app(DocumentSignatureWorkflowService::class)
+            ->createPending($order, $responsible, $responsible, ['abertura'])[0];
+        $this->mock(OrderDocumentCenterService::class, function ($mock): void {
+            $mock->shouldReceive('pendingSignatureTemplateFingerprint')
+                ->once()
+                ->andReturn(str_repeat('c', 64));
+        });
+
+        $this->postJson('/api/v1/document-signatures/' . (int) $pending->id . '/sign', [
+            'review_confirmed' => true,
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'SIGNATURE_REQUEST_INVALID')
+            ->assertJsonPath('error.message', 'Visualize e analise o documento antes de assinar. A revisão é válida por 30 minutos.');
+    }
+
+    public function test_preview_records_audited_review_before_enabling_staff_signature(): void
+    {
+        Queue::fake();
+        $responsible = $this->user('Técnico Revisor', 'preview@example.test', 'SenhaTecnico123!');
+        Sanctum::actingAs($responsible);
+        $this->post('/api/v1/auth/signature', [
+            'current_password' => 'SenhaTecnico123!',
+            'origin' => 'upload',
+            'signature_file' => UploadedFile::fake()->image('assinatura.png', 500, 160),
+        ])->assertOk();
+        $order = $this->signatureReviewOrder('OS-REVIEW-PREVIEW');
+        $pending = app(DocumentSignatureWorkflowService::class)
+            ->createPending($order, $responsible, $responsible, ['abertura'])[0];
+
+        $this->mock(OrderDocumentCenterService::class, function ($mock): void {
+            $mock->shouldReceive('previewPendingSignature')
+                ->once()
+                ->andReturn([
+                    'result' => 'ok',
+                    'bytes' => '%PDF-1.4 reviewed document',
+                    'filename' => 'previa-abertura.pdf',
+                    'template_fingerprint' => str_repeat('c', 64),
+                ]);
+        });
+        $response = $this->get('/api/v1/document-signatures/' . (int) $pending->id . '/preview', [
+            'User-Agent' => 'Review Test Browser',
+        ]);
+        $response
+            ->assertOk()
+            ->assertHeader('Content-Type', 'application/pdf')
+            ->assertSee('%PDF-1.4 reviewed document', false);
+        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
+
+        $pending->refresh();
+        $this->assertSame((int) $responsible->id, (int) $pending->revisada_por);
+        $this->assertSame((string) $pending->snapshot_os_hash, (string) $pending->revisao_snapshot_hash);
+        $this->assertSame(str_repeat('c', 64), (string) $pending->revisao_template_hash);
+        $this->assertNotNull($pending->revisada_em);
+        $this->assertNotNull($pending->revisao_ip_hash);
+        $this->assertNotNull($pending->revisao_user_agent_hash);
+        $this->assertNull($pending->revisao_confirmada_em);
+    }
+
+    private function signatureReviewOrder(string $number): Order
+    {
+        $clientId = DB::table('clientes')->insertGetId([
+            'nome_razao' => 'Cliente da Revisão',
+            'telefone1' => '(22) 98888-0000',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $equipmentId = DB::table('equipamentos')->insertGetId([
+            'cliente_id' => $clientId,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $orderId = DB::table('os')->insertGetId([
+            'numero_os' => $number,
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'relato_cliente' => 'Documento sujeito à revisão obrigatória',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return Order::query()->findOrFail($orderId);
     }
 
     private function user(string $name, string $email, string $password): User

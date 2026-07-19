@@ -1400,6 +1400,13 @@ trait BuildsLegacyErpSchema
             $table->unsignedBigInteger('documento_id')->nullable();
             $table->string('token_hash', 64)->nullable()->unique();
             $table->string('snapshot_os_hash', 64);
+            $table->integer('revisada_por')->nullable();
+            $table->string('revisao_snapshot_hash', 64)->nullable();
+            $table->string('revisao_template_hash', 64)->nullable();
+            $table->string('revisao_ip_hash', 64)->nullable();
+            $table->string('revisao_user_agent_hash', 64)->nullable();
+            $table->dateTime('revisada_em')->nullable();
+            $table->dateTime('revisao_confirmada_em')->nullable();
             $table->string('assinatura_hash', 64)->nullable();
             $table->string('assinatura_arquivo', 255)->nullable();
             $table->string('signatario_nome', 160)->nullable();

@@ -156,7 +156,6 @@ class EquipmentCreationTest extends TestCase
                 'cor_hex' => '#111827',
                 'cor_rgb' => '17, 24, 39',
                 'estado_fisico' => 'Gabinete em bom estado.',
-                'acessorios' => 'Fonte, cabo de forca',
                 'observacoes' => 'Cadastro completo de bancada.',
                 'foto_principal_index' => 1,
                 'fotos' => [
@@ -186,6 +185,7 @@ class EquipmentCreationTest extends TestCase
             'gabinete_tipo' => 'Mid Tower',
             'processador' => 'Ryzen 5 5600',
         ]);
+        $this->assertNull(DB::table('equipamentos')->where('id', $equipmentId)->value('acessorios'));
 
         $photos = EquipmentPhoto::query()
             ->where('equipamento_id', $equipmentId)
@@ -240,6 +240,36 @@ class EquipmentCreationTest extends TestCase
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'VALIDATION_ERROR')
             ->assertJsonPath('error.details.fotos.0', 'validation.required');
+    }
+
+    public function test_store_rejects_accessories_because_they_belong_to_an_order(): void
+    {
+        Storage::fake('local');
+
+        $clientId = $this->createClientRecord([
+            'nome_razao' => 'Cliente Acessorios por OS',
+            'telefone1' => '(21) 98888-3100',
+        ]);
+
+        Sanctum::actingAs($this->makeEquipmentManager(), ['*']);
+
+        $response = $this
+            ->withHeader('Accept', 'application/json')
+            ->post('/api/v1/equipments', [
+                'cliente_id' => $clientId,
+                'tipo_id' => 1,
+                'numero_serie' => 'SN-ACESSORIO-OS-001',
+                'acessorios' => 'Carregador original',
+                'fotos' => [UploadedFile::fake()->image('equipamento.jpg')],
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR')
+            ->assertJsonPath(
+                'error.details.acessorios.0',
+                'Registre os acessórios recebidos na ordem de serviço, não no equipamento.'
+            );
+        $this->assertDatabaseMissing('equipamentos', ['numero_serie' => 'SN-ACESSORIO-OS-001']);
     }
 
     public function test_update_keeps_existing_photo_as_primary_and_replaces_removed_files(): void

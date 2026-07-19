@@ -25,7 +25,7 @@ class UpsertOrderRequest extends BaseApiFormRequest
             'diagnostico_tecnico' => ['nullable', 'string'],
             'solucao_aplicada' => ['nullable', 'string'],
             'procedimentos_executados' => ['nullable', 'string'],
-            'acessorios' => ['nullable', 'string'],
+            'acessorios' => ['nullable', 'string', 'max:2000'],
             'forma_pagamento' => ['nullable', 'string', 'max:30'],
             'data_abertura' => ['nullable', 'date'],
             'data_entrada' => ['nullable', 'date'],

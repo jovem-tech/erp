@@ -206,6 +206,61 @@ class OrderDocumentCenterService
     }
 
     /**
+     * Renderiza a versão A4 que será analisada antes da assinatura.
+     * Não cria versão no acervo e nunca injeta a imagem de assinatura.
+     *
+     * @return array{result: string, bytes?: string, filename?: string, message?: string}
+     */
+    public function previewPendingSignature(int $orderId, User $actor, string $type): array
+    {
+        $context = $this->resolveAuthorizedOrder($orderId, $actor);
+        if (($context['result'] ?? 'error') !== 'ok') {
+            return $context;
+        }
+
+        $normalized = $this->normalizeDocumentTypes([$type]);
+        if ($normalized === []) {
+            return ['result' => 'validation_error', 'message' => 'O tipo documental da solicitação é inválido.'];
+        }
+
+        /** @var Order $order */
+        $order = $context['order'];
+        $type = (string) $normalized[0];
+        $precondition = $this->generationPrecondition($order, $type);
+        if (! ($precondition['ok'] ?? false)) {
+            return [
+                'result' => 'validation_error',
+                'message' => (string) ($precondition['reason'] ?? 'O documento ainda não pode ser visualizado.'),
+            ];
+        }
+
+        try {
+            $bytes = $this->renderGenericPdfBytes($order, $type, 'a4', [
+                'actor' => $actor,
+                'unsigned_review' => true,
+            ]);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return ['result' => 'error', 'message' => 'Não foi possível montar a prévia do documento.'];
+        }
+
+        return [
+            'result' => 'ok',
+            'bytes' => $bytes,
+            'filename' => sprintf('previa-%s-%s.pdf', $type, (string) ($order->numero_os ?? $order->id)),
+            'template_fingerprint' => $this->pendingSignatureTemplateFingerprint($type),
+        ];
+    }
+
+    public function pendingSignatureTemplateFingerprint(string $type): ?string
+    {
+        $code = $this->pdfTemplateRegistry->codeForLegacyType($type);
+
+        return $code === null ? null : $this->pdfGenerationService->publishedTemplateFingerprint($code);
+    }
+
+    /**
      * @param array<int, int> $documentIds
      * @return array<string, mixed>
      */

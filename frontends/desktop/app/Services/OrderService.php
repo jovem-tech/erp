@@ -237,6 +237,12 @@ class OrderService
         return $response['data']['requests'] ?? [];
     }
 
+    /** @return array{body: string, headers: array<string, string>, status: int} */
+    public function previewPendingDocumentSignature(int $requestId): array
+    {
+        return $this->apiClient->download('/document-signatures/' . $requestId . '/preview');
+    }
+
     /** @param array<string, mixed> $payload @return array<string, mixed> */
     public function signPendingDocument(int $requestId, array $payload = []): array
     {

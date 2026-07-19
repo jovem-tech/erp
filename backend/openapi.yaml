@@ -1,7 +1,7 @@
 ﻿openapi: 3.0.3
 info:
   title: Sistema ERP API
-  version: 1.3.0
+  version: 1.3.1
   description: |
     Contrato técnico oficial da API v1 do backend central do Sistema ERP.
 
@@ -61,6 +61,8 @@ tags:
     description: Inbox de conversas multicanal (Fase 1 - WhatsApp via Evolution API) com tempo real via Reverb.
   - name: Conhecimento
     description: Templates versionados e documentos PDF personalizados.
+  - name: Assinaturas
+    description: Revisão obrigatória e assinatura auditada de documentos.
 
 components:
   securitySchemes:
@@ -1149,6 +1151,8 @@ components:
         acessorios:
           type: string
           nullable: true
+          maxLength: 2000
+          description: Snapshot dos acessórios recebidos exclusivamente nesta ordem de serviço.
         forma_pagamento:
           type: string
           maxLength: 30
@@ -4682,6 +4686,92 @@ paths:
         "500":
           $ref: "#/components/responses/ServerError"
 
+  /document-signatures/{signatureRequest}/preview:
+    get:
+      tags:
+        - Assinaturas
+      summary: Renderiza e registra a revisão da prévia antes da assinatura
+      parameters:
+        - name: signatureRequest
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: PDF A4 privado, sem assinatura e sem persistência no acervo.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              example: private, no-store, max-age=0
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "403":
+          description: Usuário sem acesso à solicitação.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "409":
+          description: Solicitação expirada, processada ou OS alterada.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /document-signatures/{signatureRequest}/sign:
+    post:
+      tags:
+        - Assinaturas
+      summary: Assina e emite um documento previamente revisado
+      parameters:
+        - name: signatureRequest
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - review_confirmed
+              properties:
+                review_confirmed:
+                  type: boolean
+                  description: Confirmação explícita de leitura da prévia.
+                  example: true
+                signature_email:
+                  type: string
+                  format: email
+                  nullable: true
+                signature_password:
+                  type: string
+                  format: password
+                  nullable: true
+      responses:
+        "200":
+          description: Documento assinado e emitido.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "422":
+          description: Revisão ausente/expirada ou credenciais inválidas.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
   /orders/{order}/documents:
     get:
       tags:
@@ -5947,9 +6037,6 @@ paths:
                 estado_fisico:
                   type: string
                   nullable: true
-                acessorios:
-                  type: string
-                  nullable: true
                 observacoes:
                   type: string
                   nullable: true
@@ -6129,9 +6216,6 @@ paths:
                 estado_fisico:
                   type: string
                   nullable: true
-                acessorios:
-                  type: string
-                  nullable: true
                 observacoes:
                   type: string
                   nullable: true
@@ -6263,9 +6347,6 @@ paths:
                   type: string
                   nullable: true
                 estado_fisico:
-                  type: string
-                  nullable: true
-                acessorios:
                   type: string
                   nullable: true
                 observacoes:

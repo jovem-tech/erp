@@ -253,6 +253,12 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/os/{order}/documentos/gerar', [OrderController::class, 'documentsCenterGenerate'])
         ->middleware('desktop.permission:os,editar')
         ->name('orders.documents.generate');
+    Route::get('/documentos/assinaturas/{signatureRequest}/revisar', [OrderController::class, 'reviewPendingDocument'])
+        ->whereNumber('signatureRequest')
+        ->name('document-signatures.review');
+    Route::get('/documentos/assinaturas/{signatureRequest}/previa', [OrderController::class, 'previewPendingDocument'])
+        ->whereNumber('signatureRequest')
+        ->name('document-signatures.preview');
     Route::post('/documentos/assinaturas/{signatureRequest}/assinar', [OrderController::class, 'signPendingDocument'])
         ->whereNumber('signatureRequest')
         ->name('document-signatures.sign');
