@@ -191,6 +191,7 @@ O piloto de branding grava no path já compreendido pelo leitor legado, portanto
 | Sintoma | Resposta segura |
 |---|---|
 | configuração inválida | manter `off`; corrigir allowlist/switch e repetir diagnóstico |
+| VPS mostra “catalogação automática desativada” e zero arquivos após o deploy | conferir o `.env` real, pois `.env.example` e `git pull` não alteram a configuração persistente; habilitar `shadow` e os três switches necessários, reconstruir `config:cache`, validar o cron de `www-data` e executar a primeira sincronização somente após backup |
 | disco sem espaço ou permissão negada | bloquear escrita antes da troca; corrigir owner/group/ACL mínimo |
 | falha confirmada antes do commit do catálogo | compensar somente o candidato conhecido |
 | resultado de commit ambíguo | preservar blob; localizar por `operation_key`, scanner e reconciliação |
@@ -214,6 +215,11 @@ Um backup válido contém:
 - versão/commit da aplicação e checksum do manifesto do backup.
 
 O teste de restauração deve ocorrer em ambiente isolado, executar migrations, verificar amostra de hashes, resolver links legados e centrais e rodar as regressões de download. Backup sem teste de restore não libera produção.
+
+Arquivos de dump devem usar permissão `0600` e diretório restrito. A senha do
+banco não pode aparecer no nome do processo, log, histórico ou saída de CI; se
+o cliente exigir `-p`, restringir a execução ao operador e descartar a variável
+do processo imediatamente depois do dump.
 
 ## Observabilidade e privacidade
 
