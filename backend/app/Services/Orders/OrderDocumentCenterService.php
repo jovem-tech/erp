@@ -3,6 +3,7 @@
 namespace App\Services\Orders;
 
 use App\Jobs\ProcessOrderDocumentSendJob;
+use App\Models\Files\ManagedFile;
 use App\Models\Order;
 use App\Models\OrderDocument;
 use App\Models\OrderDocumentFile;
@@ -15,6 +16,7 @@ use App\Models\PdfTemplateVersao;
 use App\Models\User;
 use App\Models\WhatsappTemplate;
 use App\Services\Budgets\BudgetPdfService;
+use App\Services\Files\PdfThumbnailService;
 use App\Services\Integrations\IntegrationSettingsService;
 use App\Services\Pdf\PdfGenerationService;
 use App\Services\Pdf\PdfTemplateRegistry;
@@ -94,7 +96,8 @@ class OrderDocumentCenterService
         private readonly BudgetPdfService $budgetPdfService,
         private readonly IntegrationSettingsService $integrationSettingsService,
         private readonly PdfGenerationService $pdfGenerationService,
-        private readonly PdfTemplateRegistry $pdfTemplateRegistry
+        private readonly PdfTemplateRegistry $pdfTemplateRegistry,
+        private readonly PdfThumbnailService $pdfThumbnailService
     ) {
     }
 
@@ -786,6 +789,55 @@ class OrderDocumentCenterService
     }
 
     /**
+     * Resolve a miniatura da primeira página sem ampliar o acesso do usuário ao
+     * gerenciador global de arquivos. A autorização continua vinculada à OS e
+     * o PdfThumbnailService preserva os controles de estado, caminho e cache.
+     *
+     * @return array<string, mixed>
+     */
+    public function resolveThumbnailForActor(int $orderId, int $documentId, User $actor): array
+    {
+        $resolved = $this->resolveFileForActor($orderId, $documentId, 'a4', $actor);
+        if (($resolved['result'] ?? 'error') !== 'ok') {
+            return $resolved;
+        }
+
+        $file = is_array($resolved['file'] ?? null) ? $resolved['file'] : [];
+        if (strtolower((string) ($file['mime_type'] ?? '')) !== 'application/pdf') {
+            return [
+                'result' => 'unsupported',
+                'message' => 'Miniatura disponível apenas para documentos PDF.',
+            ];
+        }
+
+        if (! Schema::hasTable('managed_files')) {
+            return ['result' => 'missing_file'];
+        }
+
+        $managedFile = null;
+        $managedFileUuid = trim((string) ($file['managed_file_uuid'] ?? ''));
+        if ($managedFileUuid !== '') {
+            $managedFile = ManagedFile::query()->where('uuid', $managedFileUuid)->first();
+        }
+
+        if (! $managedFile instanceof ManagedFile) {
+            $managedFile = ManagedFile::query()
+                ->where('storage_disk', 'local')
+                ->where('storage_key', (string) ($file['relative_path'] ?? ''))
+                ->first();
+        }
+
+        if (! $managedFile instanceof ManagedFile) {
+            return ['result' => 'missing_file'];
+        }
+
+        return [
+            'result' => 'ok',
+            'thumbnail' => $this->pdfThumbnailService->firstPage($managedFile),
+        ];
+    }
+
+    /**
      * @param array<string, mixed> $engineResult
      */
     public function syncAfterBudgetDispatch(
@@ -1426,6 +1478,12 @@ class OrderDocumentCenterService
     private function resolveDocumentFilePayload(Order $order, OrderDocument $document, string $format): array
     {
         $normalizedFormat = $this->normalizeFormat($format);
+        $fileRecord = $document->relationLoaded('files')
+            ? $document->files->first(fn (OrderDocumentFile $file): bool => (string) $file->formato === $normalizedFormat)
+            : OrderDocumentFile::query()
+                ->where('documento_id', (int) $document->id)
+                ->where('formato', $normalizedFormat)
+                ->first();
 
         if ($normalizedFormat === 'a4') {
             $relativePath = trim((string) ($document->arquivo ?? ''));
@@ -1434,15 +1492,12 @@ class OrderDocumentCenterService
                 return ['result' => 'missing_file'];
             }
 
+            $file['managed_file_uuid'] = $fileRecord instanceof OrderDocumentFile
+                ? trim((string) ($fileRecord->managed_file_uuid ?? ''))
+                : '';
+
             return ['result' => 'ok', 'file' => $file];
         }
-
-        $fileRecord = $document->relationLoaded('files')
-            ? $document->files->first(fn (OrderDocumentFile $file): bool => (string) $file->formato === $normalizedFormat)
-            : OrderDocumentFile::query()
-                ->where('documento_id', (int) $document->id)
-                ->where('formato', $normalizedFormat)
-                ->first();
 
         if (! $fileRecord instanceof OrderDocumentFile) {
             return ['result' => 'missing_file'];
@@ -1452,6 +1507,8 @@ class OrderDocumentCenterService
         if ($file === null) {
             return ['result' => 'missing_file'];
         }
+
+        $file['managed_file_uuid'] = trim((string) ($fileRecord->managed_file_uuid ?? ''));
 
         return ['result' => 'ok', 'file' => $file];
     }

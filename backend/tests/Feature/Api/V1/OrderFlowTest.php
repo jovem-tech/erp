@@ -2,7 +2,10 @@
 
 namespace Tests\Feature\Api\V1;
 
+use App\Contracts\Files\PdfThumbnailRenderer;
+use App\DTO\Files\FileContext;
 use App\Enums\Files\FileCategory;
+use App\Enums\Files\FileOrigin;
 use App\Models\Files\ManagedFile;
 use App\Models\Files\ManagedFileLegacyAlias;
 use App\Models\Files\ManagedFileLink;
@@ -11,6 +14,7 @@ use App\Models\FinanceiroMovimento;
 use App\Models\User;
 use App\Notifications\Channels\MobileInboxChannel;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
+use App\Services\Files\LegacyCompatibleFileAdapter;
 use App\Services\Orders\OrderClosureService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -818,6 +822,67 @@ class OrderFlowTest extends TestCase
         $this->assertStringContainsString('application/pdf', (string) $response->headers->get('Content-Type'));
     }
 
+    public function test_document_thumbnail_endpoint_serves_the_latest_pdf_first_page(): void
+    {
+        Storage::fake('local');
+        [$user, $assignedOrder, , , $documentId] = $this->seedTechnicianOrders();
+        $token = $this->loginAndGetToken($user->email);
+
+        $relativePath = "private/os_documentos/{$assignedOrder}/abertura_v1.pdf";
+        $pdfBytes = "%PDF-1.4\nconteudo-controlado\n%%EOF";
+        Storage::disk('local')->put($relativePath, $pdfBytes);
+        DB::table('os_documentos')->where('id', $documentId)->update(['arquivo' => $relativePath]);
+        DB::table('os_documento_arquivos')->insert([
+            'documento_id' => $documentId,
+            'formato' => 'a4',
+            'arquivo' => $relativePath,
+            'mime' => 'application/pdf',
+            'tamanho_bytes' => strlen($pdfBytes),
+            'hash_sha256' => hash('sha256', $pdfBytes),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        config()->set('file-manager.mode', 'shadow');
+        config()->set('file-manager.enabled_categories', ['order_pdf']);
+        config()->set('file-manager.pdf_thumbnails.enabled', true);
+        app(LegacyCompatibleFileAdapter::class)->synchronizeExisting(
+            new FileContext(
+                category: FileCategory::OrderPdf,
+                origin: FileOrigin::Generated,
+                operationKey: 'order-document-thumbnail-test:'.$documentId,
+                subjectType: 'order',
+                subjectId: $assignedOrder,
+                relation: 'document:'.$documentId,
+                createdBy: $user->id
+            ),
+            'local',
+            $relativePath
+        );
+
+        $thumbnailBytes = UploadedFile::fake()->image('pagina-1.png', 8, 10)->getContent();
+        $renderer = new class($thumbnailBytes) implements PdfThumbnailRenderer
+        {
+            public function __construct(private readonly string $payload) {}
+
+            public function render(
+                string $sourcePath,
+                string $targetPath,
+                int $maxDimension,
+                int $timeoutSeconds
+            ): void {
+                file_put_contents($targetPath, $this->payload);
+            }
+        };
+        $this->app->instance(PdfThumbnailRenderer::class, $renderer);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->get("/api/v1/orders/{$assignedOrder}/documents/{$documentId}/thumbnail")
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/png')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+    }
+
     public function test_patch_status_updates_status_estado_fluxo_and_history(): void
     {
         [$user, $assignedOrder] = $this->seedTechnicianOrders();
@@ -1339,6 +1404,7 @@ class OrderFlowTest extends TestCase
             ->get("/api/v1/orders/{$orderId}/documents/{$documentId}")
             ->assertOk()
             ->assertHeader('Content-Type', 'application/pdf');
+
     }
 
     public function test_document_center_zip_download_returns_a_valid_zip_file(): void

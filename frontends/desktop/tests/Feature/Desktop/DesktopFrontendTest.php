@@ -903,11 +903,15 @@ class DesktopFrontendTest extends TestCase
             // Documento já gerado: ganha o dropdown de ações por linha.
             ->assertSee('Gerar nova versão')
             ->assertSee('Visualizar A4')
+            ->assertSee('>Foto</th>', false)
             // 80mm indisponível nesta versão: o item continua no DOM (a
             // seleção de versão pode trocar para uma que tenha 80mm), mas
             // escondido via d-none — não mais omitido do HTML.
             ->assertSee('class="dropdown-item d-none"', false)
             ->assertSee(route('orders.documents.files.show', ['order' => 501, 'document' => 9001, 'format' => 'a4']), false)
+            ->assertSee(route('orders.documents.thumbnail', ['order' => 501, 'document' => 9001]), false)
+            ->assertSee('data-doc-thumbnail-image', false)
+            ->assertSee('data-thumbnail-url=', false)
             ->assertSee('data-doc-row-zip="9001"', false)
             ->assertSee('data-doc-row-print="9001"', false)
             ->assertSee('data-doc-row-share="9001"', false)
@@ -921,6 +925,35 @@ class DesktopFrontendTest extends TestCase
             // Tipo ainda não gerado: só o botão de gerar, sem dropdown de ações.
             ->assertSee('Laudo técnico')
             ->assertDontSee('data-doc-row-zip=""', false);
+    }
+
+    public function test_order_document_thumbnail_route_proxies_the_private_backend_image(): void
+    {
+        $thumbnail = UploadedFile::fake()->image('pagina-1.png', 8, 10)->getContent();
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orders/501/documents/9001/thumbnail' => Http::response(
+                $thumbnail,
+                200,
+                [
+                    'Content-Type' => 'image/png',
+                    'Cache-Control' => 'private, max-age=86400',
+                    'ETag' => '"pdf-p1-test"',
+                ]
+            ),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['os' => ['visualizar']]))
+            ->get('/os/501/documentos/9001/miniatura');
+
+        $response
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/png')
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertContent($thumbnail);
+
+        Http::assertSent(static fn ($request): bool => $request->method() === 'GET'
+            && $request->url() === 'http://127.0.0.1:8000/api/v1/orders/501/documents/9001/thumbnail');
     }
 
     public function test_order_documents_center_state_endpoint_returns_rendered_fragments_and_pending_sends(): void

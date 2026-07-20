@@ -3,6 +3,15 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.2.0.0 - 2026-07-20
+
+- coluna Foto na Central Documental de cada OS;
+- miniatura lazy da primeira página do PDF A4 da versão mais recente;
+- atualização da imagem, link e texto alternativo ao selecionar outra versão;
+- rota autenticada pelo domínio da OS, sem conceder acesso ao painel administrativo de arquivos;
+- cache privado por SHA-256/ETag e fallback quando o documento não está disponível;
+- nota: `2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md`.
+
 ## v5.1.0.0 - 2026-07-20
 
 - sincronização automática do catálogo em segundo plano e solicitação manual deduplicada;

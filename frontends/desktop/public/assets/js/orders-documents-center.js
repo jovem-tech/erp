@@ -178,7 +178,7 @@
     // --- seleção de versão por linha (coluna "Versão" do catálogo) -------------
 
     // Troca qual documento (versão) é "o atual" da linha: atualiza o chip de
-    // status, os links Visualizar A4/80mm e o alvo das ações (ZIP/imprimir/
+    // status, a miniatura, os links Visualizar A4/80mm e o alvo das ações (ZIP/imprimir/
     // link/enviar/arquivar) para a versão escolhida no <select>, sem reload.
     const applyVersionSelection = (selectEl) => {
         const row = selectEl.closest('[data-doc-type-card]');
@@ -189,6 +189,8 @@
         const archived = option.dataset.archived === '1';
         const a4Available = option.dataset.a4Available === '1';
         const thermalAvailable = option.dataset.thermalAvailable === '1';
+        const a4Url = option.dataset.a4Url || '#';
+        const thumbnailUrl = option.dataset.thumbnailUrl || '';
 
         row.dataset.documentSuggestedMessage = option.dataset.suggestedMessage || '';
 
@@ -200,7 +202,29 @@
         const viewA4 = row.querySelector('[data-doc-view-a4]');
         if (viewA4 instanceof HTMLAnchorElement) {
             viewA4.classList.toggle('d-none', !a4Available);
-            viewA4.setAttribute('href', option.dataset.a4Url || '#');
+            viewA4.setAttribute('href', a4Url);
+        }
+
+        const thumbnailLink = row.querySelector('[data-doc-thumbnail-link]');
+        if (thumbnailLink instanceof HTMLAnchorElement) {
+            thumbnailLink.classList.toggle('is-unavailable', !a4Available);
+            thumbnailLink.setAttribute('href', a4Available ? a4Url : '#');
+            thumbnailLink.setAttribute('aria-disabled', a4Available ? 'false' : 'true');
+            thumbnailLink.setAttribute('title', a4Available ? 'Abrir a versão selecionada' : 'PDF indisponível nesta versão');
+        }
+
+        const thumbnailImage = row.querySelector('[data-doc-thumbnail-image]');
+        if (thumbnailImage instanceof HTMLImageElement) {
+            thumbnailImage.classList.add('d-none');
+            if (a4Available && thumbnailUrl !== '') {
+                thumbnailImage.alt = 'Miniatura de ' + option.textContent.trim();
+                thumbnailImage.setAttribute('src', thumbnailUrl);
+                if (thumbnailImage.complete && thumbnailImage.naturalWidth > 0) {
+                    thumbnailImage.classList.remove('d-none');
+                }
+            } else {
+                thumbnailImage.removeAttribute('src');
+            }
         }
 
         const view80mm = row.querySelector('[data-doc-view-80mm]');
@@ -939,6 +963,18 @@
             }
         }
     });
+
+    document.addEventListener('load', (event) => {
+        if (event.target.matches?.('[data-doc-thumbnail-image]')) {
+            event.target.classList.remove('d-none');
+        }
+    }, true);
+
+    document.addEventListener('error', (event) => {
+        if (event.target.matches?.('[data-doc-thumbnail-image]')) {
+            event.target.classList.add('d-none');
+        }
+    }, true);
 
     document.addEventListener('submit', (event) => {
         if (event.target.id === 'docSendModalForm') {

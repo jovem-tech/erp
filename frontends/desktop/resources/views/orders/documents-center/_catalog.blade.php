@@ -5,6 +5,7 @@
             <tr>
                 <th style="width: 48px;"></th>
                 <th>Tipo</th>
+                <th class="text-center" style="width: 96px;">Foto</th>
                 <th>Documento</th>
                 <th>Versão</th>
                 <th>Origem</th>
@@ -26,6 +27,10 @@
                     $documentId = $latest ? (int) ($latest['id'] ?? 0) : 0;
                     $files = $latest && is_array($latest['files'] ?? null) ? $latest['files'] : [];
                     $isArchived = $latest && ($latest['archived_at'] ?? null) !== null;
+                    $hasLatestThumbnail = $documentId > 0 && (bool) ($files['a4']['available'] ?? false);
+                    $latestThumbnailUrl = $hasLatestThumbnail
+                        ? route('orders.documents.thumbnail', ['order' => $orderId, 'document' => $documentId])
+                        : '';
                 @endphp
                 <tr class="doc-type-card"
                     data-doc-type-card="{{ $typeCode }}"
@@ -40,6 +45,25 @@
                                {{ $canGenerate ? '' : 'disabled' }}>
                     </td>
                     <td><span class="text-secondary small">{{ $typeCode }}</span></td>
+                    <td class="text-center">
+                        <a href="{{ $hasLatestThumbnail ? route('orders.documents.files.show', ['order' => $orderId, 'document' => $documentId, 'format' => 'a4']) : '#' }}"
+                           target="_blank"
+                           rel="noreferrer"
+                           class="doc-version-thumbnail {{ $hasLatestThumbnail ? '' : 'is-unavailable' }}"
+                           title="{{ $hasLatestThumbnail ? 'Abrir a versão mais recente' : 'Documento ainda não gerado' }}"
+                           aria-label="{{ $hasLatestThumbnail ? 'Abrir a versão mais recente de ' . ($type['label'] ?? 'Documento') : 'Documento ainda não gerado' }}"
+                           aria-disabled="{{ $hasLatestThumbnail ? 'false' : 'true' }}"
+                           data-doc-thumbnail-link>
+                            <i class="bi bi-file-earmark-pdf" aria-hidden="true"></i>
+                            <img
+                                @if ($latestThumbnailUrl !== '') src="{{ $latestThumbnailUrl }}" @endif
+                                class="{{ $hasLatestThumbnail ? '' : 'd-none' }}"
+                                loading="lazy"
+                                decoding="async"
+                                alt="Miniatura da versão mais recente de {{ $type['label'] ?? 'Documento' }}"
+                                data-doc-thumbnail-image>
+                        </a>
+                    </td>
                     <td><strong>{{ $type['label'] ?? 'Documento' }}</strong></td>
                     <td>
                         @if ($versions !== [])
@@ -56,6 +80,7 @@
                                         data-archived="{{ ($version['archived_at'] ?? null) !== null ? '1' : '0' }}"
                                         data-a4-available="{{ ($versionFiles['a4']['available'] ?? false) ? '1' : '0' }}"
                                         data-a4-url="{{ route('orders.documents.files.show', ['order' => $orderId, 'document' => (int) ($version['id'] ?? 0), 'format' => 'a4']) }}"
+                                        data-thumbnail-url="{{ ($versionFiles['a4']['available'] ?? false) ? route('orders.documents.thumbnail', ['order' => $orderId, 'document' => (int) ($version['id'] ?? 0)]) : '' }}"
                                         data-thermal-available="{{ ($versionFiles['80mm']['available'] ?? false) ? '1' : '0' }}"
                                         data-thermal-url="{{ route('orders.documents.files.show', ['order' => $orderId, 'document' => (int) ($version['id'] ?? 0), 'format' => '80mm']) }}"
                                         data-suggested-message="{{ $version['suggested_message'] ?? '' }}"
