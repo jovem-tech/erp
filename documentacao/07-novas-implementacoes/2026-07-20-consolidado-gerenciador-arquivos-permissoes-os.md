@@ -1,6 +1,6 @@
 # Consolidado das implementações de 20 de julho de 2026
 
-**Release:** `5.2.0.0`
+**Release:** `5.2.1.0`
 **API:** `1.5.0`  
 **Ambiente implantado e validado:** desenvolvimento LAN — `192.168.1.100`  
 **Produção externa:** não promovida por esta entrega  
@@ -203,6 +203,11 @@ A tabela em `/os/{order}/documentos` ganhou a coluna **Foto**. Cada linha usa o
 PDF A4 da versão mais recente como estado inicial e exibe sua primeira página.
 Ao escolher outra versão no seletor, miniatura, link, texto alternativo e ações
 passam a apontar para o documento selecionado sem recarregar a página.
+
+O clique na miniatura não navega para outra aba: ele abre o visualizador
+compartilhado em modal, com o PDF dentro de iframe same-origin, recarregar,
+tela cheia e download. O conteúdo só é carregado após a interação e o iframe é
+redefinido para `about:blank` ao fechar, evitando retenção desnecessária do PDF.
 
 A entrega usa uma rota de domínio dedicada no backend e outra no BFF desktop.
 Ambas exigem `os:visualizar`; o usuário não precisa receber a permissão

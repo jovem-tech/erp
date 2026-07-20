@@ -210,7 +210,10 @@
             thumbnailLink.classList.toggle('is-unavailable', !a4Available);
             thumbnailLink.setAttribute('href', a4Available ? a4Url : '#');
             thumbnailLink.setAttribute('aria-disabled', a4Available ? 'false' : 'true');
-            thumbnailLink.setAttribute('title', a4Available ? 'Abrir a versão selecionada' : 'PDF indisponível nesta versão');
+            thumbnailLink.setAttribute('title', a4Available ? 'Visualizar a versão selecionada' : 'PDF indisponível nesta versão');
+            thumbnailLink.dataset.previewUrl = a4Available ? a4Url : '';
+            thumbnailLink.dataset.downloadUrl = a4Available ? a4Url : '';
+            thumbnailLink.dataset.fileName = option.dataset.previewFileName || 'Documento.pdf';
         }
 
         const thumbnailImage = row.querySelector('[data-doc-thumbnail-image]');

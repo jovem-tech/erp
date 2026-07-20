@@ -3,6 +3,14 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.2.1.0 - 2026-07-20
+
+- clique na miniatura da Central Documental abre o visualizador interno;
+- PDF exibido em iframe same-origin com recarregar, tela cheia e download;
+- URL, nome e download acompanham a versão escolhida na linha;
+- carregamento somente após o clique e limpeza do iframe ao fechar o modal;
+- nota: `2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md`.
+
 ## v5.2.0.0 - 2026-07-20
 
 - coluna Foto na Central Documental de cada OS;

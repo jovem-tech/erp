@@ -1,5 +1,16 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.2.1.0 — 2026-07-20 07:35
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** abre a miniatura da Central Documental da OS no modal interno com iframe PDF, em vez de navegar para outra aba
+- **Arquitetura:** reutiliza o visualizador compartilhado do Gerenciador de Arquivos e mantém o endpoint autenticado da OS como fonte do iframe e do download
+- **Segurança:** iframe same-origin com `referrerpolicy=no-referrer`; o `src` só é atribuído após o clique e retorna para `about:blank` ao fechar o modal
+- **Performance:** nenhum PDF é carregado antes da interação; a URL e o nome do arquivo acompanham a versão selecionada sem recarregar a página
+- **Compatibilidade:** o `href` autenticado permanece como fallback progressivo, enquanto o JavaScript intercepta o clique para abrir o modal
+- **Validação:** teste direcionado aprovado com 26 asserções e JavaScript validado pelo parser do Node
+- **Arquivos:** frontends/desktop/resources/views/orders/documents-center.blade.php,frontends/desktop/resources/views/orders/documents-center/_catalog.blade.php,frontends/desktop/public/assets/js/orders-documents-center.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/07-novas-implementacoes/2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md,documentacao/07-novas-implementacoes/historico-de-versoes.md,VERSION,shared/version.php,CHANGELOG.md
+
 ## v5.2.0.0 — 2026-07-20 05:39
 - **Tier:** minor
 - **Autor/Agente:** Codex
