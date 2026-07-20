@@ -2,9 +2,9 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-19T06:32:05+00:00`
-- Versao do sistema: `4.25.1`
-- Versao da API: `1.3.0`
+- Gerado em: `2026-07-20T03:58:10-03:00`
+- Versao do sistema: `5.1.0`
+- Versao da API: `1.5.0`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
 
@@ -43,7 +43,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
 ### `documentacao/01-fundacao`
 
-- `documentacao/01-fundacao/acesso-seguro-a-arquivos.md` - Acesso Seguro a Arquivos
+- `documentacao/01-fundacao/acesso-seguro-a-arquivos.md` - Acesso seguro a arquivos
 - `documentacao/01-fundacao/contrato-de-ambiente.md` - Contrato de Ambiente
 - `documentacao/01-fundacao/estrutura-fisica.md` - Estrutura Fisica Inicial
 
@@ -65,6 +65,9 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/03-arquitetura-tecnica/eventos-os.md` - Timeline de Eventos da OS (`os_eventos`)
 - `documentacao/03-arquitetura-tecnica/frontend-desktop-laravel.md` - Frontend Desktop Laravel
 - `documentacao/03-arquitetura-tecnica/frontend-sistema-hml-bff.md` - Frontend sistema-hml como BFF
+- `documentacao/03-arquitetura-tecnica/gerenciador-central-arquivos.md` - Gerenciador Central de Arquivos
+- `documentacao/03-arquitetura-tecnica/idempotencia-criacao-os.md` - Idempotência e confirmação segura na criação de OS
+- `documentacao/03-arquitetura-tecnica/inventario-arquivos-funcionais.md` - Inventário de arquivos funcionais
 - `documentacao/03-arquitetura-tecnica/mapa-migracao-legado-frontend-sistema-hml.md` - Mapa Completo de Migração e Limpeza do `frontend/sistema-hml`
 - `documentacao/03-arquitetura-tecnica/notificacoes-sino.md` - Notificações do Sino (desktop) — emissores, prazos e tempo real
 - `documentacao/03-arquitetura-tecnica/ordens-mobile.md` - Fluxo de OS Mobile
@@ -151,8 +154,13 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-11-os-abertura-pdf-e-envio-whatsapp.md` - OS — PDF de abertura e envio opcional ao cliente
 - `documentacao/07-novas-implementacoes/2026-07-18-gestao-contas-e-saldos-financeiros.md` - Gestão de contas e saldos financeiros
 - `documentacao/07-novas-implementacoes/2026-07-18-motor-central-documentos-pdf.md` - Motor central e templates modernos de PDF
+- `documentacao/07-novas-implementacoes/2026-07-19-acessorios-por-ordem-servico.md` - Acessórios recebidos por ordem de serviço
 - `documentacao/07-novas-implementacoes/2026-07-19-assinaturas-digitais-documentos.md` - Assinaturas digitais e rastreabilidade documental
 - `documentacao/07-novas-implementacoes/2026-07-19-consolidado-implementacoes-18-19-julho.md` - Consolidado das implementações de 18 e 19 de julho de 2026
+- `documentacao/07-novas-implementacoes/2026-07-19-hardening-arquivos-branding-chat.md` - Hardening de arquivos: branding e anexos do chat
+- `documentacao/07-novas-implementacoes/2026-07-19-nucleo-gerenciador-central-arquivos.md` - Núcleo do Gerenciador Central de Arquivos
+- `documentacao/07-novas-implementacoes/2026-07-19-painel-gerenciador-arquivos.md` - Painel do Gerenciador Central de Arquivos
+- `documentacao/07-novas-implementacoes/2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md` - Consolidado das implementações de 20 de julho de 2026
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 
 ### `documentacao/10-deploy`
@@ -162,6 +170,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/10-deploy/deploy-producao-lan-ubuntu.md` - Deploy de Produção — Ubuntu Server (LAN ou VPS)
 - `documentacao/10-deploy/manual-inicializacao-local-windows-xampp.md` - Manual de Inicializacao Local no Windows com XAMPP
 - `documentacao/10-deploy/manual-versionamento-e-deploy.md` - Manual de Publicação — Versionar e Deploy
+- `documentacao/10-deploy/operacao-gerenciador-central-arquivos.md` - Operação do Gerenciador Central de Arquivos
 - `documentacao/10-deploy/workflow-git-multiambiente.md` - Fluxo Git Multiambiente — Sistema ERP
 
 ## Inventario de specs
@@ -187,4 +196,5 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/019-aprovacao-orcamento-desktop` - Feature Specification: Orcamentos - Revisao antes de salvar e envio para aprovacao | artefatos: spec, plan, tasks
 - `specs/020-lancamentos-avulsos-financeiro-cliente` - Feature Specification: Lançamentos avulsos com histórico financeiro do cliente | artefatos: spec, plan, tasks
 - `specs/021-gestao-contas-financeiras` - Feature Specification: Gestão de contas financeiras e disponibilidade de caixa | artefatos: spec, plan, tasks, quickstart, data_model, contracts
+- `specs/022-gerenciador-central-arquivos` - Feature Specification: Gerenciador Central de Arquivos | artefatos: spec, plan, tasks, research, quickstart, data_model, contracts, checklists
 

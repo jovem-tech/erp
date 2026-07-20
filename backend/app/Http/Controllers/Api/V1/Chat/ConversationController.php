@@ -11,6 +11,7 @@ use App\Models\User;
 use App\Services\Channels\Whatsapp\ContactConversationResolver;
 use App\Services\Channels\Whatsapp\PhoneNumberNormalizationService;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
+use App\Services\Chat\ChatAttachmentPolicy;
 use App\Services\Chat\ChatClientLookupService;
 use App\Services\Chat\ConversationAccessService;
 use App\Services\Chat\ConversationPayloadService;
@@ -27,9 +28,9 @@ class ConversationController extends BaseApiController
         private readonly PhoneNumberNormalizationService $phoneNormalizer,
         private readonly ConversationPayloadService $payloadService,
         private readonly ChatClientLookupService $clientLookup,
-        private readonly WhatsappMessagingService $messagingService
-    ) {
-    }
+        private readonly WhatsappMessagingService $messagingService,
+        private readonly ChatAttachmentPolicy $attachmentPolicy
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -71,7 +72,7 @@ class ConversationController extends BaseApiController
                 ->map(static fn ($id): int => (int) $id)
                 ->all();
 
-            $searchTerm = '%' . mb_strtolower($search) . '%';
+            $searchTerm = '%'.mb_strtolower($search).'%';
             $query->whereHas('contact', function ($contactQuery) use ($searchTerm, $matchingClientIds): void {
                 $contactQuery->where(function ($inner) use ($searchTerm, $matchingClientIds): void {
                     $inner
@@ -144,7 +145,7 @@ class ConversationController extends BaseApiController
             'nome' => ['nullable', 'string', 'max:120'],
             'mensagem' => ['nullable', 'string', 'max:4096'],
             'attachments' => ['nullable', 'array'],
-            'attachments.*' => ['file', 'max:25600'],
+            'attachments.*' => $this->attachmentPolicy->uploadRules(),
         ]);
 
         if ($validator->fails()) {
@@ -212,7 +213,7 @@ class ConversationController extends BaseApiController
     }
 
     /**
-     * @param array<string, mixed> $data
+     * @param  array<string, mixed>  $data
      * @return array{0: Conversation, 1: string|null}
      */
     private function resolveConversationTarget(array $data, int $accountId): array
@@ -264,7 +265,7 @@ class ConversationController extends BaseApiController
     }
 
     /**
-     * @param array<int, int> $conversationIds
+     * @param  array<int, int>  $conversationIds
      * @return array<int, int>
      */
     private function unreadCountsFor(array $conversationIds): array

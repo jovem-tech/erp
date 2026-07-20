@@ -259,7 +259,7 @@
                             </div>
                             <div class="flex-grow-1" style="min-width:220px;">
                                 <label class="form-label" for="empresa_logo">Arquivo da logo</label>
-                                <input type="file" class="form-control" id="empresa_logo" name="empresa_logo" accept="image/png, image/jpeg, image/gif, image/svg+xml">
+                                <input type="file" class="form-control" id="empresa_logo" name="empresa_logo" accept="image/png, image/jpeg, image/webp">
                                 <small class="text-muted d-block mt-1">PNG, JPG, GIF ou SVG, até 4&nbsp;MB.</small>
                             </div>
                         </div>

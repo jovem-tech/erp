@@ -15,6 +15,7 @@ class OrderDocumentFile extends Model
         'id' => 'integer',
         'documento_id' => 'integer',
         'tamanho_bytes' => 'integer',
+        'managed_file_uuid' => 'string',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

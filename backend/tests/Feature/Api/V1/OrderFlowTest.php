@@ -2,15 +2,23 @@
 
 namespace Tests\Feature\Api\V1;
 
+use App\Enums\Files\FileCategory;
+use App\Models\Files\ManagedFile;
+use App\Models\Files\ManagedFileLegacyAlias;
+use App\Models\Files\ManagedFileLink;
 use App\Models\Financeiro;
 use App\Models\FinanceiroMovimento;
 use App\Models\User;
-use Illuminate\Http\UploadedFile;
+use App\Notifications\Channels\MobileInboxChannel;
+use App\Services\Channels\Whatsapp\WhatsappMessagingService;
+use App\Services\Orders\OrderClosureService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Mockery\MockInterface;
 use Tests\Concerns\BuildsLegacyErpSchema;
 use Tests\TestCase;
 
@@ -46,7 +54,7 @@ class OrderFlowTest extends TestCase
             'equipamentos' => ['visualizar'],
         ]);
 
-        $this->legacyPublicRoot = storage_path('framework/testing/legacy-public-' . str_replace('.', '-', uniqid('', true)));
+        $this->legacyPublicRoot = storage_path('framework/testing/legacy-public-'.str_replace('.', '-', uniqid('', true)));
         mkdir($this->legacyPublicRoot, 0777, true);
 
         config([
@@ -59,7 +67,7 @@ class OrderFlowTest extends TestCase
         [$user, $assignedOrder, $unassignedOrder] = $this->seedTechnicianOrders();
         $token = $this->loginAndGetToken($user->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/v1/orders');
 
         $response->assertOk()
@@ -132,7 +140,7 @@ class OrderFlowTest extends TestCase
         ]);
 
         $token = $this->loginAndGetToken($manager->email);
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/v1/orders/{$orderId}/events?category=status&per_page=25");
 
         $response->assertOk()
@@ -149,7 +157,7 @@ class OrderFlowTest extends TestCase
             ->assertJsonPath('meta.pagination.total', 2)
             ->assertJsonCount(2, 'data.events');
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/v1/orders/{$orderId}/events?category=../../etc")
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'VALIDATION_ERROR');
@@ -160,7 +168,7 @@ class OrderFlowTest extends TestCase
         [$technician, , $unassignedOrder] = $this->seedTechnicianOrders();
         $token = $this->loginAndGetToken($technician->email);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/v1/orders/{$unassignedOrder}/events")
             ->assertForbidden()
             ->assertJsonPath('error.code', 'ORDER_EVENTS_FORBIDDEN')
@@ -193,8 +201,8 @@ class OrderFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->getJson('/api/v1/orders?status=aguardando_reparo&technician_id=' . $techB->id . '&search=Não liga');
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orders?status=aguardando_reparo&technician_id='.$techB->id.'&search=Não liga');
 
         $response->assertOk()
             ->assertJsonPath('meta.pagination.total', 1)
@@ -209,7 +217,7 @@ class OrderFlowTest extends TestCase
         [$manager] = $this->seedAdminOrderActors();
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/v1/orders/status-catalog');
 
         $response->assertOk()
@@ -234,14 +242,14 @@ class OrderFlowTest extends TestCase
         [$modelId, $screenItemId, $chargerItemId] = $this->seedEntryChecklistModel(1);
         $token = $this->loginAndGetToken($manager->email);
 
-        $modelResponse = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $modelResponse = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/v1/orders/checklists/entrada/modelos/1');
 
         $modelResponse->assertOk()
             ->assertJsonPath('data.modelo.id', $modelId)
             ->assertJsonPath('data.modelo.itens.0.id', $screenItemId);
 
-        $createResponse = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $createResponse = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/orders', [
                 'cliente_id' => $clientId,
                 'equipamento_id' => $equipmentId,
@@ -355,7 +363,7 @@ class OrderFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/v1/orders?status_scope=open');
 
         $response->assertOk()
@@ -444,7 +452,7 @@ class OrderFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/v1/orders?search=OS26060031');
 
         $response->assertOk()
@@ -491,7 +499,7 @@ class OrderFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/v1/orders?search=OS26060032');
 
         $response->assertOk()
@@ -532,8 +540,8 @@ class OrderFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->getJson('/api/v1/orders?' . http_build_query([
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orders?'.http_build_query([
                 'grupo_macro' => 'recepcao',
                 'data_abertura_de' => now()->subDays(10)->toDateString(),
                 'data_abertura_ate' => now()->toDateString(),
@@ -554,11 +562,11 @@ class OrderFlowTest extends TestCase
         // Aquece qualquer cache ligado ao usuario (ex.: permissoes RBAC) antes de medir,
         // para que a comparacao de queries entre as duas chamadas isole apenas o efeito
         // da quantidade de OS exibidas, sem ruido de cache frio na primeira chamada.
-        $this->withHeader('Authorization', 'Bearer ' . $token)->getJson('/api/v1/orders');
+        $this->withHeader('Authorization', 'Bearer '.$token)->getJson('/api/v1/orders');
 
         for ($i = 1; $i <= 5; $i++) {
             $orderId = $this->createOrderRecord([
-                'numero_os' => 'OS2606005' . $i,
+                'numero_os' => 'OS2606005'.$i,
                 'cliente_id' => $clientA,
                 'equipamento_id' => $equipmentA,
                 'tecnico_id' => $techA->id,
@@ -566,7 +574,7 @@ class OrderFlowTest extends TestCase
             ]);
 
             $this->createBudgetRecord([
-                'numero' => 'ORC-2606-00005' . $i,
+                'numero' => 'ORC-2606-00005'.$i,
                 'os_id' => $orderId,
             ]);
 
@@ -590,7 +598,7 @@ class OrderFlowTest extends TestCase
         }
 
         DB::enableQueryLog();
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/v1/orders?per_page=50');
         $queryCountForFiveOrders = count(DB::getQueryLog());
         DB::flushQueryLog();
@@ -618,7 +626,7 @@ class OrderFlowTest extends TestCase
         ]);
 
         DB::enableQueryLog();
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/v1/orders?per_page=50')
             ->assertOk()
             ->assertJsonPath('meta.pagination.total', 6);
@@ -664,7 +672,7 @@ class OrderFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/v1/orders?search=orcamento');
 
         $response->assertOk()
@@ -677,7 +685,7 @@ class OrderFlowTest extends TestCase
         [$user, $assignedOrder, , $photoId, $documentId] = $this->seedTechnicianOrders();
         $token = $this->loginAndGetToken($user->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/v1/orders/{$assignedOrder}");
 
         $response->assertOk()
@@ -759,7 +767,7 @@ class OrderFlowTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/v1/orders/{$assignedOrder}");
 
         $response->assertOk()
@@ -779,7 +787,7 @@ class OrderFlowTest extends TestCase
         [$user, , $unassignedOrder] = $this->seedTechnicianOrders();
         $token = $this->loginAndGetToken($user->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/v1/orders/{$unassignedOrder}");
 
         $response->assertForbidden()
@@ -791,7 +799,7 @@ class OrderFlowTest extends TestCase
         [$user, $assignedOrder, , $photoId] = $this->seedTechnicianOrders();
         $token = $this->loginAndGetToken($user->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->get("/api/v1/orders/{$assignedOrder}/photos/{$photoId}");
 
         $response->assertOk();
@@ -803,7 +811,7 @@ class OrderFlowTest extends TestCase
         [$user, $assignedOrder, , , $documentId] = $this->seedTechnicianOrders();
         $token = $this->loginAndGetToken($user->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->get("/api/v1/orders/{$assignedOrder}/documents/{$documentId}");
 
         $response->assertOk();
@@ -815,7 +823,7 @@ class OrderFlowTest extends TestCase
         [$user, $assignedOrder] = $this->seedTechnicianOrders();
         $token = $this->loginAndGetToken($user->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
                 'status' => 'aguardando_reparo',
                 'observacao' => 'Liberado para execução.',
@@ -848,7 +856,7 @@ class OrderFlowTest extends TestCase
         [$user, , $unassignedOrder] = $this->seedTechnicianOrders();
         $token = $this->loginAndGetToken($user->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/v1/orders/{$unassignedOrder}/status", [
                 'status' => 'aguardando_reparo',
             ]);
@@ -862,7 +870,7 @@ class OrderFlowTest extends TestCase
         [$user, $assignedOrder] = $this->seedTechnicianOrders();
         $token = $this->loginAndGetToken($user->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
                 'status' => 'status_inexistente',
             ]);
@@ -894,7 +902,7 @@ class OrderFlowTest extends TestCase
         // que nao seja um dos closureCodes() (ex.: entregue_reparado_pago) para
         // isolar a rejeicao de catalogo de transicoes da regra separada de
         // "closure_status_requires_baixa_flow" (ver OrderWorkflowService::updateStatus()).
-        $blocked = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $blocked = $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
                 'status' => 'aguardando_orcamento',
             ]);
@@ -909,7 +917,7 @@ class OrderFlowTest extends TestCase
         ]);
 
         // Destino permitido continua funcionando.
-        $allowed = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $allowed = $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
                 'status' => 'aguardando_reparo',
             ]);
@@ -977,7 +985,7 @@ class OrderFlowTest extends TestCase
 
         DB::table('os')->where('id', $assignedOrder)->update(['status' => 'testes_finais']);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
                 'status' => 'retrabalho',
                 'observacao' => 'Checklist de saída reprovou.',
@@ -1003,7 +1011,7 @@ class OrderFlowTest extends TestCase
 
         $this->assertDatabaseHas('os', ['id' => $assignedOrder, 'data_conclusao' => null]);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
                 'status' => 'entregue_pagamento_pendente',
             ]);
@@ -1019,13 +1027,13 @@ class OrderFlowTest extends TestCase
         [$user, $assignedOrder] = $this->seedTechnicianOrders();
         $token = $this->loginAndGetToken($user->email);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/v1/orders/{$assignedOrder}/status", ['status' => 'entregue_pagamento_pendente'])
             ->assertOk();
 
         // Tentar sair do status congelado sem informar novo_prazo é bloqueado
         // — o modal "Alterar status" no desktop deve mandar esse campo antes.
-        $blocked = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $blocked = $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/v1/orders/{$assignedOrder}/status", ['status' => 'aguardando_reparo']);
 
         $blocked->assertUnprocessable()
@@ -1040,13 +1048,13 @@ class OrderFlowTest extends TestCase
         [$user, $assignedOrder] = $this->seedTechnicianOrders();
         $token = $this->loginAndGetToken($user->email);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/v1/orders/{$assignedOrder}/status", ['status' => 'entregue_pagamento_pendente'])
             ->assertOk();
 
         $novoPrazo = now()->addDays(7)->toDateString();
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
                 'status' => 'aguardando_reparo',
                 'novo_prazo' => $novoPrazo,
@@ -1095,7 +1103,7 @@ class OrderFlowTest extends TestCase
         [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/orders', [
                 'cliente_id' => $clientId,
                 'equipamento_id' => $equipmentId,
@@ -1122,15 +1130,114 @@ class OrderFlowTest extends TestCase
         ]);
     }
 
+    public function test_create_order_is_idempotent_when_the_same_request_is_retried(): void
+    {
+        [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
+        $token = $this->loginAndGetToken($manager->email);
+        $idempotencyKey = 'f6ec1553-c42b-4d0e-8db4-0205a8b56e8a';
+        $payload = [
+            'idempotency_key' => $idempotencyKey,
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'tecnico_id' => $technician->id,
+            'status' => 'triagem',
+            'relato_cliente' => 'Requisição repetida após resposta ambígua.',
+            'enviar_pdf_cliente' => false,
+            'garantia_dias' => 90,
+        ];
+
+        $firstResponse = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', $payload);
+        $secondResponse = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', $payload);
+
+        $firstResponse->assertCreated()
+            ->assertJsonPath('data.idempotent_replay', false);
+        $secondResponse->assertCreated()
+            ->assertJsonPath('data.idempotent_replay', true)
+            ->assertJsonPath('data.order.id', (int) $firstResponse->json('data.order.id'));
+
+        $this->assertSame(1, DB::table('os')->where('creation_request_id', $idempotencyKey)->count());
+        $this->assertSame(1, DB::table('os_eventos')
+            ->where('os_id', (int) $firstResponse->json('data.order.id'))
+            ->where('tipo', 'os_criada')
+            ->count());
+    }
+
+    public function test_create_order_rejects_reusing_an_idempotency_key_with_different_data(): void
+    {
+        [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
+        $token = $this->loginAndGetToken($manager->email);
+        $idempotencyKey = '36e35818-5f39-4921-8117-bcaa35e77b7f';
+        $payload = [
+            'idempotency_key' => $idempotencyKey,
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'tecnico_id' => $technician->id,
+            'status' => 'triagem',
+            'relato_cliente' => 'Primeira tentativa válida.',
+            'garantia_dias' => 90,
+        ];
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', $payload)
+            ->assertCreated();
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', array_merge($payload, [
+                'relato_cliente' => 'Conteúdo alterado usando a mesma chave.',
+            ]))
+            ->assertConflict()
+            ->assertJsonPath('error.code', 'ORDER_IDEMPOTENCY_CONFLICT');
+
+        $this->assertSame(1, DB::table('os')->where('creation_request_id', $idempotencyKey)->count());
+    }
+
+    public function test_notification_failure_after_commit_does_not_report_order_creation_as_failed(): void
+    {
+        $this->mock(MobileInboxChannel::class, function (MockInterface $mock): void {
+            $mock->shouldReceive('send')
+                ->andThrow(new \RuntimeException('Falha simulada no canal de notificações.'));
+        });
+
+        [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
+        $token = $this->loginAndGetToken($manager->email);
+        $idempotencyKey = 'fc0d40b7-5e5e-4d31-937f-cf538b152b81';
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                'idempotency_key' => $idempotencyKey,
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'tecnico_id' => $technician->id,
+                'status' => 'triagem',
+                'relato_cliente' => 'OS deve sobreviver à falha posterior ao commit.',
+                'garantia_dias' => 90,
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('data.idempotent_replay', false)
+            ->assertJsonPath('data.warnings.0.code', 'ORDER_NOTIFICATION_DEFERRED');
+
+        $this->assertDatabaseHas('os', [
+            'creation_request_id' => $idempotencyKey,
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+        ]);
+    }
+
     public function test_admin_can_create_a_new_order_with_private_photos_and_access_them_through_the_authenticated_route(): void
     {
         Storage::fake('local');
+        config()->set('file-manager.mode', 'shadow');
+        config()->set('file-manager.enabled_categories', ['order_photo']);
 
         [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
         $token = $this->loginAndGetToken($manager->email);
 
         $response = $this
-            ->withHeader('Authorization', 'Bearer ' . $token)
+            ->withHeader('Authorization', 'Bearer '.$token)
             ->post('/api/v1/orders', [
                 'cliente_id' => $clientId,
                 'equipamento_id' => $equipmentId,
@@ -1162,7 +1269,16 @@ class OrderFlowTest extends TestCase
         $this->assertStringStartsWith("private/os/{$orderId}/", (string) $photo->arquivo);
         Storage::disk('local')->assertExists((string) $photo->arquivo);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $managedFiles = ManagedFile::query()
+            ->where('category', FileCategory::OrderPhoto->value)
+            ->get();
+        $this->assertCount(2, $managedFiles);
+        $this->assertSame(2, ManagedFileLink::query()->where('subject_type', 'order')->where('subject_id', $orderId)->count());
+        $this->assertSame(2, ManagedFileLegacyAlias::query()->whereIn('file_id', $managedFiles->pluck('id'))->count());
+
+        config()->set('file-manager.mode', 'off');
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->get("/api/v1/orders/{$orderId}/photos/{$photo->id}")
             ->assertOk()
             ->assertHeader('Content-Type', 'image/jpeg');
@@ -1177,7 +1293,7 @@ class OrderFlowTest extends TestCase
         $token = $this->loginAndGetToken($manager->email);
 
         $response = $this
-            ->withHeader('Authorization', 'Bearer ' . $token)
+            ->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/orders', [
                 'cliente_id' => $clientId,
                 'equipamento_id' => $equipmentId,
@@ -1210,7 +1326,7 @@ class OrderFlowTest extends TestCase
             'versao' => 1,
         ]);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/v1/orders/{$orderId}/documents")
             ->assertOk()
             ->assertJsonPath('status', 'success')
@@ -1219,7 +1335,7 @@ class OrderFlowTest extends TestCase
             ->assertJsonPath('data.documents.0.files.a4.available', true)
             ->assertJsonPath('data.catalog.0.type', 'abertura');
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->get("/api/v1/orders/{$orderId}/documents/{$documentId}")
             ->assertOk()
             ->assertHeader('Content-Type', 'application/pdf');
@@ -1234,7 +1350,7 @@ class OrderFlowTest extends TestCase
         $token = $this->loginAndGetToken($manager->email);
 
         $createResponse = $this
-            ->withHeader('Authorization', 'Bearer ' . $token)
+            ->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/orders', [
                 'cliente_id' => $clientId,
                 'equipamento_id' => $equipmentId,
@@ -1251,7 +1367,7 @@ class OrderFlowTest extends TestCase
         $this->assertGreaterThan(0, $documentId);
 
         $response = $this
-            ->withHeader('Authorization', 'Bearer ' . $token)
+            ->withHeader('Authorization', 'Bearer '.$token)
             ->get("/api/v1/orders/{$orderId}/documents/download?document_ids[]={$documentId}&format=a4");
 
         $response->assertOk();
@@ -1272,7 +1388,7 @@ class OrderFlowTest extends TestCase
         $token = $this->loginAndGetToken($manager->email);
 
         $createResponse = $this
-            ->withHeader('Authorization', 'Bearer ' . $token)
+            ->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/orders', [
                 'cliente_id' => $clientId,
                 'equipamento_id' => $equipmentId,
@@ -1291,7 +1407,7 @@ class OrderFlowTest extends TestCase
         $documentId = (int) $createResponse->json('data.order.documentos.0.id');
 
         $shareResponse = $this
-            ->withHeader('Authorization', 'Bearer ' . $token)
+            ->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/documents/share-links", [
                 'document_ids' => [$documentId],
                 'format' => 'a4',
@@ -1316,7 +1432,7 @@ class OrderFlowTest extends TestCase
             ->assertOk()
             ->assertSee($orderNumber);
 
-        $this->get($publicPath . '/arquivos/' . $documentId . '/a4')
+        $this->get($publicPath.'/arquivos/'.$documentId.'/a4')
             ->assertOk()
             ->assertHeader('Content-Type', 'application/pdf');
     }
@@ -1335,7 +1451,7 @@ class OrderFlowTest extends TestCase
         $token = $this->loginAndGetToken($manager->email);
 
         $response = $this
-            ->withHeader('Authorization', 'Bearer ' . $token)
+            ->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/orders', [
                 'cliente_id' => $clientId,
                 'equipamento_id' => $equipmentId,
@@ -1367,7 +1483,7 @@ class OrderFlowTest extends TestCase
         [$manager, $orderId] = $this->seedManagerOrderForUpdate();
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/v1/orders/{$orderId}", [
                 'status' => 'aguardando_reparo',
                 'estado_fluxo' => 'em_execucao',
@@ -1388,9 +1504,9 @@ class OrderFlowTest extends TestCase
             'relato_cliente' => 'Novo relato do cliente',
         ]);
 
-        Cache::forget('rbac_user_' . $manager->id);
+        Cache::forget('rbac_user_'.$manager->id);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/v1/orders/{$orderId}")
             ->assertOk()
             ->assertJsonPath('data.order.status', 'aguardando_reparo');
@@ -1401,7 +1517,7 @@ class OrderFlowTest extends TestCase
         [$manager, $orderId] = $this->seedManagerOrderForUpdate();
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/v1/orders/{$orderId}/closure");
 
         $response->assertOk()
@@ -1419,7 +1535,7 @@ class OrderFlowTest extends TestCase
         DB::table('os')->where('id', $orderId)->update(['valor_final' => 150.00]);
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
@@ -1483,13 +1599,13 @@ class OrderFlowTest extends TestCase
         ]);
         $token = $this->loginAndGetToken($manager->email);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson("/api/v1/orders/{$orderId}/closure")
             ->assertOk()
             ->assertJsonPath('data.contas_financeiras.contas.0.id', $accountId)
             ->assertJsonPath('data.contas_financeiras.contas_padrao.pix', $accountId);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
@@ -1515,7 +1631,7 @@ class OrderFlowTest extends TestCase
         [$manager, $orderId] = $this->seedManagerOrderForUpdate();
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
@@ -1537,7 +1653,7 @@ class OrderFlowTest extends TestCase
         $this->createBudgetRecord(['os_id' => $orderId, 'status' => 'aguardando_resposta']);
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
@@ -1557,7 +1673,7 @@ class OrderFlowTest extends TestCase
         $this->createBudgetRecord(['os_id' => $orderId, 'status' => 'rejeitado', 'rejeitado_em' => now()]);
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
@@ -1575,7 +1691,7 @@ class OrderFlowTest extends TestCase
         $this->createBudgetRecord(['os_id' => $orderId, 'status' => 'aprovado', 'aprovado_em' => now()]);
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
@@ -1594,7 +1710,7 @@ class OrderFlowTest extends TestCase
         DB::table('os')->where('id', $orderId)->update(['valor_final' => 100.00]);
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
@@ -1612,7 +1728,7 @@ class OrderFlowTest extends TestCase
         $this->createBudgetRecord(['os_id' => $orderId, 'status' => 'aguardando_resposta']);
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'entregue_reparado_sem_custo',
                 'data_entrega' => now()->toDateString(),
@@ -1626,7 +1742,7 @@ class OrderFlowTest extends TestCase
         [$manager, $orderId] = $this->seedManagerOrderForUpdate();
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'aguardando_reparo',
                 'data_entrega' => now()->toDateString(),
@@ -1649,7 +1765,7 @@ class OrderFlowTest extends TestCase
         ]);
         $token = $this->loginAndGetToken($technician->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$unassignedOrder}/closure", [
                 'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
@@ -1665,11 +1781,11 @@ class OrderFlowTest extends TestCase
         DB::table('os')->where('id', $orderId)->update(['valor_final' => 100.00]);
         $token = $this->loginAndGetToken($manager->email);
 
-        $this->mock(\App\Services\Channels\Whatsapp\WhatsappMessagingService::class, function ($mock): void {
+        $this->mock(WhatsappMessagingService::class, function ($mock): void {
             $mock->shouldReceive('sendSystemMessage')->andThrow(new \RuntimeException('Falha simulada de integração.'));
         });
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
@@ -1693,7 +1809,7 @@ class OrderFlowTest extends TestCase
         $card = $this->seedCardRate();
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
@@ -1740,7 +1856,7 @@ class OrderFlowTest extends TestCase
         $card = $this->seedCardRate();
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
@@ -1768,7 +1884,7 @@ class OrderFlowTest extends TestCase
         DB::table('os')->where('id', $orderId)->update(['valor_final' => 300.00]);
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
@@ -1802,7 +1918,7 @@ class OrderFlowTest extends TestCase
         DB::table('os')->where('id', $orderId)->update(['valor_final' => 300.00]);
         $token = $this->loginAndGetToken($manager->email);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
@@ -1814,7 +1930,7 @@ class OrderFlowTest extends TestCase
             DB::table('os_cobranca_agendamentos')->where('os_id', $orderId)->where('status', 'pendente')->count()
         );
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
@@ -1839,7 +1955,7 @@ class OrderFlowTest extends TestCase
         DB::table('os')->where('id', $orderId)->update(['valor_final' => 150.00]);
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'devolvido_sem_reparo',
                 'data_entrega' => now()->toDateString(),
@@ -1878,7 +1994,7 @@ class OrderFlowTest extends TestCase
         DB::table('os')->where('id', $orderId)->update(['valor_final' => 150.00]);
         $token = $this->loginAndGetToken($manager->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => $statusGratuito,
                 'data_entrega' => now()->toDateString(),
@@ -1910,7 +2026,7 @@ class OrderFlowTest extends TestCase
         $token = $this->loginAndGetToken($manager->email);
         $retornoData = now()->addDays(180)->toDateString();
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson("/api/v1/orders/{$orderId}/closure", [
                 'encerrar_como' => 'entregue_reparado_pago',
                 'data_entrega' => now()->toDateString(),
@@ -1927,9 +2043,9 @@ class OrderFlowTest extends TestCase
 
         $followup = DB::table('crm_followups')->where('os_id', $orderId)->first();
         $this->assertSame('pendente', $followup->status);
-        $this->assertStringContainsString('os_retorno_agendado_' . $orderId . '_', (string) $followup->origem_evento);
+        $this->assertStringContainsString('os_retorno_agendado_'.$orderId.'_', (string) $followup->origem_evento);
 
-        $duplicateId = app(\App\Services\Orders\OrderClosureService::class)
+        $duplicateId = app(OrderClosureService::class)
             ->createReturnFollowup($orderId, $retornoData, (int) $manager->id);
 
         $this->assertNull($duplicateId);
@@ -1971,7 +2087,7 @@ class OrderFlowTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        $this->mock(\App\Services\Channels\Whatsapp\WhatsappMessagingService::class, function ($mock): void {
+        $this->mock(WhatsappMessagingService::class, function ($mock): void {
             $mock->shouldReceive('sendSystemMessage')->once()->andReturn(['ok' => true]);
         });
 
@@ -2008,7 +2124,7 @@ class OrderFlowTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      * @return array{operadora_id: int, taxa_id: int}
      */
     private function seedCardRate(array $overrides = []): array
@@ -2113,11 +2229,11 @@ class OrderFlowTest extends TestCase
         for ($i = 1; $i <= 6; $i++) {
             DB::table('os_status_historico')->insert([
                 'os_id' => $assignedOrder,
-                'status_anterior' => $i === 1 ? 'triagem' : 'status_' . ($i - 1),
-                'status_novo' => 'status_' . $i,
+                'status_anterior' => $i === 1 ? 'triagem' : 'status_'.($i - 1),
+                'status_novo' => 'status_'.$i,
                 'estado_fluxo' => 'em_execucao',
                 'usuario_id' => $user->id,
-                'observacao' => 'Histórico ' . $i,
+                'observacao' => 'Histórico '.$i,
                 'created_at' => now()->addMinutes($i),
             ]);
         }
@@ -2314,7 +2430,7 @@ class OrderFlowTest extends TestCase
     private function writeLegacyFile(string $relativePath, string $contents): string
     {
         $relativePath = ltrim(str_replace('\\', '/', $relativePath), '/');
-        $absolutePath = $this->legacyPublicRoot . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
+        $absolutePath = $this->legacyPublicRoot.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
         $directory = dirname($absolutePath);
 
         if (! is_dir($directory)) {

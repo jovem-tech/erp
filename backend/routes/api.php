@@ -1,43 +1,44 @@
 <?php
 
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\BudgetController;
+use App\Http\Controllers\Api\V1\CatalogController;
 use App\Http\Controllers\Api\V1\Chat\AttachmentController;
 use App\Http\Controllers\Api\V1\Chat\ClientSearchController;
-use App\Http\Controllers\Api\V1\DashboardController;
-use App\Http\Controllers\Api\V1\CatalogController;
 use App\Http\Controllers\Api\V1\Chat\ConversationController;
 use App\Http\Controllers\Api\V1\Chat\MessageController;
 use App\Http\Controllers\Api\V1\ChecklistModeloController;
 use App\Http\Controllers\Api\V1\ClientController;
+use App\Http\Controllers\Api\V1\ConfigurationController;
+use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DefeitoRelatadoController;
+use App\Http\Controllers\Api\V1\DocumentSignatureController;
 use App\Http\Controllers\Api\V1\EquipamentoDefeitoController;
 use App\Http\Controllers\Api\V1\EquipmentCollectorController;
 use App\Http\Controllers\Api\V1\EquipmentController;
 use App\Http\Controllers\Api\V1\EstoqueController;
-use App\Http\Controllers\Api\V1\KnowledgeController;
-use App\Http\Controllers\Api\V1\NotificationController;
-use App\Http\Controllers\Api\V1\GroupController;
-use App\Http\Controllers\Api\V1\BudgetController;
-use App\Http\Controllers\Api\V1\ConfigurationController;
-use App\Http\Controllers\Api\V1\FinanceiroCatalogController;
+use App\Http\Controllers\Api\V1\FileManagerController;
 use App\Http\Controllers\Api\V1\FinanceiroCartaoController;
+use App\Http\Controllers\Api\V1\FinanceiroCatalogController;
 use App\Http\Controllers\Api\V1\FinanceiroContaController;
-use App\Http\Controllers\Api\V1\FinanceiroPrecificacaoController;
 use App\Http\Controllers\Api\V1\FinanceiroController;
 use App\Http\Controllers\Api\V1\FinanceiroMargemController;
+use App\Http\Controllers\Api\V1\FinanceiroPrecificacaoController;
 use App\Http\Controllers\Api\V1\FinanceiroReportController;
+use App\Http\Controllers\Api\V1\GroupController;
 use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\KnowledgeController;
+use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\OrderStatusFlowController;
 use App\Http\Controllers\Api\V1\OsPdfTemplateController;
 use App\Http\Controllers\Api\V1\PdfTemplateEngineController;
+use App\Http\Controllers\Api\V1\PublicDocumentSignatureController;
 use App\Http\Controllers\Api\V1\ServicoController;
 use App\Http\Controllers\Api\V1\SupplierController;
 use App\Http\Controllers\Api\V1\TeamMemberController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\UserSignatureController;
-use App\Http\Controllers\Api\V1\DocumentSignatureController;
-use App\Http\Controllers\Api\V1\PublicDocumentSignatureController;
 use App\Http\Controllers\Api\V1\WhatsappTemplateController;
 use App\Support\ApiResponse;
 use Illuminate\Http\Request;
@@ -87,6 +88,26 @@ Route::prefix('v1')->group(function (): void {
 
         Route::get('dashboard/summary', [DashboardController::class, 'summary'])
             ->name('api.v1.dashboard.summary');
+
+        Route::get('file-manager/dashboard', [FileManagerController::class, 'dashboard'])->name('api.v1.file_manager.dashboard');
+        Route::post('file-manager/sync', [FileManagerController::class, 'requestSynchronization'])
+            ->middleware('throttle:3,1')
+            ->name('api.v1.file_manager.sync');
+        Route::get('file-manager/scan-runs', [FileManagerController::class, 'scanRuns'])->name('api.v1.file_manager.scan_runs');
+        Route::get('file-manager/findings', [FileManagerController::class, 'findings'])->name('api.v1.file_manager.findings');
+        Route::get('files', [FileManagerController::class, 'index'])->name('api.v1.files.index');
+        Route::post('files/download-batch', [FileManagerController::class, 'downloadBatch'])->name('api.v1.files.download_batch');
+        Route::post('files/trash-batch', [FileManagerController::class, 'trashBatch'])->name('api.v1.files.trash_batch');
+        Route::get('files/{fileUuid}', [FileManagerController::class, 'show'])->name('api.v1.files.show');
+        Route::get('files/{fileUuid}/download', [FileManagerController::class, 'download'])->name('api.v1.files.download');
+        Route::get('files/{fileUuid}/preview', [FileManagerController::class, 'preview'])->name('api.v1.files.preview');
+        Route::get('files/{fileUuid}/thumbnail', [FileManagerController::class, 'thumbnail'])
+            ->middleware('throttle:120,1')
+            ->name('api.v1.files.thumbnail');
+        Route::post('files/{fileUuid}/archive', [FileManagerController::class, 'archive'])->name('api.v1.files.archive');
+        Route::post('files/{fileUuid}/restore', [FileManagerController::class, 'restore'])->name('api.v1.files.restore');
+        Route::post('files/{fileUuid}/quarantine', [FileManagerController::class, 'quarantine'])->name('api.v1.files.quarantine');
+        Route::post('files/{fileUuid}/release-quarantine', [FileManagerController::class, 'releaseQuarantine'])->name('api.v1.files.release_quarantine');
 
         Route::get('notifications', [NotificationController::class, 'index'])->name('api.v1.notifications.index');
         Route::patch('notifications/{notification}/read', [NotificationController::class, 'markAsRead'])->name('api.v1.notifications.read');

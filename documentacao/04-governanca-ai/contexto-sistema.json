@@ -1,9 +1,9 @@
 {
-    "generated_at": "2026-07-19T06:32:05+00:00",
+    "generated_at": "2026-07-20T03:58:10-03:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "4.25.1",
-        "api_version": "1.3.0",
+        "app_version": "5.1.0",
+        "api_version": "1.5.0",
         "production_target": "Ubuntu VPS",
         "development_target": "Ubuntu Server LAN - BANCADA-02 (192.168.1.100)"
     },
@@ -31,7 +31,7 @@
             "files": [
                 {
                     "file": "documentacao/01-fundacao/acesso-seguro-a-arquivos.md",
-                    "title": "Acesso Seguro a Arquivos"
+                    "title": "Acesso seguro a arquivos"
                 },
                 {
                     "file": "documentacao/01-fundacao/contrato-de-ambiente.md",
@@ -102,6 +102,18 @@
                 {
                     "file": "documentacao/03-arquitetura-tecnica/frontend-sistema-hml-bff.md",
                     "title": "Frontend sistema-hml como BFF"
+                },
+                {
+                    "file": "documentacao/03-arquitetura-tecnica/gerenciador-central-arquivos.md",
+                    "title": "Gerenciador Central de Arquivos"
+                },
+                {
+                    "file": "documentacao/03-arquitetura-tecnica/idempotencia-criacao-os.md",
+                    "title": "Idempotência e confirmação segura na criação de OS"
+                },
+                {
+                    "file": "documentacao/03-arquitetura-tecnica/inventario-arquivos-funcionais.md",
+                    "title": "Inventário de arquivos funcionais"
                 },
                 {
                     "file": "documentacao/03-arquitetura-tecnica/mapa-migracao-legado-frontend-sistema-hml.md",
@@ -434,12 +446,32 @@
                     "title": "Motor central e templates modernos de PDF"
                 },
                 {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-19-acessorios-por-ordem-servico.md",
+                    "title": "Acessórios recebidos por ordem de serviço"
+                },
+                {
                     "file": "documentacao/07-novas-implementacoes/2026-07-19-assinaturas-digitais-documentos.md",
                     "title": "Assinaturas digitais e rastreabilidade documental"
                 },
                 {
                     "file": "documentacao/07-novas-implementacoes/2026-07-19-consolidado-implementacoes-18-19-julho.md",
                     "title": "Consolidado das implementações de 18 e 19 de julho de 2026"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-19-hardening-arquivos-branding-chat.md",
+                    "title": "Hardening de arquivos: branding e anexos do chat"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-19-nucleo-gerenciador-central-arquivos.md",
+                    "title": "Núcleo do Gerenciador Central de Arquivos"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-19-painel-gerenciador-arquivos.md",
+                    "title": "Painel do Gerenciador Central de Arquivos"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md",
+                    "title": "Consolidado das implementações de 20 de julho de 2026"
                 },
                 {
                     "file": "documentacao/07-novas-implementacoes/historico-de-versoes.md",
@@ -469,6 +501,10 @@
                 {
                     "file": "documentacao/10-deploy/manual-versionamento-e-deploy.md",
                     "title": "Manual de Publicação — Versionar e Deploy"
+                },
+                {
+                    "file": "documentacao/10-deploy/operacao-gerenciador-central-arquivos.md",
+                    "title": "Operação do Gerenciador Central de Arquivos"
                 },
                 {
                     "file": "documentacao/10-deploy/workflow-git-multiambiente.md",
@@ -791,6 +827,21 @@
                 "data_model": true,
                 "contracts": true,
                 "checklists": false
+            }
+        },
+        {
+            "directory": "specs/022-gerenciador-central-arquivos",
+            "title": "Feature Specification: Gerenciador Central de Arquivos",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": true,
+                "quickstart": true,
+                "analysis": false,
+                "data_model": true,
+                "contracts": true,
+                "checklists": true
             }
         }
     ],

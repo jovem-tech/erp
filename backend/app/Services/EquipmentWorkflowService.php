@@ -2,14 +2,18 @@
 
 namespace App\Services;
 
+use App\DTO\Files\FileContext;
+use App\Enums\Files\FileCategory;
+use App\Enums\Files\FileOrigin;
+use App\Models\Client;
 use App\Models\Equipment;
 use App\Models\EquipmentBrand;
 use App\Models\EquipmentCollectorPairing;
 use App\Models\EquipmentModel;
 use App\Models\EquipmentPhoto;
 use App\Models\EquipmentType;
-use App\Models\Client;
 use App\Models\User;
+use App\Services\Files\LegacyCompatibleFileAdapter;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
@@ -21,6 +25,8 @@ use RuntimeException;
 
 class EquipmentWorkflowService
 {
+    public function __construct(private readonly LegacyCompatibleFileAdapter $fileManagerAdapter) {}
+
     private const BRAND_SCOPE_ANCHOR_MODEL_NAME = '__CATALOG_BRAND_SCOPE__';
 
     /**
@@ -101,14 +107,14 @@ class EquipmentWorkflowService
                 // e o proprio endereco publico deste backend.
                 'erp_base_url' => rtrim((string) config('app.url'), '/'),
                 'download_url_linux' => rtrim((string) config('app.url'), '/')
-                    . '/assets/agents/bench-collector/linux-x64/jovemtech-bench-collector.sh',
+                    .'/assets/agents/bench-collector/linux-x64/jovemtech-bench-collector.sh',
                 // O .exe Windows compilado (sem fonte no repo) usa um fluxo
                 // antigo por numero de OS/e-mail, incompativel com o
                 // endpoint de pareamento — por isso o link aqui aponta pro
                 // script .ps1 novo (mesmo protocolo --pairing-code do build
                 // Linux), nao pro .exe.
                 'download_url_windows' => rtrim((string) config('app.url'), '/')
-                    . '/assets/agents/bench-collector/win-x64/jovemtech-bench-collector.ps1',
+                    .'/assets/agents/bench-collector/win-x64/jovemtech-bench-collector.ps1',
             ],
         ];
     }
@@ -296,7 +302,7 @@ class EquipmentWorkflowService
             return [];
         }
 
-        $cacheKey = 'equipment_model_suggestions_' . md5($query . '|' . $brandName . '|' . $typeName);
+        $cacheKey = 'equipment_model_suggestions_'.md5($query.'|'.$brandName.'|'.$typeName);
 
         return Cache::remember($cacheKey, now()->addMinutes(15), function () use ($query, $brandName, $typeName): array {
             $parts = array_values(array_filter([$this->normalizeTypeHint($typeName), $brandName, $query]));
@@ -341,7 +347,7 @@ class EquipmentWorkflowService
 
                 $seen[] = $fingerprint;
                 $suggestions[] = [
-                    'id' => 'EXT|' . substr(md5($candidate), 0, 12),
+                    'id' => 'EXT|'.substr(md5($candidate), 0, 12),
                     'nome' => mb_convert_case($candidate, MB_CASE_TITLE, 'UTF-8'),
                     'source' => 'google',
                 ];
@@ -501,9 +507,9 @@ class EquipmentWorkflowService
                 "\$DefaultCollectorToken = ''",
             ],
             [
-                "\$DefaultPairingCode = '" . $psEscape($pairing->code) . "'",
-                "\$DefaultErpBaseUrl = '" . $psEscape($erpBaseUrl) . "'",
-                "\$DefaultCollectorToken = '" . $psEscape($token) . "'",
+                "\$DefaultPairingCode = '".$psEscape($pairing->code)."'",
+                "\$DefaultErpBaseUrl = '".$psEscape($erpBaseUrl)."'",
+                "\$DefaultCollectorToken = '".$psEscape($token)."'",
             ],
             $template,
             $replacements
@@ -530,7 +536,7 @@ class EquipmentWorkflowService
             throw new RuntimeException('Nao foi possivel gerar o pacote do coletor.', 500);
         }
 
-        $zip = new \ZipArchive();
+        $zip = new \ZipArchive;
         if ($zip->open($zipPath, \ZipArchive::CREATE | \ZipArchive::OVERWRITE) !== true) {
             @unlink($zipPath);
             throw new RuntimeException('Nao foi possivel gerar o pacote do coletor.', 500);
@@ -544,15 +550,15 @@ class EquipmentWorkflowService
         @unlink($zipPath);
 
         return [
-            'filename' => 'coletor-' . $pairing->code . '.zip',
+            'filename' => 'coletor-'.$pairing->code.'.zip',
             'mime' => 'application/zip',
             'content' => $content,
         ];
     }
 
     /**
-     * @param array<string, mixed> $payload
-     * @param array<int, UploadedFile> $uploadedFiles
+     * @param  array<string, mixed>  $payload
+     * @param  array<int, UploadedFile>  $uploadedFiles
      */
     public function createEquipment(array $payload, array $uploadedFiles = []): Equipment
     {
@@ -595,8 +601,8 @@ class EquipmentWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $payload
-     * @param array<int, UploadedFile> $uploadedFiles
+     * @param  array<string, mixed>  $payload
+     * @param  array<int, UploadedFile>  $uploadedFiles
      */
     public function updateEquipment(int $equipmentId, array $payload, array $uploadedFiles = []): Equipment
     {
@@ -704,18 +710,18 @@ class EquipmentWorkflowService
         }
 
         $root = rtrim((string) config('filesystems.disks.legacy_public.root', ''), '/\\') ?: rtrim(
-            dirname(base_path(), 2) . DIRECTORY_SEPARATOR . 'sistema-hml' . DIRECTORY_SEPARATOR . 'public',
+            dirname(base_path(), 2).DIRECTORY_SEPARATOR.'sistema-hml'.DIRECTORY_SEPARATOR.'public',
             DIRECTORY_SEPARATOR
         );
 
-        $absolutePath = $root . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . 'equipamentos_perfil'
-            . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
+        $absolutePath = $root.DIRECTORY_SEPARATOR.'uploads'.DIRECTORY_SEPARATOR.'equipamentos_perfil'
+            .DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relativePath);
 
         return is_file($absolutePath) ? $absolutePath : null;
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
     private function normalizePayload(array $payload): array
@@ -796,7 +802,7 @@ class EquipmentWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
     private function applyDesktopDefaults(array $payload): array
@@ -807,6 +813,7 @@ class EquipmentWorkflowService
 
         if (! $isDesktopFamily) {
             $payload['desktop_modalidade'] = null;
+
             return $payload;
         }
 
@@ -814,6 +821,7 @@ class EquipmentWorkflowService
         // foi enviado no payload. Apenas o tipo "Desktop" admite a modalidade "montado".
         if ($family === 'notebook') {
             $payload['desktop_modalidade'] = 'oem';
+
             return $payload;
         }
 
@@ -835,7 +843,7 @@ class EquipmentWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
     private function normalizePasswordPayload(array $payload): array
@@ -845,7 +853,7 @@ class EquipmentWorkflowService
         $passwordPattern = trim((string) ($payload['senha_desenho'] ?? ''));
 
         if ($passwordType === 'desenho' && $passwordPattern !== '') {
-            $passwordValue = 'desenho_' . ltrim($passwordPattern, '_');
+            $passwordValue = 'desenho_'.ltrim($passwordPattern, '_');
         }
 
         $payload['senha_acesso'] = $passwordValue !== '' ? $passwordValue : null;
@@ -854,7 +862,7 @@ class EquipmentWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      */
     private function shouldUpdatePassword(array $payload): bool
     {
@@ -863,7 +871,7 @@ class EquipmentWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      */
     private function buildTechnicalSummary(array $payload): string
     {
@@ -946,8 +954,8 @@ class EquipmentWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $payload
-     * @param array<int, UploadedFile> $uploadedFiles
+     * @param  array<string, mixed>  $payload
+     * @param  array<int, UploadedFile>  $uploadedFiles
      */
     private function syncEquipmentPhotos(Equipment $equipment, array $payload, array $uploadedFiles): void
     {
@@ -1056,7 +1064,7 @@ class EquipmentWorkflowService
     }
 
     /**
-     * @param array<int, UploadedFile> $uploadedFiles
+     * @param  array<int, UploadedFile>  $uploadedFiles
      */
     private function storePhotos(Equipment $equipment, array $uploadedFiles, ?int $primaryIndex = 0, bool $ensurePrimary = true): array
     {
@@ -1069,7 +1077,7 @@ class EquipmentWorkflowService
             return [];
         }
 
-        $directory = 'private/equipamentos/' . $equipment->id;
+        $directory = 'private/equipamentos/'.$equipment->id;
         $createdPhotoIds = [];
 
         if ($primaryIndex !== null) {
@@ -1086,14 +1094,45 @@ class EquipmentWorkflowService
                 $extension
             );
 
-            Storage::disk('local')->putFileAs($directory, $file, $filename);
+            $storagePath = $directory.'/'.$filename;
+            $photo = null;
 
-            $photo = EquipmentPhoto::query()->create([
-                'equipamento_id' => $equipment->id,
-                'arquivo' => $directory . '/' . $filename,
-                'is_principal' => $primaryIndex !== null && $index === $primaryIndex ? 1 : 0,
-                'created_at' => now(),
-            ]);
+            try {
+                $writtenPath = Storage::disk('local')->putFileAs($directory, $file, $filename);
+                if (! is_string($writtenPath) || $writtenPath !== $storagePath || ! Storage::disk('local')->exists($storagePath)) {
+                    throw new RuntimeException('Falha ao persistir foto do equipamento.');
+                }
+
+                $photo = EquipmentPhoto::query()->create([
+                    'equipamento_id' => $equipment->id,
+                    'arquivo' => $storagePath,
+                    'is_principal' => $primaryIndex !== null && $index === $primaryIndex ? 1 : 0,
+                    'created_at' => now(),
+                ]);
+
+                $this->fileManagerAdapter->synchronizeExisting(
+                    new FileContext(
+                        category: FileCategory::EquipmentPhoto,
+                        origin: FileOrigin::Upload,
+                        operationKey: 'equipment-photo:'.(int) $photo->id.':'.hash('sha256', $storagePath),
+                        subjectType: 'equipment',
+                        subjectId: (int) $equipment->id,
+                        relation: 'photo:'.(int) $photo->id
+                    ),
+                    'local',
+                    $storagePath,
+                    'equipamentos_fotos',
+                    'arquivo',
+                    (string) $photo->id
+                );
+            } catch (\Throwable $exception) {
+                $photo?->delete();
+                if (Storage::disk('local')->exists($storagePath)) {
+                    Storage::disk('local')->delete($storagePath);
+                }
+
+                throw $exception;
+            }
 
             $createdPhotoIds[] = (int) $photo->id;
         }
@@ -1110,7 +1149,7 @@ class EquipmentWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $snapshot
+     * @param  array<string, mixed>  $snapshot
      * @return array<string, mixed>
      */
     private function normalizeCollectorSnapshot(array $snapshot): array
@@ -1154,8 +1193,8 @@ class EquipmentWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $snapshotData
-     * @param array<string, mixed> $extra
+     * @param  array<string, mixed>  $snapshotData
+     * @param  array<string, mixed>  $extra
      * @return array<string, mixed>
      */
     private function buildLocalCollectorResponsePayload(array $snapshotData, array $extra = []): array
@@ -1177,7 +1216,7 @@ class EquipmentWorkflowService
     {
         $snapshotPath = $this->resolveLocalCollectorSnapshotPath();
         if ($snapshotPath === null) {
-            throw new RuntimeException('Nao encontrei o snapshot local do coletor em ' . $this->getCollectorLocalRootPath() . '.', 404);
+            throw new RuntimeException('Nao encontrei o snapshot local do coletor em '.$this->getCollectorLocalRootPath().'.', 404);
         }
 
         $raw = @file_get_contents($snapshotPath);
@@ -1209,8 +1248,8 @@ class EquipmentWorkflowService
     {
         $rootPath = $this->getCollectorLocalRootPath();
         $candidates = [
-            $rootPath . DIRECTORY_SEPARATOR . 'last-snapshot.json',
-            $rootPath . DIRECTORY_SEPARATOR . 'snapshot.json',
+            $rootPath.DIRECTORY_SEPARATOR.'last-snapshot.json',
+            $rootPath.DIRECTORY_SEPARATOR.'snapshot.json',
         ];
 
         foreach ($candidates as $path) {
@@ -1220,7 +1259,7 @@ class EquipmentWorkflowService
         }
 
         if (is_dir($rootPath)) {
-            $namedSnapshots = glob($rootPath . DIRECTORY_SEPARATOR . 'inf_*.json') ?: [];
+            $namedSnapshots = glob($rootPath.DIRECTORY_SEPARATOR.'inf_*.json') ?: [];
             usort($namedSnapshots, static function (string $left, string $right): int {
                 return (int) (@filemtime($right) ?: 0) <=> (int) (@filemtime($left) ?: 0);
             });
@@ -1258,7 +1297,7 @@ class EquipmentWorkflowService
         $catalogModel = $chipset !== '' ? $chipset : $model;
 
         if ($memorySummary === '' && $ramGb !== null && $ramGb !== '') {
-            $memorySummary = rtrim(rtrim(number_format((float) $ramGb, 2, '.', ''), '0'), '.') . ' GB';
+            $memorySummary = rtrim(rtrim(number_format((float) $ramGb, 2, '.', ''), '0'), '.').' GB';
         }
 
         if (strtolower($deviceType) === 'desktop') {
@@ -1311,7 +1350,7 @@ class EquipmentWorkflowService
                 return $fallback;
             }
 
-            throw new RuntimeException('Nao encontrei o executavel publicado do coletor em assets/agents/bench-collector/' . ($this->isLinuxHost() ? 'linux-x64' : 'win-x64') . '.', 500);
+            throw new RuntimeException('Nao encontrei o executavel publicado do coletor em assets/agents/bench-collector/'.($this->isLinuxHost() ? 'linux-x64' : 'win-x64').'.', 500);
         }
 
         $installInfo = $this->ensureLocalCollectorInstalled();
@@ -1321,11 +1360,11 @@ class EquipmentWorkflowService
         // bash explicito (o exec bit sozinho as vezes nao basta dependendo de
         // como o arquivo foi copiado/montado).
         $command = $this->isLinuxHost()
-            ? 'bash ' . escapeshellarg($installInfo['executable_path']) . ' --dry-run --no-prompt --no-save-config'
-            : '"' . $installInfo['executable_path'] . '" --dry-run --no-prompt --no-save-config';
+            ? 'bash '.escapeshellarg($installInfo['executable_path']).' --dry-run --no-prompt --no-save-config'
+            : '"'.$installInfo['executable_path'].'" --dry-run --no-prompt --no-save-config';
         $output = [];
         $exitCode = 1;
-        @exec($command . ' 2>&1', $output, $exitCode);
+        @exec($command.' 2>&1', $output, $exitCode);
 
         $snapshotPath = $this->resolveLocalCollectorSnapshotPath();
         $result = [
@@ -1342,15 +1381,16 @@ class EquipmentWorkflowService
         if ($exitCode !== 0) {
             if ($snapshotPath !== null) {
                 $result['warning'] = 'O coletor retornou aviso na execucao, mas um snapshot local foi encontrado apos a tentativa.';
+
                 return $result;
             }
 
-            $details = $result['output'] !== '' ? ' Saida do coletor: ' . $result['output'] : '';
-            throw new RuntimeException('Nao foi possivel executar o coletor local automaticamente.' . $details, 500);
+            $details = $result['output'] !== '' ? ' Saida do coletor: '.$result['output'] : '';
+            throw new RuntimeException('Nao foi possivel executar o coletor local automaticamente.'.$details, 500);
         }
 
         if ($snapshotPath === null) {
-            throw new RuntimeException('O coletor foi executado, mas nao gerou o snapshot local esperado em ' . $this->getCollectorLocalRootPath() . '.', 422);
+            throw new RuntimeException('O coletor foi executado, mas nao gerou o snapshot local esperado em '.$this->getCollectorLocalRootPath().'.', 422);
         }
 
         $result['cleanup'] = $this->cleanupLocalCollectorTemporaryArtifacts($snapshotPath);
@@ -1392,7 +1432,7 @@ class EquipmentWorkflowService
         $targetExe = $this->getCollectorLocalExecutablePath();
 
         if (! is_dir($rootPath) && ! @mkdir($rootPath, 0777, true) && ! is_dir($rootPath)) {
-            throw new RuntimeException('Nao foi possivel criar a pasta local ' . $rootPath . ' para o coletor.', 500);
+            throw new RuntimeException('Nao foi possivel criar a pasta local '.$rootPath.' para o coletor.', 500);
         }
 
         $targetExists = is_file($targetExe);
@@ -1402,7 +1442,7 @@ class EquipmentWorkflowService
 
         if (! $targetExists || @filesize($targetExe) !== @filesize($sourceExe) || $sourceMtime > $targetMtime) {
             if (! @copy($sourceExe, $targetExe)) {
-                throw new RuntimeException('Nao foi possivel copiar o coletor para ' . $rootPath . '.', 500);
+                throw new RuntimeException('Nao foi possivel copiar o coletor para '.$rootPath.'.', 500);
             }
 
             // copy() nao preserva o bit de execucao — sem isto o script Linux
@@ -1415,7 +1455,7 @@ class EquipmentWorkflowService
         }
 
         if (is_file($sourceReadme)) {
-            @copy($sourceReadme, $rootPath . DIRECTORY_SEPARATOR . 'README.md');
+            @copy($sourceReadme, $rootPath.DIRECTORY_SEPARATOR.'README.md');
         }
 
         return [
@@ -1429,8 +1469,8 @@ class EquipmentWorkflowService
     {
         $rootPath = $this->getCollectorLocalRootPath();
         foreach ([
-            $rootPath . DIRECTORY_SEPARATOR . 'last-snapshot.json',
-            $rootPath . DIRECTORY_SEPARATOR . 'snapshot.json',
+            $rootPath.DIRECTORY_SEPARATOR.'last-snapshot.json',
+            $rootPath.DIRECTORY_SEPARATOR.'snapshot.json',
         ] as $path) {
             if (is_file($path)) {
                 @unlink($path);
@@ -1450,7 +1490,7 @@ class EquipmentWorkflowService
 
         foreach ([
             $this->getCollectorLocalExecutablePath(),
-            $rootPath . DIRECTORY_SEPARATOR . 'README.md',
+            $rootPath.DIRECTORY_SEPARATOR.'README.md',
         ] as $path) {
             if (is_file($path) && @unlink($path)) {
                 $removed[] = $path;
@@ -1458,8 +1498,8 @@ class EquipmentWorkflowService
         }
 
         foreach ([
-            $rootPath . DIRECTORY_SEPARATOR . 'last-snapshot.json',
-            $rootPath . DIRECTORY_SEPARATOR . 'snapshot.json',
+            $rootPath.DIRECTORY_SEPARATOR.'last-snapshot.json',
+            $rootPath.DIRECTORY_SEPARATOR.'snapshot.json',
         ] as $path) {
             if ($keepSnapshotPath !== '' && strcasecmp($path, $keepSnapshotPath) === 0) {
                 continue;
@@ -1495,22 +1535,22 @@ class EquipmentWorkflowService
             return rtrim($configured, '\\/');
         }
 
-        return public_path('assets/agents/bench-collector/' . ($this->isLinuxHost() ? 'linux-x64' : 'win-x64'));
+        return public_path('assets/agents/bench-collector/'.($this->isLinuxHost() ? 'linux-x64' : 'win-x64'));
     }
 
     private function getPublishedCollectorExecutablePath(): string
     {
-        return $this->getPublishedCollectorRootPath() . DIRECTORY_SEPARATOR . $this->getCollectorExecutableFilename();
+        return $this->getPublishedCollectorRootPath().DIRECTORY_SEPARATOR.$this->getCollectorExecutableFilename();
     }
 
     private function getPublishedCollectorReadmePath(): string
     {
-        return $this->getPublishedCollectorRootPath() . DIRECTORY_SEPARATOR . 'README.md';
+        return $this->getPublishedCollectorRootPath().DIRECTORY_SEPARATOR.'README.md';
     }
 
     private function getCollectorLocalExecutablePath(): string
     {
-        return $this->getCollectorLocalRootPath() . DIRECTORY_SEPARATOR . $this->getCollectorExecutableFilename();
+        return $this->getCollectorLocalRootPath().DIRECTORY_SEPARATOR.$this->getCollectorExecutableFilename();
     }
 
     private function getCollectorExecutableFilename(): string
@@ -1693,7 +1733,7 @@ class EquipmentWorkflowService
                 continue;
             }
 
-            $text = preg_replace('/\b' . preg_quote($token, '/') . '\b/ui', '', $text) ?? $text;
+            $text = preg_replace('/\b'.preg_quote($token, '/').'\b/ui', '', $text) ?? $text;
         }
 
         $text = trim(preg_replace('/\s+/u', ' ', $text) ?? $text);

@@ -2,13 +2,18 @@
 
 namespace App\Services\Company;
 
+use App\Enums\Files\FileCategory;
 use App\Models\Configuration;
+use App\Services\Files\CompanyFileManagerAdapter;
 use App\Services\Pdf\Contexts\CompanyContextProvider;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class CompanyProfileService
 {
+    public function __construct(private readonly CompanyFileManagerAdapter $fileManagerAdapter) {}
+
     private const LOGO_CONFIG_KEY = 'empresa_logo';
 
     private const LOGIN_BACKGROUND_CONFIG_KEY = 'login_background_image';
@@ -20,12 +25,43 @@ class CompanyProfileService
     /**
      * @var array<int, string>
      */
-    private const ALLOWED_LOGO_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'svg'];
+    private const ALLOWED_LOGO_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
 
     /**
      * @var array<int, string>
      */
     private const ALLOWED_LOGIN_BACKGROUND_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
+
+    /**
+     * @var array<string, array<int, string>>
+     */
+    private const ALLOWED_LOGO_UPLOAD_MIME_EXTENSIONS = [
+        'image/jpeg' => ['jpg', 'jpeg'],
+        'image/png' => ['png'],
+        'image/webp' => ['webp'],
+    ];
+
+    /**
+     * GIF permanece apenas para leitura de configuracoes legadas. Novos
+     * uploads aceitam somente formatos raster estaticos e reencodaveis.
+     *
+     * @var array<string, array<int, string>>
+     */
+    private const ALLOWED_LOGO_READ_MIME_EXTENSIONS = [
+        'image/jpeg' => ['jpg', 'jpeg'],
+        'image/png' => ['png'],
+        'image/webp' => ['webp'],
+        'image/gif' => ['gif'],
+    ];
+
+    /**
+     * @var array<string, array<int, string>>
+     */
+    private const ALLOWED_LOGIN_BACKGROUND_MIME_EXTENSIONS = [
+        'image/jpeg' => ['jpg', 'jpeg'],
+        'image/png' => ['png'],
+        'image/webp' => ['webp'],
+    ];
 
     private const MAX_LOGO_DIMENSION = 800;
 
@@ -84,7 +120,7 @@ class CompanyProfileService
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
     public function save(array $payload): array
@@ -105,7 +141,8 @@ class CompanyProfileService
             configKey: self::LOGO_CONFIG_KEY,
             directory: self::LOGO_DIRECTORY,
             filenamePrefix: 'logo',
-            allowedExtensions: self::ALLOWED_LOGO_EXTENSIONS
+            allowedExtensions: self::ALLOWED_LOGO_EXTENSIONS,
+            allowedMimeExtensions: self::ALLOWED_LOGO_UPLOAD_MIME_EXTENSIONS
         );
 
         CompanyContextProvider::forgetLogoCache();
@@ -113,8 +150,7 @@ class CompanyProfileService
 
     public function removeLogo(): void
     {
-        $this->deleteStoredImage(self::LOGO_CONFIG_KEY, self::LOGO_DIRECTORY);
-        $this->upsert(self::LOGO_CONFIG_KEY, '');
+        $this->clearStoredImage(self::LOGO_CONFIG_KEY, self::LOGO_DIRECTORY);
 
         CompanyContextProvider::forgetLogoCache();
     }
@@ -126,14 +162,14 @@ class CompanyProfileService
             configKey: self::LOGIN_BACKGROUND_CONFIG_KEY,
             directory: self::LOGIN_BACKGROUND_DIRECTORY,
             filenamePrefix: 'login_background',
-            allowedExtensions: self::ALLOWED_LOGIN_BACKGROUND_EXTENSIONS
+            allowedExtensions: self::ALLOWED_LOGIN_BACKGROUND_EXTENSIONS,
+            allowedMimeExtensions: self::ALLOWED_LOGIN_BACKGROUND_MIME_EXTENSIONS
         );
     }
 
     public function removeLoginBackground(): void
     {
-        $this->deleteStoredImage(self::LOGIN_BACKGROUND_CONFIG_KEY, self::LOGIN_BACKGROUND_DIRECTORY);
-        $this->upsert(self::LOGIN_BACKGROUND_CONFIG_KEY, '');
+        $this->clearStoredImage(self::LOGIN_BACKGROUND_CONFIG_KEY, self::LOGIN_BACKGROUND_DIRECTORY);
     }
 
     /**
@@ -141,7 +177,11 @@ class CompanyProfileService
      */
     public function resolveLogoFile(): ?array
     {
-        return $this->resolveStoredImageFile(self::LOGO_CONFIG_KEY, self::LOGO_DIRECTORY);
+        return $this->resolveStoredImageFile(
+            self::LOGO_CONFIG_KEY,
+            self::LOGO_DIRECTORY,
+            self::ALLOWED_LOGO_READ_MIME_EXTENSIONS
+        );
     }
 
     /**
@@ -149,7 +189,11 @@ class CompanyProfileService
      */
     public function resolveLoginBackgroundFile(): ?array
     {
-        return $this->resolveStoredImageFile(self::LOGIN_BACKGROUND_CONFIG_KEY, self::LOGIN_BACKGROUND_DIRECTORY);
+        return $this->resolveStoredImageFile(
+            self::LOGIN_BACKGROUND_CONFIG_KEY,
+            self::LOGIN_BACKGROUND_DIRECTORY,
+            self::ALLOWED_LOGIN_BACKGROUND_MIME_EXTENSIONS
+        );
     }
 
     /**
@@ -192,7 +236,7 @@ class CompanyProfileService
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array<string, string>
      */
     private function normalizePayload(array $payload): array
@@ -208,6 +252,7 @@ class CompanyProfileService
 
             if ($key === 'empresa_email') {
                 $normalized[$key] = strtolower(trim((string) $value));
+
                 continue;
             }
 
@@ -231,31 +276,98 @@ class CompanyProfileService
     }
 
     /**
-     * @param array<int, string> $allowedExtensions
+     * @param  array<int, string>  $allowedExtensions
+     * @param  array<string, array<int, string>>  $allowedMimeExtensions
      */
     private function storeImage(
         UploadedFile $file,
         string $configKey,
         string $directory,
         string $filenamePrefix,
-        array $allowedExtensions
+        array $allowedExtensions,
+        array $allowedMimeExtensions
     ): void {
         $extension = strtolower((string) ($file->getClientOriginalExtension() ?: $file->extension() ?: ''));
-        if (! in_array($extension, $allowedExtensions, true)) {
-            return;
+        $mimeType = $this->normalizeMimeType((string) $file->getMimeType());
+        if (
+            ! in_array($extension, $allowedExtensions, true)
+            || ! in_array($extension, $allowedMimeExtensions[$mimeType] ?? [], true)
+        ) {
+            throw new \RuntimeException('O tipo de imagem enviado nao e permitido.');
         }
 
-        $this->deleteStoredImage($configKey, $directory);
+        $disk = Storage::disk('local');
+        $previousPath = $this->safeStoredImagePath($configKey, $directory);
+        $filename = $filenamePrefix.'_'.Str::uuid()->toString().'.'.$extension;
+        $relativePath = $directory.'/'.$filename;
+        $candidatePaths = [$relativePath];
+        $configurationPublished = false;
+        $category = $configKey === self::LOGIN_BACKGROUND_CONFIG_KEY
+            ? FileCategory::CompanyLoginBackground
+            : FileCategory::CompanyLogo;
 
-        $filename = $filenamePrefix . '_' . now()->format('YmdHisv') . '.' . $extension;
-        Storage::disk('local')->putFileAs($directory, $file, $filename);
-        $relativePath = $directory . '/' . $filename;
+        try {
+            $storedPath = $disk->putFileAs($directory, $file, $filename);
+            if (! is_string($storedPath) || $storedPath !== $relativePath || ! $disk->exists($relativePath)) {
+                throw new \RuntimeException('Falha ao persistir a imagem da empresa.');
+            }
 
-        $relativePath = $configKey === self::LOGIN_BACKGROUND_CONFIG_KEY
-            ? $this->optimizeLoginBackground($relativePath, $extension)
-            : $this->capImageDimensions($relativePath, $extension, self::MAX_LOGO_DIMENSION);
+            $optimizedPath = $configKey === self::LOGIN_BACKGROUND_CONFIG_KEY
+                ? $this->optimizeLoginBackground($relativePath, $extension)
+                : $this->capImageDimensions($relativePath, $extension, self::MAX_LOGO_DIMENSION);
+            $candidatePaths[] = $optimizedPath;
 
-        $this->upsert($configKey, $relativePath);
+            if (! $this->isAllowedStoredImage($optimizedPath, $allowedMimeExtensions)) {
+                throw new \RuntimeException('A imagem persistida nao passou pela validacao de seguranca.');
+            }
+
+            $this->upsert($configKey, $optimizedPath);
+            $configurationPublished = true;
+            $this->fileManagerAdapter->synchronize(
+                $category,
+                'local',
+                $optimizedPath,
+                $configKey
+            );
+        } catch (\Throwable $exception) {
+            $configurationRestored = ! $configurationPublished;
+            if ($configurationPublished) {
+                try {
+                    $this->upsert($configKey, $previousPath ?? '');
+                    $configurationRestored = true;
+                } catch (\Throwable $restoreException) {
+                    report($restoreException);
+                }
+            }
+
+            if ($configurationRestored) {
+                foreach (array_unique($candidatePaths) as $candidatePath) {
+                    try {
+                        if ($disk->exists($candidatePath)) {
+                            $disk->delete($candidatePath);
+                        }
+                    } catch (\Throwable $cleanupException) {
+                        report($cleanupException);
+                    }
+                }
+            }
+
+            throw $exception;
+        }
+
+        if (
+            $previousPath !== null
+            && $previousPath !== $optimizedPath
+            && ! $this->fileManagerAdapter->shouldRetainPrevious($category)
+        ) {
+            try {
+                if ($disk->exists($previousPath)) {
+                    $disk->delete($previousPath);
+                }
+            } catch (\Throwable $cleanupException) {
+                report($cleanupException);
+            }
+        }
     }
 
     /**
@@ -266,30 +378,34 @@ class CompanyProfileService
      */
     private function optimizeLoginBackground(string $relativePath, string $extension): string
     {
-        if (! in_array($extension, ['jpg', 'jpeg', 'png'], true) || ! extension_loaded('gd')) {
+        if (! in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true) || ! extension_loaded('gd')) {
             return $relativePath;
         }
 
         $absolutePath = Storage::disk('local')->path($relativePath);
         $image = $this->loadGdImage($absolutePath, $extension);
         if ($image === null) {
-            return $relativePath;
+            throw new \RuntimeException('Nao foi possivel decodificar a imagem de fundo do login.');
         }
 
         $image = $this->resizeToMaxDimension($image, self::MAX_LOGIN_BACKGROUND_DIMENSION);
         $flattened = $this->flattenOntoWhite($image);
 
-        $jpegPath = preg_replace('/\.' . preg_quote($extension, '/') . '$/', '.jpg', $absolutePath);
-        imagejpeg($flattened, $jpegPath, self::LOGIN_BACKGROUND_JPEG_QUALITY);
+        $jpegPath = preg_replace('/\.'.preg_quote($extension, '/').'$/', '.jpg', $absolutePath);
+        $encoded = imagejpeg($flattened, $jpegPath, self::LOGIN_BACKGROUND_JPEG_QUALITY);
         imagedestroy($image);
         imagedestroy($flattened);
 
-        $jpegRelativePath = preg_replace('/\.' . preg_quote($extension, '/') . '$/', '.jpg', $relativePath);
-        if ($jpegPath !== $absolutePath) {
-            @unlink($absolutePath);
+        if (! $encoded) {
+            throw new \RuntimeException('Nao foi possivel otimizar a imagem de fundo do login.');
         }
 
-        return $jpegRelativePath;
+        $jpegRelativePath = preg_replace('/\.'.preg_quote($extension, '/').'$/', '.jpg', $relativePath);
+        if ($jpegPath !== $absolutePath) {
+            Storage::disk('local')->delete($relativePath);
+        }
+
+        return is_string($jpegRelativePath) ? $jpegRelativePath : $relativePath;
     }
 
     /**
@@ -299,14 +415,14 @@ class CompanyProfileService
      */
     private function capImageDimensions(string $relativePath, string $extension, int $maxDimension): string
     {
-        if (! in_array($extension, ['jpg', 'jpeg', 'png'], true) || ! extension_loaded('gd')) {
+        if (! in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true) || ! extension_loaded('gd')) {
             return $relativePath;
         }
 
         $absolutePath = Storage::disk('local')->path($relativePath);
         $image = $this->loadGdImage($absolutePath, $extension);
         if ($image === null) {
-            return $relativePath;
+            throw new \RuntimeException('Nao foi possivel decodificar a logo da empresa.');
         }
 
         if (imagesx($image) <= $maxDimension && imagesy($image) <= $maxDimension) {
@@ -320,11 +436,18 @@ class CompanyProfileService
 
         if ($extension === 'png') {
             imagesavealpha($resized, true);
-            imagepng($resized, $absolutePath, 6);
+            $encoded = imagepng($resized, $absolutePath, 6);
+        } elseif ($extension === 'webp') {
+            imagesavealpha($resized, true);
+            $encoded = function_exists('imagewebp') && imagewebp($resized, $absolutePath, 85);
         } else {
-            imagejpeg($resized, $absolutePath, 85);
+            $encoded = imagejpeg($resized, $absolutePath, 85);
         }
         imagedestroy($resized);
+
+        if (! $encoded) {
+            throw new \RuntimeException('Nao foi possivel otimizar a logo da empresa.');
+        }
 
         return $relativePath;
     }
@@ -336,6 +459,7 @@ class CompanyProfileService
     {
         $image = match ($extension) {
             'png' => @imagecreatefrompng($absolutePath),
+            'webp' => function_exists('imagecreatefromwebp') ? @imagecreatefromwebp($absolutePath) : false,
             default => @imagecreatefromjpeg($absolutePath),
         };
 
@@ -343,7 +467,7 @@ class CompanyProfileService
     }
 
     /**
-     * @param \GdImage $image
+     * @param  \GdImage  $image
      * @return \GdImage
      */
     private function resizeToMaxDimension($image, int $maxDimension)
@@ -369,7 +493,7 @@ class CompanyProfileService
     }
 
     /**
-     * @param \GdImage $image
+     * @param  \GdImage  $image
      * @return \GdImage
      */
     private function flattenOntoWhite($image)
@@ -385,35 +509,81 @@ class CompanyProfileService
         return $flattened;
     }
 
-    private function deleteStoredImage(string $configKey, string $directory): void
+    private function clearStoredImage(string $configKey, string $directory): void
     {
         $relativePath = $this->safeStoredImagePath($configKey, $directory);
-        if ($relativePath !== null && Storage::disk('local')->exists($relativePath)) {
-            Storage::disk('local')->delete($relativePath);
+        $this->upsert($configKey, '');
+
+        if ($relativePath === null) {
+            return;
+        }
+
+        try {
+            if (Storage::disk('local')->exists($relativePath)) {
+                Storage::disk('local')->delete($relativePath);
+            }
+        } catch (\Throwable $exception) {
+            report($exception);
         }
     }
 
     /**
+     * @param  array<string, array<int, string>>  $allowedMimeExtensions
      * @return array{absolute_path: string, mime_type: string, filename: string}|null
      */
-    private function resolveStoredImageFile(string $configKey, string $directory): ?array
-    {
-        $relativePath = $this->safeStoredImagePath($configKey, $directory);
-        if ($relativePath === null || ! Storage::disk('local')->exists($relativePath)) {
+    private function resolveStoredImageFile(
+        string $configKey,
+        string $directory,
+        array $allowedMimeExtensions
+    ): ?array {
+        $legacyPath = $this->safeStoredImagePath($configKey, $directory);
+        $category = $configKey === self::LOGIN_BACKGROUND_CONFIG_KEY
+            ? FileCategory::CompanyLoginBackground
+            : FileCategory::CompanyLogo;
+        $relativePath = $this->fileManagerAdapter->resolveCompatiblePath($category, 'local', $legacyPath);
+        if ($relativePath === null || ! $this->isAllowedStoredImage($relativePath, $allowedMimeExtensions)) {
             return null;
         }
 
+        $mimeType = $this->normalizeMimeType((string) Storage::disk('local')->mimeType($relativePath));
+
         return [
             'absolute_path' => Storage::disk('local')->path($relativePath),
-            'mime_type' => Storage::disk('local')->mimeType($relativePath) ?: 'application/octet-stream',
+            'mime_type' => $mimeType,
             'filename' => basename($relativePath),
         ];
+    }
+
+    /**
+     * @param  array<string, array<int, string>>  $allowedMimeExtensions
+     */
+    private function isAllowedStoredImage(string $relativePath, array $allowedMimeExtensions): bool
+    {
+        $disk = Storage::disk('local');
+        if (! $disk->exists($relativePath)) {
+            return false;
+        }
+
+        $mimeType = $this->normalizeMimeType((string) ($disk->mimeType($relativePath) ?: ''));
+        $extension = strtolower((string) pathinfo($relativePath, PATHINFO_EXTENSION));
+
+        return in_array($extension, $allowedMimeExtensions[$mimeType] ?? [], true);
+    }
+
+    private function normalizeMimeType(string $mimeType): string
+    {
+        $mimeType = strtolower(trim(explode(';', $mimeType, 2)[0] ?? ''));
+
+        return match ($mimeType) {
+            'image/jpg', 'image/pjpeg' => 'image/jpeg',
+            default => $mimeType,
+        };
     }
 
     private function safeStoredImagePath(string $configKey, string $directory): ?string
     {
         $relativePath = str_replace('\\', '/', trim((string) $this->configValue($configKey)));
-        $expectedPrefix = rtrim($directory, '/') . '/';
+        $expectedPrefix = rtrim($directory, '/').'/';
 
         if (
             $relativePath === ''
@@ -428,7 +598,7 @@ class CompanyProfileService
     }
 
     /**
-     * @param array{absolute_path: string, mime_type: string, filename: string}|null $file
+     * @param  array{absolute_path: string, mime_type: string, filename: string}|null  $file
      * @return array<string, mixed>
      */
     private function mediaMeta(?array $file): array

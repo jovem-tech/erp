@@ -1,6 +1,6 @@
 # Contrato da API do Backend Central
 
-Atualizado em 25/06/2026.
+Atualizado em 19/07/2026.
 
 ## Objetivo
 
@@ -237,6 +237,10 @@ Rotas atuais:
 
 - `GET /orders/{order}/photos/{photo}`
 - `GET /orders/{order}/documents/{document}`
+- `GET /chat/anexos/{attachment}`
+- `GET /configuracoes/empresa/logo`
+- `GET /configuracoes/empresa/logo-publica`
+- `GET /configuracoes/empresa/login-background-publico`
 
 Essas rotas podem retornar arquivo binário com `Content-Type` adequado ou envelope de erro JSON.
 
@@ -246,6 +250,12 @@ Regras:
 - BFF não deve copiar anexos para pasta pública.
 - Download/preview deve respeitar token e permissões.
 - Falhas de arquivo devem preservar `request_id` para suporte.
+- Nomes de download são normalizados pelo backend e nunca compõem caminho físico.
+- Anexos do chat são validados pelo conteúdo real e por allowlist de MIME/extensão; HTML, SVG, XML e executáveis não são aceitos.
+- Somente imagens raster aprovadas podem usar `Content-Disposition: inline`; os demais tipos usam `attachment`.
+- Respostas de anexos aplicam `X-Content-Type-Options: nosniff`; anexos do chat também usam `Cache-Control: private, no-store`.
+- Logo e fundo de login aceitam somente JPG/JPEG, PNG e WebP em novos uploads. SVG legado não é servido.
+- Substituição de branding segue create-before-swap: a referência antiga só é removida depois que a nova imagem foi persistida, otimizada e publicada na configuração.
 
 ## Fornecedores
 
@@ -513,3 +523,46 @@ Contrato funcional atual de cartões e taxas:
 - `POST /financeiro/cartoes/operadoras`, `POST /financeiro/cartoes/bandeiras` e `POST /financeiro/cartoes/taxas` mantêm o catálogo financeiro do desktop com gravação centralizada;
 - `PATCH` e `DELETE` das rotas de cartões e taxas fazem desativação controlada ou atualização assistida, preservando o contrato do desktop;
 - `POST /financeiro/cartoes/taxas-online` e seus `PATCH`/`DELETE` mantêm o catálogo de gateway para Pix, boleto, crédito e débito.
+
+## Gerenciador Central de Arquivos
+
+- `GET /file-manager/dashboard`
+- `POST /file-manager/sync`
+- `GET /file-manager/scan-runs`
+- `GET /file-manager/findings`
+- `GET /files`
+- `POST /files/download-batch`
+- `POST /files/trash-batch`
+- `GET /files/{fileUuid}`
+- `GET /files/{fileUuid}/download`
+- `GET /files/{fileUuid}/preview`
+- `GET /files/{fileUuid}/thumbnail`
+- `POST /files/{fileUuid}/archive`
+- `POST /files/{fileUuid}/restore`
+- `POST /files/{fileUuid}/quarantine`
+- `POST /files/{fileUuid}/release-quarantine`
+
+Regras do contrato:
+
+- listagem, dashboard e findings retornam metadados paginados/agregados, nunca bytes, `storage_key` ou path absoluto;
+- detalhe retorna vínculos, eventos, findings mascarados e capacidades calculadas pelo backend;
+- UUID não é autorização: download/preview exigem RBAC do painel e autorização do registro de negócio vinculado;
+- somente arquivos `active + valid + clean` podem ser entregues; preview exige MIME aprovado pela policy;
+- ações de estado exigem motivo, `admin_email` e `admin_password`; release também exige `validation_reference`;
+- credencial de step-up inválida retorna `422`; `401` continua reservado à sessão Bearer atual;
+- o backend registra ator e administrador autorizador separadamente e aplica rate limit por e-mail/IP;
+- ações de estado podem retornar `409 FILE_STATE_MUTATIONS_DISABLED` quando o kill switch estiver desligado.
+- `POST /file-manager/sync` somente registra uma solicitação deduplicada; o scheduler executa a varredura fora da requisição web;
+- `GET /files` inclui `document_created_at` e, quando o RBAC do domínio permite, `linked_client` resolvido em lote;
+- `GET /files/{fileUuid}/thumbnail` aceita somente PDF autorizado e elegível, devolve PNG privado da primeira página e pode retornar `409`, `415` ou `503` sem expor path;
+- downloads em lote são limitados por quantidade e bytes; o ZIP temporário é removido depois da resposta;
+- lixeira em lote exige `arquivos:excluir`, motivo, step-up e kill switch; o binário não é purgado.
+
+## Idempotência na criação de OS
+
+`POST /orders` aceita `idempotency_key` em UUID. A primeira requisição grava a
+chave, um fingerprint SHA-256 do payload canônico/ator e o usuário solicitante.
+Uma repetição equivalente devolve a OS original com `idempotent_replay=true`.
+Reutilização da chave com dados diferentes devolve `409
+ORDER_IDEMPOTENCY_CONFLICT`. Falhas posteriores ao commit são retornadas em
+`warnings` e não transformam uma OS persistida em erro genérico.

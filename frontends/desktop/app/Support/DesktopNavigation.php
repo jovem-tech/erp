@@ -229,6 +229,13 @@ class DesktopNavigation
                 'label' => 'Configurações',
                 'items' => [
                     [
+                        'label' => 'Gerenciador de Arquivos',
+                        'route' => 'files.index',
+                        'module' => 'arquivos',
+                        'action' => 'listar',
+                        'icon' => 'bi-folder2-open',
+                    ],
+                    [
                         'label' => 'Configurações do Sistema',
                         'route' => 'configurations.system.index',
                         'module' => 'configuracoes',
@@ -240,7 +247,7 @@ class DesktopNavigation
     }
 
     /**
-     * @param array<string, mixed> $item
+     * @param  array<string, mixed>  $item
      * @return array<string, mixed>|null
      */
     private static function filterItem(array $item): ?array

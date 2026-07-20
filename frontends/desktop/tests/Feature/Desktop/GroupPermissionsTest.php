@@ -19,7 +19,18 @@ class GroupPermissionsTest extends TestCase
             ->assertOk()
             ->assertSee('Contas e Saldos')
             ->assertSee('contas_saldos')
-            ->assertSee('permissions[contas_saldos][]', false);
+            ->assertSee('permissions[contas_saldos][]', false)
+            ->assertSee('data-permission-row="contas_saldos"', false)
+            ->assertSee('data-module-permission-toggle', false)
+            ->assertSee('Selecionar todas')
+            ->assertSee('data-permission-column-toggle="visualizar"', false)
+            ->assertSee('data-permission-column-toggle="criar"', false)
+            ->assertSee('Marcar coluna')
+            ->assertSee('Desmarcar coluna')
+            ->assertSee('data-select-all-permissions', false)
+            ->assertSee('Marcar todas as permissões')
+            ->assertSee('data-clear-all-permissions', false)
+            ->assertSee('Desmarcar todas as permissões');
     }
 
     public function test_accounts_and_balances_permissions_are_forwarded_to_backend(): void

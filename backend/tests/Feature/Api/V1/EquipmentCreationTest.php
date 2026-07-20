@@ -2,8 +2,12 @@
 
 namespace Tests\Feature\Api\V1;
 
+use App\Enums\Files\FileCategory;
 use App\Models\EquipmentCollectorPairing;
 use App\Models\EquipmentPhoto;
+use App\Models\Files\ManagedFile;
+use App\Models\Files\ManagedFileLegacyAlias;
+use App\Models\Files\ManagedFileLink;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -128,6 +132,8 @@ class EquipmentCreationTest extends TestCase
     public function test_store_creates_equipment_with_private_photos_and_desktop_defaults(): void
     {
         Storage::fake('local');
+        config()->set('file-manager.mode', 'shadow');
+        config()->set('file-manager.enabled_categories', ['equipment_photo']);
 
         $clientId = $this->createClientRecord([
             'nome_razao' => 'Cliente Equipamento',
@@ -200,7 +206,16 @@ class EquipmentCreationTest extends TestCase
             Storage::disk('local')->assertExists((string) $photo->arquivo);
         }
 
-        $photoResponse = $this->get('/api/v1/equipments/' . $equipmentId . '/photos/' . $photos->first()->id);
+        $managedFiles = ManagedFile::query()
+            ->where('category', FileCategory::EquipmentPhoto->value)
+            ->get();
+        $this->assertCount(2, $managedFiles);
+        $this->assertSame(2, ManagedFileLink::query()->where('subject_type', 'equipment')->where('subject_id', $equipmentId)->count());
+        $this->assertSame(2, ManagedFileLegacyAlias::query()->whereIn('file_id', $managedFiles->pluck('id'))->count());
+
+        config()->set('file-manager.mode', 'off');
+
+        $photoResponse = $this->get('/api/v1/equipments/'.$equipmentId.'/photos/'.$photos->first()->id);
 
         $photoResponse->assertOk();
         $this->assertStringStartsWith('image/', (string) $photoResponse->headers->get('content-type'));
@@ -213,7 +228,7 @@ class EquipmentCreationTest extends TestCase
             ->assertJsonPath('data.equipments.0.id', $equipmentId)
             ->assertJsonPath('data.equipments.0.primary_photo_id', $primaryPhotoId);
 
-        $detailResponse = $this->getJson('/api/v1/equipments/' . $equipmentId);
+        $detailResponse = $this->getJson('/api/v1/equipments/'.$equipmentId);
 
         $detailResponse->assertOk()
             ->assertJsonPath('data.equipment.primary_photo_id', $primaryPhotoId)
@@ -317,7 +332,7 @@ class EquipmentCreationTest extends TestCase
 
         $updateResponse = $this
             ->withHeader('Accept', 'application/json')
-            ->post('/api/v1/equipments/' . $equipmentId, [
+            ->post('/api/v1/equipments/'.$equipmentId, [
                 '_method' => 'PATCH',
                 'cliente_id' => $clientId,
                 'tipo_id' => 1,
@@ -393,7 +408,7 @@ class EquipmentCreationTest extends TestCase
 
         $updateResponse = $this
             ->withHeader('Accept', 'application/json')
-            ->post('/api/v1/equipments/' . $equipmentId, [
+            ->post('/api/v1/equipments/'.$equipmentId, [
                 '_method' => 'PATCH',
                 'cliente_id' => $clientId,
                 'tipo_id' => 1,
@@ -516,7 +531,7 @@ class EquipmentCreationTest extends TestCase
 
         config()->set('services.collector.local_root', $root);
 
-        file_put_contents($root . DIRECTORY_SEPARATOR . 'last-snapshot.json', json_encode([
+        file_put_contents($root.DIRECTORY_SEPARATOR.'last-snapshot.json', json_encode([
             'savedAtUtc' => '2026-06-24T18:00:00Z',
             'collectedAtUtc' => '2026-06-24T18:00:01Z',
             'snapshot' => [
@@ -539,7 +554,7 @@ class EquipmentCreationTest extends TestCase
 
         $response->assertOk()
             ->assertJsonPath('status', 'success')
-            ->assertJsonPath('data.collector.source_path', $root . DIRECTORY_SEPARATOR . 'last-snapshot.json')
+            ->assertJsonPath('data.collector.source_path', $root.DIRECTORY_SEPARATOR.'last-snapshot.json')
             ->assertJsonPath('data.collector.mapped.numero_serie', 'SN-LOCAL-001')
             ->assertJsonPath('data.collector.mapped.placa_mae', 'B660M')
             ->assertJsonPath('data.collector.mapped.processador', 'Intel Core i5-12400')
@@ -557,7 +572,7 @@ class EquipmentCreationTest extends TestCase
         config()->set('services.collector.local_root', $root);
         config()->set('services.collector.published_root', storage_path('framework/testing/collector-published-missing'));
 
-        file_put_contents($root . DIRECTORY_SEPARATOR . 'last-snapshot.json', json_encode([
+        file_put_contents($root.DIRECTORY_SEPARATOR.'last-snapshot.json', json_encode([
             'snapshot' => [
                 'deviceType' => 'desktop',
                 'serialNumber' => 'SN-LOCAL-002',
@@ -623,7 +638,7 @@ class EquipmentCreationTest extends TestCase
         $snapshotResponse->assertCreated()
             ->assertJsonPath('data.pairing.code', $code);
 
-        $pairingViewResponse = $this->getJson('/api/v1/equipments/collector-pairings/' . $code);
+        $pairingViewResponse = $this->getJson('/api/v1/equipments/collector-pairings/'.$code);
 
         $pairingViewResponse->assertOk()
             ->assertJsonPath('data.pairing.code', $code)

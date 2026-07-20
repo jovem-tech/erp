@@ -15,6 +15,7 @@ class MessageAttachment extends Model
 
     protected $casts = [
         'metadata' => 'array',
+        'managed_file_uuid' => 'string',
     ];
 
     public const TYPE_IMAGE = 'image';

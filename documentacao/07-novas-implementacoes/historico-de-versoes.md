@@ -3,6 +3,24 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.1.0.0 - 2026-07-20
+
+- sincronização automática do catálogo em segundo plano e solicitação manual deduplicada;
+- biblioteca de arquivos em grade/lista com miniaturas de imagem e PDF, seleção, ZIP e lixeira lógica;
+- visualização interna em modal, com controles próprios para imagens e iframe para PDFs;
+- data real do documento e cliente vinculado nos cards e na tabela, sem N+1;
+- seleção de permissões individual, por módulo, por coluna e global;
+- criação idempotente de OS, bloqueio de clique duplo e avisos pós-commit sem falso erro de criação;
+- correção do proxy autenticado de fotos privadas e da resiliência da sessão do desktop;
+- nota: `2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md`.
+
+## v5.0.0.0 - 2026-07-19
+
+- núcleo do Gerenciador Central de Arquivos, catálogo, vínculos, aliases, auditoria e scanner;
+- adapters seguros para branding, fotos, documentos, assinaturas e chat;
+- painel administrativo com RBAC e operações lógicas protegidas por kill switch;
+- notas: `2026-07-19-nucleo-gerenciador-central-arquivos.md` e `2026-07-19-painel-gerenciador-arquivos.md`.
+
 ## v4.24.0.0 - 2026-07-19
 
 - cadastro versionado de assinatura por imagem ou desenho em tela, incluindo toque e Apple Pencil;

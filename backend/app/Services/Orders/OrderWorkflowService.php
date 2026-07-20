@@ -2,6 +2,10 @@
 
 namespace App\Services\Orders;
 
+use App\DTO\Files\FileContext;
+use App\Enums\Files\FileCategory;
+use App\Enums\Files\FileOrigin;
+use App\Events\OrderCreated;
 use App\Models\Budget;
 use App\Models\BudgetItem;
 use App\Models\ChecklistModelo;
@@ -14,22 +18,25 @@ use App\Models\Order;
 use App\Models\OrderDocument;
 use App\Models\OrderEvent;
 use App\Models\OrderPhoto;
-use App\Models\OrderStatus;
 use App\Models\OrderProcedureHistory;
+use App\Models\OrderStatus;
 use App\Models\OrderStatusHistory;
 use App\Models\OrderStatusTransition;
 use App\Models\User;
 use App\Models\WhatsappTemplate;
 use App\Notifications\MobileNotification;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
+use App\Services\Files\LegacyCompatibleFileAdapter;
 use App\Services\Financeiro\OsMargemService;
 use App\Services\Integrations\IntegrationSettingsService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
@@ -53,12 +60,12 @@ class OrderWorkflowService
         private readonly OrderOpeningPdfService $orderOpeningPdfService,
         private readonly WhatsappMessagingService $whatsappMessagingService,
         private readonly IntegrationSettingsService $integrationSettingsService,
-        private readonly OrderEventService $orderEventService
-    ) {
-    }
+        private readonly OrderEventService $orderEventService,
+        private readonly LegacyCompatibleFileAdapter $fileManagerAdapter
+    ) {}
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     public function paginateForUser(User $actor, array $filters = []): LengthAwarePaginator
     {
@@ -156,7 +163,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function applyOperationalStatusScope(Builder $query, array $filters, string $status, string $macroGroup): void
     {
@@ -186,7 +193,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<int, int> $orderIds
+     * @param  array<int, int>  $orderIds
      * @return array<int, array<string, mixed>>
      */
     private function resolveLatestBudgetByOrderId(array $orderIds): array
@@ -219,7 +226,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<int, int> $orderIds
+     * @param  array<int, int>  $orderIds
      * @return array<int, array<string, mixed>>
      */
     private function resolveReceivableSummaryByOrderId(array $orderIds): array
@@ -273,7 +280,7 @@ class OrderWorkflowService
 
     private function applySearchFilter(Builder $query, string $search): void
     {
-        $searchTerm = '%' . mb_strtolower($search) . '%';
+        $searchTerm = '%'.mb_strtolower($search).'%';
 
         $query->where(function (Builder $subQuery) use ($searchTerm): void {
             $this->orWhereLikeColumns($subQuery, [
@@ -382,22 +389,22 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<int, string> $columns
+     * @param  array<int, string>  $columns
      */
     private function orWhereLikeColumns(Builder|QueryBuilder $query, array $columns, string $searchTerm): void
     {
         foreach ($columns as $column) {
-            $query->orWhereRaw('LOWER(COALESCE(' . $column . ", '')) LIKE ?", [$searchTerm]);
+            $query->orWhereRaw('LOWER(COALESCE('.$column.", '')) LIKE ?", [$searchTerm]);
         }
     }
 
     /**
-     * @param array<int, string> $columns
+     * @param  array<int, string>  $columns
      */
     private function orWhereLikeCastColumns(Builder|QueryBuilder $query, array $columns, string $searchTerm): void
     {
         foreach ($columns as $column) {
-            $query->orWhereRaw('LOWER(COALESCE(CAST(' . $column . " AS CHAR), '')) LIKE ?", [$searchTerm]);
+            $query->orWhereRaw('LOWER(COALESCE(CAST('.$column." AS CHAR), '')) LIKE ?", [$searchTerm]);
         }
     }
 
@@ -430,7 +437,7 @@ class OrderWorkflowService
      * proteger tempo de resposta e memória. Este endpoint dedicado não possui
      * corte absoluto: toda a coleção permanece navegável por páginas.
      *
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
     public function paginateEventsForUser(User $actor, int $orderId, array $filters = []): array
@@ -489,7 +496,7 @@ class OrderWorkflowService
 
         $search = mb_strtolower(trim((string) ($filters['search'] ?? '')));
         if ($search !== '') {
-            $like = '%' . $search . '%';
+            $like = '%'.$search.'%';
             $query->where(static function (Builder $searchQuery) use ($like): void {
                 $searchQuery
                     ->whereRaw("LOWER(COALESCE(titulo, '')) LIKE ?", [$like])
@@ -561,7 +568,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param iterable<mixed> $rows
+     * @param  iterable<mixed>  $rows
      * @return array<string, mixed>
      */
     private function mapAuditStats(iterable $rows): array
@@ -724,7 +731,7 @@ class OrderWorkflowService
     private function resolveManagedDocumentFile(string $arquivo, int $orderId): ?array
     {
         $relative = $this->normalizeStoredPath($arquivo);
-        $allowedPrefix = 'private/os_documentos/' . $orderId . '/';
+        $allowedPrefix = 'private/os_documentos/'.$orderId.'/';
 
         if (
             $orderId <= 0
@@ -796,7 +803,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<int, UploadedFile> $uploadedPhotos
+     * @param  array<int, UploadedFile>  $uploadedPhotos
      * @return array<int, int>
      */
     private function storeOrderPhotos(Order $order, array $uploadedPhotos, string $tipo = 'recepcao'): array
@@ -810,7 +817,7 @@ class OrderWorkflowService
             return [];
         }
 
-        $directory = 'private/os/' . (int) $order->id;
+        $directory = 'private/os/'.(int) $order->id;
         $createdPhotoIds = [];
 
         foreach ($files as $index => $file) {
@@ -823,14 +830,45 @@ class OrderWorkflowService
                 $extension
             );
 
-            Storage::disk('local')->putFileAs($directory, $file, $filename);
+            $storagePath = $directory.'/'.$filename;
+            $photo = null;
 
-            $photo = OrderPhoto::query()->create([
-                'os_id' => (int) $order->id,
-                'tipo' => $tipo !== '' ? $tipo : 'recepcao',
-                'arquivo' => $directory . '/' . $filename,
-                'created_at' => now(),
-            ]);
+            try {
+                $writtenPath = Storage::disk('local')->putFileAs($directory, $file, $filename);
+                if (! is_string($writtenPath) || $writtenPath !== $storagePath || ! Storage::disk('local')->exists($storagePath)) {
+                    throw new \RuntimeException('Falha ao persistir foto da ordem de servico.');
+                }
+
+                $photo = OrderPhoto::query()->create([
+                    'os_id' => (int) $order->id,
+                    'tipo' => $tipo !== '' ? $tipo : 'recepcao',
+                    'arquivo' => $storagePath,
+                    'created_at' => now(),
+                ]);
+
+                $this->fileManagerAdapter->synchronizeExisting(
+                    new FileContext(
+                        category: FileCategory::OrderPhoto,
+                        origin: FileOrigin::Upload,
+                        operationKey: 'order-photo:'.(int) $photo->id.':'.hash('sha256', $storagePath),
+                        subjectType: 'order',
+                        subjectId: (int) $order->id,
+                        relation: 'photo:'.(int) $photo->id
+                    ),
+                    'local',
+                    $storagePath,
+                    'os_fotos',
+                    'arquivo',
+                    (string) $photo->id
+                );
+            } catch (Throwable $exception) {
+                $photo?->delete();
+                if (Storage::disk('local')->exists($storagePath)) {
+                    Storage::disk('local')->delete($storagePath);
+                }
+
+                throw $exception;
+            }
 
             $createdPhotoIds[] = (int) $photo->id;
         }
@@ -1067,7 +1105,7 @@ class OrderWorkflowService
                 $actor,
                 'order.status.updated',
                 'Status da OS atualizado',
-                'A OS ' . $updatedOrder->numero_os . ' foi movida para ' . ($updatedOrder->statusCatalog?->nome ?? $newStatus) . '.',
+                'A OS '.$updatedOrder->numero_os.' foi movida para '.($updatedOrder->statusCatalog?->nome ?? $newStatus).'.',
                 [
                     'status_anterior' => $previousStatus !== '' ? $previousStatus : null,
                     'status_novo' => $newStatus,
@@ -1147,8 +1185,8 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $attributes
-     * @param array<int, UploadedFile> $uploadedPhotos
+     * @param  array<string, mixed>  $attributes
+     * @param  array<int, UploadedFile>  $uploadedPhotos
      * @return array<string, mixed>
      */
     public function createOrder(User $actor, array $attributes, array $uploadedPhotos = []): array
@@ -1156,6 +1194,17 @@ class OrderWorkflowService
         $clientId = (int) ($attributes['cliente_id'] ?? 0);
         $equipmentId = (int) ($attributes['equipamento_id'] ?? 0);
         $shouldSendOpeningPdf = (bool) ($attributes['enviar_pdf_cliente'] ?? false);
+        $idempotencyKey = strtolower(trim((string) ($attributes['idempotency_key'] ?? '')));
+        $requestFingerprint = $idempotencyKey !== ''
+            ? $this->orderCreationFingerprint($actor, $attributes)
+            : null;
+
+        if ($idempotencyKey !== '' && $requestFingerprint !== null) {
+            $replay = $this->resolveOrderCreationReplay($actor, $idempotencyKey, $requestFingerprint);
+            if ($replay !== null) {
+                return $replay;
+            }
+        }
 
         if (! $this->equipmentBelongsToClient($equipmentId, $clientId)) {
             return [
@@ -1177,6 +1226,11 @@ class OrderWorkflowService
             ?: trim((string) ($statusRow->estado_fluxo_padrao ?? 'em_atendimento'));
 
         $payload = $this->extractMutableOrderAttributes($attributes, true);
+        if ($idempotencyKey !== '' && $requestFingerprint !== null) {
+            $payload['creation_request_id'] = $idempotencyKey;
+            $payload['creation_request_fingerprint'] = $requestFingerprint;
+            $payload['creation_requested_by'] = (int) $actor->id;
+        }
         $payload['numero_os'] = $this->orderNumberService->nextNumber();
         $payload['status'] = $statusCode;
         $payload['estado_fluxo'] = $estadoFluxo;
@@ -1194,90 +1248,268 @@ class OrderWorkflowService
             }
         }
 
-        $order = DB::transaction(function () use ($payload, $actor, $statusCode, $estadoFluxo, $now, $entryChecklistPlan): Order {
-            /** @var Order $order */
-            $order = Order::query()->create($payload);
+        try {
+            $order = DB::transaction(function () use ($payload, $actor, $statusCode, $estadoFluxo, $now, $entryChecklistPlan): Order {
+                /** @var Order $order */
+                $order = Order::query()->create($payload);
 
-            $this->createStatusHistory(
-                (int) $order->id,
-                null,
-                $statusCode,
-                $estadoFluxo,
-                $actor,
-                'OS criada pelo backend central.',
-                $now,
-                eventTipo: OrderEvent::TIPO_OS_CRIADA
-            );
+                $this->createStatusHistory(
+                    (int) $order->id,
+                    null,
+                    $statusCode,
+                    $estadoFluxo,
+                    $actor,
+                    'OS criada pelo backend central.',
+                    $now,
+                    eventTipo: OrderEvent::TIPO_OS_CRIADA
+                );
 
-            if (is_array($entryChecklistPlan)) {
-                $this->applyEntryChecklistSyncPlan((int) $order->id, $entryChecklistPlan, $now);
+                if (is_array($entryChecklistPlan)) {
+                    $this->applyEntryChecklistSyncPlan((int) $order->id, $entryChecklistPlan, $now);
+                }
+
+                return $order;
+            });
+        } catch (QueryException $exception) {
+            // A restricao UNIQUE e a autoridade final contra duas requisicoes
+            // simultaneas com a mesma chave. Se a concorrente venceu, devolve
+            // a OS que ela criou em vez de transformar o retry em erro 500.
+            if ($idempotencyKey !== '' && $requestFingerprint !== null) {
+                $replay = $this->resolveOrderCreationReplay($actor, $idempotencyKey, $requestFingerprint);
+                if ($replay !== null) {
+                    return $replay;
+                }
             }
 
-            return $order;
-        });
+            throw $exception;
+        }
+
+        $warnings = [];
 
         if ($uploadedPhotos !== []) {
-            $this->storeOrderPhotos($order, $uploadedPhotos);
+            try {
+                $this->storeOrderPhotos($order, $uploadedPhotos);
+            } catch (Throwable $exception) {
+                $this->logOrderPostCreationFailure($order, 'photos', $exception);
+                $warnings[] = $this->orderCreationWarning(
+                    'ORDER_PHOTOS_NOT_STORED',
+                    'A OS foi criada, mas uma ou mais fotos não puderam ser anexadas.'
+                );
+            }
         }
 
         $openingDocument = $this->generateOpeningDocument($order, $actor);
-        $createdOrder = $this->detailQuery()->find((int) $order->id);
-        $openingDelivery = $shouldSendOpeningPdf
-            ? $this->sendOpeningDocumentToClient(
-                $createdOrder instanceof Order ? $createdOrder : $order,
-                $openingDocument
-            )
-            : [
-                'requested' => false,
-                'sent' => false,
-                'channel' => null,
-                'message' => '',
-            ];
+        $createdOrder = $order;
 
-        if ($createdOrder instanceof Order) {
-            $this->sendOrderNotification(
-                $createdOrder,
-                $actor,
-                'order.created',
-                'Nova OS criada',
-                'A OS ' . $createdOrder->numero_os . ' foi aberta para ' . ($createdOrder->client?->nome_razao ?? 'o cliente selecionado') . '.',
-                [
-                    'status_novo' => $statusCode,
-                    'estado_fluxo' => $estadoFluxo,
-                    'icon' => 'clipboard-plus',
-                ]
+        try {
+            $detailedOrder = $this->detailQuery()->find((int) $order->id);
+            if ($detailedOrder instanceof Order) {
+                $createdOrder = $detailedOrder;
+            }
+        } catch (Throwable $exception) {
+            $this->logOrderPostCreationFailure($order, 'detail_query', $exception);
+            $warnings[] = $this->orderCreationWarning(
+                'ORDER_DETAIL_DEFERRED',
+                'A OS foi criada, mas alguns detalhes serão carregados ao abrir o registro.'
             );
+        }
 
+        $openingDelivery = [
+            'requested' => $shouldSendOpeningPdf,
+            'sent' => false,
+            'channel' => null,
+            'message' => '',
+        ];
+
+        if ($shouldSendOpeningPdf) {
             try {
-                broadcast(new \App\Events\OrderCreated([
-                    'id'                   => (int) $createdOrder->id,
-                    'numero_os'            => (string) ($createdOrder->numero_os ?? ''),
-                    'cliente_nome'         => (string) ($createdOrder->client?->nome_razao ?? ''),
-                    'cliente_telefone'     => (string) ($createdOrder->client?->telefone1 ?? ''),
-                    'equipamento_resumo'   => (string) ($createdOrder->equipment?->resumo_tecnico ?? ''),
-                    'equipamento_serie'    => (string) ($createdOrder->equipment?->numero_serie ?? ''),
-                    'status_nome'          => (string) ($createdOrder->statusCatalog?->nome ?? ''),
-                    'status_cor'           => (string) ($createdOrder->statusCatalog?->cor ?? '#64748b'),
-                    'proximas_etapas'      => $this->mapNextStatusOptions($statusCode),
-                    'estado_fluxo'         => (string) ($createdOrder->estado_fluxo ?? ''),
-                    'data_entrada'         => $createdOrder->data_entrada?->format('d/m/Y') ?? '',
-                ]));
-            } catch (\Throwable $e) {
-                \Illuminate\Support\Facades\Log::warning('Falha ao broadcast OrderCreated: ' . $e->getMessage());
+                $openingDelivery = $this->sendOpeningDocumentToClient($createdOrder, $openingDocument);
+            } catch (Throwable $exception) {
+                $this->logOrderPostCreationFailure($order, 'opening_document_delivery', $exception);
+                $openingDelivery['message'] = 'A OS foi criada, mas o envio do PDF ao cliente não pôde ser concluído.';
+                $warnings[] = $this->orderCreationWarning(
+                    'ORDER_OPENING_DELIVERY_FAILED',
+                    (string) $openingDelivery['message']
+                );
             }
         }
 
+        if ($createdOrder instanceof Order) {
+            try {
+                $this->sendOrderNotification(
+                    $createdOrder,
+                    $actor,
+                    'order.created',
+                    'Nova OS criada',
+                    'A OS '.$createdOrder->numero_os.' foi aberta para '.($createdOrder->client?->nome_razao ?? 'o cliente selecionado').'.',
+                    [
+                        'status_novo' => $statusCode,
+                        'estado_fluxo' => $estadoFluxo,
+                        'icon' => 'clipboard-plus',
+                    ]
+                );
+            } catch (Throwable $exception) {
+                $this->logOrderPostCreationFailure($order, 'internal_notification', $exception);
+                $warnings[] = $this->orderCreationWarning(
+                    'ORDER_NOTIFICATION_DEFERRED',
+                    'A OS foi criada, mas a notificação interna não pôde ser enviada.'
+                );
+            }
+
+            try {
+                broadcast(new OrderCreated([
+                    'id' => (int) $createdOrder->id,
+                    'numero_os' => (string) ($createdOrder->numero_os ?? ''),
+                    'cliente_nome' => (string) ($createdOrder->client?->nome_razao ?? ''),
+                    'cliente_telefone' => (string) ($createdOrder->client?->telefone1 ?? ''),
+                    'equipamento_resumo' => (string) ($createdOrder->equipment?->resumo_tecnico ?? ''),
+                    'equipamento_serie' => (string) ($createdOrder->equipment?->numero_serie ?? ''),
+                    'status_nome' => (string) ($createdOrder->statusCatalog?->nome ?? ''),
+                    'status_cor' => (string) ($createdOrder->statusCatalog?->cor ?? '#64748b'),
+                    'proximas_etapas' => $this->mapNextStatusOptions($statusCode),
+                    'estado_fluxo' => (string) ($createdOrder->estado_fluxo ?? ''),
+                    'data_entrada' => $createdOrder->data_entrada?->format('d/m/Y') ?? '',
+                ]));
+            } catch (Throwable $exception) {
+                $this->logOrderPostCreationFailure($order, 'realtime_broadcast', $exception);
+            }
+        }
+
+        $mappedOrder = $this->mapCreatedOrderSafely($createdOrder, $warnings);
+
         return [
             'result' => 'ok',
-            'order' => $createdOrder instanceof Order ? $this->mapDetail($createdOrder) : null,
+            'order' => $mappedOrder,
             'opening_document' => $this->sanitizeOpeningDocumentFeedback($openingDocument),
             'opening_delivery' => $openingDelivery,
+            'idempotent_replay' => false,
+            'warnings' => $warnings,
         ];
     }
 
     /**
-     * @param array<string, mixed> $attributes
-     * @param array<int, UploadedFile> $uploadedPhotos
+     * @param  array<string, mixed>  $attributes
+     */
+    private function orderCreationFingerprint(User $actor, array $attributes): string
+    {
+        unset($attributes['idempotency_key'], $attributes['fotos']);
+
+        $canonicalPayload = [
+            'actor_id' => (int) $actor->id,
+            'attributes' => $this->canonicalizeIdempotencyValue($attributes),
+        ];
+
+        return hash('sha256', json_encode(
+            $canonicalPayload,
+            JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+        ));
+    }
+
+    private function canonicalizeIdempotencyValue(mixed $value): mixed
+    {
+        if (! is_array($value)) {
+            return $value;
+        }
+
+        if (! array_is_list($value)) {
+            ksort($value);
+        }
+
+        foreach ($value as $key => $item) {
+            $value[$key] = $this->canonicalizeIdempotencyValue($item);
+        }
+
+        return $value;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function resolveOrderCreationReplay(User $actor, string $idempotencyKey, string $requestFingerprint): ?array
+    {
+        $order = Order::query()
+            ->where('creation_request_id', $idempotencyKey)
+            ->first();
+
+        if (! $order instanceof Order) {
+            return null;
+        }
+
+        if ((int) ($order->creation_requested_by ?? 0) !== (int) $actor->id
+            || ! hash_equals((string) ($order->creation_request_fingerprint ?? ''), $requestFingerprint)) {
+            return [
+                'result' => 'idempotency_conflict',
+            ];
+        }
+
+        $warnings = [];
+        $mappedOrder = $this->mapCreatedOrderSafely($order, $warnings);
+
+        return [
+            'result' => 'ok',
+            'order' => $mappedOrder,
+            'opening_document' => null,
+            'opening_delivery' => null,
+            'idempotent_replay' => true,
+            'warnings' => $warnings,
+        ];
+    }
+
+    /**
+     * @param  array<int, array{code: string, message: string}>  $warnings
+     * @return array<string, mixed>
+     */
+    private function mapCreatedOrderSafely(Order $order, array &$warnings): array
+    {
+        try {
+            $detailedOrder = $this->detailQuery()->find((int) $order->id);
+
+            return $this->mapDetail($detailedOrder instanceof Order ? $detailedOrder : $order);
+        } catch (Throwable $exception) {
+            $this->logOrderPostCreationFailure($order, 'response_mapping', $exception);
+            $warnings[] = $this->orderCreationWarning(
+                'ORDER_DETAIL_DEFERRED',
+                'A OS foi criada, mas alguns detalhes serão carregados ao abrir o registro.'
+            );
+
+            // Nunca perde a confirmação de uma escrita já concluída por causa
+            // de uma projeção de leitura. O desktop só precisa do ID confiável
+            // para redirecionar ao detalhe, onde uma nova leitura será feita.
+            return [
+                'id' => (int) $order->id,
+                'numero_os' => (string) ($order->numero_os ?? ''),
+                'cliente_id' => (int) ($order->cliente_id ?? 0),
+                'equipamento_id' => (int) ($order->equipamento_id ?? 0),
+                'tecnico_id' => (int) ($order->tecnico_id ?? 0),
+                'status' => (string) ($order->status ?? ''),
+                'estado_fluxo' => (string) ($order->estado_fluxo ?? ''),
+            ];
+        }
+    }
+
+    /**
+     * @return array{code: string, message: string}
+     */
+    private function orderCreationWarning(string $code, string $message): array
+    {
+        return [
+            'code' => $code,
+            'message' => $message,
+        ];
+    }
+
+    private function logOrderPostCreationFailure(Order $order, string $stage, Throwable $exception): void
+    {
+        Log::warning('[API V1][ORDERS] Etapa posterior à criação da OS falhou', [
+            'order_id' => (int) $order->id,
+            'stage' => $stage,
+            'exception_class' => $exception::class,
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @param  array<int, UploadedFile>  $uploadedPhotos
      * @return array<string, mixed>
      */
     public function updateOrder(int $orderId, User $actor, array $attributes, array $uploadedPhotos = []): array
@@ -1397,7 +1629,7 @@ class OrderWorkflowService
                         OrderEvent::CATEGORIA_REGISTRO,
                         OrderEvent::TIPO_OS_ATUALIZADA,
                         'OS atualizada',
-                        'Campos alterados: ' . implode(', ', array_keys($camposAlterados)) . '.',
+                        'Campos alterados: '.implode(', ', array_keys($camposAlterados)).'.',
                         ['campos' => $camposAlterados],
                         (int) $actor->id,
                         OrderEvent::ORIGEM_USUARIO,
@@ -1423,7 +1655,7 @@ class OrderWorkflowService
                 $actor,
                 'order.updated',
                 'OS atualizada',
-                'A OS ' . $updatedOrder->numero_os . ' recebeu alterações de cadastro.',
+                'A OS '.$updatedOrder->numero_os.' recebeu alterações de cadastro.',
                 [
                     'status_anterior' => $previousStatus !== '' ? $previousStatus : null,
                     'status_novo' => (string) ($payload['status'] ?? $order->status),
@@ -1547,10 +1779,10 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<string, mixed>|null $budget
-     * @param array<string, mixed>|null $receivable
-     * @param array<int, array<string, mixed>>|null $nextStatusOptions
-     * @param array<int, string>|null $closureCodes
+     * @param  array<string, mixed>|null  $budget
+     * @param  array<string, mixed>|null  $receivable
+     * @param  array<int, array<string, mixed>>|null  $nextStatusOptions
+     * @param  array<int, string>|null  $closureCodes
      * @return array<string, mixed>
      */
     private function mapSummary(
@@ -1559,8 +1791,7 @@ class OrderWorkflowService
         ?array $receivable = null,
         ?array $nextStatusOptions = null,
         ?array $closureCodes = null
-    ): array
-    {
+    ): array {
         $valorFinal = (float) ($order->valor_final ?? 0);
         $valorRecebido = (float) ($receivable['valor_recebido'] ?? 0);
 
@@ -1648,7 +1879,7 @@ class OrderWorkflowService
             return 'Sem resumo técnico';
         }
 
-        return mb_strlen($fallback) > 60 ? mb_substr($fallback, 0, 57) . '...' : $fallback;
+        return mb_strlen($fallback) > 60 ? mb_substr($fallback, 0, 57).'...' : $fallback;
     }
 
     /**
@@ -1981,7 +2212,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<int, string> $formas
+     * @param  array<int, string>  $formas
      */
     private function paymentMethodLabel(?string $formaPagamento, array $formas = []): string
     {
@@ -2002,7 +2233,7 @@ class OrderWorkflowService
                 ->all();
 
             return $labelList !== []
-                ? 'Múltiplas formas (' . implode(', ', $labelList) . ')'
+                ? 'Múltiplas formas ('.implode(', ', $labelList).')'
                 : 'Múltiplas formas';
         }
 
@@ -2039,7 +2270,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<int, string> $statusCodes
+     * @param  array<int, string>  $statusCodes
      * @return array<string, array<int, array<string, mixed>>>
      */
     private function resolveNextStatusOptionsMap(array $statusCodes): array
@@ -2418,7 +2649,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param iterable<OrderStatusHistory> $historyItems
+     * @param  iterable<OrderStatusHistory>  $historyItems
      * @return array<int, array<string, mixed>>
      */
     private function mapHistoryCollection(iterable $historyItems): array
@@ -2449,7 +2680,7 @@ class OrderWorkflowService
      * Timeline unificada de eventos da OS (tabela os_eventos) — ver skill
      * sistema-erp-os-fluxo-fechamento e documentacao de eventos.
      *
-     * @param iterable<OrderEvent> $events
+     * @param  iterable<OrderEvent>  $events
      * @return array<int, array<string, mixed>>
      */
     private function mapEventCollection(iterable $events, iterable $documents = []): array
@@ -2524,7 +2755,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<string, mixed>|null $dados
+     * @param  array<string, mixed>|null  $dados
      * @return array<int, string>
      */
     private function extractDocumentEventKeys(?array $dados): array
@@ -2536,13 +2767,13 @@ class OrderWorkflowService
         $keys = [];
         $documentId = (int) ($dados['documento_id'] ?? 0);
         if ($documentId > 0) {
-            $keys[] = 'id:' . $documentId;
+            $keys[] = 'id:'.$documentId;
         }
 
         $type = strtolower(trim((string) ($dados['tipo_documento'] ?? '')));
         $version = (int) ($dados['versao'] ?? 0);
         if ($type !== '' && $version > 0) {
-            $keys[] = 'typev:' . $type . ':' . $version;
+            $keys[] = 'typev:'.$type.':'.$version;
         }
 
         return $keys;
@@ -2556,13 +2787,13 @@ class OrderWorkflowService
         $keys = [];
         $documentId = (int) ($document->id ?? 0);
         if ($documentId > 0) {
-            $keys[] = 'id:' . $documentId;
+            $keys[] = 'id:'.$documentId;
         }
 
         $type = strtolower(trim((string) ($document->tipo_documento ?? '')));
         $version = (int) ($document->versao ?? 0);
         if ($type !== '' && $version > 0) {
-            $keys[] = 'typev:' . $type . ':' . $version;
+            $keys[] = 'typev:'.$type.':'.$version;
         }
 
         return $keys;
@@ -2587,8 +2818,8 @@ class OrderWorkflowService
             'id' => 0,
             'categoria' => OrderEvent::CATEGORIA_DOCUMENTO,
             'tipo' => 'documento_cliente_gerado',
-            'titulo' => $label . ' gerado',
-            'descricao' => $label . ' registrado no acervo da OS.',
+            'titulo' => $label.' gerado',
+            'descricao' => $label.' registrado no acervo da OS.',
             'dados' => [
                 'documento_id' => (int) ($document->id ?? 0),
                 'tipo_documento' => $type,
@@ -2618,7 +2849,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param iterable<OrderProcedureHistory> $procedureItems
+     * @param  iterable<OrderProcedureHistory>  $procedureItems
      * @return array<int, array<string, mixed>>
      */
     private function mapProcedureHistoryCollection(iterable $procedureItems): array
@@ -2643,7 +2874,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param iterable<OrderPhoto> $photos
+     * @param  iterable<OrderPhoto>  $photos
      * @return array<int, array<string, mixed>>
      */
     private function mapPhotoCollection(iterable $photos, int $orderId): array
@@ -2673,7 +2904,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param iterable<OrderDocument> $documents
+     * @param  iterable<OrderDocument>  $documents
      * @return array<int, array<string, mixed>>
      */
     private function mapDocumentCollection(iterable $documents, int $orderId): array
@@ -2830,8 +3061,8 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<int, array<string, mixed>> $statusById
-     * @param array<int, array<int, array<string, mixed>>> $transitionsByOrigin
+     * @param  array<int, array<string, mixed>>  $statusById
+     * @param  array<int, array<int, array<string, mixed>>>  $transitionsByOrigin
      * @return array<int, array<string, mixed>>
      */
     private function mapNextStatusOptionsFromCatalog(
@@ -2907,7 +3138,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<int, string> $candidates
+     * @param  array<int, string>  $candidates
      * @return array{absolute_path:string, relative_path:string, filename:string, mime_type:string}|null
      */
     private function resolveLegacyFileCandidates(array $candidates): ?array
@@ -2920,7 +3151,7 @@ class OrderWorkflowService
                 continue;
             }
 
-            $absolute = $root . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative);
+            $absolute = $root.DIRECTORY_SEPARATOR.str_replace('/', DIRECTORY_SEPARATOR, $relative);
             if (! is_file($absolute)) {
                 continue;
             }
@@ -2950,17 +3181,17 @@ class OrderWorkflowService
             $candidates[] = $normalized;
             if (! str_starts_with($normalized, 'uploads/')) {
                 foreach ($folders as $folder) {
-                    $candidates[] = $folder . '/' . $normalized;
+                    $candidates[] = $folder.'/'.$normalized;
                 }
             }
         }
 
         if ($basename !== '') {
             foreach ($folders as $folder) {
-                $candidates[] = $folder . '/' . $basename;
+                $candidates[] = $folder.'/'.$basename;
             }
 
-            $candidates[] = 'uploads/' . $basename;
+            $candidates[] = 'uploads/'.$basename;
         }
 
         return $this->resolveLegacyFileCandidates($candidates);
@@ -2978,13 +3209,13 @@ class OrderWorkflowService
         if ($normalized !== '') {
             $candidates[] = $normalized;
             if (! str_starts_with($normalized, 'uploads/')) {
-                $candidates[] = 'uploads/os_documentos/' . $normalized;
+                $candidates[] = 'uploads/os_documentos/'.$normalized;
             }
         }
 
         if ($basename !== '') {
-            $candidates[] = 'uploads/os_documentos/' . $basename;
-            $candidates[] = 'uploads/' . $basename;
+            $candidates[] = 'uploads/os_documentos/'.$basename;
+            $candidates[] = 'uploads/'.$basename;
         }
 
         return $this->resolveLegacyFileCandidates($candidates);
@@ -2998,7 +3229,7 @@ class OrderWorkflowService
         }
 
         return rtrim(
-            dirname(base_path(), 2) . DIRECTORY_SEPARATOR . 'sistema-hml' . DIRECTORY_SEPARATOR . 'public',
+            dirname(base_path(), 2).DIRECTORY_SEPARATOR.'sistema-hml'.DIRECTORY_SEPARATOR.'public',
             DIRECTORY_SEPARATOR
         );
     }
@@ -3085,7 +3316,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     private function hasEntryChecklistPayload(array $attributes): bool
     {
@@ -3094,7 +3325,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
     private function buildEntryChecklistSyncPlan(int $equipmentId, array $payload): array
@@ -3194,7 +3425,7 @@ class OrderWorkflowService
             'total_itens' => count($rows),
             'total_discrepancias' => $totalDiscrepancias,
             'resumo_texto' => $totalDiscrepancias > 0
-                ? $totalDiscrepancias . ' discrepância(s) registrada(s).'
+                ? $totalDiscrepancias.' discrepância(s) registrada(s).'
                 : 'Nenhuma discrepancia registrada.',
             'observacoes_estado' => mb_substr(trim((string) ($payload['observacoes_estado'] ?? '')), 0, 2000),
             'respostas' => $rows,
@@ -3202,7 +3433,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $plan
+     * @param  array<string, mixed>  $plan
      */
     private function applyEntryChecklistSyncPlan(int $orderId, array $plan, Carbon $now): void
     {
@@ -3283,7 +3514,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      * @return array<string, mixed>
      */
     private function extractMutableOrderAttributes(array $attributes, bool $creating): array
@@ -3410,7 +3641,7 @@ class OrderWorkflowService
             $isCreation
                 ? ($note ?? 'OS aberta')
                 : sprintf('%s → %s', $previousStatus !== null && $previousStatus !== '' ? $previousStatus : 'Sem origem', $newStatus)
-                    . ($note !== null && trim($note) !== '' ? ' — ' . $note : ''),
+                    .($note !== null && trim($note) !== '' ? ' — '.$note : ''),
             [
                 'status_anterior' => $previousStatus !== '' ? $previousStatus : null,
                 'status_novo' => $newStatus,
@@ -3423,14 +3654,14 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $extra
+     * @param  array<string, mixed>  $extra
      */
     /**
      * Versao publica de sendOrderNotification para outros services do modulo
      * (ex.: OrderClosureService avisando adiantamento/sinal) — mesmo padrao
      * de destinatarios: autor da acao + tecnico responsavel pela OS.
      *
-     * @param array<string, mixed> $extra
+     * @param  array<string, mixed>  $extra
      */
     public function notifyOrderUsers(
         Order $order,
@@ -3455,7 +3686,7 @@ class OrderWorkflowService
             'kind' => $kind,
             'title' => $title,
             'body' => $body,
-            'route' => '/os/' . (int) $order->id,
+            'route' => '/os/'.(int) $order->id,
             'icon' => 'clipboard',
             'order_id' => (int) $order->id,
             'numero_os' => (string) ($order->numero_os ?? ''),
@@ -3498,9 +3729,9 @@ class OrderWorkflowService
             OrderStatus::query()->where('codigo', $newStatus)->value('nome') ?? $newStatus
         );
 
-        $texto = 'Olá! O status da sua OS ' . $order->numero_os . ' foi atualizado para: "' . $statusNome . '".';
+        $texto = 'Olá! O status da sua OS '.$order->numero_os.' foi atualizado para: "'.$statusNome.'".';
         if (trim((string) $observacao) !== '') {
-            $texto .= ' ' . trim((string) $observacao);
+            $texto .= ' '.trim((string) $observacao);
         }
 
         // Caminho preferencial: registra a mensagem na Central de Atendimento
@@ -3592,7 +3823,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $openingDocument
+     * @param  array<string, mixed>  $openingDocument
      * @return array<string, mixed>
      */
     private function sanitizeOpeningDocumentFeedback(array $openingDocument): array
@@ -3607,7 +3838,7 @@ class OrderWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $openingDocument
+     * @param  array<string, mixed>  $openingDocument
      * @return array<string, mixed>
      */
     private function sendOpeningDocumentToClient(Order $order, array $openingDocument): array
@@ -3738,7 +3969,7 @@ class OrderWorkflowService
 
     private function renderOpeningClientMessage(Order $order): string
     {
-        $defaultMessage = 'Sua OS ' . (string) ($order->numero_os ?? '') . ' foi aberta. Segue o comprovante em PDF.';
+        $defaultMessage = 'Sua OS '.(string) ($order->numero_os ?? '').' foi aberta. Segue o comprovante em PDF.';
         if (! Schema::hasTable('whatsapp_templates')) {
             return $defaultMessage;
         }
@@ -3936,7 +4167,7 @@ class OrderWorkflowService
 
         try {
             return Carbon::parse((string) $value)->toIso8601String();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
     }
@@ -3953,7 +4184,7 @@ class OrderWorkflowService
 
         try {
             return Carbon::parse((string) $value)->toDateString();
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
     }

@@ -25,8 +25,20 @@ class UpdateCompanyProfileRequest extends FormRequest
             'empresa_telefone' => ['nullable', 'string', 'max:30'],
             'empresa_email' => ['nullable', 'string', 'email', 'max:255'],
             'empresa_endereco' => ['nullable', 'string', 'max:255'],
-            'empresa_logo' => ['nullable', 'file', 'mimes:jpg,jpeg,png,gif,svg', 'max:4096'],
-            'login_background_image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
+            'empresa_logo' => [
+                'nullable',
+                'file',
+                'mimes:jpg,jpeg,png,webp',
+                'mimetypes:image/jpeg,image/png,image/webp',
+                'max:4096',
+            ],
+            'login_background_image' => [
+                'nullable',
+                'file',
+                'mimes:jpg,jpeg,png,webp',
+                'mimetypes:image/jpeg,image/png,image/webp',
+                'max:4096',
+            ],
         ];
     }
 }

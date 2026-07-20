@@ -2,73 +2,119 @@
 
 namespace App\Services\Chat;
 
+use App\Enums\Files\FileOrigin;
 use App\Models\Chat\Message;
 use App\Models\Chat\MessageAttachment;
+use App\Services\Files\ChatFileManagerAdapter;
 use App\Services\Integrations\IntegrationSettingsService;
+use GuzzleHttp\TransferStats;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class MessageAttachmentService
 {
     public function __construct(
-        private readonly IntegrationSettingsService $integrationSettingsService
-    ) {
-    }
+        private readonly IntegrationSettingsService $integrationSettingsService,
+        private readonly ChatAttachmentPolicy $attachmentPolicy,
+        private readonly ChatFileManagerAdapter $fileManagerAdapter
+    ) {}
 
     /**
-     * @param array<int, UploadedFile> $files
+     * @param  array<int, UploadedFile>  $files
      */
     public function storeUploadedAttachments(Message $message, array $files): void
     {
-        foreach ($files as $file) {
-            if (! $file instanceof UploadedFile) {
-                continue;
+        $storedPaths = [];
+        $createdAttachmentIds = [];
+
+        try {
+            foreach ($files as $file) {
+                if (! $file instanceof UploadedFile || ! $file->isValid()) {
+                    throw ValidationException::withMessages([
+                        'attachments' => ['O anexo enviado e invalido.'],
+                    ]);
+                }
+
+                $inspection = $this->attachmentPolicy->inspectUploadedFile($file);
+                if (! $inspection['allowed']) {
+                    throw ValidationException::withMessages([
+                        'attachments' => ['O tipo de arquivo enviado nao e permitido.'],
+                    ]);
+                }
+
+                $storedName = Str::uuid()->toString().'.'.$inspection['extension'];
+                $storagePath = $file->storeAs(
+                    $this->directoryFor($message),
+                    $storedName,
+                    'local'
+                );
+
+                if (! is_string($storagePath) || $storagePath === '') {
+                    throw new \RuntimeException('Falha ao persistir o anexo do chat.');
+                }
+
+                $storedPaths[] = $storagePath;
+
+                $attachment = MessageAttachment::query()->create([
+                    'mensagem_id' => $message->id,
+                    'attachment_type' => $this->detectType(
+                        $inspection['mime_type'],
+                        $inspection['extension']
+                    ),
+                    'transfer_status' => MessageAttachment::TRANSFER_AVAILABLE,
+                    'disk' => 'local',
+                    'storage_path' => $storagePath,
+                    'original_name' => $this->attachmentPolicy->safeDownloadName(
+                        $file->getClientOriginalName(),
+                        $inspection['extension']
+                    ),
+                    'stored_name' => $storedName,
+                    'mime_type' => $inspection['mime_type'],
+                    'byte_size' => $file->getSize() ?: null,
+                    'metadata' => [
+                        'source' => 'upload',
+                    ],
+                ]);
+                $createdAttachmentIds[] = (int) $attachment->id;
+                $this->fileManagerAdapter->synchronize($attachment, FileOrigin::Upload);
             }
 
-            $extension = $file->guessExtension() ?: $file->extension() ?: 'bin';
-            $storedName = Str::uuid()->toString() . '.' . $extension;
-            $storagePath = $file->storeAs(
-                $this->directoryFor($message),
-                $storedName,
-                'local'
-            );
+            $this->refreshMessageContentType($message);
+        } catch (\Throwable $exception) {
+            if ($createdAttachmentIds !== []) {
+                try {
+                    MessageAttachment::query()->whereKey($createdAttachmentIds)->delete();
+                } catch (\Throwable $cleanupException) {
+                    report($cleanupException);
+                }
+            }
+            foreach ($storedPaths as $storedPath) {
+                try {
+                    Storage::disk('local')->delete($storedPath);
+                } catch (\Throwable $cleanupException) {
+                    report($cleanupException);
+                }
+            }
 
-            MessageAttachment::query()->create([
-                'mensagem_id' => $message->id,
-                'attachment_type' => $this->detectType(
-                    (string) $file->getMimeType(),
-                    (string) $file->getClientOriginalExtension()
-                ),
-                'transfer_status' => MessageAttachment::TRANSFER_AVAILABLE,
-                'disk' => 'local',
-                'storage_path' => $storagePath,
-                'original_name' => $file->getClientOriginalName(),
-                'stored_name' => $storedName,
-                'mime_type' => $file->getMimeType(),
-                'byte_size' => $file->getSize(),
-                'metadata' => [
-                    'source' => 'upload',
-                ],
-            ]);
+            throw $exception;
         }
-
-        $this->refreshMessageContentType($message);
     }
 
     /**
-     * @param array<string, mixed> $descriptor
+     * @param  array<string, mixed>  $descriptor
      */
     public function storeInboundAttachment(
         Message $message,
         array $descriptor,
         ?string $bytes = null,
         bool $bytesAlreadyResolved = false
-    ): MessageAttachment
-    {
+    ): MessageAttachment {
         $attachmentType = $this->normalizeAttachmentType((string) ($descriptor['attachment_type'] ?? ''));
         $mimeType = trim((string) ($descriptor['mime_type'] ?? ''));
         $originalName = trim((string) ($descriptor['original_name'] ?? ''));
@@ -76,11 +122,17 @@ class MessageAttachmentService
         $base64 = trim((string) ($descriptor['base64'] ?? ''));
         $metadata = is_array($descriptor['metadata'] ?? null) ? $descriptor['metadata'] : [];
 
+        $fallbackExtension = $this->attachmentPolicy->preferredExtension($mimeType);
+        $safeOriginalName = $this->attachmentPolicy->safeDownloadName(
+            $originalName !== '' ? $originalName : $this->fallbackFileName($attachmentType, $mimeType),
+            $fallbackExtension
+        );
+
         $attachment = MessageAttachment::query()->create([
             'mensagem_id' => $message->id,
             'attachment_type' => $attachmentType,
             'transfer_status' => MessageAttachment::TRANSFER_FAILED,
-            'original_name' => $originalName !== '' ? $originalName : $this->fallbackFileName($attachmentType, $mimeType),
+            'original_name' => $safeOriginalName,
             'mime_type' => $mimeType !== '' ? $mimeType : null,
             'byte_size' => Arr::get($descriptor, 'byte_size'),
             'provider_url' => $providerUrl !== '' ? $providerUrl : null,
@@ -92,18 +144,83 @@ class MessageAttachmentService
         }
 
         if ($bytes !== null) {
-            $storedName = Str::uuid()->toString() . '.' . $this->extensionFor($mimeType, $originalName);
-            $storagePath = $this->directoryFor($message) . '/' . $storedName;
-            Storage::disk('local')->put($storagePath, $bytes);
+            $inspection = $this->attachmentPolicy->inspectInboundBytes($bytes, $mimeType, $safeOriginalName);
 
-            $attachment->forceFill([
-                'transfer_status' => MessageAttachment::TRANSFER_AVAILABLE,
-                'disk' => 'local',
-                'storage_path' => $storagePath,
-                'stored_name' => $storedName,
-                'byte_size' => strlen($bytes),
-                'metadata' => array_merge($metadata, ['downloaded' => true]),
-            ])->save();
+            if (! $inspection['allowed']) {
+                logger()->warning('[CHAT][ANEXO] Midia inbound bloqueada pela politica de tipos', [
+                    'attachment_id' => $attachment->id,
+                    'detected_mime_type' => $inspection['mime_type'],
+                    'extension' => $inspection['extension'],
+                    'reason' => $inspection['reason'],
+                ]);
+
+                $attachment->forceFill([
+                    'metadata' => array_merge($metadata, [
+                        'downloaded' => false,
+                        'rejected_by_policy' => true,
+                        'rejection_reason' => $inspection['reason'],
+                    ]),
+                ])->save();
+
+                $this->refreshMessageContentType($message);
+
+                return $attachment->fresh() ?? $attachment;
+            }
+
+            $storedName = Str::uuid()->toString().'.'.$inspection['extension'];
+            $storagePath = $this->directoryFor($message).'/'.$storedName;
+
+            try {
+                $stored = Storage::disk('local')->put($storagePath, $bytes);
+            } catch (\Throwable $exception) {
+                report($exception);
+                $stored = false;
+            }
+
+            if (! $stored) {
+                $attachment->forceFill([
+                    'metadata' => array_merge($metadata, [
+                        'downloaded' => false,
+                        'storage_write_failed' => true,
+                    ]),
+                ])->save();
+
+                $this->refreshMessageContentType($message);
+
+                return $attachment->fresh() ?? $attachment;
+            }
+
+            try {
+                $attachment->forceFill([
+                    'attachment_type' => $this->detectType($inspection['mime_type'], $inspection['extension']),
+                    'transfer_status' => MessageAttachment::TRANSFER_AVAILABLE,
+                    'disk' => 'local',
+                    'storage_path' => $storagePath,
+                    'stored_name' => $storedName,
+                    'mime_type' => $inspection['mime_type'],
+                    'byte_size' => strlen($bytes),
+                    'metadata' => array_merge($metadata, ['downloaded' => true]),
+                ])->save();
+                $this->fileManagerAdapter->synchronize($attachment, FileOrigin::Integration);
+            } catch (\Throwable $exception) {
+                Storage::disk('local')->delete($storagePath);
+                $failureAttributes = [
+                    'transfer_status' => MessageAttachment::TRANSFER_FAILED,
+                    'disk' => null,
+                    'storage_path' => null,
+                    'stored_name' => null,
+                    'metadata' => array_merge((array) $attachment->metadata, [
+                        'downloaded' => false,
+                        'file_manager_state' => 'failed',
+                    ]),
+                ];
+                if (Schema::connection('chat')->hasColumn($attachment->getTable(), 'managed_file_uuid')) {
+                    $failureAttributes['managed_file_uuid'] = null;
+                }
+                $attachment->forceFill($failureAttributes)->saveQuietly();
+
+                throw $exception;
+            }
         } else {
             $attachment->forceFill([
                 'metadata' => array_merge($metadata, ['downloaded' => false]),
@@ -195,41 +312,18 @@ class MessageAttachmentService
 
     private function directoryFor(Message $message): string
     {
-        return 'chat-media/' . now()->format('Y/m/d') . '/conversa-' . $message->conversa_id;
-    }
-
-    private function extensionFor(string $mimeType, string $originalName): string
-    {
-        $mimeExtension = match (mb_strtolower(trim($mimeType))) {
-            'image/jpeg' => 'jpg',
-            'image/png' => 'png',
-            'image/webp' => 'webp',
-            'image/gif' => 'gif',
-            'audio/ogg' => 'ogg',
-            'audio/mpeg' => 'mp3',
-            'audio/mp4' => 'm4a',
-            'video/mp4' => 'mp4',
-            'application/pdf' => 'pdf',
-            default => '',
-        };
-
-        if ($mimeExtension !== '') {
-            return $mimeExtension;
-        }
-
-        $pathInfo = pathinfo($originalName);
-        $extension = mb_strtolower(trim((string) ($pathInfo['extension'] ?? '')));
-
-        return $extension !== '' ? $extension : 'bin';
+        return 'chat-media/'.now()->format('Y/m/d').'/conversa-'.$message->conversa_id;
     }
 
     private function fallbackFileName(string $attachmentType, string $mimeType): string
     {
+        $extension = $this->attachmentPolicy->preferredExtension($mimeType);
+
         return match ($attachmentType) {
-            MessageAttachment::TYPE_IMAGE => 'imagem.' . $this->extensionFor($mimeType, 'imagem'),
-            MessageAttachment::TYPE_AUDIO => 'audio.' . $this->extensionFor($mimeType, 'audio'),
-            MessageAttachment::TYPE_VIDEO => 'video.' . $this->extensionFor($mimeType, 'video'),
-            default => 'arquivo.' . $this->extensionFor($mimeType, 'arquivo'),
+            MessageAttachment::TYPE_IMAGE => 'imagem.'.$extension,
+            MessageAttachment::TYPE_AUDIO => 'audio.'.$extension,
+            MessageAttachment::TYPE_VIDEO => 'video.'.$extension,
+            default => 'arquivo.'.$extension,
         };
     }
 
@@ -256,21 +350,54 @@ class MessageAttachmentService
 
         if (! $this->isTrustedProviderUrl($providerUrl)) {
             logger()->warning('[CHAT][ANEXO] URL inbound bloqueada por origem nao confiavel', [
-                'url' => $providerUrl,
+                'origin_hash' => $this->originHash($providerUrl),
+            ]);
+
+            return null;
+        }
+
+        if (! $this->allowsLiteralAddress($providerUrl)) {
+            logger()->warning('[CHAT][ANEXO] URL inbound bloqueada por endereco privado nao autorizado', [
+                'origin_hash' => $this->originHash($providerUrl),
             ]);
 
             return null;
         }
 
         try {
+            $primaryIp = null;
             $response = Http::timeout(20)
                 ->connectTimeout(10)
+                ->withOptions([
+                    'allow_redirects' => false,
+                    'on_stats' => static function (TransferStats $stats) use (&$primaryIp): void {
+                        $candidate = $stats->getHandlerStats()['primary_ip'] ?? null;
+                        $primaryIp = is_string($candidate) ? $candidate : null;
+                    },
+                ])
                 ->get($providerUrl);
+
+            if ($response->status() >= 300 && $response->status() < 400) {
+                logger()->warning('[CHAT][ANEXO] Redirect de midia inbound bloqueado.', [
+                    'origin_hash' => $this->originHash($providerUrl),
+                    'status' => $response->status(),
+                ]);
+
+                return null;
+            }
+
+            if (! $this->allowsConnectedAddress($providerUrl, $primaryIp)) {
+                logger()->warning('[CHAT][ANEXO] IP conectado para midia inbound foi bloqueado.', [
+                    'origin_hash' => $this->originHash($providerUrl),
+                ]);
+
+                return null;
+            }
 
             $contentLength = (int) $response->header('Content-Length', 0);
             if ($contentLength > 0 && ! $this->withinInboundSizeLimit($contentLength)) {
                 logger()->warning('[CHAT][ANEXO] Download inbound bloqueado por tamanho excedido', [
-                    'url' => $providerUrl,
+                    'origin_hash' => $this->originHash($providerUrl),
                     'content_length' => $contentLength,
                     'max_bytes' => $this->maxInboundBytes(),
                 ]);
@@ -281,8 +408,8 @@ class MessageAttachmentService
             return $this->responseToBytes($response);
         } catch (\Throwable $exception) {
             logger()->warning('[CHAT][ANEXO] Falha ao baixar midia inbound', [
-                'url' => $providerUrl,
-                'error' => $exception->getMessage(),
+                'origin_hash' => $this->originHash($providerUrl),
+                'error_type' => $exception::class,
             ]);
 
             return null;
@@ -373,6 +500,47 @@ class MessageAttachmentService
             return null;
         }
 
-        return $scheme . '://' . $host . ($port !== null ? ':' . $port : '');
+        return $scheme.'://'.$host.($port !== null ? ':'.$port : '');
+    }
+
+    private function allowsLiteralAddress(string $url): bool
+    {
+        $host = (string) (parse_url($url, PHP_URL_HOST) ?: '');
+        if (filter_var($host, FILTER_VALIDATE_IP) === false) {
+            return true;
+        }
+
+        return $this->isPublicIp($host) || $this->allowsPrivateOrigin($url);
+    }
+
+    private function allowsConnectedAddress(string $url, ?string $primaryIp): bool
+    {
+        if ($primaryIp === null || $primaryIp === '') {
+            return app()->environment('testing');
+        }
+
+        return $this->isPublicIp($primaryIp) || $this->allowsPrivateOrigin($url);
+    }
+
+    private function isPublicIp(string $ip): bool
+    {
+        return filter_var(
+            $ip,
+            FILTER_VALIDATE_IP,
+            FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+        ) !== false;
+    }
+
+    private function allowsPrivateOrigin(string $url): bool
+    {
+        $origin = $this->normalizeOrigin($url);
+
+        return $origin !== null
+            && in_array($origin, (array) config('chat.trusted_private_media_origins', []), true);
+    }
+
+    private function originHash(string $url): string
+    {
+        return hash('sha256', $this->normalizeOrigin($url) ?? 'invalid-origin');
     }
 }

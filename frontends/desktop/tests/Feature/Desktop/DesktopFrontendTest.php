@@ -3,8 +3,10 @@
 namespace Tests\Feature\Desktop;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 class DesktopFrontendTest extends TestCase
@@ -304,7 +306,7 @@ class DesktopFrontendTest extends TestCase
                 ], 403);
             }
 
-            throw new \RuntimeException('Unexpected HTTP request: ' . $request->url());
+            throw new \RuntimeException('Unexpected HTTP request: '.$request->url());
         });
 
         $response = $this
@@ -317,6 +319,61 @@ class DesktopFrontendTest extends TestCase
             ->assertRedirect(route('login'))
             ->assertSessionMissing('desktop_auth')
             ->assertSessionMissing('warning');
+    }
+
+    public function test_profile_sync_server_error_uses_existing_authorization_snapshot_without_login_loop(): void
+    {
+        Log::spy();
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/auth/me' => Http::response([
+                'status' => 'error',
+                'error' => ['message' => 'Servico temporariamente indisponivel.'],
+            ], 500),
+        ]);
+
+        $response = $this
+            ->from('/login')
+            ->withSession($this->desktopSession([
+                'dashboard' => ['visualizar'],
+            ], syncedAt: 0))
+            ->get('/dashboard');
+
+        $response
+            ->assertOk()
+            ->assertSessionHas('desktop_auth.token', 'desktop-session-token')
+            ->assertSessionHas('desktop_auth.user.permissions.dashboard.0', 'visualizar');
+
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->withArgs(static fn (string $message, array $context): bool => $message === 'desktop_profile_sync_unavailable'
+                && $context['status_code'] === 500
+                && $context['has_authorization_snapshot'] === true);
+    }
+
+    public function test_profile_sync_server_error_without_snapshot_clears_session_and_returns_login(): void
+    {
+        Log::spy();
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/auth/me' => Http::response([
+                'status' => 'error',
+                'error' => ['message' => 'Servico temporariamente indisponivel.'],
+            ], 500),
+        ]);
+
+        $response = $this
+            ->withSession([
+                'desktop_auth' => [
+                    'token' => 'desktop-session-token',
+                    'synced_at' => 0,
+                    'user' => $this->fakeUser(),
+                ],
+            ])
+            ->get('/dashboard');
+
+        $response
+            ->assertRedirect(route('login'))
+            ->assertSessionMissing('desktop_auth')
+            ->assertSessionHas('error', 'Nao foi possivel validar sua sessao. Tente entrar novamente em instantes.');
     }
 
     public function test_dashboard_data_redirects_to_login_when_session_is_stale(): void
@@ -344,7 +401,7 @@ class DesktopFrontendTest extends TestCase
                 ], 403);
             }
 
-            throw new \RuntimeException('Unexpected HTTP request: ' . $request->url());
+            throw new \RuntimeException('Unexpected HTTP request: '.$request->url());
         });
 
         $response = $this
@@ -757,12 +814,12 @@ class DesktopFrontendTest extends TestCase
             // Illuminate\Support\Js::from() (escapa "/" como "\/") e depois
             // pelo JSON.parse('...') externo (escapa cada "\" de novo) — o
             // HTML cru contem 3 barras invertidas antes de cada "/" original.
-            ->assertSee(str_replace('/', str_repeat('\\', 3) . '/', route('orders.documents.state', 501)), false)
-            ->assertSee(str_replace('/', str_repeat('\\', 3) . '/', route('orders.documents.generate', 501)), false)
-            ->assertSee(str_replace('/', str_repeat('\\', 3) . '/', route('orders.documents.send', 501)), false)
-            ->assertSee(str_replace('/', str_repeat('\\', 3) . '/', route('orders.documents.share', 501)), false)
-            ->assertSee(str_replace('/', str_repeat('\\', 3) . '/', route('orders.documents.print', 501)), false)
-            ->assertSee(str_replace('/', str_repeat('\\', 3) . '/', route('orders.documents.download', 501)), false);
+            ->assertSee(str_replace('/', str_repeat('\\', 3).'/', route('orders.documents.state', 501)), false)
+            ->assertSee(str_replace('/', str_repeat('\\', 3).'/', route('orders.documents.generate', 501)), false)
+            ->assertSee(str_replace('/', str_repeat('\\', 3).'/', route('orders.documents.send', 501)), false)
+            ->assertSee(str_replace('/', str_repeat('\\', 3).'/', route('orders.documents.share', 501)), false)
+            ->assertSee(str_replace('/', str_repeat('\\', 3).'/', route('orders.documents.print', 501)), false)
+            ->assertSee(str_replace('/', str_repeat('\\', 3).'/', route('orders.documents.download', 501)), false);
 
         Http::assertSent(static function ($request): bool {
             return $request->method() === 'GET'
@@ -1310,11 +1367,11 @@ class DesktopFrontendTest extends TestCase
             ->get('/orcamentos/novo?os_id=401');
 
         $html = $response->getContent();
-        $helpButtonPosition = strpos($html, route('orcamentos.help') . '" class="dropdown-item"');
-        $newBudgetButtonPosition = strpos($html, route('orcamentos.create') . '" class="dropdown-item"');
-        $viewOrderPosition = strpos($html, route('orders.show', 401) . '" class="dropdown-item"');
-        $documentsCenterPosition = strpos($html, route('orders.documents.center', 401) . '" class="dropdown-item"');
-        $backButtonPosition = strpos($html, route('orcamentos.index') . '" class="dropdown-item"');
+        $helpButtonPosition = strpos($html, route('orcamentos.help').'" class="dropdown-item"');
+        $newBudgetButtonPosition = strpos($html, route('orcamentos.create').'" class="dropdown-item"');
+        $viewOrderPosition = strpos($html, route('orders.show', 401).'" class="dropdown-item"');
+        $documentsCenterPosition = strpos($html, route('orders.documents.center', 401).'" class="dropdown-item"');
+        $backButtonPosition = strpos($html, route('orcamentos.index').'" class="dropdown-item"');
 
         $response
             ->assertOk()
@@ -3495,7 +3552,9 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('name="acessorios"', false)
             ->assertSee('Este registro pertence somente a esta ordem de serviço')
             ->assertSee('Relato do cliente')
-            ->assertSee('Enviar PDF ao cliente');
+            ->assertSee('Enviar PDF ao cliente')
+            ->assertSee('name="idempotency_key"', false)
+            ->assertSee('data-order-create-idempotency-key', false);
     }
 
     public function test_nova_os_client_search_returns_compact_json_for_select2(): void
@@ -3585,6 +3644,7 @@ class DesktopFrontendTest extends TestCase
                 'os' => ['criar'],
             ]))
             ->post('/os', [
+                'idempotency_key' => '4a137b0d-18a8-4576-b6f9-a79381948d6c',
                 'cliente_id' => 11,
                 'equipamento_id' => 21,
                 'relato_cliente' => 'Notebook não liga.',
@@ -3601,6 +3661,7 @@ class DesktopFrontendTest extends TestCase
 
         Http::assertSent(static function ($request): bool {
             return $request->url() === 'http://127.0.0.1:8000/api/v1/orders'
+                && $request['idempotency_key'] === '4a137b0d-18a8-4576-b6f9-a79381948d6c'
                 && $request['acessorios'] === 'Carregador original, Bolsa'
                 && $request['enviar_pdf_cliente'] === true;
         });
@@ -3630,6 +3691,7 @@ class DesktopFrontendTest extends TestCase
                 ['desktop_theme' => 'default']
             ))
             ->post('/os', [
+                'idempotency_key' => 'ee4fe142-41e1-4dc0-8b8e-332b6234f733',
                 'cliente_id' => 11,
                 'equipamento_id' => 21,
                 'relato_cliente' => 'Notebook com tela apagada.',
@@ -4501,7 +4563,7 @@ class DesktopFrontendTest extends TestCase
         $this->assertNotFalse($historyPosition);
         $this->assertGreaterThan($photosPosition, $historyPosition);
 
-        $document = new \DOMDocument();
+        $document = new \DOMDocument;
         @$document->loadHTML($html);
         $xpath = new \DOMXPath($document);
 
@@ -5148,9 +5210,8 @@ class DesktopFrontendTest extends TestCase
         $this->assertStringContainsString("const collapsed = sidebar.classList.toggle('is-collapsed');", $script);
         $this->assertStringContainsString("if (collapsed) {\n                closeCollapsedSidebarPopovers();", $script);
         $this->assertStringContainsString("event.key !== 'Escape'", $script);
-        $this->assertStringContainsString("toggle.focus({ preventScroll: true });", $script);
+        $this->assertStringContainsString('toggle.focus({ preventScroll: true });', $script);
     }
-
 
     public function test_orders_closure_page_disables_receber_saldo_total_when_no_open_balance(): void
     {
@@ -6314,11 +6375,11 @@ class DesktopFrontendTest extends TestCase
     }
 
     /**
-     * @param array<string, array<int, string>> $permissions
+     * @param  array<string, array<int, string>>  $permissions
      * @return array<string, mixed>
      */
     /**
-     * @return array<string, \Illuminate\Http\Client\Response>
+     * @return array<string, Response>
      */
     private function notificationsFixture(): array
     {
@@ -6343,6 +6404,7 @@ class DesktopFrontendTest extends TestCase
             ]),
         ];
     }
+
     private function dashboardSummaryFixture(array $overrides = []): array
     {
         return array_replace_recursive([
@@ -6613,7 +6675,7 @@ class DesktopFrontendTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
     private function fakeUser(array $overrides = []): array

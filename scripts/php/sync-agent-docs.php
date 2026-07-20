@@ -13,7 +13,9 @@ ensureDir($aiDocsRoot);
 
 $appVersion = file_exists($sharedVersionFile) ? require $sharedVersionFile : 'indefinida';
 $apiVersion = extractYamlScalar($openApiFile, 'version') ?? 'indefinida';
-$generatedAt = (new DateTimeImmutable('now'))->format(DateTimeInterface::ATOM);
+$documentationTimezone = getenv('APP_TIMEZONE') ?: 'America/Sao_Paulo';
+$generatedAt = (new DateTimeImmutable('now', new DateTimeZone($documentationTimezone)))
+    ->format(DateTimeInterface::ATOM);
 
 $categories = collectDocumentation($docsRoot);
 $specs = collectSpecs($specsRoot);

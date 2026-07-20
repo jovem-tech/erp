@@ -206,6 +206,13 @@
         @csrf
         @if ($isEditing)
             @method('PATCH')
+        @else
+            <input
+                type="hidden"
+                name="idempotency_key"
+                value="{{ old('idempotency_key', (string) \Illuminate\Support\Str::uuid()) }}"
+                data-order-create-idempotency-key
+            >
         @endif
 
         <aside class="order-create-preview">

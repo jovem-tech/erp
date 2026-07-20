@@ -14,14 +14,17 @@ Este índice organiza a documentação da nova plataforma `sistema-erp`.
 
 ## Atualizações recentes
 
+- [Consolidado de 20/07/2026 — Gerenciador de Arquivos, permissões e criação segura de OS](07-novas-implementacoes/2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md)
+- [Arquitetura do Gerenciador Central de Arquivos](03-arquitetura-tecnica/gerenciador-central-arquivos.md)
+- [Operação do Gerenciador Central de Arquivos](10-deploy/operacao-gerenciador-central-arquivos.md)
 - [Consolidado de 18 e 19/07/2026 — Financeiro, PDFs e assinaturas](07-novas-implementacoes/2026-07-19-consolidado-implementacoes-18-19-julho.md)
 - [Gestão de contas e saldos financeiros](07-novas-implementacoes/2026-07-18-gestao-contas-e-saldos-financeiros.md)
 - [Motor central e templates modernos de PDF](07-novas-implementacoes/2026-07-18-motor-central-documentos-pdf.md)
 - [Assinaturas digitais e rastreabilidade documental](07-novas-implementacoes/2026-07-19-assinaturas-digitais-documentos.md)
 
-O consolidado é o ponto de entrada recomendado para manutenção e deploy das
-versões `4.19.0.0` a `4.24.0.0`. O `CHANGELOG.md` permanece como fonte
-cronológica detalhada por versão.
+O consolidado de 20/07/2026 é o ponto de entrada recomendado para a release
+`5.1.0.0`. O consolidado anterior cobre as versões `4.19.0.0` a `4.24.0.0`.
+O `CHANGELOG.md` permanece como fonte cronológica detalhada por versão.
 
 ## Deploy em produção
 
@@ -105,7 +108,7 @@ visualizar configurações).
 2. [Frontend sistema-hml como BFF](03-arquitetura-tecnica/frontend-sistema-hml-bff.md)
 3. [Mapa completo de migração e limpeza do frontend sistema-hml](03-arquitetura-tecnica/mapa-migracao-legado-frontend-sistema-hml.md)
 4. [Contrato da API do backend central](03-arquitetura-tecnica/contrato-api-backend-central.md)
-5. [README do clone sistema-hml](../frontend/sistema-hml/README.sistema-erp.md)
+5. [Descontinuação do clone sistema-hml](07-novas-implementacoes/2026-06-25-descontinuacao-frontend-sistema-hml.md)
 6. [Spec 008 - Governança do BFF sistema-hml](../specs/008-governanca-bff-sistema-hml/spec.md)
 7. [Nota de implementação - Governança do BFF sistema-hml](07-novas-implementacoes/2026-06-24-governanca-bff-sistema-hml.md)
 8. [Nota de implementação - Autenticação BFF do sistema-hml](07-novas-implementacoes/2026-06-24-frontend-sistema-hml-auth-bff.md)
