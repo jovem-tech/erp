@@ -236,6 +236,8 @@ Route::prefix('v1')->group(function (): void {
         Route::get('orders/{order}/documents/{document}/files/{format}', [OrderController::class, 'documentFile'])
             ->whereIn('format', ['a4', '80mm'])
             ->name('api.v1.orders.documents.files.show');
+        Route::get('orders/{order}/documents/{document}/thumbnail', [OrderController::class, 'documentThumbnail'])
+            ->name('api.v1.orders.documents.thumbnail');
         Route::patch('orders/{order}/documents/{document}/archive', [OrderController::class, 'archiveDocument'])->name('api.v1.orders.documents.archive');
         Route::patch('orders/{order}/documents/{document}/unarchive', [OrderController::class, 'unarchiveDocument'])->name('api.v1.orders.documents.unarchive');
         Route::get('orders/{order}/documents/{document}', [OrderController::class, 'document'])->name('api.v1.orders.documents.show');

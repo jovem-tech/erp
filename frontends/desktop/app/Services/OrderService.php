@@ -303,6 +303,14 @@ class OrderService
     }
 
     /**
+     * @return array{body: string, headers: array<string, string>, status: int}
+     */
+    public function downloadDocumentThumbnail(int $orderId, int $documentId): array
+    {
+        return $this->apiClient->download('/orders/' . $orderId . '/documents/' . $documentId . '/thumbnail');
+    }
+
+    /**
      * @param array<int, int> $documentIds
      * @return array{body: string, headers: array<string, string>, status: int}
      */

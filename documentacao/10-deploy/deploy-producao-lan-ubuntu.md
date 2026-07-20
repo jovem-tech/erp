@@ -83,7 +83,7 @@ atende à restrição. Instalação:
 ```bash
 sudo apt-get update
 sudo apt-get install -y software-properties-common ca-certificates curl unzip git \
-  nginx mysql-server redis-server supervisor \
+  nginx mysql-server redis-server supervisor poppler-utils \
   php8.5-fpm php8.5-cli php8.5-mysql php8.5-mbstring php8.5-xml php8.5-curl \
   php8.5-zip php8.5-bcmath php8.5-gd php8.5-intl php8.5-redis php8.5-common \
   php8.5-sqlite3
@@ -92,6 +92,12 @@ sudo apt-get install -y software-properties-common ca-certificates curl unzip gi
 > **Atenção:** `php8.5-sqlite3` é obrigatório para o **frontend desktop** (que usa
 > SQLite local para preferências de usuário). A ausência dele causa
 > `could not find driver (Connection: sqlite)` — foi um problema real deste deploy.
+
+> **Miniaturas de PDF:** `poppler-utils` também é obrigatório quando
+> `FILE_MANAGER_PDF_THUMBNAILS_ENABLED=true`, pois fornece o binário
+> `/usr/bin/pdftocairo`. Sem essa dependência, as miniaturas PDF retornam HTTP
+> `503`, embora o arquivo original possa continuar disponível para preview e
+> download.
 
 Composer e Node:
 
@@ -506,6 +512,7 @@ sem erros de CORS/500.
 | 9 | CORS bloqueia `/broadcasting/auth` | `CORS_ALLOWED_ORIGINS` ausente em produção | definir a variável com a origem do desktop |
 | 10 | desktop: `could not find driver (sqlite)` | extensão não instalada | `apt install php8.5-sqlite3` |
 | 11 | fotos/logo 404 após corrigir o 500 | dump não carrega arquivos físicos | copiar `storage/app` + uploads legados; `LEGACY_PUBLIC_PATH` |
+| 12 | miniaturas de PDF retornam 503 | `poppler-utils` ausente ou feature desabilitada | instalar `poppler-utils`, validar `pdftocairo` como `www-data`, habilitar a flag e recriar o cache de configuração |
 
 ## 7. Pendências conhecidas (não configuradas neste deploy)
 

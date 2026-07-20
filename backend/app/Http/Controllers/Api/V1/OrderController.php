@@ -699,6 +699,58 @@ class OrderController extends BaseApiController
         ]);
     }
 
+    public function documentThumbnail(Request $request, int $order, int $document): BinaryFileResponse|JsonResponse
+    {
+        $this->authorize('os:visualizar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        try {
+            $result = $this->orderDocumentCenterService->resolveThumbnailForActor($order, $document, $user);
+        } catch (\UnexpectedValueException $exception) {
+            return $this->error($exception->getMessage(), 415, 'ORDER_DOCUMENT_THUMBNAIL_NOT_SUPPORTED', request: $request);
+        } catch (\DomainException $exception) {
+            return $this->error($exception->getMessage(), 409, 'ORDER_DOCUMENT_THUMBNAIL_BLOCKED', request: $request);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return $this->error(
+                'Miniatura temporariamente indisponível.',
+                503,
+                'ORDER_DOCUMENT_THUMBNAIL_UNAVAILABLE',
+                request: $request
+            );
+        }
+
+        if (($result['result'] ?? 'error') === 'unsupported') {
+            return $this->error(
+                (string) ($result['message'] ?? 'Miniatura não suportada.'),
+                415,
+                'ORDER_DOCUMENT_THUMBNAIL_NOT_SUPPORTED',
+                request: $request
+            );
+        }
+
+        if (($result['result'] ?? 'error') !== 'ok') {
+            return $this->attachmentErrorResponse($request, $result['result'] ?? 'error', 'DOCUMENT_THUMBNAIL');
+        }
+
+        $thumbnail = $result['thumbnail'];
+        $response = response()->file($thumbnail['absolute_path'], [
+            'Content-Type' => 'image/png',
+            'Content-Disposition' => 'inline; filename="pagina-1.png"',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
+        $response->setPrivate();
+        $response->setMaxAge($thumbnail['cache_seconds']);
+        $response->setEtag($thumbnail['etag']);
+
+        return $response;
+    }
+
     public function downloadDocuments(Request $request, int $order): StreamedResponse|JsonResponse
     {
         $this->authorize('os:visualizar');

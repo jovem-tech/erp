@@ -328,6 +328,9 @@ Route::middleware('desktop.auth')->group(function (): void {
         ->middleware('desktop.permission:os,visualizar')
         ->whereIn('format', ['a4', '80mm'])
         ->name('orders.documents.files.show');
+    Route::get('/os/{order}/documentos/{document}/miniatura', [OrderController::class, 'documentThumbnail'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('orders.documents.thumbnail');
     Route::get('/os/{order}/documentos/{document}', [OrderController::class, 'document'])
         ->middleware('desktop.permission:os,visualizar')
         ->name('orders.documents.show');

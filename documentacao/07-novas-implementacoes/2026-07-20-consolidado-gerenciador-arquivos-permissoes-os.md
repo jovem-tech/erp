@@ -1,6 +1,6 @@
 # Consolidado das implementações de 20 de julho de 2026
 
-**Release:** `5.1.0.0`  
+**Release:** `5.2.1.0`
 **API:** `1.5.0`  
 **Ambiente implantado e validado:** desenvolvimento LAN — `192.168.1.100`  
 **Produção externa:** não promovida por esta entrega  
@@ -21,6 +21,7 @@ resposta ambígua e o retrabalho manual na matriz de permissões.
 | Sincronização | execução automática agendada e solicitação manual assíncrona, ambas idempotentes e protegidas por lock |
 | Biblioteca visual | pastas por categoria, grade/lista, miniaturas de imagem/PDF, seleção, ZIP, lixeira lógica, download e filtros |
 | Visualização | imagens e PDFs abertos em modal interno; fotos possuem zoom/rotação e PDF usa iframe com controles nativos |
+| Central documental da OS | coluna Foto mostra a primeira página da versão mais recente e acompanha a versão escolhida na linha |
 | Contexto de negócio | cards e linhas exibem data real do documento e cliente vinculado quando o RBAC permite |
 | Permissões | seleção individual, por módulo, por coluna e da matriz inteira, mantendo o backend como autoridade |
 | Criação de OS | chave de idempotência ponta a ponta, proteção contra clique duplo e resposta de sucesso mesmo se uma etapa posterior falhar |
@@ -195,6 +196,30 @@ privado atual e depois candidatos legados allowlisted. A consulta confirma que
 a foto pertence à OS/equipamento solicitado, impedindo IDOR. O frontend converte
 URLs do backend em rotas proxy autenticadas do próprio desktop, corrigindo as
 miniaturas quebradas nas telas de criação e edição de OS.
+
+### 3.9 Miniatura na Central Documental da OS
+
+A tabela em `/os/{order}/documentos` ganhou a coluna **Foto**. Cada linha usa o
+PDF A4 da versão mais recente como estado inicial e exibe sua primeira página.
+Ao escolher outra versão no seletor, miniatura, link, texto alternativo e ações
+passam a apontar para o documento selecionado sem recarregar a página.
+
+O clique na miniatura não navega para outra aba: ele abre o visualizador
+compartilhado em modal, com o PDF dentro de iframe same-origin, recarregar,
+tela cheia e download. O conteúdo só é carregado após a interação e o iframe é
+redefinido para `about:blank` ao fechar, evitando retenção desnecessária do PDF.
+
+A entrega usa uma rota de domínio dedicada no backend e outra no BFF desktop.
+Ambas exigem `os:visualizar`; o usuário não precisa receber a permissão
+administrativa `arquivos:baixar`. Antes de renderizar, o backend valida que o
+documento pertence à OS solicitada e delega ao `PdfThumbnailService` os estados
+de lifecycle/integridade/segurança, a contenção do caminho e o cache por
+SHA-256. A imagem usa lazy loading, resposta privada, ETag e `nosniff`.
+
+Quando a versão ainda não possui PDF, o arquivo gerenciado está bloqueado ou o
+binário não está disponível, a célula mantém um ícone de fallback e não expõe
+caminhos internos nem mensagens técnicas. A renderização depende de
+`poppler-utils` (`pdftocairo`) no host do backend.
 
 ## 4. Matriz de permissões
 
@@ -482,6 +507,24 @@ administrativas mantidas desligadas. Resultado da primeira execução:
 A segunda execução processou as mesmas 573 entradas sem gerar novo finding ou
 novo registro, confirmando idempotência. O scheduler permaneceu ativo a cada
 minuto e a sincronização completa configurada a cada cinco minutos.
+
+### Incidente de branch no ambiente LAN
+
+Durante a publicação da release, o commit `d762221` foi criado e enviado para
+`develop`, mas a promoção foi interrompida depois do checkout de `main`. Como o
+diretório Git também é o diretório servido pelo Nginx, a LAN passou a exibir
+temporariamente a versão `4.26.3.0`. O ambiente foi restaurado para `develop`.
+
+O publicador foi alterado para executar merge e push de `main` em um worktree
+temporário sob `/tmp`. Assim, falha, desconexão ou cancelamento da promoção não
+muda mais os arquivos servidos em `192.168.1.100`.
+
+Um backup nomeado como `.env.before-*` também foi incluído indevidamente no
+commit porque o filtro anterior bloqueava apenas o nome exato `.env`. O arquivo
+foi removido do estado ativo, os padrões `.env.*` passaram a ser ignorados e o
+guard do deploy passou a recusar variantes de `.env`, preservando apenas
+arquivos `*.example`. A limpeza do histórico e a rotação das credenciais devem
+ser concluídas antes de promover essa linha para `main`.
 
 ## 14. Rollback
 

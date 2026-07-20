@@ -756,6 +756,45 @@ a {
     pointer-events: none;
 }
 
+.doc-version-thumbnail {
+    position: relative;
+    display: inline-flex;
+    width: 64px;
+    height: 78px;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    border: 1px solid var(--desktop-border);
+    border-radius: 0.65rem;
+    color: var(--desktop-primary);
+    background: var(--desktop-surface-soft);
+    text-decoration: none;
+}
+
+.doc-version-thumbnail:hover {
+    border-color: var(--desktop-primary);
+    box-shadow: 0 5px 14px rgba(var(--bs-primary-rgb), 0.14);
+}
+
+.doc-version-thumbnail.is-unavailable {
+    color: var(--desktop-text-muted);
+    cursor: default;
+    pointer-events: none;
+}
+
+.doc-version-thumbnail > i {
+    font-size: 1.45rem;
+}
+
+.doc-version-thumbnail > img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #fff;
+}
+
 .desktop-main {
     min-height: 100vh;
     margin-left: var(--desktop-sidebar-width);

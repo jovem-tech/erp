@@ -1,5 +1,9 @@
 @extends('layouts.app')
 
+@section('styles')
+    <link href="{{ asset('assets/css/file-preview-modal.css') }}?v={{ filemtime(public_path('assets/css/file-preview-modal.css')) }}" rel="stylesheet">
+@endsection
+
 @section('content')
     @php
         $orderId = (int) ($order['id'] ?? 0);
@@ -218,6 +222,7 @@
         'shareExpirationOptions' => $shareExpirationOptions,
     ])
     @include('orders.documents-center._signature-modal', ['signatureUsers' => $signatureUsers])
+    @include('files._preview_modal')
     @include('orders._status_modal')
     @include('orders._cancel_closure_modal')
 @endpush
@@ -249,6 +254,7 @@
         ]) !!};
     </script>
     <script src="{{ asset('assets/js/orders-documents-center.js') }}?v={{ filemtime(public_path('assets/js/orders-documents-center.js')) }}"></script>
+    <script src="{{ asset('assets/js/file-preview-modal.js') }}?v={{ filemtime(public_path('assets/js/file-preview-modal.js')) }}"></script>
 
     {{-- Dropdown "Mais ações" reaproveita os mesmos modais/JS de orders/show.blade.php e orders/index.blade.php --}}
     <script>

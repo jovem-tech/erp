@@ -1318,6 +1318,15 @@ class OrderController extends DesktopController
             ->withHeaders($file['headers']);
     }
 
+    public function documentThumbnail(int $order, int $document): Response
+    {
+        $file = $this->orderService->downloadDocumentThumbnail($order, $document);
+
+        return response($file['body'], $file['status'])
+            ->withHeaders($file['headers'])
+            ->header('X-Content-Type-Options', 'nosniff');
+    }
+
     public function documentsCenter(int $order): View|RedirectResponse
     {
         try {

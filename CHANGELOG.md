@@ -1,5 +1,27 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.2.1.0 — 2026-07-20 07:35
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** abre a miniatura da Central Documental da OS no modal interno com iframe PDF, em vez de navegar para outra aba
+- **Arquitetura:** reutiliza o visualizador compartilhado do Gerenciador de Arquivos e mantém o endpoint autenticado da OS como fonte do iframe e do download
+- **Segurança:** iframe same-origin com `referrerpolicy=no-referrer`; o `src` só é atribuído após o clique e retorna para `about:blank` ao fechar o modal
+- **Performance:** nenhum PDF é carregado antes da interação; a URL e o nome do arquivo acompanham a versão selecionada sem recarregar a página
+- **Compatibilidade:** o `href` autenticado permanece como fallback progressivo, enquanto o JavaScript intercepta o clique para abrir o modal
+- **Validação:** teste direcionado aprovado com 26 asserções e JavaScript validado pelo parser do Node
+- **Arquivos:** frontends/desktop/resources/views/orders/documents-center.blade.php,frontends/desktop/resources/views/orders/documents-center/_catalog.blade.php,frontends/desktop/public/assets/js/orders-documents-center.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/07-novas-implementacoes/2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md,documentacao/07-novas-implementacoes/historico-de-versoes.md,VERSION,shared/version.php,CHANGELOG.md
+
+## v5.2.0.0 — 2026-07-20 05:39
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** adiciona à Central Documental da OS a coluna Foto com miniatura da primeira página do PDF mais recente e atualização dinâmica ao selecionar outra versão
+- **Arquitetura:** nova rota autenticada da OS reutiliza o serviço central de miniaturas e o cache por SHA-256; o desktop permanece como BFF e não acessa storage ou banco diretamente
+- **Segurança:** autorização `os:visualizar`, validação de vínculo documento/OS, estados seguros do arquivo gerenciado, contenção de path e resposta privada com `nosniff`; não exige a permissão administrativa `arquivos:baixar`
+- **Performance:** carregamento lazy, cache privado com ETag e geração única por hash; nenhum PDF completo é transportado na listagem
+- **Compatibilidade:** mudança aditiva, sem migration e sem alteração das rotas documentais existentes; documentos ausentes exibem fallback visual
+- **Validação:** 3 testes direcionados aprovados (31 asserções), sintaxe PHP/JS validada e novas rotas confirmadas no ambiente LAN
+- **Arquivos:** backend/app/Services/Orders/OrderDocumentCenterService.php,backend/app/Http/Controllers/Api/V1/OrderController.php,backend/routes/api.php,backend/tests/Feature/Api/V1/OrderFlowTest.php,frontends/desktop/app/Services/OrderService.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/routes/web.php,frontends/desktop/resources/views/orders/documents-center/_catalog.blade.php,frontends/desktop/public/assets/js/orders-documents-center.js,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/07-novas-implementacoes/2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md,documentacao/07-novas-implementacoes/historico-de-versoes.md,VERSION,shared/version.php,CHANGELOG.md
+
 ## v5.1.0.0 — 2026-07-20 03:55
 - **Tier:** minor
 - **Autor/Agente:** Codex
@@ -12,6 +34,8 @@
 - **Documentação:** consolidado de 20/07/2026, arquitetura, contrato da API, runbook, quickstart, histórico e índices atualizados
 - **Validação:** 76 testes direcionados aprovados (430 asserções); suítes amplas ainda contêm falhas preexistentes documentadas no consolidado da release
 - **Rollout VPS:** sincronização ativada em `shadow` em 20/07/2026; primeira execução processou 573 arquivos, catalogou 566, criou 366 vínculos ativos e terminou sem falhas; segunda execução confirmou idempotência com zero novos findings
+- **Correção operacional LAN:** restaurado o ambiente `192.168.1.100` na branch `develop` após uma promoção interrompida deixá-lo temporariamente em `main`/v4.26.3.0; promoção para `main` passa a usar worktree temporário, sem trocar o código servido na LAN
+- **Hardening do deploy:** backups com nomes `.env.*` passam a ser ignorados e bloqueados pelo publicador; o backup de ambiente incluído acidentalmente foi removido do estado ativo da `develop`, e a promoção para `main` ficou suspensa até o tratamento das credenciais e do histórico
 - **Arquivos:** backend/app/Services/Files,backend/app/Http/Controllers/Api/V1/FileManagerController.php,backend/config/file-manager.php,backend/routes/api.php,backend/routes/console.php,backend/database/migrations/2026_07_20_000001_add_order_creation_idempotency.php,backend/app/Services/Orders/OrderWorkflowService.php,frontends/desktop/resources/views/files,frontends/desktop/public/assets/css/file-preview-modal.css,frontends/desktop/public/assets/js/file-preview-modal.js,frontends/desktop/resources/views/groups/permissions.blade.php,frontends/desktop/public/assets/js/orders-create.js,scripts/php/sync-agent-docs.php,documentacao/07-novas-implementacoes/2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md,documentacao/03-arquitetura-tecnica/gerenciador-central-arquivos.md,documentacao/03-arquitetura-tecnica/idempotencia-criacao-os.md,documentacao/10-deploy/operacao-gerenciador-central-arquivos.md,specs/022-gerenciador-central-arquivos
 
 ## v5.0.0.0 — 2026-07-19 22:01

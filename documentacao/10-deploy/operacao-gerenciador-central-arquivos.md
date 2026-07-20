@@ -105,16 +105,33 @@ Miniaturas de imagem reutilizam o preview autenticado. Para PDF, o servidor
 precisa do Poppler e do binário configurado:
 
 ```bash
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends poppler-utils
+
 command -v pdftocairo
 /usr/bin/pdftocairo -v
-php -r "var_export(is_executable('/usr/bin/pdftocairo'));"
+sudo -u www-data test -x /usr/bin/pdftocairo
 ```
+
+O pacote `poppler-utils` é uma dependência operacional obrigatória sempre que
+`FILE_MANAGER_PDF_THUMBNAILS_ENABLED=true`. O sistema executa o binário
+`pdftocairo` por lista de argumentos, sem shell, para converter somente a
+primeira página do PDF em PNG. Mantenha a funcionalidade desabilitada até que o
+binário exista e seja executável pelo usuário do PHP-FPM.
 
 Depois da validação, habilitar:
 
 ```dotenv
 FILE_MANAGER_PDF_THUMBNAILS_ENABLED=true
 FILE_MANAGER_PDF_THUMBNAIL_RENDERER=/usr/bin/pdftocairo
+```
+
+Reconstruir o cache de configuração com o mesmo usuário do PHP-FPM:
+
+```bash
+cd /var/www/sistema-erp/backend
+sudo -u www-data php artisan optimize:clear
+sudo -u www-data php artisan config:cache
 ```
 
 A primeira abertura gera PNG da página 1 e as seguintes reutilizam o cache por
@@ -130,12 +147,18 @@ download/preview individual deve ser testado separadamente.
 Diagnóstico de miniatura:
 
 1. confirmar `FILE_MANAGER_PDF_THUMBNAILS_ENABLED=true` no config efetivo;
-2. confirmar `pdftocairo` executável pelo usuário do PHP-FPM;
+2. confirmar que `poppler-utils` está instalado e que `pdftocairo` é executável
+   pelo usuário do PHP-FPM;
 3. confirmar arquivo `active + valid + clean`;
 4. confirmar `arquivos:baixar` e o vínculo de domínio;
 5. verificar espaço/permissão do cache;
 6. consultar logs pelo UUID/correlation ID, sem registrar path ou nome sensível;
 7. limpar somente a miniatura comprovadamente inválida; nunca remover o PDF.
+
+Quando o pacote estiver ausente ou a funcionalidade permanecer desabilitada, a
+rota autenticada de miniatura PDF responde `503 Service Unavailable`; isso não
+indica indisponibilidade do arquivo original. O preview e o download devem ser
+testados separadamente antes de qualquer ação sobre o documento.
 
 O scanner é sempre dry-run. `catalog-legacy` também é dry-run sem `--apply` e trabalha apenas sobre findings `orphan` de roots allowlisted. A aplicação registra metadados, SHA-256 e alias no path atual, sem mover, renomear ou excluir o arquivo. `reconcile` também é dry-run sem `--apply`. Qualquer aplicação exige `FILE_MANAGER_ALLOW_MUTATING_RECONCILE=true` e uma janela aprovada.
 
