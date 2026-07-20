@@ -2,8 +2,12 @@
 
 namespace App\Services\Signatures;
 
+use App\DTO\Files\FileContext;
+use App\Enums\Files\FileCategory;
+use App\Enums\Files\FileOrigin;
 use App\Models\User;
 use App\Models\UserSignature;
+use App\Services\Files\LegacyCompatibleFileAdapter;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -17,6 +21,10 @@ class SignatureImageService
     public const MAX_BYTES = 2_097_152;
 
     private const MAX_DIMENSION = 4096;
+
+    public function __construct(
+        private readonly LegacyCompatibleFileAdapter $fileManager
+    ) {}
 
     /** @return array{signature: UserSignature, replaced: bool} */
     public function enroll(
@@ -68,6 +76,24 @@ class SignatureImageService
                     'ip_hash' => $this->fingerprint($ip),
                 ]);
 
+                $this->fileManager->synchronizeExisting(
+                    new FileContext(
+                        category: FileCategory::UserSignature,
+                        origin: FileOrigin::Upload,
+                        operationKey: 'user-signature:'.(int) $signature->id,
+                        subjectType: 'user_signature',
+                        subjectId: (int) $signature->id,
+                        relation: 'signature_image',
+                        createdBy: (int) $actor->id,
+                        metadata: ['origin' => $origin]
+                    ),
+                    'local',
+                    $path,
+                    'usuario_assinaturas',
+                    'arquivo',
+                    (string) $signature->id
+                );
+
                 return [
                     'signature' => $signature,
                     'replaced' => $current->isNotEmpty(),
@@ -114,7 +140,7 @@ class SignatureImageService
             return null;
         }
 
-        return 'data:image/png;base64,' . base64_encode($bytes);
+        return 'data:image/png;base64,'.base64_encode($bytes);
     }
 
     public function absolutePath(UserSignature $signature): ?string
@@ -139,7 +165,7 @@ class SignatureImageService
         return [
             'path' => $path,
             'hash_sha256' => hash('sha256', $normalized['bytes']),
-            'data_uri' => 'data:image/png;base64,' . base64_encode($normalized['bytes']),
+            'data_uri' => 'data:image/png;base64,'.base64_encode($normalized['bytes']),
             'width' => $normalized['width'],
             'height' => $normalized['height'],
         ];

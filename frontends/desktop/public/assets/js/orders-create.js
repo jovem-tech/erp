@@ -1154,12 +1154,41 @@
         }
     };
 
+    let submissionInProgress = false;
+
+    const markSubmissionInProgress = () => {
+        submissionInProgress = true;
+        form.dataset.submitting = 'true';
+
+        if (!(els.submitButton instanceof HTMLElement)) {
+            return;
+        }
+
+        els.submitButton.setAttribute('disabled', 'disabled');
+        els.submitButton.setAttribute('aria-disabled', 'true');
+
+        const iconEl = els.submitButton.querySelector('[data-order-create-submit-icon]');
+        const labelEl = els.submitButton.querySelector('[data-order-create-submit-label]');
+        if (iconEl) {
+            iconEl.className = 'spinner-border spinner-border-sm me-2';
+        }
+        if (labelEl) {
+            labelEl.textContent = form.querySelector('[data-order-create-idempotency-key]')
+                ? 'Criando...'
+                : 'Salvando...';
+        }
+    };
+
     const initSubmitButton = () => {
         if (!hasWizardForm || !(els.submitButton instanceof HTMLElement)) {
             return;
         }
 
         els.submitButton.addEventListener('click', () => {
+            if (submissionInProgress) {
+                return;
+            }
+
             const pendingFieldId = els.submitButton.dataset.pendingField || '';
             const pendingField = pendingFieldId !== '' ? document.getElementById(pendingFieldId) : null;
 
@@ -1171,6 +1200,7 @@
             if (typeof form.requestSubmit === 'function') {
                 form.requestSubmit();
             } else {
+                markSubmissionInProgress();
                 form.submit();
             }
         });
@@ -1182,13 +1212,21 @@
         }
 
         form.addEventListener('submit', (event) => {
+            if (submissionInProgress) {
+                event.preventDefault();
+                return;
+            }
+
             const requiredFields = Array.from(form.querySelectorAll('[required]'));
             const invalidField = requiredFields.find((field) => typeof field.checkValidity === 'function' && !field.checkValidity());
 
             if (invalidField) {
                 event.preventDefault();
                 focusInvalidField(invalidField);
+                return;
             }
+
+            markSubmissionInProgress();
         });
     };
 

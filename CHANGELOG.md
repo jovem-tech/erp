@@ -1,5 +1,30 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.1.0.0 — 2026-07-20 03:55
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** evolui o Gerenciador de Arquivos com sincronização automática e manual, biblioteca visual, miniaturas, modal seguro, contexto de cliente/data, controles RBAC em massa e criação idempotente de OS
+- **Arquitetura:** catálogo central e vínculos de domínio continuam no backend; o desktop atua como BFF; sincronização e renderização são serviços isolados, configuráveis e protegidos por locks
+- **Segurança:** autorização por vínculo e RBAC, proteção contra IDOR/traversal/MIME spoofing/command injection, step-up sem flash de senha, CSRF, rate limits, estados seguros e ausência de purga física
+- **Performance:** catálogo paginado, cliente resolvido em lote sem N+1, hashes por stream, miniaturas PDF lazy/cacheadas por SHA-256 e sincronização fora da requisição web
+- **Banco:** migrations aditivas do catálogo/RBAC/vínculos e `2026_07_20_000001_add_order_creation_idempotency.php`; nenhum campo/path legado removido
+- **Compatibilidade:** URLs e paths legados preservados; falhas pós-commit da OS viram avisos; replay idempotente recupera a mesma OS em vez de duplicá-la
+- **Documentação:** consolidado de 20/07/2026, arquitetura, contrato da API, runbook, quickstart, histórico e índices atualizados
+- **Validação:** 76 testes direcionados aprovados (430 asserções); suítes amplas ainda contêm falhas preexistentes documentadas no consolidado da release
+- **Arquivos:** backend/app/Services/Files,backend/app/Http/Controllers/Api/V1/FileManagerController.php,backend/config/file-manager.php,backend/routes/api.php,backend/routes/console.php,backend/database/migrations/2026_07_20_000001_add_order_creation_idempotency.php,backend/app/Services/Orders/OrderWorkflowService.php,frontends/desktop/resources/views/files,frontends/desktop/public/assets/css/file-preview-modal.css,frontends/desktop/public/assets/js/file-preview-modal.js,frontends/desktop/resources/views/groups/permissions.blade.php,frontends/desktop/public/assets/js/orders-create.js,scripts/php/sync-agent-docs.php,documentacao/07-novas-implementacoes/2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md,documentacao/03-arquitetura-tecnica/gerenciador-central-arquivos.md,documentacao/03-arquitetura-tecnica/idempotencia-criacao-os.md,documentacao/10-deploy/operacao-gerenciador-central-arquivos.md,specs/022-gerenciador-central-arquivos
+
+## v5.0.0.0 — 2026-07-19 22:01
+- **Tier:** major
+- **Autor/Agente:** Codex
+- **Descrição:** implementa gerenciador central de arquivos, adapters seguros e painel administrativo
+- **Arquivos:** backend/app/Services/Files,backend/app/Http/Controllers/Api/V1/FileManagerController.php,frontends/desktop/resources/views/files,backend/openapi.yaml,specs/022-gerenciador-central-arquivos
+
+## v4.27.0.0 — 2026-07-19 20:20
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Endurece uploads e downloads de branding e chat com validacao por conteudo, allowlist, headers seguros e troca atomica de imagens
+- **Arquivos:** backend/app/Services/Chat/ChatAttachmentPolicy.php,backend/config/chat.php,backend/app/Services/Chat/MessageAttachmentService.php,backend/app/Http/Controllers/Api/V1/Chat/AttachmentController.php,backend/app/Http/Controllers/Api/V1/Chat/MessageController.php,backend/app/Http/Controllers/Api/V1/Chat/ConversationController.php,backend/app/Services/Company/CompanyProfileService.php,backend/app/Http/Requests/Api/V1/UpdateCompanyProfileRequest.php,backend/app/Http/Controllers/Api/V1/ConfigurationController.php,backend/openapi.yaml,backend/tests/Feature/Api/V1/CompanyProfileImageSecurityTest.php,backend/tests/Feature/Chat/ConversationFlowTest.php,backend/tests/Feature/Chat/WhatsappWebhookTest.php,backend/tests/Unit/Services/Chat/ChatAttachmentPolicyTest.php,frontends/desktop/resources/views/configurations/system.blade.php,documentacao/03-arquitetura-tecnica/contrato-api-backend-central.md,documentacao/07-novas-implementacoes/2026-07-19-hardening-arquivos-branding-chat.md,VERSION,shared/version.php,CHANGELOG.md
+
 ## v4.26.3.0 — 2026-07-19 18:10
 - **Tier:** patch
 - **Autor/Agente:** Codex

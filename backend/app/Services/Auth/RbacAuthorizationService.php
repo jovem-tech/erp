@@ -42,6 +42,7 @@ class RbacAuthorizationService
         'anotacoes_sistema',
         'anotacoes_assistencia',
         'conhecimento',
+        'arquivos',
     ];
 
     /**
@@ -55,6 +56,12 @@ class RbacAuthorizationService
         'exportar',
         'importar',
         'encerrar',
+        'listar',
+        'metadados',
+        'baixar',
+        'quarentenar',
+        'restaurar',
+        'administrar',
     ];
 
     /**
@@ -93,7 +100,7 @@ class RbacAuthorizationService
 
         foreach ($modules as $module) {
             foreach ($permissions as $permission) {
-                $abilities[] = $module . ':' . $permission;
+                $abilities[] = $module.':'.$permission;
             }
         }
 
@@ -140,7 +147,7 @@ class RbacAuthorizationService
     }
 
     /**
-     * @param array<string, array<int, string>> $permissionsByModule
+     * @param  array<string, array<int, string>>  $permissionsByModule
      * @return array<string, array<int, string>>
      */
     public function syncGroupPermissions(Group $group, array $permissionsByModule): array
@@ -157,7 +164,7 @@ class RbacAuthorizationService
             $moduleId = (int) ($moduleMap[$moduleSlug] ?? 0);
             if ($moduleId <= 0) {
                 throw ValidationException::withMessages([
-                    'permissions' => ['O módulo "' . $moduleSlug . '" não é válido.'],
+                    'permissions' => ['O módulo "'.$moduleSlug.'" não é válido.'],
                 ]);
             }
 
@@ -165,7 +172,7 @@ class RbacAuthorizationService
                 $permissionId = (int) ($permissionMap[$actionSlug] ?? 0);
                 if ($permissionId <= 0) {
                     throw ValidationException::withMessages([
-                        'permissions' => ['A permissão "' . $actionSlug . '" não é válida para o módulo "' . $moduleSlug . '".'],
+                        'permissions' => ['A permissão "'.$actionSlug.'" não é válida para o módulo "'.$moduleSlug.'".'],
                     ]);
                 }
 
@@ -254,7 +261,7 @@ class RbacAuthorizationService
     }
 
     /**
-     * @param array<int, int> $userIds
+     * @param  array<int, int>  $userIds
      */
     public function forgetUsers(array $userIds): void
     {
@@ -297,7 +304,7 @@ class RbacAuthorizationService
 
     private function cacheKey(int $userId): string
     {
-        return 'rbac_user_' . $userId;
+        return 'rbac_user_'.$userId;
     }
 
     /**

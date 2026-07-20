@@ -82,3 +82,15 @@ Schedule::command('app:notify-order-deadlines')->hourly();
 Schedule::command('app:dispatch-pending-document-signature-notifications')
     ->everyFiveMinutes()
     ->withoutOverlapping(5);
+
+if ((bool) config('file-manager.automatic_sync.enabled', false)) {
+    $fileSyncInterval = (int) config('file-manager.automatic_sync.interval_minutes', 5);
+    Schedule::command('file-manager:sync --pending')
+        ->everyMinute()
+        ->name('file-manager-manual-sync')
+        ->withoutOverlapping(10);
+    Schedule::command('file-manager:sync')
+        ->cron('*/'.$fileSyncInterval.' * * * *')
+        ->name('file-manager-automatic-sync')
+        ->withoutOverlapping(60);
+}

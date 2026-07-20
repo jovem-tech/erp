@@ -2,20 +2,21 @@
 
 namespace App\Http\Middleware;
 
+use App\Exceptions\ApiRequestException;
 use App\Models\UserPreference;
 use App\Services\ApiClient;
 use App\Support\DesktopSession;
 use App\Support\SessionSecuritySettings;
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
 class EnsureBackendToken
 {
     public function __construct(
         private readonly ApiClient $apiClient
-    ) {
-    }
+    ) {}
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -56,8 +57,28 @@ class EnsureBackendToken
         }
 
         if (DesktopSession::shouldSyncProfile()) {
-            $payload = $this->apiClient->me();
-            DesktopSession::refreshUser($payload['data'] ?? []);
+            try {
+                $payload = $this->apiClient->me();
+                DesktopSession::refreshUser($payload['data'] ?? []);
+            } catch (ApiRequestException $exception) {
+                Log::warning('desktop_profile_sync_unavailable', [
+                    'status_code' => $exception->statusCode(),
+                    'has_authorization_snapshot' => DesktopSession::hasAuthorizationSnapshot(),
+                ]);
+
+                // O backend continua sendo a autoridade final para cada chamada.
+                // Um snapshot local existente pode manter apenas a navegacao viva
+                // durante uma falha transitoria, sem conceder acesso na API.
+                if (! DesktopSession::hasAuthorizationSnapshot()) {
+                    DesktopSession::forget();
+                    $request->session()->invalidate();
+                    $request->session()->regenerateToken();
+
+                    return redirect()
+                        ->route('login')
+                        ->with('error', 'Nao foi possivel validar sua sessao. Tente entrar novamente em instantes.');
+                }
+            }
         }
 
         // Carrega preferência de tema persistida na primeira request autenticada da sessão

@@ -12,6 +12,7 @@ class UpsertOrderRequest extends BaseApiFormRequest
         $requiredOrSometimes = $this->isMethod('post') ? 'required' : 'sometimes';
 
         return [
+            'idempotency_key' => [$this->isMethod('post') ? 'nullable' : 'prohibited', 'uuid'],
             'cliente_id' => [$requiredOrSometimes, 'integer', 'min:1', Rule::exists('clientes', 'id')],
             'equipamento_id' => [$requiredOrSometimes, 'integer', 'min:1', Rule::exists('equipamentos', 'id')],
             'tecnico_id' => ['nullable', 'integer', 'min:1', Rule::exists('usuarios', 'id')],

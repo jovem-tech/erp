@@ -618,6 +618,7 @@ class OrderController extends DesktopController
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
+            'idempotency_key' => ['required', 'uuid'],
             'cliente_id' => ['required', 'integer', 'min:1'],
             'equipamento_id' => ['required', 'integer', 'min:1'],
             'relato_cliente' => ['required', 'string', 'min:5'],
@@ -647,6 +648,7 @@ class OrderController extends DesktopController
         ]);
 
         $payload = array_filter([
+            'idempotency_key' => (string) $validated['idempotency_key'],
             'cliente_id' => (int) $validated['cliente_id'],
             'equipamento_id' => (int) $validated['equipamento_id'],
             'relato_cliente' => trim((string) $validated['relato_cliente']),
@@ -670,22 +672,35 @@ class OrderController extends DesktopController
         $order = is_array($result['order'] ?? null) ? $result['order'] : [];
         $openingDocument = is_array($result['opening_document'] ?? null) ? $result['opening_document'] : [];
         $openingDelivery = is_array($result['opening_delivery'] ?? null) ? $result['opening_delivery'] : [];
+        $idempotentReplay = (bool) ($result['idempotent_replay'] ?? false);
 
-        $successMessage = 'Nova OS criada com sucesso.';
-        if ((bool) ($openingDocument['generated'] ?? false)) {
+        $successMessage = $idempotentReplay
+            ? 'A OS já havia sido criada e foi recuperada com segurança.'
+            : 'Nova OS criada com sucesso.';
+        if (! $idempotentReplay && (bool) ($openingDocument['generated'] ?? false)) {
             $successMessage .= ' PDF de abertura gerado.';
         }
 
         $warnings = [];
-        if (! (bool) ($openingDocument['generated'] ?? false) && trim((string) ($openingDocument['message'] ?? '')) !== '') {
+        if (! $idempotentReplay && ! (bool) ($openingDocument['generated'] ?? false) && trim((string) ($openingDocument['message'] ?? '')) !== '') {
             $warnings[] = (string) $openingDocument['message'];
         }
 
-        if ((bool) ($openingDelivery['requested'] ?? false)) {
+        if (! $idempotentReplay && (bool) ($openingDelivery['requested'] ?? false)) {
             if ((bool) ($openingDelivery['sent'] ?? false)) {
                 $successMessage .= ' Documento enviado ao cliente.';
             } elseif (trim((string) ($openingDelivery['message'] ?? '')) !== '') {
                 $warnings[] = (string) $openingDelivery['message'];
+            }
+        }
+
+        foreach ((array) ($result['warnings'] ?? []) as $warning) {
+            $message = is_array($warning)
+                ? trim((string) ($warning['message'] ?? ''))
+                : trim((string) $warning);
+
+            if ($message !== '') {
+                $warnings[] = $message;
             }
         }
 

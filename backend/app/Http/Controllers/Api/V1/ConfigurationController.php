@@ -22,8 +22,7 @@ class ConfigurationController extends BaseApiController
         private readonly EmailIntegrationSettingsService $emailIntegrationSettingsService,
         private readonly GoogleIntegrationSettingsService $googleIntegrationSettingsService,
         private readonly CompanyProfileService $companyProfileService
-    ) {
-    }
+    ) {}
 
     public function companyProfile(Request $request): JsonResponse
     {
@@ -91,10 +90,7 @@ class ConfigurationController extends BaseApiController
             );
         }
 
-        return response()->file($file['absolute_path'], array_merge([
-            'Content-Type' => $file['mime_type'],
-            'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
-        ], $this->brandingCacheHeaders($file['absolute_path'], public: false)));
+        return $this->brandingFileResponse($file, public: false);
     }
 
     public function publicCompanyLogo(Request $request): Response|JsonResponse
@@ -110,10 +106,7 @@ class ConfigurationController extends BaseApiController
             );
         }
 
-        return response()->file($file['absolute_path'], array_merge([
-            'Content-Type' => $file['mime_type'],
-            'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
-        ], $this->brandingCacheHeaders($file['absolute_path'], public: true)));
+        return $this->brandingFileResponse($file, public: true);
     }
 
     public function publicLoginBackground(Request $request): Response|JsonResponse
@@ -129,10 +122,29 @@ class ConfigurationController extends BaseApiController
             );
         }
 
-        return response()->file($file['absolute_path'], array_merge([
+        return $this->brandingFileResponse($file, public: true);
+    }
+
+    /**
+     * @param  array{absolute_path: string, mime_type: string, filename: string}  $file
+     */
+    private function brandingFileResponse(array $file, bool $public): Response
+    {
+        $response = response()->file($file['absolute_path'], array_merge([
             'Content-Type' => $file['mime_type'],
-            'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
-        ], $this->brandingCacheHeaders($file['absolute_path'], public: true)));
+            'X-Content-Type-Options' => 'nosniff',
+            'Content-Security-Policy' => "default-src 'none'; base-uri 'none'; sandbox",
+            'X-Frame-Options' => 'DENY',
+        ], $this->brandingCacheHeaders($file['absolute_path'], $public)));
+
+        $extension = strtolower((string) pathinfo($file['filename'], PATHINFO_EXTENSION));
+        $response->setContentDisposition(
+            'inline',
+            basename($file['filename']),
+            'branding'.($extension !== '' ? '.'.$extension : '')
+        );
+
+        return $response;
     }
 
     /**
@@ -147,8 +159,8 @@ class ConfigurationController extends BaseApiController
     private function brandingCacheHeaders(string $absolutePath, bool $public): array
     {
         return [
-            'Cache-Control' => ($public ? 'public' : 'private') . ', max-age=86400, must-revalidate',
-            'Last-Modified' => gmdate('D, d M Y H:i:s', filemtime($absolutePath) ?: time()) . ' GMT',
+            'Cache-Control' => ($public ? 'public' : 'private').', max-age=86400, must-revalidate',
+            'Last-Modified' => gmdate('D, d M Y H:i:s', filemtime($absolutePath) ?: time()).' GMT',
         ];
     }
 

@@ -2,11 +2,15 @@
 
 namespace App\Services\Signatures;
 
+use App\DTO\Files\FileContext;
+use App\Enums\Files\FileCategory;
+use App\Enums\Files\FileOrigin;
 use App\Models\DocumentSignatureRequest;
 use App\Models\Order;
 use App\Models\OrderDocument;
 use App\Models\User;
 use App\Models\UserSignature;
+use App\Services\Files\LegacyCompatibleFileAdapter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -19,12 +23,12 @@ class DocumentSignatureWorkflowService
 {
     public function __construct(
         private readonly SignatureImageService $signatureImageService,
-        private readonly DocumentSignatureAssignmentNotifier $assignmentNotifier
-    ) {
-    }
+        private readonly DocumentSignatureAssignmentNotifier $assignmentNotifier,
+        private readonly LegacyCompatibleFileAdapter $fileManager
+    ) {}
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array{mode: string, signer?: User, signature?: UserSignature, method?: string}
      */
     public function resolveImmediateSigner(User $actor, array $payload, Request $request): array
@@ -69,7 +73,7 @@ class DocumentSignatureWorkflowService
     }
 
     /**
-     * @param array<int, string> $types
+     * @param  array<int, string>  $types
      * @return array<int, DocumentSignatureRequest>
      */
     public function createPending(Order $order, User $actor, User $responsible, array $types): array
@@ -114,7 +118,7 @@ class DocumentSignatureWorkflowService
     }
 
     /**
-     * @param array<int, string> $types
+     * @param  array<int, string>  $types
      * @return array<int, array{request: DocumentSignatureRequest, token: string}>
      */
     public function createClientPending(Order $order, User $actor, array $types): array
@@ -174,7 +178,7 @@ class DocumentSignatureWorkflowService
                 throw new InvalidArgumentException('Este documento já foi assinado ou o link foi cancelado.');
             }
 
-            $combinedHash = hash('sha256', (string) $document->hash_sha256 . '|' . (string) $drawing['hash_sha256']);
+            $combinedHash = hash('sha256', (string) $document->hash_sha256.'|'.(string) $drawing['hash_sha256']);
             $document->forceFill([
                 'assinado_por' => (int) $request->solicitada_por,
                 'assinatura_hash' => $combinedHash,
@@ -194,6 +198,24 @@ class DocumentSignatureWorkflowService
                 'assinada_em' => now(),
                 'token_hash' => null,
             ])->save();
+
+            $this->fileManager->synchronizeExisting(
+                new FileContext(
+                    category: FileCategory::UserSignature,
+                    origin: FileOrigin::Upload,
+                    operationKey: 'customer-signature:'.(int) $locked->id,
+                    subjectType: 'order',
+                    subjectId: (int) $locked->os_id,
+                    relation: 'customer_signature',
+                    createdBy: (int) $locked->solicitada_por,
+                    metadata: ['signature_request_id' => (int) $locked->id]
+                ),
+                'local',
+                (string) $drawing['path'],
+                'documento_solicitacoes_assinatura',
+                'assinatura_arquivo',
+                (string) $locked->id
+            );
         }, 3);
     }
 
@@ -216,7 +238,7 @@ class DocumentSignatureWorkflowService
             ->map(static fn (DocumentSignatureRequest $item): array => [
                 'id' => (int) $item->id,
                 'order_id' => (int) $item->os_id,
-                'order_number' => (string) ($item->order?->numero_os ?? ('#' . $item->os_id)),
+                'order_number' => (string) ($item->order?->numero_os ?? ('#'.$item->os_id)),
                 'document_type' => (string) $item->tipo_documento,
                 'requested_by' => (string) ($item->requester?->nome ?? ''),
                 'responsible_user_id' => (int) ($item->responsibleUser?->id ?? 0),
@@ -236,8 +258,7 @@ class DocumentSignatureWorkflowService
         array $payload,
         Request $request,
         string $templateFingerprint
-    ): User
-    {
+    ): User {
         if ((string) $signatureRequest->status !== 'pendente') {
             throw new InvalidArgumentException('Esta solicitação não está mais pendente.');
         }
@@ -325,8 +346,7 @@ class DocumentSignatureWorkflowService
         DocumentSignatureRequest $signatureRequest,
         User $sessionUser,
         string $templateFingerprint
-    ): void
-    {
+    ): void {
         $reviewedAt = $signatureRequest->revisada_em;
         $reviewIsCurrent = $reviewedAt !== null && $reviewedAt->greaterThanOrEqualTo(now()->subMinutes(30));
         $sameReviewer = (int) $signatureRequest->revisada_por === (int) $sessionUser->id;
@@ -419,7 +439,7 @@ class DocumentSignatureWorkflowService
 
     private function verifyCredentials(User $actor, User $target, string $email, string $password, Request $request): void
     {
-        $key = 'signature-reauth:' . (int) $actor->id . ':' . (int) $target->id . '|' . (string) $request->ip();
+        $key = 'signature-reauth:'.(int) $actor->id.':'.(int) $target->id.'|'.(string) $request->ip();
         if (RateLimiter::tooManyAttempts($key, 5)) {
             throw new InvalidArgumentException('Muitas tentativas de autenticação. Aguarde antes de tentar novamente.');
         }

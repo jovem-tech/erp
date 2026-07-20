@@ -1,0 +1,485 @@
+openapi: 3.1.0
+info:
+  title: Gerenciador Central de Arquivos
+  version: 1.0.0
+  description: >-
+    Contrato administrativo e de entrega controlada. Não cria endpoint genérico
+    de upload: uploads continuam nos endpoints dos módulos de negócio.
+servers:
+  - url: /api/v1
+security:
+  - sanctum: []
+tags:
+  - name: FileManager
+    description: Catálogo, integridade e ações administrativas controladas.
+paths:
+  /file-manager/dashboard:
+    get:
+      tags: [FileManager]
+      summary: Consultar volume, categorias, fallback, integridade e reconciliação
+      operationId: getFileManagerDashboard
+      responses:
+        '200':
+          description: Agregados administrativos; nunca inclui path absoluto ou bytes.
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /files:
+    get:
+      tags: [FileManager]
+      summary: Listar metadados do catálogo
+      operationId: listManagedFiles
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: category
+          in: query
+          schema: { type: string, maxLength: 80 }
+        - name: lifecycle_status
+          in: query
+          schema: { $ref: '#/components/schemas/LifecycleStatus' }
+        - name: integrity_status
+          in: query
+          schema: { $ref: '#/components/schemas/IntegrityStatus' }
+        - name: security_status
+          in: query
+          schema: { $ref: '#/components/schemas/SecurityStatus' }
+        - name: migration_status
+          in: query
+          schema: { $ref: '#/components/schemas/MigrationStatus' }
+        - name: created_from
+          in: query
+          schema: { type: string, format: date }
+        - name: created_to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: Página de metadados autorizados; nunca inclui path absoluto.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FilePageResponse'
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /files/{fileUuid}:
+    get:
+      tags: [FileManager]
+      summary: Consultar metadados autorizados de um arquivo
+      operationId: showManagedFile
+      parameters:
+        - $ref: '#/components/parameters/FileUuid'
+      responses:
+        '200':
+          description: Metadados e vínculos visíveis ao ator.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileDetailResponse'
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /files/{fileUuid}/download:
+    get:
+      tags: [FileManager]
+      summary: Baixar arquivo após autorização do vínculo de negócio
+      operationId: downloadManagedFile
+      parameters:
+        - $ref: '#/components/parameters/FileUuid'
+      responses:
+        '200':
+          description: >-
+            Stream com Content-Type controlado, Content-Disposition attachment
+            para tipos não seguros e X-Content-Type-Options nosniff.
+          headers:
+            X-Content-Type-Options:
+              schema: { type: string, const: nosniff }
+            Content-Disposition:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Arquivo não pode ser entregue por estado de integridade/segurança.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /files/{fileUuid}/preview:
+    get:
+      tags: [FileManager]
+      summary: Visualizar somente categorias aprovadas para preview
+      operationId: previewManagedFile
+      parameters:
+        - $ref: '#/components/parameters/FileUuid'
+      responses:
+        '200':
+          description: Stream inline apenas quando a policy da categoria permitir.
+          headers:
+            X-Content-Type-Options:
+              schema: { type: string, const: nosniff }
+            Cache-Control:
+              schema: { type: string }
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '415':
+          description: Categoria/MIME não permite preview inline.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /files/{fileUuid}/archive:
+    post:
+      tags: [FileManager]
+      summary: Arquivar logicamente
+      operationId: archiveManagedFile
+      parameters:
+        - $ref: '#/components/parameters/FileUuid'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReasonRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/FileMutationSuccess' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /files/{fileUuid}/restore:
+    post:
+      tags: [FileManager]
+      summary: Restaurar lifecycle anterior permitido
+      operationId: restoreManagedFile
+      parameters:
+        - $ref: '#/components/parameters/FileUuid'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReasonRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/FileMutationSuccess' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /files/{fileUuid}/quarantine:
+    post:
+      tags: [FileManager]
+      summary: Bloquear acesso e colocar o arquivo em quarentena
+      operationId: quarantineManagedFile
+      parameters:
+        - $ref: '#/components/parameters/FileUuid'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReasonRequest' }
+      responses:
+        '200': { $ref: '#/components/responses/FileMutationSuccess' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /files/{fileUuid}/release-quarantine:
+    post:
+      tags: [FileManager]
+      summary: Liberar após nova validação e aprovação
+      operationId: releaseManagedFileQuarantine
+      parameters:
+        - $ref: '#/components/parameters/FileUuid'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/ReasonRequest'
+                - type: object
+                  required: [validation_reference]
+                  properties:
+                    validation_reference:
+                      type: string
+                      maxLength: 120
+      responses:
+        '200': { $ref: '#/components/responses/FileMutationSuccess' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /file-manager/scan-runs:
+    get:
+      tags: [FileManager]
+      summary: Listar execuções CLI de inventário/migração
+      operationId: listFileScanRuns
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, running, interrupted, completed, failed]
+      responses:
+        '200':
+          description: Lista paginada sem checkpoints sensíveis completos.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success: { type: boolean, const: true }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/FileScanRun' }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /file-manager/findings:
+    get:
+      tags: [FileManager]
+      summary: Listar findings do scanner e integridade
+      operationId: listFileFindings
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+        - name: type
+          in: query
+          schema: { type: string, maxLength: 50 }
+        - name: severity
+          in: query
+          schema:
+            type: string
+            enum: [info, low, medium, high, critical]
+        - name: resolution_status
+          in: query
+          schema:
+            type: string
+            enum: [open, acknowledged, resolved, false_positive]
+      responses:
+        '200':
+          description: Findings paginados e mascarados conforme RBAC.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, data, meta]
+                properties:
+                  success: { type: boolean, const: true }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/FileFinding' }
+                  meta: { $ref: '#/components/schemas/PaginationMeta' }
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+components:
+  securitySchemes:
+    sanctum:
+      type: http
+      scheme: bearer
+
+  parameters:
+    FileUuid:
+      name: fileUuid
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PerPage:
+      name: per_page
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+
+  schemas:
+    LifecycleStatus:
+      type: string
+      enum: [active, archived, trashed]
+    IntegrityStatus:
+      type: string
+      enum: [unknown, valid, missing, corrupted]
+    SecurityStatus:
+      type: string
+      enum: [pending, clean, quarantined, rejected]
+    MigrationStatus:
+      type: string
+      enum: [native, legacy, cataloged, migrating, migrated, failed]
+    ManagedFileSummary:
+      type: object
+      required:
+        - uuid
+        - safe_download_name
+        - detected_mime_type
+        - size_bytes
+        - category
+        - lifecycle_status
+        - integrity_status
+        - security_status
+        - migration_status
+        - created_at
+      properties:
+        uuid: { type: string, format: uuid }
+        safe_download_name: { type: string, maxLength: 255 }
+        detected_mime_type: { type: string, maxLength: 120 }
+        size_bytes: { type: integer, minimum: 0 }
+        category: { type: string, maxLength: 80 }
+        origin: { type: string, maxLength: 40 }
+        lifecycle_status: { $ref: '#/components/schemas/LifecycleStatus' }
+        integrity_status: { $ref: '#/components/schemas/IntegrityStatus' }
+        security_status: { $ref: '#/components/schemas/SecurityStatus' }
+        migration_status: { $ref: '#/components/schemas/MigrationStatus' }
+        confidentiality:
+          type: string
+          enum: [internal, confidential, personal_data, sensitive_personal_data, legal_retention]
+        created_at: { type: string, format: date-time }
+    ManagedFileDetail:
+      allOf:
+        - $ref: '#/components/schemas/ManagedFileSummary'
+        - type: object
+          properties:
+            sha256: { type: string, pattern: '^[a-f0-9]{64}$' }
+            original_name: { type: string, maxLength: 255 }
+            links:
+              type: array
+              items:
+                type: object
+                required: [subject_type, subject_id, relation, is_current]
+                properties:
+                  subject_type: { type: string, maxLength: 80 }
+                  subject_id: { type: integer, minimum: 1 }
+                  relation: { type: string, maxLength: 80 }
+                  is_current: { type: boolean }
+            capabilities:
+              type: object
+              additionalProperties: { type: boolean }
+    FilePageResponse:
+      type: object
+      required: [success, data, meta]
+      properties:
+        success: { type: boolean, const: true }
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/ManagedFileSummary' }
+        meta: { $ref: '#/components/schemas/PaginationMeta' }
+    FileDetailResponse:
+      type: object
+      required: [success, data]
+      properties:
+        success: { type: boolean, const: true }
+        data: { $ref: '#/components/schemas/ManagedFileDetail' }
+    ReasonRequest:
+      type: object
+      required: [reason, admin_email, admin_password]
+      properties:
+        reason:
+          type: string
+          minLength: 10
+          maxLength: 500
+        admin_email:
+          type: string
+          format: email
+          maxLength: 255
+        admin_password:
+          type: string
+          format: password
+          maxLength: 200
+          writeOnly: true
+    FileScanRun:
+      type: object
+      required: [uuid, process_name, mode, status, processed_count, finding_count, created_at]
+      properties:
+        uuid: { type: string, format: uuid }
+        process_name: { type: string, maxLength: 80 }
+        mode: { type: string, enum: [dry_run, catalog, migrate] }
+        status: { type: string, enum: [pending, running, interrupted, completed, failed] }
+        processed_count: { type: integer, minimum: 0 }
+        skipped_count: { type: integer, minimum: 0 }
+        finding_count: { type: integer, minimum: 0 }
+        failed_count: { type: integer, minimum: 0 }
+        created_at: { type: string, format: date-time }
+        completed_at: { type: [string, 'null'], format: date-time }
+    FileFinding:
+      type: object
+      required: [id, finding_type, severity, resolution_status, created_at]
+      properties:
+        id: { type: integer, minimum: 1 }
+        finding_type: { type: string, maxLength: 50 }
+        severity: { type: string, enum: [info, low, medium, high, critical] }
+        resolution_status: { type: string, enum: [open, acknowledged, resolved, false_positive] }
+        file_uuid: { type: [string, 'null'], format: uuid }
+        restricted_path_hint: { type: [string, 'null'], maxLength: 255 }
+        created_at: { type: string, format: date-time }
+    PaginationMeta:
+      type: object
+      required: [current_page, per_page, total, last_page]
+      properties:
+        current_page: { type: integer, minimum: 1 }
+        per_page: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+        last_page: { type: integer, minimum: 1 }
+    ErrorResponse:
+      type: object
+      required: [success, message, code]
+      properties:
+        success: { type: boolean, const: false }
+        message: { type: string }
+        code: { type: string }
+        errors:
+          type: [object, 'null']
+          additionalProperties: true
+
+  responses:
+    Unauthenticated:
+      description: Não autenticado.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Forbidden:
+      description: Sem permissão ou sem acesso ao registro vinculado.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    NotFound:
+      description: Não encontrado; não revela se UUID existe sem autorização.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    Conflict:
+      description: Transição de estado, referência ou integridade impede a ação.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    ValidationError:
+      description: Entrada inválida.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+    FileMutationSuccess:
+      description: Estado alterado e auditado.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/FileDetailResponse' }

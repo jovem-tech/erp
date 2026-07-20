@@ -1,36 +1,37 @@
 <?php
 
+use App\Http\Controllers\AssistanceModelController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\ChecklistController;
 use App\Http\Controllers\ClientController;
+use App\Http\Controllers\ConfigurationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DefectController;
 use App\Http\Controllers\EquipmentController;
+use App\Http\Controllers\FileManagerController;
 use App\Http\Controllers\FinanceiroCartaoController;
 use App\Http\Controllers\FinanceiroCatalogController;
-use App\Http\Controllers\FinanceiroController;
 use App\Http\Controllers\FinanceiroContaController;
-use App\Http\Controllers\FinanceiroPrecificacaoController;
+use App\Http\Controllers\FinanceiroController;
 use App\Http\Controllers\FinanceiroMargemController;
+use App\Http\Controllers\FinanceiroPrecificacaoController;
 use App\Http\Controllers\FinanceiroReportController;
 use App\Http\Controllers\GroupController;
 use App\Http\Controllers\NotificationController;
-use App\Http\Controllers\ConfigurationController;
-use App\Http\Controllers\AssistanceModelController;
-use App\Http\Controllers\SupplierController;
-use App\Http\Controllers\PeopleController;
-use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\OrcamentoController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderStatusFlowController;
+use App\Http\Controllers\PasswordResetController;
 use App\Http\Controllers\PdfTemplateEngineController;
+use App\Http\Controllers\PeopleController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicDocumentSignatureController;
 use App\Http\Controllers\ReportedDefectController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\ServicoController;
 use App\Http\Controllers\StockController;
+use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WhatsappTemplateController;
 use App\Support\DesktopNavigation;
@@ -88,6 +89,43 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::patch('/perfil/senha', [ProfileController::class, 'updatePassword'])->name('profile.password.update');
     Route::post('/perfil/assinatura', [ProfileController::class, 'updateSignature'])->name('profile.signature.update');
     Route::get('/perfil/assinatura/imagem', [ProfileController::class, 'signatureImage'])->name('profile.signature.image');
+
+    Route::get('/arquivos', [FileManagerController::class, 'index'])
+        ->middleware('desktop.permission:arquivos,listar')
+        ->name('files.index');
+    Route::post('/arquivos/sincronizar', [FileManagerController::class, 'synchronize'])
+        ->middleware(['desktop.permission:arquivos,administrar', 'throttle:3,1'])
+        ->name('files.sync');
+    Route::post('/arquivos/baixar-selecionados', [FileManagerController::class, 'downloadBatch'])
+        ->middleware('desktop.permission:arquivos,baixar')
+        ->name('files.download-batch');
+    Route::post('/arquivos/excluir-selecionados', [FileManagerController::class, 'trashBatch'])
+        ->middleware('desktop.permission:arquivos,excluir')
+        ->name('files.trash-batch');
+    Route::get('/arquivos/{fileUuid}', [FileManagerController::class, 'show'])
+        ->middleware('desktop.permission:arquivos,metadados')
+        ->name('files.show');
+    Route::get('/arquivos/{fileUuid}/baixar', [FileManagerController::class, 'download'])
+        ->middleware('desktop.permission:arquivos,baixar')
+        ->name('files.download');
+    Route::get('/arquivos/{fileUuid}/visualizar', [FileManagerController::class, 'preview'])
+        ->middleware('desktop.permission:arquivos,baixar')
+        ->name('files.preview');
+    Route::get('/arquivos/{fileUuid}/miniatura', [FileManagerController::class, 'thumbnail'])
+        ->middleware(['desktop.permission:arquivos,baixar', 'throttle:120,1'])
+        ->name('files.thumbnail');
+    Route::post('/arquivos/{fileUuid}/arquivar', [FileManagerController::class, 'archive'])
+        ->middleware('desktop.permission:arquivos,administrar')
+        ->name('files.archive');
+    Route::post('/arquivos/{fileUuid}/restaurar', [FileManagerController::class, 'restore'])
+        ->middleware('desktop.permission:arquivos,restaurar')
+        ->name('files.restore');
+    Route::post('/arquivos/{fileUuid}/quarentenar', [FileManagerController::class, 'quarantine'])
+        ->middleware('desktop.permission:arquivos,quarentenar')
+        ->name('files.quarantine');
+    Route::post('/arquivos/{fileUuid}/liberar-quarentena', [FileManagerController::class, 'releaseQuarantine'])
+        ->middleware('desktop.permission:arquivos,administrar')
+        ->name('files.release-quarantine');
 
     Route::get('/configuracoes/sistema', [ConfigurationController::class, 'system'])
         ->middleware('desktop.permission:configuracoes,visualizar')

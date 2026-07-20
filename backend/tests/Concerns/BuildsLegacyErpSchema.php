@@ -1112,6 +1112,9 @@ trait BuildsLegacyErpSchema
         Schema::create('os', function (Blueprint $table): void {
             $table->id();
             $table->string('numero_os', 20)->unique();
+            $table->uuid('creation_request_id')->nullable()->unique('ux_os_creation_request_id');
+            $table->char('creation_request_fingerprint', 64)->nullable();
+            $table->unsignedBigInteger('creation_requested_by')->nullable();
             $table->string('legacy_origem', 60)->nullable();
             $table->string('legacy_id', 100)->nullable();
             $table->string('numero_os_legado', 60)->nullable();

@@ -1,7 +1,7 @@
 ﻿openapi: 3.0.3
 info:
   title: Sistema ERP API
-  version: 1.3.1
+  version: 1.5.0
   description: |
     Contrato técnico oficial da API v1 do backend central do Sistema ERP.
 
@@ -63,6 +63,8 @@ tags:
     description: Templates versionados e documentos PDF personalizados.
   - name: Assinaturas
     description: Revisão obrigatória e assinatura auditada de documentos.
+  - name: Gerenciador de Arquivos
+    description: Catálogo administrativo, entrega autorizada, integridade e ações de estado auditadas.
 
 components:
   securitySchemes:
@@ -800,9 +802,11 @@ components:
         original_name:
           type: string
           nullable: true
+          description: Nome normalizado pelo backend; nunca deve ser usado como caminho de storage.
         mime_type:
           type: string
           nullable: true
+          description: MIME detectado pelo backend para anexos disponíveis; metadados do provedor não são confiados isoladamente.
         byte_size:
           type: integer
           nullable: true
@@ -939,6 +943,9 @@ components:
           nullable: true
         attachments:
           type: array
+          description: >
+            Arquivos privados de até 25 MiB cada. O backend valida conteúdo, extensão e MIME por allowlist;
+            HTML, SVG, XML, executáveis e tipos não aprovados são rejeitados.
           items:
             type: string
             format: binary
@@ -953,6 +960,9 @@ components:
           nullable: true
         attachments:
           type: array
+          description: >
+            Arquivos privados de até 25 MiB cada. O backend valida conteúdo, extensão e MIME por allowlist;
+            HTML, SVG, XML, executáveis e tipos não aprovados são rejeitados.
           items:
             type: string
             format: binary
@@ -2222,6 +2232,25 @@ components:
           maxLength: 1000
           nullable: true
 
+    FileAdminActionPayload:
+      type: object
+      additionalProperties: false
+      required: [reason, admin_email, admin_password]
+      properties:
+        reason:
+          type: string
+          minLength: 10
+          maxLength: 500
+        admin_email:
+          type: string
+          format: email
+          maxLength: 255
+        admin_password:
+          type: string
+          format: password
+          maxLength: 200
+          writeOnly: true
+
   requestBodies:
     Login:
       required: true
@@ -2322,6 +2351,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/UpdateGroupPermissionsRequest"
+    FileAdminAction:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/FileAdminActionPayload"
 
   responses:
     Success:
@@ -2356,6 +2391,12 @@ components:
             $ref: "#/components/schemas/ApiError"
     ValidationError:
       description: Dados inválidos ou regra de entrada rejeitada.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    Conflict:
+      description: Estado atual ou kill switch impede a operação.
       content:
         application/json:
           schema:
@@ -4331,12 +4372,30 @@ paths:
     get:
       tags:
         - Central de Atendimento
-      summary: Fazer download ou streaming autenticado de um anexo privado do chat.
+      summary: Fazer download ou preview autenticado de um anexo privado do chat.
+      description: >
+        A autorização é validada pela conversa e pela conta de atendimento. Somente imagens raster
+        aprovadas podem ser exibidas inline. Demais tipos são enviados como attachment; conteúdo
+        desconhecido usa application/octet-stream. A resposta sempre aplica nosniff e no-store.
       parameters:
         - $ref: "#/components/parameters/ChatAttachmentId"
       responses:
         "200":
           description: Conteúdo binário do anexo.
+          headers:
+            Content-Disposition:
+              description: "`inline` apenas para raster aprovado; `attachment` para os demais tipos."
+              schema:
+                type: string
+            X-Content-Type-Options:
+              description: Sempre `nosniff`.
+              schema:
+                type: string
+                enum: [nosniff]
+            Cache-Control:
+              description: Resposta privada sem armazenamento em cache.
+              schema:
+                type: string
           content:
             application/octet-stream:
               schema:
@@ -6688,3 +6747,306 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+
+  /file-manager/dashboard:
+    get:
+      tags: [Gerenciador de Arquivos]
+      summary: Obter totais, volume por categoria, modo de sincronização, métricas e últimas execuções.
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /file-manager/sync:
+    post:
+      tags: [Gerenciador de Arquivos]
+      summary: Solicitar sincronização manual assíncrona das roots allowlisted.
+      description: Requer arquivos:administrar, aplica rate limit e deduplica solicitações pendentes.
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "202": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /file-manager/scan-runs:
+    get:
+      tags: [Gerenciador de Arquivos]
+      summary: Listar execuções do scanner sem expor checkpoints sensíveis.
+      parameters:
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+        - name: status
+          in: query
+          schema: { type: string, enum: [pending, running, interrupted, completed, completed_with_errors, failed] }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /file-manager/findings:
+    get:
+      tags: [Gerenciador de Arquivos]
+      summary: Listar findings paginados com referência de path mascarada.
+      parameters:
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+        - name: type
+          in: query
+          schema: { type: string, maxLength: 50 }
+        - name: severity
+          in: query
+          schema: { type: string, enum: [info, low, medium, high, critical] }
+        - name: resolution_status
+          in: query
+          schema: { type: string, enum: [open, acknowledged, resolved, false_positive] }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /files:
+    get:
+      tags: [Gerenciador de Arquivos]
+      summary: Listar somente metadados paginados do catálogo central.
+      description: Nunca retorna storage_key, path absoluto ou bytes do arquivo.
+      parameters:
+        - name: q
+          in: query
+          schema: { type: string, maxLength: 200 }
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+        - name: category
+          in: query
+          schema: { type: string, maxLength: 80 }
+        - name: lifecycle_status
+          in: query
+          schema: { type: string, enum: [active, archived, trashed] }
+        - name: integrity_status
+          in: query
+          schema: { type: string, enum: [unknown, valid, missing, corrupted] }
+        - name: security_status
+          in: query
+          schema: { type: string, enum: [pending, clean, quarantined, rejected] }
+        - name: migration_status
+          in: query
+          schema: { type: string, enum: [native, legacy, cataloged, migrating, migrated, failed] }
+        - name: created_from
+          in: query
+          schema: { type: string, format: date }
+        - name: created_to
+          in: query
+          schema: { type: string, format: date }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /files/download-batch:
+    post:
+      tags: [Gerenciador de Arquivos]
+      summary: Baixar até 50 arquivos autorizados em um pacote ZIP temporário.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [file_uuids]
+              properties:
+                file_uuids:
+                  type: array
+                  minItems: 1
+                  maxItems: 50
+                  uniqueItems: true
+                  items: { type: string, format: uuid }
+      responses:
+        "200":
+          description: ZIP privado, temporário e limitado por quantidade e volume.
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /files/trash-batch:
+    post:
+      tags: [Gerenciador de Arquivos]
+      summary: Mover até 100 arquivos para a lixeira lógica com step-up administrativo.
+      description: Preserva os binários para restauração e auditoria; não executa exclusão física.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [file_uuids, reason, admin_email, admin_password]
+              properties:
+                file_uuids:
+                  type: array
+                  minItems: 1
+                  maxItems: 100
+                  uniqueItems: true
+                  items: { type: string, format: uuid }
+                reason: { type: string, minLength: 10, maxLength: 500 }
+                admin_email: { type: string, format: email, maxLength: 255 }
+                admin_password: { type: string, format: password, maxLength: 200, writeOnly: true }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /files/{fileUuid}:
+    get:
+      tags: [Gerenciador de Arquivos]
+      summary: Consultar metadados, vínculos, eventos, findings e capacidades.
+      parameters:
+        - name: fileUuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /files/{fileUuid}/download:
+    get:
+      tags: [Gerenciador de Arquivos]
+      summary: Baixar conteúdo após RBAC e autorização do vínculo de negócio.
+      parameters:
+        - name: fileUuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Stream privado com nosniff e Content-Disposition seguro.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /files/{fileUuid}/preview:
+    get:
+      tags: [Gerenciador de Arquivos]
+      summary: Visualizar inline somente MIME aprovado pela policy da categoria.
+      parameters:
+        - name: fileUuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Stream privado inline com CSP sandbox e nosniff.
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "415": { $ref: "#/components/responses/ValidationError" }
+
+  /files/{fileUuid}/archive:
+    post:
+      tags: [Gerenciador de Arquivos]
+      summary: Arquivar logicamente com step-up de administrador.
+      parameters:
+        - name: fileUuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody: { $ref: "#/components/requestBodies/FileAdminAction" }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /files/{fileUuid}/restore:
+    post:
+      tags: [Gerenciador de Arquivos]
+      summary: Restaurar lifecycle com step-up de administrador.
+      parameters:
+        - name: fileUuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody: { $ref: "#/components/requestBodies/FileAdminAction" }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /files/{fileUuid}/quarantine:
+    post:
+      tags: [Gerenciador de Arquivos]
+      summary: Colocar em quarentena com step-up de administrador.
+      parameters:
+        - name: fileUuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody: { $ref: "#/components/requestBodies/FileAdminAction" }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /files/{fileUuid}/release-quarantine:
+    post:
+      tags: [Gerenciador de Arquivos]
+      summary: Liberar quarentena após validação e step-up de administrador.
+      parameters:
+        - name: fileUuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/FileAdminActionPayload"
+                - type: object
+                  required: [validation_reference]
+                  properties:
+                    validation_reference: { type: string, minLength: 3, maxLength: 120 }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }

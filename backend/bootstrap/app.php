@@ -1,8 +1,8 @@
 <?php
 
-use App\Support\ApiResponse;
 use App\Http\Middleware\AuthorizeModuleAction;
 use App\Http\Middleware\ForceHttps;
+use App\Support\ApiResponse;
 use Dotenv\Dotenv;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
@@ -53,12 +53,14 @@ return Application::configure(basePath: $basePath)
         $middleware->append(ForceHttps::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->dontFlash('admin_password');
+
         $isApiRequest = static function (Request $request): bool {
             return $request->is('api/*') || $request->expectsJson();
         };
 
         $exceptions->render(function (AuthenticationException $exception, Request $request) use ($isApiRequest) {
-            if (!$isApiRequest($request)) {
+            if (! $isApiRequest($request)) {
                 return null;
             }
 
@@ -73,7 +75,7 @@ return Application::configure(basePath: $basePath)
         });
 
         $exceptions->render(function (AuthorizationException $exception, Request $request) use ($isApiRequest) {
-            if (!$isApiRequest($request)) {
+            if (! $isApiRequest($request)) {
                 return null;
             }
 
@@ -88,7 +90,7 @@ return Application::configure(basePath: $basePath)
         });
 
         $exceptions->render(function (ValidationException $exception, Request $request) use ($isApiRequest) {
-            if (!$isApiRequest($request)) {
+            if (! $isApiRequest($request)) {
                 return null;
             }
 
@@ -103,7 +105,7 @@ return Application::configure(basePath: $basePath)
         });
 
         $exceptions->render(function (NotFoundHttpException $exception, Request $request) use ($isApiRequest) {
-            if (!$isApiRequest($request)) {
+            if (! $isApiRequest($request)) {
                 return null;
             }
 
@@ -122,7 +124,7 @@ return Application::configure(basePath: $basePath)
         // de origem no JSON quando APP_DEBUG=true. O log completo continua sendo
         // gravado normalmente via report() antes deste callback rodar.
         $exceptions->render(function (Throwable $exception, Request $request) use ($isApiRequest) {
-            if (!$isApiRequest($request)) {
+            if (! $isApiRequest($request)) {
                 return null;
             }
 

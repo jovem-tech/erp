@@ -7,6 +7,7 @@ use App\Jobs\SendWhatsappMessageJob;
 use App\Models\Chat\Conversation;
 use App\Models\User;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
+use App\Services\Chat\ChatAttachmentPolicy;
 use App\Services\Chat\ConversationAccessService;
 use App\Services\Chat\ConversationPayloadService;
 use Illuminate\Http\JsonResponse;
@@ -19,9 +20,9 @@ class MessageController extends BaseApiController
     public function __construct(
         private readonly ConversationAccessService $accessService,
         private readonly WhatsappMessagingService $messagingService,
-        private readonly ConversationPayloadService $payloadService
-    ) {
-    }
+        private readonly ConversationPayloadService $payloadService,
+        private readonly ChatAttachmentPolicy $attachmentPolicy
+    ) {}
 
     public function store(Request $request, Conversation $conversation): JsonResponse
     {
@@ -39,7 +40,7 @@ class MessageController extends BaseApiController
         $validator = Validator::make($request->all(), [
             'conteudo' => ['nullable', 'string', 'max:4096'],
             'attachments' => ['nullable', 'array'],
-            'attachments.*' => ['file', 'max:25600'],
+            'attachments.*' => $this->attachmentPolicy->uploadRules(),
         ]);
 
         if ($validator->fails()) {

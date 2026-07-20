@@ -201,8 +201,17 @@ class OrderController extends BaseApiController
                     'order' => $result['order'] ?? null,
                     'opening_document' => $result['opening_document'] ?? null,
                     'opening_delivery' => $result['opening_delivery'] ?? null,
+                    'idempotent_replay' => (bool) ($result['idempotent_replay'] ?? false),
+                    'warnings' => is_array($result['warnings'] ?? null) ? $result['warnings'] : [],
                 ],
                 201,
+                request: $request
+            ),
+            'idempotency_conflict' => $this->error(
+                'Esta tentativa de criação já foi usada com dados diferentes. Atualize a página e tente novamente.',
+                409,
+                'ORDER_IDEMPOTENCY_CONFLICT',
+                null,
                 request: $request
             ),
             'equipment_client_mismatch' => $this->error(

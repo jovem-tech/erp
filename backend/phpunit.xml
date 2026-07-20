@@ -31,6 +31,14 @@
         <env name="DB_DATABASE" value=":memory:"/>
         <env name="DB_URL" value=""/>
         <env name="DOCUMENT_SIGNATURES_REQUIRED" value="false"/>
+        <!-- File manager tests never inherit mutable production switches. -->
+        <env name="FILE_MANAGER_MODE" value="off"/>
+        <env name="FILE_MANAGER_ENABLED_CATEGORIES" value=""/>
+        <env name="FILE_MANAGER_ALLOW_WRITES" value="false"/>
+        <env name="FILE_MANAGER_ALLOW_SCANNER" value="false"/>
+        <env name="FILE_MANAGER_ALLOW_MUTATING_RECONCILE" value="false"/>
+        <env name="FILE_MANAGER_ALLOW_ADMIN_STATE_MUTATIONS" value="false"/>
+        <env name="FILE_MANAGER_AUTOMATIC_SYNC_ENABLED" value="false"/>
         <env name="CHAT_DB_CONNECTION" value="sqlite"/>
         <env name="CHAT_DB_DATABASE" value=":memory:"/>
         <env name="MAIL_MAILER" value="array"/>

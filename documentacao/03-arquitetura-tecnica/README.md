@@ -9,6 +9,9 @@ Este diretório concentra a documentação técnica do backend central Laravel, 
 - [Contrato da API do backend central](contrato-api-backend-central.md)
 - [Frontend desktop Laravel](frontend-desktop-laravel.md)
 - [Frontend sistema-hml como BFF](frontend-sistema-hml-bff.md)
+- [Gerenciador Central de Arquivos](gerenciador-central-arquivos.md)
+- [Idempotência e confirmação segura na criação de OS](idempotencia-criacao-os.md)
+- [Inventário de arquivos funcionais](inventario-arquivos-funcionais.md)
 - [Mapa completo de migração e limpeza do frontend sistema-hml](mapa-migracao-legado-frontend-sistema-hml.md)
 - [Fluxo de OS mobile](ordens-mobile.md)
 

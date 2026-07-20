@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Chat;
 
+use App\Enums\Files\FileCategory;
 use App\Models\Chat\Account;
 use App\Models\Chat\Channel\Whatsapp;
 use App\Models\Chat\Contact;
@@ -10,6 +11,11 @@ use App\Models\Chat\Conversation;
 use App\Models\Chat\Inbox;
 use App\Models\Chat\Message;
 use App\Models\Chat\MessageAttachment;
+use App\Models\Files\ManagedFile;
+use App\Models\Files\ManagedFileLegacyAlias;
+use App\Models\Files\ManagedFileLink;
+use App\Services\Files\ChatFileReconciliationService;
+use App\Services\Files\FileAuthorizationRegistry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
@@ -216,8 +222,11 @@ class ConversationFlowTest extends TestCase
     {
         Storage::fake('local');
         Http::fake();
+        config()->set('file-manager.mode', 'shadow');
+        config()->set('file-manager.enabled_categories', ['chat_attachment']);
 
-        Sanctum::actingAs($this->createUserRecord());
+        $actor = $this->createUserRecord();
+        Sanctum::actingAs($actor);
 
         $conversation = $this->createConversationWithMessage();
 
@@ -235,6 +244,236 @@ class ConversationFlowTest extends TestCase
         $attachment = MessageAttachment::query()->first();
         $this->assertNotNull($attachment);
         Storage::disk('local')->assertExists((string) $attachment?->storage_path);
+
+        $managed = ManagedFile::query()->where('category', FileCategory::ChatAttachment->value)->firstOrFail();
+        $this->assertSame($managed->uuid, $attachment?->fresh()?->managed_file_uuid);
+        $this->assertSame('linked', $attachment?->fresh()?->metadata['file_manager_state'] ?? null);
+        $this->assertSame(1, ManagedFileLink::query()->where('subject_type', 'chat_attachment')->where('subject_id', $attachment?->id)->count());
+        $this->assertSame(1, ManagedFileLegacyAlias::query()->where('file_id', $managed->id)->count());
+        $this->assertTrue(app(FileAuthorizationRegistry::class)->allows($actor, $managed, 'download'));
+
+        config()->set('file-manager.mode', 'off');
+        $this->get('/api/v1/chat/anexos/'.$attachment?->id)
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/png');
+    }
+
+    public function test_reconciliador_do_chat_e_dry_run_e_repara_vinculo_pendente_somente_com_switch(): void
+    {
+        Storage::fake('local');
+        config()->set('file-manager.mode', 'shadow');
+        config()->set('file-manager.enabled_categories', ['chat_attachment']);
+        $conversation = $this->createConversationWithMessage();
+        $message = Message::query()->where('conversa_id', $conversation->id)->firstOrFail();
+        $path = UploadedFile::fake()->image('pendente.png')->storeAs('chat-media/pendente', 'pendente.png', 'local');
+        $this->assertIsString($path);
+        $attachment = MessageAttachment::query()->create([
+            'mensagem_id' => $message->id,
+            'attachment_type' => 'image',
+            'transfer_status' => 'available',
+            'disk' => 'local',
+            'storage_path' => $path,
+            'original_name' => 'pendente.png',
+            'stored_name' => 'pendente.png',
+            'mime_type' => 'image/png',
+            'byte_size' => Storage::disk('local')->size($path),
+            'metadata' => ['source' => 'upload', 'file_manager_state' => 'pending_link'],
+        ]);
+
+        $dryRun = app(ChatFileReconciliationService::class)->reconcile(false);
+        $this->assertSame(1, $dryRun['pending']);
+        $this->assertSame(0, $dryRun['repaired']);
+        $this->assertNull($attachment->fresh()->managed_file_uuid);
+
+        config()->set('file-manager.kill_switches.allow_mutating_reconcile', true);
+        $applied = app(ChatFileReconciliationService::class)->reconcile(true);
+        $this->assertSame(1, $applied['repaired']);
+        $this->assertNotNull($attachment->fresh()->managed_file_uuid);
+        $this->assertSame('linked', $attachment->fresh()->metadata['file_manager_state'] ?? null);
+    }
+
+    public function test_rejeita_anexo_html_disfarcado_de_imagem(): void
+    {
+        Storage::fake('local');
+        Sanctum::actingAs($this->createUserRecord());
+
+        $conversation = $this->createConversationWithMessage();
+        $maliciousFile = UploadedFile::fake()->createWithContent(
+            'foto.png',
+            '<html><script>alert(1)</script></html>'
+        );
+
+        $this->post("/api/v1/conversas/{$conversation->id}/mensagens", [
+            'attachments' => [$maliciousFile],
+        ], ['Accept' => 'application/json'])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'MESSAGE_VALIDATION_ERROR');
+
+        $this->assertSame(0, MessageAttachment::query()->count());
+    }
+
+    public function test_rejeita_anexo_com_extensao_dupla_e_conteudo_ativo(): void
+    {
+        Storage::fake('local');
+        Sanctum::actingAs($this->createUserRecord());
+
+        $conversation = $this->createConversationWithMessage();
+        $maliciousFile = UploadedFile::fake()->createWithContent(
+            'comprovante.pdf.html',
+            '<html><script>alert(1)</script></html>'
+        );
+
+        $this->post("/api/v1/conversas/{$conversation->id}/mensagens", [
+            'attachments' => [$maliciousFile],
+        ], ['Accept' => 'application/json'])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'MESSAGE_VALIDATION_ERROR');
+
+        $this->assertSame(0, MessageAttachment::query()->count());
+    }
+
+    public function test_download_de_conteudo_nao_confiavel_forca_attachment_e_nome_seguro(): void
+    {
+        Storage::fake('local');
+        Sanctum::actingAs($this->createUserRecord());
+
+        $conversation = $this->createConversationWithMessage();
+        $message = Message::query()->where('conversa_id', $conversation->id)->firstOrFail();
+        Storage::disk('local')->put('chat-media/teste/conteudo.html', '<script>alert(1)</script>');
+
+        $attachment = MessageAttachment::query()->create([
+            'mensagem_id' => $message->id,
+            'attachment_type' => 'document',
+            'transfer_status' => 'available',
+            'disk' => 'local',
+            'storage_path' => 'chat-media/teste/conteudo.html',
+            'original_name' => "../../relatorio\"\r\nX-Evil: yes.html",
+            'stored_name' => 'conteudo.html',
+            'mime_type' => 'text/html',
+            'byte_size' => 25,
+        ]);
+
+        $response = $this->get('/api/v1/chat/anexos/'.$attachment->id);
+
+        $response->assertOk()
+            ->assertHeader('Content-Type', 'application/octet-stream')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+
+        $cacheControl = (string) $response->headers->get('Cache-Control');
+        $this->assertStringContainsString('private', $cacheControl);
+        $this->assertStringContainsString('no-store', $cacheControl);
+        $this->assertStringContainsString('max-age=0', $cacheControl);
+
+        $disposition = (string) $response->headers->get('Content-Disposition');
+        $this->assertStringStartsWith('attachment;', $disposition);
+        $this->assertStringNotContainsString("\r", $disposition);
+        $this->assertStringNotContainsString("\n", $disposition);
+        $this->assertStringNotContainsString('X-Evil:', $disposition);
+    }
+
+    public function test_download_de_imagem_raster_validada_pode_ser_inline(): void
+    {
+        Storage::fake('local');
+        Sanctum::actingAs($this->createUserRecord());
+
+        $conversation = $this->createConversationWithMessage();
+        $message = Message::query()->where('conversa_id', $conversation->id)->firstOrFail();
+        $pngBytes = base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL5WQAAAABJRU5ErkJggg==',
+            true
+        );
+        $this->assertIsString($pngBytes);
+        Storage::disk('local')->put('chat-media/teste/imagem.png', $pngBytes);
+
+        $attachment = MessageAttachment::query()->create([
+            'mensagem_id' => $message->id,
+            'attachment_type' => 'image',
+            'transfer_status' => 'available',
+            'disk' => 'local',
+            'storage_path' => 'chat-media/teste/imagem.png',
+            'original_name' => 'imagem.png',
+            'stored_name' => 'imagem.png',
+            'mime_type' => 'image/png',
+            'byte_size' => strlen($pngBytes),
+        ]);
+
+        $response = $this->get('/api/v1/chat/anexos/'.$attachment->id);
+
+        $response->assertOk()
+            ->assertHeader('Content-Type', 'image/png')
+            ->assertHeader('X-Content-Type-Options', 'nosniff');
+
+        $this->assertStringStartsWith(
+            'inline;',
+            (string) $response->headers->get('Content-Disposition')
+        );
+    }
+
+    public function test_download_de_anexo_bloqueia_idor_entre_contas(): void
+    {
+        Storage::fake('local');
+        config()->set('chat.allowed_account_ids', [$this->account->id]);
+        Sanctum::actingAs($this->createUserRecord());
+
+        $otherAccount = Account::create(['nome' => 'Conta Isolada', 'proximo_display_id' => 1]);
+        $otherChannel = Whatsapp::create([
+            'conta_id' => $otherAccount->id,
+            'nome' => 'WhatsApp Isolado',
+            'provider' => 'evolution',
+        ]);
+        $otherInbox = Inbox::create([
+            'conta_id' => $otherAccount->id,
+            'nome' => 'WhatsApp Isolado',
+            'channel_type' => 'whatsapp',
+            'channel_id' => $otherChannel->id,
+        ]);
+        $otherContact = Contact::create([
+            'conta_id' => $otherAccount->id,
+            'nome' => 'Contato Isolado',
+            'telefone' => '+5511988877665',
+        ]);
+        $otherContactInbox = ContactInbox::create([
+            'conta_id' => $otherAccount->id,
+            'contato_id' => $otherContact->id,
+            'caixa_entrada_id' => $otherInbox->id,
+            'source_id' => '+5511988877665',
+        ]);
+        $otherConversation = Conversation::create([
+            'conta_id' => $otherAccount->id,
+            'caixa_entrada_id' => $otherInbox->id,
+            'contato_id' => $otherContact->id,
+            'contato_caixa_entrada_id' => $otherContactInbox->id,
+            'display_id' => $otherAccount->reserveNextDisplayId(),
+            'status' => 'open',
+            'last_activity_at' => now(),
+        ]);
+        $otherMessage = Message::create([
+            'conta_id' => $otherAccount->id,
+            'conversa_id' => $otherConversation->id,
+            'caixa_entrada_id' => $otherInbox->id,
+            'message_type' => 'incoming',
+            'sender_type' => 'contato',
+            'sender_id' => $otherContact->id,
+            'conteudo' => 'Arquivo privado',
+            'content_type' => 'document',
+            'status' => 'sent',
+        ]);
+        Storage::disk('local')->put('chat-media/isolado/arquivo.pdf', '%PDF-1.4');
+        $attachment = MessageAttachment::query()->create([
+            'mensagem_id' => $otherMessage->id,
+            'attachment_type' => 'document',
+            'transfer_status' => 'available',
+            'disk' => 'local',
+            'storage_path' => 'chat-media/isolado/arquivo.pdf',
+            'original_name' => 'arquivo.pdf',
+            'stored_name' => 'arquivo.pdf',
+            'mime_type' => 'application/pdf',
+            'byte_size' => 8,
+        ]);
+
+        $this->get('/api/v1/chat/anexos/'.$attachment->id)
+            ->assertForbidden()
+            ->assertJsonPath('error.code', 'CHAT_ATTACHMENT_FORBIDDEN');
     }
 
     public function test_download_de_anexo_exige_autenticacao(): void
@@ -257,7 +496,7 @@ class ConversationFlowTest extends TestCase
             'byte_size' => 3,
         ]);
 
-        $this->get('/api/v1/chat/anexos/' . $attachment->id)->assertStatus(401);
+        $this->get('/api/v1/chat/anexos/'.$attachment->id)->assertStatus(401);
     }
 
     public function test_download_de_anexo_exige_permissao_do_modulo_atendimento_whatsapp(): void
@@ -282,7 +521,7 @@ class ConversationFlowTest extends TestCase
             'byte_size' => 3,
         ]);
 
-        $this->get('/api/v1/chat/anexos/' . $attachment->id)->assertForbidden();
+        $this->get('/api/v1/chat/anexos/'.$attachment->id)->assertForbidden();
     }
 
     public function test_autorizacao_do_canal_da_conversa_depende_de_rbac_e_acesso(): void
