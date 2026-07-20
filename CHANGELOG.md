@@ -1,5 +1,17 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.2.2.0 — 2026-07-20 20:30
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** corrige a seleção e a confirmação da lixeira para usuários administrativos definidos pelo RBAC, sem depender do campo legado `perfil=admin`
+- **Arquitetura:** mantém dupla autorização: a sessão exige `arquivos:excluir` e a credencial de step-up exige `arquivos:administrar`; o desktop usa POST sem retry para o comando mutável
+- **Segurança:** senha e motivo continuam obrigatórios, rate limit e auditoria permanecem ativos, perfil legado sem RBAC não contorna a regra e falha de escrita no log não transforma uma credencial recusada em HTTP 500
+- **Experiência:** amplia a área clicável do checkbox em lista, explica as permissões necessárias e preenche o e-mail da sessão quando o próprio usuário pode administrar arquivos
+- **Performance/Resiliência:** elimina três chamadas repetidas ao endpoint de lixeira em respostas 5xx e preserva o binário para restauração
+- **Operação:** grupo do log atual corrigido para `www-data`; runbook passa a exigir `setgid` em `backend/storage/logs` para arquivos futuros
+- **Validação:** 23 testes direcionados aprovados com 194 asserções; fluxo real do usuário supervisor da LAN validado em transação integralmente revertida
+- **Arquivos:** backend/app/Services/Auth/AdminCredentialVerifier.php,backend/app/Http/Controllers/Api/V1/FileManagerController.php,backend/tests/Feature/Files/FileManagerApiTest.php,frontends/desktop/app/Services/ApiClient.php,frontends/desktop/app/Services/FileManagerService.php,frontends/desktop/resources/views/files/index.blade.php,frontends/desktop/tests/Feature/Desktop/FileManagerTest.php,documentacao/07-novas-implementacoes/2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md,documentacao/07-novas-implementacoes/historico-de-versoes.md,documentacao/10-deploy/deploy-producao-lan-ubuntu.md,VERSION,shared/version.php,CHANGELOG.md
+
 ## v5.2.1.0 — 2026-07-20 07:35
 - **Tier:** patch
 - **Autor/Agente:** Codex

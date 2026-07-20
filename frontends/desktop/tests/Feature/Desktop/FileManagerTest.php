@@ -90,6 +90,9 @@ class FileManagerTest extends TestCase
             ->assertSee('Pastas por categoria')
             ->assertSee('Baixar selecionados')
             ->assertSee('Excluir selecionados')
+            ->assertSee('E-mail do responsável autorizado')
+            ->assertSee('permissão <strong>Administrar</strong> no módulo Arquivos', false)
+            ->assertSee('value="operador@example.com"', false)
             ->assertSee('hash:abcdef123456')
             ->assertDontSee('/var/www')
             ->assertDontSee('storage_key');
@@ -376,6 +379,36 @@ class FileManagerTest extends TestCase
         Http::assertSent(static fn ($request): bool => str_ends_with($request->url(), '/api/v1/files/trash-batch')
             && $request['file_uuids'] === $uuids
             && $request['reason'] === 'Arquivos substituídos por novas versões.');
+        Http::assertSentCount(1);
+    }
+
+    public function test_trash_command_is_not_retried_after_backend_server_error(): void
+    {
+        Http::fake([
+            '*/api/v1/files/trash-batch' => Http::response([
+                'status' => 'error',
+                'data' => null,
+                'error' => [
+                    'code' => 'INTERNAL_ERROR',
+                    'message' => 'Ocorreu um erro inesperado. Tente novamente em instantes.',
+                    'details' => null,
+                ],
+                'meta' => [],
+            ], 500),
+        ]);
+
+        $this->withSession($this->desktopSession())
+            ->withHeader('Accept', 'application/json')
+            ->post('/arquivos/excluir-selecionados', [
+                'file_uuids' => ['019f7c54-fd90-7cc1-a455-aa6f3efd15d1'],
+                'reason' => 'Arquivo substituído por uma nova versão revisada.',
+                'admin_email' => 'admin@example.com',
+                'admin_password' => 'Senha@123',
+            ])
+            ->assertStatus(500)
+            ->assertJsonPath('success', false);
+
+        Http::assertSentCount(1);
     }
 
     public function test_state_actions_reject_requests_without_csrf_token_before_calling_backend(): void

@@ -1,6 +1,6 @@
 # Consolidado das implementações de 20 de julho de 2026
 
-**Release:** `5.2.1.0`
+**Release:** `5.2.2.0`
 **API:** `1.5.0`  
 **Ambiente implantado e validado:** desenvolvimento LAN — `192.168.1.100`  
 **Produção externa:** não promovida por esta entrega  
@@ -130,6 +130,14 @@ O desktop oferece:
 - exclusão individual/em lote para a lixeira lógica;
 - paginação e contadores por categoria;
 - indicação de lifecycle do arquivo.
+
+A exclusão continua exigindo duas autorizações independentes: o operador da
+sessão precisa de `arquivos:excluir` e a credencial de confirmação precisa de
+`arquivos:administrar`. O step-up passou a consultar o RBAC efetivo, permitindo
+grupos administrativos mesmo quando o campo legado `perfil` não é `admin`, sem
+conceder acesso por nome de grupo ou por perfil isolado. Falhas do canal de log
+não transformam credenciais recusadas em HTTP 500, e o comando de lixeira não é
+reenviado automaticamente porque ainda não possui chave de idempotência.
 
 No modo lista foram adicionadas as colunas **Foto** e **Cliente**. A miniatura
 fica no início da linha. O cliente é resolvido em lote por vínculos de OS,
@@ -444,6 +452,10 @@ Validação direcionada executada no ambiente LAN em 20/07/2026:
 | Frontend do Gerenciador + matriz RBAC | 13 testes, 95 asserções |
 | Idempotência, conflito, pós-commit e fotos privadas da OS | 4 testes, 30 asserções |
 | Envio simples e multipart da nova OS no desktop | 2 testes, 8 asserções |
+
+Regressão adicional da `5.2.2.0`: 23 testes e 194 asserções cobriram step-up
+administrativo por RBAC, recusa do perfil legado sem permissão, falha do canal
+de log, lixeira sem retry e a interface do Gerenciador.
 | **Total direcionado aprovado** | **76 testes, 430 asserções** |
 
 As suítes amplas também foram executadas como verificação exploratória. Elas

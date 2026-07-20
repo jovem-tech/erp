@@ -262,6 +262,7 @@ O PHP-FPM roda como `www-data`; o deploy é feito pelo usuário `administrador`:
 sudo chown -R www-data:www-data backend/storage backend/bootstrap/cache
 sudo find backend/storage -type d -exec chmod 775 {} \;
 sudo find backend/storage -type f -exec chmod 664 {} \;
+sudo chmod 2775 backend/storage/logs
 sudo chmod -R 775 backend/bootstrap/cache
 
 # permite ao usuario de deploy rodar artisan sem sudo:
@@ -274,6 +275,9 @@ sudo chgrp www-data backend/.env && chmod 640 backend/.env
 > **Problema real encontrado:** o sentido do grupo importa — adicionar `www-data`
 > ao grupo `administrador` **não** resolve; é o usuário `administrador` que precisa
 > entrar no grupo `www-data` para escrever em `storage/` de arquivos criados pelo FPM.
+> O bit `setgid` (`2775`) em `storage/logs` também é necessário: ele força logs
+> criados por comandos Artisan do usuário `administrador` a herdarem o grupo
+> `www-data`, evitando HTTP 500 quando o PHP-FPM tenta registrar o próximo evento.
 
 ### 3.9 HTTPS com certificado autoassinado (LAN sem domínio)
 

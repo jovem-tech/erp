@@ -16,6 +16,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\BuildsLegacyErpSchema;
@@ -313,9 +314,9 @@ class FileManagerApiTest extends TestCase
         ]);
         $actor = $this->createUserRecord(['grupo_id' => 1, 'perfil' => 'atendente']);
         $admin = $this->createUserRecord([
-            'grupo_id' => 2,
-            'perfil' => 'admin',
-            'email' => 'admin.lixeira@example.com',
+            'grupo_id' => 1,
+            'perfil' => 'atendente',
+            'email' => 'supervisor.lixeira@example.com',
         ]);
         $file = $this->createManagedLogo($actor->id, 'trash');
         $storageKey = (string) $file->storage_key;
@@ -339,6 +340,34 @@ class FileManagerApiTest extends TestCase
         ]);
     }
 
+    public function test_batch_trash_rejects_legacy_profile_without_file_admin_permission_even_if_logging_fails(): void
+    {
+        $this->grantGroupPermissions(1, [
+            'arquivos' => ['excluir', 'administrar'],
+            'configuracoes' => ['editar'],
+        ]);
+        $actor = $this->createUserRecord(['grupo_id' => 1, 'perfil' => 'atendente']);
+        $unauthorizedStepUp = $this->createUserRecord([
+            'grupo_id' => 3,
+            'perfil' => 'admin',
+            'email' => 'legacy-profile-without-file-admin@example.com',
+        ]);
+        $file = $this->createManagedLogo($actor->id, 'denied-trash');
+        Sanctum::actingAs($actor, ['*']);
+
+        Log::shouldReceive('warning')->once()->andThrow(new \RuntimeException('log unavailable'));
+
+        $this->postJson('/api/v1/files/trash-batch', [
+            'file_uuids' => [$file->uuid],
+            'reason' => 'Tentativa sem autorização administrativa efetiva.',
+            'admin_email' => $unauthorizedStepUp->email,
+            'admin_password' => 'Senha@123',
+        ])->assertStatus(422)
+            ->assertJsonPath('error.code', 'FILE_ADMIN_AUTH_INVALID');
+
+        $this->assertSame('active', $file->fresh()->lifecycle_status->value);
+    }
+
     public function test_sensitive_state_actions_require_admin_step_up_reason_and_audit_both_actors(): void
     {
         $this->grantGroupPermissions(1, [
@@ -347,9 +376,9 @@ class FileManagerApiTest extends TestCase
         ]);
         $actor = $this->createUserRecord(['grupo_id' => 1, 'perfil' => 'atendente']);
         $admin = $this->createUserRecord([
-            'grupo_id' => 2,
-            'perfil' => 'admin',
-            'email' => 'admin.arquivos@example.com',
+            'grupo_id' => 1,
+            'perfil' => 'atendente',
+            'email' => 'supervisor.arquivos@example.com',
         ]);
         $file = $this->createManagedLogo($actor->id);
         Sanctum::actingAs($actor, ['*']);

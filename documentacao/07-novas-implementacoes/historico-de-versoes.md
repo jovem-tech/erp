@@ -3,6 +3,15 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.2.2.0 - 2026-07-20
+
+- step-up da lixeira alinhado ao RBAC `arquivos:administrar`, inclusive para supervisores cujo perfil legado não é `admin`;
+- operador ainda precisa de `arquivos:excluir`, preservando separação de responsabilidades;
+- credencial sem permissão efetiva é recusada mesmo quando o perfil legado é `admin`;
+- POST da lixeira sem retry automático e erro de log sem conversão indevida para HTTP 500;
+- checkboxes com alvo maior e explicação explícita das permissões necessárias;
+- nota: `2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md`.
+
 ## v5.2.1.0 - 2026-07-20
 
 - clique na miniatura da Central Documental abre o visualizador interno;

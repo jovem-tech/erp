@@ -334,7 +334,8 @@ class FileManagerController extends BaseApiController
             (string) $credentials['admin_email'],
             (string) $credentials['admin_password'],
             'file-manager-trash-admin-auth',
-            (string) ($request->ip() ?: 'unknown')
+            (string) ($request->ip() ?: 'unknown'),
+            'arquivos:administrar'
         );
         if ($response = $this->respondToAdminVerification(
             $verification,
@@ -494,7 +495,8 @@ class FileManagerController extends BaseApiController
             (string) $credentials['admin_email'],
             (string) $credentials['admin_password'],
             'file-manager-'.$action.'-admin-auth',
-            (string) ($request->ip() ?: 'unknown')
+            (string) ($request->ip() ?: 'unknown'),
+            'arquivos:administrar'
         );
         if ($response = $this->respondToAdminVerification(
             $verification,

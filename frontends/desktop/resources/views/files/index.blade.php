@@ -214,12 +214,15 @@
             <input class="form-check-input m-0" type="checkbox" id="selectAllFiles" aria-label="Selecionar todos os arquivos desta página">
             <label for="selectAllFiles" class="small fw-semibold mb-0">Selecionar página</label>
             <span class="badge text-bg-primary" id="selectedFilesCount">0 selecionados</span>
+            @if (! $canDelete)
+                <span class="small text-secondary"><i class="bi bi-lock me-1"></i>A exclusão exige a permissão Arquivos: Excluir.</span>
+            @endif
         </div>
         <div class="d-flex flex-wrap gap-2">
             <button type="button" class="btn btn-soft btn-sm" id="downloadSelectedFiles" disabled @disabled(!$canDownload)>
                 <i class="bi bi-file-earmark-zip me-1"></i>Baixar selecionados
             </button>
-            <button type="button" class="btn btn-outline-danger btn-sm" id="trashSelectedFiles" disabled @disabled(!$canDelete || !$mutationsEnabled) title="{{ !$mutationsEnabled ? 'Ações de estado bloqueadas pelo kill switch' : 'Mover selecionados para a lixeira' }}">
+            <button type="button" class="btn btn-outline-danger btn-sm" id="trashSelectedFiles" disabled @disabled(!$canDelete || !$mutationsEnabled) title="{{ !$canDelete ? 'Seu grupo não possui a permissão Arquivos: Excluir' : (!$mutationsEnabled ? 'Ações de estado bloqueadas pelo kill switch' : 'Mover selecionados para a lixeira') }}">
                 <i class="bi bi-trash3 me-1"></i>Excluir selecionados
             </button>
         </div>
@@ -325,7 +328,11 @@
                                 $documentCreatedAt = $file['document_created_at'] ?? $file['created_at'] ?? null;
                             @endphp
                             <tr>
-                                <td><input class="form-check-input file-select" type="checkbox" value="{{ $file['uuid'] }}" data-downloadable="{{ $deliverable ? '1' : '0' }}" data-trashable="{{ ($file['lifecycle_status'] ?? '') !== 'trashed' ? '1' : '0' }}" aria-label="Selecionar {{ $file['safe_download_name'] ?? 'arquivo' }}"></td>
+                                <td>
+                                    <label class="d-inline-flex align-items-center justify-content-center p-2 mb-0" title="Selecionar arquivo">
+                                        <input class="form-check-input file-select m-0" type="checkbox" value="{{ $file['uuid'] }}" data-downloadable="{{ $deliverable ? '1' : '0' }}" data-trashable="{{ ($file['lifecycle_status'] ?? '') !== 'trashed' ? '1' : '0' }}" aria-label="Selecionar {{ $file['safe_download_name'] ?? 'arquivo' }}">
+                                    </label>
+                                </td>
                                 <td>
                                     <button
                                         type="button"
@@ -425,9 +432,10 @@
                 <div class="modal-body">
                     <div class="alert alert-danger d-none" id="trashFilesError" role="alert"></div>
                     <div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-1"></i>Esta ação remove o arquivo dos fluxos ativos, mas preserva o binário para recuperação e auditoria.</div>
+                    <p class="small text-secondary">Confirme com as credenciais de um usuário ativo que possua a permissão <strong>Administrar</strong> no módulo Arquivos.</p>
                     <div class="mb-3"><label for="trashReason" class="form-label fw-semibold">Motivo</label><textarea id="trashReason" name="reason" class="form-control" rows="3" minlength="10" maxlength="500" required></textarea></div>
-                    <div class="mb-3"><label for="trashAdminEmail" class="form-label fw-semibold">E-mail do administrador</label><input id="trashAdminEmail" name="admin_email" type="email" class="form-control" maxlength="255" autocomplete="username" required></div>
-                    <div><label for="trashAdminPassword" class="form-label fw-semibold">Senha do administrador</label><input id="trashAdminPassword" name="admin_password" type="password" class="form-control" maxlength="200" autocomplete="current-password" required></div>
+                    <div class="mb-3"><label for="trashAdminEmail" class="form-label fw-semibold">E-mail do responsável autorizado</label><input id="trashAdminEmail" name="admin_email" type="email" class="form-control" maxlength="255" autocomplete="username" value="{{ $canAdminister ? (string) data_get(session('desktop_auth'), 'user.email', '') : '' }}" required></div>
+                    <div><label for="trashAdminPassword" class="form-label fw-semibold">Senha do responsável autorizado</label><input id="trashAdminPassword" name="admin_password" type="password" class="form-control" maxlength="200" autocomplete="current-password" required></div>
                 </div>
                 <div class="modal-footer border-0 pt-0"><button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-danger" id="trashFilesSubmit"><i class="bi bi-trash3 me-1"></i>Mover para a lixeira</button></div>
             </form>

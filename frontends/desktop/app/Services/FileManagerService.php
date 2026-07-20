@@ -82,7 +82,7 @@ class FileManagerService
      */
     public function trashBatch(array $uuids, array $payload): array
     {
-        return (array) ($this->apiClient->post('/files/trash-batch', array_merge($payload, [
+        return (array) ($this->apiClient->postOnce('/files/trash-batch', array_merge($payload, [
             'file_uuids' => array_values($uuids),
         ]))['data'] ?? []);
     }
