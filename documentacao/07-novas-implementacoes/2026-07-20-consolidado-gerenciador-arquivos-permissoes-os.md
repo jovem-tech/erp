@@ -462,6 +462,27 @@ php artisan test tests/Feature/Desktop/FileManagerTest.php
 php artisan test tests/Feature/Desktop/GroupPermissionsTest.php
 ```
 
+### Evidência do rollout na VPS
+
+Em 20/07/2026, a VPS `161.97.93.120` estava com o código e as migrations da
+release, porém o `.env` real ainda preservava os defaults seguros (`mode=off` e
+sincronização desativada). O cron do Laravel já existia sob `www-data`.
+
+Após backup validado do banco e do `.env`, foi aplicado o modo `shadow`, com
+scanner e reconciliação habilitados, mas escrita central e mutações
+administrativas mantidas desligadas. Resultado da primeira execução:
+
+- 573 arquivos processados;
+- 566 arquivos catalogados;
+- 7 arquivos rejeitados pela política e preservados na origem;
+- 320 arquivos associados a registros de domínio;
+- 366 vínculos ativos criados;
+- nenhuma root parcial ou com falha.
+
+A segunda execução processou as mesmas 573 entradas sem gerar novo finding ou
+novo registro, confirmando idempotência. O scheduler permaneceu ativo a cada
+minuto e a sincronização completa configurada a cada cinco minutos.
+
 ## 14. Rollback
 
 ### Gerenciador e sincronização

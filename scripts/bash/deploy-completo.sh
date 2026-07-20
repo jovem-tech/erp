@@ -40,7 +40,11 @@ if [[ -n "$(git status --porcelain)" ]]; then
   echo "--- git diff --stat ---"
   git diff --stat
 
-  RISKY=$(git status --porcelain | awk '{print $2}' | grep -E '(^|/)\.env$|\.pem$|\.key$|id_rsa|credentials\.json$' || true)
+  RISKY=$(git status --porcelain \
+    | awk '{print $2}' \
+    | grep -E '(^|/)\.env($|\.)|\.pem$|\.key$|id_rsa|credentials\.json$' \
+    | grep -v -E '(^|/)\.env(\.[A-Za-z0-9_-]+)*\.example$' \
+    || true)
   if [[ -n "$RISKY" ]]; then
     echo "" >&2
     echo "ERRO: os arquivos abaixo parecem sensíveis e não serão commitados automaticamente:" >&2
