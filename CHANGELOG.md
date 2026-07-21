@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.5.0.2 — 2026-07-21 04:29
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige propriedade do cache Blade nos deploys e evita erro 500 por touch negado
+- **Arquivos:** scripts/bash/deploy-producao.sh,scripts/bash/atualizar-dev.sh
+
 ## v5.5.0.1 — 2026-07-21 04:10
 - **Tier:** hotfix
 - **Autor/Agente:** Codex

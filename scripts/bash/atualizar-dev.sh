@@ -33,7 +33,10 @@ composer install --optimize-autoloader
 php artisan migrate --force
 php artisan config:clear && php artisan config:cache
 php artisan route:clear && php artisan route:cache
-php artisan view:clear && php artisan view:cache
+php artisan view:clear
+# Laravel recompila views no PHP-FPM usando touch(timestamp); por isso os
+# artefatos compilados devem ser criados pelo proprio usuario de runtime.
+sudo -u www-data -- php artisan view:cache
 php artisan queue:restart || true
 
 echo ">>> Desktop"
@@ -44,7 +47,8 @@ npm run build
 php artisan migrate --force
 php artisan config:clear && php artisan config:cache
 php artisan route:clear && php artisan route:cache
-php artisan view:clear && php artisan view:cache
+php artisan view:clear
+sudo -u www-data -- php artisan view:cache
 
 sudo systemctl reload php8.5-fpm 2>/dev/null || true
 sudo supervisorctl restart all 2>/dev/null || true
