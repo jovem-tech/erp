@@ -82,15 +82,19 @@
         const downloadUrl = trigger.dataset.downloadUrl || '';
         const fileName = trigger.dataset.fileName || 'Arquivo';
 
-        if (!['image', 'pdf'].includes(kind) || previewUrl === '' || downloadUrl === '') return;
+        if (!['image', 'pdf'].includes(kind) || previewUrl === '') return;
 
         state.kind = kind;
         state.previewUrl = previewUrl;
         title.textContent = fileName;
         mime.textContent = trigger.dataset.fileMime || '';
         type.textContent = kind === 'image' ? 'Foto' : 'PDF';
-        download.href = downloadUrl;
-        download.setAttribute('download', fileName);
+        if (download) {
+            download.classList.toggle('d-none', downloadUrl === '');
+            download.href = downloadUrl || '#';
+            if (downloadUrl !== '') download.setAttribute('download', fileName);
+            else download.removeAttribute('download');
+        }
         setHidden(imageTools, kind !== 'image');
         setHidden(pdfTools, kind !== 'pdf');
         setHidden(imageStage, kind !== 'image');
@@ -120,6 +124,7 @@
         if (download) {
             download.href = '#';
             download.removeAttribute('download');
+            download.classList.remove('d-none');
         }
         imageStage?.classList.remove('is-panning');
         setHidden(imageStage, true);

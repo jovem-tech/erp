@@ -499,3 +499,12 @@ Os nomes são candidatos. Antes da implementação, devem ser conferidos contra 
 - Implementação, commit, push, promoção e deploy exigem autorizações próprias.
 - A alegação de conclusão exigirá auditoria contra código, banco, storage, testes e comportamento real.
 
+## Incremento autorizado — ciclo completo da lixeira (2026-07-20)
+
+- Introduzir `purged` como estado terminal e `purged_at` indexado, mantendo o registro central como tombstone auditável.
+- Separar prévia de download: arquivos íntegros/seguros na lixeira podem ser visualizados no modal, mas não baixados nem reativados implicitamente.
+- Reutilizar o step-up administrativo existente para restauração, exclusão definitiva e alteração da política de retenção.
+- Executar purga física somente em disks e prefixes declarados em `file-manager.scanner.roots`/`storage.root`, recusando symlink, traversal e namespace desconhecido.
+- Persistir a política global em `configuracoes`, restrita a `0`, `7`, `30` ou `90` dias; `0` desativa a rotina.
+- Agendar comando diário, com lock distribuído, lote limitado, idempotência e kill switch independente `FILE_MANAGER_ALLOW_PERMANENT_DELETION`.
+- Manter exclusão manual disponível somente com confirmação textual explícita; a automática nunca antecipa o corte configurado.

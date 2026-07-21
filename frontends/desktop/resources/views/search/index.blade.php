@@ -6,6 +6,7 @@
         $results = is_array($results ?? null) ? $results : [];
         $sections = $results['sections'] ?? [];
         $total = (int) ($results['total'] ?? 0);
+        $selectedScopes = is_array($results['scope'] ?? null) ? $results['scope'] : ['tudo'];
     @endphp
 
     <section class="desktop-form-card mb-4">
@@ -19,15 +20,24 @@
         </div>
 
         <form method="get" action="{{ route('search.index') }}" class="desktop-filter-grid">
-            <div>
-                <label for="searchScope">Escopo</label>
-                <select id="searchScope" name="scope" class="form-select">
+            <div class="desktop-grid-span-2">
+                <label>Escopo</label>
+                <div class="desktop-search-scope-checklist" data-desktop-search-scope-menu>
                     @foreach (($scopes ?? []) as $scopeItem)
-                        <option value="{{ $scopeItem['value'] }}" @selected(($scopeItem['value'] ?? 'tudo') === ($scope ?? 'tudo'))>
-                            {{ $scopeItem['label'] }}
-                        </option>
+                        <label class="desktop-search-scope-item {{ ($scopeItem['value'] ?? '') === 'tudo' ? 'is-all' : '' }}">
+                            <input
+                                type="checkbox"
+                                class="form-check-input"
+                                name="scope[]"
+                                data-desktop-search-scope-checkbox
+                                value="{{ $scopeItem['value'] ?? 'tudo' }}"
+                                {{ in_array($scopeItem['value'] ?? '', $selectedScopes, true) ? 'checked' : '' }}
+                            >
+                            <i class="bi {{ $scopeItem['icon'] ?? 'bi-grid' }} me-1"></i>
+                            <span>{{ $scopeItem['label'] }}</span>
+                        </label>
                     @endforeach
-                </select>
+                </div>
             </div>
 
             <div class="desktop-grid-span-2">

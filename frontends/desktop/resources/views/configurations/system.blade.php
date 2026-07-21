@@ -364,21 +364,6 @@
                                     <small class="text-muted d-block mt-1">Se desativado, o campo some do login e nenhuma sessão sobrevive ao fechamento do navegador, mesmo as já ativas.</small>
                                 </div>
 
-                                <div class="col-12">
-                                    <div class="form-check form-switch">
-                                        <input
-                                            class="form-check-input"
-                                            type="checkbox"
-                                            role="switch"
-                                            id="warn_on_close"
-                                            name="warn_on_close"
-                                            value="1"
-                                            @checked(old('warn_on_close', $sessionSecuritySettings->warn_on_close))
-                                        >
-                                        <label class="form-check-label" for="warn_on_close">Avisar ao fechar o navegador com sessão ativa</label>
-                                    </div>
-                                    <small class="text-muted d-block mt-1">Só para sessões sem "Manter-me conectado": ao fechar a aba/janela, o navegador exibe uma confirmação lembrando de encerrar a sessão. O aviso não aparece na navegação normal dentro do sistema.</small>
-                                </div>
                             </div>
 
                             <div class="mt-3">

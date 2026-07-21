@@ -117,6 +117,18 @@ class ApiClient
     }
 
     /**
+     * POST sem repetição automática para comandos mutáveis que não possuem
+     * chave de idempotência. Evita executar a mesma ação mais de uma vez quando
+     * a API conclui o comando, mas a resposta falha ou chega como HTTP 5xx.
+     */
+    public function postOnce(string $uri, array $payload = []): array
+    {
+        return $this->parseResponse(
+            $this->authenticatedRequest('post', $uri, $payload)
+        );
+    }
+
+    /**
      * @param array<string, mixed> $payload
      * @param array<string, array<int, UploadedFile>> $files
      */

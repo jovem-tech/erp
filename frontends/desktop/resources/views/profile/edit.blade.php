@@ -6,7 +6,40 @@
             <div class="surface-card-header">
                 <div>
                     <h2 class="surface-title">Configurações do perfil</h2>
-                    <p class="surface-subtitle">Atualize o nome exibido no desktop.</p>
+                    <p class="surface-subtitle">Atualize sua foto e o nome exibido no desktop.</p>
+                </div>
+            </div>
+
+            <div class="profile-photo-row">
+                <div class="profile-photo-preview" data-profile-photo-preview>
+                    @if (! empty($profile['foto_url'] ?? null))
+                        <img src="{{ route('profile.photo.image', ['v' => $profile['foto'] ?? '']) }}" alt="Sua foto de perfil" data-profile-photo-img>
+                    @else
+                        <i class="bi bi-person" data-profile-photo-placeholder></i>
+                    @endif
+                </div>
+
+                <div class="profile-photo-actions">
+                    <div class="d-flex gap-2 flex-wrap">
+                        <form method="post" action="{{ route('profile.photo.update') }}" enctype="multipart/form-data" data-profile-photo-form>
+                            @csrf
+                            <label for="profilePhotoFile" class="btn btn-sm btn-outline-light mb-0">
+                                <i class="bi bi-upload me-1"></i>Escolher foto
+                            </label>
+                            <input type="file" id="profilePhotoFile" name="photo_file" class="d-none" accept="image/png,image/jpeg,image/webp" data-profile-photo-input>
+                        </form>
+
+                        @if (! empty($profile['foto_url'] ?? null))
+                            <form method="post" action="{{ route('profile.photo.destroy') }}">
+                                @csrf
+                                @method('delete')
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                    <i class="bi bi-trash me-1"></i>Remover
+                                </button>
+                            </form>
+                        @endif
+                    </div>
+                    <p class="small text-secondary mt-2 mb-0">PNG, JPG ou WebP. Máximo de 4 MB.</p>
                 </div>
             </div>
 
@@ -207,9 +240,15 @@
         .signature-pending-empty { min-height: 110px; border: 1px dashed #c9d8ef; border-radius: 16px; display: grid; place-items: center; align-content: center; gap: 8px; color: #71819b; }
         @media (max-width: 900px) { .signature-profile-layout { grid-template-columns: 1fr; } }
         @media (max-width: 720px) { .signature-pending-row { align-items: stretch; flex-direction: column; } .signature-pending-action { justify-content: stretch; } .signature-pending-action .form-control, .signature-pending-action .btn { width: 100%; } }
+        .profile-photo-row { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin-bottom: 24px; }
+        .profile-photo-preview { width: 84px; height: 84px; border-radius: 50%; overflow: hidden; background: #f1f5fb; border: 1px solid #dbe6f5; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .profile-photo-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .profile-photo-preview i { font-size: 2rem; color: #9aabc4; }
+        .profile-photo-actions form { display: inline-flex; }
     </style>
 @endsection
 
 @section('scripts')
     <script src="{{ asset('assets/js/profile-signature.js') }}?v={{ filemtime(public_path('assets/js/profile-signature.js')) }}"></script>
+    <script src="{{ asset('assets/js/profile-photo.js') }}?v={{ filemtime(public_path('assets/js/profile-photo.js')) }}"></script>
 @endsection

@@ -48,12 +48,13 @@ class SearchService
     }
 
     /**
+     * @param string|array<int, string> $scope
      * @return array<string, mixed>
      */
-    public function search(string $query, string $scope = 'tudo', int $limit = 5): array
+    public function search(string $query, string|array $scope = 'tudo', int $limit = 5): array
     {
         $query = trim($query);
-        $scope = $this->normalizeScope($scope);
+        $scope = $this->normalizeScopes($scope);
 
         if ($query === '') {
             return [
@@ -130,9 +131,10 @@ class SearchService
     }
 
     /**
+     * @param string|array<int, string> $scope
      * @return array<string, mixed>
      */
-    public function suggestions(string $query, string $scope = 'tudo', int $limit = 4): array
+    public function suggestions(string $query, string|array $scope = 'tudo', int $limit = 4): array
     {
         return $this->search($query, $scope, $limit);
     }
@@ -402,20 +404,41 @@ class SearchService
         }, $groups);
     }
 
-    private function normalizeScope(string $scope): string
+    /**
+     * Aceita tanto um array de valores (checkboxes reais, `scope[]=os&scope[]=clientes`)
+     * quanto uma string (usada pelo dropdown do topbar, que guarda a seleção num único
+     * input hidden como "os,clientes"). Selecionar "tudo" junto de escopos específicos
+     * equivale a selecionar só "tudo" (é um superconjunto de qualquer outro escopo).
+     *
+     * @param string|array<int, string> $scope
+     * @return array<int, string>
+     */
+    private function normalizeScopes(string|array $scope): array
     {
-        $allowed = array_map(fn (array $item): string => $item['value'], $this->scopes());
+        $values = is_array($scope) ? $scope : explode(',', $scope);
+        $values = array_map(static fn ($value): string => trim((string) $value), $values);
+        $values = array_values(array_unique(array_filter($values, static fn (string $value): bool => $value !== '')));
 
-        return in_array($scope, $allowed, true) ? $scope : 'tudo';
+        $allowed = array_map(fn (array $item): string => $item['value'], $this->scopes());
+        $values = array_values(array_intersect($values, $allowed));
+
+        if ($values === [] || in_array('tudo', $values, true)) {
+            return ['tudo'];
+        }
+
+        return $values;
     }
 
-    private function scopeAllows(string $module, string $scope): bool
+    /**
+     * @param array<int, string> $scopes
+     */
+    private function scopeAllows(string $module, array $scopes): bool
     {
-        if ($scope === 'tudo') {
+        if (in_array('tudo', $scopes, true)) {
             return DesktopSession::can($module, 'visualizar');
         }
 
-        return $scope === $module && DesktopSession::can($module, 'visualizar');
+        return in_array($module, $scopes, true) && DesktopSession::can($module, 'visualizar');
     }
 
     /**

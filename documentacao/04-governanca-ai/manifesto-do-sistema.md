@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-20T03:58:10-03:00`
-- Versao do sistema: `5.1.0`
+- Gerado em: `2026-07-20T23:05:16-03:00`
+- Versao do sistema: `5.4.0`
 - Versao da API: `1.5.0`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -160,7 +160,10 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-19-hardening-arquivos-branding-chat.md` - Hardening de arquivos: branding e anexos do chat
 - `documentacao/07-novas-implementacoes/2026-07-19-nucleo-gerenciador-central-arquivos.md` - Núcleo do Gerenciador Central de Arquivos
 - `documentacao/07-novas-implementacoes/2026-07-19-painel-gerenciador-arquivos.md` - Painel do Gerenciador Central de Arquivos
+- `documentacao/07-novas-implementacoes/2026-07-20-busca-global-multi-escopo.md` - Busca global: seleção de múltiplos escopos via checkboxes
 - `documentacao/07-novas-implementacoes/2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md` - Consolidado das implementações de 20 de julho de 2026
+- `documentacao/07-novas-implementacoes/2026-07-20-foto-de-perfil-usuario.md` - Foto de perfil do usuário
+- `documentacao/07-novas-implementacoes/2026-07-20-lixeira-gerenciador-arquivos.md` - Lixeira operacional e retenção do Gerenciador de Arquivos
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 
 ### `documentacao/10-deploy`

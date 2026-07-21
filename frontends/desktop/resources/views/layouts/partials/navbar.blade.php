@@ -1,17 +1,40 @@
 @php
-    $searchScopeValue = request('scope', 'tudo');
+    $searchScopeRaw = request('scope', 'tudo');
+    $searchScopeValues = is_array($searchScopeRaw) ? $searchScopeRaw : explode(',', (string) $searchScopeRaw);
+    $searchScopeValues = array_values(array_filter(array_map('trim', $searchScopeValues), fn ($value) => $value !== ''));
+
+    $availableScopeValues = array_map(fn ($scope) => $scope['value'] ?? '', $desktopSearchScopes ?? []);
+    $searchScopeValues = array_values(array_intersect($searchScopeValues, $availableScopeValues));
+
+    if ($searchScopeValues === [] || in_array('tudo', $searchScopeValues, true)) {
+        $searchScopeValues = ['tudo'];
+    }
+
     $searchScopeLabel = 'Busca completa';
-    foreach (($desktopSearchScopes ?? []) as $scope) {
-        if (($scope['value'] ?? '') === $searchScopeValue) {
-            $searchScopeLabel = (string) ($scope['label'] ?? $searchScopeLabel);
-            break;
+    if (! in_array('tudo', $searchScopeValues, true)) {
+        $selectedLabels = [];
+        foreach (($desktopSearchScopes ?? []) as $scope) {
+            if (in_array($scope['value'] ?? '', $searchScopeValues, true)) {
+                $selectedLabels[] = (string) ($scope['label'] ?? '');
+            }
+        }
+
+        if (count($selectedLabels) === 1) {
+            $searchScopeLabel = $selectedLabels[0];
+        } elseif (count($selectedLabels) > 1) {
+            $searchScopeLabel = count($selectedLabels) . ' selecionados';
         }
     }
+
+    $searchScopeValueAttr = implode(',', $searchScopeValues);
 
     $profileName = (string) ($desktopUser['nome'] ?? 'Usuário');
     $profileGroup = (string) ($desktopUser['group']['nome'] ?? ($desktopUser['perfil'] ?? 'Acesso administrativo'));
     $profileEmail = (string) ($desktopUser['email'] ?? '');
     $profileInitial = mb_strtoupper(mb_substr($profileName !== '' ? $profileName : 'U', 0, 1));
+    $profilePhotoUrl = ! empty($desktopUser['foto_url'] ?? null)
+        ? route('profile.photo.image', ['v' => $desktopUser['foto'] ?? ''])
+        : '';
 @endphp
 
 <header class="desktop-topbar">
@@ -152,29 +175,33 @@
         data-desktop-search-form
         data-suggest-url="{{ route('search.suggest') }}"
     >
-        <input type="hidden" name="scope" value="{{ $searchScopeValue }}" data-desktop-search-scope-value>
+        <input type="hidden" name="scope" value="{{ $searchScopeValueAttr }}" data-desktop-search-scope-value>
 
         <div class="dropdown">
             <button
                 type="button"
                 class="desktop-search-scope dropdown-toggle"
                 data-bs-toggle="dropdown"
+                data-bs-auto-close="outside"
                 aria-expanded="false"
             >
                 <span data-desktop-search-scope-label>{{ $searchScopeLabel }}</span>
                 <i class="bi bi-chevron-down"></i>
             </button>
 
-            <div class="dropdown-menu desktop-search-scope-menu">
+            <div class="dropdown-menu desktop-search-scope-menu" data-desktop-search-scope-menu>
                 @foreach (($desktopSearchScopes ?? []) as $scope)
-                    <button
-                        type="button"
-                        class="dropdown-item {{ ($scope['value'] ?? '') === $searchScopeValue ? 'active' : '' }}"
-                        data-desktop-search-scope-option="{{ $scope['value'] ?? 'tudo' }}"
-                    >
-                        <i class="bi {{ $scope['icon'] ?? 'bi-grid' }} me-2"></i>
-                        {{ $scope['label'] ?? 'Busca completa' }}
-                    </button>
+                    <label class="dropdown-item desktop-search-scope-item {{ ($scope['value'] ?? '') === 'tudo' ? 'is-all' : '' }}">
+                        <input
+                            type="checkbox"
+                            class="form-check-input"
+                            data-desktop-search-scope-checkbox
+                            value="{{ $scope['value'] ?? 'tudo' }}"
+                            {{ in_array($scope['value'] ?? '', $searchScopeValues, true) ? 'checked' : '' }}
+                        >
+                        <i class="bi {{ $scope['icon'] ?? 'bi-grid' }} me-1"></i>
+                        <span>{{ $scope['label'] ?? 'Busca completa' }}</span>
+                    </label>
                 @endforeach
             </div>
         </div>
@@ -215,8 +242,12 @@
                 aria-label="Menu do perfil: {{ $profileName }}"
                 title="{{ $profileName }}"
             >
-                <div class="desktop-profile-avatar">
-                    {{ $profileInitial }}
+                <div class="desktop-profile-avatar {{ $profilePhotoUrl !== '' ? 'has-photo' : '' }}">
+                    @if ($profilePhotoUrl !== '')
+                        <img src="{{ $profilePhotoUrl }}" alt="{{ $profileName }}">
+                    @else
+                        {{ $profileInitial }}
+                    @endif
                 </div>
             </button>
 

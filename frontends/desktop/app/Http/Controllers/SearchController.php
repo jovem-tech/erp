@@ -20,21 +20,22 @@ class SearchController extends DesktopController
     public function index(Request $request): View
     {
         $query = trim((string) $request->query('q', ''));
-        $scope = trim((string) $request->query('scope', 'tudo'));
+        $scope = $this->scopeFromRequest($request);
+        $results = $this->searchService->search($query, $scope, 8);
 
         return view('search.index', [
             'pageTitle' => 'Busca completa',
             'query' => $query,
-            'scope' => $scope,
+            'scope' => $results['scope'],
             'scopes' => $this->searchService->scopes(),
-            'results' => $this->searchService->search($query, $scope, 8),
+            'results' => $results,
         ]);
     }
 
     public function suggest(Request $request): JsonResponse
     {
         $query = trim((string) $request->query('q', ''));
-        $scope = trim((string) $request->query('scope', 'tudo'));
+        $scope = $this->scopeFromRequest($request);
 
         try {
             if (mb_strlen($query) < 2) {
@@ -78,5 +79,20 @@ class SearchController extends DesktopController
                 ],
             ], max(400, $exception->getCode() ?: 500));
         }
+    }
+
+    /**
+     * O parâmetro `scope` chega de duas formas conforme a origem: checkboxes reais
+     * (`scope[]=os&scope[]=clientes`, viram array) na tela de busca completa, ou uma
+     * string única separada por vírgula (`scope=os,clientes`) vinda do dropdown do
+     * topbar, que guarda a seleção multi-escolha num só input hidden.
+     *
+     * @return string|array<int, string>
+     */
+    private function scopeFromRequest(Request $request): string|array
+    {
+        $scope = $request->query('scope', 'tudo');
+
+        return is_array($scope) ? $scope : trim((string) $scope);
     }
 }

@@ -3,6 +3,44 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.4.1.0 - 2026-07-20
+
+- corrige 4 problemas da foto de perfil reportados após teste real: nome de arquivo ilegível (UUID puro → `foto-perfil-{aleatorio}.jpg`), foto antiga não aposentada no gerenciador (`ManagedFile` anterior agora vai para `trashed` ao substituir/remover), miniatura quebrada (`private/usuarios` faltava na allowlist de namespaces de `ManagedFileDeliveryService`) e logoff forçado após trocar a foto (`form.submit()` não dispara o evento `submit` que o guard de sessão depende → trocado para `form.requestSubmit()`);
+- nota: `2026-07-20-foto-de-perfil-usuario.md` (seção "Correções pós-lançamento").
+
+## v5.4.0.0 - 2026-07-20
+
+- lixeira passa a oferecer preview seguro, detalhes, restauração e exclusão definitiva individual/em lote;
+- lifecycle terminal `purged` preserva metadados, vínculos e eventos como registro-túmulo auditável;
+- retenção automática configurável em 0, 7, 30 ou 90 dias, com job diário às 02:30;
+- exclusão física protegida por RBAC, step-up, confirmação `EXCLUIR`, kill switch, rate limit, locks, allowlist de path/disco e retenção legal;
+- migration aditiva aplicada no ambiente LAN e política inicial de 30 dias ativada após backup;
+- nota: `2026-07-20-lixeira-gerenciador-arquivos.md`.
+
+## v5.3.0.0 - 2026-07-20
+
+- usuário passa a poder cadastrar foto de perfil em `Perfil > Configurações`, exibida na navbar no lugar da inicial;
+- foto é normalizada para JPEG 512x512 e catalogada no Gerenciador de Arquivos central (categoria `user_profile_photo`, já prevista desde `specs/022-gerenciador-central-arquivos/`), vinculada ao usuário dono;
+- novo `subject_type` `user` e `UserProfilePhotoFileAuthorizer`: dono sempre pode ver/baixar a própria foto, demais ações exigem `arquivos:administrar`;
+- reaproveita a coluna legada `usuarios.foto`, sem migration nova;
+- nota: `2026-07-20-foto-de-perfil-usuario.md`.
+
+## v5.2.3.0 - 2026-07-20
+
+- dropdown "Busca completa" do topbar e a tela `/buscar` passam a aceitar checkboxes, permitindo pesquisar em vários escopos ao mesmo tempo (ex.: OS + Clientes);
+- marcar "Busca completa" desmarca os escopos específicos (e vice-versa); desmarcar tudo sem alternativa volta a marcar "Busca completa" sozinha;
+- backend (`SearchService`/`SearchController`) aceita o escopo tanto como lista (`scope[]=os&scope[]=clientes`, checkboxes reais da tela `/buscar`) quanto como string separada por vírgula (`scope=os,clientes`, usada pelo input hidden do dropdown do topbar);
+- nota: `2026-07-20-busca-global-multi-escopo.md`.
+
+## v5.2.2.0 - 2026-07-20
+
+- step-up da lixeira alinhado ao RBAC `arquivos:administrar`, inclusive para supervisores cujo perfil legado não é `admin`;
+- operador ainda precisa de `arquivos:excluir`, preservando separação de responsabilidades;
+- credencial sem permissão efetiva é recusada mesmo quando o perfil legado é `admin`;
+- POST da lixeira sem retry automático e erro de log sem conversão indevida para HTTP 500;
+- checkboxes com alvo maior e explicação explícita das permissões necessárias;
+- nota: `2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md`.
+
 ## v5.2.1.0 - 2026-07-20
 
 - clique na miniatura da Central Documental abre o visualizador interno;

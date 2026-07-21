@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Cookie;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 class AuthController extends BaseApiController
@@ -473,6 +474,8 @@ class AuthController extends BaseApiController
     private function userPayload(User $user): array
     {
         $rbac = $this->rbacAuthorizationService->resolveForUser($user);
+        $fotoPath = trim((string) $user->foto);
+        $hasPhoto = $fotoPath !== '' && Storage::disk('local')->exists($fotoPath);
 
         return [
             'id' => (int) $user->id,
@@ -484,6 +487,9 @@ class AuthController extends BaseApiController
             'modules' => $rbac['modules'] ?? [],
             'permissions' => $rbac['permissions'] ?? [],
             'foto' => (string) ($user->foto ?? ''),
+            'foto_url' => $hasPhoto
+                ? '/api/v1/auth/photo/image?v=' . rawurlencode((string) ($user->updated_at?->timestamp ?? ''))
+                : null,
             'ativo' => (bool) $user->ativo,
             'ultimo_acesso' => $user->ultimo_acesso?->toIso8601String(),
             'assinatura_cadastrada' => $user->activeSignature()->exists(),

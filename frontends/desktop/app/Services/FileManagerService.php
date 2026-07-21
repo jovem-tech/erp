@@ -82,9 +82,39 @@ class FileManagerService
      */
     public function trashBatch(array $uuids, array $payload): array
     {
-        return (array) ($this->apiClient->post('/files/trash-batch', array_merge($payload, [
+        return (array) ($this->apiClient->postOnce('/files/trash-batch', array_merge($payload, [
             'file_uuids' => array_values($uuids),
         ]))['data'] ?? []);
+    }
+
+    /**
+     * @param  array<int, string>  $uuids
+     * @param  array<string, string>  $payload
+     * @return array<string, mixed>
+     */
+    public function restoreBatch(array $uuids, array $payload): array
+    {
+        return (array) ($this->apiClient->postOnce('/files/restore-batch', array_merge($payload, [
+            'file_uuids' => array_values($uuids),
+        ]))['data'] ?? []);
+    }
+
+    /**
+     * @param  array<int, string>  $uuids
+     * @param  array<string, string>  $payload
+     * @return array<string, mixed>
+     */
+    public function purgeBatch(array $uuids, array $payload): array
+    {
+        return (array) ($this->apiClient->postOnce('/files/purge-batch', array_merge($payload, [
+            'file_uuids' => array_values($uuids),
+        ]))['data'] ?? []);
+    }
+
+    /** @param array<string, string|int> $payload */
+    public function updateTrashRetention(array $payload): array
+    {
+        return (array) ($this->apiClient->postOnce('/file-manager/trash-retention', $payload)['data'] ?? []);
     }
 
     /** @return array{body: string, headers: array<string, string>, status: int} */

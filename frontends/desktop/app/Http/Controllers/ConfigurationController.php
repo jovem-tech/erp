@@ -121,7 +121,6 @@ class ConfigurationController extends DesktopController
             'idle_timeout_minutes' => (int) $validated['idle_timeout_minutes'],
             'remember_me_enabled' => $request->boolean('remember_me_enabled'),
             'remember_me_lifetime_days' => (int) $validated['remember_me_lifetime_days'],
-            'warn_on_close' => $request->boolean('warn_on_close'),
         ]);
 
         return redirect()

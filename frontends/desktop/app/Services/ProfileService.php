@@ -65,4 +65,26 @@ class ProfileService
     {
         return $this->apiClient->download('/auth/signature/image');
     }
+
+    /** @return array<string, mixed> */
+    public function savePhoto(UploadedFile $file): array
+    {
+        $response = $this->apiClient->postMultipart('/auth/photo', [], ['photo_file' => [$file]]);
+
+        return $response['data'] ?? [];
+    }
+
+    /** @return array<string, mixed> */
+    public function removePhoto(): array
+    {
+        $response = $this->apiClient->delete('/auth/photo');
+
+        return $response['data'] ?? [];
+    }
+
+    /** @return array{body: string, headers: array<string, string>, status: int} */
+    public function photoImage(): array
+    {
+        return $this->apiClient->download('/auth/photo/image');
+    }
 }

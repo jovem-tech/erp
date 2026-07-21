@@ -48,10 +48,14 @@
         $operationMode = (string) ($operation['mode'] ?? 'off');
         $automaticSyncEnabled = (bool) ($operation['automatic_sync_enabled'] ?? false);
         $automaticSyncInterval = max(1, (int) ($operation['automatic_sync_interval_minutes'] ?? 5));
+        $trashRetention = (array) ($operation['trash_retention'] ?? []);
+        $trashRetentionDays = (int) ($trashRetention['days'] ?? 30);
+        $permanentDeletionEnabled = (bool) ($operation['permanent_deletion_enabled'] ?? false);
         $mutationsEnabled = (bool) ($dashboard['state_mutations_enabled'] ?? false);
         $permissions = (array) data_get(session('desktop_auth'), 'user.permissions.arquivos', []);
         $canDownload = in_array('baixar', $permissions, true);
         $canDelete = in_array('excluir', $permissions, true);
+        $canRestore = in_array('restaurar', $permissions, true);
         $canAdminister = in_array('administrar', $permissions, true);
         $categoryLabels = [
             'company_login_background' => 'Fundos do login',
@@ -76,7 +80,7 @@
             'chat_attachment' => 'bi-paperclip',
         ];
         $statusLabels = [
-            'active' => 'Ativo', 'archived' => 'Arquivado', 'trashed' => 'Na lixeira',
+            'active' => 'Ativo', 'archived' => 'Arquivado', 'trashed' => 'Na lixeira', 'purged' => 'Excluído definitivamente',
             'valid' => 'Íntegro', 'unknown' => 'Não verificado', 'missing' => 'Ausente', 'corrupted' => 'Corrompido',
             'clean' => 'Seguro', 'pending' => 'Pendente', 'quarantined' => 'Quarentena', 'rejected' => 'Rejeitado',
             'native' => 'Nativo', 'legacy' => 'Legado', 'cataloged' => 'Catalogado', 'migrating' => 'Migrando', 'migrated' => 'Migrado', 'failed' => 'Falhou',
@@ -84,7 +88,7 @@
         $statusBadge = static fn (string $status): string => match ($status) {
             'active', 'valid', 'clean', 'native', 'migrated' => 'success',
             'archived', 'cataloged', 'unknown', 'pending', 'legacy' => 'warning',
-            'quarantined', 'missing', 'corrupted', 'rejected', 'failed', 'trashed' => 'danger',
+            'quarantined', 'missing', 'corrupted', 'rejected', 'failed', 'trashed', 'purged' => 'danger',
             default => 'secondary',
         };
         $formatBytes = static function (int $bytes): string {
@@ -96,9 +100,13 @@
         $isDeliverable = static fn (array $file): bool => ($file['lifecycle_status'] ?? '') === 'active'
             && ($file['integrity_status'] ?? '') === 'valid'
             && ($file['security_status'] ?? '') === 'clean';
+        $isPreviewable = static fn (array $file): bool => in_array(($file['lifecycle_status'] ?? ''), ['active', 'trashed'], true)
+            && ($file['integrity_status'] ?? '') === 'valid'
+            && ($file['security_status'] ?? '') === 'clean';
         $categoryRows = collect((array) ($dashboard['by_category'] ?? []))->keyBy('category');
         $selectedCategory = (string) ($filters['category'] ?? '');
-        $selectedLifecycle = (string) ($filters['lifecycle_status'] ?? 'active');
+        $auditOnly = (bool) ($filters['audit_only'] ?? false);
+        $selectedLifecycle = $auditOnly ? 'audit' : (string) ($filters['lifecycle_status'] ?? 'active');
     @endphp
 
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
@@ -142,7 +150,7 @@
         </div>
         <div class="row g-2">
             <div class="col-6 col-md-4 col-xl-2">
-                <a href="{{ route('files.index', array_merge(request()->except(['page', 'category', 'lifecycle_status']), ['view' => $viewMode])) }}" class="surface-card file-category-card p-3 text-decoration-none d-flex flex-column justify-content-between {{ $selectedCategory === '' && $selectedLifecycle !== 'trashed' ? 'is-active' : '' }}">
+                <a href="{{ route('files.index', array_merge(request()->except(['page', 'category', 'lifecycle_status', 'integrity_status']), ['view' => $viewMode])) }}" class="surface-card file-category-card p-3 text-decoration-none d-flex flex-column justify-content-between {{ $selectedCategory === '' && ! in_array($selectedLifecycle, ['trashed', 'audit'], true) ? 'is-active' : '' }}">
                     <i class="bi bi-folder2-open fs-3 text-primary"></i>
                     <div><strong class="d-block text-body">Todos os arquivos</strong><span class="small text-secondary">{{ number_format((int) ($totals['files'] ?? 0), 0, ',', '.') }} itens</span></div>
                 </a>
@@ -165,6 +173,14 @@
                     <div><strong class="d-block text-body">Lixeira</strong><span class="small text-secondary">{{ number_format((int) ($totals['trashed'] ?? 0), 0, ',', '.') }} itens</span></div>
                 </a>
             </div>
+            @if ((int) ($totals['audit_records'] ?? 0) > 0)
+                <div class="col-6 col-md-4 col-xl-2">
+                    <a href="{{ route('files.index', array_merge(request()->except(['page', 'category', 'integrity_status']), ['lifecycle_status' => 'audit', 'view' => $viewMode])) }}" class="surface-card file-category-card p-3 text-decoration-none d-flex flex-column justify-content-between {{ $auditOnly ? 'is-active' : '' }}">
+                        <i class="bi bi-shield-exclamation fs-3 text-warning"></i>
+                        <div><strong class="d-block text-body">Auditoria</strong><span class="small text-secondary">{{ number_format((int) ($totals['audit_records'] ?? 0), 0, ',', '.') }} registros</span></div>
+                    </a>
+                </div>
+            @endif
         </div>
     </section>
 
@@ -193,6 +209,7 @@
                     <option value="active" @selected($selectedLifecycle === 'active')>Arquivos ativos</option>
                     <option value="archived" @selected($selectedLifecycle === 'archived')>Arquivados</option>
                     <option value="trashed" @selected($selectedLifecycle === 'trashed')>Lixeira</option>
+                    <option value="audit" @selected($selectedLifecycle === 'audit')>Auditoria</option>
                     <option value="" @selected($selectedLifecycle === '')>Todos</option>
                 </select>
             </div>
@@ -209,19 +226,67 @@
         </form>
     </section>
 
+    @if ($selectedLifecycle === 'trashed')
+        <section class="surface-card p-3 mb-3 d-flex flex-wrap align-items-center justify-content-between gap-3" aria-labelledby="trash-retention-title">
+            <div>
+                <h2 class="surface-title fs-6 mb-1" id="trash-retention-title"><i class="bi bi-clock-history me-1"></i>Retenção da lixeira</h2>
+                <p class="surface-subtitle mb-0">
+                    @if ($trashRetentionDays === 0)
+                        A exclusão automática está desativada; os arquivos permanecem até uma ação manual autorizada.
+                    @else
+                        Arquivos com mais de <strong>{{ $trashRetentionDays }} dias</strong> na lixeira são excluídos definitivamente pelo scheduler diário.
+                    @endif
+                </p>
+                @if (! $permanentDeletionEnabled)
+                    <div class="small text-warning-emphasis mt-1"><i class="bi bi-shield-lock me-1"></i>A exclusão definitiva está bloqueada pelo kill switch do servidor.</div>
+                @endif
+            </div>
+            @if ($canAdminister)
+                <button type="button" class="btn btn-soft btn-sm" data-bs-toggle="modal" data-bs-target="#trashRetentionModal">
+                    <i class="bi bi-sliders me-1"></i>Configurar retenção
+                </button>
+            @endif
+        </section>
+    @elseif ($auditOnly)
+        <section class="surface-card p-3 mb-3" aria-labelledby="file-audit-title">
+            <h2 class="surface-title fs-6 mb-1" id="file-audit-title"><i class="bi bi-shield-exclamation me-1"></i>Auditoria de conteúdo ausente</h2>
+            <p class="surface-subtitle mb-0">Estes registros preservam metadados, vínculos históricos, hash e eventos, mas não representam arquivos físicos. Eles não entram na contagem nem na retenção automática da lixeira.</p>
+        </section>
+    @endif
+
     <div class="surface-card file-selection-bar p-2 px-3 mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
         <div class="d-flex align-items-center gap-2">
             <input class="form-check-input m-0" type="checkbox" id="selectAllFiles" aria-label="Selecionar todos os arquivos desta página">
             <label for="selectAllFiles" class="small fw-semibold mb-0">Selecionar página</label>
             <span class="badge text-bg-primary" id="selectedFilesCount">0 selecionados</span>
+            @if (! in_array($selectedLifecycle, ['trashed', 'audit'], true) && ! $canDelete)
+                <span class="small text-secondary"><i class="bi bi-lock me-1"></i>A exclusão exige a permissão Arquivos: Excluir.</span>
+            @elseif ($selectedLifecycle === 'trashed' && ! $canRestore && ! $canDelete)
+                <span class="small text-secondary"><i class="bi bi-lock me-1"></i>Seu grupo não possui ações de restauração ou exclusão.</span>
+            @elseif ($auditOnly && ! $canDelete)
+                <span class="small text-secondary"><i class="bi bi-lock me-1"></i>A remoção de registros de auditoria exige a permissão Arquivos: Excluir.</span>
+            @endif
         </div>
         <div class="d-flex flex-wrap gap-2">
-            <button type="button" class="btn btn-soft btn-sm" id="downloadSelectedFiles" disabled @disabled(!$canDownload)>
-                <i class="bi bi-file-earmark-zip me-1"></i>Baixar selecionados
-            </button>
-            <button type="button" class="btn btn-outline-danger btn-sm" id="trashSelectedFiles" disabled @disabled(!$canDelete || !$mutationsEnabled) title="{{ !$mutationsEnabled ? 'Ações de estado bloqueadas pelo kill switch' : 'Mover selecionados para a lixeira' }}">
-                <i class="bi bi-trash3 me-1"></i>Excluir selecionados
-            </button>
+            @if ($auditOnly)
+                <button type="button" class="btn btn-outline-danger btn-sm" id="purgeSelectedFiles" disabled @disabled(!$canDelete || !$permanentDeletionEnabled)>
+                    <i class="bi bi-trash3-fill me-1"></i>Excluir registros selecionados
+                </button>
+            @elseif ($selectedLifecycle === 'trashed')
+                <button type="button" class="btn btn-outline-success btn-sm" id="restoreSelectedFiles" disabled @disabled(!$canRestore || !$mutationsEnabled)>
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Restaurar selecionados
+                </button>
+                <button type="button" class="btn btn-outline-danger btn-sm" id="purgeSelectedFiles" disabled @disabled(!$canDelete || !$permanentDeletionEnabled)>
+                    <i class="bi bi-trash3-fill me-1"></i>Excluir definitivamente
+                </button>
+            @else
+                <button type="button" class="btn btn-soft btn-sm" id="downloadSelectedFiles" disabled @disabled(!$canDownload)>
+                    <i class="bi bi-file-earmark-zip me-1"></i>Baixar selecionados
+                </button>
+                <button type="button" class="btn btn-outline-danger btn-sm" id="trashSelectedFiles" disabled @disabled(!$canDelete || !$mutationsEnabled) title="{{ !$canDelete ? 'Seu grupo não possui a permissão Arquivos: Excluir' : (!$mutationsEnabled ? 'Ações de estado bloqueadas pelo kill switch' : 'Mover selecionados para a lixeira') }}">
+                    <i class="bi bi-trash3 me-1"></i>Excluir selecionados
+                </button>
+            @endif
         </div>
     </div>
 
@@ -233,7 +298,7 @@
     <section class="mb-3" aria-labelledby="files-title">
         <div class="d-flex justify-content-between align-items-center mb-2">
             <div>
-                <h2 class="surface-title fs-5 mb-1" id="files-title">{{ $selectedCategory !== '' ? ($categoryLabels[$selectedCategory] ?? 'Arquivos') : ($selectedLifecycle === 'trashed' ? 'Lixeira' : 'Arquivos') }}</h2>
+                <h2 class="surface-title fs-5 mb-1" id="files-title">{{ $auditOnly ? 'Auditoria' : ($selectedCategory !== '' ? ($categoryLabels[$selectedCategory] ?? 'Arquivos') : ($selectedLifecycle === 'trashed' ? 'Lixeira' : 'Arquivos')) }}</h2>
                 <p class="surface-subtitle mb-0">{{ number_format((int) ($pagination['total'] ?? count($files)), 0, ',', '.') }} itens encontrados.</p>
             </div>
         </div>
@@ -246,6 +311,14 @@
                         $image = str_starts_with($mime, 'image/');
                         $pdf = $mime === 'application/pdf';
                         $deliverable = $isDeliverable($file);
+                        $previewable = ($image || $pdf) && $isPreviewable($file);
+                        $inTrash = ($file['lifecycle_status'] ?? '') === 'trashed';
+                        $integrity = (string) ($file['integrity_status'] ?? 'unknown');
+                        $restoreable = $inTrash && (bool) data_get(
+                            $file,
+                            'capabilities.restore',
+                            $integrity === 'valid' && ($file['security_status'] ?? '') === 'clean'
+                        );
                         $linkedClient = is_array($file['linked_client'] ?? null) ? $file['linked_client'] : null;
                         $linkedClientName = trim((string) ($linkedClient['name'] ?? ''));
                         $documentCreatedAt = $file['document_created_at'] ?? $file['created_at'] ?? null;
@@ -257,12 +330,12 @@
                         <article class="surface-card file-card h-100">
                             <div class="file-preview">
                                 <label class="file-select-wrap" title="Selecionar arquivo">
-                                    <input class="form-check-input file-select m-0" type="checkbox" value="{{ $file['uuid'] }}" data-downloadable="{{ $deliverable ? '1' : '0' }}" data-trashable="{{ ($file['lifecycle_status'] ?? '') !== 'trashed' ? '1' : '0' }}" aria-label="Selecionar {{ $file['safe_download_name'] ?? 'arquivo' }}">
+                                    <input class="form-check-input file-select m-0" type="checkbox" value="{{ $file['uuid'] }}" data-downloadable="{{ $deliverable ? '1' : '0' }}" data-trashable="{{ ! $inTrash ? '1' : '0' }}" data-restoreable="{{ $restoreable ? '1' : '0' }}" data-purgeable="{{ $inTrash ? '1' : '0' }}" aria-label="Selecionar {{ $file['safe_download_name'] ?? 'arquivo' }}">
                                 </label>
                                 <i class="bi {{ $image ? 'bi-file-earmark-image' : ($pdf ? 'bi-file-earmark-pdf' : 'bi-file-earmark') }} file-preview-icon"></i>
-                                @if ($image && $deliverable && $canDownload)
+                                @if ($image && $previewable && $canDownload)
                                     <img loading="lazy" src="{{ route('files.preview', ['fileUuid' => $file['uuid']]) }}" alt="Prévia de {{ $file['safe_download_name'] ?? 'arquivo' }}" onerror="this.remove()">
-                                @elseif ($pdf && $deliverable && $canDownload)
+                                @elseif ($pdf && $previewable && $canDownload)
                                     <img class="file-preview-document" data-pdf-thumbnail-url="{{ route('files.thumbnail', ['fileUuid' => $file['uuid']]) }}" alt="Primeira página de {{ $file['safe_download_name'] ?? 'arquivo PDF' }}">
                                 @endif
                             </div>
@@ -286,16 +359,27 @@
                                     @php
                                         $lifecycle = (string) ($file['lifecycle_status'] ?? 'unknown');
                                     @endphp
-                                    <span class="badge text-bg-{{ $statusBadge($lifecycle) }}">{{ $statusLabels[$lifecycle] ?? $lifecycle }}</span>
+                                    <span class="d-flex flex-wrap justify-content-end gap-1">
+                                        @if ($integrity === 'missing')
+                                            <span class="badge text-bg-danger" title="O conteúdo não existe mais no armazenamento">Conteúdo ausente</span>
+                                        @endif
+                                        <span class="badge text-bg-{{ $statusBadge($lifecycle) }}">{{ $statusLabels[$lifecycle] ?? $lifecycle }}</span>
+                                    </span>
                                 </div>
                                 <div class="d-flex gap-1">
-                                    @if (($image || $pdf) && $deliverable && $canDownload)
-                                        <button type="button" class="btn btn-soft btn-sm" title="Visualizar" aria-label="Visualizar {{ $file['safe_download_name'] ?? 'arquivo' }}" data-file-preview-trigger data-preview-kind="{{ $image ? 'image' : 'pdf' }}" data-preview-url="{{ route('files.preview', ['fileUuid' => $file['uuid']]) }}" data-download-url="{{ route('files.download', ['fileUuid' => $file['uuid']]) }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" data-file-mime="{{ $mime }}"><i class="bi bi-eye"></i></button>
+                                    @if ($previewable && $canDownload)
+                                        <button type="button" class="btn btn-soft btn-sm" title="Visualizar" aria-label="Visualizar {{ $file['safe_download_name'] ?? 'arquivo' }}" data-file-preview-trigger data-preview-kind="{{ $image ? 'image' : 'pdf' }}" data-preview-url="{{ route('files.preview', ['fileUuid' => $file['uuid']]) }}" data-download-url="{{ $deliverable ? route('files.download', ['fileUuid' => $file['uuid']]) : '' }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" data-file-mime="{{ $mime }}"><i class="bi bi-eye"></i></button>
                                     @endif
+                                    <a href="{{ route('files.show', ['fileUuid' => $file['uuid']]) }}" class="btn btn-soft btn-sm" title="Detalhes"><i class="bi bi-info-circle"></i></a>
                                     @if ($deliverable && $canDownload)
                                         <a href="{{ route('files.download', ['fileUuid' => $file['uuid']]) }}" class="btn btn-soft btn-sm flex-grow-1"><i class="bi bi-download me-1"></i>Baixar</a>
                                     @endif
-                                    @if (($file['lifecycle_status'] ?? '') !== 'trashed')
+                                    @if ($inTrash)
+                                        @if (! $auditOnly)
+                                            <button type="button" class="btn btn-outline-success btn-sm file-restore-one" data-file-uuid="{{ $file['uuid'] }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" @disabled(!$canRestore || !$mutationsEnabled || !$restoreable) title="{{ $restoreable ? 'Restaurar' : 'Não é possível restaurar: conteúdo ausente' }}"><i class="bi bi-arrow-counterclockwise"></i></button>
+                                        @endif
+                                        <button type="button" class="btn btn-outline-danger btn-sm file-purge-one" data-file-uuid="{{ $file['uuid'] }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" @disabled(!$canDelete || !$permanentDeletionEnabled) title="Excluir definitivamente"><i class="bi bi-trash3-fill"></i></button>
+                                    @else
                                         <button type="button" class="btn btn-outline-danger btn-sm file-trash-one" data-file-uuid="{{ $file['uuid'] }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" @disabled(!$canDelete || !$mutationsEnabled) title="Mover para a lixeira"><i class="bi bi-trash3"></i></button>
                                     @endif
                                 </div>
@@ -317,24 +401,35 @@
                                 $mime = (string) ($file['detected_mime_type'] ?? '');
                                 $image = str_starts_with($mime, 'image/');
                                 $pdf = $mime === 'application/pdf';
-                                $previewable = $image || $pdf;
                                 $deliverable = $isDeliverable($file);
+                                $previewable = ($image || $pdf) && $isPreviewable($file);
                                 $lifecycle = (string) ($file['lifecycle_status'] ?? 'unknown');
+                                $inTrash = $lifecycle === 'trashed';
+                                $integrity = (string) ($file['integrity_status'] ?? 'unknown');
+                                $restoreable = $inTrash && (bool) data_get(
+                                    $file,
+                                    'capabilities.restore',
+                                    $integrity === 'valid' && ($file['security_status'] ?? '') === 'clean'
+                                );
                                 $linkedClient = is_array($file['linked_client'] ?? null) ? $file['linked_client'] : null;
                                 $linkedClientName = trim((string) ($linkedClient['name'] ?? ''));
                                 $documentCreatedAt = $file['document_created_at'] ?? $file['created_at'] ?? null;
                             @endphp
                             <tr>
-                                <td><input class="form-check-input file-select" type="checkbox" value="{{ $file['uuid'] }}" data-downloadable="{{ $deliverable ? '1' : '0' }}" data-trashable="{{ ($file['lifecycle_status'] ?? '') !== 'trashed' ? '1' : '0' }}" aria-label="Selecionar {{ $file['safe_download_name'] ?? 'arquivo' }}"></td>
+                                <td>
+                                    <label class="d-inline-flex align-items-center justify-content-center p-2 mb-0" title="Selecionar arquivo">
+                                        <input class="form-check-input file-select m-0" type="checkbox" value="{{ $file['uuid'] }}" data-downloadable="{{ $deliverable ? '1' : '0' }}" data-trashable="{{ ! $inTrash ? '1' : '0' }}" data-restoreable="{{ $restoreable ? '1' : '0' }}" data-purgeable="{{ $inTrash ? '1' : '0' }}" aria-label="Selecionar {{ $file['safe_download_name'] ?? 'arquivo' }}">
+                                    </label>
+                                </td>
                                 <td>
                                     <button
                                         type="button"
                                         class="file-list-preview"
-                                        @if ($previewable && $deliverable && $canDownload)
+                                        @if ($previewable && $canDownload)
                                             data-file-preview-trigger
                                             data-preview-kind="{{ $image ? 'image' : 'pdf' }}"
                                             data-preview-url="{{ route('files.preview', ['fileUuid' => $file['uuid']]) }}"
-                                            data-download-url="{{ route('files.download', ['fileUuid' => $file['uuid']]) }}"
+                                            data-download-url="{{ $deliverable ? route('files.download', ['fileUuid' => $file['uuid']]) : '' }}"
                                             data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}"
                                             data-file-mime="{{ $mime }}"
                                         @else
@@ -344,9 +439,9 @@
                                         aria-label="{{ $previewable ? 'Visualizar '.($file['safe_download_name'] ?? 'arquivo') : 'Miniatura indisponível' }}"
                                     >
                                         <i class="bi {{ $image ? 'bi-file-earmark-image' : ($pdf ? 'bi-file-earmark-pdf' : 'bi-file-earmark') }}" aria-hidden="true"></i>
-                                        @if ($image && $deliverable && $canDownload)
+                                        @if ($image && $previewable && $canDownload)
                                             <img loading="lazy" src="{{ route('files.preview', ['fileUuid' => $file['uuid']]) }}" alt="Miniatura de {{ $file['safe_download_name'] ?? 'arquivo' }}" onerror="this.remove()">
-                                        @elseif ($pdf && $deliverable && $canDownload)
+                                        @elseif ($pdf && $previewable && $canDownload)
                                             <img loading="lazy" class="file-preview-document" data-pdf-thumbnail-url="{{ route('files.thumbnail', ['fileUuid' => $file['uuid']]) }}" alt="Miniatura da primeira página de {{ $file['safe_download_name'] ?? 'arquivo PDF' }}">
                                         @endif
                                     </button>
@@ -355,12 +450,27 @@
                                 <td>{{ $categoryLabels[$file['category'] ?? ''] ?? ($file['category'] ?? '—') }}</td>
                                 <td class="file-list-client" title="{{ $linkedClientName !== '' ? $linkedClientName : 'Sem cliente vinculado' }}"><span>{{ $linkedClientName !== '' ? $linkedClientName : 'Sem cliente vinculado' }}</span></td>
                                 <td class="text-nowrap">{{ $formatBytes((int) ($file['size_bytes'] ?? 0)) }}</td>
-                                <td><span class="badge text-bg-{{ $statusBadge($lifecycle) }}">{{ $statusLabels[$lifecycle] ?? $lifecycle }}</span></td>
+                                <td>
+                                    <span class="d-flex flex-wrap gap-1">
+                                        @if ($integrity === 'missing')
+                                            <span class="badge text-bg-danger" title="O conteúdo não existe mais no armazenamento">Conteúdo ausente</span>
+                                        @endif
+                                        <span class="badge text-bg-{{ $statusBadge($lifecycle) }}">{{ $statusLabels[$lifecycle] ?? $lifecycle }}</span>
+                                    </span>
+                                </td>
                                 <td class="text-nowrap">{{ !empty($documentCreatedAt) ? \Illuminate\Support\Carbon::parse($documentCreatedAt)->format('d/m/Y H:i') : '—' }}</td>
                                 <td class="text-end text-nowrap">
-                                    @if ($previewable && $deliverable && $canDownload)<button type="button" class="btn btn-soft btn-sm" title="Visualizar" aria-label="Visualizar {{ $file['safe_download_name'] ?? 'arquivo' }}" data-file-preview-trigger data-preview-kind="{{ $image ? 'image' : 'pdf' }}" data-preview-url="{{ route('files.preview', ['fileUuid' => $file['uuid']]) }}" data-download-url="{{ route('files.download', ['fileUuid' => $file['uuid']]) }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" data-file-mime="{{ $mime }}"><i class="bi bi-eye"></i></button>@endif
+                                    @if ($previewable && $canDownload)<button type="button" class="btn btn-soft btn-sm" title="Visualizar" aria-label="Visualizar {{ $file['safe_download_name'] ?? 'arquivo' }}" data-file-preview-trigger data-preview-kind="{{ $image ? 'image' : 'pdf' }}" data-preview-url="{{ route('files.preview', ['fileUuid' => $file['uuid']]) }}" data-download-url="{{ $deliverable ? route('files.download', ['fileUuid' => $file['uuid']]) : '' }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" data-file-mime="{{ $mime }}"><i class="bi bi-eye"></i></button>@endif
+                                    <a href="{{ route('files.show', ['fileUuid' => $file['uuid']]) }}" class="btn btn-soft btn-sm" title="Detalhes"><i class="bi bi-info-circle"></i></a>
                                     @if ($deliverable && $canDownload)<a href="{{ route('files.download', ['fileUuid' => $file['uuid']]) }}" class="btn btn-soft btn-sm" title="Baixar"><i class="bi bi-download"></i></a>@endif
-                                    @if (($file['lifecycle_status'] ?? '') !== 'trashed')<button type="button" class="btn btn-outline-danger btn-sm file-trash-one" data-file-uuid="{{ $file['uuid'] }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" @disabled(!$canDelete || !$mutationsEnabled) title="Mover para a lixeira"><i class="bi bi-trash3"></i></button>@endif
+                                    @if ($inTrash)
+                                        @if (! $auditOnly)
+                                            <button type="button" class="btn btn-outline-success btn-sm file-restore-one" data-file-uuid="{{ $file['uuid'] }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" @disabled(!$canRestore || !$mutationsEnabled || !$restoreable) title="{{ $restoreable ? 'Restaurar' : 'Não é possível restaurar: conteúdo ausente' }}"><i class="bi bi-arrow-counterclockwise"></i></button>
+                                        @endif
+                                        <button type="button" class="btn btn-outline-danger btn-sm file-purge-one" data-file-uuid="{{ $file['uuid'] }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" @disabled(!$canDelete || !$permanentDeletionEnabled) title="Excluir definitivamente"><i class="bi bi-trash3-fill"></i></button>
+                                    @else
+                                        <button type="button" class="btn btn-outline-danger btn-sm file-trash-one" data-file-uuid="{{ $file['uuid'] }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" @disabled(!$canDelete || !$mutationsEnabled) title="Mover para a lixeira"><i class="bi bi-trash3"></i></button>
+                                    @endif
                                 </td>
                             </tr>
                         @empty
@@ -425,14 +535,81 @@
                 <div class="modal-body">
                     <div class="alert alert-danger d-none" id="trashFilesError" role="alert"></div>
                     <div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-1"></i>Esta ação remove o arquivo dos fluxos ativos, mas preserva o binário para recuperação e auditoria.</div>
+                    <p class="small text-secondary">Confirme com as credenciais de um usuário ativo que possua a permissão <strong>Administrar</strong> no módulo Arquivos.</p>
                     <div class="mb-3"><label for="trashReason" class="form-label fw-semibold">Motivo</label><textarea id="trashReason" name="reason" class="form-control" rows="3" minlength="10" maxlength="500" required></textarea></div>
-                    <div class="mb-3"><label for="trashAdminEmail" class="form-label fw-semibold">E-mail do administrador</label><input id="trashAdminEmail" name="admin_email" type="email" class="form-control" maxlength="255" autocomplete="username" required></div>
-                    <div><label for="trashAdminPassword" class="form-label fw-semibold">Senha do administrador</label><input id="trashAdminPassword" name="admin_password" type="password" class="form-control" maxlength="200" autocomplete="current-password" required></div>
+                    <div class="mb-3"><label for="trashAdminEmail" class="form-label fw-semibold">E-mail do responsável autorizado</label><input id="trashAdminEmail" name="admin_email" type="email" class="form-control" maxlength="255" autocomplete="username" value="{{ $canAdminister ? (string) data_get(session('desktop_auth'), 'user.email', '') : '' }}" required></div>
+                    <div><label for="trashAdminPassword" class="form-label fw-semibold">Senha do responsável autorizado</label><input id="trashAdminPassword" name="admin_password" type="password" class="form-control" maxlength="200" autocomplete="current-password" required></div>
                 </div>
                 <div class="modal-footer border-0 pt-0"><button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-danger" id="trashFilesSubmit"><i class="bi bi-trash3 me-1"></i>Mover para a lixeira</button></div>
             </form>
         </div>
     </div>
+
+    @if (in_array($selectedLifecycle, ['trashed', 'audit'], true))
+        <div class="modal fade" id="restoreFilesModal" tabindex="-1" aria-labelledby="restoreFilesModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <form id="restoreFilesForm" class="modal-content border-0 shadow file-json-action-form" method="POST" action="{{ route('files.restore-batch') }}" data-error-id="restoreFilesError" data-password-id="restoreAdminPassword">
+                    @csrf
+                    <div data-selected-inputs></div>
+                    <div class="modal-header border-0 pb-0">
+                        <div><h2 class="modal-title fs-5" id="restoreFilesModalLabel">Restaurar arquivos</h2><p class="small text-secondary mb-0" id="restoreFilesDescription">Os arquivos voltarão aos fluxos ativos.</p></div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-danger d-none" id="restoreFilesError" role="alert"></div>
+                        <div class="mb-3"><label for="restoreReason" class="form-label fw-semibold">Motivo</label><textarea id="restoreReason" name="reason" class="form-control" rows="3" minlength="10" maxlength="500" required></textarea></div>
+                        <div class="mb-3"><label for="restoreAdminEmail" class="form-label fw-semibold">E-mail do responsável autorizado</label><input id="restoreAdminEmail" name="admin_email" type="email" class="form-control" maxlength="255" autocomplete="username" value="{{ $canAdminister ? (string) data_get(session('desktop_auth'), 'user.email', '') : '' }}" required></div>
+                        <div><label for="restoreAdminPassword" class="form-label fw-semibold">Senha do responsável autorizado</label><input id="restoreAdminPassword" name="admin_password" type="password" class="form-control" maxlength="200" autocomplete="current-password" required></div>
+                    </div>
+                    <div class="modal-footer border-0 pt-0"><button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-success"><i class="bi bi-arrow-counterclockwise me-1"></i>Restaurar</button></div>
+                </form>
+            </div>
+        </div>
+
+        <div class="modal fade" id="purgeFilesModal" tabindex="-1" aria-labelledby="purgeFilesModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <form id="purgeFilesForm" class="modal-content border-0 shadow file-json-action-form" method="POST" action="{{ route('files.purge-batch') }}" data-error-id="purgeFilesError" data-password-id="purgeAdminPassword">
+                    @csrf
+                    <div data-selected-inputs></div>
+                    <div class="modal-header border-0 pb-0">
+                        <div><h2 class="modal-title fs-5" id="purgeFilesModalLabel">Excluir definitivamente</h2><p class="small text-secondary mb-0" id="purgeFilesDescription">O binário não poderá ser recuperado.</p></div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-danger d-none" id="purgeFilesError" role="alert"></div>
+                        <div class="alert alert-danger"><i class="bi bi-exclamation-octagon me-1"></i><strong>Ação irreversível.</strong> Metadados e eventos ficam preservados apenas para auditoria.</div>
+                        <div class="mb-3"><label for="purgeReason" class="form-label fw-semibold">Motivo</label><textarea id="purgeReason" name="reason" class="form-control" rows="3" minlength="10" maxlength="500" required></textarea></div>
+                        <div class="mb-3"><label for="purgeConfirmation" class="form-label fw-semibold">Digite EXCLUIR para confirmar</label><input id="purgeConfirmation" name="confirmation" type="text" class="form-control" pattern="EXCLUIR" autocomplete="off" required></div>
+                        <div class="mb-3"><label for="purgeAdminEmail" class="form-label fw-semibold">E-mail do responsável autorizado</label><input id="purgeAdminEmail" name="admin_email" type="email" class="form-control" maxlength="255" autocomplete="username" value="{{ $canAdminister ? (string) data_get(session('desktop_auth'), 'user.email', '') : '' }}" required></div>
+                        <div><label for="purgeAdminPassword" class="form-label fw-semibold">Senha do responsável autorizado</label><input id="purgeAdminPassword" name="admin_password" type="password" class="form-control" maxlength="200" autocomplete="current-password" required></div>
+                    </div>
+                    <div class="modal-footer border-0 pt-0"><button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-danger"><i class="bi bi-trash3-fill me-1"></i>Excluir definitivamente</button></div>
+                </form>
+            </div>
+        </div>
+
+        @if ($canAdminister)
+            <div class="modal fade" id="trashRetentionModal" tabindex="-1" aria-labelledby="trashRetentionModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <form id="trashRetentionForm" class="modal-content border-0 shadow file-json-action-form" method="POST" action="{{ route('files.trash-retention') }}" data-error-id="trashRetentionError" data-password-id="retentionAdminPassword">
+                        @csrf
+                        <div class="modal-header border-0 pb-0">
+                            <div><h2 class="modal-title fs-5" id="trashRetentionModalLabel">Política de retenção</h2><p class="small text-secondary mb-0">Define quando o scheduler remove definitivamente os binários.</p></div>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="alert alert-danger d-none" id="trashRetentionError" role="alert"></div>
+                            <div class="mb-3"><label for="trashRetentionDays" class="form-label fw-semibold">Prazo</label><select id="trashRetentionDays" name="days" class="form-select" required><option value="0" @selected($trashRetentionDays === 0)>Desativada</option><option value="7" @selected($trashRetentionDays === 7)>7 dias</option><option value="30" @selected($trashRetentionDays === 30)>30 dias</option><option value="90" @selected($trashRetentionDays === 90)>90 dias</option></select></div>
+                            <div class="mb-3"><label for="retentionReason" class="form-label fw-semibold">Motivo da alteração</label><textarea id="retentionReason" name="reason" class="form-control" rows="2" minlength="10" maxlength="500" required></textarea></div>
+                            <div class="mb-3"><label for="retentionAdminEmail" class="form-label fw-semibold">E-mail do responsável autorizado</label><input id="retentionAdminEmail" name="admin_email" type="email" class="form-control" maxlength="255" autocomplete="username" value="{{ (string) data_get(session('desktop_auth'), 'user.email', '') }}" required></div>
+                            <div><label for="retentionAdminPassword" class="form-label fw-semibold">Senha do responsável autorizado</label><input id="retentionAdminPassword" name="admin_password" type="password" class="form-control" maxlength="200" autocomplete="current-password" required></div>
+                        </div>
+                        <div class="modal-footer border-0 pt-0"><button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-primary"><i class="bi bi-shield-check me-1"></i>Salvar política</button></div>
+                    </form>
+                </div>
+            </div>
+        @endif
+    @endif
 @endsection
 
 @section('scripts')
@@ -444,12 +621,22 @@
             const count = document.getElementById('selectedFilesCount');
             const downloadButton = document.getElementById('downloadSelectedFiles');
             const trashButton = document.getElementById('trashSelectedFiles');
+            const restoreButton = document.getElementById('restoreSelectedFiles');
+            const purgeButton = document.getElementById('purgeSelectedFiles');
             const downloadForm = document.getElementById('bulkDownloadForm');
             const trashForm = document.getElementById('trashFilesForm');
             const trashModalElement = document.getElementById('trashFilesModal');
             const trashModal = trashModalElement && window.bootstrap ? new bootstrap.Modal(trashModalElement) : null;
+            const restoreForm = document.getElementById('restoreFilesForm');
+            const purgeForm = document.getElementById('purgeFilesForm');
+            const restoreModalElement = document.getElementById('restoreFilesModal');
+            const purgeModalElement = document.getElementById('purgeFilesModal');
+            const restoreModal = restoreModalElement && window.bootstrap ? new bootstrap.Modal(restoreModalElement) : null;
+            const purgeModal = purgeModalElement && window.bootstrap ? new bootstrap.Modal(purgeModalElement) : null;
             const canDownload = @json($canDownload);
             const canTrash = @json($canDelete && $mutationsEnabled);
+            const canRestore = @json($canRestore && $mutationsEnabled);
+            const canPurge = @json($canDelete && $permanentDeletionEnabled);
             const syncForm = document.querySelector('[data-file-sync-form]');
             const pdfThumbnailQueue = [];
             const pdfThumbnails = [...document.querySelectorAll('[data-pdf-thumbnail-url]')];
@@ -516,8 +703,10 @@
                 const items = selectedItems();
                 const total = items.length;
                 count.textContent = `${total} selecionado${total === 1 ? '' : 's'}`;
-                downloadButton.disabled = !canDownload || total === 0 || items.some((item) => item.dataset.downloadable !== '1');
-                trashButton.disabled = !canTrash || total === 0 || items.some((item) => item.dataset.trashable !== '1');
+                if (downloadButton) downloadButton.disabled = !canDownload || total === 0 || items.some((item) => item.dataset.downloadable !== '1');
+                if (trashButton) trashButton.disabled = !canTrash || total === 0 || items.some((item) => item.dataset.trashable !== '1');
+                if (restoreButton) restoreButton.disabled = !canRestore || total === 0 || items.some((item) => item.dataset.restoreable !== '1');
+                if (purgeButton) purgeButton.disabled = !canPurge || total === 0 || items.some((item) => item.dataset.purgeable !== '1');
                 selectAll.checked = checkboxes.length > 0 && total === checkboxes.length;
                 selectAll.indeterminate = total > 0 && total < checkboxes.length;
             };
@@ -529,6 +718,19 @@
                     : `${uuids.length} arquivo${uuids.length === 1 ? '' : 's'} poderão ser restaurados posteriormente.`;
                 document.getElementById('trashFilesError').classList.add('d-none');
                 trashModal.show();
+            };
+            const openTrashAction = (modal, form, descriptionId, uuids, label, verb) => {
+                if (!modal || !form || !uuids.length) return;
+                setInputs(form, uuids);
+                const description = document.getElementById(descriptionId);
+                if (description) {
+                    description.textContent = label
+                        ? `${verb} o arquivo “${label}”.`
+                        : `${verb} ${uuids.length} arquivo${uuids.length === 1 ? '' : 's'}.`;
+                }
+                const error = document.getElementById(form.dataset.errorId || '');
+                error?.classList.add('d-none');
+                modal.show();
             };
 
             checkboxes.forEach((checkbox) => checkbox.addEventListener('change', updateSelection));
@@ -543,8 +745,16 @@
                 downloadForm.submit();
             });
             trashButton?.addEventListener('click', () => openTrash(selected()));
+            restoreButton?.addEventListener('click', () => openTrashAction(restoreModal, restoreForm, 'restoreFilesDescription', selected(), '', 'Restaurar'));
+            purgeButton?.addEventListener('click', () => openTrashAction(purgeModal, purgeForm, 'purgeFilesDescription', selected(), '', 'Excluir definitivamente'));
             document.querySelectorAll('.file-trash-one').forEach((button) => button.addEventListener('click', () => {
                 openTrash([button.dataset.fileUuid], button.dataset.fileName || '');
+            }));
+            document.querySelectorAll('.file-restore-one').forEach((button) => button.addEventListener('click', () => {
+                openTrashAction(restoreModal, restoreForm, 'restoreFilesDescription', [button.dataset.fileUuid], button.dataset.fileName || '', 'Restaurar');
+            }));
+            document.querySelectorAll('.file-purge-one').forEach((button) => button.addEventListener('click', () => {
+                openTrashAction(purgeModal, purgeForm, 'purgeFilesDescription', [button.dataset.fileUuid], button.dataset.fileName || '', 'Excluir definitivamente');
             }));
 
             trashModalElement?.addEventListener('hidden.bs.modal', () => {
@@ -577,6 +787,44 @@
                     error.classList.remove('d-none');
                     submit.disabled = false;
                 }
+            });
+
+            document.querySelectorAll('.file-json-action-form').forEach((form) => {
+                const modalElement = form.closest('.modal');
+                modalElement?.addEventListener('hidden.bs.modal', () => {
+                    form.reset();
+                    setInputs(form, []);
+                    document.getElementById(form.dataset.errorId || '')?.classList.add('d-none');
+                });
+                form.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    if (!form.reportValidity()) return;
+                    const submit = form.querySelector('button[type="submit"]');
+                    const error = document.getElementById(form.dataset.errorId || '');
+                    if (submit) submit.disabled = true;
+                    error?.classList.add('d-none');
+                    try {
+                        const response = await fetch(form.action, {
+                            method: 'POST',
+                            headers: { 'Accept': 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '' },
+                            body: new FormData(form),
+                        });
+                        const payload = await response.json();
+                        if (!response.ok || !payload.success) {
+                            const validationMessage = payload.errors ? Object.values(payload.errors).flat().join(' ') : '';
+                            throw new Error(validationMessage || payload.message || 'Não foi possível concluir a ação.');
+                        }
+                        window.location.reload();
+                    } catch (exception) {
+                        const password = document.getElementById(form.dataset.passwordId || '');
+                        if (password) password.value = '';
+                        if (error) {
+                            error.textContent = exception.message || 'Não foi possível concluir a ação.';
+                            error.classList.remove('d-none');
+                        }
+                        if (submit) submit.disabled = false;
+                    }
+                });
             });
 
             updateSelection();

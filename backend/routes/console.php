@@ -94,3 +94,9 @@ if ((bool) config('file-manager.automatic_sync.enabled', false)) {
         ->name('file-manager-automatic-sync')
         ->withoutOverlapping(60);
 }
+
+Schedule::command('file-manager:purge-trash')
+    ->dailyAt('02:30')
+    ->name('file-manager-trash-retention')
+    ->onOneServer()
+    ->withoutOverlapping(180);

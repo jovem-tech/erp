@@ -150,6 +150,7 @@ class FileStateMachine
                 FileLifecycleStatus::Active => [FileLifecycleStatus::Archived, FileLifecycleStatus::Trashed],
                 FileLifecycleStatus::Archived => [FileLifecycleStatus::Active, FileLifecycleStatus::Trashed],
                 FileLifecycleStatus::Trashed => [FileLifecycleStatus::Active, FileLifecycleStatus::Archived],
+                FileLifecycleStatus::Purged => [],
             };
 
             if (! in_array($target, $allowed, true)) {

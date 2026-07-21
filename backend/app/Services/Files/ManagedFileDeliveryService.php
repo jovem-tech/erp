@@ -17,9 +17,9 @@ class ManagedFileDeliveryService
     ) {}
 
     /** @return array{stream: resource, mime_type: string, file_name: string, inline: bool} */
-    public function open(ManagedFile $file, bool $preview = false): array
+    public function open(ManagedFile $file, bool $preview = false, bool $allowTrashedPreview = false): array
     {
-        $entry = $this->locate($file);
+        $entry = $this->locate($file, $allowTrashedPreview);
         if ($preview && ! $this->policies->allowsInline($entry['category'], $entry['mime_type'])) {
             throw new \UnexpectedValueException('Preview inline não permitido para este arquivo.');
         }
@@ -43,9 +43,22 @@ class ManagedFileDeliveryService
      *
      * @return array{absolute_path: string, file_name: string, mime_type: string, category: FileCategory}
      */
-    public function locate(ManagedFile $file): array
+    public function locate(ManagedFile $file, bool $allowTrashedPreview = false): array
     {
-        $this->assertDeliverable($file);
+        $this->assertDeliverable($file, $allowTrashedPreview);
+
+        return $this->locateStoredSource($file);
+    }
+
+    /**
+     * Valida e resolve somente a fonte física, sem alterar as regras de
+     * entrega por lifecycle. Usado antes de restaurar arquivos arquivados ou
+     * presentes na lixeira.
+     *
+     * @return array{absolute_path: string, file_name: string, mime_type: string, category: FileCategory}
+     */
+    public function locateStoredSource(ManagedFile $file): array
+    {
 
         $category = FileCategory::tryFrom((string) $file->category);
         if ($category === null) {
@@ -67,9 +80,13 @@ class ManagedFileDeliveryService
         ];
     }
 
-    private function assertDeliverable(ManagedFile $file): void
+    private function assertDeliverable(ManagedFile $file, bool $allowTrashedPreview): void
     {
-        if ($file->lifecycle_status !== FileLifecycleStatus::Active) {
+        $allowedLifecycles = [FileLifecycleStatus::Active];
+        if ($allowTrashedPreview) {
+            $allowedLifecycles[] = FileLifecycleStatus::Trashed;
+        }
+        if (! in_array($file->lifecycle_status, $allowedLifecycles, true)) {
             throw new \DomainException('Arquivo fora do lifecycle ativo.');
         }
         if ($file->security_status !== FileSecurityStatus::Clean) {

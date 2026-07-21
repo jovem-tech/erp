@@ -89,12 +89,17 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::patch('/perfil/senha', [ProfileController::class, 'updatePassword'])->name('profile.password.update');
     Route::post('/perfil/assinatura', [ProfileController::class, 'updateSignature'])->name('profile.signature.update');
     Route::get('/perfil/assinatura/imagem', [ProfileController::class, 'signatureImage'])->name('profile.signature.image');
+    Route::post('/perfil/foto', [ProfileController::class, 'updatePhoto'])->name('profile.photo.update');
+    Route::delete('/perfil/foto', [ProfileController::class, 'destroyPhoto'])->name('profile.photo.destroy');
+    Route::get('/perfil/foto/imagem', [ProfileController::class, 'photoImage'])->name('profile.photo.image');
 
     Route::get('/arquivos', [FileManagerController::class, 'index'])
         ->middleware('desktop.permission:arquivos,listar')
         ->name('files.index');
     Route::post('/arquivos/sincronizar', [FileManagerController::class, 'synchronize'])
-        ->middleware(['desktop.permission:arquivos,administrar', 'throttle:3,1'])
+        // O backend já aplica o limitador autoritativo. Duplicá-lo aqui fazia
+        // a quarta tentativa sair do Gerenciador para uma página HTML 429.
+        ->middleware('desktop.permission:arquivos,administrar')
         ->name('files.sync');
     Route::post('/arquivos/baixar-selecionados', [FileManagerController::class, 'downloadBatch'])
         ->middleware('desktop.permission:arquivos,baixar')
@@ -102,6 +107,15 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/arquivos/excluir-selecionados', [FileManagerController::class, 'trashBatch'])
         ->middleware('desktop.permission:arquivos,excluir')
         ->name('files.trash-batch');
+    Route::post('/arquivos/restaurar-selecionados', [FileManagerController::class, 'restoreBatch'])
+        ->middleware('desktop.permission:arquivos,restaurar')
+        ->name('files.restore-batch');
+    Route::post('/arquivos/excluir-definitivamente', [FileManagerController::class, 'purgeBatch'])
+        ->middleware(['desktop.permission:arquivos,excluir', 'throttle:5,1'])
+        ->name('files.purge-batch');
+    Route::post('/arquivos/retencao-lixeira', [FileManagerController::class, 'updateTrashRetention'])
+        ->middleware(['desktop.permission:arquivos,administrar', 'throttle:5,1'])
+        ->name('files.trash-retention');
     Route::get('/arquivos/{fileUuid}', [FileManagerController::class, 'show'])
         ->middleware('desktop.permission:arquivos,metadados')
         ->name('files.show');

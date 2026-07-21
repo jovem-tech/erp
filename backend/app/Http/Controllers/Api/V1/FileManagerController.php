@@ -18,8 +18,10 @@ use App\Services\Files\AutomaticFileSyncService;
 use App\Services\Files\FileAuthorizationRegistry;
 use App\Services\Files\FileManagerMetrics;
 use App\Services\Files\FileStateMachine;
+use App\Services\Files\FileTrashRetentionPolicy;
 use App\Services\Files\ManagedFileArchiveService;
 use App\Services\Files\ManagedFileDeliveryService;
+use App\Services\Files\ManagedFilePurgeService;
 use App\Services\Files\PdfThumbnailService;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
@@ -41,6 +43,8 @@ class FileManagerController extends BaseApiController
         private readonly PdfThumbnailService $pdfThumbnails,
         private readonly ManagedFileArchiveService $archives,
         private readonly FileStateMachine $states,
+        private readonly ManagedFilePurgeService $purger,
+        private readonly FileTrashRetentionPolicy $trashRetention,
         private readonly AdminCredentialVerifier $adminVerifier,
         private readonly FileManagerMetrics $metrics
     ) {}
@@ -87,8 +91,15 @@ class FileManagerController extends BaseApiController
             static fn (mixed $category): bool => is_string($category) && $category !== ''
         ));
         $allowWrites = (bool) config('file-manager.kill_switches.allow_writes', false);
+        $catalogFiles = static fn (): Builder => ManagedFile::query()
+            ->where('lifecycle_status', '!=', FileLifecycleStatus::Purged->value);
+        $availableFiles = static fn (): Builder => ManagedFile::query()
+            ->where('lifecycle_status', '!=', FileLifecycleStatus::Purged->value)
+            ->where('integrity_status', '!=', FileIntegrityStatus::Missing->value);
 
         $byCategory = ManagedFile::query()
+            ->where('lifecycle_status', '!=', FileLifecycleStatus::Purged->value)
+            ->where('integrity_status', '!=', FileIntegrityStatus::Missing->value)
             ->selectRaw('category, COUNT(*) AS file_count, COALESCE(SUM(size_bytes), 0) AS total_bytes')
             ->groupBy('category')
             ->orderBy('category')
@@ -114,11 +125,18 @@ class FileManagerController extends BaseApiController
 
         return $this->success([
             'totals' => [
-                'files' => ManagedFile::query()->count(),
-                'bytes' => (int) ManagedFile::query()->sum('size_bytes'),
-                'quarantined' => ManagedFile::query()->where('security_status', FileSecurityStatus::Quarantined->value)->count(),
-                'trashed' => ManagedFile::query()->where('lifecycle_status', FileLifecycleStatus::Trashed->value)->count(),
-                'integrity_issues' => ManagedFile::query()->whereIn('integrity_status', [FileIntegrityStatus::Missing->value, FileIntegrityStatus::Corrupted->value])->count(),
+                'files' => $availableFiles()->count(),
+                'bytes' => (int) $availableFiles()->sum('size_bytes'),
+                'quarantined' => $availableFiles()->where('security_status', FileSecurityStatus::Quarantined->value)->count(),
+                'trashed' => ManagedFile::query()
+                    ->where('lifecycle_status', FileLifecycleStatus::Trashed->value)
+                    ->where('integrity_status', '!=', FileIntegrityStatus::Missing->value)
+                    ->count(),
+                'audit_records' => ManagedFile::query()
+                    ->where('lifecycle_status', FileLifecycleStatus::Trashed->value)
+                    ->where('integrity_status', FileIntegrityStatus::Missing->value)
+                    ->count(),
+                'integrity_issues' => $catalogFiles()->whereIn('integrity_status', [FileIntegrityStatus::Missing->value, FileIntegrityStatus::Corrupted->value])->count(),
                 'open_findings' => FileScanFinding::query()->where('resolution_status', 'open')->count(),
             ],
             'by_category' => $byCategory,
@@ -132,6 +150,8 @@ class FileManagerController extends BaseApiController
                 'scanner_enabled' => (bool) config('file-manager.kill_switches.allow_scanner', false),
                 'automatic_sync_enabled' => (bool) config('file-manager.automatic_sync.enabled', false),
                 'automatic_sync_interval_minutes' => (int) config('file-manager.automatic_sync.interval_minutes', 5),
+                'trash_retention' => $this->trashRetention->settings(),
+                'permanent_deletion_enabled' => (bool) config('file-manager.kill_switches.allow_permanent_deletion', false),
             ],
             'state_mutations_enabled' => (bool) config('file-manager.kill_switches.allow_admin_state_mutations', false),
             'last_scan_run' => $lastRun === null ? null : $this->mapScanRun($lastRun),
@@ -144,6 +164,7 @@ class FileManagerController extends BaseApiController
         $this->authorize('arquivos:listar');
         $validated = $request->validate($this->indexRules());
         $perPage = min(100, max(1, (int) ($validated['per_page'] ?? 25)));
+        $auditOnly = (bool) ($validated['audit_only'] ?? false);
 
         $query = ManagedFile::query()
             ->with([
@@ -155,6 +176,16 @@ class FileManagerController extends BaseApiController
             ->withCount([
                 'links as active_links_count' => static fn (Builder $query): Builder => $query->whereNull('unlinked_at'),
             ]);
+        if ($auditOnly) {
+            $query->where('lifecycle_status', FileLifecycleStatus::Trashed->value)
+                ->where('integrity_status', FileIntegrityStatus::Missing->value);
+            unset($validated['lifecycle_status'], $validated['integrity_status']);
+        } elseif (! isset($validated['integrity_status']) || $validated['integrity_status'] === '') {
+            $query->where('integrity_status', '!=', FileIntegrityStatus::Missing->value);
+        }
+        if (! $auditOnly && (! isset($validated['lifecycle_status']) || $validated['lifecycle_status'] === '')) {
+            $query->where('lifecycle_status', '!=', FileLifecycleStatus::Purged->value);
+        }
         foreach (['category', 'lifecycle_status', 'integrity_status', 'security_status', 'migration_status'] as $filter) {
             if (isset($validated[$filter]) && $validated[$filter] !== '') {
                 $query->where($filter, $validated[$filter]);
@@ -225,7 +256,7 @@ class FileManagerController extends BaseApiController
         }
 
         try {
-            $thumbnail = $this->pdfThumbnails->firstPage($file);
+            $thumbnail = $this->pdfThumbnails->firstPage($file, true);
         } catch (\UnexpectedValueException $exception) {
             return $this->error($exception->getMessage(), 415, 'FILE_THUMBNAIL_NOT_SUPPORTED', request: $request);
         } catch (\DomainException $exception) {
@@ -334,7 +365,8 @@ class FileManagerController extends BaseApiController
             (string) $credentials['admin_email'],
             (string) $credentials['admin_password'],
             'file-manager-trash-admin-auth',
-            (string) ($request->ip() ?: 'unknown')
+            (string) ($request->ip() ?: 'unknown'),
+            'arquivos:administrar'
         );
         if ($response = $this->respondToAdminVerification(
             $verification,
@@ -364,6 +396,175 @@ class FileManagerController extends BaseApiController
             'trashed_count' => count($trashed),
             'file_uuids' => $trashed,
         ], request: $request);
+    }
+
+    public function restoreBatch(FileAdminStepUpRequest $request): JsonResponse
+    {
+        $this->authorize('arquivos:restaurar');
+        if (! (bool) config('file-manager.kill_switches.allow_admin_state_mutations', false)) {
+            return $this->error('Ações de estado estão desabilitadas pelo kill switch.', 409, 'FILE_STATE_MUTATIONS_DISABLED', request: $request);
+        }
+
+        $actionData = $request->validate([
+            'file_uuids' => ['required', 'array', 'min:1', 'max:100'],
+            'file_uuids.*' => ['required', 'uuid', 'distinct'],
+            'reason' => ['required', 'string', 'min:10', 'max:500'],
+        ]);
+        $files = $this->findFiles((array) $actionData['file_uuids']);
+        $actor = $this->actor($request);
+        foreach ($files as $file) {
+            if (! $this->authorizers->allows($actor, $file, 'restore')) {
+                abort(404);
+            }
+        }
+
+        $credentials = $request->validated();
+        $verification = $this->adminVerifier->verify(
+            (string) $credentials['admin_email'],
+            (string) $credentials['admin_password'],
+            'file-manager-restore-batch-admin-auth',
+            (string) ($request->ip() ?: 'unknown'),
+            'arquivos:administrar'
+        );
+        if ($response = $this->respondToAdminVerification(
+            $verification,
+            $request,
+            'FILE_ADMIN_AUTH_RATE_LIMITED',
+            'FILE_ADMIN_AUTH_INVALID'
+        )) {
+            return $response;
+        }
+
+        /** @var User $admin */
+        $admin = $verification['admin'];
+        if ($response = $this->restoreSourceError($files, $request)) {
+            return $response;
+        }
+        $reason = trim((string) $actionData['reason']);
+
+        try {
+            $restored = DB::transaction(function () use ($files, $actor, $admin, $reason): array {
+                return $files->map(fn (ManagedFile $file): string => (string) $this->states
+                    ->restore($file, (int) $actor->id, $reason, (int) $admin->id)
+                    ->uuid)
+                    ->all();
+            });
+        } catch (\DomainException $exception) {
+            return $this->error($exception->getMessage(), 409, 'FILE_STATE_CONFLICT', request: $request);
+        }
+
+        return $this->success([
+            'restored_count' => count($restored),
+            'file_uuids' => $restored,
+        ], request: $request);
+    }
+
+    public function purgeBatch(FileAdminStepUpRequest $request): JsonResponse
+    {
+        $this->authorize('arquivos:excluir');
+        if (! (bool) config('file-manager.kill_switches.allow_permanent_deletion', false)) {
+            return $this->error('Exclusão definitiva desabilitada pelo kill switch.', 409, 'FILE_PERMANENT_DELETION_DISABLED', request: $request);
+        }
+
+        $actionData = $request->validate([
+            'file_uuids' => ['required', 'array', 'min:1', 'max:50'],
+            'file_uuids.*' => ['required', 'uuid', 'distinct'],
+            'reason' => ['required', 'string', 'min:10', 'max:500'],
+            'confirmation' => ['required', 'string', Rule::in(['EXCLUIR'])],
+        ]);
+        $files = $this->findFiles((array) $actionData['file_uuids']);
+        $actor = $this->actor($request);
+        foreach ($files as $file) {
+            if (! $this->authorizers->allows($actor, $file, 'purge')) {
+                abort(404);
+            }
+        }
+
+        $credentials = $request->validated();
+        $verification = $this->adminVerifier->verify(
+            (string) $credentials['admin_email'],
+            (string) $credentials['admin_password'],
+            'file-manager-purge-admin-auth',
+            (string) ($request->ip() ?: 'unknown'),
+            'arquivos:administrar'
+        );
+        if ($response = $this->respondToAdminVerification(
+            $verification,
+            $request,
+            'FILE_ADMIN_AUTH_RATE_LIMITED',
+            'FILE_ADMIN_AUTH_INVALID'
+        )) {
+            return $response;
+        }
+
+        /** @var User $admin */
+        $admin = $verification['admin'];
+        $reason = trim((string) $actionData['reason']);
+        $purged = [];
+        $failed = [];
+        foreach ($files as $file) {
+            try {
+                $purged[] = (string) $this->purger->purge(
+                    $file,
+                    (int) $actor->id,
+                    $reason,
+                    (int) $admin->id,
+                    'manual',
+                    null
+                )->uuid;
+            } catch (\DomainException $exception) {
+                $failed[] = ['file_uuid' => (string) $file->uuid, 'message' => $exception->getMessage()];
+            } catch (\Throwable $exception) {
+                report($exception);
+                $failed[] = ['file_uuid' => (string) $file->uuid, 'message' => 'Falha ao remover o binário do storage.'];
+            }
+        }
+
+        return $this->success([
+            'purged_count' => count($purged),
+            'failed_count' => count($failed),
+            'file_uuids' => $purged,
+            'failures' => $failed,
+        ], request: $request);
+    }
+
+    public function updateTrashRetention(FileAdminStepUpRequest $request): JsonResponse
+    {
+        $this->authorize('arquivos:administrar');
+        $actionData = $request->validate([
+            'days' => ['required', 'integer', Rule::in($this->trashRetention->allowedDays())],
+            'reason' => ['required', 'string', 'min:10', 'max:500'],
+        ]);
+        $actor = $this->actor($request);
+        $credentials = $request->validated();
+        $verification = $this->adminVerifier->verify(
+            (string) $credentials['admin_email'],
+            (string) $credentials['admin_password'],
+            'file-manager-retention-admin-auth',
+            (string) ($request->ip() ?: 'unknown'),
+            'arquivos:administrar'
+        );
+        if ($response = $this->respondToAdminVerification(
+            $verification,
+            $request,
+            'FILE_ADMIN_AUTH_RATE_LIMITED',
+            'FILE_ADMIN_AUTH_INVALID'
+        )) {
+            return $response;
+        }
+
+        /** @var User $admin */
+        $admin = $verification['admin'];
+        $settings = $this->trashRetention->save((int) $actionData['days'], $admin);
+        logger()->notice('[API V1][FILES] Política de retenção da lixeira alterada', [
+            'actor_id' => (int) $actor->id,
+            'authorized_by' => (int) $admin->id,
+            'retention_days' => $settings['days'],
+            'reason_fingerprint' => hash('sha256', trim((string) $actionData['reason'])),
+            'ip' => $request->ip(),
+        ]);
+
+        return $this->success($settings, request: $request);
     }
 
     public function scanRuns(Request $request): JsonResponse
@@ -418,6 +619,7 @@ class FileManagerController extends BaseApiController
     {
         return [
             'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+            'audit_only' => ['sometimes', 'boolean'],
             'q' => ['nullable', 'string', 'max:200'],
             'category' => ['nullable', Rule::enum(FileCategory::class)],
             'lifecycle_status' => ['nullable', Rule::enum(FileLifecycleStatus::class)],
@@ -438,7 +640,7 @@ class FileManagerController extends BaseApiController
         }
 
         try {
-            $opened = $this->delivery->open($file, $preview);
+            $opened = $this->delivery->open($file, $preview, $preview);
         } catch (\UnexpectedValueException $exception) {
             return $this->error($exception->getMessage(), 415, 'FILE_PREVIEW_NOT_ALLOWED', request: $request);
         } catch (\DomainException $exception) {
@@ -494,7 +696,8 @@ class FileManagerController extends BaseApiController
             (string) $credentials['admin_email'],
             (string) $credentials['admin_password'],
             'file-manager-'.$action.'-admin-auth',
-            (string) ($request->ip() ?: 'unknown')
+            (string) ($request->ip() ?: 'unknown'),
+            'arquivos:administrar'
         );
         if ($response = $this->respondToAdminVerification(
             $verification,
@@ -507,6 +710,11 @@ class FileManagerController extends BaseApiController
 
         /** @var User $admin */
         $admin = $verification['admin'];
+        if ($action === 'restore') {
+            if ($response = $this->restoreSourceError(new EloquentCollection([$file]), $request)) {
+                return $response;
+            }
+        }
         $reason = trim((string) $actionData['reason']);
 
         try {
@@ -589,6 +797,8 @@ class FileManagerController extends BaseApiController
             'confidentiality' => (string) $file->confidentiality,
             'active_links_count' => (int) ($file->active_links_count ?? $file->links->whereNull('unlinked_at')->count()),
             'created_at' => $file->created_at?->toIso8601String(),
+            'trashed_at' => $file->trashed_at?->toIso8601String(),
+            'purged_at' => $file->purged_at?->toIso8601String(),
             'document_created_at' => $this->documentCreatedAt($file),
             'linked_client' => $linkedClient,
         ];
@@ -774,10 +984,49 @@ class FileManagerController extends BaseApiController
             'download' => $this->rbac->allows($actor, 'arquivos', 'baixar') && $this->authorizers->allows($actor, $file, 'download'),
             'archive' => $enabled && $this->rbac->allows($actor, 'arquivos', 'administrar') && $this->authorizers->allows($actor, $file, 'archive'),
             'trash' => $enabled && $this->rbac->allows($actor, 'arquivos', 'excluir') && $this->authorizers->allows($actor, $file, 'trash'),
-            'restore' => $enabled && $this->rbac->allows($actor, 'arquivos', 'restaurar') && $this->authorizers->allows($actor, $file, 'restore'),
+            'restore' => $enabled
+                && $file->integrity_status === FileIntegrityStatus::Valid
+                && $this->rbac->allows($actor, 'arquivos', 'restaurar')
+                && $this->authorizers->allows($actor, $file, 'restore'),
+            'purge' => (bool) config('file-manager.kill_switches.allow_permanent_deletion', false)
+                && $this->rbac->allows($actor, 'arquivos', 'excluir')
+                && $this->authorizers->allows($actor, $file, 'purge'),
             'quarantine' => $enabled && $this->rbac->allows($actor, 'arquivos', 'quarentenar') && $this->authorizers->allows($actor, $file, 'quarantine'),
             'release' => $enabled && $this->rbac->allows($actor, 'arquivos', 'administrar') && $this->authorizers->allows($actor, $file, 'release'),
         ];
+    }
+
+    /**
+     * Impede que um registro sem binário volte ao lifecycle ativo. A checagem
+     * ocorre depois do step-up e antes da transação de estado.
+     *
+     * @param EloquentCollection<int, ManagedFile> $files
+     */
+    private function restoreSourceError(EloquentCollection $files, Request $request): ?JsonResponse
+    {
+        foreach ($files as $file) {
+            if ($file->integrity_status !== FileIntegrityStatus::Valid) {
+                return $this->error(
+                    'Um ou mais arquivos não podem ser restaurados porque o conteúdo não está disponível no armazenamento.',
+                    409,
+                    'FILE_RESTORE_SOURCE_UNAVAILABLE',
+                    request: $request
+                );
+            }
+
+            try {
+                $this->delivery->locateStoredSource($file);
+            } catch (\Throwable) {
+                return $this->error(
+                    'Um ou mais arquivos não podem ser restaurados porque o conteúdo não está disponível no armazenamento.',
+                    409,
+                    'FILE_RESTORE_SOURCE_UNAVAILABLE',
+                    request: $request
+                );
+            }
+        }
+
+        return null;
     }
 
     /** @return array<string, mixed> */

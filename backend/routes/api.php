@@ -38,6 +38,7 @@ use App\Http\Controllers\Api\V1\ServicoController;
 use App\Http\Controllers\Api\V1\SupplierController;
 use App\Http\Controllers\Api\V1\TeamMemberController;
 use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\UserPhotoController;
 use App\Http\Controllers\Api\V1\UserSignatureController;
 use App\Http\Controllers\Api\V1\WhatsappTemplateController;
 use App\Support\ApiResponse;
@@ -75,6 +76,9 @@ Route::prefix('v1')->group(function (): void {
         Route::get('auth/signature', [UserSignatureController::class, 'show']);
         Route::post('auth/signature', [UserSignatureController::class, 'store'])->middleware('throttle:10,1');
         Route::get('auth/signature/image', [UserSignatureController::class, 'image'])->middleware('throttle:60,1');
+        Route::post('auth/photo', [UserPhotoController::class, 'store'])->middleware('throttle:10,1');
+        Route::delete('auth/photo', [UserPhotoController::class, 'destroy']);
+        Route::get('auth/photo/image', [UserPhotoController::class, 'image'])->middleware('throttle:60,1');
         Route::get('document-signatures/signers', [DocumentSignatureController::class, 'signers']);
         Route::get('document-signatures/pending', [DocumentSignatureController::class, 'pending']);
         Route::get('document-signatures/{signatureRequest}/preview', [DocumentSignatureController::class, 'preview'])
@@ -93,11 +97,18 @@ Route::prefix('v1')->group(function (): void {
         Route::post('file-manager/sync', [FileManagerController::class, 'requestSynchronization'])
             ->middleware('throttle:3,1')
             ->name('api.v1.file_manager.sync');
+        Route::post('file-manager/trash-retention', [FileManagerController::class, 'updateTrashRetention'])
+            ->middleware('throttle:5,1')
+            ->name('api.v1.file_manager.trash_retention');
         Route::get('file-manager/scan-runs', [FileManagerController::class, 'scanRuns'])->name('api.v1.file_manager.scan_runs');
         Route::get('file-manager/findings', [FileManagerController::class, 'findings'])->name('api.v1.file_manager.findings');
         Route::get('files', [FileManagerController::class, 'index'])->name('api.v1.files.index');
         Route::post('files/download-batch', [FileManagerController::class, 'downloadBatch'])->name('api.v1.files.download_batch');
         Route::post('files/trash-batch', [FileManagerController::class, 'trashBatch'])->name('api.v1.files.trash_batch');
+        Route::post('files/restore-batch', [FileManagerController::class, 'restoreBatch'])->name('api.v1.files.restore_batch');
+        Route::post('files/purge-batch', [FileManagerController::class, 'purgeBatch'])
+            ->middleware('throttle:5,1')
+            ->name('api.v1.files.purge_batch');
         Route::get('files/{fileUuid}', [FileManagerController::class, 'show'])->name('api.v1.files.show');
         Route::get('files/{fileUuid}/download', [FileManagerController::class, 'download'])->name('api.v1.files.download');
         Route::get('files/{fileUuid}/preview', [FileManagerController::class, 'preview'])->name('api.v1.files.preview');

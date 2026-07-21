@@ -1,5 +1,76 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.4.1.5 — 2026-07-21 02:19
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Separa registros sem conteudo em colecao de auditoria fora da lixeira
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/FileManagerController.php,backend/app/Console/Commands/Files/PurgeTrashedFiles.php,backend/tests/Feature/Files/FileManagerApiTest.php,frontends/desktop/app/Http/Controllers/FileManagerController.php,frontends/desktop/resources/views/files/index.blade.php,frontends/desktop/tests/Feature/Desktop/FileManagerTest.php
+
+## v5.4.1.4 — 2026-07-21 02:03
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Impede restauracao de itens sem binario e sinaliza conteudo ausente na lixeira
+- **Arquivos:** frontends/desktop/resources/views/files/index.blade.php,frontends/desktop/tests/Feature/Desktop/FileManagerTest.php
+
+## v5.4.1.3 — 2026-07-21 01:48
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige restauracao segura da lixeira e limite da sincronizacao manual
+- **Arquivos:** backend/app/Services/Files/FileAuthorizationRegistry.php,backend/app/Services/Files/ManagedFileDeliveryService.php,backend/app/Http/Controllers/Api/V1/FileManagerController.php,backend/app/Services/Profile/ProfilePhotoImageService.php,backend/tests/Feature/Files/FileManagerApiTest.php,backend/tests/Feature/Files/FileManagerCoreTest.php,frontends/desktop/routes/web.php,frontends/desktop/app/Http/Controllers/FileManagerController.php,frontends/desktop/tests/Feature/Desktop/FileManagerTest.php
+
+## v5.4.1.2 — 2026-07-21 01:26
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige o overlay de carregamento preso apos downloads e navegacoes que nao descarregam a pagina
+- **Arquivos:** frontends/desktop/public/assets/js/desktop.js,frontends/desktop/tests/Unit/PageTransitionScriptTest.php
+
+## v5.4.1.1 — 2026-07-21 01:21
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Remove o aviso nativo e enganoso de saida do navegador, preservando o encerramento seguro de sessoes nao lembradas
+- **Arquivos:** frontends/desktop/resources/views/layouts/app.blade.php,frontends/desktop/resources/views/configurations/system.blade.php,frontends/desktop/app/Providers/DesktopAppServiceProvider.php,frontends/desktop/app/Http/Controllers/ConfigurationController.php,frontends/desktop/tests/Feature/Desktop/SessionSecurityTest.php
+
+## v5.4.1.0 — 2026-07-20 23:27
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige 4 problemas na foto de perfil: nome de arquivo ilegivel, foto antiga nao aposentada no gerenciador, miniatura quebrada (path fora do namespace autorizado) e logoff forcado apos upload (form.submit nao dispara evento submit)
+- **Arquivos:** backend/app/Services/Profile/ProfilePhotoImageService.php,backend/app/Http/Controllers/Api/V1/UserPhotoController.php,backend/config/file-manager.php,backend/tests/Feature/Files/FileManagerCoreTest.php,frontends/desktop/public/assets/js/profile-photo.js
+
+## v5.4.0.0 — 2026-07-20 23:02
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Completa a lixeira do Gerenciador de Arquivos com restauracao, preview, exclusao definitiva auditavel e retencao automatica configuravel
+- **Arquitetura:** adiciona lifecycle terminal `purged`, registro-túmulo auditável, serviço único de expurgo manual/agendado e política persistida de 0/7/30/90 dias
+- **Segurança:** RBAC e step-up, confirmação `EXCLUIR`, kill switch independente, rate limit, legal hold, locks e contenção por disco/path/realpath/symlink; preview da lixeira não libera download
+- **Performance/escala:** índice `(lifecycle_status, trashed_at)`, lote de até 250 por padrão, processamento O(1) de memória por arquivo e scheduler `onOneServer/withoutOverlapping`
+- **Operação:** migration aditiva aplicada na LAN após backup de 46,45 MB; política inicial de 30 dias ativada; cron diário confirmado às 02:30 e diagnóstico sem arquivo elegível
+- **Validação:** 64 testes/353 asserções no núcleo/backend de arquivos e 14 testes/104 asserções no desktop; OpenAPI YAML, PHP, JavaScript, Blade, rotas e caches validados
+- **Arquivos:** backend/app/Console/Commands/Files/PurgeTrashedFiles.php,backend/app/Services/Files/ManagedFilePurgeService.php,backend/app/Services/Files/FileTrashRetentionPolicy.php,backend/app/Http/Controllers/Api/V1/FileManagerController.php,backend/database/migrations/2026_07_20_000002_add_managed_file_purge_state.php,backend/routes/api.php,backend/routes/console.php,frontends/desktop/resources/views/files/index.blade.php,frontends/desktop/app/Http/Controllers/FileManagerController.php,frontends/desktop/routes/web.php,specs/022-gerenciador-central-arquivos/contracts/openapi-file-manager.yaml,documentacao/07-novas-implementacoes/2026-07-20-lixeira-gerenciador-arquivos.md
+
+## v5.3.0.0 — 2026-07-20 22:56
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Adiciona upload de foto de perfil do usuario, catalogada no Gerenciador de Arquivos (categoria user_profile_photo)
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/UserPhotoController.php,backend/app/Services/Profile/ProfilePhotoImageService.php,backend/app/Services/Files/Authorizers/UserProfilePhotoFileAuthorizer.php,backend/app/Providers/AppServiceProvider.php,backend/app/Http/Controllers/Api/V1/AuthController.php,backend/config/file-manager.php,backend/routes/api.php,backend/openapi.yaml,backend/tests/Feature/Api/V1/UserPhotoControllerTest.php,backend/tests/Feature/Files/FileManagerCoreTest.php,frontends/desktop/app/Http/Controllers/ProfileController.php,frontends/desktop/app/Services/ProfileService.php,frontends/desktop/routes/web.php,frontends/desktop/resources/views/profile/edit.blade.php,frontends/desktop/resources/views/layouts/partials/navbar.blade.php,frontends/desktop/public/assets/js/profile-photo.js,frontends/desktop/public/assets/css/desktop.css
+
+## v5.2.3.0 — 2026-07-20 22:39
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Busca global passa a aceitar seleção de múltiplos escopos via checkboxes (antes só permitia escolher um)
+- **Arquivos:** frontends/desktop/app/Http/Controllers/SearchController.php,frontends/desktop/app/Services/SearchService.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/public/assets/js/desktop.js,frontends/desktop/resources/views/layouts/partials/navbar.blade.php,frontends/desktop/resources/views/search/index.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v5.2.2.0 — 2026-07-20 20:30
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** corrige a seleção e a confirmação da lixeira para usuários administrativos definidos pelo RBAC, sem depender do campo legado `perfil=admin`
+- **Arquitetura:** mantém dupla autorização: a sessão exige `arquivos:excluir` e a credencial de step-up exige `arquivos:administrar`; o desktop usa POST sem retry para o comando mutável
+- **Segurança:** senha e motivo continuam obrigatórios, rate limit e auditoria permanecem ativos, perfil legado sem RBAC não contorna a regra e falha de escrita no log não transforma uma credencial recusada em HTTP 500
+- **Experiência:** amplia a área clicável do checkbox em lista, explica as permissões necessárias e preenche o e-mail da sessão quando o próprio usuário pode administrar arquivos
+- **Performance/Resiliência:** elimina três chamadas repetidas ao endpoint de lixeira em respostas 5xx e preserva o binário para restauração
+- **Operação:** grupo do log atual corrigido para `www-data`; runbook passa a exigir `setgid` em `backend/storage/logs` para arquivos futuros
+- **Validação:** 23 testes direcionados aprovados com 194 asserções; fluxo real do usuário supervisor da LAN validado em transação integralmente revertida
+- **Arquivos:** backend/app/Services/Auth/AdminCredentialVerifier.php,backend/app/Http/Controllers/Api/V1/FileManagerController.php,backend/tests/Feature/Files/FileManagerApiTest.php,frontends/desktop/app/Services/ApiClient.php,frontends/desktop/app/Services/FileManagerService.php,frontends/desktop/resources/views/files/index.blade.php,frontends/desktop/tests/Feature/Desktop/FileManagerTest.php,documentacao/07-novas-implementacoes/2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md,documentacao/07-novas-implementacoes/historico-de-versoes.md,documentacao/10-deploy/deploy-producao-lan-ubuntu.md,VERSION,shared/version.php,CHANGELOG.md
+
 ## v5.2.1.0 — 2026-07-20 07:35
 - **Tier:** patch
 - **Autor/Agente:** Codex
