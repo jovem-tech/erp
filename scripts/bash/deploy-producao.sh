@@ -18,6 +18,12 @@ REPO_ROOT="/var/www/sistema-erp"
 BACKUP_DIR="/var/backups/sistema-erp"
 STAMP=$(date +%F_%H%M)
 
+# O deploy de producao executa tarefas privilegiadas e costuma ser iniciado
+# por root. Evita que o Composer interrompa o fluxo pedindo confirmacao em TTY.
+if [ "$(id -u)" -eq 0 ]; then
+  export COMPOSER_ALLOW_SUPERUSER=1
+fi
+
 if [ "$(pwd)" != "$REPO_ROOT" ] && [ -d "$REPO_ROOT" ]; then
   cd "$REPO_ROOT"
 fi
@@ -46,7 +52,10 @@ composer install --no-dev --optimize-autoloader
 php artisan migrate --force
 php artisan config:clear && php artisan config:cache
 php artisan route:clear && php artisan route:cache
-php artisan view:clear && php artisan view:cache
+php artisan view:clear
+# Blade preserva o mtime com touch(timestamp). O cache precisa pertencer ao
+# usuario do PHP-FPM; permissao de grupo, isoladamente, nao e suficiente.
+sudo -u www-data -- php artisan view:cache
 
 echo ">>> [4/5] Desktop"
 cd ../frontends/desktop
@@ -56,7 +65,8 @@ npm run build
 php artisan migrate --force
 php artisan config:clear && php artisan config:cache
 php artisan route:clear && php artisan route:cache
-php artisan view:clear && php artisan view:cache
+php artisan view:clear
+sudo -u www-data -- php artisan view:cache
 
 echo ">>> [5/5] Reiniciando servicos"
 sudo systemctl reload php8.3-fpm
