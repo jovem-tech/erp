@@ -35,6 +35,7 @@ return [
         'allow_scanner' => (bool) env('FILE_MANAGER_ALLOW_SCANNER', false),
         'allow_mutating_reconcile' => (bool) env('FILE_MANAGER_ALLOW_MUTATING_RECONCILE', false),
         'allow_admin_state_mutations' => (bool) env('FILE_MANAGER_ALLOW_ADMIN_STATE_MUTATIONS', false),
+        'allow_permanent_deletion' => (bool) env('FILE_MANAGER_ALLOW_PERMANENT_DELETION', false),
     ],
     'locks' => [
         'seconds' => max(5, (int) env('FILE_MANAGER_LOCK_SECONDS', 30)),
@@ -42,6 +43,9 @@ return [
     ],
     'retention' => [
         'previous_versions_days' => max(1, (int) env('FILE_MANAGER_PREVIOUS_VERSION_DAYS', 7)),
+        'trash_days' => (int) env('FILE_MANAGER_TRASH_RETENTION_DAYS', 30),
+        'allowed_trash_days' => [0, 7, 30, 90],
+        'purge_batch_size' => max(1, min(1000, (int) env('FILE_MANAGER_TRASH_PURGE_BATCH_SIZE', 250))),
     ],
     'batch_download' => [
         'max_files' => max(1, min(100, (int) env('FILE_MANAGER_BATCH_DOWNLOAD_MAX_FILES', 50))),
@@ -72,6 +76,7 @@ return [
             'order_files' => ['disk' => 'local', 'path' => 'private/os_documentos'],
             'budget_documents' => ['disk' => 'local', 'path' => 'private/orcamentos'],
             'signatures' => ['disk' => 'local', 'path' => 'private/assinaturas'],
+            'user_profile_photos' => ['disk' => 'local', 'path' => 'private/usuarios'],
             'chat' => ['disk' => 'local', 'path' => 'chat-media'],
             'legacy_equipment_profiles' => ['disk' => 'legacy_public', 'path' => 'uploads/equipamentos_perfil'],
             'legacy_equipment_files' => ['disk' => 'legacy_public', 'path' => 'uploads/equipamentos'],
@@ -102,6 +107,7 @@ return [
         'equipment',
         'order',
         'order_document',
+        'user',
         'user_signature',
         'chat_message',
         'chat_attachment',

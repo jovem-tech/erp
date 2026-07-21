@@ -21,6 +21,7 @@ class FileManagerController extends DesktopController
         $viewMode = in_array((string) $request->query('view', 'grid'), ['grid', 'list'], true)
             ? (string) $request->query('view', 'grid')
             : 'grid';
+        $auditOnly = (string) $request->query('lifecycle_status', '') === 'audit';
         $filters = $request->only([
             'q',
             'category',
@@ -32,7 +33,10 @@ class FileManagerController extends DesktopController
             'created_to',
             'page',
         ]);
-        if (! $request->has('lifecycle_status')) {
+        if ($auditOnly) {
+            unset($filters['lifecycle_status'], $filters['integrity_status']);
+            $filters['audit_only'] = true;
+        } elseif (! $request->has('lifecycle_status')) {
             $filters['lifecycle_status'] = 'active';
         }
         $filters['per_page'] = $viewMode === 'grid' ? 24 : 50;
@@ -93,7 +97,11 @@ class FileManagerController extends DesktopController
                 ? $exception->statusCode()
                 : 500;
 
-            return $this->actionError($request, $exception->getMessage(), $status);
+            $message = $status === 429
+                ? 'Muitas solicitações em sequência. Aguarde até um minuto antes de sincronizar novamente.'
+                : $exception->getMessage();
+
+            return $this->actionError($request, $message, $status);
         }
 
         $message = (bool) ($result['queued'] ?? false)
@@ -223,6 +231,55 @@ class FileManagerController extends DesktopController
         return redirect()->route('files.index')->with('success', 'Arquivos movidos para a lixeira.');
     }
 
+    public function restoreBatch(Request $request): JsonResponse|RedirectResponse
+    {
+        return $this->performTrashBatchAction($request, 'restore');
+    }
+
+    public function purgeBatch(Request $request): JsonResponse|RedirectResponse
+    {
+        return $this->performTrashBatchAction($request, 'purge');
+    }
+
+    public function updateTrashRetention(Request $request): JsonResponse|RedirectResponse
+    {
+        $validated = $request->validate([
+            'days' => ['required', 'integer', 'in:0,7,30,90'],
+            'reason' => ['required', 'string', 'min:10', 'max:500'],
+            'admin_email' => ['required', 'string', 'email', 'max:255'],
+            'admin_password' => ['required', 'string', 'max:200'],
+        ]);
+
+        try {
+            $settings = $this->files->updateTrashRetention([
+                'days' => (int) $validated['days'],
+                'reason' => trim((string) $validated['reason']),
+                'admin_email' => trim((string) $validated['admin_email']),
+                'admin_password' => (string) $validated['admin_password'],
+            ]);
+        } catch (ApiAuthenticationException $exception) {
+            return $this->actionError($request, $exception->getMessage(), 401, true);
+        } catch (ApiAuthorizationException $exception) {
+            return $this->actionError($request, $exception->getMessage(), 403);
+        } catch (ApiRequestException $exception) {
+            $status = in_array($exception->statusCode(), [409, 422, 429], true)
+                ? $exception->statusCode()
+                : 500;
+
+            return $this->actionError($request, $exception->getMessage(), $status);
+        }
+
+        $message = ((int) ($settings['days'] ?? 0)) === 0
+            ? 'Exclusão automática da lixeira desativada.'
+            : 'Retenção da lixeira atualizada para '.(int) $settings['days'].' dias.';
+
+        if ($request->expectsJson()) {
+            return response()->json(['success' => true, 'message' => $message, 'settings' => $settings]);
+        }
+
+        return redirect()->back()->with('success', $message);
+    }
+
     private function deliver(string $fileUuid, bool $preview): Response|RedirectResponse
     {
         try {
@@ -234,6 +291,65 @@ class FileManagerController extends DesktopController
         }
 
         return $this->binaryResponse($download);
+    }
+
+    private function performTrashBatchAction(Request $request, string $action): JsonResponse|RedirectResponse
+    {
+        $rules = [
+            'file_uuids' => ['required', 'array', 'min:1', 'max:'.($action === 'purge' ? '50' : '100')],
+            'file_uuids.*' => ['required', 'uuid', 'distinct'],
+            'reason' => ['required', 'string', 'min:10', 'max:500'],
+            'admin_email' => ['required', 'string', 'email', 'max:255'],
+            'admin_password' => ['required', 'string', 'max:200'],
+        ];
+        if ($action === 'purge') {
+            $rules['confirmation'] = ['required', 'string', 'in:EXCLUIR'];
+        }
+        $validated = $request->validate($rules);
+        $payload = [
+            'reason' => trim((string) $validated['reason']),
+            'admin_email' => trim((string) $validated['admin_email']),
+            'admin_password' => (string) $validated['admin_password'],
+        ];
+        if ($action === 'purge') {
+            $payload['confirmation'] = (string) $validated['confirmation'];
+        }
+
+        try {
+            $result = $action === 'purge'
+                ? $this->files->purgeBatch((array) $validated['file_uuids'], $payload)
+                : $this->files->restoreBatch((array) $validated['file_uuids'], $payload);
+        } catch (ApiAuthenticationException $exception) {
+            return $this->actionError($request, $exception->getMessage(), 401, true);
+        } catch (ApiAuthorizationException $exception) {
+            return $this->actionError($request, $exception->getMessage(), 403);
+        } catch (ApiRequestException $exception) {
+            $status = in_array($exception->statusCode(), [409, 422, 429], true)
+                ? $exception->statusCode()
+                : 500;
+
+            return $this->actionError($request, $exception->getMessage(), $status);
+        }
+
+        $message = $action === 'purge'
+            ? ((int) ($result['failed_count'] ?? 0) > 0
+                ? 'A exclusão definitiva terminou com falhas em alguns arquivos.'
+                : 'Arquivos excluídos definitivamente; os eventos de auditoria foram preservados.')
+            : 'Arquivos restaurados com sucesso.';
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'partial' => (int) ($result['failed_count'] ?? 0) > 0,
+                'message' => $message,
+                'result' => $result,
+            ]);
+        }
+
+        return redirect()->back()->with(
+            (int) ($result['failed_count'] ?? 0) > 0 ? 'error' : 'success',
+            $message
+        );
     }
 
     /**

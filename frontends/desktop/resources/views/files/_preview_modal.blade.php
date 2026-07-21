@@ -42,7 +42,7 @@
                 <div class="file-preview-error d-none" data-file-preview-error role="alert">
                     <i class="bi bi-exclamation-triangle fs-2" aria-hidden="true"></i>
                     <strong>NÃ£o foi possÃ­vel exibir este arquivo.</strong>
-                    <span>VocÃª ainda pode tentar baixÃ¡-lo.</span>
+                    <span>Confira o estado e a integridade do arquivo nos detalhes.</span>
                 </div>
                 <div class="file-preview-image-stage d-none" data-file-preview-image-stage tabindex="0" aria-label="Visualizador da foto">
                     <div class="file-preview-image-canvas" data-file-preview-image-canvas>

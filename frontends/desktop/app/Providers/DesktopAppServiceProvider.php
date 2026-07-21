@@ -81,7 +81,6 @@ class DesktopAppServiceProvider extends ServiceProvider
             $view->with('desktopSessionGuard', [
                 'active' => DesktopSession::hasToken() && ! DesktopSession::rememberMe(),
                 'justLoggedIn' => (bool) session('session_just_started', false),
-                'warnOnClose' => SessionSecuritySettings::warnOnClose(),
             ]);
         });
     }

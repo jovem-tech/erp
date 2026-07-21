@@ -233,44 +233,15 @@ class SessionSecurityTest extends TestCase
         $response->assertOk()->assertDontSee('__DESKTOP_SESSION_GUARD', false);
     }
 
-    public function test_close_warning_is_armed_by_default_for_non_remembered_session(): void
+    public function test_close_warning_is_not_rendered_for_non_remembered_session(): void
     {
         $response = $this
             ->withSession($this->desktopSession(['dashboard' => ['visualizar']], false))
             ->get('/dashboard');
 
-        $response->assertOk()->assertSee('warnOnClose\u0022:true', false);
-    }
-
-    public function test_close_warning_can_be_disabled_via_settings(): void
-    {
-        SessionSecuritySetting::create([
-            'idle_timeout_minutes' => 120,
-            'remember_me_enabled' => true,
-            'remember_me_lifetime_days' => 30,
-            'warn_on_close' => false,
-        ]);
-
-        $response = $this
-            ->withSession($this->desktopSession(['dashboard' => ['visualizar']], false))
-            ->get('/dashboard');
-
-        $response->assertOk()->assertSee('warnOnClose\u0022:false', false);
-    }
-
-    public function test_admin_can_update_close_warning_toggle(): void
-    {
-        $response = $this
-            ->withSession($this->desktopSession(['configuracoes' => ['visualizar', 'editar']], false))
-            ->post('/configuracoes/sessao-seguranca', [
-                'idle_timeout_minutes' => 120,
-                'remember_me_lifetime_days' => 30,
-                'remember_me_enabled' => '1',
-                // warn_on_close ausente = desmarcado
-            ]);
-
-        $response->assertRedirect(route('configurations.system.index', ['tab' => 'sessao']));
-        $this->assertFalse(SessionSecuritySetting::first()->warn_on_close);
+        $response->assertOk()
+            ->assertDontSee('warnOnClose', false)
+            ->assertDontSee("event.returnValue = ''", false);
     }
 
     public function test_idle_timeout_setting_from_database_is_applied(): void

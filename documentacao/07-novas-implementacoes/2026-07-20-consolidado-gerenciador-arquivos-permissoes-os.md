@@ -323,6 +323,7 @@ Todos os endpoints abaixo estão sob `/api/v1`, autenticação Bearer e RBAC:
 |---|---|---|
 | `GET` | `/file-manager/dashboard` | totais, categorias, flags e última sincronização |
 | `POST` | `/file-manager/sync` | solicita sincronização manual; retorna `202` quando enfileirada |
+| `POST` | `/file-manager/trash-retention` | configura 0/7/30/90 dias com step-up |
 | `GET` | `/file-manager/scan-runs` | histórico paginado de execuções |
 | `GET` | `/file-manager/findings` | findings paginados e mascarados |
 | `GET` | `/files` | catálogo paginado com cliente/data do documento |
@@ -332,6 +333,8 @@ Todos os endpoints abaixo estão sob `/api/v1`, autenticação Bearer e RBAC:
 | `GET` | `/files/{uuid}/thumbnail` | PNG da primeira página de PDF |
 | `POST` | `/files/download-batch` | ZIP temporário de arquivos autorizados |
 | `POST` | `/files/trash-batch` | lixeira lógica com step-up |
+| `POST` | `/files/restore-batch` | restauração em lote com step-up |
+| `POST` | `/files/purge-batch` | exclusão física em lote com confirmação e step-up |
 | `POST` | `/files/{uuid}/archive` | arquivamento lógico |
 | `POST` | `/files/{uuid}/restore` | restauração lógica |
 | `POST` | `/files/{uuid}/quarantine` | quarentena lógica |
@@ -380,11 +383,16 @@ FILE_MANAGER_PDF_THUMBNAIL_MAX_DIMENSION=480
 FILE_MANAGER_PDF_THUMBNAIL_MAX_BYTES=2097152
 FILE_MANAGER_PDF_THUMBNAIL_TIMEOUT_SECONDS=10
 FILE_MANAGER_PDF_THUMBNAIL_CACHE_SECONDS=86400
+FILE_MANAGER_ALLOW_PERMANENT_DELETION=false
+FILE_MANAGER_TRASH_RETENTION_DAYS=30
+FILE_MANAGER_TRASH_PURGE_BATCH_SIZE=250
 ```
 
 `FILE_MANAGER_ALLOW_ADMIN_STATE_MUTATIONS` deve continuar `false` até que
 archive, lixeira e quarentena sejam formalmente liberados. Ativar sincronização
-não autoriza escrita central dos módulos nem exclusão física.
+não autoriza escrita central dos módulos nem exclusão física. O expurgo possui o
+kill switch independente `FILE_MANAGER_ALLOW_PERMANENT_DELETION`, desligado por
+padrão.
 
 ## 10. Segurança
 
@@ -402,7 +410,8 @@ não autoriza escrita central dos módulos nem exclusão física.
 - **Credential leakage:** `admin_password` não entra em flash/old input,
   eventos ou logs.
 - **Race condition:** locks de sincronização/miniatura, índices UNIQUE e
-  idempotência de criação da OS.
+  idempotência de criação da OS; o expurgo adiciona lock distribuído por UUID e
+  `lockForUpdate`.
 - **DoS:** paginação máxima, limites de lote/bytes/profundidade/tempo, rate
   limits e carregamento lazy.
 
@@ -414,7 +423,8 @@ não autoriza escrita central dos módulos nem exclusão física.
   uma CA confiável interna ou pública;
 - backup e restauração conjuntos de banco principal, banco `chat`, catálogo e
   storage ainda precisam de ensaio operacional formal;
-- purga física, retenção destrutiva e deduplicação permanecem fora do escopo;
+- purga física está limitada à lixeira, com allowlist, retenção legal, tombstone,
+  kill switch e política 0/7/30/90; deduplicação permanece fora do escopo;
 - modo `hybrid` por categoria exige gate e janela próprios.
 
 ## 11. Performance e escalabilidade
@@ -440,6 +450,8 @@ Cobertura implementada inclui:
 - catálogo/painel, IDOR, headers, step-up, lixeira, ZIP e CSRF;
 - miniatura PDF, cache seguro e fallback visual;
 - grade/lista, modal, cliente vinculado e data do documento;
+- restauração/expurgo em lote, tombstone auditável, cutoff da retenção e preview
+  da lixeira sem download;
 - matriz RBAC por módulo, coluna, global e checkbox individual;
 - criação/replay/conflito idempotente de OS e falhas pós-commit;
 - fotos privadas atuais e legadas de OS/equipamento.
@@ -456,6 +468,9 @@ Validação direcionada executada no ambiente LAN em 20/07/2026:
 Regressão adicional da `5.2.2.0`: 23 testes e 194 asserções cobriram step-up
 administrativo por RBAC, recusa do perfil legado sem permissão, falha do canal
 de log, lixeira sem retry e a interface do Gerenciador.
+
+Validação da lixeira operacional: 16 testes/153 asserções no backend e 14
+testes/104 asserções no desktop.
 | **Total direcionado aprovado** | **76 testes, 430 asserções** |
 
 As suítes amplas também foram executadas como verificação exploratória. Elas
@@ -477,10 +492,12 @@ Ordem segura:
 6. limpar caches de configuração, rota e view;
 7. reconstruir o cache de views;
 8. validar `schedule:list` e cron do Laravel;
-9. executar `file-manager:diagnose --json`;
-10. executar sincronização controlada por uma root e comparar contadores;
-11. validar grade, lista, miniatura, modal, download e uma OS idempotente;
-12. monitorar logs, `file_scan_runs` e findings.
+9. confirmar `file-manager:purge-trash` às 02:30 e manter seu kill switch desligado
+   até a política ser aprovada;
+10. executar `file-manager:diagnose --json`;
+11. executar sincronização controlada por uma root e comparar contadores;
+12. validar grade, lista, miniatura, modal, lixeira e uma OS idempotente;
+13. monitorar logs, `file_scan_runs`, eventos de expurgo e findings.
 
 Comandos de verificação:
 
@@ -488,6 +505,7 @@ Comandos de verificação:
 cd /var/www/sistema-erp/backend
 php artisan migrate:status
 php artisan schedule:list
+php artisan file-manager:purge-trash --limit=10
 php artisan file-manager:diagnose --json
 php artisan file-manager:sync --status
 php artisan file-manager:sync --root=order_photos

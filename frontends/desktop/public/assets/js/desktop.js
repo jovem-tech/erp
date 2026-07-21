@@ -913,16 +913,6 @@ const DesktopUi = (() => {
 
         window.addEventListener('pageshow', hidePageLoader);
         window.addEventListener('pagehide', hidePageLoader);
-        window.addEventListener('beforeunload', () => {
-            if (!(pageLoaderRoot instanceof HTMLElement)) {
-                return;
-            }
-
-            pageLoaderRoot.hidden = false;
-            pageLoaderRoot.classList.add('is-visible');
-            pageLoaderRoot.setAttribute('aria-hidden', 'false');
-            document.body.classList.add('is-page-transitioning');
-        });
     };
 
     const initSidebar = () => {
@@ -1838,22 +1828,82 @@ const DesktopUi = (() => {
             }
         });
 
-        searchForm.querySelectorAll('[data-desktop-search-scope-option]').forEach((button) => {
-            button.addEventListener('click', () => {
-                const value = button.getAttribute('data-desktop-search-scope-option') || 'tudo';
-                const label = button.textContent?.trim() || 'Tudo';
+        // `initDropdowns()` move o `.dropdown-menu` para o final do <body> enquanto ele
+        // está aberto (ver comentário lá) para escapar de containers com overflow
+        // clipado — isso reparenta os checkboxes para fora de `searchForm`. Por isso
+        // guardamos a referência direta ao menu aqui (antes de qualquer move) em vez
+        // de buscar via `searchForm.querySelectorAll(...)` dentro do handler abaixo,
+        // que pararia de encontrá-los assim que o dropdown fosse aberto pela primeira vez.
+        const scopeMenu = searchForm.querySelector('[data-desktop-search-scope-menu]');
+
+        scopeMenu?.querySelectorAll('[data-desktop-search-scope-checkbox]').forEach((checkbox) => {
+            checkbox.addEventListener('change', () => {
+                const checked = Array.from(
+                    scopeMenu.querySelectorAll('[data-desktop-search-scope-checkbox]:checked')
+                );
+                const values = checked.map((item) => item.value);
+                const scopeValue = values.length > 0 ? values.join(',') : 'tudo';
 
                 if (searchScopeValue instanceof HTMLInputElement) {
-                    searchScopeValue.value = value;
+                    searchScopeValue.value = scopeValue;
                 }
 
                 if (searchScopeLabel instanceof HTMLElement) {
-                    searchScopeLabel.textContent = label;
+                    if (values.length === 0 || values.includes('tudo')) {
+                        searchScopeLabel.textContent = 'Busca completa';
+                    } else if (values.length === 1) {
+                        const itemLabel = checked[0]
+                            .closest('.desktop-search-scope-item')
+                            ?.querySelector('span')
+                            ?.textContent?.trim();
+                        searchScopeLabel.textContent = itemLabel || 'Busca completa';
+                    } else {
+                        searchScopeLabel.textContent = `${values.length} selecionados`;
+                    }
                 }
 
                 searchInput.focus();
                 performSearchPreview();
             });
+        });
+    };
+
+    /**
+     * Marcar "Busca completa" desmarca os escopos específicos (é um superconjunto
+     * de qualquer um deles) e vice-versa; se o usuário desmarcar tudo, volta pra
+     * "Busca completa" sozinha em vez de deixar a busca sem nenhum escopo válido.
+     * Reaproveitado tanto pelo dropdown do topbar quanto pela checklist da
+     * tela de busca completa (`/buscar`).
+     */
+    const initScopeCheckboxExclusivity = (container) => {
+        const checkboxes = Array.from(container.querySelectorAll('[data-desktop-search-scope-checkbox]'));
+        const allCheckbox = checkboxes.find((checkbox) => checkbox.value === 'tudo');
+
+        checkboxes.forEach((checkbox) => {
+            checkbox.addEventListener('change', () => {
+                if (checkbox.value === 'tudo') {
+                    if (checkbox.checked) {
+                        checkboxes.forEach((other) => {
+                            if (other !== checkbox) {
+                                other.checked = false;
+                            }
+                        });
+                    }
+                } else if (checkbox.checked && allCheckbox instanceof HTMLInputElement) {
+                    allCheckbox.checked = false;
+                }
+
+                const anyChecked = checkboxes.some((item) => item.checked);
+                if (!anyChecked && allCheckbox instanceof HTMLInputElement) {
+                    allCheckbox.checked = true;
+                }
+            });
+        });
+    };
+
+    const initScopeExclusivity = () => {
+        document.querySelectorAll('[data-desktop-search-scope-menu]').forEach((menu) => {
+            initScopeCheckboxExclusivity(menu);
         });
     };
 
@@ -1943,6 +1993,7 @@ const DesktopUi = (() => {
         initSelect2();
         initOsPreviewModals();
         initPhotoViewers();
+        initScopeExclusivity();
         initSearchAutocomplete();
         initPhotoFallbacks();
         initDropdowns();

@@ -112,7 +112,6 @@
         //      navegador esteve fechado.
         window.__DESKTOP_SESSION_GUARD = {{ \Illuminate\Support\Js::from([
             'justLoggedIn' => (bool) ($desktopSessionGuard['justLoggedIn'] ?? false),
-            'warnOnClose' => (bool) ($desktopSessionGuard['warnOnClose'] ?? false),
             'logoutUrl' => route('logout'),
             'loginUrl' => route('login'),
             'csrfToken' => csrf_token(),
@@ -277,19 +276,6 @@
                 }
             });
 
-            // Aviso nativo ao fechar com sessão ativa (opcional, configurável).
-            if (cfg.warnOnClose) {
-                window.addEventListener('beforeunload', function (event) {
-                    if (internalNavigation) {
-                        return undefined;
-                    }
-                    // Mensagem genérica (navegadores modernos ignoram texto
-                    // customizado e mostram o próprio diálogo padrão).
-                    event.preventDefault();
-                    event.returnValue = '';
-                    return '';
-                });
-            }
         })();
     </script>
     @endif

@@ -235,14 +235,25 @@
 - [ ] T163 Executar backup antes de cada deploy de produção.
 - [ ] T164 Fazer rollout por módulo, monitorar e manter rollback por janela aprovada.
 
-## Phase 12 — Pós-estabilização (projetos futuros, não autorizados)
+## Phase 12 — Pós-estabilização
 
 - [ ] T165 Avaliar object storage/S3 com teste de latência, custo e restore.
 - [ ] T166 Avaliar antivírus operacional e SLA de quarentena.
-- [ ] T167 Definir retenção com jurídico/LGPD e implementar somente dry-run primeiro.
+- [x] T167 Definir retenção operacional configurável em 0/7/30/90 dias, com kill switch, step-up, tombstone e purga limitada.
 - [ ] T168 Avaliar deduplicação restrita após confirmar single/multiempresa e threat model.
 - [ ] T169 Avaliar thumbnails assíncronos apenas para categorias que gerem valor real.
 - [ ] T170 Planejar desligamento do fallback somente com fallback próximo de zero, backup e aprovação.
+
+## Phase 13 — Ciclo completo da lixeira [US7]
+
+- [x] T171 Permitir prévia segura de imagens/PDFs na lixeira sem liberar download.
+- [x] T172 Expor detalhes, restauração e exclusão definitiva individual e em lote no desktop.
+- [x] T173 Criar estado terminal `purged` e `purged_at`, preservando metadados, vínculos e eventos.
+- [x] T174 Implementar purga física contida em disks/roots allowlisted, com lock e idempotência.
+- [x] T175 Persistir política 0/7/30/90 no backend e protegê-la com RBAC + step-up.
+- [x] T176 Criar comando agendado de purga, com lote limitado e execução fora da requisição web.
+- [x] T177 Cobrir RBAC, step-up, prazo, kill switch, traversal, restauração, preview e tombstone com testes.
+- [x] T178 Atualizar OpenAPI, arquitetura, runbook, release note, contexto vivo e versão.
 
 ## Definition of Done por task/release
 

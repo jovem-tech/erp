@@ -36,8 +36,6 @@ O resultado deve reduzir riscos atuais de MIME inconsistente, conteúdo ativo se
 
 - mover em massa todos os arquivos existentes;
 - desativar o fallback legado;
-- exclusão física automática;
-- retenção destrutiva;
 - deduplicação global ou entre empresas;
 - extração automática de ZIP/TAR/GZ;
 - armazenamento S3 obrigatório em produção;
@@ -139,6 +137,22 @@ Como administrador autorizado, quero consultar saúde, uso, quarentena, ausentes
 3. **Given** uma ação de restauração ou quarentena, **When** ela é executada, **Then** autor, motivo e resultado são auditados.
 4. **Given** uma exclusão definitiva futura, **When** não há reautenticação, aprovação e retenção satisfeita, **Then** a ação é recusada.
 
+---
+
+### User Story 7 - Recuperar e expurgar arquivos da lixeira (Priority: P1)
+
+Como administrador do acervo, quero visualizar, consultar detalhes, restaurar ou excluir definitivamente arquivos da lixeira e definir uma retenção automática para que a lixeira não se torne um estado sem saída.
+
+**Independent Test**: mover arquivos para a lixeira, executar cada ação individual e em lote, alterar a retenção entre desativada/7/30/90 dias e executar o comando de purga sobre arquivos elegíveis e não elegíveis.
+
+**Acceptance Scenarios**:
+
+1. **Given** um arquivo íntegro na lixeira, **When** o usuário autorizado abre a prévia, **Then** imagem ou PDF é exibido no modal sem reativar nem permitir download do arquivo.
+2. **Given** um arquivo na lixeira, **When** a restauração é confirmada por step-up administrativo, **Then** ele volta ao estado ativo e a ação é auditada.
+3. **Given** um arquivo na lixeira, **When** a exclusão definitiva é confirmada com motivo, palavra de confirmação e step-up administrativo, **Then** o binário é removido, o registro vira um tombstone `purged` e os eventos permanecem consultáveis.
+4. **Given** retenção configurada em 7, 30 ou 90 dias, **When** o scheduler executa, **Then** somente arquivos com `trashed_at` anterior ao corte são expurgados, sob lock e em lote limitado.
+5. **Given** retenção desativada ou kill switch de exclusão definitiva desligado, **When** o scheduler executa, **Then** nenhum binário é removido.
+
 ## Edge Cases
 
 - Banco confirma e o storage falha, ou storage confirma e o banco falha.
@@ -194,6 +208,12 @@ Como administrador autorizado, quero consultar saúde, uso, quarentena, ausentes
 - **FR-032**: O módulo piloto MUST usar namespace físico compatível com o leitor legado até que o rollback de arquivos novos esteja comprovado.
 - **FR-033**: Deduplicação, quando futuramente ativada, MUST ser invisível ao usuário e nunca revelar a existência de arquivo de outro contexto.
 - **FR-034**: `last_accessed_at` MUST NOT ser atualizado sincronicamente na linha principal a cada download; acessos serão derivados da auditoria ou agregados assincronamente.
+- **FR-035**: A lixeira MUST oferecer visualização, detalhes, restauração e exclusão definitiva, individualmente e em lote, conforme RBAC e step-up administrativo.
+- **FR-036**: Exclusão definitiva MUST possuir kill switch independente, confirmação textual, motivo, rate limit, lock por arquivo e evento append-only com ator e administrador autorizador.
+- **FR-037**: O binário expurgado MUST ser removido somente de disco e namespace allowlisted; o catálogo MUST manter tombstone `purged`, `purged_at`, hash, tamanho, vínculos e eventos para auditoria.
+- **FR-038**: A retenção automática MUST aceitar somente `0` (desativada), `7`, `30` ou `90` dias, ser persistida no backend central e ser alterável somente mediante `arquivos:administrar` e step-up.
+- **FR-039**: A purga agendada MUST ser idempotente, limitada, protegida por lock, não executar em request web e ignorar arquivos ainda fora do corte temporal.
+- **FR-040**: Arquivos `purged` MUST NOT ser entregues, miniaturizados, restaurados, recatalogados como ativos nem contabilizados como binários disponíveis.
 
 ### Non-Functional Requirements
 
@@ -239,7 +259,7 @@ Como administrador autorizado, quero consultar saúde, uso, quarentena, ausentes
 - **SC-007**: O modo shadow pode ser desativado sem rollback de banco e sem alteração do comportamento visível.
 - **SC-008**: O rollback do piloto é concluído em até 15 minutos e os arquivos criados no modo híbrido continuam legíveis.
 - **SC-009**: Download de arquivo grande apresenta memória estável e streaming comprovado em teste.
-- **SC-010**: Nenhuma exclusão física, retenção destrutiva ou deduplicação está ativa na implantação inicial.
+- **SC-010**: Nenhuma exclusão física ocorre com o kill switch desligado; quando habilitada, 100% das purgas deixam tombstone e evento auditável e respeitam a política temporal configurada.
 - **SC-011**: Fallback, divergências, falhas, quarentena e reconciliação possuem métricas e alertas verificáveis.
 - **SC-012**: Rotas existentes de OS, PDFs, assinaturas, chat, logo, fotos, importações e exportações passam na regressão antes de cada promoção.
 

@@ -3162,7 +3162,70 @@ class DesktopFrontendTest extends TestCase
         $response
             ->assertOk()
             ->assertJsonPath('status', 'success')
-            ->assertJsonPath('data.scope', 'os');
+            ->assertJsonPath('data.scope', ['os']);
+    }
+
+    public function test_search_accepts_multiple_scopes_selected_via_checkboxes(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orders*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'orders' => [
+                        [
+                            'id' => 1001,
+                            'numero_os' => 'OS1001',
+                            'cliente_nome' => 'Ana Comércio',
+                            'status_nome' => 'Em execução',
+                            'status_cor' => '#6f5afc',
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/clients*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'clients' => [
+                        [
+                            'id' => 201,
+                            'nome_razao' => 'Ana Comércio LTDA',
+                            'telefone1' => '(21) 98888-1111',
+                            'email' => 'contato@ana.com',
+                            'cidade' => 'Rio de Janeiro',
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]);
+
+        $session = $this->desktopSession([
+            'dashboard' => ['visualizar'],
+            'os' => ['visualizar'],
+            'clientes' => ['visualizar'],
+            'equipamentos' => ['visualizar'],
+        ]);
+
+        // O dropdown do topbar guarda a seleção multi-escolha num único input hidden,
+        // como string separada por vírgula.
+        $this->withSession($session)
+            ->getJson('/buscar/sugestoes?q=ana&scope=os,clientes')
+            ->assertOk()
+            ->assertJsonPath('data.scope', ['os', 'clientes'])
+            ->assertJsonCount(2, 'data.sections')
+            ->assertJsonPath('data.sections.0.key', 'os')
+            ->assertJsonPath('data.sections.1.key', 'clientes');
+
+        // A tela de busca completa (`/buscar`) envia checkboxes reais, que o navegador
+        // serializa como array (`scope[]=os&scope[]=clientes`).
+        $this->withSession($session)
+            ->getJson('/buscar/sugestoes?q=ana&scope[]=os&scope[]=clientes')
+            ->assertOk()
+            ->assertJsonPath('data.scope', ['os', 'clientes'])
+            ->assertJsonCount(2, 'data.sections');
     }
 
     public function test_profile_update_refreshes_session(): void

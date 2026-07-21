@@ -2602,6 +2602,77 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
+  /auth/photo:
+    post:
+      tags:
+        - Autenticação
+      summary: Cadastrar ou substituir a foto de perfil do usuário autenticado.
+      description: >-
+        Recebe uma imagem PNG, JPG ou WebP (até 4 MB), normaliza para JPEG
+        512x512 e cataloga no Gerenciador de Arquivos central (categoria
+        `user_profile_photo`, vinculada ao usuário). Substitui e remove a
+        foto anterior, se existir.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - photo_file
+              properties:
+                photo_file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: Foto salva com sucesso.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          has_photo:
+                            type: boolean
+                          preview_url:
+                            type: string
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      tags:
+        - Autenticação
+      summary: Remover a foto de perfil do usuário autenticado.
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /auth/photo/image:
+    get:
+      tags:
+        - Autenticação
+      summary: Servir a foto de perfil atual do usuário autenticado.
+      responses:
+        "200":
+          description: Arquivo de imagem (JPEG normalizado).
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /auth/refresh:
     post:
       tags:

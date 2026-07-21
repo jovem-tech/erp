@@ -177,7 +177,55 @@ O painel pode permanecer disponível para consulta com `FILE_MANAGER_MODE=off`. 
 
 Cada ação exige a permissão RBAC própria, motivo, credenciais de um administrador ativo e vínculo de negócio autorizado. Tentativas inválidas retornam `422` e sofrem rate limit; o operador não deve ser deslogado. Nunca registrar `admin_password` em log, old input ou sessão.
 
-O switch permite apenas transições lógicas auditadas. Exclusão física, empty trash, retenção destrutiva e deduplicação continuam desabilitados.
+O switch de mutações permite somente transições lógicas auditadas. A exclusão física
+tem um segundo kill switch, independente e desativado por padrão.
+
+## Lixeira, restauração e retenção automática
+
+Configuração recomendada para habilitar a lixeira completa após backup e validação em
+homologação:
+
+```dotenv
+FILE_MANAGER_ALLOW_ADMIN_STATE_MUTATIONS=true
+FILE_MANAGER_ALLOW_PERMANENT_DELETION=true
+FILE_MANAGER_TRASH_RETENTION_DAYS=30
+FILE_MANAGER_TRASH_PURGE_BATCH_SIZE=250
+```
+
+Prazos aceitos pela interface e pelo backend:
+
+- `0`: desativa a exclusão automática;
+- `7`, `30` ou `90`: remove definitivamente binários que ultrapassarem esse tempo na lixeira.
+
+O valor configurado pela interface é persistido em `configuracoes` e prevalece sobre
+o fallback do `.env`. Alterá-lo exige `arquivos:administrar`, motivo e step-up. A
+exclusão manual exige `arquivos:excluir`, motivo, step-up e a confirmação exata
+`EXCLUIR`. A restauração exige `arquivos:restaurar` e também passa por step-up.
+
+O scheduler executa diariamente às `02:30`:
+
+```bash
+php artisan file-manager:purge-trash
+```
+
+O comando consulta pelo índice `(lifecycle_status, trashed_at)`, processa um lote
+limitado, usa lock por UUID e não segue links simbólicos. O binário e miniaturas PDF
+derivadas são removidos, mas a linha de `managed_files`, vínculos e eventos permanecem
+com lifecycle `purged` e `purged_at`, formando o registro-túmulo de auditoria.
+Arquivos com `metadata_json.legal_hold=true` nunca são expurgados.
+
+Validação operacional:
+
+```bash
+php artisan schedule:list | grep file-manager:purge-trash
+php artisan file-manager:purge-trash --limit=10
+```
+
+O segundo comando é seguro para diagnóstico quando o kill switch está desligado: ele
+encerra sem remover arquivos. Com o switch ligado, executá-lo antecipa o ciclo e deve
+ser tratado como operação destrutiva. Para rollback imediato, defina
+`FILE_MANAGER_ALLOW_PERMANENT_DELETION=false` e execute `php artisan config:clear`;
+arquivos já expurgados não podem ser recuperados pela aplicação e dependem de backup.
 
 ## Rollout por categoria
 

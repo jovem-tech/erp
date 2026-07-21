@@ -183,6 +183,32 @@ class FileManagerTest extends TestCase
             && str_ends_with($request->url(), '/api/v1/file-manager/sync'));
     }
 
+    public function test_backend_manual_sync_rate_limit_returns_to_catalog_with_friendly_error(): void
+    {
+        Http::fake([
+            '*/api/v1/file-manager/sync' => Http::response([
+                'status' => 'error',
+                'data' => null,
+                'error' => [
+                    'code' => 'TOO_MANY_REQUESTS',
+                    'message' => 'Too Many Attempts.',
+                    'details' => null,
+                ],
+                'meta' => [],
+            ], 429),
+        ]);
+
+        for ($attempt = 0; $attempt < 4; $attempt++) {
+            $this->withSession($this->desktopSession())
+                ->from('/arquivos')
+                ->post('/arquivos/sincronizar')
+                ->assertRedirect('/arquivos')
+                ->assertSessionHas('error', 'Muitas solicitações em sequência. Aguarde até um minuto antes de sincronizar novamente.');
+        }
+
+        Http::assertSentCount(4);
+    }
+
     public function test_successful_state_action_is_forwarded_with_reason_and_step_up_credentials(): void
     {
         Http::fake([
@@ -380,6 +406,166 @@ class FileManagerTest extends TestCase
             && $request['file_uuids'] === $uuids
             && $request['reason'] === 'Arquivos substituídos por novas versões.');
         Http::assertSentCount(1);
+    }
+
+    public function test_trash_list_exposes_preview_details_restore_purge_and_retention_controls(): void
+    {
+        $uuid = '019f7c54-fd90-7cc1-a455-aa6f3efd15d1';
+        Http::fake([
+            '*/api/v1/file-manager/dashboard*' => Http::response($this->success([
+                'totals' => ['files' => 1, 'bytes' => 1024, 'trashed' => 1],
+                'by_category' => [],
+                'operation' => [
+                    'mode' => 'shadow',
+                    'trash_retention' => ['days' => 30, 'enabled' => true],
+                    'permanent_deletion_enabled' => true,
+                ],
+                'state_mutations_enabled' => true,
+            ])),
+            '*/api/v1/files*' => Http::response($this->success([[
+                'uuid' => $uuid,
+                'safe_download_name' => 'abertura-os.pdf',
+                'detected_mime_type' => 'application/pdf',
+                'size_bytes' => 1024,
+                'category' => 'order_pdf',
+                'origin' => 'upload',
+                'lifecycle_status' => 'trashed',
+                'integrity_status' => 'valid',
+                'security_status' => 'clean',
+                'migration_status' => 'cataloged',
+                'active_links_count' => 0,
+                'created_at' => '2026-07-20T12:00:00-03:00',
+                'trashed_at' => '2026-07-20T13:00:00-03:00',
+                'linked_client' => ['id' => 44, 'name' => 'Cliente da OS'],
+            ]], ['pagination' => [
+                'current_page' => 1,
+                'per_page' => 50,
+                'total' => 1,
+                'last_page' => 1,
+            ]])),
+            '*/api/v1/file-manager/findings*' => Http::response($this->success([])),
+        ]);
+
+        $response = $this->withSession($this->desktopSession())
+            ->get('/arquivos?lifecycle_status=trashed&view=list');
+
+        $response->assertOk()
+            ->assertSee('Retenção da lixeira')
+            ->assertSee('30 dias')
+            ->assertSee('Restaurar selecionados')
+            ->assertSee('Excluir definitivamente')
+            ->assertSee('title="Detalhes"', false)
+            ->assertSee('class="btn btn-outline-success btn-sm file-restore-one"', false)
+            ->assertSee('class="btn btn-outline-danger btn-sm file-purge-one"', false)
+            ->assertSee('/arquivos/'.$uuid.'/visualizar', false)
+            ->assertSee('data-download-url=""', false)
+            ->assertSee('/arquivos/'.$uuid.'/miniatura', false);
+    }
+
+    public function test_missing_trash_content_is_separated_into_the_audit_collection(): void
+    {
+        $uuid = '019f7c54-fd90-7cc1-a455-aa6f3efd15d1';
+        Http::fake([
+            '*/api/v1/file-manager/dashboard*' => Http::response($this->success([
+                'totals' => ['files' => 0, 'bytes' => 0, 'trashed' => 0, 'audit_records' => 1],
+                'by_category' => [],
+                'operation' => [
+                    'mode' => 'shadow',
+                    'trash_retention' => ['days' => 30, 'enabled' => true],
+                    'permanent_deletion_enabled' => true,
+                ],
+                'state_mutations_enabled' => true,
+            ])),
+            '*/api/v1/files*' => Http::response($this->success([[
+                'uuid' => $uuid,
+                'safe_download_name' => 'foto-antiga.jpg',
+                'detected_mime_type' => 'image/jpeg',
+                'size_bytes' => 1024,
+                'category' => 'user_profile_photo',
+                'origin' => 'upload',
+                'lifecycle_status' => 'trashed',
+                'integrity_status' => 'missing',
+                'security_status' => 'clean',
+                'migration_status' => 'cataloged',
+                'active_links_count' => 0,
+                'capabilities' => ['restore' => false, 'purge' => true],
+                'created_at' => '2026-07-20T12:00:00-03:00',
+            ]], ['pagination' => [
+                'current_page' => 1,
+                'per_page' => 24,
+                'total' => 1,
+                'last_page' => 1,
+            ]])),
+            '*/api/v1/file-manager/findings*' => Http::response($this->success([])),
+        ]);
+
+        $response = $this->withSession($this->desktopSession())
+            ->get('/arquivos?lifecycle_status=audit&view=grid');
+
+        $response->assertOk()
+            ->assertSee('Auditoria de conteúdo ausente')
+            ->assertSee('Eles não entram na contagem nem na retenção automática da lixeira.')
+            ->assertSee('Excluir registros selecionados')
+            ->assertSee('Conteúdo ausente')
+            ->assertSee('data-restoreable="0"', false)
+            ->assertDontSee('Restaurar selecionados')
+            ->assertDontSee('class="btn btn-outline-success btn-sm file-restore-one"', false);
+
+        Http::assertSent(static fn ($request): bool => str_contains($request->url(), '/api/v1/files')
+            && str_contains($request->url(), 'audit_only=1'));
+    }
+
+    public function test_trash_actions_and_retention_are_forwarded_once_with_step_up_credentials(): void
+    {
+        $uuid = '019f7c54-fd90-7cc1-a455-aa6f3efd15d1';
+        Http::fake([
+            '*/api/v1/files/restore-batch' => Http::response($this->success([
+                'restored_count' => 1,
+            ])),
+            '*/api/v1/files/purge-batch' => Http::response($this->success([
+                'purged_count' => 1,
+                'failed_count' => 0,
+            ])),
+            '*/api/v1/file-manager/trash-retention' => Http::response($this->success([
+                'days' => 90,
+                'enabled' => true,
+            ])),
+        ]);
+
+        $stepUp = [
+            'reason' => 'Manutenção autorizada da lixeira documental.',
+            'admin_email' => 'admin@example.com',
+            'admin_password' => 'Senha@123',
+        ];
+
+        $this->withSession($this->desktopSession())
+            ->withHeader('Accept', 'application/json')
+            ->post('/arquivos/restaurar-selecionados', array_merge($stepUp, ['file_uuids' => [$uuid]]))
+            ->assertOk()
+            ->assertJsonPath('result.restored_count', 1);
+
+        $this->withSession($this->desktopSession())
+            ->withHeader('Accept', 'application/json')
+            ->post('/arquivos/excluir-definitivamente', array_merge($stepUp, [
+                'file_uuids' => [$uuid],
+                'confirmation' => 'EXCLUIR',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('result.purged_count', 1);
+
+        $this->withSession($this->desktopSession())
+            ->withHeader('Accept', 'application/json')
+            ->post('/arquivos/retencao-lixeira', array_merge($stepUp, ['days' => 90]))
+            ->assertOk()
+            ->assertJsonPath('settings.days', 90);
+
+        Http::assertSent(static fn ($request): bool => str_ends_with($request->url(), '/api/v1/files/restore-batch')
+            && $request['file_uuids'] === [$uuid]);
+        Http::assertSent(static fn ($request): bool => str_ends_with($request->url(), '/api/v1/files/purge-batch')
+            && $request['confirmation'] === 'EXCLUIR');
+        Http::assertSent(static fn ($request): bool => str_ends_with($request->url(), '/api/v1/file-manager/trash-retention')
+            && $request['days'] === 90);
+        Http::assertSentCount(3);
     }
 
     public function test_trash_command_is_not_retried_after_backend_server_error(): void

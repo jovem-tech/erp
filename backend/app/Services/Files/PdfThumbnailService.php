@@ -17,13 +17,13 @@ class PdfThumbnailService
     ) {}
 
     /** @return array{absolute_path: string, etag: string, cache_seconds: int} */
-    public function firstPage(ManagedFile $file): array
+    public function firstPage(ManagedFile $file, bool $allowTrashedPreview = false): array
     {
         if (! (bool) config('file-manager.pdf_thumbnails.enabled', false)) {
             throw new \RuntimeException('Miniaturas PDF desabilitadas.');
         }
 
-        $source = $this->delivery->locate($file);
+        $source = $this->delivery->locate($file, $allowTrashedPreview);
         if ($source['mime_type'] !== 'application/pdf') {
             throw new \UnexpectedValueException('Miniatura disponivel apenas para PDF.');
         }
@@ -61,6 +61,25 @@ class PdfThumbnailService
             'etag' => 'pdf-p1-'.$sha256.'-'.$maxDimension,
             'cache_seconds' => (int) config('file-manager.pdf_thumbnails.browser_cache_seconds', 86400),
         ];
+    }
+
+    public function forget(ManagedFile $file): void
+    {
+        $sha256 = strtolower(trim((string) $file->sha256));
+        if (preg_match('/^[0-9a-f]{64}$/', $sha256) !== 1) {
+            return;
+        }
+
+        $disk = Storage::disk((string) config('file-manager.pdf_thumbnails.disk', 'local'));
+        $root = FilePathGuard::normalizeRelativePath(
+            (string) config('file-manager.pdf_thumbnails.root', 'file-thumbnails/pdf')
+        );
+        $directory = $root.'/'.substr($sha256, 0, 2);
+        foreach ($disk->files($directory) as $candidate) {
+            if (str_starts_with(basename($candidate), $sha256.'-')) {
+                $disk->delete($candidate);
+            }
+        }
     }
 
     private function render(

@@ -45,6 +45,39 @@ class ProfileController extends DesktopController
         ]);
     }
 
+    public function updatePhoto(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'photo_file' => ['required', 'file', 'image', 'mimes:png,jpg,jpeg,webp', 'max:4096'],
+        ], [], [
+            'photo_file' => 'foto de perfil',
+        ]);
+
+        $this->profileService->savePhoto($request->file('photo_file'));
+        DesktopSession::refreshUser($this->profileService->current());
+
+        return redirect()
+            ->route('profile.edit')
+            ->with('success', 'Foto de perfil atualizada.');
+    }
+
+    public function destroyPhoto(): RedirectResponse
+    {
+        $this->profileService->removePhoto();
+        DesktopSession::refreshUser($this->profileService->current());
+
+        return redirect()
+            ->route('profile.edit')
+            ->with('success', 'Foto de perfil removida.');
+    }
+
+    public function photoImage(): Response
+    {
+        $file = $this->profileService->photoImage();
+
+        return response($file['body'], $file['status'])->withHeaders($file['headers']);
+    }
+
     public function updateSignature(Request $request): RedirectResponse
     {
         $validated = $request->validate([

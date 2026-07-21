@@ -12,6 +12,7 @@ enum ManagedFileAction: string
     case Archived = 'ARCHIVED';
     case Trashed = 'TRASHED';
     case Restored = 'RESTORED';
+    case Purged = 'PURGED';
     case Quarantined = 'QUARANTINED';
     case ReleasedFromQuarantine = 'RELEASED_FROM_QUARANTINE';
     case IntegrityChecked = 'INTEGRITY_CHECKED';

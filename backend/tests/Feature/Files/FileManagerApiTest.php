@@ -6,12 +6,15 @@ use App\Contracts\Files\PdfThumbnailRenderer;
 use App\DTO\Files\FileContext;
 use App\DTO\Files\FileDescriptor;
 use App\Enums\Files\FileCategory;
+use App\Enums\Files\FileIntegrityStatus;
+use App\Enums\Files\FileLifecycleStatus;
 use App\Enums\Files\FileOrigin;
 use App\Models\Files\ManagedFile;
 use App\Models\Files\ManagedFileEvent;
 use App\Services\Auth\RbacAuthorizationService;
 use App\Services\Files\FileManagerFacade;
 use App\Services\Files\LegacyCompatibleFileAdapter;
+use App\Services\Files\ManagedFilePurgeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
@@ -40,6 +43,7 @@ class FileManagerApiTest extends TestCase
         config()->set('file-manager.enabled_categories', ['company_logo']);
         config()->set('file-manager.kill_switches.allow_writes', true);
         config()->set('file-manager.kill_switches.allow_admin_state_mutations', true);
+        config()->set('file-manager.kill_switches.allow_permanent_deletion', true);
     }
 
     public function test_catalog_dashboard_and_detail_never_expose_storage_path(): void
@@ -74,6 +78,46 @@ class FileManagerApiTest extends TestCase
             $this->assertStringNotContainsString('managed-files/company_logo', $payload);
             $this->assertStringNotContainsString(Storage::disk('local')->path(''), $payload);
         }
+    }
+
+    public function test_missing_trashed_records_are_partitioned_into_the_audit_collection(): void
+    {
+        $this->grantGroupPermissions(1, [
+            'arquivos' => ['listar', 'metadados', 'administrar'],
+            'configuracoes' => ['visualizar'],
+        ]);
+        $actor = $this->createUserRecord(['grupo_id' => 1]);
+        $present = $this->createManagedLogo($actor->id, 'trash-present');
+        $missing = $this->createManagedLogo($actor->id, 'trash-audit-missing');
+        $present->forceFill([
+            'lifecycle_status' => FileLifecycleStatus::Trashed,
+            'trashed_at' => now()->subDay(),
+        ])->save();
+        $missing->forceFill([
+            'lifecycle_status' => FileLifecycleStatus::Trashed,
+            'integrity_status' => FileIntegrityStatus::Missing,
+            'trashed_at' => now()->subDay(),
+        ])->save();
+        Storage::disk('local')->delete((string) $missing->storage_key);
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->getJson('/api/v1/file-manager/dashboard')
+            ->assertOk()
+            ->assertJsonPath('data.totals.files', 1)
+            ->assertJsonPath('data.totals.trashed', 1)
+            ->assertJsonPath('data.totals.audit_records', 1)
+            ->assertJsonPath('data.totals.integrity_issues', 1)
+            ->assertJsonPath('data.by_category.0.file_count', 1);
+
+        $this->getJson('/api/v1/files?lifecycle_status=trashed')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.0.uuid', $present->uuid);
+
+        $this->getJson('/api/v1/files?audit_only=1')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.0.integrity_status', 'missing');
     }
 
     public function test_download_requires_panel_and_linked_domain_authorization(): void
@@ -338,6 +382,279 @@ class FileManagerApiTest extends TestCase
             'action' => 'TRASHED',
             'actor_id' => $actor->id,
         ]);
+    }
+
+    public function test_trashed_file_without_active_link_can_be_previewed_and_restored_by_administrator(): void
+    {
+        $this->grantGroupPermissions(1, [
+            'arquivos' => ['baixar', 'restaurar', 'administrar'],
+            'configuracoes' => ['visualizar', 'editar'],
+        ]);
+        $this->grantGroupPermissions(3, [
+            'arquivos' => ['baixar', 'restaurar'],
+        ]);
+        $actor = $this->createUserRecord(['grupo_id' => 1, 'perfil' => 'atendente']);
+        $nonAdmin = $this->createUserRecord(['grupo_id' => 3, 'perfil' => 'atendente']);
+        $admin = $this->createUserRecord([
+            'grupo_id' => 1,
+            'perfil' => 'atendente',
+            'email' => 'supervisor.restore@example.com',
+        ]);
+        $file = $this->createManagedLogo($actor->id, 'restore-batch');
+        $file->forceFill([
+            'lifecycle_status' => FileLifecycleStatus::Trashed,
+            'trashed_at' => now(),
+        ])->save();
+        $file->links()->update([
+            'is_current' => false,
+            'unlinked_at' => now(),
+        ]);
+        $file->unsetRelation('links');
+
+        Sanctum::actingAs($nonAdmin, ['*']);
+        $this->get('/api/v1/files/'.$file->uuid.'/preview')->assertNotFound();
+        $this->postJson('/api/v1/files/restore-batch', [
+            'file_uuids' => [$file->uuid],
+            'reason' => 'Tentativa sem permissão administrativa do módulo.',
+            'admin_email' => $admin->email,
+            'admin_password' => 'Senha@123',
+        ])->assertNotFound();
+
+        Sanctum::actingAs($actor, ['*']);
+
+        $preview = $this->get('/api/v1/files/'.$file->uuid.'/preview');
+        $preview->assertOk()->assertHeader('Content-Type', 'image/png');
+        $this->assertNotSame('', $preview->streamedContent());
+        $this->get('/api/v1/files/'.$file->uuid.'/download')
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'FILE_DELIVERY_BLOCKED');
+
+        $this->postJson('/api/v1/files/restore-batch', [
+            'file_uuids' => [$file->uuid],
+            'reason' => 'Documento recuperado após conferência administrativa.',
+            'admin_email' => $admin->email,
+            'admin_password' => 'Senha@123',
+        ])->assertOk()
+            ->assertJsonPath('data.restored_count', 1)
+            ->assertJsonPath('data.file_uuids.0', $file->uuid);
+
+        $this->assertSame(FileLifecycleStatus::Active, $file->fresh()->lifecycle_status);
+        $this->assertNull($file->fresh()->trashed_at);
+    }
+
+    public function test_trashed_file_without_binary_is_not_restored_to_active_lifecycle(): void
+    {
+        $this->grantGroupPermissions(1, [
+            'arquivos' => ['restaurar', 'administrar'],
+            'configuracoes' => ['visualizar', 'editar'],
+        ]);
+        $actor = $this->createUserRecord(['grupo_id' => 1, 'perfil' => 'atendente']);
+        $admin = $this->createUserRecord([
+            'grupo_id' => 1,
+            'perfil' => 'atendente',
+            'email' => 'supervisor.restore-missing@example.com',
+        ]);
+        $file = $this->createManagedLogo($actor->id, 'restore-missing');
+        Storage::disk('local')->delete((string) $file->storage_key);
+        $file->forceFill([
+            'lifecycle_status' => FileLifecycleStatus::Trashed,
+            'trashed_at' => now(),
+        ])->save();
+        $file->links()->update([
+            'is_current' => false,
+            'unlinked_at' => now(),
+        ]);
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->postJson('/api/v1/files/restore-batch', [
+            'file_uuids' => [$file->uuid],
+            'reason' => 'Tentativa controlada de restaurar documento sem binário.',
+            'admin_email' => $admin->email,
+            'admin_password' => 'Senha@123',
+        ])->assertStatus(409)
+            ->assertJsonPath('error.code', 'FILE_RESTORE_SOURCE_UNAVAILABLE');
+
+        $this->assertSame(FileLifecycleStatus::Trashed, $file->fresh()->lifecycle_status);
+    }
+
+    public function test_permanent_deletion_removes_binary_and_keeps_an_auditable_tombstone(): void
+    {
+        $this->grantGroupPermissions(1, [
+            'arquivos' => ['listar', 'excluir', 'administrar'],
+            'configuracoes' => ['editar'],
+        ]);
+        $actor = $this->createUserRecord(['grupo_id' => 1, 'perfil' => 'atendente']);
+        $admin = $this->createUserRecord([
+            'grupo_id' => 1,
+            'perfil' => 'atendente',
+            'email' => 'supervisor.purge@example.com',
+        ]);
+        $file = $this->createManagedLogo($actor->id, 'permanent-delete');
+        $storageKey = (string) $file->storage_key;
+        $file->forceFill([
+            'lifecycle_status' => FileLifecycleStatus::Trashed,
+            'trashed_at' => now()->subDays(2),
+        ])->save();
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->postJson('/api/v1/files/purge-batch', [
+            'file_uuids' => [$file->uuid],
+            'reason' => 'Exclusão definitiva aprovada após conferência do documento.',
+            'confirmation' => 'EXCLUIR',
+            'admin_email' => $admin->email,
+            'admin_password' => 'Senha@123',
+        ])->assertOk()
+            ->assertJsonPath('data.purged_count', 1)
+            ->assertJsonPath('data.failed_count', 0);
+
+        Storage::disk('local')->assertMissing($storageKey);
+        $tombstone = $file->fresh();
+        $this->assertSame(FileLifecycleStatus::Purged, $tombstone->lifecycle_status);
+        $this->assertNotNull($tombstone->purged_at);
+        $this->assertDatabaseHas('managed_file_events', [
+            'file_id' => $file->id,
+            'action' => 'PURGED',
+            'actor_id' => $actor->id,
+        ]);
+        $this->getJson('/api/v1/file-manager/dashboard')
+            ->assertOk()
+            ->assertJsonPath('data.totals.files', 0)
+            ->assertJsonPath('data.totals.bytes', 0);
+    }
+
+    public function test_permanent_deletion_refuses_outside_namespace_and_legal_hold(): void
+    {
+        $this->grantGroupPermissions(1, [
+            'arquivos' => ['listar', 'excluir', 'administrar'],
+            'configuracoes' => ['editar'],
+        ]);
+        $actor = $this->createUserRecord(['grupo_id' => 1, 'perfil' => 'atendente']);
+        $admin = $this->createUserRecord([
+            'grupo_id' => 1,
+            'perfil' => 'atendente',
+            'email' => 'supervisor.purge-guard@example.com',
+        ]);
+        $outside = $this->createManagedLogo($actor->id, 'outside-namespace');
+        $legalHold = $this->createManagedLogo($actor->id, 'legal-hold');
+        $outsideOriginalKey = (string) $outside->storage_key;
+        $outside->forceFill([
+            'storage_key' => 'outside-allowlist/document.png',
+            'lifecycle_status' => FileLifecycleStatus::Trashed,
+            'trashed_at' => now()->subDays(90),
+        ])->save();
+        $legalHold->forceFill([
+            'lifecycle_status' => FileLifecycleStatus::Trashed,
+            'trashed_at' => now()->subDays(90),
+            'metadata_json' => array_merge((array) $legalHold->metadata_json, ['legal_hold' => true]),
+        ])->save();
+
+        try {
+            $this->app->make(ManagedFilePurgeService::class)->purge(
+                $outside,
+                (int) $actor->id,
+                'Teste direto da contenção do namespace autorizado.',
+                (int) $admin->id,
+                'test'
+            );
+            $this->fail('A purga fora do namespace autorizado deveria ser recusada.');
+        } catch (\RuntimeException $exception) {
+            $this->assertStringContainsString('namespaces autorizados', $exception->getMessage());
+        }
+
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->postJson('/api/v1/files/purge-batch', [
+            'file_uuids' => [$legalHold->uuid],
+            'reason' => 'Teste dos limites de contenção e retenção legal.',
+            'confirmation' => 'EXCLUIR',
+            'admin_email' => $admin->email,
+            'admin_password' => 'Senha@123',
+        ])->assertOk()
+            ->assertJsonPath('data.purged_count', 0)
+            ->assertJsonPath('data.failed_count', 1);
+
+        $this->assertSame(FileLifecycleStatus::Trashed, $outside->fresh()->lifecycle_status);
+        $this->assertSame(FileLifecycleStatus::Trashed, $legalHold->fresh()->lifecycle_status);
+        Storage::disk('local')->assertExists($outsideOriginalKey);
+        Storage::disk('local')->assertExists((string) $legalHold->storage_key);
+    }
+
+    public function test_retention_policy_is_step_up_protected_and_scheduled_purge_respects_cutoff(): void
+    {
+        $this->grantGroupPermissions(1, [
+            'arquivos' => ['administrar'],
+            'configuracoes' => ['editar'],
+        ]);
+        $actor = $this->createUserRecord(['grupo_id' => 1, 'perfil' => 'atendente']);
+        $admin = $this->createUserRecord([
+            'grupo_id' => 1,
+            'perfil' => 'atendente',
+            'email' => 'supervisor.retention@example.com',
+        ]);
+        $expired = $this->createManagedLogo($actor->id, 'retention-expired');
+        $recent = $this->createManagedLogo($actor->id, 'retention-recent');
+        $auditRecord = $this->createManagedLogo($actor->id, 'retention-audit-record');
+        $expired->forceFill([
+            'lifecycle_status' => FileLifecycleStatus::Trashed,
+            'trashed_at' => now()->subDays(8),
+        ])->save();
+        $recent->forceFill([
+            'lifecycle_status' => FileLifecycleStatus::Trashed,
+            'trashed_at' => now()->subDays(6),
+        ])->save();
+        $auditRecord->forceFill([
+            'lifecycle_status' => FileLifecycleStatus::Trashed,
+            'integrity_status' => FileIntegrityStatus::Missing,
+            'trashed_at' => now()->subDays(90),
+        ])->save();
+        Storage::disk('local')->delete((string) $auditRecord->storage_key);
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->postJson('/api/v1/file-manager/trash-retention', [
+            'days' => 7,
+            'reason' => 'Padronização do prazo operacional da lixeira.',
+            'admin_email' => $admin->email,
+            'admin_password' => 'Senha@123',
+        ])->assertOk()
+            ->assertJsonPath('data.days', 7)
+            ->assertJsonPath('data.enabled', true)
+            ->assertJsonPath('data.configured_by', $admin->id);
+
+        $this->artisan('file-manager:purge-trash')->assertSuccessful();
+
+        $this->assertSame(FileLifecycleStatus::Purged, $expired->fresh()->lifecycle_status);
+        $this->assertSame(FileLifecycleStatus::Trashed, $recent->fresh()->lifecycle_status);
+        $this->assertSame(FileLifecycleStatus::Trashed, $auditRecord->fresh()->lifecycle_status);
+        Storage::disk('local')->assertMissing((string) $expired->storage_key);
+        Storage::disk('local')->assertExists((string) $recent->storage_key);
+        Storage::disk('local')->assertMissing((string) $auditRecord->storage_key);
+    }
+
+    public function test_permanent_deletion_kill_switch_blocks_before_step_up(): void
+    {
+        $this->grantGroupPermissions(1, [
+            'arquivos' => ['excluir', 'administrar'],
+            'configuracoes' => ['editar'],
+        ]);
+        $actor = $this->createUserRecord(['grupo_id' => 1]);
+        $file = $this->createManagedLogo($actor->id, 'purge-disabled');
+        $file->forceFill([
+            'lifecycle_status' => FileLifecycleStatus::Trashed,
+            'trashed_at' => now()->subDays(100),
+        ])->save();
+        config()->set('file-manager.kill_switches.allow_permanent_deletion', false);
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->postJson('/api/v1/files/purge-batch', [
+            'file_uuids' => [$file->uuid],
+            'reason' => 'Tentativa bloqueada pelo controle operacional.',
+            'confirmation' => 'EXCLUIR',
+            'admin_email' => 'nobody@example.com',
+            'admin_password' => 'qualquer-coisa',
+        ])->assertStatus(409)->assertJsonPath('error.code', 'FILE_PERMANENT_DELETION_DISABLED');
+
+        Storage::disk('local')->assertExists((string) $file->storage_key);
+        $this->assertSame(FileLifecycleStatus::Trashed, $file->fresh()->lifecycle_status);
     }
 
     public function test_batch_trash_rejects_legacy_profile_without_file_admin_permission_even_if_logging_fails(): void

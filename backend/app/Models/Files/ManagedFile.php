@@ -28,6 +28,7 @@ class ManagedFile extends Model
         'metadata_json' => 'array',
         'archived_at' => 'immutable_datetime',
         'trashed_at' => 'immutable_datetime',
+        'purged_at' => 'immutable_datetime',
         'quarantined_at' => 'immutable_datetime',
     ];
 
@@ -55,6 +56,7 @@ class ManagedFile extends Model
     {
         return $query
             ->where('lifecycle_status', '!=', FileLifecycleStatus::Trashed->value)
+            ->where('lifecycle_status', '!=', FileLifecycleStatus::Purged->value)
             ->where('security_status', '!=', FileSecurityStatus::Quarantined->value);
     }
 

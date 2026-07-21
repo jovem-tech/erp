@@ -9,10 +9,15 @@
         $capabilities = (array) ($file['capabilities'] ?? []);
         $mime = (string) ($file['detected_mime_type'] ?? '');
         $previewKind = str_starts_with($mime, 'image/') ? 'image' : ($mime === 'application/pdf' ? 'pdf' : null);
+        $lifecycle = (string) ($file['lifecycle_status'] ?? '');
+        $deliverable = $lifecycle === 'active';
+        $previewable = in_array($lifecycle, ['active', 'trashed'], true)
+            && ($file['integrity_status'] ?? '') === 'valid'
+            && ($file['security_status'] ?? '') === 'clean';
         $statusBadge = static fn (string $status): string => match ($status) {
             'active', 'valid', 'clean', 'native', 'migrated' => 'success',
             'archived', 'cataloged', 'unknown', 'pending' => 'warning',
-            'quarantined', 'missing', 'corrupted', 'rejected', 'failed' => 'danger',
+            'quarantined', 'missing', 'corrupted', 'rejected', 'failed', 'trashed', 'purged' => 'danger',
             default => 'secondary',
         };
         $formatBytes = static fn (int $bytes): string => $bytes >= 1_048_576
@@ -29,10 +34,10 @@
         </div>
         @if ($capabilities['download'] ?? false)
             <div class="d-flex flex-wrap gap-2">
-                @if ($previewKind !== null)
-                    <button type="button" class="btn btn-soft" data-file-preview-trigger data-preview-kind="{{ $previewKind }}" data-preview-url="{{ route('files.preview', ['fileUuid' => $file['uuid']]) }}" data-download-url="{{ route('files.download', ['fileUuid' => $file['uuid']]) }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" data-file-mime="{{ $mime }}"><i class="bi bi-eye me-1"></i> Visualizar</button>
+                @if ($previewKind !== null && $previewable)
+                    <button type="button" class="btn btn-soft" data-file-preview-trigger data-preview-kind="{{ $previewKind }}" data-preview-url="{{ route('files.preview', ['fileUuid' => $file['uuid']]) }}" data-download-url="{{ $deliverable ? route('files.download', ['fileUuid' => $file['uuid']]) : '' }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" data-file-mime="{{ $mime }}"><i class="bi bi-eye me-1"></i> Visualizar</button>
                 @endif
-                <a href="{{ route('files.download', ['fileUuid' => $file['uuid']]) }}" class="btn btn-primary"><i class="bi bi-download me-1"></i> Baixar</a>
+                @if ($deliverable)<a href="{{ route('files.download', ['fileUuid' => $file['uuid']]) }}" class="btn btn-primary"><i class="bi bi-download me-1"></i> Baixar</a>@endif
             </div>
         @endif
     </div>
@@ -49,6 +54,7 @@
                         'Tamanho' => $formatBytes((int) ($file['size_bytes'] ?? 0)),
                         'Confidencialidade' => $file['confidentiality'] ?? '—',
                         'Criado em' => !empty($file['document_created_at'] ?? $file['created_at'] ?? null) ? \Illuminate\Support\Carbon::parse($file['document_created_at'] ?? $file['created_at'])->format('d/m/Y H:i:s') : '—',
+                        'Enviado à lixeira em' => !empty($file['trashed_at'] ?? null) ? \Illuminate\Support\Carbon::parse($file['trashed_at'])->format('d/m/Y H:i:s') : '—',
                     ] as $label => $value)
                         <div class="col-12 col-md-6">
                             <div class="small text-secondary">{{ $label }}</div>

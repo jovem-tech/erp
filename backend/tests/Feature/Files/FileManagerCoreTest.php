@@ -17,6 +17,7 @@ use App\Models\Files\ManagedFileEvent;
 use App\Models\Files\ManagedFileLink;
 use App\Models\OrderDocument;
 use App\Models\OrderDocumentFile;
+use App\Services\Files\Authorizers\UserProfilePhotoFileAuthorizer;
 use App\Services\Files\Authorizers\UserSignatureFileAuthorizer;
 use App\Services\Files\FileAuthorizationRegistry;
 use App\Services\Files\FileManagerConfiguration;
@@ -29,6 +30,7 @@ use App\Services\Files\LegacyCompatibleFileAdapter;
 use App\Services\Files\LegacyFileObservationService;
 use App\Services\Files\LegacyFileResolver;
 use App\Services\Files\ManagedFileEventRecorder;
+use App\Services\Profile\ProfilePhotoImageService;
 use App\Services\Signatures\SignatureImageService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -203,6 +205,110 @@ class FileManagerCoreTest extends TestCase
 
         $this->assertFalse($authorizer->allows($user, $managed, 'archive'));
         $this->assertTrue($authorizer->allows($admin, $managed, 'archive'));
+    }
+
+    public function test_user_profile_photo_is_cataloged_in_shadow_and_linked_to_owner(): void
+    {
+        config()->set('file-manager.mode', 'shadow');
+        config()->set('file-manager.enabled_categories', ['user_profile_photo']);
+        $user = $this->createUserRecord(['grupo_id' => null]);
+
+        $path = app(ProfilePhotoImageService::class)->update(
+            $user,
+            UploadedFile::fake()->image('foto.jpg', 400, 400),
+            $user
+        );
+
+        $managed = ManagedFile::query()->where('category', 'user_profile_photo')->firstOrFail();
+
+        $this->assertSame($path, (string) $managed->storage_key);
+        $this->assertSame('cataloged', $managed->migration_status->value);
+        $this->assertMatchesRegularExpression('/^foto-perfil-[A-Za-z0-9]{10}\.jpg$/', (string) $managed->original_name);
+        $this->assertNotEmpty(
+            app(\App\Services\Files\ManagedFileDeliveryService::class)->open($managed, true)
+        );
+        $this->assertDatabaseHas('managed_file_links', [
+            'file_id' => $managed->id,
+            'subject_type' => 'user',
+            'subject_id' => $user->id,
+            'relation' => 'profile_photo',
+        ]);
+        $this->assertDatabaseHas('managed_file_legacy_aliases', [
+            'file_id' => $managed->id,
+            'legacy_disk' => 'local',
+            'source_table' => 'usuarios',
+            'source_record_id' => (string) $user->id,
+        ]);
+        Storage::disk('local')->assertExists($path);
+
+        DB::table('grupos')->insert([
+            'id' => 1,
+            'nome' => 'Administrador',
+            'descricao' => 'Grupo administrativo',
+            'sistema' => 1,
+            'created_at' => now(),
+        ]);
+        DB::table('modulos')->insert([
+            'id' => 20,
+            'nome' => 'Arquivos',
+            'slug' => 'arquivos',
+            'icone' => 'bi-folder2-open',
+            'ordem_menu' => 78,
+            'ativo' => 1,
+        ]);
+        DB::table('permissoes')->insert([
+            'id' => 20,
+            'nome' => 'Administrar',
+            'slug' => 'administrar',
+        ]);
+        DB::table('grupo_permissoes')->insert([
+            'grupo_id' => 1,
+            'modulo_id' => 20,
+            'permissao_id' => 20,
+        ]);
+        $otherUser = $this->createUserRecord(['grupo_id' => null]);
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        $authorizer = app(UserProfilePhotoFileAuthorizer::class);
+
+        $this->assertTrue($authorizer->allows($user, $managed, 'download'));
+        $this->assertFalse($authorizer->allows($otherUser, $managed, 'download'));
+        $this->assertTrue($authorizer->allows($admin, $managed, 'download'));
+        $this->assertFalse($authorizer->allows($otherUser, $managed, 'archive'));
+        $this->assertTrue($authorizer->allows($admin, $managed, 'archive'));
+    }
+
+    public function test_replacing_profile_photo_trashes_the_superseded_catalog_entry(): void
+    {
+        config()->set('file-manager.mode', 'shadow');
+        config()->set('file-manager.enabled_categories', ['user_profile_photo']);
+        $user = $this->createUserRecord(['grupo_id' => null]);
+        $service = app(ProfilePhotoImageService::class);
+
+        $firstPath = $service->update($user, UploadedFile::fake()->image('primeira.jpg', 400, 400), $user);
+        $secondPath = $service->update($user->fresh(), UploadedFile::fake()->image('segunda.jpg', 400, 400), $user);
+
+        $first = ManagedFile::query()->where('storage_key', $firstPath)->firstOrFail();
+        $second = ManagedFile::query()->where('storage_key', $secondPath)->firstOrFail();
+
+        $this->assertSame('trashed', $first->lifecycle_status->value);
+        $this->assertSame('active', $second->lifecycle_status->value);
+        Storage::disk('local')->assertExists($firstPath);
+        Storage::disk('local')->assertExists($secondPath);
+    }
+
+    public function test_removing_profile_photo_trashes_the_catalog_entry(): void
+    {
+        config()->set('file-manager.mode', 'shadow');
+        config()->set('file-manager.enabled_categories', ['user_profile_photo']);
+        $user = $this->createUserRecord(['grupo_id' => null]);
+        $service = app(ProfilePhotoImageService::class);
+
+        $path = $service->update($user, UploadedFile::fake()->image('foto.jpg', 400, 400), $user);
+        $service->remove($user->fresh(), $user);
+
+        $managed = ManagedFile::query()->where('storage_key', $path)->firstOrFail();
+        $this->assertSame('trashed', $managed->lifecycle_status->value);
+        Storage::disk('local')->assertExists($path);
     }
 
     public function test_catalog_failure_compensates_promoted_blob(): void

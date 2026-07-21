@@ -15,6 +15,7 @@ use App\Services\Files\Authorizers\ChatAttachmentFileAuthorizer;
 use App\Services\Files\Authorizers\ConfigurationFileAuthorizer;
 use App\Services\Files\Authorizers\EquipmentFileAuthorizer;
 use App\Services\Files\Authorizers\OrderFileAuthorizer;
+use App\Services\Files\Authorizers\UserProfilePhotoFileAuthorizer;
 use App\Services\Files\Authorizers\UserSignatureFileAuthorizer;
 use App\Services\Files\EloquentFileCatalog;
 use App\Services\Files\FileAuthorizationRegistry;
@@ -74,6 +75,7 @@ class AppServiceProvider extends ServiceProvider
         $fileAuthorizers->register('equipment', app(EquipmentFileAuthorizer::class));
         $fileAuthorizers->register('order', app(OrderFileAuthorizer::class));
         $fileAuthorizers->register('user_signature', app(UserSignatureFileAuthorizer::class));
+        $fileAuthorizers->register('user', app(UserProfilePhotoFileAuthorizer::class));
         $fileAuthorizers->register('chat_attachment', app(ChatAttachmentFileAuthorizer::class));
         OrderDocumentFile::observe(app(OrderDocumentFileObserver::class));
 

@@ -25,7 +25,7 @@ class ManagedFileEventRecorder
         }
 
         $safeContext = [];
-        foreach (['category', 'origin', 'relation', 'reason_code', 'reason', 'authorized_by', 'validation_reference', 'integrity_status', 'path_hash', 'size_bytes', 'detected_mime_type'] as $key) {
+        foreach (['category', 'origin', 'relation', 'reason_code', 'reason', 'authorized_by', 'validation_reference', 'integrity_status', 'path_hash', 'size_bytes', 'detected_mime_type', 'purge_source', 'retention_days', 'binary_existed'] as $key) {
             if (array_key_exists($key, $context) && (is_scalar($context[$key]) || $context[$key] === null)) {
                 $safeContext[$key] = is_string($context[$key])
                     ? mb_substr(trim($context[$key]), 0, 500)

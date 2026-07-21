@@ -48,12 +48,15 @@ As migrations seguintes adicionam `managed_file_uuid` aos arquivos documentais d
 
 Lifecycle, integridade, segurança e migração não são condensados em um único status:
 
-- lifecycle: `active`, `archived`, `trashed`;
+- lifecycle: `active`, `archived`, `trashed`, `purged`;
 - integridade: `unknown`, `valid`, `missing`, `corrupted`;
 - segurança: `pending`, `clean`, `quarantined`, `rejected`;
 - migração: `native`, `legacy`, `cataloged`, `migrating`, `migrated`, `failed`.
 
-Transições inválidas são recusadas. Quarentena e restauração são estados lógicos; exclusão física permanece fora do escopo ativado.
+Transições inválidas são recusadas. `trashed` mantém o binário recuperável e permite
+preview autenticado, mas nunca download. `purged` é terminal: o binário e as
+miniaturas derivadas foram removidos, enquanto metadados, vínculos e eventos ficam
+preservados como registro-túmulo para auditoria.
 
 ## Escrita e compensação
 
@@ -131,7 +134,9 @@ Archive, restore, quarantine e release exigem permissão específica, motivo de 
 - a sincronização está em `shadow`; qualquer promoção para `hybrid` ainda exige uma janela operacional por categoria;
 - backup/restore conjunto precisa ser ensaiado antes de qualquer rollout produtivo;
 - métricas já existem como eventos/findings, mas alertas externos ainda precisam de integração operacional;
-- antivírus real, retenção destrutiva, deduplicação e S3 permanecem projetos futuros;
+- antivírus real, deduplicação e S3 permanecem projetos futuros;
+- a retenção destrutiva está disponível somente para a lixeira, protegida por kill switch,
+  step-up administrativo, confirmação explícita, allowlist de disco/path e retenção legal;
 - miniaturas PDF estão disponíveis sob demanda; uma evolução assíncrona só se justifica após teste de carga;
 - cada novo domínio exige authorizer e regressão próprios antes de entrar na allowlist.
 - o banco `sistema_erp_chat` precisa receber o grant mínimo de migration antes de aplicar a coluna aditiva; credenciais não foram contornadas.
@@ -142,9 +147,21 @@ Detalhes de inventário estão em `inventario-arquivos-funcionais.md`; compatibi
 
 A listagem administrativa também funciona como biblioteca de arquivos: pastas por categoria, busca, filtros, visualização em grade/lista, miniaturas lazy e seleção da página. O desktop continua consumindo exclusivamente a API central e nunca recebe `storage_key` ou path absoluto.
 
-Download individual e preview exigem `arquivos:baixar`, autorização de domínio e estados `active + valid + clean`. Arquivos legados ainda sem vínculo inferido exigem adicionalmente `arquivos:administrar`. Downloads múltiplos geram um ZIP temporário de até 50 arquivos e 100 MiB, removido após a resposta.
+Download individual e preview exigem `arquivos:baixar`, autorização de domínio e estados
+de integridade/segurança `valid + clean`. Download exige lifecycle `active`; preview
+também aceita `trashed` para que o operador consiga confirmar o conteúdo antes de
+restaurar ou excluir definitivamente. Arquivos legados ainda sem vínculo inferido
+exigem adicionalmente `arquivos:administrar`. Downloads múltiplos geram um ZIP
+temporário de até 50 arquivos e 100 MiB, removido após a resposta.
 
-“Excluir” exige `arquivos:excluir`, motivo, step-up de administrador e kill switch ativo. A operação é atômica e move os registros para `trashed`; o binário permanece preservado para restauração e auditoria. Purga física, esvaziamento da lixeira e retenção destrutiva continuam deliberadamente fora do escopo.
+“Excluir” exige `arquivos:excluir`, motivo, step-up de administrador e kill switch de
+mutação ativo. A operação move o registro para `trashed` e preserva o binário.
+“Excluir definitivamente” é uma operação distinta: exige o kill switch independente
+`FILE_MANAGER_ALLOW_PERMANENT_DELETION`, a confirmação exata `EXCLUIR`, limita o lote
+a 50 UUIDs e valida disco, namespace, caminho físico, symlink e retenção legal antes
+de remover o binário. A rotina automática usa a mesma implementação e aceita somente
+0, 7, 30 ou 90 dias; 0 desativa o expurgo. Locks por UUID, `lockForUpdate`, lote
+limitado e scheduler `onOneServer/withoutOverlapping` evitam corridas e picos de carga.
 
 ### Miniaturas, contexto e modal
 

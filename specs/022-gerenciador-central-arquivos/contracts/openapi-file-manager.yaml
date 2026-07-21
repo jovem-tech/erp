@@ -24,6 +24,25 @@ paths:
         '401': { $ref: '#/components/responses/Unauthenticated' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /file-manager/trash-retention:
+    post:
+      tags: [FileManager]
+      summary: Configurar retenção automática da lixeira
+      operationId: updateManagedFileTrashRetention
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TrashRetentionRequest' }
+      responses:
+        '200':
+          description: Política persistida e disponível ao scheduler.
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429':
+          description: Limite de alterações administrativas excedido.
+
   /files:
     get:
       tags: [FileManager]
@@ -114,7 +133,7 @@ paths:
   /files/{fileUuid}/preview:
     get:
       tags: [FileManager]
-      summary: Visualizar somente categorias aprovadas para preview
+      summary: Visualizar arquivos ativos ou na lixeira em categorias aprovadas
       operationId: previewManagedFile
       parameters:
         - $ref: '#/components/parameters/FileUuid'
@@ -137,6 +156,44 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /files/restore-batch:
+    post:
+      tags: [FileManager]
+      summary: Restaurar arquivos da lixeira em lote
+      operationId: restoreManagedFilesBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FileBatchStepUpRequest' }
+      responses:
+        '200':
+          description: Arquivos restaurados e eventos de auditoria registrados.
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+
+  /files/purge-batch:
+    post:
+      tags: [FileManager]
+      summary: Excluir definitivamente binários da lixeira em lote
+      operationId: purgeManagedFilesBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FilePurgeBatchRequest' }
+      responses:
+        '200':
+          description: Resultado item a item; registros-túmulo e eventos são preservados.
+        '401': { $ref: '#/components/responses/Unauthenticated' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429':
+          description: Limite de exclusões administrativas excedido.
 
   /files/{fileUuid}/archive:
     post:
@@ -318,7 +375,7 @@ components:
   schemas:
     LifecycleStatus:
       type: string
-      enum: [active, archived, trashed]
+      enum: [active, archived, trashed, purged]
     IntegrityStatus:
       type: string
       enum: [unknown, valid, missing, corrupted]
@@ -356,6 +413,8 @@ components:
           type: string
           enum: [internal, confidential, personal_data, sensitive_personal_data, legal_retention]
         created_at: { type: string, format: date-time }
+        trashed_at: { type: [string, 'null'], format: date-time }
+        purged_at: { type: [string, 'null'], format: date-time }
     ManagedFileDetail:
       allOf:
         - $ref: '#/components/schemas/ManagedFileSummary'
@@ -408,6 +467,42 @@ components:
           format: password
           maxLength: 200
           writeOnly: true
+    FileBatchStepUpRequest:
+      allOf:
+        - $ref: '#/components/schemas/ReasonRequest'
+        - type: object
+          required: [file_uuids]
+          properties:
+            file_uuids:
+              type: array
+              minItems: 1
+              maxItems: 100
+              uniqueItems: true
+              items: { type: string, format: uuid }
+    FilePurgeBatchRequest:
+      allOf:
+        - $ref: '#/components/schemas/FileBatchStepUpRequest'
+        - type: object
+          required: [confirmation]
+          properties:
+            file_uuids:
+              type: array
+              minItems: 1
+              maxItems: 50
+              uniqueItems: true
+              items: { type: string, format: uuid }
+            confirmation:
+              type: string
+              const: EXCLUIR
+    TrashRetentionRequest:
+      allOf:
+        - $ref: '#/components/schemas/ReasonRequest'
+        - type: object
+          required: [days]
+          properties:
+            days:
+              type: integer
+              enum: [0, 7, 30, 90]
     FileScanRun:
       type: object
       required: [uuid, process_name, mode, status, processed_count, finding_count, created_at]
