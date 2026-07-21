@@ -128,15 +128,20 @@
                 <div>
                     <label for="financeiroFormaPagamento">Forma de pagamento</label>
                     @php $formaPagamento = old('forma_pagamento', $lancamento['forma_pagamento'] ?? ''); @endphp
+                    {{--
+                        Este campo grava na coluna-resumo do título, que é um ENUM fixo
+                        no banco legado — por isso lista só as formas compatíveis com ele.
+                        As formas personalizadas do cadastro aparecem na baixa/recebimento,
+                        que é onde o valor realmente entra.
+                    --}}
                     <select id="financeiroFormaPagamento" name="forma_pagamento" class="form-select">
                         <option value="" @selected($formaPagamento === '')>Não informado</option>
-                        <option value="dinheiro" @selected($formaPagamento === 'dinheiro')>Dinheiro</option>
-                        <option value="cartao_credito" @selected($formaPagamento === 'cartao_credito')>Cartão de crédito</option>
-                        <option value="cartao_debito" @selected($formaPagamento === 'cartao_debito')>Cartão de débito</option>
-                        <option value="pix" @selected($formaPagamento === 'pix')>Pix</option>
-                        <option value="boleto" @selected($formaPagamento === 'boleto')>Boleto</option>
-                        <option value="transferencia" @selected($formaPagamento === 'transferencia')>Transferência</option>
+                        @foreach (($formasPagamento ?? []) as $forma)
+                            @continue(! ($forma['ativo'] ?? true) || ! ($forma['resumo_enum'] ?? false))
+                            <option value="{{ $forma['codigo'] }}" @selected($formaPagamento === $forma['codigo'])>{{ $forma['nome'] }}</option>
+                        @endforeach
                     </select>
+                    <p class="small text-secondary mt-1 mb-0">Formas personalizadas ficam disponíveis na hora da baixa.</p>
                 </div>
 
                 @if ($financialAccounts !== [] && ! $hasMovements)

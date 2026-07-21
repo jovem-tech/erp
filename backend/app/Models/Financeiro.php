@@ -18,6 +18,13 @@ class Financeiro extends Model
     public const STATUS_CANCELADO = 'cancelado';
 
     /**
+     * Lista histórica das formas de pagamento. Desde o catálogo gerenciável
+     * (`financeiro_formas_pagamento`) esta constante serve apenas como semente
+     * da migration e fallback quando a tabela ainda não existe. Para validar ou
+     * listar formas, use FinanceiroFormaPagamento::validCodes()/options().
+     *
+     * Coincide com os valores do ENUM legado de `financeiro.forma_pagamento`.
+     *
      * @var array<int, string>
      */
     public const FORMAS_PAGAMENTO = ['dinheiro', 'cartao_credito', 'cartao_debito', 'pix', 'boleto', 'transferencia'];
@@ -53,16 +60,14 @@ class Financeiro extends Model
         ];
     }
 
+    /**
+     * Opções vindas do catálogo gerenciável (Configurações Financeiras >
+     * Formas de Pagamento). A constante FORMAS_PAGAMENTO acima permanece só
+     * como semente/fallback — ver FinanceiroFormaPagamento::options().
+     */
     public static function formaPagamentoOptions(): array
     {
-        return [
-            ['value' => 'dinheiro', 'label' => 'Dinheiro'],
-            ['value' => 'cartao_credito', 'label' => 'Cartão de crédito'],
-            ['value' => 'cartao_debito', 'label' => 'Cartão de débito'],
-            ['value' => 'pix', 'label' => 'Pix'],
-            ['value' => 'boleto', 'label' => 'Boleto'],
-            ['value' => 'transferencia', 'label' => 'Transferência'],
-        ];
+        return FinanceiroFormaPagamento::options();
     }
 
     public function scopeWithFilters(Builder $query, array $filters): Builder

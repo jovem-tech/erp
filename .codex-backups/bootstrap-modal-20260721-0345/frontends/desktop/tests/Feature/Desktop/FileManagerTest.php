@@ -650,21 +650,6 @@ class FileManagerTest extends TestCase
         ));
     }
 
-    public function test_default_theme_keeps_bootstrap_modal_surface_opaque(): void
-    {
-        $stylesheet = file_get_contents(public_path('assets/css/desktop.css'));
-
-        $this->assertIsString($stylesheet);
-        $this->assertMatchesRegularExpression(
-            '/\.modal-content\s*\{[^}]*background:\s*var\(--desktop-surface\);[^}]*border:\s*1px\s+solid\s+var\(--desktop-border\);[^}]*\}/s',
-            $stylesheet
-        );
-        $this->assertDoesNotMatchRegularExpression(
-            '/\.modal-content\s*\{[^}]*background:\s*transparent\s*;/s',
-            $stylesheet
-        );
-    }
-
     /** @return array<string, mixed> */
     private function desktopSession(): array
     {

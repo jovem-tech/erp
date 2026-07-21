@@ -30,7 +30,41 @@ class FinanceiroCatalogController extends DesktopController
             'dreSubgrupos' => $catalogo['dre_subgrupos'],
             'comissoesTecnicos' => $catalogo['comissoes_tecnicos'],
             'comissaoPercentualPadrao' => $catalogo['comissao_percentual_padrao'],
+            'formasPagamento' => $catalogo['formas_pagamento'],
         ]);
+    }
+
+    public function saveFormaPagamento(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'id' => ['nullable', 'integer', 'min:1'],
+            'nome' => ['required', 'string', 'max:60'],
+            'is_cartao' => ['nullable', 'boolean'],
+            'ordem_exibicao' => ['nullable', 'integer', 'min:0', 'max:9999'],
+            'ativo' => ['nullable', 'boolean'],
+        ], [], [
+            'nome' => 'nome da forma de pagamento',
+        ]);
+
+        $id = (int) ($validated['id'] ?? 0);
+        unset($validated['id']);
+        $validated['is_cartao'] = $request->boolean('is_cartao');
+        $validated['ativo'] = $request->boolean('ativo', true);
+
+        return $this->saveCatalogItem(
+            fn () => $id > 0
+                ? $this->financeiroService->updateFormaPagamento($id, $validated)
+                : $this->financeiroService->createFormaPagamento($validated),
+            'Forma de pagamento salva com sucesso.'
+        );
+    }
+
+    public function deleteFormaPagamento(int $formaPagamento): RedirectResponse
+    {
+        return $this->deleteCatalogItem(
+            fn () => $this->financeiroService->destroyFormaPagamento($formaPagamento),
+            'Forma de pagamento excluída com sucesso.'
+        );
     }
 
     public function saveComissao(Request $request): RedirectResponse

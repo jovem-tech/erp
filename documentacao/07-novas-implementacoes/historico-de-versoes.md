@@ -3,6 +3,22 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.5.0.0 - 2026-07-21
+
+- formas de pagamento deixam de ser lista fixa no código e viram cadastro gerenciável em `Configurações Financeiras > Formas de Pagamento`;
+- o catálogo alimenta a baixa de OS, o formulário de lançamento e as formas padrão das contas; formas de sistema são protegidas (só desativáveis) e formas já usadas não podem ser excluídas;
+- a marcação "É cartão" passa a controlar operadora/bandeira/parcelas/taxas, inclusive no JS da baixa (que antes adivinhava pelo prefixo do código);
+- migration aditiva: a coluna-resumo `financeiro.forma_pagamento` (ENUM do banco legado compartilhado) **não** foi alterada — formas personalizadas vivem nas colunas de detalhe (varchar), sem perda de informação;
+- nota: `2026-07-21-cadastro-formas-de-pagamento.md`.
+
+## v5.4.2.0 - 2026-07-21
+
+- sidebar do desktop reorganizada em 7 seções por afinidade (Visão Geral, Atendimento, Cadastros, Financeiro, Conhecimento, Processos e Modelos, Administração);
+- "Equipe da Assistência" sai do antigo grupo "Comercial" para "Administração"; "Aparelhos/Equip." vira Cadastro; catálogos (Serviços/Estoque) agrupados em Cadastros;
+- novos grupos de atalho levam direto às sub-páginas mais usadas: Relatórios e Ferramentas (Financeiro) e Acesso e Integrações (Administração), sem substituir os dropdowns das páginas-mãe;
+- mudança só de apresentação (array `DesktopNavigation::definition()`); rotas/permissões/RBAC inalterados;
+- nota: `2026-07-21-sidebar-reorganizacao-e-atalhos.md`.
+
 ## v5.4.1.0 - 2026-07-20
 
 - corrige 4 problemas da foto de perfil reportados após teste real: nome de arquivo ilegível (UUID puro → `foto-perfil-{aleatorio}.jpg`), foto antiga não aposentada no gerenciador (`ManagedFile` anterior agora vai para `trashed` ao substituir/remover), miniatura quebrada (`private/usuarios` faltava na allowlist de namespaces de `ManagedFileDeliveryService`) e logoff forçado após trocar a foto (`form.submit()` não dispara o evento `submit` que o guard de sessão depende → trocado para `form.requestSubmit()`);

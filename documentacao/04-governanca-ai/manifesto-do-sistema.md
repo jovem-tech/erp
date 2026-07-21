@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-20T23:05:16-03:00`
-- Versao do sistema: `5.4.0`
+- Gerado em: `2026-07-21T04:06:54-03:00`
+- Versao do sistema: `5.5.0`
 - Versao da API: `1.5.0`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -164,6 +164,8 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md` - Consolidado das implementações de 20 de julho de 2026
 - `documentacao/07-novas-implementacoes/2026-07-20-foto-de-perfil-usuario.md` - Foto de perfil do usuário
 - `documentacao/07-novas-implementacoes/2026-07-20-lixeira-gerenciador-arquivos.md` - Lixeira operacional e retenção do Gerenciador de Arquivos
+- `documentacao/07-novas-implementacoes/2026-07-21-cadastro-formas-de-pagamento.md` - Cadastro de formas de pagamento
+- `documentacao/07-novas-implementacoes/2026-07-21-sidebar-reorganizacao-e-atalhos.md` - Reorganização da sidebar e atalhos de submenu
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 
 ### `documentacao/10-deploy`

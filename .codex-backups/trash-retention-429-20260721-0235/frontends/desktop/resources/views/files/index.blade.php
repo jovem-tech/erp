@@ -638,30 +638,6 @@
             const canRestore = @json($canRestore && $mutationsEnabled);
             const canPurge = @json($canDelete && $permanentDeletionEnabled);
             const syncForm = document.querySelector('[data-file-sync-form]');
-            const modalReturnFocus = new WeakMap();
-            document.querySelectorAll('.modal').forEach((modalElement) => {
-                modalElement.addEventListener('show.bs.modal', (event) => {
-                    const trigger = event.relatedTarget instanceof HTMLElement
-                        ? event.relatedTarget
-                        : document.activeElement;
-                    if (trigger instanceof HTMLElement && !modalElement.contains(trigger)) {
-                        modalReturnFocus.set(modalElement, trigger);
-                    }
-                });
-                modalElement.addEventListener('hide.bs.modal', () => {
-                    const focused = document.activeElement;
-                    if (focused instanceof HTMLElement && modalElement.contains(focused)) {
-                        focused.blur();
-                    }
-                });
-                modalElement.addEventListener('hidden.bs.modal', () => {
-                    const trigger = modalReturnFocus.get(modalElement);
-                    if (trigger instanceof HTMLElement && trigger.isConnected) {
-                        trigger.focus({ preventScroll: true });
-                    }
-                    modalReturnFocus.delete(modalElement);
-                });
-            });
             const pdfThumbnailQueue = [];
             const pdfThumbnails = [...document.querySelectorAll('[data-pdf-thumbnail-url]')];
             const maximumConcurrentThumbnails = 2;

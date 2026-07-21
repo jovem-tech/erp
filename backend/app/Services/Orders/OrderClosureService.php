@@ -5,6 +5,7 @@ namespace App\Services\Orders;
 use App\Models\Budget;
 use App\Models\CrmFollowup;
 use App\Models\Financeiro;
+use App\Models\FinanceiroFormaPagamento;
 use App\Models\FinanceiroMovimentoCartao;
 use App\Models\Order;
 use App\Models\OrderEvent;
@@ -1027,7 +1028,10 @@ class OrderClosureService
 
     private function isCardPayment(string $formaPagamento): bool
     {
-        return str_contains(strtolower($formaPagamento), 'cartao');
+        // Consulta o catálogo para que formas personalizadas marcadas como
+        // cartão também disparem operadora/bandeira/parcelas/taxas; o modelo
+        // mantém a heurística por nome como fallback.
+        return FinanceiroFormaPagamento::isCardCode($formaPagamento);
     }
 
     /**

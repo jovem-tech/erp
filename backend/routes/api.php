@@ -179,6 +179,10 @@ Route::prefix('v1')->group(function (): void {
                 Route::match(['put', 'patch'], 'dre-subgrupos/{subgrupo}', [FinanceiroCatalogController::class, 'updateSubgrupo'])->name('dre_subgrupos.update');
                 Route::delete('dre-subgrupos/{subgrupo}', [FinanceiroCatalogController::class, 'destroySubgrupo'])->name('dre_subgrupos.destroy');
 
+                Route::post('formas-pagamento', [FinanceiroCatalogController::class, 'storeFormaPagamento'])->name('formas_pagamento.store');
+                Route::match(['put', 'patch'], 'formas-pagamento/{formaPagamento}', [FinanceiroCatalogController::class, 'updateFormaPagamento'])->name('formas_pagamento.update');
+                Route::delete('formas-pagamento/{formaPagamento}', [FinanceiroCatalogController::class, 'destroyFormaPagamento'])->name('formas_pagamento.destroy');
+
                 Route::post('comissoes', [FinanceiroCatalogController::class, 'storeComissao'])->name('comissoes.store');
                 Route::match(['put', 'patch'], 'comissoes/{comissao}', [FinanceiroCatalogController::class, 'updateComissao'])->name('comissoes.update');
                 Route::delete('comissoes/{comissao}', [FinanceiroCatalogController::class, 'destroyComissao'])->name('comissoes.destroy');

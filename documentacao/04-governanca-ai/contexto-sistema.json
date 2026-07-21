@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-07-20T23:05:16-03:00",
+    "generated_at": "2026-07-21T04:06:54-03:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "5.4.0",
+        "app_version": "5.5.0",
         "api_version": "1.5.0",
         "production_target": "Ubuntu VPS",
         "development_target": "Ubuntu Server LAN - BANCADA-02 (192.168.1.100)"
@@ -484,6 +484,14 @@
                 {
                     "file": "documentacao/07-novas-implementacoes/2026-07-20-lixeira-gerenciador-arquivos.md",
                     "title": "Lixeira operacional e retenção do Gerenciador de Arquivos"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-21-cadastro-formas-de-pagamento.md",
+                    "title": "Cadastro de formas de pagamento"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-21-sidebar-reorganizacao-e-atalhos.md",
+                    "title": "Reorganização da sidebar e atalhos de submenu"
                 },
                 {
                     "file": "documentacao/07-novas-implementacoes/historico-de-versoes.md",

@@ -6,6 +6,15 @@
     const noRepairStatuses = Array.isArray(config.noRepairStatuses) ? config.noRepairStatuses : [];
     const orcamentoPendenteAprovacao = Boolean(config.orcamentoPendenteAprovacao);
 
+    // Formas marcadas como cartao no cadastro de Formas de Pagamento. Usa o
+    // catalogo em vez de adivinhar pelo prefixo do codigo, para que formas
+    // personalizadas marcadas como cartao tambem peçam operadora/parcelas.
+    const cardPaymentCodes = Array.isArray(config.cardPaymentCodes) ? config.cardPaymentCodes : [];
+    const isCardPayment = (forma) => (forma || '') !== ''
+        && (cardPaymentCodes.length > 0
+            ? cardPaymentCodes.includes(forma)
+            : String(forma).startsWith('cartao'));
+
     const formatMoney = (value) => Number(value || 0).toLocaleString('pt-BR', {
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
@@ -334,7 +343,7 @@
         const toggleCardFields = (row) => {
             const formaPagamento = row.querySelector('[data-field="forma_pagamento"]')?.value || '';
             const cardFields = row.querySelector('[data-card-fields]');
-            const isCard = formaPagamento.startsWith('cartao');
+            const isCard = isCardPayment(formaPagamento);
 
             if (cardFields instanceof HTMLElement) cardFields.classList.toggle('d-none', !isCard);
 
@@ -410,7 +419,7 @@
                 const formaPagamento = row.querySelector('[data-field="forma_pagamento"]')?.value || '';
                 const previewEl = row.querySelector('[data-card-preview]');
 
-                if (!formaPagamento.startsWith('cartao')) return;
+                if (!isCardPayment(formaPagamento)) return;
 
                 const operadoraId = row.querySelector('[data-field="operadora_id"]')?.value || '';
                 const bandeiraId = row.querySelector('[data-field="bandeira_id"]')?.value || '';
@@ -478,7 +487,7 @@
                 errors.push('Selecione a conta financeira de todos os recebimentos lançados.');
             }
 
-            if (formaPagamento.startsWith('cartao')) {
+            if (isCardPayment(formaPagamento)) {
                 if (!operadoraId) {
                     errors.push('Selecione a operadora para recebimentos em cartão.');
                 } else {

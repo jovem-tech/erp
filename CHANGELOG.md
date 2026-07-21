@@ -1,5 +1,29 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.5.0.1 — 2026-07-21 04:10
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Restaura superficie opaca dos modais Bootstrap no tema padrao
+- **Arquivos:** frontends/desktop/public/assets/css/desktop.css,frontends/desktop/tests/Feature/Desktop/FileManagerTest.php
+
+## v5.5.0.0 — 2026-07-21 04:05
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Cadastro gerenciavel de formas de pagamento em Configuracoes Financeiras, substituindo a lista fixa no codigo; formas de cartao protegidas e detectadas pelo catalogo
+- **Arquivos:** backend/database/migrations/2026_07_21_000001_create_financeiro_formas_pagamento_table.php,backend/app/Models/FinanceiroFormaPagamento.php,backend/app/Models/Financeiro.php,backend/app/Http/Controllers/Api/V1/FinanceiroCatalogController.php,backend/app/Http/Controllers/Api/V1/OrderController.php,backend/app/Http/Requests/Api/V1/UpsertFinanceiroFormaPagamentoRequest.php,backend/app/Http/Requests/Api/V1/UpsertFinanceiroRequest.php,backend/app/Http/Requests/Api/V1/UpsertFinanceiroContaRequest.php,backend/app/Http/Requests/Api/V1/CloseOrderRequest.php,backend/app/Services/Financeiro/FinanceiroService.php,backend/app/Services/Financeiro/FinanceiroContaService.php,backend/app/Services/Orders/OrderClosureService.php,backend/routes/api.php,backend/tests/Feature/Api/V1/FinanceiroFormaPagamentoTest.php,frontends/desktop/app/Http/Controllers/FinanceiroCatalogController.php,frontends/desktop/app/Http/Controllers/FinanceiroController.php,frontends/desktop/app/Services/FinanceiroService.php,frontends/desktop/routes/web.php,frontends/desktop/resources/views/financeiro/configuracoes.blade.php,frontends/desktop/resources/views/financeiro/form.blade.php,frontends/desktop/resources/views/orders/closure.blade.php,frontends/desktop/public/assets/js/orders-closure.js
+
+## v5.4.2.0 — 2026-07-21 03:31
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Reorganiza a sidebar do desktop por afinidade (Atendimento/Cadastros/Processos e Modelos/Administracao), move Equipe da Assistencia para Administracao e adiciona grupos de atalho (Relatorios, Ferramentas, Acesso e Integracoes)
+- **Arquivos:** frontends/desktop/app/Support/DesktopNavigation.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v5.4.1.6 — 2026-07-21 02:50
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige bloqueio 429 da politica de retencao atras do proxy da VPS
+- **Arquivos:** frontends/desktop/routes/web.php,frontends/desktop/resources/views/files/index.blade.php,frontends/desktop/tests/Feature/Desktop/FileManagerTest.php
+
 ## v5.4.1.5 — 2026-07-21 02:19
 - **Tier:** hotfix
 - **Autor/Agente:** Codex

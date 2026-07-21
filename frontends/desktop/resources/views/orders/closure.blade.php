@@ -1025,14 +1025,12 @@
                     </div>
                     <div>
                         <label class="form-label">Forma de pagamento <span class="text-danger">*</span></label>
+                        {{-- Opções vêm do cadastro em Configurações Financeiras > Formas de Pagamento. --}}
                         <select class="form-select" data-field="forma_pagamento" required>
                             <option value="">Selecione</option>
-                            <option value="dinheiro">Dinheiro</option>
-                            <option value="cartao_credito">Cartão de crédito</option>
-                            <option value="cartao_debito">Cartão de débito</option>
-                            <option value="pix">Pix</option>
-                            <option value="boleto">Boleto</option>
-                            <option value="transferencia">Transferência</option>
+                            @foreach (($closure['formas_pagamento'] ?? []) as $forma)
+                                <option value="{{ $forma['codigo'] }}">{{ $forma['nome'] }}</option>
+                            @endforeach
                         </select>
                     </div>
                     <div>
@@ -1117,6 +1115,13 @@
             'orcamentoPendenteAprovacao' => $orcamentoPendenteAprovacao,
             'statusAtualNome' => $order['status_nome'] ?? 'Sem status',
             'statusAtualCodigo' => $order['status'] ?? '',
+            // Códigos marcados como cartão no cadastro de formas de pagamento.
+            // A tela usa esta lista (em vez de adivinhar pelo nome) para decidir
+            // quando pedir operadora/bandeira/parcelas e calcular a taxa.
+            'cardPaymentCodes' => collect($closure['formas_pagamento'] ?? [])
+                ->filter(fn ($forma) => (bool) ($forma['is_cartao'] ?? false))
+                ->pluck('codigo')
+                ->values(),
             'cartao' => $cartaoDataset,
             'contasFinanceiras' => $accountDataset,
             'clienteTelefone' => $clienteTelefone,

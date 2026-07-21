@@ -28,6 +28,9 @@
             <button type="button" class="config-subtab" data-config-subtab="comissionamento">
                 <i class="bi bi-person-badge me-1"></i>Comissionamento
             </button>
+            <button type="button" class="config-subtab" data-config-subtab="formas-pagamento">
+                <i class="bi bi-credit-card me-1"></i>Formas de Pagamento
+            </button>
         </div>
 
         <div class="config-subpanel is-active" data-config-subpanel="categorias">
@@ -255,6 +258,111 @@
                                     @method('DELETE')
                                     <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
                                 </form>
+                            </td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="config-subpanel" data-config-subpanel="formas-pagamento">
+            <h4 class="surface-title mt-3 mb-1">Nova forma de pagamento</h4>
+            <p class="surface-subtitle mb-3">
+                As formas cadastradas aqui aparecem na baixa de OS, nos lançamentos e nas formas padrão das contas.
+                Marque "É cartão" para que a forma peça operadora, bandeira e parcelas, e calcule a taxa.
+            </p>
+
+            <form method="post" action="{{ route('financeiro.configuracoes.formas.save') }}" class="desktop-grid desktop-grid-three mb-4">
+                @csrf
+                <div>
+                    <label>Nome</label>
+                    <input type="text" name="nome" class="form-control" maxlength="60" required placeholder="Ex.: Cheque">
+                </div>
+                <div>
+                    <label>Ordem de exibição</label>
+                    <input type="number" name="ordem_exibicao" class="form-control" value="900" min="0" max="9999">
+                </div>
+                <div class="d-flex align-items-end">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="is_cartao" id="formaIsCartao" value="1">
+                        <label class="form-check-label" for="formaIsCartao">É cartão (usa operadora e taxa)</label>
+                    </div>
+                </div>
+                <div class="field-actions">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Criar forma</button>
+                </div>
+            </form>
+
+            <div class="table-responsive">
+                <table class="table table-stack align-middle">
+                    <thead>
+                        <tr>
+                            <th>Nome</th>
+                            <th>Código</th>
+                            <th>Tipo</th>
+                            <th>Ordem</th>
+                            <th>Situação</th>
+                            <th class="text-end">Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach ($formasPagamento as $forma)
+                        <tr>
+                            <td>
+                                <form method="post" action="{{ route('financeiro.configuracoes.formas.save') }}" class="d-flex gap-2 align-items-center">
+                                    @csrf
+                                    <input type="hidden" name="id" value="{{ $forma['id'] }}">
+                                    <input type="hidden" name="ordem_exibicao" value="{{ $forma['ordem_exibicao'] }}">
+                                    @unless ($forma['sistema'] ?? false)
+                                        <input type="hidden" name="is_cartao" value="{{ ($forma['is_cartao'] ?? false) ? 1 : 0 }}">
+                                    @endunless
+                                    <input type="hidden" name="ativo" value="{{ ($forma['ativo'] ?? true) ? 1 : 0 }}">
+                                    <input type="text" name="nome" class="form-control form-control-sm" value="{{ $forma['nome'] }}" maxlength="60" required>
+                                    <button type="submit" class="btn btn-sm btn-outline-light" title="Salvar nome"><i class="bi bi-check-lg"></i></button>
+                                </form>
+                            </td>
+                            <td><code>{{ $forma['codigo'] }}</code></td>
+                            <td>
+                                @if ($forma['is_cartao'] ?? false)
+                                    <span class="badge text-bg-light border"><i class="bi bi-credit-card me-1"></i>Cartão</span>
+                                @else
+                                    <span class="text-secondary">—</span>
+                                @endif
+                            </td>
+                            <td>{{ $forma['ordem_exibicao'] }}</td>
+                            <td>
+                                @if ($forma['ativo'] ?? true)
+                                    <span class="badge text-bg-success">Ativa</span>
+                                @else
+                                    <span class="badge text-bg-secondary">Inativa</span>
+                                @endif
+                                @if ($forma['sistema'] ?? false)
+                                    <span class="badge text-bg-light border ms-1" title="Forma padrão do sistema: o código é fixo e ela não pode ser excluída.">Sistema</span>
+                                @endif
+                            </td>
+                            <td class="text-end">
+                                <form method="post" action="{{ route('financeiro.configuracoes.formas.save') }}" class="d-inline">
+                                    @csrf
+                                    <input type="hidden" name="id" value="{{ $forma['id'] }}">
+                                    <input type="hidden" name="nome" value="{{ $forma['nome'] }}">
+                                    <input type="hidden" name="ordem_exibicao" value="{{ $forma['ordem_exibicao'] }}">
+                                    @unless ($forma['sistema'] ?? false)
+                                        <input type="hidden" name="is_cartao" value="{{ ($forma['is_cartao'] ?? false) ? 1 : 0 }}">
+                                    @endunless
+                                    <input type="hidden" name="ativo" value="{{ ($forma['ativo'] ?? true) ? 0 : 1 }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-light" title="{{ ($forma['ativo'] ?? true) ? 'Desativar' : 'Ativar' }}">
+                                        <i class="bi {{ ($forma['ativo'] ?? true) ? 'bi-toggle-on' : 'bi-toggle-off' }}"></i>
+                                    </button>
+                                </form>
+
+                                @unless ($forma['sistema'] ?? false)
+                                    <form method="post" action="{{ route('financeiro.configuracoes.formas.delete', $forma['id']) }}" data-confirm="Excluir esta forma de pagamento?" data-confirm-title="Excluir forma" data-confirm-button="Sim, excluir" class="d-inline">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                @endunless
                             </td>
                         </tr>
                     @endforeach

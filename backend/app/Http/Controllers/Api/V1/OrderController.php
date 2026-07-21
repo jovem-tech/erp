@@ -972,6 +972,12 @@ class OrderController extends BaseApiController
                     'retorno_padrao' => $result['retorno_padrao'] ?? null,
                     'cartao' => $result['cartao'] ?? null,
                     'contas_financeiras' => $result['contas_financeiras'] ?? null,
+                    // Catálogo gerenciável: a baixa grava em coluna varchar, então
+                    // aceita inclusive as formas de pagamento personalizadas.
+                    'formas_pagamento' => \App\Models\FinanceiroFormaPagamento::query()
+                        ->ativo()
+                        ->ordenado()
+                        ->get(['codigo', 'nome', 'is_cartao']),
                     'status_pagamento_pendente' => $result['status_pagamento_pendente'] ?? null,
                     'status_sem_reparo' => $result['status_sem_reparo'] ?? [],
                     'status_entregue' => $result['status_entregue'] ?? null,

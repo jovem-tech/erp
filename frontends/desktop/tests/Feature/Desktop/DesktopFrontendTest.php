@@ -228,7 +228,7 @@ class DesktopFrontendTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_commercial_people_menu_groups_clients_suppliers_and_technical_team(): void
+    public function test_sidebar_groups_registries_and_moves_team_to_administration(): void
     {
         Http::fake([
             'http://127.0.0.1:8000/api/v1/notifications*' => Http::response([
@@ -249,6 +249,23 @@ class DesktopFrontendTest extends TestCase
                     ],
                 ],
             ]),
+            'http://127.0.0.1:8000/api/v1/suppliers*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'suppliers' => [],
+                ],
+                'error' => null,
+                'meta' => [
+                    'pagination' => [
+                        'current_page' => 1,
+                        'per_page' => 20,
+                        'total' => 0,
+                        'last_page' => 1,
+                        'from' => 0,
+                        'to' => 0,
+                    ],
+                ],
+            ]),
         ]);
 
         $response = $this
@@ -256,16 +273,34 @@ class DesktopFrontendTest extends TestCase
                 'clientes' => ['visualizar'],
                 'fornecedores' => ['visualizar'],
                 'funcionarios' => ['visualizar'],
+                'financeiro' => ['visualizar'],
+                'contas_saldos' => ['visualizar'],
+                'precificacao' => ['visualizar'],
+                'conhecimento' => ['visualizar'],
+                'usuarios' => ['visualizar'],
+                'grupos' => ['visualizar'],
+                'configuracoes' => ['visualizar'],
             ]))
             ->get('/fornecedores');
 
+        // Clientes/Fornecedores agora vivem em "Cadastros" e a equipe interna
+        // saiu do antigo grupo "Comercial" para "Administração".
         $response
             ->assertOk()
-            ->assertSee('Pessoas')
+            ->assertSee('Cadastros')
             ->assertSee('Clientes')
             ->assertSee('Fornecedores')
-            ->assertSee('Equipe Técnica')
-            ->assertSee('Estrutura em andamento');
+            ->assertSee('Administração')
+            ->assertSee('Equipe da Assistência')
+            // Novas seções e grupos de atalho (submenu para sub-páginas mais usadas).
+            ->assertSee('Processos e Modelos')
+            ->assertSee('Relatórios')
+            ->assertSee('Fluxo de Caixa')
+            ->assertSee('Ferramentas')
+            ->assertSee('Precificação')
+            ->assertSee('Acesso e Integrações')
+            ->assertSee('Grupos e Permissões')
+            ->assertSee('Integrações');
     }
 
     public function test_permission_middleware_redirects_to_first_allowed_route(): void
@@ -2438,7 +2473,7 @@ class DesktopFrontendTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('Conhecimento')
-            ->assertSee('Base de Conhecimento')
+            ->assertSee('Processos e Modelos')
             ->assertSee('Mapa visual do andamento')
             ->assertSee('Recepção')
             ->assertSee('Diagnóstico')

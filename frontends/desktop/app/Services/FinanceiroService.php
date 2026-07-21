@@ -109,7 +109,29 @@ class FinanceiroService
                 'contas_padrao' => [],
                 'tipos' => [],
             ],
+            'formas_pagamento' => $response['data']['formas_pagamento'] ?? [],
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    public function createFormaPagamento(array $payload): void
+    {
+        $this->apiClient->post('/financeiro/formas-pagamento', $payload);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    public function updateFormaPagamento(int $id, array $payload): void
+    {
+        $this->apiClient->patch('/financeiro/formas-pagamento/' . $id, $payload);
+    }
+
+    public function destroyFormaPagamento(int $id): void
+    {
+        $this->apiClient->delete('/financeiro/formas-pagamento/' . $id);
     }
 
     /**
