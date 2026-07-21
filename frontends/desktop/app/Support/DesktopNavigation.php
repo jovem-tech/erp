@@ -74,13 +74,42 @@ class DesktopNavigation
                 ],
             ],
             [
-                'label' => 'Operacional',
+                'label' => 'Atendimento',
                 'items' => [
                     [
                         'label' => 'Ordens de Serviço',
                         'route' => 'orders.index',
                         'module' => 'os',
                         'icon' => 'bi-clipboard-check-fill',
+                    ],
+                    [
+                        'label' => 'Orçamentos',
+                        'route' => 'orcamentos.index',
+                        'module' => 'orcamentos',
+                        'icon' => 'bi-receipt',
+                    ],
+                ],
+            ],
+            [
+                'label' => 'Cadastros',
+                'items' => [
+                    [
+                        'label' => 'Clientes',
+                        'route' => 'clients.index',
+                        'module' => 'clientes',
+                        'icon' => 'bi-people',
+                    ],
+                    [
+                        'label' => 'Fornecedores',
+                        'route' => 'suppliers.index',
+                        'module' => 'fornecedores',
+                        'icon' => 'bi-truck',
+                    ],
+                    [
+                        'label' => 'Aparelhos / Equip.',
+                        'route' => 'equipments.index',
+                        'module' => 'equipamentos',
+                        'icon' => 'bi-laptop',
                     ],
                     [
                         'label' => 'Serviços',
@@ -93,47 +122,6 @@ class DesktopNavigation
                         'route' => 'estoque.index',
                         'module' => 'estoque',
                         'icon' => 'bi-box-seam',
-                    ],
-                    [
-                        'label' => 'Aparelhos / Equip.',
-                        'route' => 'equipments.index',
-                        'module' => 'equipamentos',
-                        'icon' => 'bi-laptop',
-                    ],
-                ],
-            ],
-            [
-                'label' => 'Comercial',
-                'items' => [
-                    [
-                        'label' => 'Orçamentos',
-                        'route' => 'orcamentos.index',
-                        'module' => 'orcamentos',
-                        'icon' => 'bi-receipt',
-                    ],
-                    [
-                        'label' => 'Pessoas',
-                        'icon' => 'bi-people-fill',
-                        'children' => [
-                            [
-                                'label' => 'Clientes',
-                                'route' => 'clients.index',
-                                'module' => 'clientes',
-                                'icon' => 'bi-people',
-                            ],
-                            [
-                                'label' => 'Fornecedores',
-                                'route' => 'suppliers.index',
-                                'module' => 'fornecedores',
-                                'icon' => 'bi-truck',
-                            ],
-                            [
-                                'label' => 'Equipe da Assistência',
-                                'route' => 'technicians.index',
-                                'module' => 'funcionarios',
-                                'icon' => 'bi-person-badge',
-                            ],
-                        ],
                     ],
                 ],
             ],
@@ -152,39 +140,98 @@ class DesktopNavigation
                         'module' => 'contas_saldos',
                         'icon' => 'bi-wallet2',
                     ],
+                    [
+                        'label' => 'Relatórios',
+                        'icon' => 'bi-file-earmark-bar-graph',
+                        'children' => [
+                            [
+                                'label' => 'Fluxo de Caixa',
+                                'route' => 'financeiro.relatorios.fluxo-caixa',
+                                'module' => 'financeiro',
+                                'icon' => 'bi-calendar3-week',
+                            ],
+                            [
+                                'label' => 'DRE por Competência',
+                                'route' => 'financeiro.relatorios.dre',
+                                'module' => 'financeiro',
+                                'icon' => 'bi-graph-up-arrow',
+                            ],
+                            [
+                                'label' => 'DRE de Caixa',
+                                'route' => 'financeiro.relatorios.dre-caixa',
+                                'module' => 'financeiro',
+                                'icon' => 'bi-wallet2',
+                            ],
+                            [
+                                'label' => 'Margem por OS',
+                                'route' => 'financeiro.relatorios.margem',
+                                'module' => 'financeiro',
+                                'icon' => 'bi-graph-up',
+                            ],
+                        ],
+                    ],
+                    [
+                        'label' => 'Ferramentas',
+                        'icon' => 'bi-sliders2',
+                        'children' => [
+                            [
+                                'label' => 'Cartões e Taxas',
+                                'route' => 'financeiro.cartoes.index',
+                                'module' => 'financeiro',
+                                'icon' => 'bi-credit-card-2-front',
+                            ],
+                            [
+                                'label' => 'Configurações Financeiras',
+                                'route' => 'financeiro.configuracoes',
+                                'module' => 'financeiro',
+                                'icon' => 'bi-bar-chart-line',
+                            ],
+                            [
+                                'label' => 'Precificação',
+                                'route' => 'financeiro.precificacao.index',
+                                'module' => 'precificacao',
+                                'icon' => 'bi-calculator',
+                            ],
+                        ],
+                    ],
                 ],
             ],
             [
                 'label' => 'Conhecimento',
                 'items' => [
                     [
-                        'label' => 'Base de Conhecimento',
-                        'icon' => 'bi-journal-bookmark-fill',
+                        'label' => 'Base de Defeitos',
+                        'route' => 'knowledge.defects.index',
+                        'module' => 'conhecimento',
+                        'icon' => 'bi-bug-fill',
+                    ],
+                    [
+                        'label' => 'Defeitos Relatados',
+                        'route' => 'knowledge.reported-defects.index',
+                        'module' => 'conhecimento',
+                        'icon' => 'bi-chat-square-text-fill',
+                    ],
+                ],
+            ],
+            [
+                'label' => 'Processos e Modelos',
+                'items' => [
+                    [
+                        'label' => 'Fluxo de Trabalho OS',
+                        'route' => 'knowledge.os-flow.index',
+                        'module' => 'conhecimento',
+                        'icon' => 'bi-diagram-3-fill',
+                    ],
+                    [
+                        'label' => 'Modelo da Assistência Técnica',
+                        'route' => 'knowledge.assistance-model.index',
+                        'module' => 'conhecimento',
+                        'icon' => 'bi-diagram-2-fill',
+                    ],
+                    [
+                        'label' => 'Checklists',
+                        'icon' => 'bi-check2-square',
                         'children' => [
-                            [
-                                'label' => 'Base de Defeitos',
-                                'route' => 'knowledge.defects.index',
-                                'module' => 'conhecimento',
-                                'icon' => 'bi-bug-fill',
-                            ],
-                            [
-                                'label' => 'Defeitos Relatados',
-                                'route' => 'knowledge.reported-defects.index',
-                                'module' => 'conhecimento',
-                                'icon' => 'bi-chat-square-text-fill',
-                            ],
-                            [
-                                'label' => 'Fluxo de Trabalho OS',
-                                'route' => 'knowledge.os-flow.index',
-                                'module' => 'conhecimento',
-                                'icon' => 'bi-diagram-3-fill',
-                            ],
-                            [
-                                'label' => 'Modelo da Assistência Técnica',
-                                'route' => 'knowledge.assistance-model.index',
-                                'module' => 'conhecimento',
-                                'icon' => 'bi-diagram-2-fill',
-                            ],
                             [
                                 'label' => 'Checklist de Entrada',
                                 'route' => 'knowledge.checklists.entrada',
@@ -209,25 +256,31 @@ class DesktopNavigation
                                 'module' => 'conhecimento',
                                 'icon' => 'bi-box-arrow-up',
                             ],
-                            [
-                                'label' => 'Modelos PDF',
-                                'route' => 'knowledge.pdf-engine.index',
-                                'module' => 'conhecimento',
-                                'icon' => 'bi-file-earmark-pdf-fill',
-                            ],
-                            [
-                                'label' => 'Templates WhatsApp',
-                                'route' => 'knowledge.whatsapp-templates.index',
-                                'module' => 'conhecimento',
-                                'icon' => 'bi-whatsapp',
-                            ],
                         ],
+                    ],
+                    [
+                        'label' => 'Modelos PDF',
+                        'route' => 'knowledge.pdf-engine.index',
+                        'module' => 'conhecimento',
+                        'icon' => 'bi-file-earmark-pdf-fill',
+                    ],
+                    [
+                        'label' => 'Templates WhatsApp',
+                        'route' => 'knowledge.whatsapp-templates.index',
+                        'module' => 'conhecimento',
+                        'icon' => 'bi-whatsapp',
                     ],
                 ],
             ],
             [
-                'label' => 'Configurações',
+                'label' => 'Administração',
                 'items' => [
+                    [
+                        'label' => 'Equipe da Assistência',
+                        'route' => 'technicians.index',
+                        'module' => 'funcionarios',
+                        'icon' => 'bi-person-badge',
+                    ],
                     [
                         'label' => 'Gerenciador de Arquivos',
                         'route' => 'files.index',
@@ -240,6 +293,30 @@ class DesktopNavigation
                         'route' => 'configurations.system.index',
                         'module' => 'configuracoes',
                         'icon' => 'bi-sliders',
+                    ],
+                    [
+                        'label' => 'Acesso e Integrações',
+                        'icon' => 'bi-shield-lock',
+                        'children' => [
+                            [
+                                'label' => 'Usuários',
+                                'route' => 'users.index',
+                                'module' => 'usuarios',
+                                'icon' => 'bi-person-lines-fill',
+                            ],
+                            [
+                                'label' => 'Grupos e Permissões',
+                                'route' => 'groups.index',
+                                'module' => 'grupos',
+                                'icon' => 'bi-diagram-3',
+                            ],
+                            [
+                                'label' => 'Integrações',
+                                'route' => 'configurations.integrations.index',
+                                'module' => 'configuracoes',
+                                'icon' => 'bi-plug',
+                            ],
+                        ],
                     ],
                 ],
             ],

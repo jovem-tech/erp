@@ -6,6 +6,7 @@ use App\Models\Budget;
 use App\Models\Client;
 use App\Models\Financeiro;
 use App\Models\FinanceiroCategoria;
+use App\Models\FinanceiroFormaPagamento;
 use App\Models\FinanceiroMovimento;
 use App\Models\FinanceiroMovimentoCartao;
 use App\Models\Order;
@@ -531,7 +532,7 @@ class FinanceiroService
         // FinanceiroMovimentoCartao/despesa antes de chamar este método, sem
         // repassar operadora_id aqui — sem esse guard, este bloco tentaria
         // simular de novo sem operadora e derrubaria a baixa com exceção.
-        if (str_contains($formaPagamento, 'cartao') && ! empty($payload['operadora_id'])) {
+        if (FinanceiroFormaPagamento::isCardCode($formaPagamento) && ! empty($payload['operadora_id'])) {
             $simulation = $this->registerCardMovementMeta($movimento, $payload, $valorMovimento, $dataMovimento, $observacoes);
             $this->registerCardFeeExpense($financeiro, $simulation, $movimento);
         }
@@ -1016,7 +1017,9 @@ class FinanceiroService
             // financeiro.forma_pagamento é um ENUM restrito do banco real e não
             // aceita esse valor sintético — o detalhe de cada baixa já fica
             // registrado em financeiro_movimentos.forma_pagamento (texto livre).
-            'forma_pagamento' => (! $clearPagamento && in_array($formaPagamento, Financeiro::FORMAS_PAGAMENTO, true))
+            // Pelo mesmo motivo, formas personalizadas do catálogo (fora do
+            // ENUM) também caem aqui como null, sem perder o detalhe.
+            'forma_pagamento' => (! $clearPagamento && in_array($formaPagamento, FinanceiroFormaPagamento::summaryCodes(), true))
                 ? $formaPagamento
                 : null,
         ]);

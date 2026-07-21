@@ -6040,9 +6040,8 @@ a {
 }
 
 .modal-content {
-    background: var(--desktop-surface);
-    border: 1px solid var(--desktop-border);
-    color: var(--desktop-text);
+    background: transparent;
+    border: 0;
 }
 
 .modal-content.modal-shell {

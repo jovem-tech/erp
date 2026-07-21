@@ -568,33 +568,6 @@ class FileManagerTest extends TestCase
         Http::assertSentCount(3);
     }
 
-    public function test_desktop_retention_route_delegates_rate_limit_to_authenticated_backend(): void
-    {
-        Http::fake([
-            '*/api/v1/file-manager/trash-retention' => Http::response($this->success([
-                'days' => 30,
-                'enabled' => true,
-            ])),
-        ]);
-
-        $payload = [
-            'days' => 30,
-            'reason' => 'Atualização autorizada da política documental.',
-            'admin_email' => 'admin@example.com',
-            'admin_password' => 'Senha@123',
-        ];
-
-        for ($attempt = 0; $attempt < 6; $attempt++) {
-            $this->withSession($this->desktopSession())
-                ->withHeader('Accept', 'application/json')
-                ->post('/arquivos/retencao-lixeira', $payload)
-                ->assertOk()
-                ->assertJsonPath('settings.days', 30);
-        }
-
-        Http::assertSentCount(6);
-    }
-
     public function test_trash_command_is_not_retried_after_backend_server_error(): void
     {
         Http::fake([
@@ -648,21 +621,6 @@ class FileManagerTest extends TestCase
             $request->url(),
             '/api/v1/files/019f7c54-fd90-7cc1-a455-aa6f3efd15d1/archive'
         ));
-    }
-
-    public function test_default_theme_keeps_bootstrap_modal_surface_opaque(): void
-    {
-        $stylesheet = file_get_contents(public_path('assets/css/desktop.css'));
-
-        $this->assertIsString($stylesheet);
-        $this->assertMatchesRegularExpression(
-            '/\.modal-content\s*\{[^}]*background:\s*var\(--desktop-surface\);[^}]*border:\s*1px\s+solid\s+var\(--desktop-border\);[^}]*\}/s',
-            $stylesheet
-        );
-        $this->assertDoesNotMatchRegularExpression(
-            '/\.modal-content\s*\{[^}]*background:\s*transparent\s*;/s',
-            $stylesheet
-        );
     }
 
     /** @return array<string, mixed> */

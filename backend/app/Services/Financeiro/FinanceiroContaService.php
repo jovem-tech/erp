@@ -6,6 +6,7 @@ use App\Models\Financeiro;
 use App\Models\FinanceiroConta;
 use App\Models\FinanceiroContaDefault;
 use App\Models\FinanceiroContaMovimento;
+use App\Models\FinanceiroFormaPagamento;
 use App\Models\FinanceiroMovimento;
 use App\Models\FinanceiroMovimentoCartao;
 use App\Models\FinanceiroTransferencia;
@@ -830,7 +831,8 @@ class FinanceiroContaService
     /** @param array<int, string> $forms */
     private function syncDefaults(FinanceiroConta $account, array $forms): void
     {
-        $forms = array_values(array_unique(array_filter($forms, fn ($form): bool => in_array($form, Financeiro::FORMAS_PAGAMENTO, true))));
+        $validForms = FinanceiroFormaPagamento::validCodes();
+        $forms = array_values(array_unique(array_filter($forms, fn ($form): bool => in_array($form, $validForms, true))));
         $account->defaults()->whereNotIn('forma_pagamento', $forms)->delete();
 
         foreach ($forms as $form) {

@@ -108,6 +108,7 @@ class FinanceiroController extends DesktopController
             'lancamento' => $this->formDefaults(),
             'categorias' => $catalog['categorias'],
             'accountDataset' => $catalog['contas_financeiras'],
+            'formasPagamento' => $catalog['formas_pagamento'],
             'canQuickClient' => \App\Support\DesktopSession::can('clientes', 'criar'),
         ]);
     }
@@ -219,6 +220,7 @@ class FinanceiroController extends DesktopController
             'resumo' => $data['resumo'] ?? [],
             'categorias' => $catalog['categorias'],
             'accountDataset' => $catalog['contas_financeiras'],
+            'formasPagamento' => $catalog['formas_pagamento'],
             'canQuickClient' => \App\Support\DesktopSession::can('clientes', 'criar'),
         ]);
     }

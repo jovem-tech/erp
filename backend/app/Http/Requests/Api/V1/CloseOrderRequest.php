@@ -4,6 +4,7 @@ namespace App\Http\Requests\Api\V1;
 
 use App\Models\Financeiro;
 use App\Models\FinanceiroCartaoTaxa;
+use App\Models\FinanceiroFormaPagamento;
 use App\Models\OrderStatus;
 use Illuminate\Validation\Rule;
 
@@ -81,7 +82,9 @@ class CloseOrderRequest extends BaseApiFormRequest
             'recebimentos.*.forma_pagamento' => [
                 'required',
                 'string',
-                Rule::in(Financeiro::FORMAS_PAGAMENTO),
+                // Recebimento vai para colunas varchar (movimentos), então
+                // aceita o catálogo inteiro, inclusive formas personalizadas.
+                Rule::in(FinanceiroFormaPagamento::validCodes()),
             ],
             'recebimentos.*.conta_financeira_id' => [
                 'nullable',

@@ -111,12 +111,10 @@ Route::middleware('desktop.auth')->group(function (): void {
         ->middleware('desktop.permission:arquivos,restaurar')
         ->name('files.restore-batch');
     Route::post('/arquivos/excluir-definitivamente', [FileManagerController::class, 'purgeBatch'])
-        // O backend autentica o token e aplica o limite autoritativo por usuário.
-        // Um segundo throttle aqui agrupa sessões distintas atrás do proxy da VPS.
-        ->middleware('desktop.permission:arquivos,excluir')
+        ->middleware(['desktop.permission:arquivos,excluir', 'throttle:5,1'])
         ->name('files.purge-batch');
     Route::post('/arquivos/retencao-lixeira', [FileManagerController::class, 'updateTrashRetention'])
-        ->middleware('desktop.permission:arquivos,administrar')
+        ->middleware(['desktop.permission:arquivos,administrar', 'throttle:5,1'])
         ->name('files.trash-retention');
     Route::get('/arquivos/{fileUuid}', [FileManagerController::class, 'show'])
         ->middleware('desktop.permission:arquivos,metadados')
@@ -503,12 +501,6 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::delete('/financeiro/configuracoes/categorias/{categoria}', [FinanceiroCatalogController::class, 'deleteCategoria'])
         ->middleware('desktop.permission:financeiro,excluir')
         ->name('financeiro.configuracoes.categorias.delete');
-    Route::post('/financeiro/configuracoes/formas-pagamento', [FinanceiroCatalogController::class, 'saveFormaPagamento'])
-        ->middleware('desktop.permission:financeiro,editar')
-        ->name('financeiro.configuracoes.formas.save');
-    Route::delete('/financeiro/configuracoes/formas-pagamento/{formaPagamento}', [FinanceiroCatalogController::class, 'deleteFormaPagamento'])
-        ->middleware('desktop.permission:financeiro,excluir')
-        ->name('financeiro.configuracoes.formas.delete');
     Route::post('/financeiro/configuracoes/dre/grupos', [FinanceiroCatalogController::class, 'saveGrupo'])
         ->middleware('desktop.permission:financeiro,editar')
         ->name('financeiro.configuracoes.grupos.save');

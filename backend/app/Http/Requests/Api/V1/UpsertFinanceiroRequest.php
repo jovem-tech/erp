@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1;
 
 use App\Models\Financeiro;
+use App\Models\FinanceiroFormaPagamento;
 use Illuminate\Validation\Rule;
 
 class UpsertFinanceiroRequest extends BaseApiFormRequest
@@ -17,7 +18,10 @@ class UpsertFinanceiroRequest extends BaseApiFormRequest
             'descricao' => [$requiredOrSometimes, 'string', 'max:255'],
             'valor' => [$requiredOrSometimes, 'numeric', 'min:0.01', 'max:99999999.99'],
             'status' => ['nullable', 'string', Rule::in(array_column(Financeiro::statusOptions(), 'value'))],
-            'forma_pagamento' => ['nullable', 'string', Rule::in(Financeiro::FORMAS_PAGAMENTO)],
+            // Grava na coluna-resumo `financeiro.forma_pagamento`, que é um ENUM
+            // restrito no banco legado — por isso aceita só as formas marcadas
+            // como compatíveis com o resumo, e não o catálogo inteiro.
+            'forma_pagamento' => ['nullable', 'string', Rule::in(FinanceiroFormaPagamento::summaryCodes())],
             'conta_financeira_id' => ['nullable', 'integer', Rule::exists('financeiro_contas', 'id')],
             'data_vencimento' => [$requiredOrSometimes, 'date'],
             'data_pagamento' => ['nullable', 'date'],

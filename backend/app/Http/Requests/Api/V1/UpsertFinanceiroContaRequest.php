@@ -2,8 +2,8 @@
 
 namespace App\Http\Requests\Api\V1;
 
-use App\Models\Financeiro;
 use App\Models\FinanceiroConta;
+use App\Models\FinanceiroFormaPagamento;
 use Illuminate\Validation\Rule;
 
 class UpsertFinanceiroContaRequest extends BaseApiFormRequest
@@ -24,7 +24,8 @@ class UpsertFinanceiroContaRequest extends BaseApiFormRequest
             'cor' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'observacoes' => ['nullable', 'string', 'max:2000'],
             'formas_padrao' => ['nullable', 'array'],
-            'formas_padrao.*' => ['string', Rule::in(Financeiro::FORMAS_PAGAMENTO)],
+            // Coluna varchar: aceita o catálogo inteiro, inclusive formas novas.
+            'formas_padrao.*' => ['string', Rule::in(FinanceiroFormaPagamento::validCodes())],
         ];
     }
 }
