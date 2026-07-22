@@ -249,8 +249,8 @@
         </section>
     @elseif ($auditOnly)
         <section class="surface-card p-3 mb-3" aria-labelledby="file-audit-title">
-            <h2 class="surface-title fs-6 mb-1" id="file-audit-title"><i class="bi bi-shield-exclamation me-1"></i>Auditoria de conteúdo ausente</h2>
-            <p class="surface-subtitle mb-0">Estes registros preservam metadados, vínculos históricos, hash e eventos, mas não representam arquivos físicos. Eles não entram na contagem nem na retenção automática da lixeira.</p>
+            <h2 class="surface-title fs-6 mb-1" id="file-audit-title"><i class="bi bi-shield-exclamation me-1"></i>Auditoria de arquivos removidos</h2>
+            <p class="surface-subtitle mb-0">Reúne exclusões definitivas e registros cujo conteúdo não está mais disponível. Metadados, vínculos históricos, hash e eventos permanecem preservados fora da contagem e da retenção da lixeira.</p>
         </section>
     @endif
 
@@ -312,7 +312,9 @@
                         $pdf = $mime === 'application/pdf';
                         $deliverable = $isDeliverable($file);
                         $previewable = ($image || $pdf) && $isPreviewable($file);
-                        $inTrash = ($file['lifecycle_status'] ?? '') === 'trashed';
+                        $lifecycle = (string) ($file['lifecycle_status'] ?? 'unknown');
+                        $inTrash = $lifecycle === 'trashed';
+                        $purged = $lifecycle === 'purged';
                         $integrity = (string) ($file['integrity_status'] ?? 'unknown');
                         $restoreable = $inTrash && (bool) data_get(
                             $file,
@@ -330,7 +332,7 @@
                         <article class="surface-card file-card h-100">
                             <div class="file-preview">
                                 <label class="file-select-wrap" title="Selecionar arquivo">
-                                    <input class="form-check-input file-select m-0" type="checkbox" value="{{ $file['uuid'] }}" data-downloadable="{{ $deliverable ? '1' : '0' }}" data-trashable="{{ ! $inTrash ? '1' : '0' }}" data-restoreable="{{ $restoreable ? '1' : '0' }}" data-purgeable="{{ $inTrash ? '1' : '0' }}" aria-label="Selecionar {{ $file['safe_download_name'] ?? 'arquivo' }}">
+                                    <input class="form-check-input file-select m-0" type="checkbox" value="{{ $file['uuid'] }}" data-downloadable="{{ $deliverable ? '1' : '0' }}" data-trashable="{{ ! $inTrash && ! $purged ? '1' : '0' }}" data-restoreable="{{ $restoreable ? '1' : '0' }}" data-purgeable="{{ $inTrash ? '1' : '0' }}" @disabled($purged) aria-label="Selecionar {{ $file['safe_download_name'] ?? 'arquivo' }}">
                                 </label>
                                 <i class="bi {{ $image ? 'bi-file-earmark-image' : ($pdf ? 'bi-file-earmark-pdf' : 'bi-file-earmark') }} file-preview-icon"></i>
                                 @if ($image && $previewable && $canDownload)
@@ -356,9 +358,6 @@
                                 </div>
                                 <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
                                     <span class="small text-secondary">{{ $formatBytes((int) ($file['size_bytes'] ?? 0)) }}</span>
-                                    @php
-                                        $lifecycle = (string) ($file['lifecycle_status'] ?? 'unknown');
-                                    @endphp
                                     <span class="d-flex flex-wrap justify-content-end gap-1">
                                         @if ($integrity === 'missing')
                                             <span class="badge text-bg-danger" title="O conteúdo não existe mais no armazenamento">Conteúdo ausente</span>
@@ -379,7 +378,7 @@
                                             <button type="button" class="btn btn-outline-success btn-sm file-restore-one" data-file-uuid="{{ $file['uuid'] }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" @disabled(!$canRestore || !$mutationsEnabled || !$restoreable) title="{{ $restoreable ? 'Restaurar' : 'Não é possível restaurar: conteúdo ausente' }}"><i class="bi bi-arrow-counterclockwise"></i></button>
                                         @endif
                                         <button type="button" class="btn btn-outline-danger btn-sm file-purge-one" data-file-uuid="{{ $file['uuid'] }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" @disabled(!$canDelete || !$permanentDeletionEnabled) title="Excluir definitivamente"><i class="bi bi-trash3-fill"></i></button>
-                                    @else
+                                    @elseif (! $purged)
                                         <button type="button" class="btn btn-outline-danger btn-sm file-trash-one" data-file-uuid="{{ $file['uuid'] }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" @disabled(!$canDelete || !$mutationsEnabled) title="Mover para a lixeira"><i class="bi bi-trash3"></i></button>
                                     @endif
                                 </div>
@@ -405,6 +404,7 @@
                                 $previewable = ($image || $pdf) && $isPreviewable($file);
                                 $lifecycle = (string) ($file['lifecycle_status'] ?? 'unknown');
                                 $inTrash = $lifecycle === 'trashed';
+                                $purged = $lifecycle === 'purged';
                                 $integrity = (string) ($file['integrity_status'] ?? 'unknown');
                                 $restoreable = $inTrash && (bool) data_get(
                                     $file,
@@ -418,7 +418,7 @@
                             <tr>
                                 <td>
                                     <label class="d-inline-flex align-items-center justify-content-center p-2 mb-0" title="Selecionar arquivo">
-                                        <input class="form-check-input file-select m-0" type="checkbox" value="{{ $file['uuid'] }}" data-downloadable="{{ $deliverable ? '1' : '0' }}" data-trashable="{{ ! $inTrash ? '1' : '0' }}" data-restoreable="{{ $restoreable ? '1' : '0' }}" data-purgeable="{{ $inTrash ? '1' : '0' }}" aria-label="Selecionar {{ $file['safe_download_name'] ?? 'arquivo' }}">
+                                        <input class="form-check-input file-select m-0" type="checkbox" value="{{ $file['uuid'] }}" data-downloadable="{{ $deliverable ? '1' : '0' }}" data-trashable="{{ ! $inTrash && ! $purged ? '1' : '0' }}" data-restoreable="{{ $restoreable ? '1' : '0' }}" data-purgeable="{{ $inTrash ? '1' : '0' }}" @disabled($purged) aria-label="Selecionar {{ $file['safe_download_name'] ?? 'arquivo' }}">
                                     </label>
                                 </td>
                                 <td>
@@ -468,7 +468,7 @@
                                             <button type="button" class="btn btn-outline-success btn-sm file-restore-one" data-file-uuid="{{ $file['uuid'] }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" @disabled(!$canRestore || !$mutationsEnabled || !$restoreable) title="{{ $restoreable ? 'Restaurar' : 'Não é possível restaurar: conteúdo ausente' }}"><i class="bi bi-arrow-counterclockwise"></i></button>
                                         @endif
                                         <button type="button" class="btn btn-outline-danger btn-sm file-purge-one" data-file-uuid="{{ $file['uuid'] }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" @disabled(!$canDelete || !$permanentDeletionEnabled) title="Excluir definitivamente"><i class="bi bi-trash3-fill"></i></button>
-                                    @else
+                                    @elseif (! $purged)
                                         <button type="button" class="btn btn-outline-danger btn-sm file-trash-one" data-file-uuid="{{ $file['uuid'] }}" data-file-name="{{ $file['safe_download_name'] ?? 'arquivo' }}" @disabled(!$canDelete || !$mutationsEnabled) title="Mover para a lixeira"><i class="bi bi-trash3"></i></button>
                                     @endif
                                 </td>

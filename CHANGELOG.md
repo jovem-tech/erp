@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.5.1.0 — 2026-07-21 22:44
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige a auditoria do gerenciador para exibir exclusões definitivas preservadas como tombstones imutáveis.
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/FileManagerController.php,backend/tests/Feature/Files/FileManagerApiTest.php,frontends/desktop/resources/views/files/index.blade.php,frontends/desktop/tests/Feature/Desktop/FileManagerTest.php
+
 ## v5.5.0.2 — 2026-07-21 04:29
 - **Tier:** hotfix
 - **Autor/Agente:** Codex
