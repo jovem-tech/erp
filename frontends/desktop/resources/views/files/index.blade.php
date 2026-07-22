@@ -59,13 +59,13 @@
         $canAdminister = in_array('administrar', $permissions, true);
         $categoryLabels = [
             'company_login_background' => 'Fundos do login',
+            'user_profile_photo' => 'Fotos de usuários',
             'company_logo' => 'Logos da empresa',
             'equipment_photo' => 'Fotos de equipamentos',
             'order_photo' => 'Fotos de OS',
-            'order_pdf' => 'Documentos de OS',
-            'budget_pdf' => 'Orçamentos em PDF',
             'user_signature' => 'Assinaturas',
-            'user_profile_photo' => 'Fotos de usuários',
+            'budget_pdf' => 'Orçamentos em PDF',
+            'order_pdf' => 'Documentos de OS',
             'chat_attachment' => 'Anexos do chat',
         ];
         $categoryIcons = [
