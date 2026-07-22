@@ -58,6 +58,8 @@ class OrderEvent extends Model
     public const TIPO_ORCAMENTO_ENVIADO = 'orcamento_enviado';
     public const TIPO_ORCAMENTO_APROVADO = 'orcamento_aprovado';
     public const TIPO_ORCAMENTO_RECUSADO = 'orcamento_recusado';
+    public const TIPO_ORCAMENTO_CANCELADO = 'orcamento_cancelado';
+    public const TIPO_ORCAMENTO_CONVERTIDO = 'orcamento_convertido';
     public const TIPO_ORCAMENTO_PDF_GERADO = 'orcamento_pdf_gerado';
     public const TIPO_FECHAMENTO_PDF_GERADO = 'fechamento_pdf_gerado';
     public const TIPO_WHATSAPP_ENVIADO = 'whatsapp_enviado';

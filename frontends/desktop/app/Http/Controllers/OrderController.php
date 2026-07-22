@@ -8,6 +8,7 @@ use App\Exceptions\ApiRequestException;
 use App\Services\ClientService;
 use App\Services\DesktopOrderStatusFlowService;
 use App\Services\EquipmentService;
+use App\Services\OrcamentoService;
 use App\Services\OrderService;
 use App\Services\ReportedDefectService;
 use App\Services\TeamMemberService;
@@ -31,7 +32,8 @@ class OrderController extends DesktopController
         private readonly ReportedDefectService $reportedDefectService,
         private readonly TeamMemberService $teamMemberService,
         private readonly UserService $userService,
-        private readonly DesktopOrderStatusFlowService $statusFlowService
+        private readonly DesktopOrderStatusFlowService $statusFlowService,
+        private readonly OrcamentoService $orcamentoService
     ) {
     }
 
@@ -218,8 +220,16 @@ class OrderController extends DesktopController
     {
         $oldInput = $request->session()->getOldInput();
 
-        $selectedClientId = (int) ($oldInput['cliente_id'] ?? $request->query('cliente_id', 0));
-        $selectedEquipmentId = (int) ($oldInput['equipamento_id'] ?? $request->query('equipamento_id', 0));
+        // Geração de OS a partir de um orçamento avulso aprovado (botão "Gerar OS"):
+        // pré-preenche cliente/equipamento e mantém o vínculo via orcamento_id.
+        $linkedBudget = $this->resolveLinkedBudgetForCreation(
+            (int) ($oldInput['orcamento_id'] ?? $request->query('orcamento_id', 0))
+        );
+        $budgetClientId = (int) data_get($linkedBudget, 'cliente.id', 0);
+        $budgetEquipmentId = (int) data_get($linkedBudget, 'equipamento.id', 0);
+
+        $selectedClientId = (int) ($oldInput['cliente_id'] ?? $request->query('cliente_id', $budgetClientId));
+        $selectedEquipmentId = (int) ($oldInput['equipamento_id'] ?? $request->query('equipamento_id', $budgetEquipmentId));
         $selectedTechnicianId = (int) ($oldInput['tecnico_id'] ?? 0);
 
         $selectedEquipment = $this->resolveSelectedEquipment($selectedEquipmentId);
@@ -245,7 +255,86 @@ class OrderController extends DesktopController
             'selectedEquipment' => $selectedEquipment,
             'selectedTechnician' => $selectedTechnician,
             'entryChecklistModel' => $entryChecklistModel,
+            'linkedBudget' => $linkedBudget,
+            'linkableBudgets' => $this->resolveLinkableBudgets($linkedBudget),
         ]);
+    }
+
+    /**
+     * Lista enxuta de orçamentos avulsos aprovados que ainda podem gerar OS
+     * (status pendente_abertura_os). Alimenta o seletor "vincular orçamento" do
+     * formulário de OS (caminho B). Vazia quando já se está gerando a OS a
+     * partir de um orçamento específico (caminho A).
+     *
+     * @param array<string, mixed>|null $linkedBudget
+     * @return array<int, array<string, mixed>>
+     */
+    private function resolveLinkableBudgets(?array $linkedBudget): array
+    {
+        if ($linkedBudget !== null) {
+            return [];
+        }
+
+        try {
+            $result = $this->orcamentoService->paginate([
+                'status' => 'pendente_abertura_os',
+                'per_page' => 50,
+            ]);
+        } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
+            return [];
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return [];
+        }
+
+        $items = is_array($result['items'] ?? null) ? $result['items'] : [];
+
+        return array_values(array_filter(array_map(static function (array $budget): array {
+            return [
+                'id' => (int) ($budget['id'] ?? 0),
+                'numero' => (string) ($budget['numero'] ?? ''),
+                'cliente_nome' => (string) ($budget['cliente_nome'] ?? ''),
+                'total_formatado' => (string) ($budget['total_formatado'] ?? ''),
+                'can_generate_os' => (bool) ($budget['can_generate_os'] ?? false),
+            ];
+        }, $items), static fn (array $budget): bool => $budget['id'] > 0 && $budget['can_generate_os']));
+    }
+
+    /**
+     * Carrega o orçamento avulso aprovado que está sendo convertido em OS.
+     * Retorna null quando não há vínculo, o orçamento não existe ou não está
+     * num estado que permita gerar OS (pendente de OS / aprovado sem OS).
+     *
+     * @return array<string, mixed>|null
+     */
+    private function resolveLinkedBudgetForCreation(int $budgetId): ?array
+    {
+        if ($budgetId <= 0) {
+            return null;
+        }
+
+        try {
+            $budget = $this->orcamentoService->find($budgetId);
+        } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
+            return null;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return null;
+        }
+
+        if (! is_array($budget) || $budget === []) {
+            return null;
+        }
+
+        $alreadyLinked = (int) data_get($budget, 'os.id', 0) > 0;
+        $status = (string) data_get($budget, 'status', '');
+        if ($alreadyLinked || ! in_array($status, ['pendente_abertura_os', 'aprovado'], true)) {
+            return null;
+        }
+
+        return $budget;
     }
 
     /**
@@ -621,6 +710,7 @@ class OrderController extends DesktopController
             'idempotency_key' => ['required', 'uuid'],
             'cliente_id' => ['required', 'integer', 'min:1'],
             'equipamento_id' => ['required', 'integer', 'min:1'],
+            'orcamento_id' => ['nullable', 'integer', 'min:1'],
             'relato_cliente' => ['required', 'string', 'min:5'],
             'prioridade' => ['nullable', 'string', 'in:baixa,normal,alta,urgente'],
             'enviar_pdf_cliente' => ['nullable', 'boolean'],
@@ -651,6 +741,7 @@ class OrderController extends DesktopController
             'idempotency_key' => (string) $validated['idempotency_key'],
             'cliente_id' => (int) $validated['cliente_id'],
             'equipamento_id' => (int) $validated['equipamento_id'],
+            'orcamento_id' => isset($validated['orcamento_id']) ? (int) $validated['orcamento_id'] : null,
             'relato_cliente' => trim((string) $validated['relato_cliente']),
             'prioridade' => $validated['prioridade'] ?? null,
             'tecnico_id' => isset($validated['tecnico_id']) ? (int) $validated['tecnico_id'] : null,

@@ -2038,6 +2038,7 @@
         const quickClientForm = els.quickClientForm;
 
         els.quickClientButton?.addEventListener('click', () => {
+            prefillQuickClientFromLinkedBudget();
             const modal = getModal(els.quickClientModal);
             modal?.show();
         });
@@ -2200,11 +2201,49 @@
         }
     };
 
+    // Pré-preenche o cadastro rápido de cliente com os dados do cliente eventual
+    // do orçamento avulso que está sendo convertido em OS (só quando vazio).
+    function prefillQuickClientFromLinkedBudget() {
+        const banner = document.querySelector('[data-linked-budget-avulso-name]');
+        if (!(banner instanceof HTMLElement)) {
+            return;
+        }
+
+        const setIfEmpty = (id, value) => {
+            const field = document.getElementById(id);
+            const text = String(value || '').trim();
+            if ((field instanceof HTMLInputElement) && field.value.trim() === '' && text !== '') {
+                field.value = text;
+            }
+        };
+
+        setIfEmpty('quickClientNomeRazao', banner.dataset.linkedBudgetAvulsoName);
+        setIfEmpty('quickClientTelefone1', banner.dataset.linkedBudgetAvulsoPhone);
+        setIfEmpty('quickClientEmail', banner.dataset.linkedBudgetAvulsoEmail);
+    }
+
+    // Seletor "vincular orçamento avulso" (caminho B): recarrega a criação de OS
+    // já vinculada ao orçamento escolhido, reaproveitando o pré-preenchimento.
+    const initBudgetPicker = () => {
+        const picker = document.querySelector('[data-order-link-budget]');
+        if (!(picker instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        picker.addEventListener('change', () => {
+            const target = picker.value.trim();
+            if (target !== '') {
+                window.location.href = target;
+            }
+        });
+    };
+
     initTabs();
     initSelectors();
     initPhotos();
     initQuickClient();
     initQuickEquipment();
+    initBudgetPicker();
     initAccessoryPresets();
     initFormValidation();
     initSubmitButton();

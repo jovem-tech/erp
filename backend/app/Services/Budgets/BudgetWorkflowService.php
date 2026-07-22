@@ -277,9 +277,9 @@ class BudgetWorkflowService
             $budget->fill($budgetAttributes);
             $budget->numero = (string) ($budgetAttributes['numero'] ?? $this->nextBudgetNumber());
             $budget->versao = max(1, (int) ($budgetAttributes['versao'] ?? 1));
-            $budget->tipo_orcamento = $this->resolveType($budgetAttributes, true);
+            $budget->tipo_orcamento = $this->resolveType($budgetAttributes, $osId > 0);
             $budget->status = $this->resolveStatus($budgetAttributes, true);
-            $budget->origem = $this->resolveOrigin($budgetAttributes, $budget->os_id !== null);
+            $budget->origem = $this->resolveOrigin($budgetAttributes, $osId > 0);
             $budget->cliente_id = $this->resolveClientId($budgetAttributes, $budget->os_id);
             $budget->equipamento_id = $this->resolveEquipmentId($budgetAttributes, $budget->os_id);
             $budget->responsavel_id = (int) ($budgetAttributes['responsavel_id'] ?? $user->id);
@@ -636,6 +636,11 @@ class BudgetWorkflowService
             'created_at' => optional($budget->created_at)->format('d/m/Y H:i'),
             'can_edit' => ! in_array($status, [Budget::STATUS_CONVERTED], true),
             'can_delete' => in_array($status, [Budget::STATUS_DRAFT, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
+            'can_approve' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
+            'can_reject' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
+            'can_cancel' => ! in_array($status, [Budget::STATUS_CONVERTED, Budget::STATUS_CANCELLED], true),
+            'can_generate_os' => (int) ($budget->os_id ?? 0) <= 0
+                && in_array($status, [Budget::STATUS_PENDING_OS, Budget::STATUS_APPROVED], true),
         ];
     }
 
@@ -782,6 +787,12 @@ class BudgetWorkflowService
             'can_edit' => ! in_array($status, [Budget::STATUS_CONVERTED], true),
             'can_delete' => in_array($status, [Budget::STATUS_DRAFT, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
             'can_send_approval' => $canSendApproval,
+            'can_approve' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
+            'can_reject' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
+            'can_cancel' => ! in_array($status, [Budget::STATUS_CONVERTED, Budget::STATUS_CANCELLED], true),
+            'can_generate_os' => (int) ($budget->os_id ?? 0) <= 0
+                && in_array($status, [Budget::STATUS_PENDING_OS, Budget::STATUS_APPROVED], true),
+            'has_registered_client' => $client !== null,
             'link_publico' => $publicLink,
             'created_at' => optional($budget->created_at)->format('d/m/Y H:i'),
             'updated_at' => optional($budget->updated_at)->format('d/m/Y H:i'),
@@ -884,17 +895,16 @@ class BudgetWorkflowService
     }
 
     /**
+     * O tipo é derivado exclusivamente da presença de OS, garantindo a divisão
+     * clara entre os dois fluxos: com OS = "equipamento na assistência";
+     * sem OS = "prévio" (avulso). O tipo enviado no payload é ignorado de
+     * propósito — um orçamento sem OS nunca é "assistência" (e vice-versa).
+     *
      * @param array<string, mixed> $attributes
      */
     private function resolveType(array $attributes, bool $fromOrder): string
     {
-        if ($fromOrder) {
-            return Budget::TYPE_ASSISTANCE;
-        }
-
-        $type = strtolower(trim((string) ($attributes['tipo_orcamento'] ?? '')));
-
-        return in_array($type, [Budget::TYPE_PREVIEW, Budget::TYPE_ASSISTANCE], true) ? $type : Budget::TYPE_PREVIEW;
+        return $fromOrder ? Budget::TYPE_ASSISTANCE : Budget::TYPE_PREVIEW;
     }
 
     /**

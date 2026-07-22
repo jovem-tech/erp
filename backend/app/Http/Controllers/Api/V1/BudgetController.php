@@ -241,6 +241,88 @@ class BudgetController extends BaseApiController
         };
     }
 
+    public function approve(Request $request, int $budget): JsonResponse
+    {
+        $this->authorize('orcamentos:editar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $result = $this->budgetApprovalService->approveByStaff($budget, $user, $request->input('observacao'));
+
+        return $this->respondToStaffDecision($result, $request);
+    }
+
+    public function reject(Request $request, int $budget): JsonResponse
+    {
+        $this->authorize('orcamentos:editar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $result = $this->budgetApprovalService->rejectByStaff($budget, $user, $request->input('motivo'));
+
+        return $this->respondToStaffDecision($result, $request);
+    }
+
+    public function cancel(Request $request, int $budget): JsonResponse
+    {
+        $this->authorize('orcamentos:editar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $result = $this->budgetApprovalService->cancelByStaff($budget, $user, $request->input('motivo'));
+
+        return $this->respondToStaffDecision($result, $request);
+    }
+
+    /**
+     * Mapeia o retorno das ações de decisão do técnico (aprovar/rejeitar/
+     * cancelar por outros meios) para respostas HTTP.
+     *
+     * @param array<string, mixed> $result
+     */
+    private function respondToStaffDecision(array $result, Request $request): JsonResponse
+    {
+        return match ($result['result'] ?? 'error') {
+            'ok' => $this->success(
+                [
+                    'budget' => ['status' => $result['status'] ?? null],
+                    'message' => $result['message'] ?? null,
+                ],
+                request: $request
+            ),
+            'not_found' => $this->error(
+                'Orçamento não encontrado.',
+                404,
+                'BUDGET_NOT_FOUND',
+                null,
+                request: $request
+            ),
+            'already_resolved' => $this->error(
+                (string) ($result['message'] ?? 'Ação não permitida no status atual do orçamento.'),
+                409,
+                'BUDGET_DECISION_CONFLICT',
+                null,
+                request: $request
+            ),
+            default => $this->error(
+                (string) ($result['message'] ?? 'Falha ao registrar a decisão do orçamento.'),
+                422,
+                'BUDGET_DECISION_FAILED',
+                null,
+                request: $request
+            ),
+        };
+    }
+
     /**
      * Verifica credenciais de administrador quando o payload as inclui —
      * campos usados apenas para autorizar edição/criação de orçamento numa OS

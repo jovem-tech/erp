@@ -372,22 +372,29 @@
 
         <div class="equipment-tab-panel" data-budget-panel="operacional">
             <div class="desktop-grid desktop-grid-two">
+                @php
+                    $typeLabelMap = [];
+                    foreach ($typeOptions as $typeOption) {
+                        $typeLabelMap[(string) ($typeOption['value'] ?? '')] = (string) ($typeOption['label'] ?? 'Tipo');
+                    }
+                    $originLabelMap = [];
+                    foreach ($originOptions as $originOption) {
+                        $originLabelMap[(string) ($originOption['value'] ?? '')] = (string) ($originOption['label'] ?? 'Origem');
+                    }
+                    $typeDisplayLabel = $typeLabelMap[$typeValue] ?? 'Orçamento prévio';
+                    $originDisplayLabel = $originLabelMap[$originValue] ?? 'Manual';
+                @endphp
                 <div>
-                    <label for="orcamentoTipo">Tipo de orçamento</label>
-                    <select id="orcamentoTipo" name="tipo_orcamento" class="form-select">
-                        @foreach ($typeOptions as $typeOption)
-                            <option value="{{ $typeOption['value'] ?? '' }}" @selected($typeValue === ($typeOption['value'] ?? ''))>{{ $typeOption['label'] ?? 'Tipo' }}</option>
-                        @endforeach
-                    </select>
+                    <label for="orcamentoTipoDisplay">Tipo de orçamento</label>
+                    <input type="text" id="orcamentoTipoDisplay" class="form-control" value="{{ $typeDisplayLabel }}" readonly data-budget-type-display>
+                    <input type="hidden" name="tipo_orcamento" value="{{ $typeValue }}" data-budget-type-value>
+                    <small class="text-secondary d-block mt-2">Definido automaticamente: <strong>sem OS</strong> é orçamento prévio (avulso); <strong>com OS</strong> é equipamento na assistência.</small>
                 </div>
 
                 <div>
-                    <label for="orcamentoOrigem">Origem</label>
-                    <select id="orcamentoOrigem" name="origem" class="form-select">
-                        @foreach ($originOptions as $originOption)
-                            <option value="{{ $originOption['value'] ?? '' }}" @selected($originValue === ($originOption['value'] ?? ''))>{{ $originOption['label'] ?? 'Origem' }}</option>
-                        @endforeach
-                    </select>
+                    <label for="orcamentoOrigemDisplay">Origem</label>
+                    <input type="text" id="orcamentoOrigemDisplay" class="form-control" value="{{ $originDisplayLabel }}" readonly data-budget-origin-display>
+                    <input type="hidden" name="origem" value="{{ $originValue }}" data-budget-origin-value>
                 </div>
 
                 <div>

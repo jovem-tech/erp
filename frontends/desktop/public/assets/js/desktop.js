@@ -1157,10 +1157,18 @@ const DesktopUi = (() => {
 
                 event.preventDefault();
 
+                // Suporte opcional a um campo de motivo (ex.: rejeitar/cancelar
+                // orçamento): data-confirm-input="textarea" mostra o campo e o
+                // valor é copiado para o input [data-confirm-reason] do form.
+                const inputType = form.getAttribute('data-confirm-input');
+
                 Swal.fire({
                     title: form.getAttribute('data-confirm-title') || 'Confirmar ação',
                     text: form.getAttribute('data-confirm') || 'Deseja continuar com esta operação?',
                     icon: form.getAttribute('data-confirm-icon') || 'warning',
+                    input: inputType || undefined,
+                    inputPlaceholder: form.getAttribute('data-confirm-input-placeholder') || '',
+                    inputAttributes: inputType ? { 'aria-label': form.getAttribute('data-confirm-input-placeholder') || 'Motivo' } : undefined,
                     showCancelButton: true,
                     confirmButtonText: form.getAttribute('data-confirm-button') || 'Sim, continuar',
                     cancelButtonText: 'Cancelar',
@@ -1168,6 +1176,13 @@ const DesktopUi = (() => {
                 }).then((result) => {
                     if (!result.isConfirmed) {
                         return;
+                    }
+
+                    if (inputType) {
+                        const reasonTarget = form.querySelector('[data-confirm-reason]');
+                        if (reasonTarget instanceof HTMLInputElement || reasonTarget instanceof HTMLTextAreaElement) {
+                            reasonTarget.value = typeof result.value === 'string' ? result.value : '';
+                        }
                     }
 
                     form.dataset.confirmed = '1';

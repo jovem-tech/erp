@@ -94,6 +94,46 @@
                     </form>
                 @endif
 
+                @if (! empty($budget['can_generate_os']))
+                    <div class="dropdown-divider"></div>
+                    <a href="{{ route('orders.create', ['orcamento_id' => $budgetId]) }}" class="dropdown-item text-primary">
+                        <i class="bi bi-wrench-adjustable me-2"></i>Gerar OS a partir deste orçamento
+                    </a>
+                @endif
+
+                @if (! empty($budget['can_approve']) || ! empty($budget['can_reject']) || ! empty($budget['can_cancel']))
+                    <div class="dropdown-divider"></div>
+                @endif
+
+                @if (! empty($budget['can_approve']))
+                    <form method="post" action="{{ route('orcamentos.approve', $budgetId) }}" data-confirm="Registrar que o cliente aprovou este orçamento por outros meios (telefone, presencial, etc.)?" data-confirm-title="Aprovar orçamento" data-confirm-button="Sim, registrar aprovação" data-confirm-icon="question">
+                        @csrf
+                        <button type="submit" class="dropdown-item text-success">
+                            <i class="bi bi-check2-circle me-2"></i>Aprovar (outros meios)
+                        </button>
+                    </form>
+                @endif
+
+                @if (! empty($budget['can_reject']))
+                    <form method="post" action="{{ route('orcamentos.reject', $budgetId) }}" data-confirm="Confirmar que o cliente recusou explicitamente este orçamento?" data-confirm-title="Rejeitar orçamento" data-confirm-button="Sim, registrar recusa" data-confirm-input="textarea" data-confirm-input-placeholder="Motivo da recusa (opcional)">
+                        @csrf
+                        <input type="hidden" name="motivo" data-confirm-reason>
+                        <button type="submit" class="dropdown-item text-warning">
+                            <i class="bi bi-x-circle me-2"></i>Rejeitar (em nome do cliente)
+                        </button>
+                    </form>
+                @endif
+
+                @if (! empty($budget['can_cancel']))
+                    <form method="post" action="{{ route('orcamentos.cancel', $budgetId) }}" data-confirm="Cancelar este orçamento por falta de resposta do cliente?" data-confirm-title="Cancelar orçamento" data-confirm-button="Sim, cancelar" data-confirm-input="textarea" data-confirm-input-placeholder="Motivo do cancelamento (opcional)">
+                        @csrf
+                        <input type="hidden" name="motivo" data-confirm-reason>
+                        <button type="submit" class="dropdown-item text-secondary">
+                            <i class="bi bi-slash-circle me-2"></i>Cancelar (sem resposta)
+                        </button>
+                    </form>
+                @endif
+
                 @if (! empty($budget['can_delete']))
                     <div class="dropdown-divider"></div>
                     <form method="post" action="{{ route('orcamentos.destroy', $budgetId) }}" data-confirm="Deseja excluir este orçamento? Esta ação não poderá ser desfeita." data-confirm-title="Excluir orçamento" data-confirm-button="Sim, excluir">

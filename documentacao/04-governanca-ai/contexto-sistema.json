@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-07-21T22:44:55-03:00",
+    "generated_at": "2026-07-22T11:37:25-03:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "5.5.1",
+        "app_version": "5.6.0",
         "api_version": "1.5.0",
         "production_target": "Ubuntu VPS",
         "development_target": "Ubuntu Server LAN - BANCADA-02 (192.168.1.100)"
@@ -496,6 +496,10 @@
                 {
                     "file": "documentacao/07-novas-implementacoes/historico-de-versoes.md",
                     "title": "Historico de versoes"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md",
+                    "title": "Revisão de segurança — Fluxo de orçamento na assistência (com OS)"
                 }
             ]
         },

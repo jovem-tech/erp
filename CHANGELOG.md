@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.6.0.0 — 2026-07-22 11:37
+- **Tier:** minor
+- **Autor/Agente:** Claude (Opus 4.8)
+- **Descrição:** Divisao clara orcamento avulso x OS: tipo derivado da presenca de OS, acoes do tecnico (aprovar/rejeitar/cancelar por outros meios) e geracao de OS a partir de orcamento avulso aprovado com cadastro rapido de cliente e vinculo (convertido)
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/BudgetController.php,backend/app/Http/Controllers/Api/V1/OrderController.php,backend/app/Http/Requests/Api/V1/UpsertOrderRequest.php,backend/app/Models/OrderEvent.php,backend/app/Services/Budgets/BudgetApprovalService.php,backend/app/Services/Budgets/BudgetOrderSyncService.php,backend/app/Services/Budgets/BudgetWorkflowService.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/routes/api.php,backend/tests/Feature/Api/V1/BudgetAvulsoFlowTest.php,documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md,frontends/desktop/app/Http/Controllers/OrcamentoController.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/app/Services/OrcamentoService.php,frontends/desktop/public/assets/js/desktop.js,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/public/assets/js/orders-create.js,frontends/desktop/resources/views/orcamentos/form.blade.php,frontends/desktop/resources/views/orcamentos/index.blade.php,frontends/desktop/resources/views/orcamentos/show.blade.php,frontends/desktop/resources/views/orders/_wizard.blade.php,frontends/desktop/routes/web.php
+
 ## v5.5.1.0 — 2026-07-21 22:44
 - **Tier:** patch
 - **Autor/Agente:** Codex

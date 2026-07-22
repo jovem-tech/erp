@@ -8,6 +8,7 @@ use App\Enums\Files\FileOrigin;
 use App\Events\OrderCreated;
 use App\Models\Budget;
 use App\Models\BudgetItem;
+use App\Models\BudgetStatusHistory;
 use App\Models\ChecklistModelo;
 use App\Models\ChecklistTipo;
 use App\Models\Client;
@@ -25,6 +26,7 @@ use App\Models\OrderStatusTransition;
 use App\Models\User;
 use App\Models\WhatsappTemplate;
 use App\Notifications\MobileNotification;
+use App\Services\Budgets\BudgetOrderSyncService;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
 use App\Services\Files\LegacyCompatibleFileAdapter;
 use App\Services\Financeiro\OsMargemService;
@@ -61,7 +63,8 @@ class OrderWorkflowService
         private readonly WhatsappMessagingService $whatsappMessagingService,
         private readonly IntegrationSettingsService $integrationSettingsService,
         private readonly OrderEventService $orderEventService,
-        private readonly LegacyCompatibleFileAdapter $fileManagerAdapter
+        private readonly LegacyCompatibleFileAdapter $fileManagerAdapter,
+        private readonly BudgetOrderSyncService $budgetOrderSyncService
     ) {}
 
     /**
@@ -1189,6 +1192,91 @@ class OrderWorkflowService
      * @param  array<int, UploadedFile>  $uploadedPhotos
      * @return array<string, mixed>
      */
+    /**
+     * Valida se um orçamento avulso pode ser convertido na OS que está sendo
+     * criada. Regra de negócio: só gera OS se o cliente estiver cadastrado
+     * (cliente_id) e for o mesmo cliente da OS.
+     *
+     * @return array<string, mixed>|null Erro pronto para retornar, ou null se ok.
+     */
+    private function validateBudgetForOrderLink(?Budget $budget, int $clientId): ?array
+    {
+        if (! $budget instanceof Budget) {
+            return ['result' => 'budget_link_invalid', 'message' => 'Orçamento informado para vínculo não foi encontrado.'];
+        }
+
+        if ((int) ($budget->os_id ?? 0) > 0) {
+            return ['result' => 'budget_link_invalid', 'message' => 'Este orçamento já está vinculado a uma OS.'];
+        }
+
+        if (! in_array((string) ($budget->status ?? ''), [Budget::STATUS_PENDING_OS, Budget::STATUS_APPROVED], true)) {
+            return ['result' => 'budget_link_invalid', 'message' => 'Somente orçamentos aprovados (pendentes de abertura de OS) podem gerar uma OS.'];
+        }
+
+        // Se o orçamento já tinha um cliente cadastrado, ele precisa ser o mesmo
+        // da OS. Se era avulso (cliente_nome_avulso, sem cliente_id), a OS exige
+        // um cliente cadastrado — escolhido ou criado na hora — e o orçamento o
+        // adota em linkApprovedBudgetToOrder(). Assim garantimos a regra "só gera
+        // OS com cliente na base" sem travar o avulso sem cadastro prévio.
+        $budgetClientId = (int) ($budget->cliente_id ?? 0);
+        if ($budgetClientId > 0 && $budgetClientId !== $clientId) {
+            return ['result' => 'budget_link_invalid', 'message' => 'O cliente da OS precisa ser o mesmo do orçamento vinculado.'];
+        }
+
+        return null;
+    }
+
+    /**
+     * Vincula um orçamento avulso aprovado à OS recém-criada, marcando-o como
+     * convertido e propagando os valores para a OS. Executado dentro da mesma
+     * transação de createOrder(). O status da OS é o escolhido pelo técnico —
+     * por isso usamos syncFinancialsFromBudget (não o syncFromBudget completo).
+     */
+    private function linkApprovedBudgetToOrder(Budget $budget, Order $order, User $actor, Carbon $now): void
+    {
+        $previousStatus = (string) ($budget->status ?? '');
+        $orderNumber = (string) ($order->numero_os ?? ('#' . (int) $order->id));
+
+        // Adota o cliente/equipamento da OS quando o orçamento era avulso
+        // (cliente_nome_avulso sem cliente_id, ou sem equipamento definido).
+        $budget->forceFill([
+            'os_id' => (int) $order->id,
+            'cliente_id' => (int) ($order->cliente_id ?? 0) ?: $budget->cliente_id,
+            'equipamento_id' => (int) ($budget->equipamento_id ?? 0) ?: (int) ($order->equipamento_id ?? 0),
+            'status' => Budget::STATUS_CONVERTED,
+            'convertido_tipo' => 'os',
+            'convertido_id' => (int) $order->id,
+            'atualizado_por' => (int) $actor->id,
+        ])->save();
+
+        BudgetStatusHistory::query()->create([
+            'orcamento_id' => (int) $budget->id,
+            'status_anterior' => $previousStatus,
+            'status_novo' => Budget::STATUS_CONVERTED,
+            'observacao' => sprintf('Orçamento convertido na OS %s.', $orderNumber),
+            'origem' => 'sistema',
+            'alterado_por' => (int) $actor->id,
+            'created_at' => $now,
+        ]);
+
+        $this->budgetOrderSyncService->syncFinancialsFromBudget($budget, (int) $order->id);
+
+        $this->orderEventService->record(
+            (int) $order->id,
+            OrderEvent::CATEGORIA_ORCAMENTO,
+            OrderEvent::TIPO_ORCAMENTO_CONVERTIDO,
+            'Orçamento vinculado à OS',
+            sprintf('Orçamento %s vinculado e convertido nesta OS.', (string) ($budget->numero ?? ('#' . (int) $budget->id))),
+            [
+                'orcamento_id' => (int) $budget->id,
+                'numero' => (string) ($budget->numero ?? ''),
+                'valor_total' => round((float) ($budget->total ?? 0), 2),
+                'status_anterior' => $previousStatus,
+            ],
+            (int) $actor->id
+        );
+    }
+
     public function createOrder(User $actor, array $attributes, array $uploadedPhotos = []): array
     {
         $clientId = (int) ($attributes['cliente_id'] ?? 0);
@@ -1210,6 +1298,19 @@ class OrderWorkflowService
             return [
                 'result' => 'equipment_client_mismatch',
             ];
+        }
+
+        // Atrelamento de um orçamento avulso aprovado (status pendente_abertura_os):
+        // a OS gerada reaproveita cliente/valores e o orçamento passa a convertido.
+        // Ver Budget::STATUS_PENDING_OS e BudgetApprovalService::approvedStatus().
+        $linkBudgetId = (int) ($attributes['orcamento_id'] ?? 0);
+        $linkBudget = null;
+        if ($linkBudgetId > 0) {
+            $linkBudget = Budget::query()->find($linkBudgetId);
+            $linkValidation = $this->validateBudgetForOrderLink($linkBudget, $clientId);
+            if ($linkValidation !== null) {
+                return $linkValidation;
+            }
         }
 
         $statusCode = trim((string) ($attributes['status'] ?? 'triagem'));
@@ -1249,7 +1350,7 @@ class OrderWorkflowService
         }
 
         try {
-            $order = DB::transaction(function () use ($payload, $actor, $statusCode, $estadoFluxo, $now, $entryChecklistPlan): Order {
+            $order = DB::transaction(function () use ($payload, $actor, $statusCode, $estadoFluxo, $now, $entryChecklistPlan, $linkBudget): Order {
                 /** @var Order $order */
                 $order = Order::query()->create($payload);
 
@@ -1266,6 +1367,10 @@ class OrderWorkflowService
 
                 if (is_array($entryChecklistPlan)) {
                     $this->applyEntryChecklistSyncPlan((int) $order->id, $entryChecklistPlan, $now);
+                }
+
+                if ($linkBudget instanceof Budget) {
+                    $this->linkApprovedBudgetToOrder($linkBudget, $order, $actor, $now);
                 }
 
                 return $order;

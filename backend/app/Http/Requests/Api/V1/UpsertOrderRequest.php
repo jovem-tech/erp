@@ -15,6 +15,8 @@ class UpsertOrderRequest extends BaseApiFormRequest
             'idempotency_key' => [$this->isMethod('post') ? 'nullable' : 'prohibited', 'uuid'],
             'cliente_id' => [$requiredOrSometimes, 'integer', 'min:1', Rule::exists('clientes', 'id')],
             'equipamento_id' => [$requiredOrSometimes, 'integer', 'min:1', Rule::exists('equipamentos', 'id')],
+            // Vínculo opcional de um orçamento avulso aprovado a ser convertido nesta OS.
+            'orcamento_id' => ['nullable', 'integer', 'min:1', Rule::exists('orcamentos', 'id')],
             'tecnico_id' => ['nullable', 'integer', 'min:1', Rule::exists('usuarios', 'id')],
             'fotos' => ['nullable', 'array', 'max:4'],
             'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],

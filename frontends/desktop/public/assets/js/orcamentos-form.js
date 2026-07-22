@@ -354,9 +354,55 @@
         const orderSelect = document.getElementById('orcamentoOsId');
         const equipmentSelect = document.getElementById('orcamentoEquipamentoId');
         const titleInput = document.getElementById('orcamentoTitulo');
-        const typeSelect = document.getElementById('orcamentoTipo');
-        const originSelect = document.getElementById('orcamentoOrigem');
+        // Tipo e origem são derivados da presença de OS (sem OS = avulso/prévio;
+        // com OS = assistência). Exibidos read-only, o valor real vai em hidden.
+        const typeDisplay = document.querySelector('[data-budget-type-display]');
+        const typeValueInput = document.querySelector('[data-budget-type-value]');
+        const originDisplay = document.querySelector('[data-budget-origin-display]');
+        const originValueInput = document.querySelector('[data-budget-origin-value]');
         const statusSelect = document.getElementById('orcamentoStatus');
+        const DERIVED_TYPE_LABELS = {
+            previo: 'Orçamento prévio',
+            assistencia: 'Orçamento com equipamento na assistência',
+        };
+        const DERIVED_ORIGIN_LABELS = {
+            manual: 'Manual',
+            os: 'Ordem de serviço',
+            conversa: 'Conversa',
+            cliente: 'Cliente',
+        };
+        // Origens de proveniência (chat/cliente) são preservadas quando não há OS;
+        // caso contrário o avulso manual usa 'manual' e o vinculado usa 'os'.
+        const preservedOrigins = ['conversa', 'cliente'];
+        const syncDerivedClassification = () => {
+            const hasOrder = orderSelect instanceof HTMLSelectElement
+                ? String(orderSelect.value || '').trim() !== ''
+                : false;
+            const nextType = hasOrder ? 'assistencia' : 'previo';
+            if (typeValueInput instanceof HTMLInputElement) {
+                typeValueInput.value = nextType;
+            }
+            if (typeDisplay instanceof HTMLInputElement) {
+                typeDisplay.value = DERIVED_TYPE_LABELS[nextType] || nextType;
+            }
+            const currentOrigin = originValueInput instanceof HTMLInputElement
+                ? String(originValueInput.value || '').trim()
+                : '';
+            let nextOrigin;
+            if (hasOrder) {
+                nextOrigin = 'os';
+            } else if (preservedOrigins.includes(currentOrigin)) {
+                nextOrigin = currentOrigin;
+            } else {
+                nextOrigin = 'manual';
+            }
+            if (originValueInput instanceof HTMLInputElement) {
+                originValueInput.value = nextOrigin;
+            }
+            if (originDisplay instanceof HTMLInputElement) {
+                originDisplay.value = DERIVED_ORIGIN_LABELS[nextOrigin] || nextOrigin;
+            }
+        };
         const executionDeadlineInput = document.getElementById('orcamentoPrazoExecucao');
         const observationsInput = document.getElementById('orcamentoObservacoes');
         const conditionsInput = document.getElementById('orcamentoCondicoes');
@@ -1202,8 +1248,8 @@
                 email: normalizeText(emailInput?.value),
                 orderLabel: getSelectedOptionLabel(orderSelect),
                 equipmentLabel: getSelectedOptionLabel(equipmentSelect),
-                typeLabel: getSelectedOptionLabel(typeSelect),
-                originLabel: getSelectedOptionLabel(originSelect),
+                typeLabel: typeDisplay instanceof HTMLInputElement ? normalizeText(typeDisplay.value) : '',
+                originLabel: originDisplay instanceof HTMLInputElement ? normalizeText(originDisplay.value) : '',
                 statusLabel: getSelectedOptionLabel(statusSelect),
                 validityDays: normalizeText(validityDaysSelect?.value),
                 validityDate: normalizeText(validityDateInput?.value),
@@ -1993,7 +2039,12 @@
             updateQuickItemMode(getResolvedQuickType('servico'));
         });
 
+        onSelectEvent(orderSelect, 'change', syncDerivedClassification);
+        onSelectEvent(orderSelect, 'select2:select', syncDerivedClassification);
+        onSelectEvent(orderSelect, 'select2:clear', syncDerivedClassification);
+
         loadDraft();
+        syncDerivedClassification();
         updateSummary();
 
         window.setTimeout(() => {
