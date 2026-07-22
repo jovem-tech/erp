@@ -12,19 +12,19 @@
                 <button type="button" class="btn-close ms-3" data-bs-dismiss="modal" aria-label="Fechar visualizador"></button>
             </div>
 
-            <div class="file-preview-toolbar" role="toolbar" aria-label="Ferramentas de visualização">
+            <div class="file-preview-toolbar" role="toolbar" aria-label="Ferramentas de visualizaÃ§Ã£o">
                 <div class="btn-group btn-group-sm d-none" role="group" aria-label="Controles da foto" data-file-preview-image-tools>
                     <button type="button" class="btn btn-soft" data-file-preview-action="zoom-out" title="Diminuir zoom" aria-label="Diminuir zoom"><i class="bi bi-zoom-out"></i></button>
                     <button type="button" class="btn btn-soft file-preview-zoom-label" data-file-preview-action="reset" title="Tamanho original" aria-label="Restaurar tamanho original"><span data-file-preview-zoom>100%</span></button>
                     <button type="button" class="btn btn-soft" data-file-preview-action="zoom-in" title="Aumentar zoom" aria-label="Aumentar zoom"><i class="bi bi-zoom-in"></i></button>
-                    <button type="button" class="btn btn-soft" data-file-preview-action="fit" title="Ajustar foto à janela" aria-label="Ajustar foto à janela"><i class="bi bi-arrows-angle-contract"></i></button>
+                    <button type="button" class="btn btn-soft" data-file-preview-action="fit" title="Ajustar foto Ã  janela" aria-label="Ajustar foto Ã  janela"><i class="bi bi-arrows-angle-contract"></i></button>
                     <button type="button" class="btn btn-soft" data-file-preview-action="rotate-left" title="Girar para a esquerda" aria-label="Girar para a esquerda"><i class="bi bi-arrow-counterclockwise"></i></button>
                     <button type="button" class="btn btn-soft" data-file-preview-action="rotate-right" title="Girar para a direita" aria-label="Girar para a direita"><i class="bi bi-arrow-clockwise"></i></button>
                 </div>
 
                 <div class="file-preview-pdf-help d-none" data-file-preview-pdf-tools>
                     <i class="bi bi-file-earmark-pdf text-danger" aria-hidden="true"></i>
-                    <span>Use a barra do leitor para páginas, zoom, rotação e impressão.</span>
+                    <span>Use a barra do leitor para pÃ¡ginas, zoom, rotaÃ§Ã£o e impressÃ£o.</span>
                     <button type="button" class="btn btn-soft btn-sm" data-file-preview-action="reload" title="Recarregar PDF"><i class="bi bi-arrow-repeat me-1"></i>Recarregar</button>
                 </div>
 
@@ -37,11 +37,11 @@
             <div class="modal-body file-preview-modal-body p-0">
                 <div class="file-preview-loading" data-file-preview-loading role="status" aria-live="polite">
                     <span class="spinner-border text-primary" aria-hidden="true"></span>
-                    <span>Carregando visualização...</span>
+                    <span>Carregando visualizaÃ§Ã£o...</span>
                 </div>
                 <div class="file-preview-error d-none" data-file-preview-error role="alert">
                     <i class="bi bi-exclamation-triangle fs-2" aria-hidden="true"></i>
-                    <strong>Não foi possível exibir este arquivo.</strong>
+                    <strong>NÃ£o foi possÃ­vel exibir este arquivo.</strong>
                     <span>Confira o estado e a integridade do arquivo nos detalhes.</span>
                 </div>
                 <div class="file-preview-image-stage d-none" data-file-preview-image-stage tabindex="0" aria-label="Visualizador da foto">

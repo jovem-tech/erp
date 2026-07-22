@@ -103,7 +103,7 @@
 
         if (kind === 'image') {
             resetImage(true);
-            image.alt = `Visualização de ${fileName}`;
+            image.alt = `VisualizaÃ§Ã£o de ${fileName}`;
             image.src = previewUrl;
         } else {
             loadPdf();
