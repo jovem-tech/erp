@@ -82,6 +82,36 @@ class OrcamentoService
     /**
      * @return array<string, mixed>
      */
+    public function approve(int $id, ?string $observacao = null): array
+    {
+        $response = $this->apiClient->post('/orcamentos/' . $id . '/aprovar', ['observacao' => $observacao]);
+
+        return $response['data'] ?? [];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function reject(int $id, ?string $motivo = null): array
+    {
+        $response = $this->apiClient->post('/orcamentos/' . $id . '/rejeitar', ['motivo' => $motivo]);
+
+        return $response['data'] ?? [];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function cancel(int $id, ?string $motivo = null): array
+    {
+        $response = $this->apiClient->post('/orcamentos/' . $id . '/cancelar', ['motivo' => $motivo]);
+
+        return $response['data'] ?? [];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     public function destroy(int $id): array
     {
         $response = $this->apiClient->delete('/orcamentos/' . $id);

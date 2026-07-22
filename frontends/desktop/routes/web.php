@@ -230,6 +230,15 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/orcamentos/{orcamento}/enviar-aprovacao', [OrcamentoController::class, 'sendApproval'])
         ->middleware('desktop.permission:orcamentos,editar')
         ->name('orcamentos.send_approval');
+    Route::post('/orcamentos/{orcamento}/aprovar', [OrcamentoController::class, 'approve'])
+        ->middleware('desktop.permission:orcamentos,editar')
+        ->name('orcamentos.approve');
+    Route::post('/orcamentos/{orcamento}/rejeitar', [OrcamentoController::class, 'reject'])
+        ->middleware('desktop.permission:orcamentos,editar')
+        ->name('orcamentos.reject');
+    Route::post('/orcamentos/{orcamento}/cancelar', [OrcamentoController::class, 'cancel'])
+        ->middleware('desktop.permission:orcamentos,editar')
+        ->name('orcamentos.cancel');
     Route::delete('/orcamentos/{orcamento}', [OrcamentoController::class, 'destroy'])
         ->middleware('desktop.permission:orcamentos,excluir')
         ->name('orcamentos.destroy');

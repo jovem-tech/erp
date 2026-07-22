@@ -131,6 +131,9 @@ Route::prefix('v1')->group(function (): void {
         Route::get('orcamentos/{budget}', [BudgetController::class, 'show'])->name('api.v1.orcamentos.show');
         Route::match(['put', 'patch'], 'orcamentos/{budget}', [BudgetController::class, 'update'])->name('api.v1.orcamentos.update');
         Route::post('orcamentos/{budget}/send-approval', [BudgetController::class, 'sendForApproval'])->name('api.v1.orcamentos.send_approval');
+        Route::post('orcamentos/{budget}/aprovar', [BudgetController::class, 'approve'])->name('api.v1.orcamentos.approve');
+        Route::post('orcamentos/{budget}/rejeitar', [BudgetController::class, 'reject'])->name('api.v1.orcamentos.reject');
+        Route::post('orcamentos/{budget}/cancelar', [BudgetController::class, 'cancel'])->name('api.v1.orcamentos.cancel');
         Route::delete('orcamentos/{budget}', [BudgetController::class, 'destroy'])->name('api.v1.orcamentos.destroy');
 
         Route::prefix('financeiro/cartoes')

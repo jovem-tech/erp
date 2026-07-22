@@ -198,6 +198,49 @@
                                             </a>
                                         </li>
                                     @endif
+                                    @if (! empty($budget['can_generate_os']))
+                                        <li>
+                                            <a href="{{ route('orders.create', ['orcamento_id' => $budgetId]) }}" class="dropdown-item text-primary">
+                                                <i class="bi bi-wrench-adjustable me-2"></i>
+                                                Gerar OS
+                                            </a>
+                                        </li>
+                                    @endif
+                                    @if (! empty($budget['can_approve']))
+                                        <li>
+                                            <form method="post" action="{{ route('orcamentos.approve', $budgetId) }}" data-confirm="Registrar que o cliente aprovou este orçamento por outros meios (telefone, presencial, etc.)?" data-confirm-title="Aprovar orçamento" data-confirm-button="Sim, registrar aprovação" data-confirm-icon="question">
+                                                @csrf
+                                                <button type="submit" class="dropdown-item text-success">
+                                                    <i class="bi bi-check2-circle me-2"></i>
+                                                    Aprovar (outros meios)
+                                                </button>
+                                            </form>
+                                        </li>
+                                    @endif
+                                    @if (! empty($budget['can_reject']))
+                                        <li>
+                                            <form method="post" action="{{ route('orcamentos.reject', $budgetId) }}" data-confirm="Confirmar que o cliente recusou explicitamente este orçamento?" data-confirm-title="Rejeitar orçamento" data-confirm-button="Sim, registrar recusa" data-confirm-input="textarea" data-confirm-input-placeholder="Motivo da recusa (opcional)">
+                                                @csrf
+                                                <input type="hidden" name="motivo" data-confirm-reason>
+                                                <button type="submit" class="dropdown-item text-warning">
+                                                    <i class="bi bi-x-circle me-2"></i>
+                                                    Rejeitar (em nome do cliente)
+                                                </button>
+                                            </form>
+                                        </li>
+                                    @endif
+                                    @if (! empty($budget['can_cancel']))
+                                        <li>
+                                            <form method="post" action="{{ route('orcamentos.cancel', $budgetId) }}" data-confirm="Cancelar este orçamento por falta de resposta do cliente?" data-confirm-title="Cancelar orçamento" data-confirm-button="Sim, cancelar" data-confirm-input="textarea" data-confirm-input-placeholder="Motivo do cancelamento (opcional)">
+                                                @csrf
+                                                <input type="hidden" name="motivo" data-confirm-reason>
+                                                <button type="submit" class="dropdown-item text-secondary">
+                                                    <i class="bi bi-slash-circle me-2"></i>
+                                                    Cancelar (sem resposta)
+                                                </button>
+                                            </form>
+                                        </li>
+                                    @endif
                                     @if (! empty($budget['can_delete']))
                                         <li>
                                             <form method="post" action="{{ route('orcamentos.destroy', $budgetId) }}" data-confirm="Deseja excluir este orçamento? Esta ação não poderá ser desfeita." data-confirm-title="Excluir orçamento" data-confirm-button="Sim, excluir">

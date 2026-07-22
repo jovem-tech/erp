@@ -240,6 +240,78 @@ class OrcamentoController extends DesktopController
             ->with('success', 'Orçamento enviado para aprovação do cliente.');
     }
 
+    public function approve(Request $request, int $orcamento): RedirectResponse
+    {
+        return $this->handleStaffDecision(
+            $request,
+            $orcamento,
+            fn (?string $note) => $this->orcamentoService->approve($orcamento, $note),
+            'observacao',
+            'Aprovação registrada com sucesso.'
+        );
+    }
+
+    public function reject(Request $request, int $orcamento): RedirectResponse
+    {
+        return $this->handleStaffDecision(
+            $request,
+            $orcamento,
+            fn (?string $reason) => $this->orcamentoService->reject($orcamento, $reason),
+            'motivo',
+            'Rejeição registrada com sucesso.'
+        );
+    }
+
+    public function cancel(Request $request, int $orcamento): RedirectResponse
+    {
+        return $this->handleStaffDecision(
+            $request,
+            $orcamento,
+            fn (?string $reason) => $this->orcamentoService->cancel($orcamento, $reason),
+            'motivo',
+            'Orçamento cancelado com sucesso.'
+        );
+    }
+
+    /**
+     * Fluxo comum das ações de decisão do técnico (aprovar/rejeitar/cancelar):
+     * lê o motivo/observação, chama o serviço e redireciona com feedback.
+     */
+    private function handleStaffDecision(
+        Request $request,
+        int $orcamento,
+        callable $action,
+        string $reasonField,
+        string $successMessage
+    ): RedirectResponse {
+        $reason = trim((string) $request->input($reasonField, ''));
+        $reason = $reason !== '' ? $reason : null;
+
+        try {
+            $action($reason);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException $exception) {
+            return redirect()
+                ->route('orcamentos.show', $orcamento)
+                ->with('error', 'O seu usuário não tem permissão para esta ação no orçamento.');
+        } catch (ApiRequestException $exception) {
+            return redirect()
+                ->route('orcamentos.show', $orcamento)
+                ->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return redirect()
+                ->route('orcamentos.show', $orcamento)
+                ->with('error', 'Não foi possível concluir a ação agora. Tente novamente.');
+        }
+
+        return redirect()
+            ->route('orcamentos.show', $orcamento)
+            ->with('success', $successMessage);
+    }
+
     public function destroy(int $orcamento): RedirectResponse
     {
         try {

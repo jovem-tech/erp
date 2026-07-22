@@ -221,6 +221,13 @@ class OrderController extends BaseApiController
                 null,
                 request: $request
             ),
+            'budget_link_invalid' => $this->error(
+                (string) ($result['message'] ?? 'O orçamento informado não pode ser convertido nesta OS.'),
+                422,
+                'ORDER_BUDGET_LINK_INVALID',
+                null,
+                request: $request
+            ),
             'invalid_status' => $this->error(
                 'O status informado não é válido para o catálogo atual.',
                 422,

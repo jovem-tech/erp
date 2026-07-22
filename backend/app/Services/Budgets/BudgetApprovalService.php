@@ -297,89 +297,27 @@ class BudgetApprovalService
             ];
         }
 
-        $approvedStatus = $this->approvedStatus($budget);
         $decisionMessage = trim((string) $response) !== '' ? trim((string) $response) : 'Aprovado pelo cliente.';
 
-        DB::transaction(function () use ($budget, $approvedStatus, $decisionMessage, $ipAddress, $userAgent): void {
-            $budget->refresh();
-            $previousStatus = (string) ($budget->status ?? Budget::STATUS_DRAFT);
-            $approvedAt = now();
-
-            $budget->forceFill([
-                'status' => $approvedStatus,
-                'aprovado_em' => $approvedAt,
-                'rejeitado_em' => null,
-                'motivo_rejeicao' => null,
-            ])->save();
-
-            BudgetApproval::query()->create([
-                'orcamento_id' => (int) $budget->id,
-                'token_publico' => (string) ($budget->token_publico ?? ''),
-                'acao' => 'aprovado',
-                'origem' => 'link_publico',
-                'usuario_id' => null,
-                'usuario_nome' => 'Cliente',
-                'resposta_cliente' => $decisionMessage,
-                'observacao' => 'Aprovação registrada pelo link público do orçamento.',
-                'ip_origem' => $ipAddress,
-                'user_agent' => $userAgent !== null ? Str::limit($userAgent, 255, '') : null,
-                'created_at' => $approvedAt,
-            ]);
-
-            $this->recordStatusHistory(
-                $budget,
-                $previousStatus,
-                $approvedStatus,
-                'Cliente aprovou o orçamento pelo link público.',
-                'cliente',
-                null
-            );
-
-            $osId = (int) ($budget->os_id ?? 0);
-            if ($osId > 0) {
-                $this->orderEventService->record(
-                    $osId,
-                    OrderEvent::CATEGORIA_ORCAMENTO,
-                    OrderEvent::TIPO_ORCAMENTO_APROVADO,
-                    'Orçamento aprovado pelo cliente',
-                    sprintf('Cliente aprovou o orçamento %s pelo link público.', $budget->numero),
-                    [
-                        'orcamento_id' => (int) $budget->id,
-                        'numero' => (string) $budget->numero,
-                        'resposta_cliente' => $decisionMessage,
-                        'ip_origem' => $ipAddress,
-                        'user_agent' => $userAgent,
-                    ],
-                    null,
-                    OrderEvent::ORIGEM_CLIENTE,
-                    $approvedAt
-                );
-            }
-
-            $this->syncOrderForDecision($budget, true, $approvedAt);
-            $this->budgetOrderSyncService->syncFromBudget($budget);
-
-            // Sino: avisa responsável, criador e técnico da OS — sem isso a
-            // aprovação só aparecia no sino no próximo carregamento manual da
-            // lista (nenhum dispatch existia aqui antes, apesar de já
-            // documentado em notificacoes-sino.md).
-            $this->notificationDispatchService->toUsers(
-                $this->budgetDecisionRecipients($budget),
-                [
-                    'kind' => 'orcamento.approved',
-                    'title' => 'Orçamento aprovado pelo cliente',
-                    'body' => sprintf(
-                        'O cliente aprovou o orçamento %s (R$ %s).',
-                        $budget->numero,
-                        number_format((float) $budget->total, 2, ',', '.')
-                    ),
-                    'route' => '/orcamentos/' . (int) $budget->id,
-                    'icon' => 'receipt',
-                    'orcamento_id' => (int) $budget->id,
-                    'os_id' => (int) ($budget->os_id ?? 0),
-                ]
-            );
-        });
+        $this->finalizeApproval($budget, $decisionMessage, [
+            'origem' => 'link_publico',
+            'usuario_id' => null,
+            'usuario_nome' => 'Cliente',
+            'approval_observacao' => 'Aprovação registrada pelo link público do orçamento.',
+            'history_observacao' => 'Cliente aprovou o orçamento pelo link público.',
+            'history_origem' => 'cliente',
+            'ip' => $ipAddress,
+            'ua' => $userAgent,
+            'event_titulo' => 'Orçamento aprovado pelo cliente',
+            'event_descricao' => sprintf('Cliente aprovou o orçamento %s pelo link público.', $budget->numero),
+            'event_origem' => OrderEvent::ORIGEM_CLIENTE,
+            'notif_title' => 'Orçamento aprovado pelo cliente',
+            'notif_body' => sprintf(
+                'O cliente aprovou o orçamento %s (R$ %s).',
+                $budget->numero,
+                number_format((float) $budget->total, 2, ',', '.')
+            ),
+        ]);
 
         return [
             'result' => 'ok',
@@ -418,7 +356,249 @@ class BudgetApprovalService
 
         $decisionMessage = trim((string) $reason) !== '' ? trim((string) $reason) : 'Proposta rejeitada pelo cliente.';
 
-        DB::transaction(function () use ($budget, $decisionMessage, $ipAddress, $userAgent): void {
+        $this->finalizeRejection($budget, $decisionMessage, [
+            'origem' => 'link_publico',
+            'usuario_id' => null,
+            'usuario_nome' => 'Cliente',
+            'approval_observacao' => 'Rejeição registrada pelo link público do orçamento.',
+            'history_observacao' => 'Cliente rejeitou o orçamento pelo link público.',
+            'history_origem' => 'cliente',
+            'ip' => $ipAddress,
+            'ua' => $userAgent,
+            'event_titulo' => 'Orçamento recusado pelo cliente',
+            'event_descricao' => sprintf('Cliente recusou o orçamento %s pelo link público. Motivo: %s', $budget->numero, $decisionMessage),
+            'event_origem' => OrderEvent::ORIGEM_CLIENTE,
+            'notif_title' => 'Orçamento recusado pelo cliente',
+            'notif_body' => sprintf('O cliente recusou o orçamento %s.', $budget->numero),
+        ]);
+
+        return [
+            'result' => 'ok',
+            'message' => 'Rejeição registrada com sucesso.',
+        ];
+    }
+
+    /**
+     * Registra a aprovação pelo técnico ("outros meios": telefone, presencial,
+     * WhatsApp etc.). Reaproveita o mesmo núcleo do link público
+     * (finalizeApproval), incluindo o roteamento de status via approvedStatus()
+     * — avulso aprovado vai para pendente_abertura_os.
+     *
+     * @return array<string, mixed>
+     */
+    public function approveByStaff(int $budgetId, User $actor, ?string $note): array
+    {
+        $budget = $this->loadBudget($budgetId);
+        if (! $budget instanceof Budget) {
+            return ['result' => 'not_found', 'message' => 'Orçamento não encontrado.'];
+        }
+
+        $status = trim((string) ($budget->status ?? ''));
+        if (in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED], true)) {
+            return ['result' => 'already_resolved', 'message' => 'Este orçamento já está aprovado.'];
+        }
+
+        $decisionMessage = trim((string) $note) !== ''
+            ? trim((string) $note)
+            : 'Cliente aprovou o orçamento por outros meios (registrado pelo técnico).';
+        $actorName = trim((string) ($actor->nome ?? '')) ?: 'Técnico';
+
+        $newStatus = $this->finalizeApproval($budget, $decisionMessage, [
+            'origem' => 'painel',
+            'usuario_id' => (int) $actor->id,
+            'usuario_nome' => $actorName,
+            'approval_observacao' => 'Aprovação registrada pelo técnico (cliente aprovou por outros meios).',
+            'history_observacao' => 'Técnico registrou a aprovação do cliente (outros meios).',
+            'history_origem' => 'tecnico',
+            'ip' => null,
+            'ua' => null,
+            'event_titulo' => 'Orçamento aprovado (registrado pelo técnico)',
+            'event_descricao' => sprintf('%s registrou a aprovação do orçamento %s (outros meios).', $actorName, $budget->numero),
+            'event_origem' => OrderEvent::ORIGEM_USUARIO,
+            'notif_title' => 'Orçamento aprovado (registrado pelo técnico)',
+            'notif_body' => sprintf(
+                'O orçamento %s foi aprovado (R$ %s).',
+                $budget->numero,
+                number_format((float) $budget->total, 2, ',', '.')
+            ),
+        ]);
+
+        return ['result' => 'ok', 'status' => $newStatus, 'message' => 'Aprovação registrada com sucesso.'];
+    }
+
+    /**
+     * Registra a rejeição explícita do cliente quando comunicada por outros
+     * meios (o cliente recusou por telefone/presencial e não usou o link).
+     *
+     * @return array<string, mixed>
+     */
+    public function rejectByStaff(int $budgetId, User $actor, ?string $reason): array
+    {
+        $budget = $this->loadBudget($budgetId);
+        if (! $budget instanceof Budget) {
+            return ['result' => 'not_found', 'message' => 'Orçamento não encontrado.'];
+        }
+
+        $status = trim((string) ($budget->status ?? ''));
+        if (in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true)) {
+            return ['result' => 'already_resolved', 'message' => 'Este orçamento não pode ser rejeitado no status atual.'];
+        }
+
+        $decisionMessage = trim((string) $reason) !== ''
+            ? trim((string) $reason)
+            : 'Cliente recusou o orçamento por outros meios (registrado pelo técnico).';
+        $actorName = trim((string) ($actor->nome ?? '')) ?: 'Técnico';
+
+        $this->finalizeRejection($budget, $decisionMessage, [
+            'origem' => 'painel',
+            'usuario_id' => (int) $actor->id,
+            'usuario_nome' => $actorName,
+            'approval_observacao' => 'Rejeição registrada pelo técnico (cliente recusou por outros meios).',
+            'history_observacao' => 'Técnico registrou a rejeição do cliente (outros meios).',
+            'history_origem' => 'tecnico',
+            'ip' => null,
+            'ua' => null,
+            'event_titulo' => 'Orçamento recusado (registrado pelo técnico)',
+            'event_descricao' => sprintf('%s registrou a rejeição do orçamento %s. Motivo: %s', $actorName, $budget->numero, $decisionMessage),
+            'event_origem' => OrderEvent::ORIGEM_USUARIO,
+            'notif_title' => 'Orçamento recusado (registrado pelo técnico)',
+            'notif_body' => sprintf('O orçamento %s foi recusado pelo cliente.', $budget->numero),
+        ]);
+
+        return ['result' => 'ok', 'status' => Budget::STATUS_REJECTED, 'message' => 'Rejeição registrada com sucesso.'];
+    }
+
+    /**
+     * Cancela o orçamento por decisão do técnico — usado quando o cliente
+     * ignorou a proposta por tempo indeterminado (abandono). Não é uma decisão
+     * do cliente: difere de rejeitado (recusa explícita).
+     *
+     * @return array<string, mixed>
+     */
+    public function cancelByStaff(int $budgetId, User $actor, ?string $reason): array
+    {
+        $budget = $this->loadBudget($budgetId);
+        if (! $budget instanceof Budget) {
+            return ['result' => 'not_found', 'message' => 'Orçamento não encontrado.'];
+        }
+
+        $status = trim((string) ($budget->status ?? ''));
+        if (in_array($status, [Budget::STATUS_CONVERTED, Budget::STATUS_CANCELLED], true)) {
+            return ['result' => 'already_resolved', 'message' => 'Este orçamento não pode ser cancelado no status atual.'];
+        }
+
+        $decisionMessage = trim((string) $reason) !== ''
+            ? trim((string) $reason)
+            : 'Cancelado pelo técnico: cliente não respondeu à proposta.';
+        $actorName = trim((string) ($actor->nome ?? '')) ?: 'Técnico';
+
+        $this->finalizeCancellation($budget, $decisionMessage, [
+            'usuario_id' => (int) $actor->id,
+            'usuario_nome' => $actorName,
+        ]);
+
+        return ['result' => 'ok', 'status' => Budget::STATUS_CANCELLED, 'message' => 'Orçamento cancelado com sucesso.'];
+    }
+
+    /**
+     * Núcleo da aprovação — compartilhado pelo link público (approveByToken) e
+     * pela ação do técnico (approveByStaff). O status final é resolvido por
+     * approvedStatus() (avulso → pendente_abertura_os; com OS → aprovado).
+     *
+     * @param array<string, mixed> $ctx
+     */
+    private function finalizeApproval(Budget $budget, string $decisionMessage, array $ctx): string
+    {
+        $approvedStatus = $this->approvedStatus($budget);
+
+        DB::transaction(function () use ($budget, $approvedStatus, $decisionMessage, $ctx): void {
+            $budget->refresh();
+            $previousStatus = (string) ($budget->status ?? Budget::STATUS_DRAFT);
+            $approvedAt = now();
+
+            $budget->forceFill([
+                'status' => $approvedStatus,
+                'aprovado_em' => $approvedAt,
+                'rejeitado_em' => null,
+                'motivo_rejeicao' => null,
+            ])->save();
+
+            BudgetApproval::query()->create([
+                'orcamento_id' => (int) $budget->id,
+                'token_publico' => (string) ($budget->token_publico ?? ''),
+                'acao' => 'aprovado',
+                'origem' => (string) $ctx['origem'],
+                'usuario_id' => $ctx['usuario_id'] ?? null,
+                'usuario_nome' => (string) $ctx['usuario_nome'],
+                'resposta_cliente' => $decisionMessage,
+                'observacao' => (string) $ctx['approval_observacao'],
+                'ip_origem' => $ctx['ip'] ?? null,
+                'user_agent' => ($ctx['ua'] ?? null) !== null ? Str::limit((string) $ctx['ua'], 255, '') : null,
+                'created_at' => $approvedAt,
+            ]);
+
+            $this->recordStatusHistory(
+                $budget,
+                $previousStatus,
+                $approvedStatus,
+                (string) $ctx['history_observacao'],
+                (string) $ctx['history_origem'],
+                $ctx['usuario_id'] ?? null
+            );
+
+            $osId = (int) ($budget->os_id ?? 0);
+            if ($osId > 0) {
+                $this->orderEventService->record(
+                    $osId,
+                    OrderEvent::CATEGORIA_ORCAMENTO,
+                    OrderEvent::TIPO_ORCAMENTO_APROVADO,
+                    (string) $ctx['event_titulo'],
+                    (string) $ctx['event_descricao'],
+                    [
+                        'orcamento_id' => (int) $budget->id,
+                        'numero' => (string) $budget->numero,
+                        'resposta_cliente' => $decisionMessage,
+                        'ip_origem' => $ctx['ip'] ?? null,
+                        'user_agent' => $ctx['ua'] ?? null,
+                    ],
+                    $ctx['usuario_id'] ?? null,
+                    (string) $ctx['event_origem'],
+                    $approvedAt
+                );
+            }
+
+            $this->syncOrderForDecision($budget, true, $approvedAt);
+            $this->budgetOrderSyncService->syncFromBudget($budget, $ctx['usuario_id'] ?? null);
+
+            // Sino: avisa responsável, criador e técnico da OS — sem isso a
+            // aprovação só aparecia no sino no próximo carregamento manual da
+            // lista (nenhum dispatch existia aqui antes, apesar de já
+            // documentado em notificacoes-sino.md).
+            $this->notificationDispatchService->toUsers(
+                $this->decisionRecipients($budget, $ctx['usuario_id'] ?? null),
+                [
+                    'kind' => 'orcamento.approved',
+                    'title' => (string) $ctx['notif_title'],
+                    'body' => (string) $ctx['notif_body'],
+                    'route' => '/orcamentos/' . (int) $budget->id,
+                    'icon' => 'receipt',
+                    'orcamento_id' => (int) $budget->id,
+                    'os_id' => (int) ($budget->os_id ?? 0),
+                ]
+            );
+        });
+
+        return $approvedStatus;
+    }
+
+    /**
+     * Núcleo da rejeição — compartilhado por rejectByToken e rejectByStaff.
+     *
+     * @param array<string, mixed> $ctx
+     */
+    private function finalizeRejection(Budget $budget, string $decisionMessage, array $ctx): void
+    {
+        DB::transaction(function () use ($budget, $decisionMessage, $ctx): void {
             $budget->refresh();
             $previousStatus = (string) ($budget->status ?? Budget::STATUS_DRAFT);
             $rejectedAt = now();
@@ -434,13 +614,13 @@ class BudgetApprovalService
                 'orcamento_id' => (int) $budget->id,
                 'token_publico' => (string) ($budget->token_publico ?? ''),
                 'acao' => 'rejeitado',
-                'origem' => 'link_publico',
-                'usuario_id' => null,
-                'usuario_nome' => 'Cliente',
+                'origem' => (string) $ctx['origem'],
+                'usuario_id' => $ctx['usuario_id'] ?? null,
+                'usuario_nome' => (string) $ctx['usuario_nome'],
                 'resposta_cliente' => $decisionMessage,
-                'observacao' => 'Rejeição registrada pelo link público do orçamento.',
-                'ip_origem' => $ipAddress,
-                'user_agent' => $userAgent !== null ? Str::limit($userAgent, 255, '') : null,
+                'observacao' => (string) $ctx['approval_observacao'],
+                'ip_origem' => $ctx['ip'] ?? null,
+                'user_agent' => ($ctx['ua'] ?? null) !== null ? Str::limit((string) $ctx['ua'], 255, '') : null,
                 'created_at' => $rejectedAt,
             ]);
 
@@ -448,9 +628,9 @@ class BudgetApprovalService
                 $budget,
                 $previousStatus,
                 Budget::STATUS_REJECTED,
-                'Cliente rejeitou o orçamento pelo link público.',
-                'cliente',
-                null
+                (string) $ctx['history_observacao'],
+                (string) $ctx['history_origem'],
+                $ctx['usuario_id'] ?? null
             );
 
             $osId = (int) ($budget->os_id ?? 0);
@@ -459,31 +639,31 @@ class BudgetApprovalService
                     $osId,
                     OrderEvent::CATEGORIA_ORCAMENTO,
                     OrderEvent::TIPO_ORCAMENTO_RECUSADO,
-                    'Orçamento recusado pelo cliente',
-                    sprintf('Cliente recusou o orçamento %s pelo link público. Motivo: %s', $budget->numero, $decisionMessage),
+                    (string) $ctx['event_titulo'],
+                    (string) $ctx['event_descricao'],
                     [
                         'orcamento_id' => (int) $budget->id,
                         'numero' => (string) $budget->numero,
                         'resposta_cliente' => $decisionMessage,
-                        'ip_origem' => $ipAddress,
-                        'user_agent' => $userAgent,
+                        'ip_origem' => $ctx['ip'] ?? null,
+                        'user_agent' => $ctx['ua'] ?? null,
                     ],
-                    null,
-                    OrderEvent::ORIGEM_CLIENTE,
+                    $ctx['usuario_id'] ?? null,
+                    (string) $ctx['event_origem'],
                     $rejectedAt
                 );
             }
 
             $this->syncOrderForDecision($budget, false, $rejectedAt);
-            $this->budgetOrderSyncService->syncFromBudget($budget);
+            $this->budgetOrderSyncService->syncFromBudget($budget, $ctx['usuario_id'] ?? null);
 
-            // Sino: mesmo aviso da aprovação, ver comentário em approveByToken().
+            // Sino: mesmo aviso da aprovação, ver comentário em finalizeApproval().
             $this->notificationDispatchService->toUsers(
-                $this->budgetDecisionRecipients($budget),
+                $this->decisionRecipients($budget, $ctx['usuario_id'] ?? null),
                 [
                     'kind' => 'orcamento.rejected',
-                    'title' => 'Orçamento recusado pelo cliente',
-                    'body' => sprintf('O cliente recusou o orçamento %s.', $budget->numero),
+                    'title' => (string) $ctx['notif_title'],
+                    'body' => (string) $ctx['notif_body'],
                     'route' => '/orcamentos/' . (int) $budget->id,
                     'icon' => 'receipt',
                     'orcamento_id' => (int) $budget->id,
@@ -491,11 +671,98 @@ class BudgetApprovalService
                 ]
             );
         });
+    }
 
-        return [
-            'result' => 'ok',
-            'message' => 'Rejeição registrada com sucesso.',
-        ];
+    /**
+     * Núcleo do cancelamento (abandono) — sempre disparado pelo técnico.
+     *
+     * @param array<string, mixed> $ctx
+     */
+    private function finalizeCancellation(Budget $budget, string $decisionMessage, array $ctx): void
+    {
+        DB::transaction(function () use ($budget, $decisionMessage, $ctx): void {
+            $budget->refresh();
+            $previousStatus = (string) ($budget->status ?? Budget::STATUS_DRAFT);
+            $cancelledAt = now();
+
+            $budget->forceFill([
+                'status' => Budget::STATUS_CANCELLED,
+                'cancelado_em' => $cancelledAt,
+            ])->save();
+
+            BudgetApproval::query()->create([
+                'orcamento_id' => (int) $budget->id,
+                'token_publico' => (string) ($budget->token_publico ?? ''),
+                'acao' => 'cancelado',
+                'origem' => 'painel',
+                'usuario_id' => $ctx['usuario_id'] ?? null,
+                'usuario_nome' => (string) $ctx['usuario_nome'],
+                'resposta_cliente' => null,
+                'observacao' => $decisionMessage,
+                'ip_origem' => null,
+                'user_agent' => null,
+                'created_at' => $cancelledAt,
+            ]);
+
+            $this->recordStatusHistory(
+                $budget,
+                $previousStatus,
+                Budget::STATUS_CANCELLED,
+                'Técnico cancelou o orçamento (abandono do cliente). ' . $decisionMessage,
+                'tecnico',
+                $ctx['usuario_id'] ?? null
+            );
+
+            $osId = (int) ($budget->os_id ?? 0);
+            if ($osId > 0) {
+                $this->orderEventService->record(
+                    $osId,
+                    OrderEvent::CATEGORIA_ORCAMENTO,
+                    OrderEvent::TIPO_ORCAMENTO_CANCELADO,
+                    'Orçamento cancelado pelo técnico',
+                    sprintf('%s cancelou o orçamento %s. Motivo: %s', (string) $ctx['usuario_nome'], $budget->numero, $decisionMessage),
+                    [
+                        'orcamento_id' => (int) $budget->id,
+                        'numero' => (string) $budget->numero,
+                        'motivo' => $decisionMessage,
+                    ],
+                    $ctx['usuario_id'] ?? null,
+                    OrderEvent::ORIGEM_USUARIO,
+                    $cancelledAt
+                );
+            }
+
+            $this->budgetOrderSyncService->syncFromBudget($budget, $ctx['usuario_id'] ?? null);
+
+            $this->notificationDispatchService->toUsers(
+                $this->decisionRecipients($budget, $ctx['usuario_id'] ?? null),
+                [
+                    'kind' => 'orcamento.cancelled',
+                    'title' => 'Orçamento cancelado',
+                    'body' => sprintf('O orçamento %s foi cancelado (sem resposta do cliente).', $budget->numero),
+                    'route' => '/orcamentos/' . (int) $budget->id,
+                    'icon' => 'receipt',
+                    'orcamento_id' => (int) $budget->id,
+                    'os_id' => (int) ($budget->os_id ?? 0),
+                ]
+            );
+        });
+    }
+
+    /**
+     * Destinatários do sino incluindo, quando houver, o técnico que registrou
+     * a decisão manualmente (além de responsável/criador/técnico da OS).
+     *
+     * @return array<int, int>
+     */
+    private function decisionRecipients(Budget $budget, ?int $actorId): array
+    {
+        $recipients = $this->budgetDecisionRecipients($budget);
+        if ($actorId !== null && $actorId > 0) {
+            $recipients[] = (int) $actorId;
+        }
+
+        return $recipients;
     }
 
     /**

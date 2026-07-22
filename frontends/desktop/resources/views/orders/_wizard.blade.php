@@ -7,6 +7,15 @@
     $selectedClientId = (int) old('cliente_id', $selectedClientId ?? 0);
     $selectedEquipmentId = (int) old('equipamento_id', $selectedEquipmentId ?? 0);
     $selectedTechnicianId = (int) old('tecnico_id', $selectedTechnicianId ?? 0);
+
+    // Geração de OS a partir de orçamento avulso aprovado (ver OrderController::create).
+    $linkedBudget = is_array($linkedBudget ?? null) ? $linkedBudget : null;
+    $linkableBudgets = is_array($linkableBudgets ?? null) ? $linkableBudgets : [];
+    $linkedBudgetId = (int) old('orcamento_id', $linkedBudget !== null ? (int) data_get($linkedBudget, 'id', 0) : 0);
+    $linkedBudgetHasClient = $linkedBudget !== null && (int) data_get($linkedBudget, 'cliente.id', 0) > 0;
+    $linkedBudgetAvulsoName = trim((string) data_get($linkedBudget, 'cliente_nome_avulso', ''));
+    $linkedBudgetAvulsoPhone = trim((string) data_get($linkedBudget, 'telefone_contato', ''));
+    $linkedBudgetAvulsoEmail = trim((string) data_get($linkedBudget, 'email_contato', ''));
     $selectedPriority = (string) old('prioridade', data_get($order, 'prioridade', 'normal'));
     $selectedClient = is_array($selectedClient ?? null) ? $selectedClient : [];
     $selectedEquipment = is_array($selectedEquipment ?? null) ? $selectedEquipment : [];
@@ -213,6 +222,47 @@
                 value="{{ old('idempotency_key', (string) \Illuminate\Support\Str::uuid()) }}"
                 data-order-create-idempotency-key
             >
+        @endif
+
+        @if (! $isEditing && $linkedBudgetId > 0)
+            <input type="hidden" name="orcamento_id" value="{{ $linkedBudgetId }}">
+        @endif
+
+        @if (! $isEditing && $linkedBudget !== null)
+            <div class="alert alert-info order-create-linked-budget" role="alert"
+                data-linked-budget-avulso-name="{{ $linkedBudgetAvulsoName }}"
+                data-linked-budget-avulso-phone="{{ $linkedBudgetAvulsoPhone }}"
+                data-linked-budget-avulso-email="{{ $linkedBudgetAvulsoEmail }}">
+                <div class="d-flex align-items-start gap-2">
+                    <i class="bi bi-receipt-cutoff"></i>
+                    <div>
+                        <strong>Gerando OS a partir do orçamento {{ (string) data_get($linkedBudget, 'numero', '') }}.</strong>
+                        <div class="small">
+                            Os valores do orçamento serão vinculados a esta OS e o orçamento passará a "Convertido" ao salvar.
+                            @if (! $linkedBudgetHasClient)
+                                <br>
+                                Este orçamento não tinha cliente cadastrado (cliente eventual: <strong>{{ $linkedBudgetAvulsoName !== '' ? $linkedBudgetAvulsoName : 'não informado' }}</strong>).
+                                Selecione um cliente existente ou use <strong>Novo cliente</strong> para cadastrá-lo antes de salvar.
+                            @endif
+                        </div>
+                    </div>
+                </div>
+            </div>
+        @elseif (! $isEditing && $linkableBudgets !== [])
+            <div class="order-create-budget-picker mb-2">
+                <label for="orderLinkBudget" class="mb-1">Vincular orçamento avulso aprovado (opcional)</label>
+                <select id="orderLinkBudget" class="form-select" data-order-link-budget>
+                    <option value="">Não vincular — abrir OS em branco</option>
+                    @foreach ($linkableBudgets as $linkableBudget)
+                        <option value="{{ route('orders.create', ['orcamento_id' => (int) $linkableBudget['id']]) }}">
+                            {{ $linkableBudget['numero'] !== '' ? $linkableBudget['numero'] : ('Orçamento #' . (int) $linkableBudget['id']) }}
+                            @if (($linkableBudget['cliente_nome'] ?? '') !== '') · {{ $linkableBudget['cliente_nome'] }} @endif
+                            @if (($linkableBudget['total_formatado'] ?? '') !== '') · R$ {{ $linkableBudget['total_formatado'] }} @endif
+                        </option>
+                    @endforeach
+                </select>
+                <small class="text-secondary d-block mt-1">Ao escolher, o formulário recarrega já vinculado e pré-preenchido.</small>
+            </div>
         @endif
 
         <aside class="order-create-preview">
