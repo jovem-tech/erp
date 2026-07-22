@@ -132,10 +132,7 @@ class FileManagerController extends BaseApiController
                     ->where('lifecycle_status', FileLifecycleStatus::Trashed->value)
                     ->where('integrity_status', '!=', FileIntegrityStatus::Missing->value)
                     ->count(),
-                'audit_records' => ManagedFile::query()
-                    ->where('lifecycle_status', FileLifecycleStatus::Trashed->value)
-                    ->where('integrity_status', FileIntegrityStatus::Missing->value)
-                    ->count(),
+                'audit_records' => $this->applyAuditRecordFilter(ManagedFile::query())->count(),
                 'integrity_issues' => $catalogFiles()->whereIn('integrity_status', [FileIntegrityStatus::Missing->value, FileIntegrityStatus::Corrupted->value])->count(),
                 'open_findings' => FileScanFinding::query()->where('resolution_status', 'open')->count(),
             ],
@@ -177,8 +174,7 @@ class FileManagerController extends BaseApiController
                 'links as active_links_count' => static fn (Builder $query): Builder => $query->whereNull('unlinked_at'),
             ]);
         if ($auditOnly) {
-            $query->where('lifecycle_status', FileLifecycleStatus::Trashed->value)
-                ->where('integrity_status', FileIntegrityStatus::Missing->value);
+            $this->applyAuditRecordFilter($query);
             unset($validated['lifecycle_status'], $validated['integrity_status']);
         } elseif (! isset($validated['integrity_status']) || $validated['integrity_status'] === '') {
             $query->where('integrity_status', '!=', FileIntegrityStatus::Missing->value);
@@ -612,6 +608,20 @@ class FileManagerController extends BaseApiController
             meta: $this->paginationMeta($paginator),
             request: $request
         );
+    }
+
+    /** Restrict the query to immutable purge tombstones and unexpected missing trash. */
+    private function applyAuditRecordFilter(Builder $query): Builder
+    {
+        return $query->where(static function (Builder $auditRecords): void {
+            $auditRecords
+                ->where('lifecycle_status', FileLifecycleStatus::Purged->value)
+                ->orWhere(static function (Builder $missingTrash): void {
+                    $missingTrash
+                        ->where('lifecycle_status', FileLifecycleStatus::Trashed->value)
+                        ->where('integrity_status', FileIntegrityStatus::Missing->value);
+                });
+        });
     }
 
     /** @return array<string, array<int, mixed>> */

@@ -80,7 +80,7 @@ class FileManagerApiTest extends TestCase
         }
     }
 
-    public function test_missing_trashed_records_are_partitioned_into_the_audit_collection(): void
+    public function test_missing_trashed_records_and_purged_tombstones_are_partitioned_into_the_audit_collection(): void
     {
         $this->grantGroupPermissions(1, [
             'arquivos' => ['listar', 'metadados', 'administrar'],
@@ -89,6 +89,7 @@ class FileManagerApiTest extends TestCase
         $actor = $this->createUserRecord(['grupo_id' => 1]);
         $present = $this->createManagedLogo($actor->id, 'trash-present');
         $missing = $this->createManagedLogo($actor->id, 'trash-audit-missing');
+        $purged = $this->createManagedLogo($actor->id, 'purged-audit-tombstone');
         $present->forceFill([
             'lifecycle_status' => FileLifecycleStatus::Trashed,
             'trashed_at' => now()->subDay(),
@@ -98,14 +99,20 @@ class FileManagerApiTest extends TestCase
             'integrity_status' => FileIntegrityStatus::Missing,
             'trashed_at' => now()->subDay(),
         ])->save();
+        $purged->forceFill([
+            'lifecycle_status' => FileLifecycleStatus::Purged,
+            'trashed_at' => now()->subDays(2),
+            'purged_at' => now()->subDay(),
+        ])->save();
         Storage::disk('local')->delete((string) $missing->storage_key);
+        Storage::disk('local')->delete((string) $purged->storage_key);
         Sanctum::actingAs($actor, ['*']);
 
         $this->getJson('/api/v1/file-manager/dashboard')
             ->assertOk()
             ->assertJsonPath('data.totals.files', 1)
             ->assertJsonPath('data.totals.trashed', 1)
-            ->assertJsonPath('data.totals.audit_records', 1)
+            ->assertJsonPath('data.totals.audit_records', 2)
             ->assertJsonPath('data.totals.integrity_issues', 1)
             ->assertJsonPath('data.by_category.0.file_count', 1);
 
@@ -116,8 +123,11 @@ class FileManagerApiTest extends TestCase
 
         $this->getJson('/api/v1/files?audit_only=1')
             ->assertOk()
-            ->assertJsonPath('meta.pagination.total', 1)
-            ->assertJsonPath('data.0.integrity_status', 'missing');
+            ->assertJsonPath('meta.pagination.total', 2)
+            ->assertJsonPath('data.0.uuid', $purged->uuid)
+            ->assertJsonPath('data.0.lifecycle_status', 'purged')
+            ->assertJsonPath('data.1.uuid', $missing->uuid)
+            ->assertJsonPath('data.1.integrity_status', 'missing');
     }
 
     public function test_download_requires_panel_and_linked_domain_authorization(): void

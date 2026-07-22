@@ -503,8 +503,8 @@ class FileManagerTest extends TestCase
             ->get('/arquivos?lifecycle_status=audit&view=grid');
 
         $response->assertOk()
-            ->assertSee('Auditoria de conteúdo ausente')
-            ->assertSee('Eles não entram na contagem nem na retenção automática da lixeira.')
+            ->assertSee('Auditoria de arquivos removidos')
+            ->assertSee('Metadados, vínculos históricos, hash e eventos permanecem preservados fora da contagem e da retenção da lixeira.')
             ->assertSee('Excluir registros selecionados')
             ->assertSee('Conteúdo ausente')
             ->assertSee('data-restoreable="0"', false)
@@ -513,6 +513,57 @@ class FileManagerTest extends TestCase
 
         Http::assertSent(static fn ($request): bool => str_contains($request->url(), '/api/v1/files')
             && str_contains($request->url(), 'audit_only=1'));
+    }
+
+    public function test_purged_tombstones_are_read_only_in_the_audit_collection(): void
+    {
+        $uuid = '019f7c54-fd90-7cc1-a455-aa6f3efd15d2';
+        Http::fake([
+            '*/api/v1/file-manager/dashboard*' => Http::response($this->success([
+                'totals' => ['files' => 0, 'bytes' => 0, 'trashed' => 0, 'audit_records' => 1],
+                'by_category' => [],
+                'operation' => [
+                    'mode' => 'shadow',
+                    'trash_retention' => ['days' => 30, 'enabled' => true],
+                    'permanent_deletion_enabled' => true,
+                ],
+                'state_mutations_enabled' => true,
+            ])),
+            '*/api/v1/files*' => Http::response($this->success([[
+                'uuid' => $uuid,
+                'safe_download_name' => 'documento-removido.pdf',
+                'detected_mime_type' => 'application/pdf',
+                'size_bytes' => 2048,
+                'category' => 'order_pdf',
+                'origin' => 'upload',
+                'lifecycle_status' => 'purged',
+                'integrity_status' => 'valid',
+                'security_status' => 'clean',
+                'migration_status' => 'cataloged',
+                'active_links_count' => 0,
+                'capabilities' => ['restore' => false, 'purge' => false, 'trash' => false],
+                'created_at' => '2026-07-20T12:00:00-03:00',
+                'purged_at' => '2026-07-21T12:00:00-03:00',
+            ]], ['pagination' => [
+                'current_page' => 1,
+                'per_page' => 24,
+                'total' => 1,
+                'last_page' => 1,
+            ]])),
+            '*/api/v1/file-manager/findings*' => Http::response($this->success([])),
+        ]);
+
+        $response = $this->withSession($this->desktopSession())
+            ->get('/arquivos?lifecycle_status=audit&view=grid');
+
+        $response->assertOk()
+            ->assertSee('Auditoria de arquivos removidos')
+            ->assertSee('Excluído definitivamente')
+            ->assertSee('data-trashable="0"', false)
+            ->assertSee('data-purgeable="0"', false)
+            ->assertDontSee('class="btn btn-outline-danger btn-sm file-purge-one"', false)
+            ->assertDontSee('class="btn btn-outline-danger btn-sm file-trash-one"', false)
+            ->assertSee('/arquivos/'.$uuid, false);
     }
 
     public function test_trash_actions_and_retention_are_forwarded_once_with_step_up_credentials(): void
