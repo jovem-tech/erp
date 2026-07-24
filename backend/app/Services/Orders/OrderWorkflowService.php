@@ -28,6 +28,7 @@ use App\Models\WhatsappTemplate;
 use App\Notifications\MobileNotification;
 use App\Services\Budgets\BudgetOrderSyncService;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
+use App\Services\EquipmentWorkflowService;
 use App\Services\Files\LegacyCompatibleFileAdapter;
 use App\Services\Financeiro\OsMargemService;
 use App\Services\Integrations\IntegrationSettingsService;
@@ -64,7 +65,8 @@ class OrderWorkflowService
         private readonly IntegrationSettingsService $integrationSettingsService,
         private readonly OrderEventService $orderEventService,
         private readonly LegacyCompatibleFileAdapter $fileManagerAdapter,
-        private readonly BudgetOrderSyncService $budgetOrderSyncService
+        private readonly BudgetOrderSyncService $budgetOrderSyncService,
+        private readonly EquipmentWorkflowService $equipmentWorkflowService
     ) {}
 
     /**
@@ -1235,7 +1237,7 @@ class OrderWorkflowService
     private function linkApprovedBudgetToOrder(Budget $budget, Order $order, User $actor, Carbon $now): void
     {
         $previousStatus = (string) ($budget->status ?? '');
-        $orderNumber = (string) ($order->numero_os ?? ('#' . (int) $order->id));
+        $orderNumber = (string) ($order->numero_os ?? ('#'.(int) $order->id));
 
         // Adota o cliente/equipamento da OS quando o orçamento era avulso
         // (cliente_nome_avulso sem cliente_id, ou sem equipamento definido).
@@ -1266,7 +1268,7 @@ class OrderWorkflowService
             OrderEvent::CATEGORIA_ORCAMENTO,
             OrderEvent::TIPO_ORCAMENTO_CONVERTIDO,
             'Orçamento vinculado à OS',
-            sprintf('Orçamento %s vinculado e convertido nesta OS.', (string) ($budget->numero ?? ('#' . (int) $budget->id))),
+            sprintf('Orçamento %s vinculado e convertido nesta OS.', (string) ($budget->numero ?? ('#'.(int) $budget->id))),
             [
                 'orcamento_id' => (int) $budget->id,
                 'numero' => (string) ($budget->numero ?? ''),
@@ -1277,10 +1279,91 @@ class OrderWorkflowService
         );
     }
 
-    public function createOrder(User $actor, array $attributes, array $uploadedPhotos = []): array
+    /**
+     * Normaliza o payload de "novo cliente" (criação diferida). Retorna null
+     * quando faltam os campos mínimos (nome + telefone principal).
+     *
+     * @return array<string, mixed>|null
+     */
+    private function sanitizeNovoClientePayload(mixed $data): ?array
+    {
+        if (! is_array($data)) {
+            return null;
+        }
+
+        $nome = trim((string) ($data['nome_razao'] ?? ''));
+        $telefone = trim((string) ($data['telefone1'] ?? ''));
+        if ($nome === '' || $telefone === '') {
+            return null;
+        }
+
+        return $data;
+    }
+
+    /**
+     * Normaliza o payload de "novo equipamento" (criação diferida). Retorna null
+     * quando falta o tipo (obrigatório para criar o equipamento).
+     *
+     * @return array<string, mixed>|null
+     */
+    private function sanitizeNovoEquipamentoPayload(mixed $data): ?array
+    {
+        if (! is_array($data)) {
+            return null;
+        }
+
+        if ((int) ($data['tipo_id'] ?? 0) <= 0) {
+            return null;
+        }
+
+        return $data;
+    }
+
+    /**
+     * Cria o cliente capturado durante a abertura da OS (fluxo atômico). Mesmos
+     * defaults do cadastro rápido (pessoa física, situação "completo").
+     *
+     * @param  array<string, mixed>  $data
+     */
+    private function createDeferredClient(array $data): Client
+    {
+        return Client::query()->create([
+            'tipo_pessoa' => trim((string) ($data['tipo_pessoa'] ?? '')) ?: 'fisica',
+            'nome_razao' => trim((string) ($data['nome_razao'] ?? '')),
+            'cpf_cnpj' => $this->normalizeString($data['cpf_cnpj'] ?? null),
+            'rg_ie' => $this->normalizeString($data['rg_ie'] ?? null),
+            'email' => $this->normalizeString($data['email'] ?? null),
+            'telefone1' => trim((string) ($data['telefone1'] ?? '')),
+            'telefone2' => $this->normalizeString($data['telefone2'] ?? null),
+            'nome_contato' => $this->normalizeString($data['nome_contato'] ?? null),
+            'telefone_contato' => $this->normalizeString($data['telefone_contato'] ?? null),
+            'cep' => $this->normalizeString($data['cep'] ?? null),
+            'endereco' => $this->normalizeString($data['endereco'] ?? null),
+            'numero' => $this->normalizeString($data['numero'] ?? null),
+            'complemento' => $this->normalizeString($data['complemento'] ?? null),
+            'bairro' => $this->normalizeString($data['bairro'] ?? null),
+            'cidade' => $this->normalizeString($data['cidade'] ?? null),
+            'uf' => $this->normalizeString($data['uf'] ?? null),
+            'status_cadastro' => trim((string) ($data['status_cadastro'] ?? '')) ?: 'completo',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    public function createOrder(User $actor, array $attributes, array $uploadedPhotos = [], array $equipmentPhotos = []): array
     {
         $clientId = (int) ($attributes['cliente_id'] ?? 0);
         $equipmentId = (int) ($attributes['equipamento_id'] ?? 0);
+
+        // Criação atômica: cliente/equipamento "novos" só são persistidos junto
+        // com a OS, dentro da mesma transação. Se a abertura da OS for abandonada,
+        // nada fica no banco — evita cadastros duplicados por tentativas não
+        // concluídas.
+        $novoCliente = $this->sanitizeNovoClientePayload($attributes['novo_cliente'] ?? null);
+        $novoEquipamento = $this->sanitizeNovoEquipamentoPayload($attributes['novo_equipamento'] ?? null);
+        $deferClient = $clientId <= 0 && $novoCliente !== null;
+        $deferEquipment = $equipmentId <= 0 && $novoEquipamento !== null;
+
         $shouldSendOpeningPdf = (bool) ($attributes['enviar_pdf_cliente'] ?? false);
         $idempotencyKey = strtolower(trim((string) ($attributes['idempotency_key'] ?? '')));
         $requestFingerprint = $idempotencyKey !== ''
@@ -1294,7 +1377,10 @@ class OrderWorkflowService
             }
         }
 
-        if (! $this->equipmentBelongsToClient($equipmentId, $clientId)) {
+        // A checagem equipamento×cliente só se aplica quando ambos já são
+        // registros existentes; se algum será criado agora, o equipamento é
+        // criado para o cliente da própria OS.
+        if ($equipmentId > 0 && $clientId > 0 && ! $this->equipmentBelongsToClient($equipmentId, $clientId)) {
             return [
                 'result' => 'equipment_client_mismatch',
             ];
@@ -1339,9 +1425,15 @@ class OrderWorkflowService
         $payload['data_abertura'] = $this->normalizeDateTimeValue($attributes['data_abertura'] ?? null) ?? $now->copy()->toDateTimeString();
         $payload['data_entrada'] = $this->normalizeDateTimeValue($attributes['data_entrada'] ?? null) ?? $now->copy()->toDateTimeString();
 
+        // Tipo do equipamento para o checklist de entrada: do equipamento já
+        // cadastrado ou, no fluxo diferido, do "novo equipamento" capturado.
+        $checklistTypeId = $equipmentId > 0
+            ? (int) Equipment::query()->whereKey($equipmentId)->value('tipo_id')
+            : (int) ($novoEquipamento['tipo_id'] ?? 0);
+
         $entryChecklistPlan = null;
         if ($this->hasEntryChecklistPayload($attributes)) {
-            $entryChecklistPlan = $this->buildEntryChecklistSyncPlan($equipmentId, (array) $attributes['checklist_entrada']);
+            $entryChecklistPlan = $this->buildEntryChecklistSyncPlan($checklistTypeId, (array) $attributes['checklist_entrada']);
             if (($entryChecklistPlan['result'] ?? 'error') !== 'ok') {
                 return [
                     'result' => (string) ($entryChecklistPlan['result'] ?? 'entry_checklist_invalid'),
@@ -1350,7 +1442,28 @@ class OrderWorkflowService
         }
 
         try {
-            $order = DB::transaction(function () use ($payload, $actor, $statusCode, $estadoFluxo, $now, $entryChecklistPlan, $linkBudget): Order {
+            $order = DB::transaction(function () use ($payload, $actor, $statusCode, $estadoFluxo, $now, $entryChecklistPlan, $linkBudget, $clientId, $equipmentId, $deferClient, $deferEquipment, $novoCliente, $novoEquipamento, $equipmentPhotos): Order {
+                // Cria cliente/equipamento novos DENTRO da transação (atômico): se
+                // qualquer passo abaixo falhar, o rollback desfaz também estes
+                // cadastros, e nada é persistido em aberturas de OS abandonadas.
+                if ($deferClient && is_array($novoCliente)) {
+                    $clientId = (int) $this->createDeferredClient($novoCliente)->id;
+                }
+
+                if ($deferEquipment && is_array($novoEquipamento)) {
+                    // As fotos do equipamento novo são capturadas no navegador junto
+                    // com o cadastro e só persistem aqui, dentro da mesma transação
+                    // da OS — a foto obrigatória do equipamento nasce atômica.
+                    $equipment = $this->equipmentWorkflowService->createEquipment(
+                        array_merge($novoEquipamento, ['cliente_id' => $clientId]),
+                        $equipmentPhotos
+                    );
+                    $equipmentId = (int) $equipment->id;
+                }
+
+                $payload['cliente_id'] = $clientId;
+                $payload['equipamento_id'] = $equipmentId;
+
                 /** @var Order $order */
                 $order = Order::query()->create($payload);
 
@@ -1387,6 +1500,15 @@ class OrderWorkflowService
             }
 
             throw $exception;
+        } catch (\RuntimeException $exception) {
+            // Falha ao criar o cliente/equipamento novo dentro da transação
+            // (fluxo atômico): a transação faz rollback, nada é persistido.
+            report($exception);
+
+            return [
+                'result' => 'deferred_registration_failed',
+                'message' => $exception->getMessage(),
+            ];
         }
 
         $warnings = [];
@@ -1648,7 +1770,10 @@ class OrderWorkflowService
         $entryChecklistPlan = null;
 
         if ($this->hasEntryChecklistPayload($attributes)) {
-            $entryChecklistPlan = $this->buildEntryChecklistSyncPlan($equipmentId, (array) $attributes['checklist_entrada']);
+            $equipmentTypeId = $equipmentId > 0
+                ? (int) Equipment::query()->whereKey($equipmentId)->value('tipo_id')
+                : 0;
+            $entryChecklistPlan = $this->buildEntryChecklistSyncPlan($equipmentTypeId, (array) $attributes['checklist_entrada']);
             if (($entryChecklistPlan['result'] ?? 'error') !== 'ok') {
                 return [
                     'result' => (string) ($entryChecklistPlan['result'] ?? 'entry_checklist_invalid'),
@@ -3433,12 +3558,8 @@ class OrderWorkflowService
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
-    private function buildEntryChecklistSyncPlan(int $equipmentId, array $payload): array
+    private function buildEntryChecklistSyncPlan(int $equipmentTypeId, array $payload): array
     {
-        $equipmentTypeId = $equipmentId > 0
-            ? (int) Equipment::query()->whereKey($equipmentId)->value('tipo_id')
-            : 0;
-
         $modelo = $this->resolveEntryChecklistModelForEquipmentType($equipmentTypeId);
         if (! $modelo instanceof ChecklistModelo) {
             return ['result' => 'entry_checklist_model_not_found'];

@@ -33,6 +33,20 @@
         };
 
         $orderId = (int) ($order['id'] ?? ($budget['os_id'] ?? 0));
+
+        // Marca + modelo do equipamento — registrado (da OS/cadastro) ou eventual.
+        $equipmentBrandModel = trim(implode(' ', array_filter([
+            trim((string) ($equipment['marca_nome'] ?? '')),
+            trim((string) ($equipment['modelo_nome'] ?? '')),
+        ])));
+        $equipmentEventualBrandModel = trim(implode(' ', array_filter([
+            trim((string) ($budget['equipamento_marca_avulso'] ?? '')),
+            trim((string) ($budget['equipamento_modelo_avulso'] ?? '')),
+        ])));
+        $equipmentEventualMeta = trim(implode(' · ', array_filter([
+            trim((string) ($budget['equipamento_tipo_avulso'] ?? '')),
+            trim((string) ($budget['equipamento_cor'] ?? '')),
+        ])));
     @endphp
 
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
@@ -157,8 +171,8 @@
 
         <article class="summary-card">
             <span class="summary-card-eyebrow">Equipamento / OS</span>
-            <div class="summary-card-value">{{ $firstNonEmpty([$equipment['resumo_tecnico'] ?? null, $numeroOs], 'Sem vínculo') }}</div>
-            <div class="summary-card-meta">{{ $firstNonEmpty([$equipment['numero_serie'] ?? null, $order['status'] ?? null], 'Sem série informada') }}</div>
+            <div class="summary-card-value">{{ $firstNonEmpty([$equipmentBrandModel, $equipmentEventualBrandModel, $equipment['resumo_tecnico'] ?? null, $numeroOs], 'Sem vínculo') }}</div>
+            <div class="summary-card-meta">{{ $firstNonEmpty([$equipment['numero_serie'] ?? null, $equipmentEventualMeta, $order['status'] ?? null], 'Sem série informada') }}</div>
         </article>
 
         <article class="summary-card">
@@ -190,6 +204,7 @@
                 <div class="detail-item"><strong>E-mail</strong><span>{{ $budget['email_contato'] !== '' ? $budget['email_contato'] : 'Não informado' }}</span></div>
                 <div class="detail-item"><strong>Tipo</strong><span>{{ $budget['tipo_label'] ?? 'Orçamento prévio' }}</span></div>
                 <div class="detail-item"><strong>Origem</strong><span>{{ $budget['origem_label'] ?? 'Manual' }}</span></div>
+                <div class="detail-item"><strong>Equipamento</strong><span>{{ $firstNonEmpty([$equipmentBrandModel, $equipmentEventualBrandModel, $equipment['resumo_tecnico'] ?? null, $budget['equipamento_eventual_label'] ?? null], 'Não informado') }}</span></div>
                 <div class="detail-item"><strong>OS vinculada</strong><span>{{ $numeroOs !== '' ? $numeroOs : 'Sem OS' }}</span></div>
                 <div class="detail-item"><strong>Responsável</strong><span>{{ $budget['responsavel']['nome'] ?? 'Não informado' }}</span></div>
             </div>

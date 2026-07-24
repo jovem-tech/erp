@@ -375,9 +375,11 @@
         // caso contrário o avulso manual usa 'manual' e o vinculado usa 'os'.
         const preservedOrigins = ['conversa', 'cliente'];
         const syncDerivedClassification = () => {
+            // OS desabilitada (cliente eventual ou "sem equipamento") conta como
+            // "sem OS" — assim tipo/origem derivam corretamente para avulso.
             const hasOrder = orderSelect instanceof HTMLSelectElement
-                ? String(orderSelect.value || '').trim() !== ''
-                : false;
+                && ! orderSelect.disabled
+                && String(orderSelect.value || '').trim() !== '';
             const nextType = hasOrder ? 'assistencia' : 'previo';
             if (typeValueInput instanceof HTMLInputElement) {
                 typeValueInput.value = nextType;
@@ -402,6 +404,137 @@
             if (originDisplay instanceof HTMLInputElement) {
                 originDisplay.value = DERIVED_ORIGIN_LABELS[nextOrigin] || nextOrigin;
             }
+        };
+
+        // --- Cliente/equipamento eventual: exclusividade e visibilidade ---------
+        // Regras: cliente cadastrado × nome eventual são mutuamente exclusivos;
+        // equipamento cadastrado × equipamento eventual idem; cliente eventual
+        // oculta "OS vinculada" e "Equipamento cadastrado" (dependem de cadastro);
+        // "sem equipamento" oculta todo o bloco de equipamento.
+        const clientFallbackForExclusivity = clientFallbackInput;
+        const envolveCheckbox = document.querySelector('[data-budget-envolve-equipamento]');
+        const eventualInputs = Array.from(document.querySelectorAll('[data-budget-eventual-input]'));
+        const equipmentFieldWraps = Array.from(document.querySelectorAll('[data-budget-equipment-field]'));
+        const registeredOnlyWraps = Array.from(document.querySelectorAll('[data-budget-registered-only]'));
+        const eventualWrap = document.querySelector('[data-budget-eventual-equipment]');
+        // clientLocked (orçamento vindo de uma OS): o Blade zera o name do select.
+        const clientLocked = clientSelect instanceof HTMLSelectElement
+            && clientSelect.getAttribute('name') !== 'cliente_id';
+
+        const jq = () => (typeof window.jQuery !== 'undefined' ? window.jQuery : null);
+        // Ao desabilitar, também limpamos o valor: o campo inativo (lado oposto da
+        // exclusividade / oculto) deve ir vazio. Antes de enviar reabilitamos tudo
+        // (enableManagedControlsForSubmit) para que o valor vazio realmente poste e
+        // sobrescreva o antigo numa edição — campo disabled não é submetido.
+        const setControlDisabled = (el, disabled) => {
+            if (!(el instanceof HTMLElement)) {
+                return;
+            }
+            el.disabled = disabled;
+            const $ = jq();
+            if (el.tagName === 'SELECT') {
+                if (disabled) {
+                    el.value = '';
+                    if ($) {
+                        $(el).val(null).trigger('change.select2');
+                    }
+                }
+                if ($) {
+                    $(el).prop('disabled', disabled).trigger('change.select2');
+                }
+            } else if (disabled && (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)) {
+                el.value = '';
+            }
+        };
+        const managedExclusivityControls = () => [
+            orderSelect,
+            equipmentSelect,
+            ...eventualInputs,
+            ...(clientLocked ? [] : [clientSelect, clientFallbackInput]),
+        ];
+        const enableManagedControlsForSubmit = () => {
+            managedExclusivityControls().forEach((el) => {
+                if (el instanceof HTMLElement) {
+                    el.disabled = false;
+                    const $ = jq();
+                    if ($ && el.tagName === 'SELECT') {
+                        $(el).prop('disabled', false);
+                    }
+                }
+            });
+        };
+        const setWrapHidden = (wrap, hidden) => {
+            if (wrap instanceof HTMLElement) {
+                wrap.classList.toggle('d-none', hidden);
+            }
+        };
+        const filledSelect = (el) => el instanceof HTMLSelectElement && String(el.value || '').trim() !== '';
+        const filledInput = (el) => (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)
+            && String(el.value || '').trim() !== '';
+
+        const syncClientExclusivity = () => {
+            if (clientLocked) {
+                return;
+            }
+            const avulsoFilled = filledInput(clientFallbackForExclusivity);
+            const clientFilled = filledSelect(clientSelect);
+            setControlDisabled(clientSelect, avulsoFilled && ! clientFilled);
+            setControlDisabled(clientFallbackForExclusivity, clientFilled && ! avulsoFilled);
+        };
+
+        const syncEquipmentMode = () => {
+            const envolve = envolveCheckbox instanceof HTMLInputElement ? envolveCheckbox.checked : true;
+            const hasEventualClient = ! clientLocked
+                && filledInput(clientFallbackForExclusivity)
+                && ! filledSelect(clientSelect);
+
+            if (! envolve) {
+                equipmentFieldWraps.forEach((w) => setWrapHidden(w, true));
+                setControlDisabled(orderSelect, true);
+                setControlDisabled(equipmentSelect, true);
+                eventualInputs.forEach((i) => setControlDisabled(i, true));
+                syncDerivedClassification();
+                return;
+            }
+
+            equipmentFieldWraps.forEach((w) => setWrapHidden(w, false));
+
+            if (hasEventualClient) {
+                // Sem cadastro: só existe equipamento eventual.
+                registeredOnlyWraps.forEach((w) => setWrapHidden(w, true));
+                setWrapHidden(eventualWrap, false);
+                setControlDisabled(orderSelect, true);
+                setControlDisabled(equipmentSelect, true);
+                eventualInputs.forEach((i) => setControlDisabled(i, false));
+                syncDerivedClassification();
+                return;
+            }
+
+            // Cliente cadastrado (ou travado por OS): registrado + eventual disponíveis.
+            registeredOnlyWraps.forEach((w) => setWrapHidden(w, false));
+            setWrapHidden(eventualWrap, false);
+
+            const hasRegistered = filledSelect(orderSelect) || filledSelect(equipmentSelect);
+            const hasEventual = eventualInputs.some(filledInput);
+            if (hasRegistered) {
+                setControlDisabled(orderSelect, false);
+                setControlDisabled(equipmentSelect, false);
+                eventualInputs.forEach((i) => setControlDisabled(i, true));
+            } else if (hasEventual) {
+                setControlDisabled(orderSelect, true);
+                setControlDisabled(equipmentSelect, true);
+                eventualInputs.forEach((i) => setControlDisabled(i, false));
+            } else {
+                setControlDisabled(orderSelect, false);
+                setControlDisabled(equipmentSelect, false);
+                eventualInputs.forEach((i) => setControlDisabled(i, false));
+            }
+            syncDerivedClassification();
+        };
+
+        const syncEventualFields = () => {
+            syncClientExclusivity();
+            syncEquipmentMode();
         };
         const executionDeadlineInput = document.getElementById('orcamentoPrazoExecucao');
         const observationsInput = document.getElementById('orcamentoObservacoes');
@@ -1909,6 +2042,9 @@
 
                 removeEmptyRows();
                 updateSummary();
+                // Reabilita os campos de exclusividade (já com valor limpo quando
+                // inativos) para que postem e sobrescrevam o registro na edição.
+                enableManagedControlsForSubmit();
 
                 try {
                     localStorage.removeItem(draftKey);
@@ -2039,12 +2175,22 @@
             updateQuickItemMode(getResolvedQuickType('servico'));
         });
 
-        onSelectEvent(orderSelect, 'change', syncDerivedClassification);
-        onSelectEvent(orderSelect, 'select2:select', syncDerivedClassification);
-        onSelectEvent(orderSelect, 'select2:clear', syncDerivedClassification);
+        // syncEquipmentMode() já chama syncDerivedClassification() ao final.
+        onSelectEvent(orderSelect, 'change', syncEquipmentMode);
+        onSelectEvent(orderSelect, 'select2:select', syncEquipmentMode);
+        onSelectEvent(orderSelect, 'select2:clear', syncEquipmentMode);
+        onSelectEvent(clientSelect, 'change', syncEventualFields);
+        onSelectEvent(clientSelect, 'select2:select', syncEventualFields);
+        onSelectEvent(clientSelect, 'select2:clear', syncEventualFields);
+        onSelectEvent(equipmentSelect, 'change', syncEquipmentMode);
+        onSelectEvent(equipmentSelect, 'select2:select', syncEquipmentMode);
+        onSelectEvent(equipmentSelect, 'select2:clear', syncEquipmentMode);
+        clientFallbackInput?.addEventListener('input', syncEventualFields);
+        envolveCheckbox?.addEventListener('change', syncEquipmentMode);
+        eventualInputs.forEach((input) => input.addEventListener('input', syncEquipmentMode));
 
         loadDraft();
-        syncDerivedClassification();
+        syncEventualFields();
         updateSummary();
 
         window.setTimeout(() => {

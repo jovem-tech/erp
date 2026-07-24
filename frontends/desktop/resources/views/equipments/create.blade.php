@@ -703,7 +703,8 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
                 <div class="modal-body">
-                    <img src="" alt="Preview para recorte" id="equipmentCropImage" class="equipment-crop-image">
+                    {{-- Sem src inicial: <img src=""> dispara 'error' no navegador. --}}
+                    <img alt="Preview para recorte" id="equipmentCropImage" class="equipment-crop-image">
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancelar</button>

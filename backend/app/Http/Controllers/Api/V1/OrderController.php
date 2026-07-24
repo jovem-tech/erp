@@ -8,14 +8,15 @@ use App\Http\Requests\Api\V1\OrderEventIndexRequest;
 use App\Http\Requests\Api\V1\StoreOrderProcedureRequest;
 use App\Http\Requests\Api\V1\UpdateOrderStatusRequest;
 use App\Http\Requests\Api\V1\UpsertOrderRequest;
+use App\Models\FinanceiroFormaPagamento;
+use App\Models\Order;
+use App\Models\OrderDocument;
+use App\Models\User;
 use App\Services\Auth\AdminCredentialVerifier;
 use App\Services\Orders\OrderClosureService;
 use App\Services\Orders\OrderDocumentCenterService;
 use App\Services\Orders\OrderWorkflowService;
 use App\Services\Signatures\DocumentSignatureWorkflowService;
-use App\Models\Order;
-use App\Models\OrderDocument;
-use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -31,8 +32,7 @@ class OrderController extends BaseApiController
         private readonly OrderDocumentCenterService $orderDocumentCenterService,
         private readonly AdminCredentialVerifier $adminCredentialVerifier,
         private readonly DocumentSignatureWorkflowService $documentSignatureWorkflowService
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -189,10 +189,21 @@ class OrderController extends BaseApiController
             return $this->unauthenticatedResponse($request);
         }
 
+        // validated() só traz subchaves com regra própria; encaminha os arrays
+        // completos de cadastro novo (criação diferida) para o service.
+        $attributes = $request->validated();
+        if (is_array($request->input('novo_cliente'))) {
+            $attributes['novo_cliente'] = $request->input('novo_cliente');
+        }
+        if (is_array($request->input('novo_equipamento'))) {
+            $attributes['novo_equipamento'] = $request->input('novo_equipamento');
+        }
+
         $result = $this->orderWorkflowService->createOrder(
             $user,
-            $request->validated(),
-            $this->extractUploadedFiles($request, 'fotos')
+            $attributes,
+            $this->extractUploadedFiles($request, 'fotos'),
+            $this->extractUploadedFiles($request, 'novo_equipamento_fotos')
         );
 
         return match ($result['result'] ?? 'error') {
@@ -225,6 +236,13 @@ class OrderController extends BaseApiController
                 (string) ($result['message'] ?? 'O orçamento informado não pode ser convertido nesta OS.'),
                 422,
                 'ORDER_BUDGET_LINK_INVALID',
+                null,
+                request: $request
+            ),
+            'deferred_registration_failed' => $this->error(
+                (string) ($result['message'] ?? 'Não foi possível cadastrar o cliente/equipamento informado.'),
+                422,
+                'ORDER_DEFERRED_REGISTRATION_FAILED',
                 null,
                 request: $request
             ),
@@ -378,7 +396,7 @@ class OrderController extends BaseApiController
 
         return response()->file($file['absolute_path'], [
             'Content-Type' => $file['mime_type'],
-            'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
+            'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
         ]);
     }
 
@@ -400,7 +418,7 @@ class OrderController extends BaseApiController
 
         return response()->file($file['absolute_path'], [
             'Content-Type' => $file['mime_type'],
-            'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
+            'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
         ]);
     }
 
@@ -506,7 +524,7 @@ class OrderController extends BaseApiController
                     'ok' => true,
                     'pending_signature' => true,
                     'signature_request_id' => (int) $item['request']->id,
-                    'signature_url' => '/assinar-documento/' . $item['token'],
+                    'signature_url' => '/assinar-documento/'.$item['token'],
                     'message' => 'Link seguro de assinatura do cliente criado.',
                 ], $pending),
             ], request: $request);
@@ -701,7 +719,7 @@ class OrderController extends BaseApiController
 
         return response()->file($file['absolute_path'], [
             'Content-Type' => $file['mime_type'],
-            'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
+            'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
             'Cache-Control' => 'no-store, private',
         ]);
     }
@@ -981,7 +999,7 @@ class OrderController extends BaseApiController
                     'contas_financeiras' => $result['contas_financeiras'] ?? null,
                     // Catálogo gerenciável: a baixa grava em coluna varchar, então
                     // aceita inclusive as formas de pagamento personalizadas.
-                    'formas_pagamento' => \App\Models\FinanceiroFormaPagamento::query()
+                    'formas_pagamento' => FinanceiroFormaPagamento::query()
                         ->ativo()
                         ->ordenado()
                         ->get(['codigo', 'nome', 'is_cartao']),
@@ -1223,21 +1241,21 @@ class OrderController extends BaseApiController
             'missing_file' => $this->error(
                 'O arquivo solicitado não foi encontrado no armazenamento legado.',
                 404,
-                'ORDER_' . $kind . '_MISSING_FILE',
+                'ORDER_'.$kind.'_MISSING_FILE',
                 null,
                 request: $request
             ),
             'not_found' => $this->error(
                 'Arquivo não encontrado.',
                 404,
-                'ORDER_' . $kind . '_NOT_FOUND',
+                'ORDER_'.$kind.'_NOT_FOUND',
                 null,
                 request: $request
             ),
             default => $this->error(
                 'Falha ao acessar o arquivo solicitado.',
                 500,
-                'ORDER_' . $kind . '_ACCESS_FAILED',
+                'ORDER_'.$kind.'_ACCESS_FAILED',
                 null,
                 request: $request
             ),
@@ -1245,7 +1263,7 @@ class OrderController extends BaseApiController
     }
 
     /**
-     * @param array<int, mixed> $values
+     * @param  array<int, mixed>  $values
      * @return array<int, int>
      */
     private function normalizeDocumentIds(array $values): array
@@ -1257,7 +1275,7 @@ class OrderController extends BaseApiController
     }
 
     /**
-     * @param array<string, callable> $overrides
+     * @param  array<string, callable>  $overrides
      */
     private function documentCenterResponse(Request $request, array $result, array $overrides): JsonResponse
     {

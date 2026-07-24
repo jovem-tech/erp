@@ -69,6 +69,10 @@ class EquipmentController extends DesktopController
             $equipment['cliente_busca_label'] = $clientLabel !== '' ? $clientLabel : ('Cliente #' . $clientId);
         }
 
+        // Pré-preenche o equipamento a partir do "equipamento eventual" de um
+        // orçamento avulso (texto livre casado com o catálogo por nome).
+        $this->applyEventualEquipmentPrefill($request, $form, $equipment);
+
         return $this->renderEquipmentFormView(
             'Novo equipamento',
             $form,
@@ -79,6 +83,76 @@ class EquipmentController extends DesktopController
             false,
             $embedded
         );
+    }
+
+    /**
+     * Casa o equipamento eventual (texto livre tipo/marca/modelo/cor vindo de um
+     * orçamento avulso) com o catálogo por nome e pré-preenche o formulário. O
+     * que não casar fica em branco para o técnico completar.
+     *
+     * @param array<string, mixed> $form
+     * @param array<string, mixed> $equipment
+     */
+    private function applyEventualEquipmentPrefill(Request $request, array $form, array &$equipment): void
+    {
+        $tipo = trim((string) $request->query('equip_tipo', ''));
+        $marca = trim((string) $request->query('equip_marca', ''));
+        $modelo = trim((string) $request->query('equip_modelo', ''));
+        $cor = trim((string) $request->query('equip_cor', ''));
+
+        if ($tipo === '' && $marca === '' && $modelo === '' && $cor === '') {
+            return;
+        }
+
+        if ($cor !== '') {
+            $equipment['cor'] = $cor;
+        }
+
+        $matchByName = static function (array $list, string $needle): ?array {
+            $needle = mb_strtolower(trim($needle));
+            if ($needle === '') {
+                return null;
+            }
+            foreach ($list as $item) {
+                if (is_array($item) && mb_strtolower(trim((string) ($item['nome'] ?? ''))) === $needle) {
+                    return $item;
+                }
+            }
+
+            return null;
+        };
+
+        $tipoMatch = $matchByName((array) ($form['types'] ?? []), $tipo);
+        if ($tipoMatch !== null) {
+            $equipment['tipo_id'] = (int) ($tipoMatch['id'] ?? 0) ?: null;
+        }
+
+        $marcaMatch = $matchByName((array) ($form['brands'] ?? []), $marca);
+        if ($marcaMatch !== null) {
+            $equipment['marca_id'] = (int) ($marcaMatch['id'] ?? 0) ?: null;
+        }
+
+        if ($modelo !== '') {
+            $marcaId = (int) ($equipment['marca_id'] ?? 0);
+            $modeloNeedle = mb_strtolower($modelo);
+            $modeloMatch = null;
+            foreach ((array) ($form['models'] ?? []) as $model) {
+                if (! is_array($model) || mb_strtolower(trim((string) ($model['nome'] ?? ''))) !== $modeloNeedle) {
+                    continue;
+                }
+                if ($marcaId <= 0 || (int) ($model['marca_id'] ?? 0) === $marcaId) {
+                    $modeloMatch = $model;
+                    break;
+                }
+                $modeloMatch = $modeloMatch ?? $model;
+            }
+            if ($modeloMatch !== null) {
+                $equipment['modelo_id'] = (int) ($modeloMatch['id'] ?? 0) ?: null;
+                if ((int) ($equipment['marca_id'] ?? 0) <= 0 && (int) ($modeloMatch['marca_id'] ?? 0) > 0) {
+                    $equipment['marca_id'] = (int) $modeloMatch['marca_id'];
+                }
+            }
+        }
     }
 
     public function edit(int $equipment): View|RedirectResponse
@@ -744,6 +818,18 @@ class EquipmentController extends DesktopController
             ?? ''
         ));
 
+        // Tipo do equipamento — necessário para o form de OS carregar o checklist
+        // de entrada e as sugestões de defeito do tipo. Sem isto, um equipamento
+        // recém-cadastrado no fluxo embedded chegava com tipoId=0.
+        $tipoId = (int) ($decoratedEquipment['tipo_id'] ?? 0);
+        if ($tipoId <= 0) {
+            $tipoId = (int) (data_get($decoratedEquipment, 'tipo.id', 0));
+        }
+        $tipoName = trim((string) (
+            $decoratedEquipment['tipo_nome']
+            ?? data_get($decoratedEquipment, 'tipo.nome', '')
+        ));
+
         $label = $summary !== ''
             ? $summary
             : implode(' / ', array_values(array_filter([$brandName, $modelName])));
@@ -770,6 +856,10 @@ class EquipmentController extends DesktopController
             'client_id' => $clientId,
             'clientName' => $clientName,
             'client_name' => $clientName,
+            'tipoId' => $tipoId,
+            'tipo_id' => $tipoId,
+            'tipoName' => $tipoName,
+            'tipo_nome' => $tipoName,
         ];
     }
 

@@ -1007,6 +1007,9 @@
 
         syncExistingPhotoInputs();
         ensurePrimaryPhotoState();
+        if (typeof updateEquipmentSubmitState === 'function') {
+            updateEquipmentSubmitState();
+        }
     };
 
     const renderPhotos = () => {
@@ -1598,10 +1601,133 @@
         renderPhotos();
     };
 
+    const isDeferMode = isEmbeddedMode
+        && new URLSearchParams(window.location.search).get('defer') === '1';
+
+    const captureAndPostEquipment = () => {
+        const fd = new FormData(form);
+        const equipment = {};
+        fd.forEach((value, key) => {
+            if (value instanceof File) {
+                return; // fotos não são capturadas no modo diferido
+            }
+            equipment[key] = value;
+        });
+
+        const optionText = (id) => {
+            const select = document.getElementById(id);
+            if (select instanceof HTMLSelectElement && select.selectedIndex >= 0) {
+                return (select.options[select.selectedIndex]?.textContent || '').trim();
+            }
+            return '';
+        };
+        equipment.tipo_nome = optionText('equipmentType');
+        equipment.marca_nome = optionText('equipmentBrand');
+        equipment.modelo_nome = optionText('equipmentModel');
+
+        // Fotos novas (File): transferidas por structured clone via postMessage e
+        // enviadas junto com a OS (criação atômica) — não persistem aqui.
+        const photos = getNewPhotos()
+            .map((item) => item.file)
+            .filter((file) => file instanceof File);
+
+        if (window.parent && window.parent !== window) {
+            window.parent.postMessage({
+                type: 'equipment-captured',
+                message: 'Equipamento capturado.',
+                equipment,
+                photos,
+            }, window.location.origin);
+        }
+    };
+
+    // --- Gate Próximo/Criar: só libera "Criar equipamento" com os obrigatórios --
+    // Obrigatórios: Tipo sempre; Cliente só fora do modo diferido (no diferido o
+    // cliente vem da OS); Foto principal sempre. Enquanto faltar algo, o botão
+    // vira "Próximo" e leva para a aba/campo pendente.
+    const getEquipmentPendingField = () => {
+        const tipo = document.getElementById('equipmentType');
+        if (!(tipo instanceof HTMLSelectElement) || String(tipo.value || '').trim() === '') {
+            return { tab: 'informacoes', el: tipo };
+        }
+        if (!isDeferMode) {
+            const cliente = document.getElementById('equipmentClientSelect');
+            if (!(cliente instanceof HTMLSelectElement) || String(cliente.value || '').trim() === '') {
+                return { tab: 'informacoes', el: cliente };
+            }
+        }
+        if (state.photos.length === 0) {
+            return { tab: 'fotos', el: els.photoGalleryButton };
+        }
+        return null;
+    };
+
+    const originalSubmitHtml = els.submitButton instanceof HTMLButtonElement ? els.submitButton.innerHTML : '';
+    const nextSubmitHtml = '<i class="bi bi-arrow-right-circle me-2"></i>Próximo';
+    const updateEquipmentSubmitState = () => {
+        if (!(els.submitButton instanceof HTMLButtonElement) || els.submitButton.disabled) {
+            return;
+        }
+        const html = getEquipmentPendingField() ? nextSubmitHtml : originalSubmitHtml;
+        if (els.submitButton.innerHTML !== html) {
+            els.submitButton.innerHTML = html;
+        }
+        // Mantém o originalHtml coerente para setFormSubmitState restaurar o label.
+        els.submitButton.dataset.originalHtml = html;
+    };
+
     const initFormSubmission = () => {
+        // Modo diferido (abertura de OS): o equipamento é apenas capturado e
+        // criado junto com a OS ao salvar — nada é persistido aqui. O cliente
+        // pode ainda ser um cadastro novo pendente, por isso não exigimos cliente.
+        if (isDeferMode) {
+            const params = new URLSearchParams(window.location.search);
+            const clientField = document.getElementById('equipmentClientSelect');
+            if (clientField instanceof HTMLElement) {
+                clientField.removeAttribute('required');
+            }
+
+            // Cliente novo pendente (sem cliente_id): não dá para selecioná-lo no
+            // catálogo (ainda não existe). Mostra o nome como contexto read-only —
+            // o vínculo é feito pelo backend com o cliente da OS, ao salvar.
+            const hasRealClient = (params.get('cliente_id') || '').trim() !== '';
+            const clienteNome = (params.get('cliente_nome') || '').trim();
+            if (!hasRealClient && clientField instanceof HTMLElement) {
+                const wrapper = clientField.closest('.equipment-inline-field');
+                if (wrapper instanceof HTMLElement && wrapper.parentNode) {
+                    wrapper.classList.add('d-none');
+                    const info = document.createElement('div');
+                    info.className = 'form-control bg-body-secondary';
+                    info.setAttribute('aria-readonly', 'true');
+                    info.textContent = clienteNome !== ''
+                        ? `${clienteNome} — novo cliente da OS (vínculo ao salvar)`
+                        : 'Cliente da OS (vínculo ao salvar)';
+                    wrapper.parentNode.insertBefore(info, wrapper.nextSibling);
+                }
+            }
+        }
+
         form.addEventListener('submit', (event) => {
+            // Botão "Próximo": ainda há campo obrigatório pendente — leva até ele
+            // em vez de enviar.
+            const pending = getEquipmentPendingField();
+            if (pending) {
+                event.preventDefault();
+                setActiveTab(pending.tab);
+                if (pending.el && typeof pending.el.focus === 'function') {
+                    pending.el.focus();
+                }
+                return;
+            }
+
             if (!form.reportValidity()) {
                 event.preventDefault();
+                return;
+            }
+
+            if (isDeferMode) {
+                event.preventDefault();
+                captureAndPostEquipment();
                 return;
             }
 
@@ -1646,6 +1772,11 @@
                 }
             })();
         });
+
+        // Atualiza o rótulo do botão (Próximo/Criar) conforme os obrigatórios.
+        form.addEventListener('input', updateEquipmentSubmitState);
+        form.addEventListener('change', updateEquipmentSubmitState);
+        updateEquipmentSubmitState();
     };
 
     const initQuickAdd = () => {

@@ -17,8 +17,8 @@ use App\Support\DesktopSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Http\Response;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\View\View;
 use Throwable;
@@ -34,8 +34,7 @@ class OrderController extends DesktopController
         private readonly UserService $userService,
         private readonly DesktopOrderStatusFlowService $statusFlowService,
         private readonly OrcamentoService $orcamentoService
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): View
     {
@@ -75,7 +74,7 @@ class OrderController extends DesktopController
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function shouldDefaultToOpenScope(array $filters): bool
     {
@@ -93,8 +92,8 @@ class OrderController extends DesktopController
     }
 
     /**
-     * @param array<string, mixed> $filters
-     * @param array<int, array<string, mixed>> $statuses
+     * @param  array<string, mixed>  $filters
+     * @param  array<int, array<string, mixed>>  $statuses
      * @return array<string, mixed>
      */
     private function syncStatusMacroFilters(array $filters, array $statuses): array
@@ -147,7 +146,7 @@ class OrderController extends DesktopController
 
                     return [
                         'id' => $userId,
-                        'nome' => $name !== '' ? $name : ('Técnico #' . $userId),
+                        'nome' => $name !== '' ? $name : ('Técnico #'.$userId),
                         'email' => $email,
                     ];
                 },
@@ -199,7 +198,7 @@ class OrderController extends DesktopController
     }
 
     /**
-     * @param array<int, array<string, mixed>> $statuses
+     * @param  array<int, array<string, mixed>>  $statuses
      * @return array<int, string>
      */
     private function resolveMacroGroupOptions(array $statuses): array
@@ -266,7 +265,7 @@ class OrderController extends DesktopController
      * formulário de OS (caminho B). Vazia quando já se está gerando a OS a
      * partir de um orçamento específico (caminho A).
      *
-     * @param array<string, mixed>|null $linkedBudget
+     * @param  array<string, mixed>|null  $linkedBudget
      * @return array<int, array<string, mixed>>
      */
     private function resolveLinkableBudgets(?array $linkedBudget): array
@@ -355,7 +354,7 @@ class OrderController extends DesktopController
         if ($client === []) {
             $client = [
                 'id' => $clientId,
-                'nome_razao' => 'Cliente #' . $clientId,
+                'nome_razao' => 'Cliente #'.$clientId,
                 'telefone1' => '',
                 'email' => '',
                 'nome_contato' => '',
@@ -390,7 +389,7 @@ class OrderController extends DesktopController
     }
 
     /**
-     * @param array<int, array<string, mixed>> $technicians
+     * @param  array<int, array<string, mixed>>  $technicians
      * @return array<string, mixed>
      */
     private function resolveSelectedTechnician(array $technicians, int $technicianId): array
@@ -404,7 +403,7 @@ class OrderController extends DesktopController
         if ($technicianId > 0) {
             return [
                 'id' => $technicianId,
-                'nome' => 'Tecnico #' . $technicianId,
+                'nome' => 'Tecnico #'.$technicianId,
                 'email' => '',
             ];
         }
@@ -460,7 +459,7 @@ class OrderController extends DesktopController
 
             return [
                 'id' => $equipmentId,
-                'label' => $label !== '' ? $label : ('Equipamento #' . $equipmentId),
+                'label' => $label !== '' ? $label : ('Equipamento #'.$equipmentId),
                 'summary' => $summary,
                 'brand_name' => $brandName,
                 'model_name' => $modelName,
@@ -582,7 +581,7 @@ class OrderController extends DesktopController
 
             return [
                 'id' => $clientId,
-                'text' => $label !== '' ? $label : ('Cliente #' . $clientId),
+                'text' => $label !== '' ? $label : ('Cliente #'.$clientId),
                 'name' => $label,
                 'phone' => trim((string) ($client['telefone1'] ?? '')),
                 'email' => trim((string) ($client['email'] ?? '')),
@@ -600,7 +599,7 @@ class OrderController extends DesktopController
     }
 
     /**
-     * @param array<string, mixed> $equipment
+     * @param  array<string, mixed>  $equipment
      * @return array<string, mixed>
      */
     private function decorateEquipmentPhotoAccess(array $equipment): array
@@ -646,7 +645,7 @@ class OrderController extends DesktopController
     }
 
     /**
-     * @param array<string, mixed> $equipment
+     * @param  array<string, mixed>  $equipment
      * @return array<string, mixed>
      */
     private function resolveEntryChecklistModelForEquipment(array $equipment): array
@@ -666,7 +665,7 @@ class OrderController extends DesktopController
     }
 
     /**
-     * @param array<string, mixed> $validated
+     * @param  array<string, mixed>  $validated
      * @return array<string, mixed>
      */
     private function buildEntryChecklistPayload(array $validated): array
@@ -708,8 +707,15 @@ class OrderController extends DesktopController
     {
         $validated = $request->validate([
             'idempotency_key' => ['required', 'uuid'],
-            'cliente_id' => ['required', 'integer', 'min:1'],
-            'equipamento_id' => ['required', 'integer', 'min:1'],
+            // Criação atômica: cliente/equipamento existentes OU cadastro novo
+            // capturado no formulário (só persistido junto com a OS).
+            'cliente_id' => ['required_without:novo_cliente.nome_razao', 'nullable', 'integer', 'min:1'],
+            'equipamento_id' => ['required_without:novo_equipamento.tipo_id', 'nullable', 'integer', 'min:1'],
+            'novo_cliente' => ['nullable', 'array'],
+            'novo_cliente.nome_razao' => ['nullable', 'required_with:novo_cliente', 'string', 'max:100'],
+            'novo_cliente.telefone1' => ['nullable', 'required_with:novo_cliente', 'string', 'max:20'],
+            'novo_equipamento' => ['nullable', 'array'],
+            'novo_equipamento.tipo_id' => ['nullable', 'required_with:novo_equipamento', 'integer', 'min:1'],
             'orcamento_id' => ['nullable', 'integer', 'min:1'],
             'relato_cliente' => ['required', 'string', 'min:5'],
             'prioridade' => ['nullable', 'string', 'in:baixa,normal,alta,urgente'],
@@ -726,6 +732,9 @@ class OrderController extends DesktopController
             'checklist_entrada.respostas.*.observacao' => ['nullable', 'string', 'max:1000'],
             'fotos' => ['nullable', 'array', 'max:4'],
             'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            // Fotos do equipamento novo capturado (criação diferida na abertura de OS).
+            'novo_equipamento_fotos' => ['nullable', 'array', 'max:4'],
+            'novo_equipamento_fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
         ], [], [
             'cliente_id' => 'cliente',
             'equipamento_id' => 'equipamento',
@@ -739,8 +748,8 @@ class OrderController extends DesktopController
 
         $payload = array_filter([
             'idempotency_key' => (string) $validated['idempotency_key'],
-            'cliente_id' => (int) $validated['cliente_id'],
-            'equipamento_id' => (int) $validated['equipamento_id'],
+            'cliente_id' => isset($validated['cliente_id']) ? (int) $validated['cliente_id'] : null,
+            'equipamento_id' => isset($validated['equipamento_id']) ? (int) $validated['equipamento_id'] : null,
             'orcamento_id' => isset($validated['orcamento_id']) ? (int) $validated['orcamento_id'] : null,
             'relato_cliente' => trim((string) $validated['relato_cliente']),
             'prioridade' => $validated['prioridade'] ?? null,
@@ -751,6 +760,14 @@ class OrderController extends DesktopController
         ], static fn ($value): bool => $value !== null && $value !== '');
         $payload['enviar_pdf_cliente'] = $request->boolean('enviar_pdf_cliente');
 
+        // Cadastro novo capturado (criação diferida) — encaminha os arrays completos.
+        if (is_array($request->input('novo_cliente'))) {
+            $payload['novo_cliente'] = $request->input('novo_cliente');
+        }
+        if (is_array($request->input('novo_equipamento'))) {
+            $payload['novo_equipamento'] = $request->input('novo_equipamento');
+        }
+
         $entryChecklistPayload = $this->buildEntryChecklistPayload($validated);
         if ($entryChecklistPayload !== []) {
             $payload['checklist_entrada'] = $entryChecklistPayload;
@@ -758,7 +775,8 @@ class OrderController extends DesktopController
 
         $result = $this->orderService->create(
             $payload,
-            $this->extractUploadedFiles($request, 'fotos')
+            $this->extractUploadedFiles($request, 'fotos'),
+            $this->extractUploadedFiles($request, 'novo_equipamento_fotos')
         );
         $order = is_array($result['order'] ?? null) ? $result['order'] : [];
         $openingDocument = is_array($result['opening_document'] ?? null) ? $result['opening_document'] : [];
@@ -846,7 +864,7 @@ class OrderController extends DesktopController
         $orderLabel = trim((string) ($auditOrder['numero_os'] ?? ''));
 
         return view('orders.audit', [
-            'pageTitle' => 'Auditoria da OS ' . ($orderLabel !== '' ? $orderLabel : ('#' . $order)),
+            'pageTitle' => 'Auditoria da OS '.($orderLabel !== '' ? $orderLabel : ('#'.$order)),
             'order' => $auditOrder,
             'events' => $audit['events'],
             'stats' => $audit['stats'],
@@ -867,7 +885,7 @@ class OrderController extends DesktopController
         $orderLabel = trim((string) ($mapData['order']['numero_os'] ?? ''));
 
         return view('orders.map', [
-            'pageTitle' => 'Mapa da OS ' . ($orderLabel !== '' ? $orderLabel : ('#' . $order)),
+            'pageTitle' => 'Mapa da OS '.($orderLabel !== '' ? $orderLabel : ('#'.$order)),
             'order' => $mapData['order'],
             'path' => $mapData['path'],
             'pathTruncated' => $mapData['pathTruncated'],
@@ -962,7 +980,7 @@ class OrderController extends DesktopController
      * Código -> nome do status, para o painel de trajeto do Mapa da OS
      * (códigos legados/sem card no fluxo aparecem crus).
      *
-     * @param array<string, mixed> $orderData
+     * @param  array<string, mixed>  $orderData
      * @return array<string, string>
      */
     private function buildStatusNameMap(array $orderData): array
@@ -980,8 +998,8 @@ class OrderController extends DesktopController
     }
 
     /**
-     * @param array<int, array<string, mixed>> $items
-     * @param array<string, mixed> $selectedItem
+     * @param  array<int, array<string, mixed>>  $items
+     * @param  array<string, mixed>  $selectedItem
      * @return array<int, array<string, mixed>>
      */
     private function ensureSelectedItemPresent(array $items, int $selectedId, array $selectedItem): array
@@ -1074,6 +1092,9 @@ class OrderController extends DesktopController
             'checklist_entrada.respostas.*.observacao' => ['nullable', 'string', 'max:1000'],
             'fotos' => ['nullable', 'array', 'max:4'],
             'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            // Fotos do equipamento novo capturado (criação diferida na abertura de OS).
+            'novo_equipamento_fotos' => ['nullable', 'array', 'max:4'],
+            'novo_equipamento_fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
         ], [], [
             'cliente_id' => 'cliente',
             'equipamento_id' => 'equipamento',
@@ -1258,29 +1279,29 @@ class OrderController extends DesktopController
         }
 
         return response()->json([
-            'id'                       => $data['id'] ?? $order,
-            'numero_os'                => (string) ($data['numero_os'] ?? ('#' . $order)),
-            'status'                   => (string) ($data['status'] ?? ''),
-            'status_nome'              => (string) ($data['status_nome'] ?? ''),
-            'status_cor'               => (string) ($data['status_cor'] ?? '#64748b'),
-            'status_congela_prazo'     => (bool) ($data['status_congela_prazo'] ?? false),
-            'status_ordem_fluxo'       => (int) ($data['status_ordem_fluxo'] ?? 0),
-            'cliente_nome'             => (string) ($data['cliente_nome'] ?? ''),
-            'cliente_telefone'         => (string) ($data['cliente']['telefone1'] ?? ''),
-            'cliente_email'            => (string) ($data['cliente']['email'] ?? ''),
-            'equipamento_nome'         => (string) ($data['equipamento_resumo_curto'] ?? ($data['equipamento_resumo_tecnico'] ?? '')),
-            'equipamento_tipo_nome'    => (string) ($data['equipamento_tipo_nome'] ?? ''),
+            'id' => $data['id'] ?? $order,
+            'numero_os' => (string) ($data['numero_os'] ?? ('#'.$order)),
+            'status' => (string) ($data['status'] ?? ''),
+            'status_nome' => (string) ($data['status_nome'] ?? ''),
+            'status_cor' => (string) ($data['status_cor'] ?? '#64748b'),
+            'status_congela_prazo' => (bool) ($data['status_congela_prazo'] ?? false),
+            'status_ordem_fluxo' => (int) ($data['status_ordem_fluxo'] ?? 0),
+            'cliente_nome' => (string) ($data['cliente_nome'] ?? ''),
+            'cliente_telefone' => (string) ($data['cliente']['telefone1'] ?? ''),
+            'cliente_email' => (string) ($data['cliente']['email'] ?? ''),
+            'equipamento_nome' => (string) ($data['equipamento_resumo_curto'] ?? ($data['equipamento_resumo_tecnico'] ?? '')),
+            'equipamento_tipo_nome' => (string) ($data['equipamento_tipo_nome'] ?? ''),
             'equipamento_numero_serie' => (string) ($data['equipamento_numero_serie'] ?? ''),
-            'diagnostico_tecnico'      => (string) ($data['diagnostico_tecnico'] ?? ''),
-            'solucao_aplicada'         => (string) ($data['solucao_aplicada'] ?? ''),
-            'proximas_etapas'          => is_array($data['proximas_etapas'] ?? null) ? $data['proximas_etapas'] : [],
-            'status_disponiveis'       => is_array($data['status_disponiveis'] ?? null) ? $data['status_disponiveis'] : [],
-            'historico'                => array_slice(
+            'diagnostico_tecnico' => (string) ($data['diagnostico_tecnico'] ?? ''),
+            'solucao_aplicada' => (string) ($data['solucao_aplicada'] ?? ''),
+            'proximas_etapas' => is_array($data['proximas_etapas'] ?? null) ? $data['proximas_etapas'] : [],
+            'status_disponiveis' => is_array($data['status_disponiveis'] ?? null) ? $data['status_disponiveis'] : [],
+            'historico' => array_slice(
                 is_array($data['historico'] ?? null) ? $data['historico'] : [],
                 0,
                 8
             ),
-            'procedimentos_historico'  => is_array($data['procedimentos_historico'] ?? null) ? $data['procedimentos_historico'] : [],
+            'procedimentos_historico' => is_array($data['procedimentos_historico'] ?? null) ? $data['procedimentos_historico'] : [],
         ]);
     }
 
@@ -1368,15 +1389,15 @@ class OrderController extends DesktopController
 
         $statusNome = $updatedOrder['status_nome'] ?? 'o novo estado';
         $message = ($validated['status'] ?? null) !== null
-            ? 'Status da OS atualizado para ' . $statusNome . '.'
+            ? 'Status da OS atualizado para '.$statusNome.'.'
             : 'Informações da OS salvas com sucesso.';
 
         if ($request->wantsJson()) {
             return response()->json([
-                'success'     => true,
-                'message'     => $message,
+                'success' => true,
+                'message' => $message,
                 'status_nome' => $statusNome,
-                'status_cor'  => (string) ($updatedOrder['status_cor'] ?? '#64748b'),
+                'status_cor' => (string) ($updatedOrder['status_cor'] ?? '#64748b'),
             ]);
         }
 
@@ -1593,7 +1614,7 @@ class OrderController extends DesktopController
 
         $successMessage = count($successfulDocuments) === 1
             ? '1 documento gerado com sucesso.'
-            : count($successfulDocuments) . ' documentos gerados com sucesso.';
+            : count($successfulDocuments).' documentos gerados com sucesso.';
 
         if ($documents !== [] && count($successfulDocuments) < count($documents)) {
             $successMessage .= ' Alguns itens permaneceram pendentes por falta de pré-requisitos.';
@@ -1826,7 +1847,7 @@ class OrderController extends DesktopController
         }
 
         if (($link['url'] ?? '') !== '') {
-            $message .= ' URL: ' . $link['url'];
+            $message .= ' URL: '.$link['url'];
         }
 
         return redirect()
@@ -2019,7 +2040,7 @@ class OrderController extends DesktopController
     }
 
     /**
-     * @param array<int, mixed> $values
+     * @param  array<int, mixed>  $values
      * @return array<int, int>
      */
     private function normalizeDocumentIds(array $values): array

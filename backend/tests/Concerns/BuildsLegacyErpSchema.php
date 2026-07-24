@@ -1685,9 +1685,13 @@ trait BuildsLegacyErpSchema
             $table->string('email_contato', 120)->nullable();
             $table->unsignedBigInteger('os_id')->nullable();
             $table->unsignedBigInteger('equipamento_id')->nullable();
+            $table->boolean('envolve_equipamento')->default(true);
             $table->unsignedBigInteger('equipamento_tipo_id')->nullable();
             $table->unsignedBigInteger('equipamento_marca_id')->nullable();
             $table->unsignedBigInteger('equipamento_modelo_id')->nullable();
+            $table->string('equipamento_tipo_avulso', 120)->nullable();
+            $table->string('equipamento_marca_avulso', 120)->nullable();
+            $table->string('equipamento_modelo_avulso', 120)->nullable();
             $table->string('equipamento_cor', 100)->nullable();
             $table->string('equipamento_cor_hex', 7)->nullable();
             $table->string('equipamento_cor_rgb', 32)->nullable();
@@ -1696,6 +1700,7 @@ trait BuildsLegacyErpSchema
             $table->unsignedBigInteger('criado_por')->nullable();
             $table->unsignedBigInteger('atualizado_por')->nullable();
             $table->string('titulo', 180)->nullable();
+            $table->text('relato_cliente')->nullable();
             $table->integer('validade_dias')->default(10);
             $table->date('validade_data')->nullable();
             $table->decimal('subtotal', 12, 2)->default(0);

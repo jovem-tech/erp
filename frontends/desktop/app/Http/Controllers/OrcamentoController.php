@@ -379,7 +379,20 @@ class OrcamentoController extends DesktopController
             'email_contato' => ['nullable', 'email', 'max:255'],
             'os_id' => ['nullable', 'integer', 'min:1'],
             'equipamento_id' => ['nullable', 'integer', 'min:1'],
+            'envolve_equipamento' => ['nullable', 'boolean'],
+            // Equipamento eventual (aparelho sem cadastro). Modelo é obrigatório
+            // quando o orçamento é para reparo de um equipamento e não há
+            // equipamento cadastrado nem OS vinculada.
+            'equipamento_tipo_avulso' => ['nullable', 'string', 'max:120'],
+            'equipamento_marca_avulso' => ['nullable', 'string', 'max:120'],
+            'equipamento_modelo_avulso' => ['nullable', 'string', 'max:120', Rule::requiredIf(
+                fn (): bool => $request->boolean('envolve_equipamento')
+                    && ! $request->filled('equipamento_id')
+                    && ! $request->filled('os_id')
+            )],
+            'equipamento_cor' => ['nullable', 'string', 'max:100'],
             'titulo' => ['nullable', 'string', 'max:255'],
+            'relato_cliente' => ['nullable', 'string', 'max:5000'],
             'validade_dias' => ['nullable', 'integer', 'min:0'],
             'validade_data' => ['nullable', 'date'],
             'prazo_execucao' => ['nullable', 'string', 'max:255'],
@@ -423,6 +436,10 @@ class OrcamentoController extends DesktopController
             'email_contato' => 'e-mail de contato',
             'os_id' => 'OS',
             'equipamento_id' => 'equipamento',
+            'equipamento_tipo_avulso' => 'tipo do equipamento',
+            'equipamento_marca_avulso' => 'marca do equipamento',
+            'equipamento_modelo_avulso' => 'modelo do equipamento',
+            'equipamento_cor' => 'cor do equipamento',
             'titulo' => 'título',
             'validade_dias' => 'validade em dias',
             'validade_data' => 'validade',

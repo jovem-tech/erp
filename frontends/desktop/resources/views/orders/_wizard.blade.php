@@ -16,6 +16,13 @@
     $linkedBudgetAvulsoName = trim((string) data_get($linkedBudget, 'cliente_nome_avulso', ''));
     $linkedBudgetAvulsoPhone = trim((string) data_get($linkedBudget, 'telefone_contato', ''));
     $linkedBudgetAvulsoEmail = trim((string) data_get($linkedBudget, 'email_contato', ''));
+    // Equipamento eventual do orçamento — pré-preenche o cadastro rápido de equipamento.
+    $linkedBudgetEquipTipo = trim((string) data_get($linkedBudget, 'equipamento_tipo_avulso', ''));
+    $linkedBudgetEquipMarca = trim((string) data_get($linkedBudget, 'equipamento_marca_avulso', ''));
+    $linkedBudgetEquipModelo = trim((string) data_get($linkedBudget, 'equipamento_modelo_avulso', ''));
+    $linkedBudgetEquipCor = trim((string) data_get($linkedBudget, 'equipamento_cor', ''));
+    $linkedBudgetEquipLabel = trim((string) data_get($linkedBudget, 'equipamento_eventual_label', ''));
+    $linkedBudgetRelato = trim((string) data_get($linkedBudget, 'relato_cliente', ''));
     $selectedPriority = (string) old('prioridade', data_get($order, 'prioridade', 'normal'));
     $selectedClient = is_array($selectedClient ?? null) ? $selectedClient : [];
     $selectedEquipment = is_array($selectedEquipment ?? null) ? $selectedEquipment : [];
@@ -74,7 +81,8 @@
     }
 
     $canCreateClient = \App\Support\DesktopSession::can('clientes', 'criar');
-    $selectedRelato = trim((string) old('relato_cliente', data_get($order, 'relato_cliente', '')));
+    // Ao gerar OS a partir de um orçamento, herda o relato do cliente do orçamento.
+    $selectedRelato = trim((string) old('relato_cliente', data_get($order, 'relato_cliente', $linkedBudgetRelato)));
     $selectedAccessories = trim((string) old('acessorios', data_get($order, 'acessorios', '')));
     $selectedOperacionaisNote = trim((string) old('observacoes_internas', data_get($order, 'observacoes_internas', '')));
     $selectedPrevisao = trim((string) old('data_previsao', data_get($order, 'data_previsao', '')));
@@ -211,6 +219,7 @@
         enctype="multipart/form-data"
         class="desktop-grid order-create-layout"
         data-order-create-form
+        data-order-create-home-url="{{ url('/') }}"
     >
         @csrf
         @if ($isEditing)
@@ -232,7 +241,11 @@
             <div class="alert alert-info order-create-linked-budget" role="alert"
                 data-linked-budget-avulso-name="{{ $linkedBudgetAvulsoName }}"
                 data-linked-budget-avulso-phone="{{ $linkedBudgetAvulsoPhone }}"
-                data-linked-budget-avulso-email="{{ $linkedBudgetAvulsoEmail }}">
+                data-linked-budget-avulso-email="{{ $linkedBudgetAvulsoEmail }}"
+                data-linked-budget-equip-tipo="{{ $linkedBudgetEquipTipo }}"
+                data-linked-budget-equip-marca="{{ $linkedBudgetEquipMarca }}"
+                data-linked-budget-equip-modelo="{{ $linkedBudgetEquipModelo }}"
+                data-linked-budget-equip-cor="{{ $linkedBudgetEquipCor }}">
                 <div class="d-flex align-items-start gap-2">
                     <i class="bi bi-receipt-cutoff"></i>
                     <div>
@@ -243,6 +256,11 @@
                                 <br>
                                 Este orçamento não tinha cliente cadastrado (cliente eventual: <strong>{{ $linkedBudgetAvulsoName !== '' ? $linkedBudgetAvulsoName : 'não informado' }}</strong>).
                                 Selecione um cliente existente ou use <strong>Novo cliente</strong> para cadastrá-lo antes de salvar.
+                            @endif
+                            @if ($linkedBudgetEquipLabel !== '')
+                                <br>
+                                Equipamento eventual do orçamento: <strong>{{ $linkedBudgetEquipLabel }}</strong>.
+                                Use <strong>Novo equipamento</strong> — o cadastro já abre pré-preenchido; complete série/foto.
                             @endif
                         </div>
                     </div>
@@ -456,6 +474,14 @@
                             @endif
                         </select>
                         @error('cliente_id')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                        <div class="order-create-pending-record alert alert-success d-none mt-2 py-2 px-3 mb-0" data-order-pending-client>
+                            <i class="bi bi-person-plus me-1"></i>
+                            <strong>Novo cliente:</strong>
+                            <span data-order-pending-client-name></span>
+                            <span class="small text-secondary">— será cadastrado ao salvar a OS.</span>
+                            <button type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline" data-order-pending-client-edit>Editar</button>
+                            <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline text-danger" data-order-pending-client-remove>Remover</button>
+                        </div>
                         @if ($canCreateClient)
                             <small class="text-secondary d-block mt-2">Se o cliente ainda nao estiver cadastrado, abra o cadastro rapido sem sair da OS.</small>
                         @endif
@@ -511,6 +537,14 @@
                             @endif
                         </select>
                         @error('equipamento_id')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                        <div class="order-create-pending-record alert alert-success d-none mt-2 py-2 px-3 mb-0" data-order-pending-equipment>
+                            <i class="bi bi-phone me-1"></i>
+                            <strong>Novo equipamento:</strong>
+                            <span data-order-pending-equipment-name></span>
+                            <span class="small text-secondary">— será cadastrado ao salvar a OS.</span>
+                            <button type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline" data-order-pending-equipment-edit>Editar</button>
+                            <button type="button" class="btn btn-link btn-sm p-0 ms-1 align-baseline text-danger" data-order-pending-equipment-remove>Remover</button>
+                        </div>
                         <small class="text-secondary d-block mt-2">Busque por nome, serie ou cliente. Se o equipamento nao estiver cadastrado, abra o modal de cadastro sem sair da OS.</small>
                     </div>
 

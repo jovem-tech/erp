@@ -282,6 +282,8 @@ class BudgetWorkflowService
             $budget->origem = $this->resolveOrigin($budgetAttributes, $osId > 0);
             $budget->cliente_id = $this->resolveClientId($budgetAttributes, $budget->os_id);
             $budget->equipamento_id = $this->resolveEquipmentId($budgetAttributes, $budget->os_id);
+            $budget->envolve_equipamento = $this->resolveEnvolveEquipamento($budgetAttributes, true);
+            $this->applyClientEquipmentExclusivity($budget);
             $budget->responsavel_id = (int) ($budgetAttributes['responsavel_id'] ?? $user->id);
             $budget->criado_por = (int) ($budgetAttributes['criado_por'] ?? $user->id);
             $budget->atualizado_por = (int) ($budgetAttributes['atualizado_por'] ?? $user->id);
@@ -390,6 +392,11 @@ class BudgetWorkflowService
             $budget->origem = $this->resolveOrigin($budgetAttributes, (int) ($budget->os_id ?? 0) > 0);
             $budget->cliente_id = $this->resolveClientId($budgetAttributes, $budget->os_id);
             $budget->equipamento_id = $this->resolveEquipmentId($budgetAttributes, $budget->os_id);
+            $budget->envolve_equipamento = $this->resolveEnvolveEquipamento(
+                $budgetAttributes,
+                (bool) ($budget->getOriginal('envolve_equipamento') ?? true)
+            );
+            $this->applyClientEquipmentExclusivity($budget);
             $budget->responsavel_id = (int) ($budgetAttributes['responsavel_id'] ?? $budget->responsavel_id ?? $user->id);
             $budget->atualizado_por = (int) ($budgetAttributes['atualizado_por'] ?? $user->id);
             $budget->validade_dias = max(0, (int) ($budgetAttributes['validade_dias'] ?? $budget->validade_dias ?? 10));
@@ -618,7 +625,8 @@ class BudgetWorkflowService
             'origem_label' => Budget::originLabel($budget->origem),
             'cliente_nome' => trim((string) ($client?->nome_razao ?? ($budget->cliente_nome_avulso ?? ''))),
             'cliente_documento' => trim((string) ($client?->cpf_cnpj ?? '')),
-            'equipamento_resumo' => trim((string) ($equipment?->resumo_tecnico ?? '')),
+            'equipamento_resumo' => trim((string) ($equipment?->resumo_tecnico ?? '')) ?: $this->eventualEquipmentLabel($budget),
+            'envolve_equipamento' => (bool) ($budget->envolve_equipamento ?? true),
             'os_numero' => trim((string) ($order?->numero_os ?? '')),
             'vinculos' => implode(' | ', $links),
             'validade_dias' => (int) ($budget->validade_dias ?? 0),
@@ -677,9 +685,16 @@ class BudgetWorkflowService
             'origem' => (string) ($budget->origem ?? 'manual'),
             'origem_label' => Budget::originLabel($budget->origem),
             'titulo' => (string) ($budget->titulo ?? ''),
+            'relato_cliente' => (string) ($budget->relato_cliente ?? ''),
             'cliente_nome_avulso' => (string) ($budget->cliente_nome_avulso ?? ''),
             'telefone_contato' => (string) ($budget->telefone_contato ?? ''),
             'email_contato' => (string) ($budget->email_contato ?? ''),
+            'envolve_equipamento' => (bool) ($budget->envolve_equipamento ?? true),
+            'equipamento_tipo_avulso' => (string) ($budget->equipamento_tipo_avulso ?? ''),
+            'equipamento_marca_avulso' => (string) ($budget->equipamento_marca_avulso ?? ''),
+            'equipamento_modelo_avulso' => (string) ($budget->equipamento_modelo_avulso ?? ''),
+            'equipamento_cor' => (string) ($budget->equipamento_cor ?? ''),
+            'equipamento_eventual_label' => $this->eventualEquipmentLabel($budget),
             'validade_dias' => (int) ($budget->validade_dias ?? 0),
             'validade_data' => optional($budget->validade_data)->format('d/m/Y'),
             'token_publico' => (string) ($budget->token_publico ?? ''),
@@ -711,6 +726,9 @@ class BudgetWorkflowService
             'equipamento' => $equipment ? [
                 'id' => (int) $equipment->id,
                 'resumo_tecnico' => (string) ($equipment->resumo_tecnico ?? ''),
+                'tipo_nome' => (string) ($equipment->type?->nome ?? ''),
+                'marca_nome' => (string) ($equipment->brand?->nome ?? ''),
+                'modelo_nome' => (string) ($equipment->model?->nome ?? ''),
                 'numero_serie' => (string) ($equipment->numero_serie ?? ''),
                 'imei' => (string) ($equipment->imei ?? ''),
             ] : null,
@@ -905,6 +923,86 @@ class BudgetWorkflowService
     private function resolveType(array $attributes, bool $fromOrder): string
     {
         return $fromOrder ? Budget::TYPE_ASSISTANCE : Budget::TYPE_PREVIEW;
+    }
+
+    /**
+     * @param array<string, mixed> $attributes
+     */
+    private function resolveEnvolveEquipamento(array $attributes, bool $default): bool
+    {
+        if (! array_key_exists('envolve_equipamento', $attributes) || $attributes['envolve_equipamento'] === null) {
+            return $default;
+        }
+
+        return (bool) filter_var($attributes['envolve_equipamento'], FILTER_VALIDATE_BOOLEAN);
+    }
+
+    /**
+     * Exclusividade cliente cadastrado × eventual e equipamento cadastrado ×
+     * eventual (regra do usuário: sem conflito de dados). Também zera todo o
+     * equipamento quando o orçamento não envolve aparelho (serviço puro, ex.:
+     * visita técnica, instalação de cabo de rede).
+     */
+    private function applyClientEquipmentExclusivity(Budget $budget): void
+    {
+        // Cliente cadastrado tem prioridade sobre o nome eventual.
+        if ((int) ($budget->cliente_id ?? 0) > 0) {
+            $budget->cliente_nome_avulso = null;
+        }
+
+        if (! $budget->envolve_equipamento) {
+            $budget->equipamento_id = null;
+            $this->clearEventualEquipment($budget);
+
+            return;
+        }
+
+        if ((int) ($budget->equipamento_id ?? 0) > 0) {
+            // Equipamento cadastrado tem prioridade: descarta o eventual.
+            $this->clearEventualEquipment($budget);
+        } elseif ($this->hasEventualEquipment($budget)) {
+            // Só há equipamento eventual: garante que nenhum equipamento_id órfão fique.
+            $budget->equipamento_id = null;
+        }
+    }
+
+    private function hasEventualEquipment(Budget $budget): bool
+    {
+        foreach (['equipamento_tipo_avulso', 'equipamento_marca_avulso', 'equipamento_modelo_avulso', 'equipamento_cor'] as $field) {
+            if (trim((string) ($budget->{$field} ?? '')) !== '') {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function clearEventualEquipment(Budget $budget): void
+    {
+        $budget->equipamento_tipo_avulso = null;
+        $budget->equipamento_marca_avulso = null;
+        $budget->equipamento_modelo_avulso = null;
+        $budget->equipamento_cor = null;
+    }
+
+    /**
+     * Rótulo composto do equipamento eventual (tipo/marca/modelo · cor), usado
+     * quando não há equipamento cadastrado — espelha o cliente_nome_avulso.
+     */
+    private function eventualEquipmentLabel(Budget $budget): string
+    {
+        $principal = trim(implode(' ', array_filter([
+            trim((string) ($budget->equipamento_tipo_avulso ?? '')),
+            trim((string) ($budget->equipamento_marca_avulso ?? '')),
+            trim((string) ($budget->equipamento_modelo_avulso ?? '')),
+        ])));
+
+        $cor = trim((string) ($budget->equipamento_cor ?? ''));
+        if ($cor !== '') {
+            return $principal !== '' ? $principal . ' · ' . $cor : $cor;
+        }
+
+        return $principal;
     }
 
     /**
@@ -1352,7 +1450,7 @@ class BudgetWorkflowService
     private function loadBudget(int $budgetId): ?Budget
     {
         return Budget::query()
-            ->with(['client', 'equipment', 'order', 'responsible', 'creator', 'updater', 'items', 'histories.user', 'sends.sender', 'approvals.user'])
+            ->with(['client', 'equipment.brand', 'equipment.model', 'equipment.type', 'order', 'responsible', 'creator', 'updater', 'items', 'histories.user', 'sends.sender', 'approvals.user'])
             ->find($budgetId);
     }
 
