@@ -27,7 +27,7 @@ class BudgetAvulsoFlowTest extends TestCase
         $this->rebuildLegacySchema();
         $this->seedRbacCatalog();
         $this->grantGroupPermissions(1, [
-            'orcamentos' => ['visualizar', 'criar', 'editar', 'excluir'],
+            'orcamentos' => ['visualizar', 'criar', 'editar', 'excluir', 'converter_os'],
             'clientes' => ['visualizar', 'criar'],
             'equipamentos' => ['visualizar'],
             'os' => ['visualizar', 'criar', 'editar'],
@@ -394,11 +394,13 @@ class BudgetAvulsoFlowTest extends TestCase
 
     public function test_create_order_defers_new_client_and_equipment_until_save(): void
     {
+        Storage::fake('local');
+
         $admin = $this->admin();
         $token = $this->loginAndGetToken($admin->email);
 
         $response = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson('/api/v1/orders', [
+            ->post('/api/v1/orders', [
                 'novo_cliente' => [
                     'nome_razao' => 'Cliente Diferido',
                     'telefone1' => '22999998888',
@@ -409,9 +411,12 @@ class BudgetAvulsoFlowTest extends TestCase
                     'numero_serie_visual' => 'SN-DIFERIDO',
                     'cor' => 'Preto',
                 ],
+                'novo_equipamento_fotos' => [
+                    UploadedFile::fake()->image('equipamento-diferido.jpg'),
+                ],
                 'relato_cliente' => 'Aparelho não liga após queda.',
                 'garantia_dias' => 90,
-            ]);
+            ], ['Accept' => 'application/json']);
 
         $response->assertCreated();
         $orderId = (int) $response->json('data.order.id');
@@ -481,8 +486,47 @@ class BudgetAvulsoFlowTest extends TestCase
             ->assertStatus(422);
     }
 
+    public function test_create_order_with_deferred_equipment_without_photo_is_rejected_without_persisting_records(): void
+    {
+        $admin = $this->admin();
+        $token = $this->loginAndGetToken($admin->email);
+
+        $clientsBefore = DB::table('clientes')->count();
+        $equipmentsBefore = DB::table('equipamentos')->count();
+        $ordersBefore = DB::table('os')->count();
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                'novo_cliente' => [
+                    'nome_razao' => 'Cliente Sem Foto',
+                    'telefone1' => '22999997777',
+                ],
+                'novo_equipamento' => [
+                    'tipo_id' => 1,
+                    'numero_serie_visual' => 'SN-SEM-FOTO',
+                ],
+                'relato_cliente' => 'Equipamento sem imagem obrigatória.',
+                'garantia_dias' => 90,
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR')
+            ->assertJsonStructure([
+                'error' => [
+                    'details' => [
+                        'novo_equipamento_fotos',
+                    ],
+                ],
+            ]);
+
+        $this->assertSame($clientsBefore, DB::table('clientes')->count());
+        $this->assertSame($equipmentsBefore, DB::table('equipamentos')->count());
+        $this->assertSame($ordersBefore, DB::table('os')->count());
+    }
+
     public function test_generate_os_from_avulso_defers_client_and_equipment(): void
     {
+        Storage::fake('local');
+
         $admin = $this->admin();
         $budgetId = $this->createBudgetRecord([
             'cliente_id' => null,
@@ -501,13 +545,16 @@ class BudgetAvulsoFlowTest extends TestCase
         $token = $this->loginAndGetToken($admin->email);
 
         $response = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->postJson('/api/v1/orders', [
+            ->post('/api/v1/orders', [
                 'novo_cliente' => ['nome_razao' => 'Otavio Eventual', 'telefone1' => '2299990000'],
                 'novo_equipamento' => ['tipo_id' => 1, 'numero_serie_visual' => 'SN-9'],
+                'novo_equipamento_fotos' => [
+                    UploadedFile::fake()->image('iphone-eventual.jpg'),
+                ],
                 'orcamento_id' => $budgetId,
                 'relato_cliente' => 'Tela quebrada.',
                 'garantia_dias' => 90,
-            ]);
+            ], ['Accept' => 'application/json']);
 
         $response->assertCreated();
         $orderId = (int) $response->json('data.order.id');
@@ -572,5 +619,336 @@ class BudgetAvulsoFlowTest extends TestCase
             'cliente_id' => $clientId,
             'cliente_nome_avulso' => null,
         ]);
+    }
+
+    public function test_order_creation_with_budget_requires_specific_conversion_permission(): void
+    {
+        $this->grantGroupPermissions(2, [
+            'os' => ['criar'],
+        ]);
+        $technician = $this->createUserRecord([
+            'nome' => 'Técnico sem conversão',
+            'email' => 'tecnico.sem.conversao@example.com',
+            'perfil' => 'tecnico',
+            'grupo_id' => 2,
+        ]);
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente protegido']);
+        $equipmentId = $this->createEquipmentRecord($clientId);
+        $budgetId = $this->createBudgetRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'tipo_orcamento' => 'previo',
+            'status' => 'pendente_abertura_os',
+            'os_id' => null,
+        ]);
+        $token = $this->loginAndGetToken($technician->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orcamentos/vinculaveis-os')
+            ->assertForbidden();
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'orcamento_id' => $budgetId,
+                'relato_cliente' => 'Tentativa sem autorização específica.',
+            ])
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('os', ['relato_cliente' => 'Tentativa sem autorização específica.']);
+        $this->assertDatabaseHas('orcamentos', [
+            'id' => $budgetId,
+            'status' => 'pendente_abertura_os',
+            'os_id' => null,
+        ]);
+
+        $this->grantGroupPermissions(3, [
+            'orcamentos' => ['converter_os'],
+        ]);
+        $converterWithoutOrderCreate = $this->createUserRecord([
+            'nome' => 'Conversor sem criar OS',
+            'email' => 'conversor.sem.os@example.com',
+            'perfil' => 'atendente',
+            'grupo_id' => 3,
+        ]);
+        $converterToken = $this->loginAndGetToken($converterWithoutOrderCreate->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$converterToken)
+            ->getJson('/api/v1/orcamentos/vinculaveis-os')
+            ->assertForbidden();
+    }
+
+    public function test_linkable_budget_catalog_only_returns_canonical_candidates(): void
+    {
+        $admin = $this->admin();
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Catálogo Seguro']);
+        $equipmentId = $this->createEquipmentRecord($clientId, ['resumo_tecnico' => 'Notebook catálogo']);
+        $validId = $this->createBudgetRecord([
+            'numero' => 'ORC-LINK-VALIDO',
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'tipo_orcamento' => 'previo',
+            'status' => 'pendente_abertura_os',
+            'os_id' => null,
+            'aprovado_em' => now(),
+            'total' => 345.67,
+        ]);
+        $this->createBudgetRecord([
+            'numero' => 'ORC-STATUS-ERRADO',
+            'cliente_id' => $clientId,
+            'tipo_orcamento' => 'previo',
+            'status' => 'aprovado',
+            'os_id' => null,
+        ]);
+        $this->createBudgetRecord([
+            'numero' => 'ORC-TIPO-ERRADO',
+            'cliente_id' => $clientId,
+            'tipo_orcamento' => 'assistencia',
+            'status' => 'pendente_abertura_os',
+            'os_id' => null,
+        ]);
+        $token = $this->loginAndGetToken($admin->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orcamentos/vinculaveis-os?q=Cat%C3%A1logo&per_page=10');
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data.budgets')
+            ->assertJsonPath('data.budgets.0.id', $validId)
+            ->assertJsonPath('data.budgets.0.equipamento_resumo', 'Notebook catálogo')
+            ->assertJsonPath('data.budgets.0.total_formatado', '345,67');
+
+        $detailResponse = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orcamentos/vinculaveis-os/'.$validId)
+            ->assertOk()
+            ->assertJsonPath('data.budget.status', 'pendente_abertura_os')
+            ->assertJsonPath('data.budget.equipamento.id', $equipmentId);
+
+        $this->assertArrayNotHasKey(
+            'cpf_cnpj',
+            (array) $detailResponse->json('data.budget.cliente'),
+            'O endpoint de conversão não deve expor documento pessoal do cliente.'
+        );
+        $this->assertArrayNotHasKey(
+            'telefone1',
+            (array) $detailResponse->json('data.budget.cliente'),
+            'O endpoint de conversão não deve duplicar contatos do cadastro do cliente.'
+        );
+        $this->assertArrayNotHasKey(
+            'email',
+            (array) $detailResponse->json('data.budget.cliente'),
+            'O endpoint de conversão deve retornar apenas o contexto mínimo.'
+        );
+        $this->assertArrayNotHasKey(
+            'numero_serie',
+            (array) $detailResponse->json('data.budget.equipamento'),
+            'O endpoint de conversão não deve expor o número de série do equipamento.'
+        );
+        $this->assertArrayNotHasKey(
+            'imei',
+            (array) $detailResponse->json('data.budget.equipamento'),
+            'O endpoint de conversão não deve expor o IMEI do equipamento.'
+        );
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orcamentos/vinculaveis-os?q=%25&per_page=10')
+            ->assertOk()
+            ->assertJsonCount(0, 'data.budgets');
+    }
+
+    public function test_generate_os_rejects_equipment_different_from_registered_budget_equipment(): void
+    {
+        $admin = $this->admin();
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente dois equipamentos']);
+        $budgetEquipmentId = $this->createEquipmentRecord($clientId, ['resumo_tecnico' => 'Equipamento orçado']);
+        $otherEquipmentId = $this->createEquipmentRecord($clientId, ['resumo_tecnico' => 'Equipamento indevido']);
+        $budgetId = $this->createBudgetRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $budgetEquipmentId,
+            'tipo_orcamento' => 'previo',
+            'status' => 'pendente_abertura_os',
+            'os_id' => null,
+        ]);
+        $ordersBefore = DB::table('os')->count();
+        $token = $this->loginAndGetToken($admin->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $otherEquipmentId,
+                'orcamento_id' => $budgetId,
+                'relato_cliente' => 'Tentativa com equipamento divergente.',
+            ])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'ORDER_BUDGET_LINK_INVALID');
+
+        $this->assertSame($ordersBefore, DB::table('os')->count());
+        $this->assertDatabaseHas('orcamentos', ['id' => $budgetId, 'os_id' => null]);
+    }
+
+    public function test_second_conversion_of_same_budget_is_a_conflict_and_does_not_duplicate_order(): void
+    {
+        $admin = $this->admin();
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente concorrência']);
+        $equipmentId = $this->createEquipmentRecord($clientId);
+        $budgetId = $this->createBudgetRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'tipo_orcamento' => 'previo',
+            'status' => 'pendente_abertura_os',
+            'os_id' => null,
+        ]);
+        $ordersBefore = DB::table('os')->count();
+        $token = $this->loginAndGetToken($admin->email);
+        $payload = [
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'orcamento_id' => $budgetId,
+            'relato_cliente' => 'Conversão protegida contra duplicidade.',
+        ];
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', $payload)
+            ->assertCreated();
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', $payload)
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'ORDER_BUDGET_LINK_CONFLICT');
+
+        $this->assertSame($ordersBefore + 1, DB::table('os')->count());
+        $this->assertSame(1, DB::table('os')->where('relato_cliente', $payload['relato_cliente'])->count());
+    }
+
+    public function test_assistance_or_generically_approved_budget_cannot_use_conversion_flow(): void
+    {
+        $admin = $this->admin();
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente estado inválido']);
+        $equipmentId = $this->createEquipmentRecord($clientId);
+        $budgetId = $this->createBudgetRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'tipo_orcamento' => 'assistencia',
+            'status' => 'aprovado',
+            'os_id' => null,
+        ]);
+        $token = $this->loginAndGetToken($admin->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'orcamento_id' => $budgetId,
+                'relato_cliente' => 'Tentativa fora do fluxo canônico.',
+            ])
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'ORDER_BUDGET_LINK_CONFLICT');
+    }
+
+    public function test_converted_budget_is_immutable_and_active_budget_cannot_be_hard_deleted(): void
+    {
+        $admin = $this->admin();
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente snapshot']);
+        $equipmentId = $this->createEquipmentRecord($clientId);
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+        ]);
+        $convertedId = $this->createBudgetRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'os_id' => $orderId,
+            'tipo_orcamento' => 'previo',
+            'status' => 'convertido',
+            'convertido_tipo' => 'os',
+            'convertido_id' => $orderId,
+        ]);
+        $activeId = $this->createBudgetRecord([
+            'numero' => 'ORC-ATIVO-NAO-EXCLUIR',
+            'cliente_id' => $clientId,
+            'tipo_orcamento' => 'previo',
+            'status' => 'aprovado',
+            'os_id' => null,
+        ]);
+        $token = $this->loginAndGetToken($admin->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson('/api/v1/orcamentos/'.$convertedId, ['titulo' => 'Tentativa de alteração'])
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BUDGET_IMMUTABLE');
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->deleteJson('/api/v1/orcamentos/'.$convertedId)
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BUDGET_IMMUTABLE');
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->deleteJson('/api/v1/orcamentos/'.$activeId)
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BUDGET_NOT_DELETABLE');
+
+        $this->assertDatabaseHas('orcamentos', ['id' => $convertedId, 'status' => 'convertido']);
+        $this->assertDatabaseHas('orcamentos', ['id' => $activeId, 'status' => 'aprovado']);
+    }
+
+    public function test_generic_budget_endpoint_cannot_forge_conversion_lifecycle_status(): void
+    {
+        $admin = $this->admin();
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente ciclo protegido']);
+        $budgetId = $this->createBudgetRecord([
+            'cliente_id' => $clientId,
+            'tipo_orcamento' => 'previo',
+            'status' => 'rascunho',
+        ]);
+        $token = $this->loginAndGetToken($admin->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orcamentos', [
+                'cliente_id' => $clientId,
+                'envolve_equipamento' => false,
+                'titulo' => 'Tentativa de criar orçamento já aprovado',
+                'status' => 'pendente_abertura_os',
+            ])
+            ->assertStatus(422)
+            ->assertJsonStructure(['error' => ['details' => ['status']]]);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson('/api/v1/orcamentos/'.$budgetId, [
+                'titulo' => 'Tentativa de transição genérica',
+                'status' => 'pendente_abertura_os',
+            ])
+            ->assertStatus(422)
+            ->assertJsonStructure(['error' => ['details' => ['status']]]);
+
+        $this->assertDatabaseHas('orcamentos', [
+            'id' => $budgetId,
+            'status' => 'rascunho',
+        ]);
+    }
+
+    public function test_generic_budget_request_rejects_server_managed_lifecycle_fields(): void
+    {
+        $admin = $this->admin();
+        $token = $this->loginAndGetToken($admin->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orcamentos', [
+                'cliente_nome_avulso' => 'Cliente malicioso',
+                'envolve_equipamento' => false,
+                'titulo' => 'Tentativa de controlar ciclo de vida',
+                'token_publico' => str_repeat('a', 64),
+                'aprovado_em' => now()->toDateTimeString(),
+                'convertido_tipo' => 'os',
+                'convertido_id' => 999,
+            ])
+            ->assertStatus(422)
+            ->assertJsonStructure([
+                'error' => [
+                    'details' => [
+                        'token_publico',
+                        'aprovado_em',
+                        'convertido_tipo',
+                        'convertido_id',
+                    ],
+                ],
+            ]);
     }
 }

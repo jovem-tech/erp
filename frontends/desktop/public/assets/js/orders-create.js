@@ -39,6 +39,8 @@
         photosPickButton: document.querySelector(config.photosPickButtonSelector || '[data-order-create-photos-pick]'),
         photosClearButton: document.querySelector(config.photosClearButtonSelector || '[data-order-create-photos-clear]'),
         photosPreview: document.querySelector(config.photosPreviewSelector || '[data-order-create-photos-preview]'),
+        pendingEquipmentPhotos: document.querySelector('[data-order-pending-equipment-photos]'),
+        pendingEquipmentPhotosPreview: document.querySelector('[data-order-pending-equipment-photos-preview]'),
         photoCropModal: document.getElementById('orderPhotoCropModal'),
         photoCropImage: document.getElementById('orderPhotoCropImage'),
         photoCropConfirm: document.querySelector('[data-order-photo-crop-confirm]'),
@@ -110,6 +112,8 @@
         pendingClient: null,
         pendingEquipment: null,
         pendingEquipmentPhotos: [],
+        pendingEquipmentPhotoUrls: [],
+        pendingEquipmentPrimaryPhotoUrl: '',
     };
 
     const select2Language = {
@@ -522,7 +526,7 @@
                 pending: true,
                 name: label,
                 serial: normalizeText(p.numero_serie_visual || ''),
-                photoUrl: '',
+                photoUrl: state.pendingEquipmentPrimaryPhotoUrl,
                 clientId: 0,
                 clientName: '',
                 brandName: normalizeText(p.marca_nome || ''),
@@ -1041,7 +1045,9 @@
         const relato = normalizeText(els.relatoField instanceof HTMLTextAreaElement ? els.relatoField.value : '');
         const observacoes = normalizeText(els.observacoesField instanceof HTMLTextAreaElement ? els.observacoesField.value : '');
         const previsao = normalizeText(els.previsaoField instanceof HTMLInputElement ? els.previsaoField.value : '');
-        const photoCount = state.existingPhotosCount + state.photoEntries.length;
+        const entryPhotoCount = state.existingPhotosCount + state.photoEntries.length;
+        const equipmentPhotoCount = state.pendingEquipmentPhotos.length;
+        const photoCount = entryPhotoCount + equipmentPhotoCount;
         const checklist = getChecklistSummary();
         // Cadastro novo capturado conta como "pronto" (será criado ao salvar a OS).
         const clientReady = client.id > 0 || client.pending === true;
@@ -1071,7 +1077,10 @@
         setText(els.summaryRelato, relato !== '' ? (relato.length > 28 ? `${relato.slice(0, 28)}...` : relato) : 'Vazio');
         setRowTitle(els.summaryRelato, relato);
         setSummaryIcon(els.summaryRelatoIcon, relato !== '');
-        setText(els.summaryPhotos, String(photoCount));
+        const photoLabel = equipmentPhotoCount > 0
+            ? `${equipmentPhotoCount} equip. · ${entryPhotoCount} entrada`
+            : `${entryPhotoCount} ${entryPhotoCount === 1 ? 'foto' : 'fotos'}`;
+        setText(els.summaryPhotos, photoLabel);
         setSummaryIcon(els.summaryPhotosIcon, photoCount > 0);
         if (checklist.total > 0) {
             const checklistLabel = checklist.discrepancies > 0
@@ -1265,7 +1274,10 @@
             if (typeof form.requestSubmit === 'function') {
                 form.requestSubmit();
             } else {
-                markSubmissionInProgress();
+                const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+                if (!form.dispatchEvent(submitEvent)) {
+                    return;
+                }
                 form.submit();
             }
         });
@@ -1279,6 +1291,16 @@
         form.addEventListener('submit', (event) => {
             if (submissionInProgress) {
                 event.preventDefault();
+                return;
+            }
+
+            if (state.pendingEquipment && !syncPendingEquipmentPhotosInput()) {
+                event.preventDefault();
+                showAlert(
+                    'error',
+                    'Foto do equipamento pendente',
+                    'A foto não está pronta para envio. Reabra o cadastro do equipamento, selecione a foto e tente novamente.'
+                );
                 return;
             }
 
@@ -1503,7 +1525,36 @@
 
     // Modo diferido: o iframe de equipamento devolve os dados capturados (sem
     // criar). Guardamos como equipamento pendente; o backend cria junto com a OS.
-    const handleEmbeddedEquipmentCaptured = (event) => {
+    const normalizeCapturedEquipmentPhoto = async (value, index) => {
+        const objectTag = Object.prototype.toString.call(value);
+        const isSupportedBlob = value instanceof Blob
+            || objectTag === '[object File]'
+            || objectTag === '[object Blob]';
+
+        if (!isSupportedBlob || typeof value.arrayBuffer !== 'function') {
+            return null;
+        }
+
+        const mime = String(value.type || '').toLowerCase();
+        const size = Number(value.size || 0);
+        if (!acceptedPhotoTypes.has(mime) || size <= 0 || size > maxPhotoUploadBytes) {
+            return null;
+        }
+
+        if (value instanceof File) {
+            return value;
+        }
+
+        const originalName = normalizeText(value.name || '') || `equipamento-${index + 1}.jpg`;
+        const bytes = await value.arrayBuffer();
+
+        return new File([bytes], originalName, {
+            type: mime,
+            lastModified: Number(value.lastModified || Date.now()),
+        });
+    };
+
+    const handleEmbeddedEquipmentCaptured = async (event) => {
         if (!els.quickEquipmentModal || !(els.quickEquipmentFrame instanceof HTMLIFrameElement)) {
             return;
         }
@@ -1517,9 +1568,25 @@
         if (payload.type !== 'equipment-captured') {
             return;
         }
-        state.pendingEquipmentPhotos = Array.isArray(payload.photos)
-            ? payload.photos.filter((file) => file instanceof File)
-            : [];
+        const incomingPhotos = Array.isArray(payload.photos) ? payload.photos.slice(0, maxPhotos) : [];
+        const normalizedPhotos = (await Promise.all(incomingPhotos.map((value, index) => (
+            normalizeCapturedEquipmentPhoto(value, index).catch(() => null)
+        )))).filter((file) => file instanceof File);
+
+        if (normalizedPhotos.length === 0) {
+            showAlert(
+                'error',
+                'Foto não recebida',
+                'A foto do equipamento não pôde ser transferida para a OS. Selecione-a novamente antes de continuar.'
+            );
+            return;
+        }
+
+        if (Array.isArray(payload.photos) && payload.photos.length > maxPhotos) {
+            showToast('warning', `Somente as primeiras ${maxPhotos} fotos do equipamento serão enviadas.`);
+        }
+
+        state.pendingEquipmentPhotos = normalizedPhotos;
         applyPendingEquipment(payload.equipment || {});
         getModal(els.quickEquipmentModal)?.hide();
         showToast('success', 'Equipamento será cadastrado ao salvar a OS.');
@@ -2274,11 +2341,61 @@
         updateSummary();
     };
 
+    const revokePendingEquipmentPhotoUrls = () => {
+        state.pendingEquipmentPhotoUrls.forEach((url) => URL.revokeObjectURL(url));
+        state.pendingEquipmentPhotoUrls = [];
+        state.pendingEquipmentPrimaryPhotoUrl = '';
+    };
+
+    const renderPendingEquipmentPhotos = () => {
+        const photos = Array.isArray(state.pendingEquipmentPhotos) ? state.pendingEquipmentPhotos : [];
+        const hasPhotos = state.pendingEquipment !== null && photos.length > 0;
+
+        if (els.pendingEquipmentPhotos instanceof HTMLElement) {
+            els.pendingEquipmentPhotos.classList.toggle('d-none', !hasPhotos);
+        }
+
+        if (!(els.pendingEquipmentPhotosPreview instanceof HTMLElement)) {
+            return;
+        }
+
+        els.pendingEquipmentPhotosPreview.innerHTML = hasPhotos
+            ? photos.map((file, index) => `
+                <article class="order-create-photo-preview-item">
+                    <div class="order-create-photo-preview-thumb">
+                        <img src="${escapeHtml(state.pendingEquipmentPhotoUrls[index] || '')}" alt="${escapeHtml(file.name)}">
+                    </div>
+                    <div class="order-create-photo-preview-meta">
+                        <strong title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</strong>
+                        <small>${escapeHtml(Math.round(file.size / 1024))} KB · temporária</small>
+                    </div>
+                </article>
+            `).join('')
+            : '';
+    };
+
+    const refreshPendingEquipmentPhotoPreview = () => {
+        revokePendingEquipmentPhotoUrls();
+
+        const photos = Array.isArray(state.pendingEquipmentPhotos) ? state.pendingEquipmentPhotos : [];
+        state.pendingEquipmentPhotoUrls = photos.map((file) => URL.createObjectURL(file));
+
+        const requestedPrimaryIndex = Number(state.pendingEquipment?.foto_principal_index || 0);
+        const primaryIndex = Math.max(0, Math.min(photos.length - 1, requestedPrimaryIndex));
+        state.pendingEquipmentPrimaryPhotoUrl = state.pendingEquipmentPhotoUrls[primaryIndex] || '';
+
+        renderPendingEquipmentPhotos();
+        setMainPhoto(
+            state.pendingEquipmentPrimaryPhotoUrl,
+            getEquipmentData().name || 'Foto do novo equipamento'
+        );
+    };
+
     // Mantém um input file oculto (novo_equipamento_fotos[]) com as fotos do
     // equipamento capturado — enviadas junto com a OS (criação atômica).
     const syncPendingEquipmentPhotosInput = () => {
         if (!(form instanceof HTMLFormElement)) {
-            return;
+            return false;
         }
         let input = form.querySelector('input[data-novo-equipamento-fotos]');
         const photos = Array.isArray(state.pendingEquipmentPhotos) ? state.pendingEquipmentPhotos : [];
@@ -2286,7 +2403,10 @@
             if (input) {
                 input.remove();
             }
-            return;
+            return state.pendingEquipment === null;
+        }
+        if (typeof DataTransfer === 'undefined') {
+            return false;
         }
         if (!(input instanceof HTMLInputElement)) {
             input = document.createElement('input');
@@ -2297,19 +2417,27 @@
             input.style.display = 'none';
             form.appendChild(input);
         }
-        const dt = new DataTransfer();
-        photos.forEach((file) => {
-            if (file instanceof File) {
-                dt.items.add(file);
-            }
-        });
-        input.files = dt.files;
+        try {
+            const dt = new DataTransfer();
+            photos.forEach((file) => {
+                if (file instanceof File) {
+                    dt.items.add(file);
+                }
+            });
+            input.files = dt.files;
+        } catch (error) {
+            input.remove();
+            return false;
+        }
+
+        return input.files instanceof FileList && input.files.length === photos.length;
     };
 
     const applyPendingEquipment = (data) => {
         state.pendingEquipment = data && typeof data === 'object' ? data : null;
         setHiddenGroup('novo_equipamento', state.pendingEquipment);
-        syncPendingEquipmentPhotosInput();
+        const photosReady = syncPendingEquipmentPhotosInput();
+        refreshPendingEquipmentPhotoPreview();
         if (els.equipmentSelect instanceof HTMLSelectElement) {
             setEquipmentSelectValue('');
             els.equipmentSelect.required = false;
@@ -2319,6 +2447,9 @@
         loadEntryChecklistModel(tipoId);
         renderPendingRecords();
         updateSummary();
+        if (!photosReady) {
+            showToast('error', 'A foto do equipamento não pôde ser preparada para envio.');
+        }
     };
 
     const clearPendingEquipment = () => {
@@ -2327,12 +2458,15 @@
         }
         state.pendingEquipment = null;
         state.pendingEquipmentPhotos = [];
+        revokePendingEquipmentPhotoUrls();
         setHiddenGroup('novo_equipamento', null);
         syncPendingEquipmentPhotosInput();
         if (els.equipmentSelect instanceof HTMLSelectElement) {
             els.equipmentSelect.required = true;
         }
         renderPendingRecords();
+        renderPendingEquipmentPhotos();
+        setMainPhoto('', 'Foto do equipamento selecionado');
         updateSummary();
     };
 
@@ -2588,19 +2722,194 @@
         prefillQuickClientFromLinkedBudget();
     }
 
-    // Seletor "vincular orçamento avulso" (caminho B): recarrega a criação de OS
-    // já vinculada ao orçamento escolhido, reaproveitando o pré-preenchimento.
+    const orderFormSnapshot = () => {
+        if (!(form instanceof HTMLFormElement)) {
+            return '';
+        }
+
+        const ignored = new Set(['_token', '_method', 'idempotency_key', 'orcamento_id']);
+        const values = [];
+        const formData = new FormData(form);
+
+        formData.forEach((value, key) => {
+            if (ignored.has(key)) {
+                return;
+            }
+
+            if (value instanceof File) {
+                values.push([key, `${value.name}:${value.size}:${value.lastModified}`]);
+                return;
+            }
+
+            values.push([key, String(value)]);
+        });
+
+        return JSON.stringify(values);
+    };
+
+    const confirmBudgetNavigation = async (target, initialSnapshot) => {
+        if (target === '') {
+            return;
+        }
+
+        const hasChanges = orderFormSnapshot() !== initialSnapshot;
+        if (!hasChanges) {
+            navigateInternal(target);
+            return;
+        }
+
+        let confirmed = false;
+        if (typeof Swal !== 'undefined') {
+            const result = await Swal.fire({
+                icon: 'warning',
+                title: 'Substituir os dados da Nova OS?',
+                text: 'Ao trocar o orçamento, os dados preenchidos neste formulário serão descartados.',
+                showCancelButton: true,
+                confirmButtonText: 'Sim, vincular orçamento',
+                cancelButtonText: 'Continuar preenchendo',
+                reverseButtons: true,
+            });
+            confirmed = Boolean(result.isConfirmed);
+        } else {
+            confirmed = window.confirm('Os dados preenchidos serão descartados. Deseja continuar?');
+        }
+
+        if (confirmed) {
+            navigateInternal(target);
+        }
+    };
+
+    // Seletor remoto "vincular orçamento avulso": consulta somente candidatos
+    // canônicos, com paginação, sem carregar o catálogo inteiro junto da página.
     const initBudgetPicker = () => {
         const picker = document.querySelector('[data-order-link-budget]');
+        const unlink = document.querySelector('[data-order-unlink-budget]');
+        const initialSnapshot = orderFormSnapshot();
+
+        if (unlink instanceof HTMLAnchorElement) {
+            unlink.addEventListener('click', (event) => {
+                event.preventDefault();
+                void confirmBudgetNavigation(unlink.href, initialSnapshot);
+            });
+        }
+
         if (!(picker instanceof HTMLSelectElement)) {
             return;
         }
 
-        picker.addEventListener('change', () => {
-            const target = picker.value.trim();
-            if (target !== '') {
-                navigateInternal(target);
+        const searchUrl = String(picker.dataset.searchUrl || '').trim();
+        const linkUrl = String(picker.dataset.linkUrl || '').trim();
+        const feedback = document.querySelector('[data-order-link-budget-feedback]');
+        const showFeedback = (message = '') => {
+            if (!(feedback instanceof HTMLElement)) {
+                return;
             }
+
+            feedback.textContent = message;
+            feedback.classList.toggle('d-none', message === '');
+        };
+        const navigateToBudget = (budgetId) => {
+            const normalizedId = String(budgetId || '').trim();
+            if (normalizedId === '' || linkUrl === '') {
+                return;
+            }
+
+            const target = new URL(linkUrl, window.location.origin);
+            target.searchParams.set('orcamento_id', normalizedId);
+            void confirmBudgetNavigation(target.toString(), initialSnapshot);
+        };
+
+        if (searchUrl !== ''
+            && typeof window.jQuery !== 'undefined'
+            && window.jQuery.fn
+            && typeof window.jQuery.fn.select2 === 'function') {
+            const $ = window.jQuery;
+            $(picker).select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                placeholder: 'Não vincular — abrir OS em branco',
+                allowClear: true,
+                dropdownParent: getSelect2DropdownParent(picker, $),
+                minimumInputLength: 0,
+                language: select2Language,
+                ajax: {
+                    url: searchUrl,
+                    dataType: 'json',
+                    delay: 250,
+                    cache: true,
+                    data: (params) => ({
+                        q: String(params.term || '').trim(),
+                        page: Number(params.page || 1),
+                        per_page: 15,
+                    }),
+                    processResults: (response) => {
+                        showFeedback('');
+
+                        return {
+                            results: Array.isArray(response?.results) ? response.results : [],
+                            pagination: {
+                                more: Boolean(response?.pagination?.more),
+                            },
+                        };
+                    },
+                    transport: (params, success, failure) => {
+                        const request = $.ajax(params);
+                        request.then(success);
+                        request.fail((xhr) => {
+                            const message = String(xhr?.responseJSON?.message || 'Não foi possível carregar os orçamentos.');
+                            showFeedback(message);
+                            failure(xhr);
+                        });
+
+                        return request;
+                    },
+                },
+            });
+
+            $(picker).on('select2:select', (event) => {
+                navigateToBudget(event?.params?.data?.id);
+            });
+
+            return;
+        }
+
+        // Fallback sem Select2: carrega uma página limitada e mantém o fluxo
+        // funcional em vez de esconder silenciosamente o recurso.
+        let fallbackLoaded = false;
+        let fallbackLoading = false;
+        picker.addEventListener('focus', async () => {
+            if (fallbackLoaded || fallbackLoading || searchUrl === '') {
+                return;
+            }
+            fallbackLoading = true;
+
+            try {
+                const response = await fetch(`${searchUrl}?page=1&per_page=30`, {
+                    headers: { Accept: 'application/json' },
+                    credentials: 'same-origin',
+                });
+                const payload = await response.json();
+                if (!response.ok) {
+                    throw new Error(String(payload?.message || 'Não foi possível carregar os orçamentos.'));
+                }
+
+                (Array.isArray(payload?.results) ? payload.results : []).forEach((item) => {
+                    const option = document.createElement('option');
+                    option.value = String(item.id || '');
+                    option.textContent = String(item.text || '');
+                    picker.appendChild(option);
+                });
+                fallbackLoaded = true;
+                showFeedback('');
+            } catch (error) {
+                showFeedback(String(error?.message || 'Não foi possível carregar os orçamentos.'));
+            } finally {
+                fallbackLoading = false;
+            }
+        });
+
+        picker.addEventListener('change', () => {
+            navigateToBudget(picker.value);
         });
     };
 
@@ -2615,6 +2924,11 @@
     initFormValidation();
     initSubmitButton();
     updateSummary();
+
+    window.addEventListener('pagehide', () => {
+        revokePhotoUrls();
+        revokePendingEquipmentPhotoUrls();
+    });
 
     // Após inicializar selects/modais, abre o cadastro rápido pré-preenchido do
     // cliente/equipamento do orçamento (geração de OS a partir de avulso).

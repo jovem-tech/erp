@@ -215,15 +215,35 @@ class OrderController extends DesktopController
         return array_values($groups);
     }
 
-    public function create(Request $request): View
+    public function create(Request $request): View|RedirectResponse
     {
         $oldInput = $request->session()->getOldInput();
+        $canLinkBudgets = DesktopSession::can('orcamentos', 'converter_os');
+        $requestedBudgetId = (int) ($oldInput['orcamento_id'] ?? $request->query('orcamento_id', 0));
+
+        if ($requestedBudgetId > 0 && ! $canLinkBudgets) {
+            abort(403, 'Você não tem permissão para converter orçamento em OS.');
+        }
 
         // Geração de OS a partir de um orçamento avulso aprovado (botão "Gerar OS"):
         // pré-preenche cliente/equipamento e mantém o vínculo via orcamento_id.
-        $linkedBudget = $this->resolveLinkedBudgetForCreation(
-            (int) ($oldInput['orcamento_id'] ?? $request->query('orcamento_id', 0))
-        );
+        try {
+            $linkedBudget = $this->resolveLinkedBudgetForCreation($requestedBudgetId);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException $exception) {
+            abort(403, $exception->getMessage());
+        } catch (ApiRequestException $exception) {
+            return redirect()
+                ->route('orders.create')
+                ->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return redirect()
+                ->route('orders.create')
+                ->with('error', 'Não foi possível carregar o orçamento selecionado. Tente novamente.');
+        }
         $budgetClientId = (int) data_get($linkedBudget, 'cliente.id', 0);
         $budgetEquipmentId = (int) data_get($linkedBudget, 'equipamento.id', 0);
 
@@ -255,55 +275,14 @@ class OrderController extends DesktopController
             'selectedTechnician' => $selectedTechnician,
             'entryChecklistModel' => $entryChecklistModel,
             'linkedBudget' => $linkedBudget,
-            'linkableBudgets' => $this->resolveLinkableBudgets($linkedBudget),
+            'canLinkBudgets' => $canLinkBudgets,
+            'linkableBudgetSearchUrl' => route('orders.linkable-budgets.search'),
         ]);
     }
 
     /**
-     * Lista enxuta de orçamentos avulsos aprovados que ainda podem gerar OS
-     * (status pendente_abertura_os). Alimenta o seletor "vincular orçamento" do
-     * formulário de OS (caminho B). Vazia quando já se está gerando a OS a
-     * partir de um orçamento específico (caminho A).
-     *
-     * @param  array<string, mixed>|null  $linkedBudget
-     * @return array<int, array<string, mixed>>
-     */
-    private function resolveLinkableBudgets(?array $linkedBudget): array
-    {
-        if ($linkedBudget !== null) {
-            return [];
-        }
-
-        try {
-            $result = $this->orcamentoService->paginate([
-                'status' => 'pendente_abertura_os',
-                'per_page' => 50,
-            ]);
-        } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
-            return [];
-        } catch (Throwable $exception) {
-            report($exception);
-
-            return [];
-        }
-
-        $items = is_array($result['items'] ?? null) ? $result['items'] : [];
-
-        return array_values(array_filter(array_map(static function (array $budget): array {
-            return [
-                'id' => (int) ($budget['id'] ?? 0),
-                'numero' => (string) ($budget['numero'] ?? ''),
-                'cliente_nome' => (string) ($budget['cliente_nome'] ?? ''),
-                'total_formatado' => (string) ($budget['total_formatado'] ?? ''),
-                'can_generate_os' => (bool) ($budget['can_generate_os'] ?? false),
-            ];
-        }, $items), static fn (array $budget): bool => $budget['id'] > 0 && $budget['can_generate_os']));
-    }
-
-    /**
      * Carrega o orçamento avulso aprovado que está sendo convertido em OS.
-     * Retorna null quando não há vínculo, o orçamento não existe ou não está
-     * num estado que permita gerar OS (pendente de OS / aprovado sem OS).
+     * O endpoint dedicado já garante tipo, status e ausência de OS.
      *
      * @return array<string, mixed>|null
      */
@@ -313,27 +292,74 @@ class OrderController extends DesktopController
             return null;
         }
 
-        try {
-            $budget = $this->orcamentoService->find($budgetId);
-        } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
-            return null;
-        } catch (Throwable $exception) {
-            report($exception);
-
-            return null;
-        }
+        $budget = $this->orcamentoService->findLinkableForOrder($budgetId);
 
         if (! is_array($budget) || $budget === []) {
             return null;
         }
 
-        $alreadyLinked = (int) data_get($budget, 'os.id', 0) > 0;
-        $status = (string) data_get($budget, 'status', '');
-        if ($alreadyLinked || ! in_array($status, ['pendente_abertura_os', 'aprovado'], true)) {
-            return null;
+        return $budget;
+    }
+
+    public function searchLinkableBudgets(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:30'],
+        ]);
+        $page = max(1, (int) ($validated['page'] ?? 1));
+        $perPage = max(1, min(30, (int) ($validated['per_page'] ?? 15)));
+
+        try {
+            $result = $this->orcamentoService->linkableForOrder([
+                'q' => trim((string) ($validated['q'] ?? '')),
+                'page' => $page,
+                'per_page' => $perPage,
+            ]);
+        } catch (ApiAuthenticationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 401);
+        } catch (ApiAuthorizationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 403);
+        } catch (ApiRequestException $exception) {
+            return $this->jsonFailure(
+                $exception->getMessage(),
+                $exception->statusCode() > 0 ? $exception->statusCode() : 422,
+                $exception->details()
+            );
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->jsonFailure('Não foi possível pesquisar os orçamentos agora.', 500);
         }
 
-        return $budget;
+        $items = array_values(array_filter(array_map(static function (array $budget): array {
+            $id = (int) ($budget['id'] ?? 0);
+            $total = trim((string) ($budget['total_formatado'] ?? ''));
+            $approvedAt = trim((string) ($budget['aprovado_em'] ?? ''));
+            $parts = array_values(array_filter([
+                trim((string) ($budget['numero'] ?? '')) ?: ($id > 0 ? 'Orçamento #'.$id : ''),
+                trim((string) ($budget['cliente_nome'] ?? '')),
+                trim((string) ($budget['equipamento_resumo'] ?? '')),
+                $total !== '' ? 'R$ '.$total : '',
+                $approvedAt !== '' ? 'Aprovado em '.$approvedAt : '',
+            ], static fn (string $value): bool => $value !== ''));
+
+            return [
+                'id' => $id,
+                'text' => implode(' · ', $parts),
+                'budget' => $budget,
+            ];
+        }, (array) ($result['items'] ?? [])), static fn (array $item): bool => $item['id'] > 0));
+        $pagination = is_array($result['pagination'] ?? null) ? $result['pagination'] : [];
+        $currentPage = (int) ($pagination['current_page'] ?? $page);
+        $lastPage = (int) ($pagination['last_page'] ?? $currentPage);
+
+        return response()->json([
+            'success' => true,
+            'results' => $items,
+            'pagination' => ['more' => $currentPage < $lastPage],
+        ]);
     }
 
     /**
@@ -733,7 +759,7 @@ class OrderController extends DesktopController
             'fotos' => ['nullable', 'array', 'max:4'],
             'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             // Fotos do equipamento novo capturado (criação diferida na abertura de OS).
-            'novo_equipamento_fotos' => ['nullable', 'array', 'max:4'],
+            'novo_equipamento_fotos' => ['nullable', 'required_with:novo_equipamento', 'array', 'min:1', 'max:4'],
             'novo_equipamento_fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
         ], [], [
             'cliente_id' => 'cliente',
@@ -744,7 +770,14 @@ class OrderController extends DesktopController
             'data_previsao' => 'data de previsão',
             'acessorios' => 'acessórios recebidos',
             'observacoes_internas' => 'observações internas',
+            'novo_equipamento_fotos' => 'foto do novo equipamento',
         ]);
+
+        if ((int) ($validated['orcamento_id'] ?? 0) > 0
+            && ! DesktopSession::can('orcamentos', 'converter_os')
+        ) {
+            abort(403, 'Você não tem permissão para converter orçamento em OS.');
+        }
 
         $payload = array_filter([
             'idempotency_key' => (string) $validated['idempotency_key'],

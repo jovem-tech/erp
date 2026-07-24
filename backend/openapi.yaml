@@ -1,7 +1,7 @@
 ﻿openapi: 3.0.3
 info:
   title: Sistema ERP API
-  version: 1.5.0
+  version: 1.6.1
   description: |
     Contrato técnico oficial da API v1 do backend central do Sistema ERP.
 
@@ -329,7 +329,7 @@ components:
 
     BudgetUpsertInput:
       type: object
-      additionalProperties: true
+      additionalProperties: false
       properties:
         numero:
           type: string
@@ -347,6 +347,23 @@ components:
         status:
           type: string
           nullable: true
+          description: |
+            Estado operacional editável. `pendente_abertura_os` e `convertido`
+            são estados protegidos, atribuídos exclusivamente pelos workflows
+            formais de aprovação e conversão.
+          enum:
+            - rascunho
+            - pendente_envio
+            - enviado
+            - aguardando_resposta
+            - aguardando_pacote
+            - pacote_aprovado
+            - pendente
+            - aprovado
+            - reenviar_orcamento
+            - rejeitado
+            - vencido
+            - cancelado
           example: rascunho
         origem:
           type: string
@@ -432,6 +449,96 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/BudgetItemUpsertInput"
+
+    LinkableBudgetSummary:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - numero
+        - cliente_nome
+        - equipamento_resumo
+        - total
+        - total_formatado
+      properties:
+        id:
+          type: integer
+          minimum: 1
+        numero:
+          type: string
+        cliente_nome:
+          type: string
+        equipamento_resumo:
+          type: string
+        total:
+          type: number
+          format: float
+          minimum: 0
+        total_formatado:
+          type: string
+          example: "1.250,00"
+        aprovado_em:
+          type: string
+          nullable: true
+          description: Data formatada para apresentação no desktop.
+          example: "23/07/2026 18:30"
+
+    LinkableBudgetDetail:
+      allOf:
+        - $ref: "#/components/schemas/LinkableBudgetSummary"
+        - type: object
+          additionalProperties: true
+          required:
+            - tipo_orcamento
+            - status
+          properties:
+            tipo_orcamento:
+              type: string
+              enum:
+                - previo
+            status:
+              type: string
+              enum:
+                - pendente_abertura_os
+            relato_cliente:
+              type: string
+            cliente_nome_avulso:
+              type: string
+            telefone_contato:
+              type: string
+            email_contato:
+              type: string
+            envolve_equipamento:
+              type: boolean
+            cliente:
+              type: object
+              nullable: true
+              additionalProperties: false
+              required:
+                - id
+                - nome_razao
+              properties:
+                id:
+                  type: integer
+                  minimum: 1
+                nome_razao:
+                  type: string
+              description: |
+                Referência mínima ao cliente cadastrado. CPF/CNPJ e contatos
+                não são expostos por este endpoint.
+            equipamento:
+              type: object
+              nullable: true
+              additionalProperties: false
+              required:
+                - id
+              properties:
+                id:
+                  type: integer
+                  minimum: 1
+              description: |
+                Referência mínima ao equipamento cadastrado. Número de série e
+                IMEI não são expostos por este endpoint.
 
     ApiSuccess:
       type: object
@@ -596,21 +703,21 @@ components:
         user:
           $ref: "#/components/schemas/User"
 
-      ForgotPasswordRequest:
-        type: object
-        required:
-          - email
-        properties:
-          email:
-            type: string
-            format: email
-            maxLength: 255
-          frontend:
-            type: string
-            description: Canal aprovado para montar o link de redefinição. O backend resolve a URL por configuração, sem aceitar URL livre do cliente, e exige um canal real de e-mail para o envio.
-            enum:
-              - desktop
-            default: desktop
+    ForgotPasswordRequest:
+      type: object
+      required:
+        - email
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+        frontend:
+          type: string
+          description: Canal aprovado para montar o link de redefinição. O backend resolve a URL por configuração, sem aceitar URL livre do cliente, e exige um canal real de e-mail para o envio.
+          enum:
+            - desktop
+          default: desktop
 
     ResetPasswordRequest:
       type: object
@@ -1110,12 +1217,79 @@ components:
     UpsertOrderRequest:
       type: object
       properties:
+        orcamento_id:
+          type: integer
+          minimum: 1
+          nullable: true
+          description: |
+            Orçamento avulso aprovado a converter atomicamente. Quando
+            informado, exige simultaneamente `os:criar` e
+            `orcamentos:converter_os`; somente orçamento `previo`, em
+            `pendente_abertura_os` e sem OS vinculada é aceito.
         cliente_id:
           type: integer
           minimum: 1
+          nullable: true
+          description: Obrigatório na criação quando `novo_cliente` não for informado.
         equipamento_id:
           type: integer
           minimum: 1
+          nullable: true
+          description: Obrigatório na criação quando `novo_equipamento` não for informado.
+        novo_cliente:
+          type: object
+          nullable: true
+          description: Cadastro diferido; só é persistido na transação que cria a OS.
+          required:
+            - nome_razao
+            - telefone1
+          properties:
+            nome_razao:
+              type: string
+              maxLength: 100
+            telefone1:
+              type: string
+              maxLength: 20
+            email:
+              type: string
+              format: email
+              maxLength: 100
+              nullable: true
+        novo_equipamento:
+          type: object
+          nullable: true
+          description: Cadastro diferido; só é persistido na transação que cria a OS.
+          required:
+            - tipo_id
+          properties:
+            tipo_id:
+              type: integer
+              minimum: 1
+            marca_id:
+              type: integer
+              minimum: 1
+              nullable: true
+            modelo_id:
+              type: integer
+              minimum: 1
+              nullable: true
+            numero_serie_visual:
+              type: string
+              nullable: true
+            foto_principal_index:
+              type: integer
+              minimum: 0
+              maximum: 3
+              default: 0
+        novo_equipamento_fotos:
+          type: array
+          nullable: true
+          minItems: 1
+          maxItems: 4
+          description: Obrigatório quando `novo_equipamento` for informado; enviado somente no POST final da OS.
+          items:
+            type: string
+            format: binary
         tecnico_id:
           type: integer
           minimum: 1
@@ -1399,6 +1573,24 @@ components:
           nullable: true
         status_cadastro:
           type: string
+
+    BudgetClientOption:
+      type: object
+      required:
+        - id
+        - nome_razao
+      properties:
+        id:
+          type: integer
+        nome_razao:
+          type: string
+        telefone1:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
 
     ClientUpsertRequest:
       type: object
@@ -5512,6 +5704,129 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /orcamentos/clientes:
+    get:
+      tags:
+        - Orçamentos
+      summary: Pesquisar clientes disponíveis para criação ou edição de orçamento.
+      description: |
+        Catálogo mínimo e paginado do Select2 de clientes. Exige
+        `orcamentos:visualizar` e pelo menos uma das capacidades
+        `orcamentos:criar` ou `orcamentos:editar`; não concede acesso ao módulo
+        completo de clientes nem retorna CPF/CNPJ.
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - name: per_page
+          in: query
+          description: Itens por página, limitado a 20 neste endpoint.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 15
+        - $ref: "#/components/parameters/QParam"
+      responses:
+        "200":
+          description: Página de opções mínimas de clientes.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          clients:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/BudgetClientOption"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /orcamentos/vinculaveis-os:
+    get:
+      tags:
+        - Orçamentos
+      summary: Pesquisar orçamentos aptos a gerar uma OS.
+      description: |
+        Catálogo mínimo, paginado e protegido pela permissão
+        `orcamentos:converter_os` em conjunto com `os:criar`. Retorna somente
+        orçamentos do tipo `previo`, no estado `pendente_abertura_os` e sem
+        `os_id`.
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - name: per_page
+          in: query
+          description: Itens por página, limitado a 30 neste endpoint.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 30
+            default: 15
+        - $ref: "#/components/parameters/QParam"
+      responses:
+        "200":
+          description: Lista paginada de candidatos canônicos.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          budgets:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/LinkableBudgetSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /orcamentos/vinculaveis-os/{budget}:
+    get:
+      tags:
+        - Orçamentos
+      summary: Obter contexto seguro de um orçamento apto a gerar OS.
+      description: |
+        Revalida o estado canônico no momento da leitura. A criação da OS faz
+        uma segunda validação transacional com bloqueio pessimista. Exige
+        `orcamentos:converter_os` e `os:criar`.
+      parameters:
+        - $ref: "#/components/parameters/BudgetId"
+      responses:
+        "200":
+          description: Contexto mínimo para pré-preenchimento da Nova OS.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          budget:
+                            $ref: "#/components/schemas/LinkableBudgetDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /orcamentos/{budget}:
     get:
       tags:
@@ -5549,6 +5864,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationError"
     patch:
@@ -5572,6 +5889,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
         "422":
           $ref: "#/components/responses/ValidationError"
     delete:
@@ -5589,6 +5908,8 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /orcamentos/{budget}/send-approval:
     post:

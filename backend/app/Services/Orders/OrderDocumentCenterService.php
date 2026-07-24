@@ -3,6 +3,7 @@
 namespace App\Services\Orders;
 
 use App\Jobs\ProcessOrderDocumentSendJob;
+use App\Models\Budget;
 use App\Models\Files\ManagedFile;
 use App\Models\Order;
 use App\Models\OrderDocument;
@@ -14,12 +15,14 @@ use App\Models\OrderStatus;
 use App\Models\PdfTemplate;
 use App\Models\PdfTemplateVersao;
 use App\Models\User;
+use App\Models\UserSignature;
 use App\Models\WhatsappTemplate;
 use App\Services\Budgets\BudgetPdfService;
 use App\Services\Files\PdfThumbnailService;
 use App\Services\Integrations\IntegrationSettingsService;
 use App\Services\Pdf\PdfGenerationService;
 use App\Services\Pdf\PdfTemplateRegistry;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Crypt;
@@ -98,8 +101,7 @@ class OrderDocumentCenterService
         private readonly PdfGenerationService $pdfGenerationService,
         private readonly PdfTemplateRegistry $pdfTemplateRegistry,
         private readonly PdfThumbnailService $pdfThumbnailService
-    ) {
-    }
+    ) {}
 
     /**
      * Último resultado do motor central por tipo (layout A4) — alimenta os
@@ -144,7 +146,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param array<int, string> $types
+     * @param  array<int, string>  $types
      * @return array<string, mixed>
      */
     public function generate(int $orderId, User $actor, array $types, array $options = []): array
@@ -175,6 +177,7 @@ class OrderDocumentCenterService
                     'blocked' => true,
                     'message' => (string) ($precondition['reason'] ?? 'Documento sem pré-requisitos suficientes para geração.'),
                 ];
+
                 continue;
             }
 
@@ -264,7 +267,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param array<int, int> $documentIds
+     * @param  array<int, int>  $documentIds
      * @return array<string, mixed>
      */
     public function queueSend(int $orderId, User $actor, array $documentIds, array $payload = []): array
@@ -464,7 +467,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param array<int, int> $documentIds
+     * @param  array<int, int>  $documentIds
      * @return array<string, mixed>
      */
     public function createShareLink(int $orderId, User $actor, array $documentIds, array $payload = []): array
@@ -535,7 +538,7 @@ class OrderDocumentCenterService
             'result' => 'ok',
             'link' => [
                 'id' => (int) $link->id,
-                'url' => url('/documentos/compartilhados/' . $rawToken),
+                'url' => url('/documentos/compartilhados/'.$rawToken),
                 'expires_at' => optional($link->expira_em)->toIso8601String(),
                 'format' => $format,
             ],
@@ -677,7 +680,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param array<int, int> $documentIds
+     * @param  array<int, int>  $documentIds
      * @return array<string, mixed>
      */
     public function buildZip(int $orderId, User $actor, array $documentIds, string $format = 'a4'): array
@@ -697,8 +700,8 @@ class OrderDocumentCenterService
             ];
         }
 
-        $zipName = 'documentos-cliente-' . $this->slug((string) ($order->numero_os ?? ('os-' . $order->id))) . '-' . now()->format('YmdHis') . '.zip';
-        $relativePath = 'private/os_documentos/' . (int) $order->id . '/zip/' . $zipName;
+        $zipName = 'documentos-cliente-'.$this->slug((string) ($order->numero_os ?? ('os-'.$order->id))).'-'.now()->format('YmdHis').'.zip';
+        $relativePath = 'private/os_documentos/'.(int) $order->id.'/zip/'.$zipName;
         $absolutePath = Storage::disk('local')->path($relativePath);
         $directory = dirname($absolutePath);
 
@@ -706,7 +709,7 @@ class OrderDocumentCenterService
             mkdir($directory, 0775, true);
         }
 
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         if ($zip->open($absolutePath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
             return [
                 'result' => 'error',
@@ -741,7 +744,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param array<int, int> $documentIds
+     * @param  array<int, int>  $documentIds
      * @return array<string, mixed>
      */
     public function printBundle(int $orderId, User $actor, array $documentIds, string $format = 'a4'): array
@@ -838,7 +841,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param array<string, mixed> $engineResult
+     * @param  array<string, mixed>  $engineResult
      */
     public function syncAfterBudgetDispatch(
         int $orderId,
@@ -847,8 +850,7 @@ class OrderDocumentCenterService
         User $actor,
         ?string $approvalLink = null,
         array $engineResult = []
-    ): void
-    {
+    ): void {
         try {
             $order = Order::query()->with(['client', 'equipment', 'equipment.type', 'equipment.brand', 'equipment.model', 'technician'])->find($orderId);
             if (! $order instanceof Order) {
@@ -864,28 +866,39 @@ class OrderDocumentCenterService
                 return;
             }
 
-            $thermalBytes = $this->renderGenericPdfBytes($order, 'orcamento', '80mm', [
-                'budget_id' => $budgetId,
-                'approval_link' => $approvalLink,
-            ]);
+            $documentFiles = [
+                'a4' => [
+                    'bytes' => $bytes,
+                    'mime' => 'application/pdf',
+                ],
+            ];
+
+            // O PDF A4 já foi gerado e enviado ao cliente. A indisponibilidade
+            // de um template térmico opcional não pode impedir que essa versão
+            // canônica seja registrada no acervo da OS.
+            try {
+                $thermalBytes = $this->renderGenericPdfBytes($order, 'orcamento', '80mm', [
+                    'budget_id' => $budgetId,
+                    'approval_link' => $approvalLink,
+                ]);
+                if ($thermalBytes !== '') {
+                    $documentFiles['80mm'] = [
+                        'bytes' => $thermalBytes,
+                        'mime' => 'application/pdf',
+                    ];
+                }
+            } catch (Throwable $exception) {
+                report($exception);
+            }
 
             $this->persistDocumentVersion(
                 $order,
                 'orcamento',
-                [
-                    'a4' => [
-                        'bytes' => $bytes,
-                        'mime' => 'application/pdf',
-                    ],
-                    '80mm' => [
-                        'bytes' => $thermalBytes,
-                        'mime' => 'application/pdf',
-                    ],
-                ],
+                $documentFiles,
                 $actor,
                 [
                     'template_codigo' => 'os_orcamento',
-                    'idempotency_key' => 'budget:' . $budgetId . ':dispatch',
+                    'idempotency_key' => 'budget:'.$budgetId.':dispatch',
                     'metadata' => array_merge(
                         [
                             'budget_id' => $budgetId,
@@ -1006,7 +1019,7 @@ class OrderDocumentCenterService
             ];
         }
 
-        if (! class_exists(\App\Models\Budget::class)) {
+        if (! class_exists(Budget::class)) {
             return [
                 'type' => 'orcamento',
                 'ok' => false,
@@ -1014,9 +1027,9 @@ class OrderDocumentCenterService
             ];
         }
 
-        /** @var class-string<\Illuminate\Database\Eloquent\Model> $budgetClass */
-        $budgetClass = \App\Models\Budget::class;
-        /** @var \Illuminate\Database\Eloquent\Model|null $budget */
+        /** @var class-string<Model> $budgetClass */
+        $budgetClass = Budget::class;
+        /** @var Model|null $budget */
         $budget = $budgetClass::query()->find((int) $budgetRow->id);
 
         if ($budget === null) {
@@ -1028,7 +1041,7 @@ class OrderDocumentCenterService
         }
 
         $approvalLink = trim((string) ($budgetRow->token_publico ?? '')) !== ''
-            ? url('/orcamento/' . rawurlencode((string) $budgetRow->token_publico))
+            ? url('/orcamento/'.rawurlencode((string) $budgetRow->token_publico))
             : '';
         $pdf = $this->budgetPdfService->generate($budget, $approvalLink, array_merge($options, ['actor' => $actor]));
 
@@ -1142,7 +1155,7 @@ class OrderDocumentCenterService
         }
 
         $thermalBytes = $this->renderGenericPdfBytes($order, $type, '80mm');
-        $relativePath = 'private/os_documentos/' . (int) $order->id . '/' . $type . '_' . $this->slug((string) ($order->numero_os ?? ('os-' . $order->id))) . '_v' . (int) ($document->versao ?? 1) . '_80mm.pdf';
+        $relativePath = 'private/os_documentos/'.(int) $order->id.'/'.$type.'_'.$this->slug((string) ($order->numero_os ?? ('os-'.$order->id))).'_v'.(int) ($document->versao ?? 1).'_80mm.pdf';
 
         Storage::disk('local')->put($relativePath, $thermalBytes);
 
@@ -1159,8 +1172,8 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param array<string, array<string, string>> $files
-     * @param array<string, mixed> $options
+     * @param  array<string, array<string, string>>  $files
+     * @param  array<string, mixed>  $options
      * @return array<string, mixed>
      */
     private function persistDocumentVersion(Order $order, string $type, array $files, User $actor, array $options = []): array
@@ -1194,7 +1207,7 @@ class OrderDocumentCenterService
             }
         }
 
-        $baseSlug = $this->slug((string) ($order->numero_os ?? ('os-' . $order->id)));
+        $baseSlug = $this->slug((string) ($order->numero_os ?? ('os-'.$order->id)));
 
         try {
             /** @var array{document: OrderDocument} $persisted */
@@ -1216,7 +1229,7 @@ class OrderDocumentCenterService
                         continue;
                     }
 
-                    $relativePath = 'private/os_documentos/' . (int) $order->id . '/' . $type . '_' . $baseSlug . '_v' . $version . '_' . $normalizedFormat . '.pdf';
+                    $relativePath = 'private/os_documentos/'.(int) $order->id.'/'.$type.'_'.$baseSlug.'_v'.$version.'_'.$normalizedFormat.'.pdf';
                     Storage::disk('local')->put($relativePath, $bytes);
 
                     $preparedFiles[$normalizedFormat] = [
@@ -1351,7 +1364,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param Collection<int, OrderDocument> $documents
+     * @param  Collection<int, OrderDocument>  $documents
      * @return array<int, array<string, mixed>>
      */
     private function buildCatalog(Order $order, Collection $documents): array
@@ -1447,7 +1460,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param array<int, int> $documentIds
+     * @param  array<int, int>  $documentIds
      * @return Collection<int, OrderDocument>
      */
     private function resolveSelectedDocuments(Order $order, array $documentIds): Collection
@@ -1662,7 +1675,7 @@ class OrderDocumentCenterService
             $link->forceFill([
                 'acessos_count' => (int) ($link->acessos_count ?? 0) + 1,
                 'ultimo_acesso_em' => now(),
-                'ultimo_acesso_ip_hash' => $ip !== null && $ip !== '' ? hash('sha256', $ip . '|' . (string) config('app.key')) : $link->ultimo_acesso_ip_hash,
+                'ultimo_acesso_ip_hash' => $ip !== null && $ip !== '' ? hash('sha256', $ip.'|'.(string) config('app.key')) : $link->ultimo_acesso_ip_hash,
                 'updated_at' => now(),
             ])->save();
         } catch (Throwable $exception) {
@@ -1686,7 +1699,7 @@ class OrderDocumentCenterService
             $files[] = [
                 'format' => $format,
                 'label' => $format === '80mm' ? '80mm' : 'A4',
-                'url' => url('/documentos/compartilhados/' . $token . '/arquivos/' . (int) $document->id . '/' . $format),
+                'url' => url('/documentos/compartilhados/'.$token.'/arquivos/'.(int) $document->id.'/'.$format),
             ];
         }
 
@@ -1711,7 +1724,7 @@ class OrderDocumentCenterService
      * Delegação exclusiva ao motor central. Abertura e orçamento também usam
      * este caminho para produzir a variação 80mm do mesmo template publicado.
      *
-     * @param array<string, mixed> $options
+     * @param  array<string, mixed>  $options
      */
     private function renderViaPdfEngine(Order $order, string $type, string $layout, array $options = []): ?string
     {
@@ -1732,8 +1745,8 @@ class OrderDocumentCenterService
                 $budgetId = (int) ($this->latestBudgetRow((int) $order->id)?->id ?? 0);
             }
 
-            $budget = $budgetId > 0 ? \App\Models\Budget::query()->find($budgetId) : null;
-            if (! $budget instanceof \App\Models\Budget) {
+            $budget = $budgetId > 0 ? Budget::query()->find($budgetId) : null;
+            if (! $budget instanceof Budget) {
                 return null;
             }
 
@@ -1748,7 +1761,7 @@ class OrderDocumentCenterService
         if (($options['signature_signer'] ?? null) instanceof User) {
             $generationOptions['signature_signer'] = $options['signature_signer'];
         }
-        if (($options['responsible_signature'] ?? null) instanceof \App\Models\UserSignature) {
+        if (($options['responsible_signature'] ?? null) instanceof UserSignature) {
             $generationOptions['responsible_signature'] = $options['responsible_signature'];
         }
         if (isset($options['signature_method'])) {
@@ -1784,7 +1797,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param Collection<int, OrderDocument> $documents
+     * @param  Collection<int, OrderDocument>  $documents
      */
     private function resolveSuggestedTemplateCode(Collection $documents): string
     {
@@ -1794,8 +1807,8 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param Collection<int, OrderDocument> $documents
-     * @param array<string, mixed> $payload
+     * @param  Collection<int, OrderDocument>  $documents
+     * @param  array<string, mixed>  $payload
      */
     private function resolveRequestedTemplateCode(Collection $documents, array $payload): string
     {
@@ -1815,7 +1828,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param Collection<int, OrderDocument> $documents
+     * @param  Collection<int, OrderDocument>  $documents
      * @return array<string, mixed>
      */
     private function buildDispatchDefaults(Order $order, Collection $documents): array
@@ -1852,7 +1865,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param Collection<int, OrderDocument> $documents
+     * @param  Collection<int, OrderDocument>  $documents
      */
     private function buildDefaultOutboundMessage(Order $order, Collection $documents, string $templateCode): string
     {
@@ -1863,7 +1876,7 @@ class OrderDocumentCenterService
 
         $labels = $documents->map(fn (OrderDocument $document): string => $this->documentTypeLabel((string) $document->tipo_documento))->values()->all();
 
-        return 'Olá! Seguem os documentos da sua OS ' . (string) ($order->numero_os ?? '') . ': ' . implode(', ', $labels) . '.';
+        return 'Olá! Seguem os documentos da sua OS '.(string) ($order->numero_os ?? '').': '.implode(', ', $labels).'.';
     }
 
     private function resolveWhatsappTemplateBody(string $templateCode): string
@@ -1990,7 +2003,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param array<int, array<string, string>> $files
+     * @param  array<int, array<string, string>>  $files
      * @return array<string, mixed>
      */
     private function dispatchWhatsapp(string $phone, string $message, array $files): array
@@ -2041,7 +2054,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param array<int, array<string, string>> $files
+     * @param  array<int, array<string, string>>  $files
      * @return array<string, mixed>
      */
     private function dispatchEmail(string $email, string $subject, string $message, array $files): array
@@ -2069,7 +2082,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param Collection<int, OrderDocument> $documents
+     * @param  Collection<int, OrderDocument>  $documents
      */
     private function buildEmailSubject(Order $order, Collection $documents): string
     {
@@ -2077,11 +2090,11 @@ class OrderDocumentCenterService
             ? $this->documentTypeLabel((string) ($documents->first()?->tipo_documento ?? 'documento'))
             : 'Documentos da OS';
 
-        return $label . ' - ' . (string) ($order->numero_os ?? ('OS #' . $order->id));
+        return $label.' - '.(string) ($order->numero_os ?? ('OS #'.$order->id));
     }
 
     /**
-     * @param Collection<int, OrderDocument> $documents
+     * @param  Collection<int, OrderDocument>  $documents
      * @return array<int, array<string, string>>
      */
     private function buildSendableFiles(Order $order, Collection $documents, string $format): array
@@ -2106,7 +2119,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param array<int, array<string, string>> $files
+     * @param  array<int, array<string, string>>  $files
      * @return array<string, mixed>
      */
     private function validateBatchFiles(array $files): array
@@ -2210,7 +2223,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param iterable<OrderDocument> $documents
+     * @param  iterable<OrderDocument>  $documents
      * @return array<int, string>
      */
     private function normalizeDocumentTypes(iterable $documents): array
@@ -2306,7 +2319,7 @@ class OrderDocumentCenterService
             $availableFormats[$format] = [
                 'available' => ($resolved['result'] ?? 'error') === 'ok',
                 'url' => ($resolved['result'] ?? 'error') === 'ok'
-                    ? '/api/v1/orders/' . (int) $order->id . '/documents/' . (int) $document->id . '/files/' . $format
+                    ? '/api/v1/orders/'.(int) $order->id.'/documents/'.(int) $document->id.'/files/'.$format
                     : null,
             ];
         }
@@ -2347,10 +2360,10 @@ class OrderDocumentCenterService
 
         if ($channel === 'email') {
             [$local, $domain] = array_pad(explode('@', $value, 2), 2, '');
-            $local = mb_substr($local, 0, 2) . str_repeat('*', max(1, mb_strlen($local) - 2));
+            $local = mb_substr($local, 0, 2).str_repeat('*', max(1, mb_strlen($local) - 2));
             $domain = preg_replace('/(^.).*?(\.[^.]+$)/', '$1***$2', $domain) ?? '***';
 
-            return trim($local . '@' . $domain, '@');
+            return trim($local.'@'.$domain, '@');
         }
 
         $digits = preg_replace('/\D+/', '', $value) ?? '';
@@ -2358,7 +2371,7 @@ class OrderDocumentCenterService
             return '***';
         }
 
-        return str_repeat('*', max(0, strlen($digits) - 4)) . substr($digits, -4);
+        return str_repeat('*', max(0, strlen($digits) - 4)).substr($digits, -4);
     }
 
     private function sanitizeOperationalError(string $message): string
@@ -2385,7 +2398,7 @@ class OrderDocumentCenterService
 
     private function money(float $value): string
     {
-        return 'R$ ' . number_format($value, 2, ',', '.');
+        return 'R$ '.number_format($value, 2, ',', '.');
     }
 
     private function escape(mixed $value): string
@@ -2401,7 +2414,7 @@ class OrderDocumentCenterService
     }
 
     /**
-     * @param array<string, mixed> $metadata
+     * @param  array<string, mixed>  $metadata
      */
     private function recordOrderEvent(
         int $orderId,
@@ -2417,7 +2430,7 @@ class OrderDocumentCenterService
         }
 
         try {
-            $serviceClass = \App\Services\Orders\OrderEventService::class;
+            $serviceClass = OrderEventService::class;
             if (! app()->bound($serviceClass)) {
                 return;
             }

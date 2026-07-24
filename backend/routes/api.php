@@ -126,6 +126,13 @@ Route::prefix('v1')->group(function (): void {
         Route::delete('notifications/read', [NotificationController::class, 'clearRead'])->name('api.v1.notifications.clear_read');
 
         Route::get('orcamentos/form-data', [BudgetController::class, 'formData'])->name('api.v1.orcamentos.form_data');
+        Route::get('orcamentos/clientes', [BudgetController::class, 'clientOptions'])
+            ->name('api.v1.orcamentos.clients.index');
+        Route::get('orcamentos/vinculaveis-os', [BudgetController::class, 'linkableForOrder'])
+            ->name('api.v1.orcamentos.linkable_orders.index');
+        Route::get('orcamentos/vinculaveis-os/{budget}', [BudgetController::class, 'showLinkableForOrder'])
+            ->whereNumber('budget')
+            ->name('api.v1.orcamentos.linkable_orders.show');
         Route::get('orcamentos', [BudgetController::class, 'index'])->name('api.v1.orcamentos.index');
         Route::post('orcamentos', [BudgetController::class, 'store'])->name('api.v1.orcamentos.store');
         Route::get('orcamentos/{budget}', [BudgetController::class, 'show'])->name('api.v1.orcamentos.show');

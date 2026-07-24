@@ -62,6 +62,7 @@ class RbacAuthorizationService
         'quarentenar',
         'restaurar',
         'administrar',
+        'converter_os',
     ];
 
     /**

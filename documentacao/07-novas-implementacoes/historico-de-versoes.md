@@ -3,6 +3,14 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.12.1.0 - 2026-07-24
+
+- botão principal do cadastro de orçamento novo (`/orcamentos/novo`) vira "Próximo" enquanto qualquer aba tiver campo obrigatório pendente; só volta a ser "Salvar orçamento" com as 4 abas completas;
+- cada aba ganha um indicador visual (ponto âmbar) quando tem pendência, sem bloquear o clique direto na aba — só o botão principal é travado;
+- obrigatório por aba: Cliente (cadastrado ou nome eventual); Equipamento (se "envolve equipamento" estiver marcado: cadastrado ou tipo+marca+modelo avulso); Financeiro (ao menos 1 item com descrição e total > 0, e total final > 0); Operacional não tem campo obrigatório;
+- só se aplica ao cadastro novo — orçamentos em edição continuam podendo ser salvos parcialmente, como antes;
+- nota: `2026-07-24-trava-campos-obrigatorios-orcamento.md`.
+
 ## v5.5.0.0 - 2026-07-21
 
 - formas de pagamento deixam de ser lista fixa no código e viram cadastro gerenciável em `Configurações Financeiras > Formas de Pagamento`;

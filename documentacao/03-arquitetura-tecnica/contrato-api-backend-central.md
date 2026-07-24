@@ -566,3 +566,36 @@ Uma repetição equivalente devolve a OS original com `idempotent_replay=true`.
 Reutilização da chave com dados diferentes devolve `409
 ORDER_IDEMPOTENCY_CONFLICT`. Falhas posteriores ao commit são retornadas em
 `warnings` e não transformam uma OS persistida em erro genérico.
+
+## Conversão de orçamento avulso em OS
+
+- `GET /orcamentos/clientes` entrega o catálogo mínimo e paginado usado no
+  Select2 da criação/edição de orçamento;
+- a rota exige `orcamentos:visualizar` e uma das capacidades
+  `orcamentos:criar` ou `orcamentos:editar`, sem exigir ou conceder acesso ao
+  módulo completo de clientes;
+- a resposta contém somente `id`, nome, telefone principal e e-mail; CPF/CNPJ
+  pode participar da pesquisa no backend, mas não é devolvido ao navegador;
+- `per_page` é limitado a 20 e `q` a 100 caracteres para impedir consultas e
+  respostas sem limite;
+- `GET /orcamentos/vinculaveis-os` pesquisa candidatos canônicos com paginação
+  máxima de 30 registros;
+- `GET /orcamentos/vinculaveis-os/{budget}` retorna o contexto mínimo de um
+  candidato para pré-preenchimento;
+- ambos exigem `orcamentos:converter_os` e `os:criar`;
+- `POST /orders` com `orcamento_id` exige `os:criar` e
+  `orcamentos:converter_os`;
+- somente orçamento `previo`, em `pendente_abertura_os`, sem OS e compatível
+  com cliente/equipamento pode ser consumido;
+- criação da OS e conversão do orçamento acontecem na mesma transação, com
+  bloqueio pessimista do orçamento;
+- orçamento inexistente retorna `404`, conflito de estado ou conversão repetida
+  retorna `409`, incompatibilidade de vínculo retorna `422` e falta de
+  autorização retorna `403`;
+- `pendente_abertura_os`, `convertido`, autoria, tokens públicos e timestamps de
+  decisão não são aceitos pelas rotas genéricas de criação/edição de orçamento;
+- orçamento convertido é imutável nas rotas genéricas de atualização e
+  exclusão.
+
+Detalhes operacionais e de segurança:
+`documentacao/07-novas-implementacoes/2026-07-23-hardening-vinculo-orcamento-os.md`.

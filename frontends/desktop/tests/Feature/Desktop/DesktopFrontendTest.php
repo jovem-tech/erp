@@ -949,7 +949,7 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('data-thumbnail-url=', false)
             ->assertSee('data-file-preview-trigger', false)
             ->assertSee('data-preview-kind="pdf"', false)
-            ->assertSee('data-preview-url="' . route('orders.documents.files.show', ['order' => 501, 'document' => 9001, 'format' => 'a4']) . '"', false)
+            ->assertSee('data-preview-url="'.route('orders.documents.files.show', ['order' => 501, 'document' => 9001, 'format' => 'a4']).'"', false)
             ->assertSee('data-preview-file-name="Comprovante de abertura - v1.pdf"', false)
             ->assertSee('data-file-preview-modal', false)
             ->assertSee('assets/css/file-preview-modal.css', false)
@@ -1279,6 +1279,7 @@ class DesktopFrontendTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('assets/js/orcamentos-form.js', false)
+            ->assertSee(route('orcamentos.clients.search'), false)
             ->assertSee('data-budget-item-reference', false)
             ->assertSee('desktop-grid-four', false)
             ->assertSee('budget-summary-card', false)
@@ -1305,6 +1306,72 @@ class DesktopFrontendTest extends TestCase
             ->assertDontSee('data-select2="false"', false);
 
         Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_client_search_proxies_paginated_minimal_results_for_select2(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orcamentos/clientes*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'clients' => [
+                        [
+                            'id' => 901,
+                            'nome_razao' => 'Cliente Remoto',
+                            'telefone1' => '(11) 99999-0000',
+                            'email' => 'cliente.remoto@example.com',
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [
+                    'pagination' => [
+                        'current_page' => 2,
+                        'per_page' => 15,
+                        'total' => 31,
+                        'last_page' => 3,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'orcamentos' => ['visualizar', 'criar'],
+            ]))
+            ->getJson('/orcamentos/clientes/buscar?q=Cliente&page=2&per_page=15');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('results.0.id', 901)
+            ->assertJsonPath('results.0.text', 'Cliente Remoto - (11) 99999-0000')
+            ->assertJsonPath('results.0.email', 'cliente.remoto@example.com')
+            ->assertJsonPath('pagination.more', true);
+
+        Http::assertSent(static function ($request): bool {
+            return str_contains($request->url(), '/api/v1/orcamentos/clientes')
+                && str_contains($request->url(), 'q=Cliente')
+                && str_contains($request->url(), 'page=2')
+                && str_contains($request->url(), 'per_page=15');
+        });
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_client_select_uses_remote_pagination_and_preserves_draft_selection_metadata(): void
+    {
+        $script = file_get_contents(public_path('assets/js/orcamentos-form.js'));
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('const clientSearchUrl =', $script);
+        $this->assertStringContainsString('minimumInputLength: 0', $script);
+        $this->assertStringContainsString('per_page: 15', $script);
+        $this->assertStringContainsString('more: Boolean(payload?.pagination?.more)', $script);
+        $this->assertStringContainsString('selectedClient', $script);
+        $this->assertStringContainsString('rememberClientOption(option, restoredClient || {})', $script);
     }
 
     public function test_orcamentos_create_page_renders_review_modal_for_save_decision(): void
@@ -3692,7 +3759,115 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Relato do cliente')
             ->assertSee('Enviar PDF ao cliente')
             ->assertSee('name="idempotency_key"', false)
-            ->assertSee('data-order-create-idempotency-key', false);
+            ->assertSee('data-order-create-idempotency-key', false)
+            ->assertDontSee('Vincular orçamento avulso aprovado');
+    }
+
+    public function test_nova_os_budget_picker_requires_dedicated_permission_and_uses_remote_catalog(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/users*' => Http::response([
+                'status' => 'success',
+                'data' => ['users' => []],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response([
+                'status' => 'success',
+                'data' => ['items' => [], 'unread_count' => 0],
+                'error' => null,
+                'meta' => ['pagination' => []],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'os' => ['criar'],
+                'orcamentos' => ['converter_os'],
+            ]))
+            ->get('/os/criar');
+
+        $response
+            ->assertOk()
+            ->assertSee('Vincular orçamento avulso aprovado')
+            ->assertSee('data-order-link-budget', false)
+            ->assertSee(route('orders.linkable-budgets.search'), false)
+            ->assertSee('A troca pede confirmação');
+    }
+
+    public function test_nova_os_linkable_budget_search_returns_paginated_select2_contract(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orcamentos/vinculaveis-os*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'budgets' => [[
+                        'id' => 901,
+                        'numero' => 'ORC-2607-000901',
+                        'cliente_nome' => 'Cliente Seguro',
+                        'equipamento_resumo' => 'Notebook Dell',
+                        'total_formatado' => '1.234,56',
+                        'aprovado_em' => '23/07/2026 10:00',
+                    ]],
+                ],
+                'error' => null,
+                'meta' => [
+                    'pagination' => [
+                        'current_page' => 1,
+                        'last_page' => 2,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'os' => ['criar'],
+                'orcamentos' => ['converter_os'],
+            ]))
+            ->getJson('/os/orcamentos-vinculaveis/buscar?q=Cliente&page=1&per_page=15');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('results.0.id', 901)
+            ->assertJsonPath(
+                'results.0.text',
+                'ORC-2607-000901 · Cliente Seguro · Notebook Dell · R$ 1.234,56 · Aprovado em 23/07/2026 10:00'
+            )
+            ->assertJsonPath('pagination.more', true);
+
+        Http::assertSent(static function ($request): bool {
+            return str_contains($request->url(), '/api/v1/orcamentos/vinculaveis-os')
+                && str_contains($request->url(), 'q=Cliente')
+                && str_contains($request->url(), 'page=1')
+                && str_contains($request->url(), 'per_page=15');
+        });
+    }
+
+    public function test_nova_os_rejects_budget_link_without_conversion_permission_before_api_call(): void
+    {
+        Http::preventStrayRequests();
+
+        $this
+            ->withSession($this->desktopSession([
+                'os' => ['criar'],
+            ]))
+            ->get('/os/criar?orcamento_id=901')
+            ->assertForbidden();
+
+        $this
+            ->withSession($this->desktopSession([
+                'os' => ['criar'],
+            ]))
+            ->post('/os', [
+                'idempotency_key' => '01312d1b-c1b3-4451-8d55-720ed3dc2722',
+                'cliente_id' => 11,
+                'equipamento_id' => 21,
+                'orcamento_id' => 901,
+                'relato_cliente' => 'Tentativa sem permissão de conversão.',
+            ])
+            ->assertForbidden();
     }
 
     public function test_nova_os_client_search_returns_compact_json_for_select2(): void
@@ -3805,6 +3980,45 @@ class DesktopFrontendTest extends TestCase
         });
     }
 
+    public function test_nova_os_submission_forwards_budget_when_conversion_permission_exists(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orders' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'order' => [
+                        'id' => 78,
+                        'numero_os' => 'OS0078',
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'os' => ['criar'],
+                'orcamentos' => ['converter_os'],
+            ]))
+            ->post('/os', [
+                'idempotency_key' => '4c9172e4-b4b9-42b4-8e09-22f5c949c734',
+                'cliente_id' => 11,
+                'equipamento_id' => 21,
+                'orcamento_id' => 901,
+                'relato_cliente' => 'Conversão autorizada do orçamento.',
+            ]);
+
+        $response
+            ->assertRedirect(route('orders.show', 78))
+            ->assertSessionHas('success');
+
+        Http::assertSent(static function ($request): bool {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/orders'
+                && (int) $request['orcamento_id'] === 901;
+        });
+    }
+
     public function test_nova_os_submission_with_photos_uses_multipart_without_json_content_type(): void
     {
         Http::fake([
@@ -3861,6 +4075,96 @@ class DesktopFrontendTest extends TestCase
                 && str_contains($body, 'frente.jpg')
                 && str_contains($body, 'verso.jpg');
         });
+    }
+
+    public function test_nova_os_submission_forwards_deferred_equipment_photo_only_on_final_save(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orders' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'order' => [
+                        'id' => 89,
+                        'numero_os' => 'OS0089',
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'os' => ['criar'],
+                'orcamentos' => ['converter_os'],
+            ]))
+            ->post('/os', [
+                'idempotency_key' => 'fa4fded1-9d7d-45ec-9f89-d7c420599568',
+                'orcamento_id' => 44,
+                'novo_cliente' => [
+                    'nome_razao' => 'Cliente Eventual',
+                    'telefone1' => '22999990001',
+                ],
+                'novo_equipamento' => [
+                    'tipo_id' => 1,
+                    'numero_serie_visual' => 'SN-EVENTUAL-44',
+                    'foto_principal_index' => 0,
+                ],
+                'novo_equipamento_fotos' => [
+                    UploadedFile::fake()->image('equipamento-eventual.jpg'),
+                ],
+                'relato_cliente' => 'Equipamento não liga após colisão.',
+                'prioridade' => 'normal',
+            ]);
+
+        $response
+            ->assertRedirect(route('orders.show', 89))
+            ->assertSessionHas('success');
+
+        Http::assertSent(static function ($request): bool {
+            $contentType = strtolower(implode(';', $request->header('Content-Type')));
+            $body = $request->body();
+
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/orders'
+                && str_contains($contentType, 'multipart/form-data')
+                && ! str_contains($contentType, 'application/json')
+                && str_contains($body, 'name="orcamento_id"')
+                && str_contains($body, "\r\n\r\n44\r\n")
+                && str_contains($body, 'name="novo_cliente[nome_razao]"')
+                && str_contains($body, 'Cliente Eventual')
+                && str_contains($body, 'name="novo_equipamento[tipo_id]"')
+                && str_contains($body, 'name="novo_equipamento_fotos[]"')
+                && str_contains($body, 'equipamento-eventual.jpg');
+        });
+    }
+
+    public function test_nova_os_submission_without_deferred_equipment_photo_never_calls_backend(): void
+    {
+        Http::preventStrayRequests();
+
+        $this
+            ->withSession($this->desktopSession([
+                'os' => ['criar'],
+                'orcamentos' => ['converter_os'],
+            ]))
+            ->from('/os/criar?orcamento_id=44')
+            ->post('/os', [
+                'idempotency_key' => '4a377da6-9e99-4b6a-a889-5a7931750280',
+                'orcamento_id' => 44,
+                'novo_cliente' => [
+                    'nome_razao' => 'Cliente Sem Foto',
+                    'telefone1' => '22999990002',
+                ],
+                'novo_equipamento' => [
+                    'tipo_id' => 1,
+                    'numero_serie_visual' => 'SN-SEM-FOTO',
+                ],
+                'relato_cliente' => 'Equipamento sem imagem obrigatória.',
+            ])
+            ->assertRedirect('/os/criar?orcamento_id=44')
+            ->assertSessionHasErrors('novo_equipamento_fotos');
+
+        Http::assertNothingSent();
     }
 
     public function test_client_detail_page_renders_related_orders_and_equipments(): void
@@ -5316,6 +5620,10 @@ class DesktopFrontendTest extends TestCase
         $this->assertStringContainsString('maxPhotoUploadBytes', $script);
         $this->assertStringContainsString('initAccessoryPresets', $script);
         $this->assertStringContainsString('accessoriesField', $script);
+        $this->assertStringContainsString('normalizeCapturedEquipmentPhoto', $script);
+        $this->assertStringContainsString('refreshPendingEquipmentPhotoPreview', $script);
+        $this->assertStringContainsString('data-novo-equipamento-fotos', $script);
+        $this->assertStringContainsString('Foto do equipamento pendente', $script);
     }
 
     public function test_orders_closure_receipt_validator_reads_account_from_current_row(): void

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\Api\V1\UpsertBudgetRequest;
+use App\Models\User;
 use App\Services\Auth\AdminCredentialVerifier;
 use App\Services\Budgets\BudgetApprovalService;
 use App\Services\Budgets\BudgetWorkflowService;
@@ -16,8 +17,7 @@ class BudgetController extends BaseApiController
         private readonly BudgetWorkflowService $budgetWorkflowService,
         private readonly BudgetApprovalService $budgetApprovalService,
         private readonly AdminCredentialVerifier $adminCredentialVerifier
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): JsonResponse
     {
@@ -56,6 +56,92 @@ class BudgetController extends BaseApiController
             ],
             request: $request
         );
+    }
+
+    public function clientOptions(Request $request): JsonResponse
+    {
+        $this->authorize('orcamentos:visualizar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+        if (! $user->can('orcamentos:criar') && ! $user->can('orcamentos:editar')) {
+            $this->authorize('orcamentos:criar');
+        }
+
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'search' => ['nullable', 'string', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:20'],
+        ]);
+        $paginator = $this->budgetWorkflowService->paginateClientOptions($filters);
+
+        return $this->success(
+            ['clients' => $paginator->items()],
+            meta: $this->paginationMeta($paginator),
+            request: $request
+        );
+    }
+
+    public function linkableForOrder(Request $request): JsonResponse
+    {
+        $this->authorize('os:criar');
+        $this->authorize('orcamentos:converter_os');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'search' => ['nullable', 'string', 'max:120'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:30'],
+        ]);
+        $result = $this->budgetWorkflowService->paginateLinkableForOrder($filters);
+
+        return $this->success(
+            ['budgets' => $result['paginator']->items()],
+            meta: $this->paginationMeta($result['paginator']),
+            request: $request
+        );
+    }
+
+    public function showLinkableForOrder(Request $request, int $budget): JsonResponse
+    {
+        $this->authorize('os:criar');
+        $this->authorize('orcamentos:converter_os');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $result = $this->budgetWorkflowService->showLinkableForOrder($budget);
+
+        return match ($result['result'] ?? 'error') {
+            'ok' => $this->success(
+                ['budget' => $result['budget'] ?? null],
+                request: $request
+            ),
+            'not_found' => $this->error(
+                'Orçamento não encontrado ou não está disponível para gerar uma OS.',
+                404,
+                'BUDGET_NOT_LINKABLE',
+                null,
+                request: $request
+            ),
+            default => $this->error(
+                'Falha ao carregar o orçamento vinculável.',
+                500,
+                'BUDGET_LINKABLE_SHOW_FAILED',
+                null,
+                request: $request
+            ),
+        };
     }
 
     public function show(Request $request, int $budget): JsonResponse
@@ -159,6 +245,13 @@ class BudgetController extends BaseApiController
                 null,
                 request: $request
             ),
+            'immutable' => $this->error(
+                'Orçamento convertido é um registro imutável da OS e não pode ser editado.',
+                409,
+                'BUDGET_IMMUTABLE',
+                null,
+                request: $request
+            ),
             default => $this->success(
                 ['budget' => $result],
                 request: $request
@@ -186,6 +279,20 @@ class BudgetController extends BaseApiController
                 'Orçamento não encontrado.',
                 404,
                 'BUDGET_NOT_FOUND',
+                null,
+                request: $request
+            ),
+            'immutable' => $this->error(
+                'Orçamento convertido é um registro imutável da OS e não pode ser excluído.',
+                409,
+                'BUDGET_IMMUTABLE',
+                null,
+                request: $request
+            ),
+            'not_deletable' => $this->error(
+                'Este orçamento não pode ser excluído no estado atual. Cancele ou rejeite o fluxo antes da exclusão.',
+                409,
+                'BUDGET_NOT_DELETABLE',
                 null,
                 request: $request
             ),
@@ -287,7 +394,7 @@ class BudgetController extends BaseApiController
      * Mapeia o retorno das ações de decisão do técnico (aprovar/rejeitar/
      * cancelar por outros meios) para respostas HTTP.
      *
-     * @param array<string, mixed> $result
+     * @param  array<string, mixed>  $result
      */
     private function respondToStaffDecision(array $result, Request $request): JsonResponse
     {
@@ -330,8 +437,8 @@ class BudgetController extends BaseApiController
      * dos dois campos vier preenchido, retorna ok sem exigir nada (o guard de
      * OS encerrada por si só decide se a confirmação é necessária).
      *
-     * @param array<string, mixed> $validated
-     * @return array{ok: bool, admin?: ?\App\Models\User, response?: JsonResponse}
+     * @param  array<string, mixed>  $validated
+     * @return array{ok: bool, admin?: ?User, response?: JsonResponse}
      */
     private function verifyAdminIfProvided(array $validated, Request $request): array
     {

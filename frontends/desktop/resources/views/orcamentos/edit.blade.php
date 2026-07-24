@@ -62,6 +62,7 @@
             'draftKey' => 'orcamentos:edit:' . (int) ($budget['id'] ?? 0),
             'isEditMode' => true,
             'budgetId' => (int) ($budget['id'] ?? 0),
+            'clientSearchUrl' => route('orcamentos.clients.search'),
             'quickCatalogs' => $quickCatalogs ?? [],
             'catalogs' => [
                 'services' => collect($form['services'] ?? [])->map(static function (array $service): array {
@@ -83,5 +84,8 @@
             ],
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
     </script>
-    <script src="{{ asset('assets/js/orcamentos-form.js') }}?v={{ filemtime(public_path('assets/js/orcamentos-form.js')) }}"></script>
+    {{-- Cache-buster combina mtime + tamanho: mtime sozinho tem granularidade de
+         1s e pode colidir quando o arquivo é reescrito duas vezes no mesmo
+         segundo, fazendo o navegador reusar o JS antigo em cache. --}}
+    <script src="{{ asset('assets/js/orcamentos-form.js') }}?v={{ filemtime(public_path('assets/js/orcamentos-form.js')) }}-{{ filesize(public_path('assets/js/orcamentos-form.js')) }}"></script>
 @endsection
