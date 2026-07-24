@@ -12,6 +12,8 @@
         $sends = is_array($budget['envios'] ?? null) ? $budget['envios'] : [];
         $approvals = is_array($budget['aprovacoes'] ?? null) ? $budget['aprovacoes'] : [];
         $budgetId = (int) ($budget['id'] ?? 0);
+        $canConvertBudgetToOrder = \App\Support\DesktopSession::can('orcamentos', 'converter_os')
+            && \App\Support\DesktopSession::can('os', 'criar');
         $publicLink = trim((string) ($budget['link_publico'] ?? ''));
         $itemsDescontoTotal = array_sum(array_map(static fn ($item) => (float) ($item['desconto'] ?? 0), $items));
         $itemsAcrescimoTotal = array_sum(array_map(static fn ($item) => (float) ($item['acrescimo'] ?? 0), $items));
@@ -108,7 +110,7 @@
                     </form>
                 @endif
 
-                @if (! empty($budget['can_generate_os']))
+                @if ($canConvertBudgetToOrder && ! empty($budget['can_generate_os']))
                     <div class="dropdown-divider"></div>
                     <a href="{{ route('orders.create', ['orcamento_id' => $budgetId]) }}" class="dropdown-item text-primary">
                         <i class="bi bi-wrench-adjustable me-2"></i>Gerar OS a partir deste orçamento

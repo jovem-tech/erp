@@ -6,6 +6,8 @@
         $filters = is_array($filters ?? null) ? $filters : [];
         $summary = is_array($summary ?? null) ? $summary : [];
         $statusOptions = is_array($statusOptions ?? null) ? $statusOptions : [];
+        $canConvertBudgetToOrder = \App\Support\DesktopSession::can('orcamentos', 'converter_os')
+            && \App\Support\DesktopSession::can('os', 'criar');
         $typeOptions = [
             ['value' => '', 'label' => 'Todos os tipos'],
             ['value' => 'previo', 'label' => 'Orçamento prévio'],
@@ -198,7 +200,7 @@
                                             </a>
                                         </li>
                                     @endif
-                                    @if (! empty($budget['can_generate_os']))
+                                    @if ($canConvertBudgetToOrder && ! empty($budget['can_generate_os']))
                                         <li>
                                             <a href="{{ route('orders.create', ['orcamento_id' => $budgetId]) }}" class="dropdown-item text-primary">
                                                 <i class="bi bi-wrench-adjustable me-2"></i>

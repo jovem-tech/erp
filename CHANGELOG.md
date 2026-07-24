@@ -1,5 +1,29 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.12.1.0 — 2026-07-24 04:07
+- **Tier:** patch
+- **Autor/Agente:** Claude (Opus 4.8)
+- **Descrição:** Cadastro de orçamento novo trava o botão principal (vira 'Próximo') até os campos obrigatórios de todas as abas estarem preenchidos; só libera 'Salvar orçamento' quando completo, com indicador de pendência por aba
+- **Arquivos:** frontends/desktop/resources/views/orcamentos/form.blade.php,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/public/assets/css/desktop.css
+
+## v5.12.0.0 — 2026-07-24 03:55
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige o seletor de clientes do novo orcamento com catalogo remoto paginado, busca completa, resposta minimizada e preservacao segura em rascunhos.
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/BudgetController.php,backend/app/Services/Budgets/BudgetWorkflowService.php,backend/openapi.yaml,backend/routes/api.php,backend/tests/Feature/Api/V1/BudgetFlowTest.php,frontends/desktop/app/Http/Controllers/OrcamentoController.php,frontends/desktop/app/Services/OrcamentoService.php,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/resources/views/orcamentos/create.blade.php,frontends/desktop/resources/views/orcamentos/edit.blade.php,frontends/desktop/resources/views/orcamentos/form.blade.php,frontends/desktop/routes/web.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/03-arquitetura-tecnica/contrato-api-backend-central.md,documentacao/07-novas-implementacoes/2026-07-24-select2-clientes-orcamento-paginado.md
+
+## v5.11.1.0 — 2026-07-24 03:27
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige a perda visual e o risco de descarte silencioso da foto do novo equipamento durante a criação de OS a partir de orçamento avulso. A foto permanece apenas na memória do navegador, aparece no card e na aba Fotos, é normalizada entre iframe e página principal e segue como multipart somente no salvamento final. Desktop e API agora rejeitam novo equipamento sem foto antes de persistir qualquer registro.
+- **Arquivos:** backend/app/Http/Requests/Api/V1/UpsertOrderRequest.php,backend/openapi.yaml,backend/tests/Feature/Api/V1/BudgetAvulsoFlowTest.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/public/assets/js/orders-create.js,frontends/desktop/resources/views/orders/_wizard.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,documentacao/07-novas-implementacoes/2026-07-24-foto-diferida-equipamento-na-criacao-os.md,VERSION,shared/version.php,CHANGELOG.md
+
+## v5.11.0.0 — 2026-07-24 00:17
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Protege a conversão de orçamento avulso aprovado em OS com permissão dedicada, catálogo remoto paginado e minimizado, validação transacional sob lock, bloqueio de conversão duplicada e imutabilidade do orçamento convertido; corrige a criação de OS sem garantia informada e preserva o PDF A4 no acervo quando o layout térmico opcional estiver indisponível.
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/BudgetController.php,backend/app/Http/Controllers/Api/V1/OrderController.php,backend/app/Http/Requests/Api/V1/UpsertBudgetRequest.php,backend/app/Services/Auth/RbacAuthorizationService.php,backend/app/Services/Budgets/BudgetWorkflowService.php,backend/app/Services/Orders/OrderBudgetLinkException.php,backend/app/Services/Orders/OrderDocumentCenterService.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/database/migrations/2026_07_23_000001_harden_budget_order_linking.php,backend/openapi.yaml,backend/routes/api.php,backend/tests/Concerns/BuildsLegacyErpSchema.php,backend/tests/Feature/Api/V1/BudgetAvulsoFlowTest.php,backend/tests/Feature/Api/V1/BudgetFlowTest.php,documentacao/03-arquitetura-tecnica/contrato-api-backend-central.md,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,documentacao/07-novas-implementacoes/2026-07-23-hardening-vinculo-orcamento-os.md,frontends/desktop/app/Http/Controllers/OrcamentoController.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/app/Services/OrcamentoService.php,frontends/desktop/public/assets/js/orders-create.js,frontends/desktop/resources/views/orcamentos/form.blade.php,frontends/desktop/resources/views/orcamentos/index.blade.php,frontends/desktop/resources/views/orcamentos/show.blade.php,frontends/desktop/resources/views/orders/_wizard.blade.php,frontends/desktop/routes/web.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,specs/023-hardening-vinculo-orcamento-os/plan.md,specs/023-hardening-vinculo-orcamento-os/spec.md,specs/023-hardening-vinculo-orcamento-os/tasks.md,VERSION,shared/version.php
+
 ## v5.10.0.0 — 2026-07-23 20:57
 - **Tier:** minor
 - **Autor/Agente:** Claude (Opus 4.8)

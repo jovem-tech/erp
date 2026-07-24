@@ -2,9 +2,9 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-23T20:57:51-03:00`
-- Versao do sistema: `5.10.0`
-- Versao da API: `1.5.0`
+- Gerado em: `2026-07-24T04:08:30-03:00`
+- Versao do sistema: `5.12.1`
+- Versao da API: `1.6.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
 
@@ -166,6 +166,10 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-20-lixeira-gerenciador-arquivos.md` - Lixeira operacional e retenção do Gerenciador de Arquivos
 - `documentacao/07-novas-implementacoes/2026-07-21-cadastro-formas-de-pagamento.md` - Cadastro de formas de pagamento
 - `documentacao/07-novas-implementacoes/2026-07-21-sidebar-reorganizacao-e-atalhos.md` - Reorganização da sidebar e atalhos de submenu
+- `documentacao/07-novas-implementacoes/2026-07-23-hardening-vinculo-orcamento-os.md` - Hardening do vínculo de orçamento avulso com Ordem de Serviço
+- `documentacao/07-novas-implementacoes/2026-07-24-foto-diferida-equipamento-na-criacao-os.md` - Foto diferida do equipamento na criação de OS
+- `documentacao/07-novas-implementacoes/2026-07-24-select2-clientes-orcamento-paginado.md` - Select2 paginado de clientes no orçamento
+- `documentacao/07-novas-implementacoes/2026-07-24-trava-campos-obrigatorios-orcamento.md` - Cadastro de orçamento: trava o salvamento até completar os campos obrigatórios de todas as abas
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 - `documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md` - Revisão de segurança — Fluxo de orçamento na assistência (com OS)
 
@@ -203,4 +207,5 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/020-lancamentos-avulsos-financeiro-cliente` - Feature Specification: Lançamentos avulsos com histórico financeiro do cliente | artefatos: spec, plan, tasks
 - `specs/021-gestao-contas-financeiras` - Feature Specification: Gestão de contas financeiras e disponibilidade de caixa | artefatos: spec, plan, tasks, quickstart, data_model, contracts
 - `specs/022-gerenciador-central-arquivos` - Feature Specification: Gerenciador Central de Arquivos | artefatos: spec, plan, tasks, research, quickstart, data_model, contracts, checklists
+- `specs/023-hardening-vinculo-orcamento-os` - Especificação — Hardening do vínculo orçamento avulso → OS | artefatos: spec, plan, tasks
 

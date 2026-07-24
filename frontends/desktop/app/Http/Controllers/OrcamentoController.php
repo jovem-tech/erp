@@ -7,6 +7,7 @@ use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
 use App\Services\OrcamentoService;
 use App\Support\DesktopSession;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -18,8 +19,7 @@ class OrcamentoController extends DesktopController
 {
     public function __construct(
         private readonly OrcamentoService $orcamentoService
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): View
     {
@@ -79,6 +79,66 @@ class OrcamentoController extends DesktopController
             'form' => $form,
             'quickCatalogs' => $this->quickCatalogConfig(),
             'isEditMode' => false,
+        ]);
+    }
+
+    public function searchClients(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'search' => ['nullable', 'string', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:20'],
+        ]);
+        $page = max(1, (int) ($validated['page'] ?? 1));
+        $perPage = max(1, min(20, (int) ($validated['per_page'] ?? 15)));
+
+        try {
+            $result = $this->orcamentoService->clientOptions([
+                'q' => trim((string) ($validated['q'] ?? $validated['search'] ?? '')),
+                'page' => $page,
+                'per_page' => $perPage,
+            ]);
+        } catch (ApiAuthenticationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 401);
+        } catch (ApiAuthorizationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 403);
+        } catch (ApiRequestException $exception) {
+            return $this->jsonFailure(
+                $exception->getMessage(),
+                $exception->statusCode() > 0 ? $exception->statusCode() : 422,
+                $exception->details()
+            );
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->jsonFailure('Não foi possível pesquisar os clientes agora.', 500);
+        }
+
+        $items = array_values(array_filter(array_map(static function (array $client): array {
+            $id = (int) ($client['id'] ?? 0);
+            $name = trim((string) ($client['nome_razao'] ?? ''));
+            $phone = trim((string) ($client['telefone1'] ?? ''));
+
+            return [
+                'id' => $id,
+                'text' => implode(' - ', array_values(array_filter([
+                    $name !== '' ? $name : ($id > 0 ? 'Cliente #'.$id : ''),
+                    $phone,
+                ]))),
+                'name' => $name,
+                'phone' => $phone,
+                'email' => trim((string) ($client['email'] ?? '')),
+            ];
+        }, (array) ($result['items'] ?? [])), static fn (array $item): bool => $item['id'] > 0));
+        $pagination = is_array($result['pagination'] ?? null) ? $result['pagination'] : [];
+        $currentPage = (int) ($pagination['current_page'] ?? $page);
+        $lastPage = (int) ($pagination['last_page'] ?? $currentPage);
+
+        return response()->json([
+            'success' => true,
+            'results' => $items,
+            'pagination' => ['more' => $currentPage < $lastPage],
         ]);
     }
 
@@ -366,11 +426,9 @@ class OrcamentoController extends DesktopController
                 'pendente',
                 'aprovado',
                 'reenviar_orcamento',
-                'pendente_abertura_os',
                 'rejeitado',
                 'vencido',
                 'cancelado',
-                'convertido',
             ])],
             'origem' => ['nullable', 'string', Rule::in(['manual', 'os', 'conversa', 'cliente'])],
             'cliente_id' => ['nullable', 'integer', 'min:1'],
@@ -489,7 +547,7 @@ class OrcamentoController extends DesktopController
     }
 
     /**
-     * @param array<string, mixed> $budget
+     * @param  array<string, mixed>  $budget
      */
     private function redirectAfterPersist(
         array $budget,
@@ -564,16 +622,16 @@ class OrcamentoController extends DesktopController
             ->values();
 
         $details = $messages->isNotEmpty()
-            ? ' Pendências: ' . $messages->implode(' | ')
+            ? ' Pendências: '.$messages->implode(' | ')
             : '';
 
         return $prefix
-            . ($exception->getMessage() !== '' ? ' ' . $exception->getMessage() : '')
-            . $details;
+            .($exception->getMessage() !== '' ? ' '.$exception->getMessage() : '')
+            .$details;
     }
 
     /**
-     * @param array<string, mixed> $item
+     * @param  array<string, mixed>  $item
      */
     private function itemHasMeaningfulContent(array $item): bool
     {

@@ -4,8 +4,13 @@ namespace Tests\Feature\Api\V1;
 
 use App\Models\Financeiro;
 use App\Models\FinanceiroMovimento;
+use App\Services\Auth\RbacAuthorizationService;
+use App\Services\Budgets\BudgetPdfService;
+use App\Services\Company\CompanyProfileService;
+use App\Services\Integrations\IntegrationSettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Tests\Concerns\BuildsLegacyErpSchema;
 use Tests\TestCase;
 
@@ -30,6 +35,9 @@ class BudgetFlowTest extends TestCase
         ]);
         $this->grantGroupPermissions(3, [
             'orcamentos' => ['visualizar'],
+        ]);
+        $this->grantGroupPermissions(4, [
+            'orcamentos' => ['visualizar', 'criar'],
         ]);
         $this->seedOrderCatalog();
         $this->seedOrderNumberConfiguration();
@@ -80,7 +88,7 @@ class BudgetFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($admin->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/v1/orcamentos?search=ORC-2606');
 
         $response->assertOk()
@@ -90,10 +98,69 @@ class BudgetFlowTest extends TestCase
             ->assertJsonPath('data.budgets.0.numero', 'ORC-2606-000012')
             ->assertJsonPath('data.status_options.0.value', 'rascunho');
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/v1/orcamentos?status=aprovado')
             ->assertOk()
             ->assertJsonPath('meta.pagination.total', 1);
+    }
+
+    public function test_budget_client_options_are_searchable_and_paginated_without_full_client_module_access(): void
+    {
+        $operator = $this->createUserRecord([
+            'nome' => 'Operador Comercial',
+            'email' => 'operador.catalogo.orcamento@example.com',
+            'perfil' => 'usuario',
+            'grupo_id' => 4,
+        ]);
+        app(RbacAuthorizationService::class)->forgetUser((int) $operator->id);
+
+        foreach (range(1, 25) as $position) {
+            $this->createClientRecord([
+                'nome_razao' => sprintf('Cliente Paginado %02d', $position),
+                'telefone1' => sprintf('1199000%04d', $position),
+                'email' => sprintf('cliente%02d@example.com', $position),
+            ]);
+        }
+
+        $token = $this->loginAndGetToken($operator->email);
+
+        $pageResponse = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orcamentos/clientes?per_page=10&page=3');
+
+        $pageResponse->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonPath('meta.pagination.current_page', 3)
+            ->assertJsonPath('meta.pagination.per_page', 10)
+            ->assertJsonPath('meta.pagination.total', 25)
+            ->assertJsonCount(5, 'data.clients')
+            ->assertJsonMissingPath('data.clients.0.cpf_cnpj');
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orcamentos/clientes?q=Paginado%2024&per_page=15')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 1)
+            ->assertJsonPath('data.clients.0.nome_razao', 'Cliente Paginado 24')
+            ->assertJsonPath('data.clients.0.telefone1', '11990000024');
+    }
+
+    public function test_budget_client_options_forbid_viewer_without_create_or_edit_permission(): void
+    {
+        $viewer = $this->createUserRecord([
+            'nome' => 'Leitor Comercial',
+            'email' => 'leitor.catalogo.orcamento@example.com',
+            'perfil' => 'usuario',
+            'grupo_id' => 3,
+        ]);
+        $rbac = app(RbacAuthorizationService::class);
+        $rbac->forgetUser((int) $viewer->id);
+        $this->assertTrue($rbac->allows($viewer, 'orcamentos', 'visualizar'));
+        $this->assertFalse($rbac->allows($viewer, 'orcamentos', 'criar'));
+        $this->assertFalse($rbac->allows($viewer, 'orcamentos', 'editar'));
+        $viewerToken = $this->loginAndGetToken($viewer->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$viewerToken)
+            ->getJson('/api/v1/orcamentos/clientes')
+            ->assertForbidden();
     }
 
     public function test_admin_can_create_update_and_delete_budget_with_items(): void
@@ -132,7 +199,7 @@ class BudgetFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($admin->email);
 
-        $createResponse = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $createResponse = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/orcamentos', [
                 'tipo_orcamento' => 'assistencia',
                 'status' => 'rascunho',
@@ -185,7 +252,7 @@ class BudgetFlowTest extends TestCase
             'os_id' => $orderId,
             'tipo_orcamento' => 'assistencia',
         ]);
-        $this->assertNotEmpty((string) \Illuminate\Support\Facades\DB::table('orcamentos')->where('id', $budgetId)->value('token_publico'));
+        $this->assertNotEmpty((string) DB::table('orcamentos')->where('id', $budgetId)->value('token_publico'));
 
         $this->assertDatabaseHas('orcamento_itens', [
             'orcamento_id' => $budgetId,
@@ -199,8 +266,8 @@ class BudgetFlowTest extends TestCase
             'valor_final' => 570.50,
         ]);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson('/api/v1/orcamentos/'.$budgetId, [
                 'tipo_orcamento' => 'assistencia',
                 'status' => 'enviado',
                 'origem' => 'os',
@@ -239,8 +306,18 @@ class BudgetFlowTest extends TestCase
             'status_novo' => 'enviado',
         ]);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->deleteJson('/api/v1/orcamentos/' . $budgetId)
+        // Registros em fluxo ativo não podem mais sofrer hard delete. O fluxo
+        // explícito de cancelamento preserva a transição/auditoria antes da
+        // exclusão permitida.
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orcamentos/'.$budgetId.'/cancelar', [
+                'motivo' => 'Encerramento do cenário de teste.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.budget.status', 'cancelado');
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->deleteJson('/api/v1/orcamentos/'.$budgetId)
             ->assertOk()
             ->assertJsonPath('data.deleted', true);
 
@@ -268,7 +345,7 @@ class BudgetFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($admin->email);
 
-        $createResponse = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $createResponse = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/orcamentos', [
                 'tipo_orcamento' => 'assistencia',
                 'status' => 'rascunho',
@@ -298,8 +375,8 @@ class BudgetFlowTest extends TestCase
         // o campo OS antes de salvar, mas "Origem" continuou marcado como
         // "os". O backend precisa corrigir isso, não persistir o rótulo
         // "veio de uma OS" sem nenhum os_id de verdade.
-        $updateResponse = $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+        $updateResponse = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson('/api/v1/orcamentos/'.$budgetId, [
                 'tipo_orcamento' => 'assistencia',
                 'status' => 'rascunho',
                 'origem' => 'os',
@@ -346,7 +423,7 @@ class BudgetFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($admin->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/orcamentos', [
                 'numero' => null,
                 'tipo_orcamento' => 'previo',
@@ -400,8 +477,8 @@ class BudgetFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($admin->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->getJson('/api/v1/orcamentos/' . $budgetId);
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orcamentos/'.$budgetId);
 
         $response->assertOk()
             ->assertJsonPath('data.budget.id', $budgetId)
@@ -410,7 +487,7 @@ class BudgetFlowTest extends TestCase
             ->assertJsonPath('data.budget.historico.0.status_novo', 'enviado');
 
         $this->assertNotEmpty((string) $response->json('data.budget.link_publico'));
-        $this->assertNotEmpty((string) \Illuminate\Support\Facades\DB::table('orcamentos')->where('id', $budgetId)->value('token_publico'));
+        $this->assertNotEmpty((string) DB::table('orcamentos')->where('id', $budgetId)->value('token_publico'));
 
         $historico = collect($response->json('data.budget.historico', []));
         $this->assertNotEmpty($historico);
@@ -437,7 +514,7 @@ class BudgetFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($admin->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/orcamentos', [
                 'tipo_orcamento' => 'previo',
                 'status' => 'rascunho',
@@ -548,7 +625,7 @@ class BudgetFlowTest extends TestCase
         }
         file_put_contents($budgetPdfPath, '%PDF-1.4 orçamento de teste');
 
-        $this->mock(\App\Services\Budgets\BudgetPdfService::class, function ($mock): void {
+        $this->mock(BudgetPdfService::class, function ($mock): void {
             $mock->shouldReceive('generate')
                 ->once()
                 ->andReturn([
@@ -558,7 +635,7 @@ class BudgetFlowTest extends TestCase
                     'file_name' => 'Orcamento-ORC.pdf',
                 ]);
         });
-        $this->mock(\App\Services\Integrations\IntegrationSettingsService::class, function ($mock): void {
+        $this->mock(IntegrationSettingsService::class, function ($mock): void {
             $mock->shouldReceive('sendDirectMedia')
                 ->once()
                 ->andReturn([
@@ -567,7 +644,7 @@ class BudgetFlowTest extends TestCase
                     'message' => 'Proposta enviada para aprovacao.',
                 ]);
         });
-        $this->mock(\App\Services\Company\CompanyProfileService::class, function ($mock): void {
+        $this->mock(CompanyProfileService::class, function ($mock): void {
             $mock->shouldReceive('payload')
                 ->andReturn([
                     'settings' => [
@@ -578,14 +655,14 @@ class BudgetFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($admin->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->postJson('/api/v1/orcamentos/' . $budgetId . '/send-approval');
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orcamentos/'.$budgetId.'/send-approval');
 
         $response->assertOk()
             ->assertJsonPath('data.dispatch.canal', 'whatsapp')
             ->assertJsonPath('data.dispatch.status', 'enviado');
 
-        $budgetRecord = \Illuminate\Support\Facades\DB::table('orcamentos')->where('id', $budgetId)->first();
+        $budgetRecord = DB::table('orcamentos')->where('id', $budgetId)->first();
 
         $this->assertNotNull($budgetRecord);
         $this->assertNotEmpty($budgetRecord->token_publico);
@@ -611,7 +688,7 @@ class BudgetFlowTest extends TestCase
             'status_novo' => 'aguardando_autorizacao',
         ]);
 
-        $documentId = (int) \Illuminate\Support\Facades\DB::table('os_documentos')
+        $documentId = (int) DB::table('os_documentos')
             ->where('os_id', $orderId)
             ->where('tipo_documento', 'orcamento')
             ->max('id');
@@ -700,6 +777,19 @@ class BudgetFlowTest extends TestCase
             'valor_unitario' => 150.00,
             'total' => 150.00,
         ]);
+
+        Storage::fake('local');
+        Storage::disk('local')->put('testing/orcamento-publico.pdf', '%PDF-1.4 orçamento público');
+        $this->mock(BudgetPdfService::class, function ($mock): void {
+            $mock->shouldReceive('generate')
+                ->once()
+                ->andReturn([
+                    'ok' => true,
+                    'absolute_path' => Storage::disk('local')->path('testing/orcamento-publico.pdf'),
+                    'relative_path' => 'testing/orcamento-publico.pdf',
+                    'file_name' => 'Orcamento-publico.pdf',
+                ]);
+        });
 
         $response = $this->get('/orcamento/token-public-pdf/pdf');
 
@@ -898,7 +988,7 @@ class BudgetFlowTest extends TestCase
         $token = $this->loginAndGetToken($admin->email);
 
         // Criação com status rascunho: OS deve aguardar orçamento.
-        $createResponse = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $createResponse = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/orcamentos', [
                 'tipo_orcamento' => 'assistencia',
                 'status' => 'rascunho',
@@ -945,8 +1035,8 @@ class BudgetFlowTest extends TestCase
         ];
 
         foreach ($statusTransitions as [$budgetStatus, $expectedOrderStatus, $expectedFlowState]) {
-            $this->withHeader('Authorization', 'Bearer ' . $token)
-                ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+            $this->withHeader('Authorization', 'Bearer '.$token)
+                ->patchJson('/api/v1/orcamentos/'.$budgetId, [
                     'tipo_orcamento' => 'assistencia',
                     'status' => $budgetStatus,
                     'os_id' => $orderId,
@@ -972,8 +1062,8 @@ class BudgetFlowTest extends TestCase
         // de "cancelado" (congela prazo) para "aguardando_orcamento" (não
         // congela) — reabertura automática: redefine o prazo pra hoje+7 dias
         // sozinho, sem modal, e registra no histórico (origem automação).
-        $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson('/api/v1/orcamentos/'.$budgetId, [
                 'tipo_orcamento' => 'assistencia',
                 'status' => 'pendente_envio',
                 'os_id' => $orderId,
@@ -1023,7 +1113,7 @@ class BudgetFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($admin->email);
 
-        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/orcamentos', [
                 'tipo_orcamento' => 'assistencia',
                 'status' => 'pendente_envio',
@@ -1071,7 +1161,7 @@ class BudgetFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($viewer->email);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/orcamentos', [
                 'tipo_orcamento' => 'previo',
                 'cliente_nome_avulso' => 'Cliente sem permissão',
@@ -1100,8 +1190,8 @@ class BudgetFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($actor->email);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson('/api/v1/orcamentos/'.$budgetId, [
                 'tipo_orcamento' => 'assistencia',
                 'os_id' => $orderId,
                 'itens' => [[
@@ -1138,8 +1228,8 @@ class BudgetFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($actor->email);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson('/api/v1/orcamentos/'.$budgetId, [
                 'tipo_orcamento' => 'assistencia',
                 'os_id' => $orderId,
                 'itens' => [[
@@ -1188,8 +1278,8 @@ class BudgetFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($actor->email);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson('/api/v1/orcamentos/'.$budgetId, [
                 'tipo_orcamento' => 'assistencia',
                 'os_id' => $orderId,
                 'admin_email' => $admin->email,
@@ -1222,8 +1312,8 @@ class BudgetFlowTest extends TestCase
         $token = $this->loginAndGetToken($actor->email);
 
         for ($attempt = 0; $attempt < 5; $attempt++) {
-            $this->withHeader('Authorization', 'Bearer ' . $token)
-                ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+            $this->withHeader('Authorization', 'Bearer '.$token)
+                ->patchJson('/api/v1/orcamentos/'.$budgetId, [
                     'tipo_orcamento' => 'assistencia',
                     'os_id' => $orderId,
                     'admin_email' => $admin->email,
@@ -1232,8 +1322,8 @@ class BudgetFlowTest extends TestCase
                 ->assertStatus(422);
         }
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson('/api/v1/orcamentos/'.$budgetId, [
                 'tipo_orcamento' => 'assistencia',
                 'os_id' => $orderId,
                 'admin_email' => $admin->email,
@@ -1283,8 +1373,8 @@ class BudgetFlowTest extends TestCase
 
         $token = $this->loginAndGetToken($actor->email);
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
-            ->patchJson('/api/v1/orcamentos/' . $budgetId, [
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson('/api/v1/orcamentos/'.$budgetId, [
                 'tipo_orcamento' => 'assistencia',
                 'os_id' => $orderId,
                 'itens' => [[

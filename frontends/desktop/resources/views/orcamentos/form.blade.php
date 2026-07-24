@@ -243,18 +243,22 @@
             <button type="button" class="equipment-tab is-active" data-budget-tab="cliente" aria-pressed="true">
                 <i class="bi bi-person-vcard"></i>
                 Dados do cliente
+                <span class="equipment-tab-flag" data-budget-tab-flag hidden title="Faltam campos obrigatórios nesta aba"></span>
             </button>
             <button type="button" class="equipment-tab" data-budget-tab="equipamento" aria-pressed="false">
                 <i class="bi bi-laptop"></i>
                 Dados do equipamento
+                <span class="equipment-tab-flag" data-budget-tab-flag hidden title="Faltam campos obrigatórios nesta aba"></span>
             </button>
             <button type="button" class="equipment-tab" data-budget-tab="operacional" aria-pressed="false">
                 <i class="bi bi-sliders"></i>
                 Dados operacionais
+                <span class="equipment-tab-flag" data-budget-tab-flag hidden title="Faltam campos obrigatórios nesta aba"></span>
             </button>
             <button type="button" class="equipment-tab" data-budget-tab="financeiro" aria-pressed="false">
                 <i class="bi bi-cash-coin"></i>
                 Orçamento e financeiro
+                <span class="equipment-tab-flag" data-budget-tab-flag hidden title="Faltam campos obrigatórios nesta aba"></span>
             </button>
         </div>
 
@@ -272,7 +276,13 @@
                                 $clientPhone = trim((string) ($client['telefone1'] ?? ''));
                                 $clientLabel = implode(' - ', array_values(array_filter([$clientName, $clientDocument, $clientPhone])));
                             @endphp
-                            <option value="{{ $clientId }}" @selected($selectedClientId === $clientId)>{{ $clientLabel !== '' ? $clientLabel : 'Cliente' }}</option>
+                            <option
+                                value="{{ $clientId }}"
+                                data-client-name="{{ $clientName }}"
+                                data-client-phone="{{ $clientPhone }}"
+                                data-client-email="{{ trim((string) ($client['email'] ?? '')) }}"
+                                @selected($selectedClientId === $clientId)
+                            >{{ $clientLabel !== '' ? $clientLabel : 'Cliente' }}</option>
                         @endforeach
                     </select>
                     @if ($clientLocked)
@@ -431,8 +441,14 @@
                     foreach ($originOptions as $originOption) {
                         $originLabelMap[(string) ($originOption['value'] ?? '')] = (string) ($originOption['label'] ?? 'Origem');
                     }
+                    $statusLabelMap = [];
+                    foreach ($statusOptions as $statusOption) {
+                        $statusLabelMap[(string) ($statusOption['value'] ?? '')] = (string) ($statusOption['label'] ?? 'Status');
+                    }
                     $typeDisplayLabel = $typeLabelMap[$typeValue] ?? 'Orçamento prévio';
                     $originDisplayLabel = $originLabelMap[$originValue] ?? 'Manual';
+                    $statusDisplayLabel = $statusLabelMap[$statusValue] ?? 'Rascunho';
+                    $statusManagedBySystem = in_array($statusValue, ['pendente_abertura_os', 'convertido'], true);
                 @endphp
                 <div>
                     <label for="orcamentoTipoDisplay">Tipo de orçamento</label>
@@ -449,13 +465,21 @@
 
                 <div>
                     <label for="orcamentoStatus">Status</label>
-                    <select id="orcamentoStatus" name="status" class="form-select">
-                        @foreach ($statusOptions as $statusOption)
-                            <option value="{{ $statusOption['value'] ?? '' }}" @selected($statusValue === ($statusOption['value'] ?? ''))>
-                                {{ $statusOption['label'] ?? 'Status' }}
-                            </option>
-                        @endforeach
-                    </select>
+                    @if ($statusManagedBySystem)
+                        <select id="orcamentoStatus" class="form-select" disabled>
+                            <option selected>{{ $statusDisplayLabel }}</option>
+                        </select>
+                        <small class="text-secondary d-block mt-2">Este estado é controlado automaticamente pela aprovação e pela conversão em OS.</small>
+                    @else
+                        <select id="orcamentoStatus" name="status" class="form-select">
+                            @foreach ($statusOptions as $statusOption)
+                                @continue(in_array((string) ($statusOption['value'] ?? ''), ['pendente_abertura_os', 'convertido'], true))
+                                <option value="{{ $statusOption['value'] ?? '' }}" @selected($statusValue === ($statusOption['value'] ?? ''))>
+                                    {{ $statusOption['label'] ?? 'Status' }}
+                                </option>
+                            @endforeach
+                        </select>
+                    @endif
                 </div>
 
                 <div>
@@ -636,7 +660,7 @@
 
         <div class="desktop-form-actions">
             <a href="{{ $cancelUrl ?? route('orcamentos.index') }}" class="btn btn-outline-light">Cancelar</a>
-            <button type="submit" class="btn btn-primary">{{ $submitLabel ?? 'Salvar orçamento' }}</button>
+            <button type="submit" class="btn btn-primary" data-budget-primary-action>{{ $submitLabel ?? 'Salvar orçamento' }}</button>
         </div>
     </form>
 </section>

@@ -1201,18 +1201,23 @@ class OrderWorkflowService
      *
      * @return array<string, mixed>|null Erro pronto para retornar, ou null se ok.
      */
-    private function validateBudgetForOrderLink(?Budget $budget, int $clientId): ?array
+    private function validateBudgetForOrderLink(?Budget $budget, int $clientId, int $equipmentId): ?array
     {
         if (! $budget instanceof Budget) {
-            return ['result' => 'budget_link_invalid', 'message' => 'Orçamento informado para vínculo não foi encontrado.'];
+            return ['result' => 'budget_link_not_found', 'message' => 'Orçamento informado para vínculo não foi encontrado.'];
         }
 
         if ((int) ($budget->os_id ?? 0) > 0) {
-            return ['result' => 'budget_link_invalid', 'message' => 'Este orçamento já está vinculado a uma OS.'];
+            return ['result' => 'budget_link_conflict', 'message' => 'Este orçamento já está vinculado a uma OS.'];
         }
 
-        if (! in_array((string) ($budget->status ?? ''), [Budget::STATUS_PENDING_OS, Budget::STATUS_APPROVED], true)) {
-            return ['result' => 'budget_link_invalid', 'message' => 'Somente orçamentos aprovados (pendentes de abertura de OS) podem gerar uma OS.'];
+        if ((string) ($budget->tipo_orcamento ?? '') !== Budget::TYPE_PREVIEW
+            || (string) ($budget->status ?? '') !== Budget::STATUS_PENDING_OS
+        ) {
+            return [
+                'result' => 'budget_link_conflict',
+                'message' => 'Somente orçamento avulso aprovado e pendente de abertura de OS pode ser convertido.',
+            ];
         }
 
         // Se o orçamento já tinha um cliente cadastrado, ele precisa ser o mesmo
@@ -1223,6 +1228,14 @@ class OrderWorkflowService
         $budgetClientId = (int) ($budget->cliente_id ?? 0);
         if ($budgetClientId > 0 && $budgetClientId !== $clientId) {
             return ['result' => 'budget_link_invalid', 'message' => 'O cliente da OS precisa ser o mesmo do orçamento vinculado.'];
+        }
+
+        $budgetEquipmentId = (int) ($budget->equipamento_id ?? 0);
+        if ($budgetEquipmentId > 0 && $budgetEquipmentId !== $equipmentId) {
+            return [
+                'result' => 'budget_link_invalid',
+                'message' => 'O equipamento da OS precisa ser o mesmo equipamento cadastrado no orçamento.',
+            ];
         }
 
         return null;
@@ -1390,14 +1403,6 @@ class OrderWorkflowService
         // a OS gerada reaproveita cliente/valores e o orçamento passa a convertido.
         // Ver Budget::STATUS_PENDING_OS e BudgetApprovalService::approvedStatus().
         $linkBudgetId = (int) ($attributes['orcamento_id'] ?? 0);
-        $linkBudget = null;
-        if ($linkBudgetId > 0) {
-            $linkBudget = Budget::query()->find($linkBudgetId);
-            $linkValidation = $this->validateBudgetForOrderLink($linkBudget, $clientId);
-            if ($linkValidation !== null) {
-                return $linkValidation;
-            }
-        }
 
         $statusCode = trim((string) ($attributes['status'] ?? 'triagem'));
         $statusCode = $statusCode !== '' ? $statusCode : 'triagem';
@@ -1413,12 +1418,14 @@ class OrderWorkflowService
             ?: trim((string) ($statusRow->estado_fluxo_padrao ?? 'em_atendimento'));
 
         $payload = $this->extractMutableOrderAttributes($attributes, true);
+        // A coluna é NOT NULL no esquema canônico. Uma OS sem garantia
+        // informada representa zero dias, nunca NULL.
+        $payload['garantia_dias'] = max(0, (int) ($payload['garantia_dias'] ?? 0));
         if ($idempotencyKey !== '' && $requestFingerprint !== null) {
             $payload['creation_request_id'] = $idempotencyKey;
             $payload['creation_request_fingerprint'] = $requestFingerprint;
             $payload['creation_requested_by'] = (int) $actor->id;
         }
-        $payload['numero_os'] = $this->orderNumberService->nextNumber();
         $payload['status'] = $statusCode;
         $payload['estado_fluxo'] = $estadoFluxo;
         $payload['status_atualizado_em'] = $now;
@@ -1442,7 +1449,7 @@ class OrderWorkflowService
         }
 
         try {
-            $order = DB::transaction(function () use ($payload, $actor, $statusCode, $estadoFluxo, $now, $entryChecklistPlan, $linkBudget, $clientId, $equipmentId, $deferClient, $deferEquipment, $novoCliente, $novoEquipamento, $equipmentPhotos): Order {
+            $order = DB::transaction(function () use ($payload, $actor, $statusCode, $estadoFluxo, $now, $entryChecklistPlan, $linkBudgetId, $clientId, $equipmentId, $deferClient, $deferEquipment, $novoCliente, $novoEquipamento, $equipmentPhotos): Order {
                 // Cria cliente/equipamento novos DENTRO da transação (atômico): se
                 // qualquer passo abaixo falhar, o rollback desfaz também estes
                 // cadastros, e nada é persistido em aberturas de OS abandonadas.
@@ -1463,6 +1470,34 @@ class OrderWorkflowService
 
                 $payload['cliente_id'] = $clientId;
                 $payload['equipamento_id'] = $equipmentId;
+
+                $linkBudget = null;
+                if ($linkBudgetId > 0) {
+                    // A leitura, validação e conversão compartilham a transação e
+                    // o lock. Chaves idempotentes distintas não podem consumir a
+                    // mesma aprovação em duas OS concorrentes.
+                    $linkBudget = Budget::query()
+                        ->whereKey($linkBudgetId)
+                        ->lockForUpdate()
+                        ->first();
+                    $linkValidation = $this->validateBudgetForOrderLink(
+                        $linkBudget,
+                        $clientId,
+                        $equipmentId
+                    );
+
+                    if ($linkValidation !== null) {
+                        throw new OrderBudgetLinkException(
+                            (string) ($linkValidation['result'] ?? 'budget_link_invalid'),
+                            (string) ($linkValidation['message'] ?? 'O orçamento não pode ser convertido.')
+                        );
+                    }
+                }
+
+                // A numeração só é consumida depois de todas as validações que
+                // podem abortar a conversão. Assim uma disputa pelo mesmo
+                // orçamento não cria lacunas desnecessárias na sequência de OS.
+                $payload['numero_os'] = $this->orderNumberService->nextNumber();
 
                 /** @var Order $order */
                 $order = Order::query()->create($payload);
@@ -1488,6 +1523,11 @@ class OrderWorkflowService
 
                 return $order;
             });
+        } catch (OrderBudgetLinkException $exception) {
+            return [
+                'result' => $exception->resultCode(),
+                'message' => $exception->getMessage(),
+            ];
         } catch (QueryException $exception) {
             // A restricao UNIQUE e a autoridade final contra duas requisicoes
             // simultaneas com a mesma chave. Se a concorrente venceu, devolve

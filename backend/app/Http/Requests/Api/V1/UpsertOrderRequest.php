@@ -33,7 +33,7 @@ class UpsertOrderRequest extends BaseApiFormRequest
             'fotos' => ['nullable', 'array', 'max:4'],
             'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             // Fotos do equipamento novo (criação diferida na abertura de OS).
-            'novo_equipamento_fotos' => ['nullable', 'array', 'max:4'],
+            'novo_equipamento_fotos' => ['nullable', 'required_with:novo_equipamento', 'array', 'min:1', 'max:4'],
             'novo_equipamento_fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'status' => [$this->isMethod('post') ? 'nullable' : 'sometimes', 'string', 'max:80', Rule::in(OrderStatus::activeCodes())],
             'estado_fluxo' => ['nullable', 'string', 'max:40'],

@@ -35,7 +35,54 @@ class BudgetWorkflowService
         private readonly NotificationDispatchService $notificationDispatchService,
         private readonly FinanceiroService $financeiroService,
         private readonly OsMargemService $osMargemService
-    ) {
+    ) {}
+
+    /**
+     * Catálogo paginado e mínimo para seletores de cliente do orçamento.
+     *
+     * A consulta fica no domínio de orçamentos porque o formulário já permite
+     * selecionar um cliente mesmo quando o operador não possui acesso ao módulo
+     * completo de clientes. Somente os campos indispensáveis ao orçamento são
+     * expostos.
+     *
+     * @param  array<string, mixed>  $filters
+     */
+    public function paginateClientOptions(array $filters = []): LengthAwarePaginator
+    {
+        $search = trim((string) ($filters['q'] ?? $filters['search'] ?? ''));
+        $page = max(1, (int) ($filters['page'] ?? 1));
+        $perPage = max(1, min(20, (int) ($filters['per_page'] ?? 15)));
+
+        $query = Client::query()
+            ->select(['id', 'nome_razao', 'cpf_cnpj', 'telefone1', 'email']);
+
+        if ($search !== '') {
+            $term = '%'.mb_strtolower($search).'%';
+
+            $query->where(static function (Builder $builder) use ($term): void {
+                $builder
+                    ->whereRaw("LOWER(COALESCE(nome_razao, '')) LIKE ?", [$term])
+                    ->orWhereRaw("LOWER(COALESCE(cpf_cnpj, '')) LIKE ?", [$term])
+                    ->orWhereRaw("LOWER(COALESCE(telefone1, '')) LIKE ?", [$term])
+                    ->orWhereRaw("LOWER(COALESCE(email, '')) LIKE ?", [$term]);
+            });
+        }
+
+        $paginator = $query
+            ->orderBy('nome_razao')
+            ->orderBy('id')
+            ->paginate($perPage, ['*'], 'page', $page);
+
+        $paginator->setCollection(
+            $paginator->getCollection()->map(static fn (Client $client): array => [
+                'id' => (int) $client->id,
+                'nome_razao' => trim((string) ($client->nome_razao ?? '')),
+                'telefone1' => trim((string) ($client->telefone1 ?? '')),
+                'email' => trim((string) ($client->email ?? '')),
+            ])
+        );
+
+        return $paginator;
     }
 
     /**
@@ -97,6 +144,73 @@ class BudgetWorkflowService
     }
 
     /**
+     * Catálogo mínimo e paginado usado exclusivamente na abertura de OS.
+     *
+     * @return array{paginator: LengthAwarePaginator}
+     */
+    public function paginateLinkableForOrder(array $filters = []): array
+    {
+        $search = trim((string) ($filters['q'] ?? $filters['search'] ?? ''));
+        $perPage = max(1, min(30, (int) ($filters['per_page'] ?? 15)));
+        $page = max(1, (int) ($filters['page'] ?? 1));
+
+        $query = $this->linkableForOrderQuery();
+        if ($search !== '') {
+            // Trata curingas como texto do usuário. Isso evita que entradas
+            // como "%" ampliem a busca para todo o catálogo e elevem o custo
+            // da consulta de contagem/paginação.
+            $likeSearch = addcslashes($search, '\\%_');
+            $query->where(function (Builder $builder) use ($likeSearch): void {
+                $builder
+                    ->where('orcamentos.numero', 'like', '%'.$likeSearch.'%')
+                    ->orWhere('orcamentos.cliente_nome_avulso', 'like', '%'.$likeSearch.'%')
+                    ->orWhere('orcamentos.equipamento_tipo_avulso', 'like', '%'.$likeSearch.'%')
+                    ->orWhere('orcamentos.equipamento_marca_avulso', 'like', '%'.$likeSearch.'%')
+                    ->orWhere('orcamentos.equipamento_modelo_avulso', 'like', '%'.$likeSearch.'%')
+                    ->orWhereHas('client', static function (Builder $clientQuery) use ($likeSearch): void {
+                        $clientQuery->where('nome_razao', 'like', '%'.$likeSearch.'%')
+                            ->orWhere('cpf_cnpj', 'like', '%'.$likeSearch.'%')
+                            ->orWhere('telefone1', 'like', '%'.$likeSearch.'%');
+                    })
+                    ->orWhereHas('equipment', static function (Builder $equipmentQuery) use ($likeSearch): void {
+                        $equipmentQuery->where('resumo_tecnico', 'like', '%'.$likeSearch.'%')
+                            ->orWhere('numero_serie', 'like', '%'.$likeSearch.'%')
+                            ->orWhere('imei', 'like', '%'.$likeSearch.'%');
+                    });
+            });
+        }
+
+        $paginator = $query
+            ->orderByDesc('orcamentos.aprovado_em')
+            ->orderByDesc('orcamentos.id')
+            ->paginate(perPage: $perPage, page: $page);
+        $paginator->setCollection(
+            $paginator->getCollection()->map(
+                fn (Budget $budget): array => $this->linkableBudgetListItem($budget)
+            )
+        );
+
+        return ['paginator' => $paginator];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function showLinkableForOrder(int $budgetId): array
+    {
+        $budget = $this->linkableForOrderQuery()->find($budgetId);
+
+        if (! $budget instanceof Budget) {
+            return ['result' => 'not_found'];
+        }
+
+        return [
+            'result' => 'ok',
+            'budget' => $this->linkableBudgetDetail($budget),
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function formData(User $user, array $context = []): array
@@ -124,7 +238,7 @@ class BudgetWorkflowService
                 }
 
                 if ($contextOrder->data_previsao !== null) {
-                    $selectedOrderDeadline = 'Previsão: ' . $contextOrder->data_previsao->format('d/m/Y');
+                    $selectedOrderDeadline = 'Previsão: '.$contextOrder->data_previsao->format('d/m/Y');
                 }
             }
         }
@@ -255,7 +369,7 @@ class BudgetWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
     public function createBudget(User $user, array $payload, ?User $verifiedAdmin = null): array
@@ -273,7 +387,7 @@ class BudgetWorkflowService
                 }
             }
 
-            $budget = new Budget();
+            $budget = new Budget;
             $budget->fill($budgetAttributes);
             $budget->numero = (string) ($budgetAttributes['numero'] ?? $this->nextBudgetNumber());
             $budget->versao = max(1, (int) ($budgetAttributes['versao'] ?? 1));
@@ -346,7 +460,7 @@ class BudgetWorkflowService
                         $budget->numero,
                         number_format((float) $budget->total, 2, ',', '.')
                     ),
-                    'route' => '/orcamentos/' . (int) $budget->id,
+                    'route' => '/orcamentos/'.(int) $budget->id,
                     'icon' => 'receipt',
                     'orcamento_id' => (int) $budget->id,
                     'os_id' => (int) ($budget->os_id ?? 0),
@@ -358,16 +472,20 @@ class BudgetWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
     public function updateBudget(int $budgetId, User $user, array $payload, ?User $verifiedAdmin = null): array
     {
         return DB::transaction(function () use ($budgetId, $user, $payload, $verifiedAdmin): array {
-            $budget = $this->loadBudget($budgetId);
+            $budget = $this->loadBudgetForUpdate($budgetId);
 
             if (! $budget instanceof Budget) {
                 return ['result' => 'not_found'];
+            }
+
+            if ((string) ($budget->status ?? '') === Budget::STATUS_CONVERTED) {
+                return ['result' => 'immutable'];
             }
 
             $order = $budget->order; // já eager-loaded por loadBudget()
@@ -483,7 +601,7 @@ class BudgetWorkflowService
                     ];
                     $dados['total_anterior'] = round($previousTotal, 2);
                     $dados['total_novo'] = round((float) $budget->total, 2);
-                    $descricao = 'Edição em OS encerrada autorizada por administrador. ' . $descricao;
+                    $descricao = 'Edição em OS encerrada autorizada por administrador. '.$descricao;
                 }
 
                 $this->orderEventService->record(
@@ -556,10 +674,26 @@ class BudgetWorkflowService
     public function deleteBudget(int $budgetId, User $user): array
     {
         return DB::transaction(function () use ($budgetId, $user): array {
-            $budget = Budget::query()->with(['items', 'histories', 'sends', 'approvals'])->find($budgetId);
+            $budget = Budget::query()
+                ->with(['items', 'histories', 'sends', 'approvals'])
+                ->lockForUpdate()
+                ->find($budgetId);
 
             if (! $budget instanceof Budget) {
                 return ['result' => 'not_found'];
+            }
+
+            $status = (string) ($budget->status ?? Budget::STATUS_DRAFT);
+            if ($status === Budget::STATUS_CONVERTED) {
+                return ['result' => 'immutable'];
+            }
+
+            if (! in_array($status, [
+                Budget::STATUS_DRAFT,
+                Budget::STATUS_REJECTED,
+                Budget::STATUS_CANCELLED,
+            ], true)) {
+                return ['result' => 'not_deletable'];
             }
 
             // Snapshot ANTES do hard delete para a timeline da OS.
@@ -594,6 +728,78 @@ class BudgetWorkflowService
     /**
      * @return array<string, mixed>
      */
+    private function linkableForOrderQuery(): Builder
+    {
+        return Budget::query()
+            ->with([
+                'client:id,nome_razao',
+                'equipment:id,cliente_id,resumo_tecnico',
+            ])
+            ->where('orcamentos.tipo_orcamento', Budget::TYPE_PREVIEW)
+            ->where('orcamentos.status', Budget::STATUS_PENDING_OS)
+            ->whereNull('orcamentos.os_id');
+    }
+
+    private function isLinkableForOrder(Budget $budget): bool
+    {
+        return (string) ($budget->tipo_orcamento ?? '') === Budget::TYPE_PREVIEW
+            && (string) ($budget->status ?? '') === Budget::STATUS_PENDING_OS
+            && (int) ($budget->os_id ?? 0) <= 0;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function linkableBudgetListItem(Budget $budget): array
+    {
+        $clientName = trim((string) ($budget->client?->nome_razao ?? $budget->cliente_nome_avulso ?? ''));
+        $equipmentLabel = trim((string) ($budget->equipment?->resumo_tecnico ?? ''))
+            ?: $this->eventualEquipmentLabel($budget);
+
+        return [
+            'id' => (int) $budget->id,
+            'numero' => (string) ($budget->numero ?? ('ORC-'.(int) $budget->id)),
+            'cliente_nome' => $clientName,
+            'equipamento_resumo' => $equipmentLabel,
+            'total' => round((float) ($budget->total ?? 0), 2),
+            'total_formatado' => number_format((float) ($budget->total ?? 0), 2, ',', '.'),
+            'aprovado_em' => optional($budget->aprovado_em)->format('d/m/Y H:i'),
+        ];
+    }
+
+    /**
+     * Retorna somente o contexto necessário para pré-preencher a Nova OS.
+     *
+     * @return array<string, mixed>
+     */
+    private function linkableBudgetDetail(Budget $budget): array
+    {
+        return array_merge($this->linkableBudgetListItem($budget), [
+            'tipo_orcamento' => (string) $budget->tipo_orcamento,
+            'status' => (string) $budget->status,
+            'relato_cliente' => (string) ($budget->relato_cliente ?? ''),
+            'cliente_nome_avulso' => (string) ($budget->cliente_nome_avulso ?? ''),
+            'telefone_contato' => (string) ($budget->telefone_contato ?? ''),
+            'email_contato' => (string) ($budget->email_contato ?? ''),
+            'envolve_equipamento' => (bool) ($budget->envolve_equipamento ?? true),
+            'equipamento_tipo_avulso' => (string) ($budget->equipamento_tipo_avulso ?? ''),
+            'equipamento_marca_avulso' => (string) ($budget->equipamento_marca_avulso ?? ''),
+            'equipamento_modelo_avulso' => (string) ($budget->equipamento_modelo_avulso ?? ''),
+            'equipamento_cor' => (string) ($budget->equipamento_cor ?? ''),
+            'equipamento_eventual_label' => $this->eventualEquipmentLabel($budget),
+            'cliente' => $budget->client ? [
+                'id' => (int) $budget->client->id,
+                'nome_razao' => (string) ($budget->client->nome_razao ?? ''),
+            ] : null,
+            'equipamento' => $budget->equipment ? [
+                'id' => (int) $budget->equipment->id,
+            ] : null,
+        ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
     private function budgetListItem(Budget $budget): array
     {
         $status = (string) ($budget->status ?? Budget::STATUS_DRAFT);
@@ -603,18 +809,18 @@ class BudgetWorkflowService
 
         $links = [];
         if ((int) ($budget->os_id ?? 0) > 0) {
-            $links[] = 'OS ' . (string) ($order?->numero_os ?? ('#' . (int) $budget->os_id));
+            $links[] = 'OS '.(string) ($order?->numero_os ?? ('#'.(int) $budget->os_id));
         }
         if ((int) ($budget->equipamento_id ?? 0) > 0) {
-            $links[] = 'Equipamento #' . (int) $budget->equipamento_id;
+            $links[] = 'Equipamento #'.(int) $budget->equipamento_id;
         }
         if ((int) ($budget->conversa_id ?? 0) > 0) {
-            $links[] = 'Conversa #' . (int) $budget->conversa_id;
+            $links[] = 'Conversa #'.(int) $budget->conversa_id;
         }
 
         return [
             'id' => (int) $budget->id,
-            'numero' => (string) ($budget->numero ?? ('ORC-' . (int) $budget->id)),
+            'numero' => (string) ($budget->numero ?? ('ORC-'.(int) $budget->id)),
             'versao' => (int) ($budget->versao ?? 1),
             'tipo_orcamento' => (string) ($budget->tipo_orcamento ?? Budget::TYPE_PREVIEW),
             'tipo_label' => Budget::typeLabel($budget->tipo_orcamento),
@@ -647,8 +853,7 @@ class BudgetWorkflowService
             'can_approve' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
             'can_reject' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
             'can_cancel' => ! in_array($status, [Budget::STATUS_CONVERTED, Budget::STATUS_CANCELLED], true),
-            'can_generate_os' => (int) ($budget->os_id ?? 0) <= 0
-                && in_array($status, [Budget::STATUS_PENDING_OS, Budget::STATUS_APPROVED], true),
+            'can_generate_os' => $this->isLinkableForOrder($budget),
         ];
     }
 
@@ -675,7 +880,7 @@ class BudgetWorkflowService
 
         return [
             'id' => (int) $budget->id,
-            'numero' => (string) ($budget->numero ?? ('ORC-' . (int) $budget->id)),
+            'numero' => (string) ($budget->numero ?? ('ORC-'.(int) $budget->id)),
             'versao' => (int) ($budget->versao ?? 1),
             'tipo_orcamento' => (string) ($budget->tipo_orcamento ?? Budget::TYPE_PREVIEW),
             'tipo_label' => Budget::typeLabel($budget->tipo_orcamento),
@@ -808,8 +1013,7 @@ class BudgetWorkflowService
             'can_approve' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
             'can_reject' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
             'can_cancel' => ! in_array($status, [Budget::STATUS_CONVERTED, Budget::STATUS_CANCELLED], true),
-            'can_generate_os' => (int) ($budget->os_id ?? 0) <= 0
-                && in_array($status, [Budget::STATUS_PENDING_OS, Budget::STATUS_APPROVED], true),
+            'can_generate_os' => $this->isLinkableForOrder($budget),
             'has_registered_client' => $client !== null,
             'link_publico' => $publicLink,
             'created_at' => optional($budget->created_at)->format('d/m/Y H:i'),
@@ -818,7 +1022,7 @@ class BudgetWorkflowService
     }
 
     /**
-     * @param Builder<Budget> $query
+     * @param  Builder<Budget>  $query
      * @return array<string, mixed>
      */
     private function summary(Builder $query): array
@@ -838,7 +1042,7 @@ class BudgetWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $filters
+     * @param  array<string, mixed>  $filters
      */
     private function buildQuery(array $filters = []): Builder
     {
@@ -879,7 +1083,7 @@ class BudgetWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $payload
+     * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */
     private function normalizePayload(array $payload, bool $creating): array
@@ -918,7 +1122,7 @@ class BudgetWorkflowService
      * sem OS = "prévio" (avulso). O tipo enviado no payload é ignorado de
      * propósito — um orçamento sem OS nunca é "assistência" (e vice-versa).
      *
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     private function resolveType(array $attributes, bool $fromOrder): string
     {
@@ -926,7 +1130,7 @@ class BudgetWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     private function resolveEnvolveEquipamento(array $attributes, bool $default): bool
     {
@@ -999,14 +1203,14 @@ class BudgetWorkflowService
 
         $cor = trim((string) ($budget->equipamento_cor ?? ''));
         if ($cor !== '') {
-            return $principal !== '' ? $principal . ' · ' . $cor : $cor;
+            return $principal !== '' ? $principal.' · '.$cor : $cor;
         }
 
         return $principal;
     }
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     private function resolveStatus(array $attributes, bool $creating, ?string $fallback = null): string
     {
@@ -1019,7 +1223,7 @@ class BudgetWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     private function resolveOrigin(array $attributes, bool $fromOrder): string
     {
@@ -1043,7 +1247,7 @@ class BudgetWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     private function resolveClientId(array $attributes, mixed $orderId): ?int
     {
@@ -1066,7 +1270,7 @@ class BudgetWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     private function resolveEquipmentId(array $attributes, mixed $orderId): ?int
     {
@@ -1089,7 +1293,7 @@ class BudgetWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     private function resolveValidityDate(array $attributes, int $validityDays, mixed $fallback = null): ?string
     {
@@ -1105,9 +1309,6 @@ class BudgetWorkflowService
         return now()->addDays(max(0, $validityDays))->toDateString();
     }
 
-    /**
-     * @param mixed $value
-     */
     private function resolveMoney(mixed $value): float
     {
         if ($value === null || $value === '') {
@@ -1245,7 +1446,7 @@ class BudgetWorkflowService
     }
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     private function resolveTotal(array $attributes, float $subtotal, float $desconto, float $acrescimo, ?float $fallback = null): float
     {
@@ -1262,9 +1463,9 @@ class BudgetWorkflowService
 
     private function nextBudgetNumber(): string
     {
-        $prefix = 'ORC-' . now()->format('ym') . '-';
+        $prefix = 'ORC-'.now()->format('ym').'-';
         $last = Budget::query()
-            ->where('numero', 'like', $prefix . '%')
+            ->where('numero', 'like', $prefix.'%')
             ->orderByDesc('id')
             ->value('numero');
 
@@ -1273,7 +1474,7 @@ class BudgetWorkflowService
             $sequence = max(1, (int) substr($last, strlen($prefix)) + 1);
         }
 
-        return $prefix . str_pad((string) $sequence, 6, '0', STR_PAD_LEFT);
+        return $prefix.str_pad((string) $sequence, 6, '0', STR_PAD_LEFT);
     }
 
     private function statusColor(string $status): string
@@ -1288,7 +1489,7 @@ class BudgetWorkflowService
     }
 
     /**
-     * @param array<int, mixed> $items
+     * @param  array<int, mixed>  $items
      */
     private function syncItems(Budget $budget, array $items): float
     {
@@ -1451,6 +1652,14 @@ class BudgetWorkflowService
     {
         return Budget::query()
             ->with(['client', 'equipment.brand', 'equipment.model', 'equipment.type', 'order', 'responsible', 'creator', 'updater', 'items', 'histories.user', 'sends.sender', 'approvals.user'])
+            ->find($budgetId);
+    }
+
+    private function loadBudgetForUpdate(int $budgetId): ?Budget
+    {
+        return Budget::query()
+            ->with(['client', 'equipment.brand', 'equipment.model', 'equipment.type', 'order', 'responsible', 'creator', 'updater', 'items', 'histories.user', 'sends.sender', 'approvals.user'])
+            ->lockForUpdate()
             ->find($budgetId);
     }
 

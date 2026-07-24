@@ -159,11 +159,12 @@ trait BuildsLegacyErpSchema
             ['id' => 5, 'nome' => 'Encerrar', 'slug' => 'encerrar'],
             ['id' => 6, 'nome' => 'Exportar', 'slug' => 'exportar'],
             ['id' => 7, 'nome' => 'Importar', 'slug' => 'importar'],
+            ['id' => 8, 'nome' => 'Converter orçamento em OS', 'slug' => 'converter_os'],
         ]);
     }
 
     /**
-     * @param array<string, array<int, string>> $permissionsByModule
+     * @param  array<string, array<int, string>>  $permissionsByModule
      */
     protected function grantGroupPermissions(int $groupId, array $permissionsByModule): void
     {
@@ -383,13 +384,13 @@ trait BuildsLegacyErpSchema
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     protected function createUserRecord(array $overrides = []): User
     {
         return User::create(array_merge([
             'nome' => 'Usuário Teste',
-            'email' => 'usuario.' . uniqid() . '@example.com',
+            'email' => 'usuario.'.uniqid().'@example.com',
             'senha' => Hash::make('Senha@123'),
             'telefone' => '(11) 99999-9999',
             'perfil' => 'atendente',
@@ -400,7 +401,7 @@ trait BuildsLegacyErpSchema
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     protected function createClientRecord(array $overrides = []): int
     {
@@ -430,7 +431,7 @@ trait BuildsLegacyErpSchema
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     protected function createSupplierRecord(array $overrides = []): int
     {
@@ -458,7 +459,7 @@ trait BuildsLegacyErpSchema
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     protected function createServiceRecord(array $overrides = []): int
     {
@@ -476,7 +477,7 @@ trait BuildsLegacyErpSchema
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     protected function createPecaRecord(array $overrides = []): int
     {
@@ -502,7 +503,7 @@ trait BuildsLegacyErpSchema
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     protected function createMovimentacaoRecord(array $overrides = []): int
     {
@@ -518,7 +519,7 @@ trait BuildsLegacyErpSchema
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     protected function createEquipmentRecord(int $clientId, array $overrides = []): int
     {
@@ -530,8 +531,8 @@ trait BuildsLegacyErpSchema
             'cor' => 'Preto',
             'cor_hex' => '#101010',
             'cor_rgb' => '16, 16, 16',
-            'numero_serie' => 'SER-' . uniqid(),
-            'imei' => 'IMEI-' . uniqid(),
+            'numero_serie' => 'SER-'.uniqid(),
+            'imei' => 'IMEI-'.uniqid(),
             'senha_acesso' => '1234',
             'estado_fisico' => 'Bom estado',
             'acessorios' => 'Fonte, mouse',
@@ -559,12 +560,12 @@ trait BuildsLegacyErpSchema
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     protected function createOrderRecord(array $overrides = []): int
     {
         return (int) DB::table('os')->insertGetId(array_merge([
-            'numero_os' => 'OS' . now()->format('ym') . str_pad((string) random_int(1000, 9999), 4, '0', STR_PAD_LEFT),
+            'numero_os' => 'OS'.now()->format('ym').str_pad((string) random_int(1000, 9999), 4, '0', STR_PAD_LEFT),
             'cliente_id' => 1,
             'equipamento_id' => 1,
             'tecnico_id' => null,
@@ -1562,12 +1563,12 @@ trait BuildsLegacyErpSchema
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     protected function createBudgetRecord(array $overrides = []): int
     {
         return (int) DB::table('orcamentos')->insertGetId(array_merge([
-            'numero' => 'ORC-' . now()->format('ym') . '-000001',
+            'numero' => 'ORC-'.now()->format('ym').'-000001',
             'versao' => 1,
             'tipo_orcamento' => 'previo',
             'status' => 'rascunho',
@@ -1603,7 +1604,7 @@ trait BuildsLegacyErpSchema
             'prazo_execucao' => null,
             'observacoes' => null,
             'condicoes' => null,
-            'token_publico' => 'token-' . uniqid(),
+            'token_publico' => 'token-'.uniqid(),
             'token_expira_em' => null,
             'enviado_em' => null,
             'aprovado_em' => null,
@@ -1618,7 +1619,7 @@ trait BuildsLegacyErpSchema
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     protected function createBudgetItemRecord(int $budgetId, array $overrides = []): int
     {
@@ -1653,7 +1654,7 @@ trait BuildsLegacyErpSchema
     }
 
     /**
-     * @param array<string, mixed> $overrides
+     * @param  array<string, mixed>  $overrides
      */
     protected function createBudgetHistoryRecord(int $budgetId, array $overrides = []): int
     {

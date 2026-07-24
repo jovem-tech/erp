@@ -183,6 +183,9 @@ class OrderController extends BaseApiController
     public function store(UpsertOrderRequest $request): JsonResponse
     {
         $this->authorize('os:criar');
+        if ((int) $request->input('orcamento_id', 0) > 0) {
+            $this->authorize('orcamentos:converter_os');
+        }
 
         $user = $this->authenticatedUser($request);
         if ($user === null) {
@@ -236,6 +239,20 @@ class OrderController extends BaseApiController
                 (string) ($result['message'] ?? 'O orçamento informado não pode ser convertido nesta OS.'),
                 422,
                 'ORDER_BUDGET_LINK_INVALID',
+                null,
+                request: $request
+            ),
+            'budget_link_conflict' => $this->error(
+                (string) ($result['message'] ?? 'O orçamento já foi convertido ou mudou de estado. Atualize a página.'),
+                409,
+                'ORDER_BUDGET_LINK_CONFLICT',
+                null,
+                request: $request
+            ),
+            'budget_link_not_found' => $this->error(
+                'O orçamento informado não foi encontrado.',
+                404,
+                'ORDER_BUDGET_LINK_NOT_FOUND',
                 null,
                 request: $request
             ),

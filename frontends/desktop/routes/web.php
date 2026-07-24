@@ -212,6 +212,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/orcamentos', [OrcamentoController::class, 'index'])
         ->middleware('desktop.permission:orcamentos,visualizar')
         ->name('orcamentos.index');
+    Route::get('/orcamentos/clientes/buscar', [OrcamentoController::class, 'searchClients'])
+        ->middleware('desktop.permission:orcamentos,criar|editar')
+        ->name('orcamentos.clients.search');
     Route::get('/orcamentos/novo', [OrcamentoController::class, 'create'])
         ->middleware('desktop.permission:orcamentos,criar')
         ->name('orcamentos.create');
@@ -246,6 +249,12 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/os/criar', [OrderController::class, 'create'])
         ->middleware('desktop.permission:os,criar')
         ->name('orders.create');
+    Route::get('/os/orcamentos-vinculaveis/buscar', [OrderController::class, 'searchLinkableBudgets'])
+        ->middleware([
+            'desktop.permission:os,criar',
+            'desktop.permission:orcamentos,converter_os',
+        ])
+        ->name('orders.linkable-budgets.search');
     Route::get('/os/clientes/buscar', [OrderController::class, 'searchClients'])
         ->middleware('desktop.permission:os,criar|editar')
         ->name('orders.clients.search');

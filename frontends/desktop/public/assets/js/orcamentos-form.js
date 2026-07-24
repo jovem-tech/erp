@@ -26,6 +26,7 @@
 
     const draftKey = String(config.draftKey || 'orcamentos:create');
     const isEditMode = Boolean(config.isEditMode);
+    const clientSearchUrl = String(config.clientSearchUrl || '').trim();
 
     const moneyFormatter = new Intl.NumberFormat('pt-BR', {
         minimumFractionDigits: 2,
@@ -422,6 +423,95 @@
             && clientSelect.getAttribute('name') !== 'cliente_id';
 
         const jq = () => (typeof window.jQuery !== 'undefined' ? window.jQuery : null);
+        const rememberClientOption = (option, client = {}) => {
+            if (!(option instanceof HTMLOptionElement)) {
+                return;
+            }
+
+            option.dataset.clientName = normalizeText(client?.name || option.dataset.clientName || option.textContent);
+            option.dataset.clientPhone = normalizeText(client?.phone || option.dataset.clientPhone || '');
+            option.dataset.clientEmail = normalizeText(client?.email || option.dataset.clientEmail || '');
+        };
+        const initClientSelect = () => {
+            if (!(clientSelect instanceof HTMLSelectElement)
+                || clientLocked
+                || clientSearchUrl === ''
+                || typeof window.jQuery === 'undefined'
+                || !window.jQuery.fn
+                || typeof window.jQuery.fn.select2 !== 'function') {
+                return;
+            }
+
+            const $ = window.jQuery;
+
+            if ($(clientSelect).data('select2')) {
+                try {
+                    $(clientSelect).select2('destroy');
+                } catch (error) {
+                    console.error('[OrcamentosForm] Falha ao reinicializar a busca de clientes.', error);
+                }
+            }
+
+            $(clientSelect).select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                placeholder: clientSelect.dataset.select2Placeholder || 'Selecione um cliente...',
+                allowClear: true,
+                dropdownParent: $(document.body),
+                minimumInputLength: 0,
+                language: {
+                    errorLoading: () => 'Os clientes não puderam ser carregados.',
+                    loadingMore: () => 'Carregando mais clientes...',
+                    noResults: () => 'Nenhum cliente encontrado.',
+                    searching: () => 'Buscando clientes...',
+                },
+                ajax: {
+                    url: clientSearchUrl,
+                    dataType: 'json',
+                    delay: 250,
+                    cache: true,
+                    data: (params) => ({
+                        q: normalizeText(params.term),
+                        page: Number(params.page || 1),
+                        per_page: 15,
+                    }),
+                    processResults: (payload) => ({
+                        results: Array.isArray(payload?.results)
+                            ? payload.results.map((client) => ({
+                                id: String(client?.id || ''),
+                                text: normalizeText(client?.text || client?.name || ''),
+                                name: normalizeText(client?.name || ''),
+                                phone: normalizeText(client?.phone || ''),
+                                email: normalizeText(client?.email || ''),
+                            })).filter((client) => client.id !== '')
+                            : [],
+                        pagination: {
+                            more: Boolean(payload?.pagination?.more),
+                        },
+                    }),
+                },
+            });
+
+            $(clientSelect)
+                .off('select2:select.orcamentoClients')
+                .on('select2:select.orcamentoClients', (event) => {
+                    const selectedOption = clientSelect.selectedOptions[0];
+                    const selectedClient = event?.params?.data || {};
+
+                    rememberClientOption(selectedOption, selectedClient);
+
+                    if (phoneInput instanceof HTMLInputElement) {
+                        phoneInput.value = normalizeText(selectedClient.phone);
+                    }
+                    if (emailInput instanceof HTMLInputElement) {
+                        emailInput.value = normalizeText(selectedClient.email);
+                    }
+                });
+
+            const selectedOption = clientSelect.selectedOptions[0];
+            rememberClientOption(selectedOption);
+            clientSelect.dataset.remoteSelect2Ready = '1';
+        };
         // Ao desabilitar, também limpamos o valor: o campo inativo (lado oposto da
         // exclusividade / oculto) deve ir vazio. Antes de enviar reabilitamos tudo
         // (enableManagedControlsForSubmit) para que o valor vazio realmente poste e
@@ -1259,6 +1349,7 @@
 
             updateItemsCount();
             saveDraftDebounced();
+            syncPrimaryAction();
         };
 
         const getSelectedOptionLabel = (select) => {
@@ -1831,7 +1922,21 @@
                 });
             });
 
-            return { fields, items };
+            const selectedClientOption = clientSelect instanceof HTMLSelectElement
+                ? clientSelect.selectedOptions[0]
+                : null;
+            const selectedClient = selectedClientOption instanceof HTMLOptionElement
+                && normalizeText(selectedClientOption.value) !== ''
+                ? {
+                    id: normalizeText(selectedClientOption.value),
+                    text: normalizeText(selectedClientOption.textContent),
+                    name: normalizeText(selectedClientOption.dataset.clientName),
+                    phone: normalizeText(selectedClientOption.dataset.clientPhone),
+                    email: normalizeText(selectedClientOption.dataset.clientEmail),
+                }
+                : null;
+
+            return { fields, items, selectedClient };
         };
 
         const saveDraft = () => {
@@ -1852,6 +1957,19 @@
 
             const fields = state.fields || {};
             const items = Array.isArray(state.items) ? state.items : [];
+            const restoredClient = state.selectedClient && typeof state.selectedClient === 'object'
+                ? state.selectedClient
+                : null;
+            const restoredClientId = normalizeText(fields.cliente_id || restoredClient?.id || '');
+
+            if (clientSelect instanceof HTMLSelectElement
+                && restoredClientId !== ''
+                && !Array.from(clientSelect.options).some((option) => option.value === restoredClientId)) {
+                const label = normalizeText(restoredClient?.text || restoredClient?.name || `Cliente #${restoredClientId}`);
+                const option = new Option(label, restoredClientId, true, true);
+                rememberClientOption(option, restoredClient || {});
+                clientSelect.appendChild(option);
+            }
 
             Object.entries(fields).forEach(([name, value]) => {
                 const field = form.querySelector(`[name="${CSS.escape(name)}"]`);
@@ -1867,6 +1985,14 @@
 
                 field.value = String(value ?? '');
             });
+
+            if (clientSelect instanceof HTMLSelectElement && restoredClientId !== '') {
+                clientSelect.value = restoredClientId;
+
+                if (typeof window.jQuery !== 'undefined' && window.jQuery.fn && window.jQuery(clientSelect).data('select2')) {
+                    window.jQuery(clientSelect).val(restoredClientId).trigger('change');
+                }
+            }
 
             itemsBody.innerHTML = '';
 
@@ -1983,6 +2109,104 @@
                     switchTab(button.dataset.budgetTab);
                 }
             });
+        });
+
+        // Trava do botao principal: so libera "Salvar orcamento" quando os campos
+        // obrigatorios de TODAS as abas estiverem preenchidos; antes disso o botao
+        // vira "Proximo" (so avanca a aba corrente, nao bloqueia clicar direto numa
+        // aba especifica). So se aplica ao cadastro novo — orcamentos existentes
+        // (edicao) foram salvos sob as regras antigas, mais permissivas, e nao devem
+        // ficar travados por uma regra que nao existia quando foram criados.
+        const budgetIsEdit = form.dataset.budgetIsEdit === '1';
+        const primaryActionButton = form.querySelector('[data-budget-primary-action]');
+        const primaryActionSaveLabel = primaryActionButton instanceof HTMLButtonElement
+            ? primaryActionButton.textContent.trim()
+            : 'Salvar orçamento';
+        const budgetTabOrder = ['cliente', 'equipamento', 'operacional', 'financeiro'];
+        const budgetTabFlags = new Map(
+            tabButtons.map((button) => [button.dataset.budgetTab, button.querySelector('[data-budget-tab-flag]')])
+        );
+
+        const isEquipmentTabComplete = () => {
+            const envolve = envolveCheckbox instanceof HTMLInputElement ? envolveCheckbox.checked : true;
+            if (!envolve) {
+                return true;
+            }
+            if (filledSelect(equipmentSelect)) {
+                return true;
+            }
+            const tipo = document.getElementById('orcamentoEquipTipoAvulso');
+            const marca = document.getElementById('orcamentoEquipMarcaAvulso');
+            const modelo = document.getElementById('orcamentoEquipModeloAvulso');
+            return filledInput(tipo) && filledInput(marca) && filledInput(modelo);
+        };
+
+        const isFinanceiroTabComplete = () => {
+            const rows = Array.from(itemsBody.querySelectorAll('[data-budget-item-row]')).filter(rowHasMeaningfulContent);
+            if (rows.length === 0) {
+                return false;
+            }
+
+            const allRowsValid = rows.every((row) => {
+                const descriptionInput = row.querySelector('[data-budget-item-description]');
+                const rowTotalInput = row.querySelector('[data-budget-item-total]');
+                const description = descriptionInput instanceof HTMLInputElement ? normalizeText(descriptionInput.value) : '';
+                const rowTotal = rowTotalInput instanceof HTMLInputElement ? toNumber(rowTotalInput.value) : 0;
+                return description !== '' && rowTotal > 0;
+            });
+
+            return allRowsValid && toNumber(totalInput?.value) > 0;
+        };
+
+        // Le o estado atual direto do DOM (nao usa collectReviewSnapshot(): essa
+        // funcao chama updateSummary(), e syncPrimaryAction() e chamada de dentro
+        // de updateSummary() — reusar o snapshot aqui criaria uma recursao infinita).
+        const computeBudgetTabValidity = () => ({
+            cliente: filledSelect(clientSelect) || filledInput(clientFallbackInput),
+            equipamento: isEquipmentTabComplete(),
+            operacional: true,
+            financeiro: isFinanceiroTabComplete(),
+        });
+
+        const syncPrimaryAction = () => {
+            if (budgetIsEdit || !(primaryActionButton instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            const validity = computeBudgetTabValidity();
+
+            budgetTabFlags.forEach((flag, name) => {
+                if (flag instanceof HTMLElement) {
+                    flag.hidden = validity[name] !== false;
+                }
+            });
+
+            const allValid = budgetTabOrder.every((name) => validity[name] !== false);
+
+            if (allValid) {
+                primaryActionButton.type = 'submit';
+                primaryActionButton.textContent = primaryActionSaveLabel;
+                primaryActionButton.removeAttribute('title');
+                delete primaryActionButton.dataset.budgetNextMode;
+            } else {
+                primaryActionButton.type = 'button';
+                primaryActionButton.textContent = 'Próximo';
+                primaryActionButton.title = 'Preencha os campos obrigatórios destacados nas abas antes de salvar.';
+                primaryActionButton.dataset.budgetNextMode = '1';
+            }
+        };
+
+        primaryActionButton?.addEventListener('click', (event) => {
+            if (primaryActionButton.dataset.budgetNextMode !== '1') {
+                return;
+            }
+
+            event.preventDefault();
+
+            const activeButton = tabButtons.find((button) => button.classList.contains('is-active'));
+            const currentIndex = activeButton ? budgetTabOrder.indexOf(activeButton.dataset.budgetTab) : -1;
+            const nextTab = budgetTabOrder[(currentIndex + 1) % budgetTabOrder.length];
+            switchTab(nextTab);
         });
 
         const formatDateInput = (date) => {
@@ -2189,11 +2413,18 @@
         envolveCheckbox?.addEventListener('change', syncEquipmentMode);
         eventualInputs.forEach((input) => input.addEventListener('input', syncEquipmentMode));
 
+        initClientSelect();
         loadDraft();
         syncEventualFields();
         updateSummary();
+        // Reassere o estado do botao principal ("Proximo" x "Salvar orcamento")
+        // depois que a fila de tarefas drena — cobre o caso de o Select2 do cliente
+        // (initClientSelect) so terminar de montar num tick posterior e disparar
+        // eventos que so entao refletem o valor real dos campos.
+        syncPrimaryAction();
 
         window.setTimeout(() => {
+            syncPrimaryAction();
             if (!isEditMode && banner instanceof HTMLElement && !banner.classList.contains('d-none')) {
                 return;
             }

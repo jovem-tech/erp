@@ -10,7 +10,8 @@
 
     // Geração de OS a partir de orçamento avulso aprovado (ver OrderController::create).
     $linkedBudget = is_array($linkedBudget ?? null) ? $linkedBudget : null;
-    $linkableBudgets = is_array($linkableBudgets ?? null) ? $linkableBudgets : [];
+    $canLinkBudgets = (bool) ($canLinkBudgets ?? false);
+    $linkableBudgetSearchUrl = trim((string) ($linkableBudgetSearchUrl ?? ''));
     $linkedBudgetId = (int) old('orcamento_id', $linkedBudget !== null ? (int) data_get($linkedBudget, 'id', 0) : 0);
     $linkedBudgetHasClient = $linkedBudget !== null && (int) data_get($linkedBudget, 'cliente.id', 0) > 0;
     $linkedBudgetAvulsoName = trim((string) data_get($linkedBudget, 'cliente_nome_avulso', ''));
@@ -248,7 +249,7 @@
                 data-linked-budget-equip-cor="{{ $linkedBudgetEquipCor }}">
                 <div class="d-flex align-items-start gap-2">
                     <i class="bi bi-receipt-cutoff"></i>
-                    <div>
+                    <div class="flex-grow-1">
                         <strong>Gerando OS a partir do orçamento {{ (string) data_get($linkedBudget, 'numero', '') }}.</strong>
                         <div class="small">
                             Os valores do orçamento serão vinculados a esta OS e o orçamento passará a "Convertido" ao salvar.
@@ -264,22 +265,27 @@
                             @endif
                         </div>
                     </div>
+                    <a href="{{ route('orders.create') }}"
+                        class="btn btn-sm btn-outline-primary ms-auto"
+                        data-order-unlink-budget>
+                        <i class="bi bi-arrow-repeat me-1"></i>Remover ou trocar
+                    </a>
                 </div>
             </div>
-        @elseif (! $isEditing && $linkableBudgets !== [])
+        @elseif (! $isEditing && $canLinkBudgets)
             <div class="order-create-budget-picker mb-2">
                 <label for="orderLinkBudget" class="mb-1">Vincular orçamento avulso aprovado (opcional)</label>
-                <select id="orderLinkBudget" class="form-select" data-order-link-budget>
-                    <option value="">Não vincular — abrir OS em branco</option>
-                    @foreach ($linkableBudgets as $linkableBudget)
-                        <option value="{{ route('orders.create', ['orcamento_id' => (int) $linkableBudget['id']]) }}">
-                            {{ $linkableBudget['numero'] !== '' ? $linkableBudget['numero'] : ('Orçamento #' . (int) $linkableBudget['id']) }}
-                            @if (($linkableBudget['cliente_nome'] ?? '') !== '') · {{ $linkableBudget['cliente_nome'] }} @endif
-                            @if (($linkableBudget['total_formatado'] ?? '') !== '') · R$ {{ $linkableBudget['total_formatado'] }} @endif
-                        </option>
-                    @endforeach
+                <select id="orderLinkBudget"
+                    class="form-select"
+                    data-order-link-budget
+                    data-search-url="{{ $linkableBudgetSearchUrl }}"
+                    data-link-url="{{ route('orders.create') }}">
+                    <option value=""></option>
                 </select>
-                <small class="text-secondary d-block mt-1">Ao escolher, o formulário recarrega já vinculado e pré-preenchido.</small>
+                <small class="text-secondary d-block mt-1">
+                    Pesquise por número, cliente ou equipamento. A troca pede confirmação se este formulário já tiver alterações.
+                </small>
+                <small class="text-danger d-none mt-1" data-order-link-budget-feedback role="alert"></small>
             </div>
         @endif
 
@@ -382,7 +388,7 @@
                     <li class="order-create-summary-row">
                         <span class="order-create-summary-row-label">Fotos</span>
                         <span class="order-create-summary-row-value">
-                            <span class="order-create-summary-row-text"><span data-order-create-summary-photos>{{ $existingPhotosCount }}</span> fotos</span>
+                            <span class="order-create-summary-row-text" data-order-create-summary-photos>{{ $existingPhotosCount }} {{ $existingPhotosCount === 1 ? 'foto' : 'fotos' }}</span>
                             <i class="bi {{ $existingPhotosCount > 0 ? 'bi-check-circle-fill is-complete' : 'bi-x-circle-fill is-pending' }} order-create-summary-row-icon" data-order-create-summary-photos-icon></i>
                         </span>
                     </li>
@@ -780,6 +786,16 @@
                             <small class="text-secondary d-block mt-2">Fotos ja enviadas para a OS. A remocao nao esta disponivel por aqui.</small>
                         </div>
                     @endif
+
+                    <div class="order-create-field order-create-field-span-2 d-none" data-order-pending-equipment-photos>
+                        <div class="mb-2">
+                            <label class="mb-0">Fotos do novo equipamento</label>
+                            <small class="text-secondary d-block">
+                                Temporárias: permanecem somente neste navegador e serão gravadas com o equipamento apenas quando a OS for salva.
+                            </small>
+                        </div>
+                        <div class="order-create-photo-preview-grid" data-order-pending-equipment-photos-preview></div>
+                    </div>
 
                     <div class="order-create-field order-create-field-span-2">
                         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
