@@ -97,7 +97,12 @@
         ]) }};
         @endif
     </script>
-    @if (!empty($desktopSessionGuard['active']))
+    {{-- O guard de "navegador fechado/reaberto" é só para a janela principal.
+         Em páginas embedded (iframe, ex.: cadastro rápido de equipamento na OS),
+         o pagehide do iframe (ao fechar o modal / src=about:blank) gravava o
+         marcador de fechamento no localStorage compartilhado e derrubava a
+         sessão do pai. Iframes não participam dessa deteccao. --}}
+    @if (!empty($desktopSessionGuard['active']) && ! $desktopEmbedded)
     <script>
         // Guard "fechar o navegador = deslogar" para sessões SEM "Manter-me
         // conectado". O cookie de sessão já nasce efêmero (morre ao fechar),

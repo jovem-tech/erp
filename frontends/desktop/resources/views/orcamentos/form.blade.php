@@ -165,6 +165,17 @@
     // OS encerrada (skill sistema-erp-os-fluxo-fechamento): edição exige
     // confirmação de administrador — ver BudgetWorkflowService::isOrderClosed().
     $osIsEncerrada = (bool) ($budget['os']['is_encerrada'] ?? false);
+
+    // Equipamento eventual (aparelho sem cadastro) — espelha o cliente eventual.
+    $clienteAvulsoValue = trim((string) old('cliente_nome_avulso', $budget['cliente_nome_avulso'] ?? ''));
+    $envolveEquipamentoRaw = old('envolve_equipamento', (($budget['envolve_equipamento'] ?? true) ? '1' : '0'));
+    $envolveEquipamento = (string) $envolveEquipamentoRaw === '1' || $envolveEquipamentoRaw === true;
+    $equipTipoAvulso = trim((string) old('equipamento_tipo_avulso', $budget['equipamento_tipo_avulso'] ?? ''));
+    $equipMarcaAvulso = trim((string) old('equipamento_marca_avulso', $budget['equipamento_marca_avulso'] ?? ''));
+    $equipModeloAvulso = trim((string) old('equipamento_modelo_avulso', $budget['equipamento_modelo_avulso'] ?? ''));
+    $equipCorAvulso = trim((string) old('equipamento_cor', $budget['equipamento_cor'] ?? ''));
+    $hasEventualEquipment = ($equipTipoAvulso . $equipMarcaAvulso . $equipModeloAvulso . $equipCorAvulso) !== '';
+    $hasEventualClient = $clienteAvulsoValue !== '' && $selectedClientId <= 0;
 @endphp
 
 <section class="desktop-form-card">
@@ -251,7 +262,7 @@
             <div class="desktop-grid desktop-grid-two">
                 <div>
                     <label for="orcamentoClienteId">Cliente cadastrado</label>
-                    <select id="orcamentoClienteId" name="{{ $clientLocked ? '' : 'cliente_id' }}" class="form-select" data-select2-placeholder="Selecione um cliente..." data-select2-allow-clear="true" @disabled($clientLocked)>
+                    <select id="orcamentoClienteId" name="{{ $clientLocked ? '' : 'cliente_id' }}" class="form-select" data-select2-placeholder="Selecione um cliente..." data-select2-allow-clear="true" data-budget-client-select @disabled($clientLocked)>
                         <option value=""></option>
                         @foreach ($clients as $client)
                             @php
@@ -273,7 +284,7 @@
 
                 <div>
                     <label for="orcamentoClienteAvulso">Nome do cliente eventual</label>
-                    <input type="text" id="orcamentoClienteAvulso" name="cliente_nome_avulso" class="form-control" value="{{ old('cliente_nome_avulso', $budget['cliente_nome_avulso'] ?? '') }}" placeholder="Preencher apenas se não houver cadastro" @disabled($clientLocked)>
+                    <input type="text" id="orcamentoClienteAvulso" name="cliente_nome_avulso" class="form-control" value="{{ old('cliente_nome_avulso', $budget['cliente_nome_avulso'] ?? '') }}" placeholder="Preencher apenas se não houver cadastro" data-budget-client-avulso @disabled($clientLocked)>
                 </div>
 
                 <div>
@@ -290,7 +301,16 @@
 
         <div class="equipment-tab-panel" data-budget-panel="equipamento">
             <div class="desktop-grid desktop-grid-two">
-                <div>
+                <div class="desktop-grid-span-2">
+                    <div class="form-check">
+                        <input type="hidden" name="envolve_equipamento" value="0">
+                        <input type="checkbox" class="form-check-input" id="orcamentoEnvolveEquipamento" name="envolve_equipamento" value="1" data-budget-envolve-equipamento @checked($envolveEquipamento)>
+                        <label class="form-check-label" for="orcamentoEnvolveEquipamento">Orçamento para reparo de um equipamento</label>
+                    </div>
+                    <small class="text-secondary d-block mt-1">Desmarque para serviços sem aparelho (visita técnica, instalação de cabo de rede, etc.).</small>
+                </div>
+
+                <div data-budget-equipment-field data-budget-registered-only>
                     <label for="orcamentoOsId">OS vinculada</label>
                     <select id="orcamentoOsId" name="os_id" class="form-select" data-select2-placeholder="Selecione uma OS..." data-select2-allow-clear="true">
                         <option value=""></option>
@@ -305,9 +325,9 @@
                     </select>
                 </div>
 
-                <div>
-                    <label for="orcamentoEquipamentoId">Equipamento</label>
-                    <select id="orcamentoEquipamentoId" name="equipamento_id" class="form-select" data-select2-placeholder="Selecione um equipamento..." data-select2-allow-clear="true">
+                <div data-budget-equipment-field data-budget-registered-only>
+                    <label for="orcamentoEquipamentoId">Equipamento cadastrado</label>
+                    <select id="orcamentoEquipamentoId" name="equipamento_id" class="form-select" data-select2-placeholder="Selecione um equipamento..." data-select2-allow-clear="true" data-budget-equipment-select>
                         <option value=""></option>
                         @foreach ($equipments as $equipment)
                             @php
@@ -326,6 +346,36 @@
                             <option value="{{ $equipmentId }}" @selected($selectedEquipmentId === $equipmentId)>{{ $equipmentLabel !== '' ? $equipmentLabel : 'Equipamento #' . $equipmentId }}{{ $serial !== '' ? ' · S/N ' . $serial : '' }}{{ $clientName !== '' ? ' · ' . $clientName : '' }}</option>
                         @endforeach
                     </select>
+                </div>
+
+                <div class="desktop-grid-span-2" data-budget-equipment-field data-budget-eventual-equipment>
+                    <div class="surface-subtle-card p-3">
+                        <div class="fw-semibold mb-1"><i class="bi bi-phone me-1"></i>Equipamento eventual</div>
+                        <small class="text-secondary d-block mb-3">Aparelho que ainda não veio à assistência. Preencha o que souber — estes dados pré-preenchem o cadastro do equipamento ao gerar a OS.</small>
+                        <div class="desktop-grid desktop-grid-two">
+                            <div>
+                                <label for="orcamentoEquipTipoAvulso">Tipo</label>
+                                <input type="text" id="orcamentoEquipTipoAvulso" name="equipamento_tipo_avulso" class="form-control" value="{{ $equipTipoAvulso }}" placeholder="Ex.: Smartphone" data-budget-eventual-input maxlength="120">
+                            </div>
+                            <div>
+                                <label for="orcamentoEquipMarcaAvulso">Marca</label>
+                                <input type="text" id="orcamentoEquipMarcaAvulso" name="equipamento_marca_avulso" class="form-control" value="{{ $equipMarcaAvulso }}" placeholder="Ex.: Apple" data-budget-eventual-input maxlength="120">
+                            </div>
+                            <div>
+                                <label for="orcamentoEquipModeloAvulso">Modelo</label>
+                                <input type="text" id="orcamentoEquipModeloAvulso" name="equipamento_modelo_avulso" class="form-control" value="{{ $equipModeloAvulso }}" placeholder="Ex.: iPhone 16" data-budget-eventual-input maxlength="120">
+                            </div>
+                            <div>
+                                <label for="orcamentoEquipCorAvulso">Cor</label>
+                                <input type="text" id="orcamentoEquipCorAvulso" name="equipamento_cor" class="form-control" value="{{ $equipCorAvulso }}" placeholder="Ex.: Preto" data-budget-eventual-input maxlength="100">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="desktop-grid-span-2">
+                    <label for="orcamentoRelatoCliente">Relato do cliente / defeito relatado</label>
+                    <textarea id="orcamentoRelatoCliente" name="relato_cliente" class="form-control" rows="3" placeholder="Descreva o problema relatado pelo cliente. Ao gerar a OS, isto preenche o relato da ordem.">{{ old('relato_cliente', $budget['relato_cliente'] ?? '') }}</textarea>
                 </div>
 
                 <div class="desktop-grid-span-2">

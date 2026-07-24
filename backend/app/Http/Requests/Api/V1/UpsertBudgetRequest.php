@@ -24,9 +24,16 @@ class UpsertBudgetRequest extends BaseApiFormRequest
             'email_contato' => ['nullable', 'email', 'max:120'],
             'os_id' => ['nullable', 'integer', 'min:1', Rule::exists('os', 'id')],
             'equipamento_id' => ['nullable', 'integer', 'min:1', Rule::exists('equipamentos', 'id')],
+            'envolve_equipamento' => ['nullable', 'boolean'],
             'equipamento_tipo_id' => ['nullable', 'integer', 'min:1'],
             'equipamento_marca_id' => ['nullable', 'integer', 'min:1'],
             'equipamento_modelo_id' => ['nullable', 'integer', 'min:1'],
+            // Equipamento eventual (aparelho sem cadastro) — texto livre, espelha
+            // cliente_nome_avulso. A obrigatoriedade condicional fica na camada
+            // desktop (OrcamentoController::validatedBudgetPayload).
+            'equipamento_tipo_avulso' => ['nullable', 'string', 'max:120'],
+            'equipamento_marca_avulso' => ['nullable', 'string', 'max:120'],
+            'equipamento_modelo_avulso' => ['nullable', 'string', 'max:120'],
             'equipamento_cor' => ['nullable', 'string', 'max:100'],
             'equipamento_cor_hex' => ['nullable', 'string', 'max:7'],
             'equipamento_cor_rgb' => ['nullable', 'string', 'max:32'],
@@ -35,6 +42,7 @@ class UpsertBudgetRequest extends BaseApiFormRequest
             'criado_por' => ['nullable', 'integer', 'min:1', Rule::exists('usuarios', 'id')],
             'atualizado_por' => ['nullable', 'integer', 'min:1', Rule::exists('usuarios', 'id')],
             'titulo' => ['nullable', 'string', 'max:180'],
+            'relato_cliente' => ['nullable', 'string'],
             'validade_dias' => ['nullable', 'integer', 'min:0', 'max:3650'],
             'validade_data' => ['nullable', 'date'],
             'subtotal' => ['nullable', 'numeric', 'min:0'],

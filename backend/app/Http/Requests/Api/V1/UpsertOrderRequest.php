@@ -10,16 +10,31 @@ class UpsertOrderRequest extends BaseApiFormRequest
     public function rules(): array
     {
         $requiredOrSometimes = $this->isMethod('post') ? 'required' : 'sometimes';
+        // Criação atômica: no POST, cliente/equipamento podem vir como registro
+        // existente (cliente_id/equipamento_id) OU como cadastro novo, capturado
+        // no formulário e só persistido junto com a OS (novo_cliente/novo_equipamento).
+        $clientRule = $this->isMethod('post') ? 'required_without:novo_cliente.nome_razao' : 'sometimes';
+        $equipmentRule = $this->isMethod('post') ? 'required_without:novo_equipamento.tipo_id' : 'sometimes';
 
         return [
             'idempotency_key' => [$this->isMethod('post') ? 'nullable' : 'prohibited', 'uuid'],
-            'cliente_id' => [$requiredOrSometimes, 'integer', 'min:1', Rule::exists('clientes', 'id')],
-            'equipamento_id' => [$requiredOrSometimes, 'integer', 'min:1', Rule::exists('equipamentos', 'id')],
+            'cliente_id' => [$clientRule, 'nullable', 'integer', 'min:1', Rule::exists('clientes', 'id')],
+            'equipamento_id' => [$equipmentRule, 'nullable', 'integer', 'min:1', Rule::exists('equipamentos', 'id')],
+            // Cadastro novo de cliente/equipamento (criação diferida, só no POST).
+            'novo_cliente' => ['nullable', 'array'],
+            'novo_cliente.nome_razao' => ['nullable', 'required_with:novo_cliente', 'string', 'max:100'],
+            'novo_cliente.telefone1' => ['nullable', 'required_with:novo_cliente', 'string', 'max:20'],
+            'novo_cliente.email' => ['nullable', 'email', 'max:100'],
+            'novo_equipamento' => ['nullable', 'array'],
+            'novo_equipamento.tipo_id' => ['nullable', 'required_with:novo_equipamento', 'integer', 'min:1', Rule::exists('equipamentos_tipos', 'id')],
             // Vínculo opcional de um orçamento avulso aprovado a ser convertido nesta OS.
             'orcamento_id' => ['nullable', 'integer', 'min:1', Rule::exists('orcamentos', 'id')],
             'tecnico_id' => ['nullable', 'integer', 'min:1', Rule::exists('usuarios', 'id')],
             'fotos' => ['nullable', 'array', 'max:4'],
             'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            // Fotos do equipamento novo (criação diferida na abertura de OS).
+            'novo_equipamento_fotos' => ['nullable', 'array', 'max:4'],
+            'novo_equipamento_fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'status' => [$this->isMethod('post') ? 'nullable' : 'sometimes', 'string', 'max:80', Rule::in(OrderStatus::activeCodes())],
             'estado_fluxo' => ['nullable', 'string', 'max:40'],
             'prioridade' => ['nullable', 'string', Rule::in(['baixa', 'normal', 'alta', 'urgente'])],

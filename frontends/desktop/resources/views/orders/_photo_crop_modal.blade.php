@@ -37,7 +37,10 @@
                     </button>
                 </div>
 
-                <img src="" alt="Imagem selecionada para corte" id="orderPhotoCropImage" class="equipment-crop-image">
+                {{-- Sem src inicial: <img src=""> dispara evento 'error' no
+                     navegador (tenta carregar imagem vazia). O src real é
+                     definido no recorte (openNextPhotoCrop). --}}
+                <img alt="Imagem selecionada para corte" id="orderPhotoCropImage" class="equipment-crop-image">
             </div>
 
             <div class="modal-footer">

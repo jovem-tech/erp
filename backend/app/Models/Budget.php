@@ -46,6 +46,7 @@ class Budget extends Model
         'equipamento_tipo_id' => 'integer',
         'equipamento_marca_id' => 'integer',
         'equipamento_modelo_id' => 'integer',
+        'envolve_equipamento' => 'boolean',
         'conversa_id' => 'integer',
         'responsavel_id' => 'integer',
         'criado_por' => 'integer',

@@ -106,6 +106,10 @@
         existingPhotosCount: Math.max(0, Number(config.existingPhotosCount || 0)),
         entryChecklistModel: parseJsonDataset(els.entryChecklistRoot?.dataset.checklistModel || '', null),
         entryChecklistResponses: parseJsonDataset(els.entryChecklistRoot?.dataset.checklistResponses || '', []),
+        // Cadastro novo capturado (criação diferida): nada é persistido até salvar a OS.
+        pendingClient: null,
+        pendingEquipment: null,
+        pendingEquipmentPhotos: [],
     };
 
     const select2Language = {
@@ -348,6 +352,18 @@
     };
 
     const getClientData = () => {
+        if (state.pendingClient) {
+            return {
+                id: 0,
+                pending: true,
+                name: normalizeText(state.pendingClient.nome_razao || 'Novo cliente'),
+                phone: normalizeText(state.pendingClient.telefone1 || ''),
+                email: normalizeText(state.pendingClient.email || ''),
+                contact: normalizeText(state.pendingClient.nome_contato || ''),
+                city: normalizeText(state.pendingClient.cidade || ''),
+                uf: normalizeText(state.pendingClient.uf || ''),
+            };
+        }
         const selected = getSelectedOption(els.clientSelect);
         const cachedRecord = state.clientCache.get(String(els.clientSelect instanceof HTMLSelectElement ? els.clientSelect.value : '')) || null;
         const record = getClientRecordFromOption(selected) || cachedRecord;
@@ -497,6 +513,24 @@
     };
 
     const getEquipmentData = () => {
+        if (state.pendingEquipment) {
+            const p = state.pendingEquipment;
+            const label = normalizeText([p.marca_nome, p.modelo_nome].filter(Boolean).join(' ')
+                || p.tipo_nome || p.numero_serie_visual || 'Novo equipamento');
+            return {
+                id: 0,
+                pending: true,
+                name: label,
+                serial: normalizeText(p.numero_serie_visual || ''),
+                photoUrl: '',
+                clientId: 0,
+                clientName: '',
+                brandName: normalizeText(p.marca_nome || ''),
+                modelName: normalizeText(p.modelo_nome || ''),
+                tipoId: Number(p.tipo_id || 0) || 0,
+                tipoName: normalizeText(p.tipo_nome || ''),
+            };
+        }
         const selected = getSelectedOption(els.equipmentSelect);
         const optionRecord = getEquipmentRecordFromOption(selected);
         const cachedRecord = state.equipmentCache.get(String(els.equipmentSelect?.value || '')) || null;
@@ -794,6 +828,9 @@
         const url = new URL(baseUrl, window.location.origin);
         const client = getClientData();
         url.searchParams.set('embedded', '1');
+        // Modo diferido: o cadastro de equipamento é apenas capturado (não persiste);
+        // será criado com a OS ao salvar.
+        url.searchParams.set('defer', '1');
 
         if (client.id > 0) {
             url.searchParams.set('cliente_id', String(client.id));
@@ -801,6 +838,31 @@
             if (client.name !== '' && client.name !== 'Nao selecionado') {
                 url.searchParams.set('cliente_busca_label', client.name);
             }
+        }
+
+        // Nome do cliente da OS (existente OU novo pendente) — mostrado como
+        // contexto read-only no cadastro do equipamento (o vínculo é feito pelo
+        // backend com o cliente da OS; nada é criado aqui).
+        if (client.name !== '' && client.name !== 'Nao selecionado') {
+            url.searchParams.set('cliente_nome', client.name);
+        }
+
+        // Pré-preenche o cadastro do equipamento com o equipamento eventual do
+        // orçamento que está gerando esta OS (tipo/marca/modelo/cor, texto livre).
+        const budgetBanner = document.querySelector('[data-linked-budget-equip-modelo]');
+        if (budgetBanner instanceof HTMLElement) {
+            const eventualEquip = {
+                equip_tipo: budgetBanner.dataset.linkedBudgetEquipTipo,
+                equip_marca: budgetBanner.dataset.linkedBudgetEquipMarca,
+                equip_modelo: budgetBanner.dataset.linkedBudgetEquipModelo,
+                equip_cor: budgetBanner.dataset.linkedBudgetEquipCor,
+            };
+            Object.entries(eventualEquip).forEach(([param, raw]) => {
+                const value = String(raw || '').trim();
+                if (value !== '') {
+                    url.searchParams.set(param, value);
+                }
+            });
         }
 
         return url.toString();
@@ -981,22 +1043,25 @@
         const previsao = normalizeText(els.previsaoField instanceof HTMLInputElement ? els.previsaoField.value : '');
         const photoCount = state.existingPhotosCount + state.photoEntries.length;
         const checklist = getChecklistSummary();
-        const isReady = client.id > 0 && equipment.id > 0 && relato.length >= 5 && technician.id > 0 && previsao !== '';
+        // Cadastro novo capturado conta como "pronto" (será criado ao salvar a OS).
+        const clientReady = client.id > 0 || client.pending === true;
+        const equipmentReady = equipment.id > 0 || equipment.pending === true;
+        const isReady = clientReady && equipmentReady && relato.length >= 5 && technician.id > 0 && previsao !== '';
 
         if (!config.lockStatus) {
             setText(els.summaryStatus, isReady ? 'Pronto para abrir' : 'Triagem em andamento');
         }
 
-        setText(els.summaryClient, client.name);
+        setText(els.summaryClient, client.pending ? `${client.name} (novo)` : client.name);
         setRowTitle(els.summaryClient, [client.phone, client.email].filter(Boolean).join(' · '));
-        setSummaryIcon(els.summaryClientIcon, client.id > 0);
+        setSummaryIcon(els.summaryClientIcon, clientReady);
         setText(els.summaryClientPhone, client.phone);
         if (els.summaryClientPhone instanceof HTMLElement) {
             els.summaryClientPhone.classList.toggle('d-none', client.phone === '');
         }
-        setText(els.summaryEquipment, equipment.name);
+        setText(els.summaryEquipment, equipment.pending ? `${equipment.name} (novo)` : equipment.name);
         setRowTitle(els.summaryEquipment, equipment.serial !== '' ? `S/N ${equipment.serial}` : '');
-        setSummaryIcon(els.summaryEquipmentIcon, equipment.id > 0);
+        setSummaryIcon(els.summaryEquipmentIcon, equipmentReady);
         setText(els.summaryTechnician, technician.name);
         setRowTitle(els.summaryTechnician, technician.email);
         setSummaryIcon(els.summaryTechnicianIcon, technician.id > 0);
@@ -1108,10 +1173,10 @@
     };
 
     const getNextPendingField = (client, equipment, relatoValue, technician, previsaoValue) => {
-        if (client.id <= 0 && els.clientSelect instanceof HTMLElement) {
+        if (client.id <= 0 && client.pending !== true && els.clientSelect instanceof HTMLElement) {
             return els.clientSelect;
         }
-        if (equipment.id <= 0 && els.equipmentSelect instanceof HTMLElement) {
+        if (equipment.id <= 0 && equipment.pending !== true && els.equipmentSelect instanceof HTMLElement) {
             return els.equipmentSelect;
         }
         if (relatoValue.length < 5 && els.relatoField instanceof HTMLElement) {
@@ -1231,6 +1296,10 @@
     };
 
     const handleClientChange = () => {
+        // Selecionar um cliente cadastrado cancela o "cliente novo" capturado.
+        if (els.clientSelect instanceof HTMLSelectElement && Number(els.clientSelect.value || 0) > 0) {
+            clearPendingClient();
+        }
         clearEquipmentSelection();
     };
 
@@ -1281,6 +1350,11 @@
     const handleEquipmentChange = (options = {}) => {
         if (!(els.equipmentSelect instanceof HTMLSelectElement)) {
             return;
+        }
+
+        // Selecionar um equipamento cadastrado cancela o "equipamento novo" capturado.
+        if (Number(els.equipmentSelect.value || 0) > 0) {
+            clearPendingEquipment();
         }
 
         const currentEquipment = getEquipmentData();
@@ -1425,6 +1499,30 @@
             .catch(() => {
                 renderDefectSuggestionsEmpty('Nao foi possivel carregar as sugestoes de defeitos.');
             });
+    };
+
+    // Modo diferido: o iframe de equipamento devolve os dados capturados (sem
+    // criar). Guardamos como equipamento pendente; o backend cria junto com a OS.
+    const handleEmbeddedEquipmentCaptured = (event) => {
+        if (!els.quickEquipmentModal || !(els.quickEquipmentFrame instanceof HTMLIFrameElement)) {
+            return;
+        }
+        if (event.origin !== window.location.origin) {
+            return;
+        }
+        if (event.source !== els.quickEquipmentFrame.contentWindow) {
+            return;
+        }
+        const payload = event.data || {};
+        if (payload.type !== 'equipment-captured') {
+            return;
+        }
+        state.pendingEquipmentPhotos = Array.isArray(payload.photos)
+            ? payload.photos.filter((file) => file instanceof File)
+            : [];
+        applyPendingEquipment(payload.equipment || {});
+        getModal(els.quickEquipmentModal)?.hide();
+        showToast('success', 'Equipamento será cadastrado ao salvar a OS.');
     };
 
     const handleEmbeddedEquipmentCreated = (event) => {
@@ -1963,6 +2061,15 @@
 
         els.photoCropImage?.addEventListener('load', initializePhotoCropper);
         els.photoCropImage?.addEventListener('error', () => {
+            // Ao limpar a imagem de recorte (destroyPhotoCropper faz
+            // removeAttribute('src')), alguns navegadores disparam 'error' com
+            // src vazio — não é uma imagem inválida de verdade; só ignoramos.
+            const cropSrc = els.photoCropImage instanceof HTMLImageElement
+                ? (els.photoCropImage.getAttribute('src') || '').trim()
+                : '';
+            if (cropSrc === '' || !state.activePhotoCrop) {
+                return;
+            }
             showAlert('error', 'Imagem inválida', 'O navegador não conseguiu abrir esta imagem.');
             getModal(els.photoCropModal)?.hide();
         });
@@ -2009,6 +2116,238 @@
             : '<i class="bi bi-person-plus me-2"></i>Cadastrar cliente';
     };
 
+    // --- Geração de OS a partir de orçamento: auto-preenchimento --------------
+    // O cliente/equipamento eventuais do orçamento são inseridos automaticamente:
+    // ao chegar na página, abrimos o cadastro rápido já pré-preenchido (o técnico
+    // ajusta o que faltar e salva). Cliente eventual primeiro; o equipamento
+    // eventual abre em seguida (após salvar o cliente, ou já se o cliente for
+    // cadastrado).
+    const linkedBudgetBanner = () => document.querySelector('[data-linked-budget-avulso-name]');
+    const linkedBudgetHasEventualClient = () => {
+        const banner = linkedBudgetBanner();
+        return banner instanceof HTMLElement && String(banner.dataset.linkedBudgetAvulsoName || '').trim() !== '';
+    };
+    const linkedBudgetHasEventualEquipment = () => {
+        const banner = linkedBudgetBanner();
+        if (!(banner instanceof HTMLElement)) {
+            return false;
+        }
+        return ['linkedBudgetEquipTipo', 'linkedBudgetEquipMarca', 'linkedBudgetEquipModelo', 'linkedBudgetEquipCor']
+            .some((key) => String(banner.dataset[key] || '').trim() !== '');
+    };
+    const isClientSelected = () => els.clientSelect instanceof HTMLSelectElement && Number(els.clientSelect.value || 0) > 0;
+    const isEquipmentSelected = () => els.equipmentSelect instanceof HTMLSelectElement && Number(els.equipmentSelect.value || 0) > 0;
+    const openQuickEquipmentForEventual = () => {
+        if (!linkedBudgetHasEventualEquipment() || isEquipmentSelected() || state.pendingEquipment) {
+            return;
+        }
+        // syncEquipmentCreateFrame roda no evento show.bs.modal, já com o prefill.
+        getModal(els.quickEquipmentModal)?.show();
+    };
+    const autoStartBudgetGeneration = () => {
+        if (linkedBudgetBanner() === null) {
+            return;
+        }
+        if (linkedBudgetHasEventualClient() && !isClientSelected() && !state.pendingClient) {
+            prefillQuickClientFromPendingOrBudget();
+            getModal(els.quickClientModal)?.show();
+            return; // o equipamento abre depois que o cliente for salvo.
+        }
+        openQuickEquipmentForEventual();
+    };
+
+    // Geração de OS a partir de orçamento: cliente e equipamento são etapas
+    // obrigatórias. Cancelar (X/Cancelar) qualquer um dos modais sem concluir o
+    // cadastro aborta toda a abertura da OS e volta para a home. Como nada é
+    // persistido antes de salvar, não há resíduo no banco.
+    // Usamos a raiz ('/'), que roteia cada usuário para a sua home conforme as
+    // permissões (firstAllowedRouteName) — evita 403/logoff em quem não tem a
+    // permissão de dashboard.
+    const homeUrl = String((hasWizardForm ? form.dataset.orderCreateHomeUrl : '') || '/');
+    // Navega como se fosse um clique de link (âncora) para que o guard de sessão
+    // (__DESKTOP_SESSION_GUARD em layouts/app.blade.php) reconheça a saída como
+    // navegação INTERNA. Um window.location.href programático não dispara o
+    // detector de clique/submit do guard, então o pagehide marcava "navegador
+    // fechado" e a próxima página forçava logout.
+    const navigateInternal = (url) => {
+        const link = document.createElement('a');
+        link.href = url;
+        link.style.display = 'none';
+        document.body.appendChild(link);
+        link.click();
+    };
+    let budgetGenerationAborted = false;
+    const abortBudgetGenerationToDashboard = () => {
+        if (budgetGenerationAborted) {
+            return;
+        }
+        budgetGenerationAborted = true;
+        showToast('info', 'Abertura de OS cancelada. Voltando ao início.');
+        window.setTimeout(() => {
+            navigateInternal(homeUrl);
+        }, 250);
+    };
+    const handleQuickClientModalDismissed = () => {
+        if (linkedBudgetBanner() !== null && !state.pendingClient && !isClientSelected()) {
+            abortBudgetGenerationToDashboard();
+        }
+    };
+    const handleQuickEquipmentModalDismissed = () => {
+        if (linkedBudgetBanner() !== null && !state.pendingEquipment && !isEquipmentSelected()) {
+            abortBudgetGenerationToDashboard();
+        }
+    };
+
+    // --- Cadastro novo capturado (criação diferida) --------------------------
+    // Nada é persistido: os dados de cliente/equipamento novos ficam em campos
+    // ocultos (novo_cliente[...]/novo_equipamento[...]) e só são criados no
+    // backend, junto com a OS, ao salvar. Se a abertura for abandonada, nada fica.
+    const setHiddenGroup = (prefix, data) => {
+        if (!(form instanceof HTMLFormElement)) {
+            return;
+        }
+        Array.from(form.querySelectorAll(`input[data-hidden-group="${prefix}"]`)).forEach((el) => el.remove());
+        if (!data || typeof data !== 'object') {
+            return;
+        }
+        Object.entries(data).forEach(([key, value]) => {
+            if (value === null || value === undefined || String(value) === '') {
+                return;
+            }
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = `${prefix}[${key}]`;
+            input.value = String(value);
+            input.setAttribute('data-hidden-group', prefix);
+            form.appendChild(input);
+        });
+    };
+
+    // Mostra/oculta os avisos "Novo cliente/equipamento (será cadastrado ao
+    // salvar)" nas abas, refletindo o cadastro capturado (fica visível também no
+    // campo, não só no resumo).
+    const renderPendingRecords = () => {
+        const clientChip = document.querySelector('[data-order-pending-client]');
+        if (clientChip instanceof HTMLElement) {
+            clientChip.classList.toggle('d-none', !state.pendingClient);
+            const nameEl = clientChip.querySelector('[data-order-pending-client-name]');
+            if (nameEl && state.pendingClient) {
+                nameEl.textContent = String(state.pendingClient.nome_razao || 'Novo cliente');
+            }
+        }
+        const equipChip = document.querySelector('[data-order-pending-equipment]');
+        if (equipChip instanceof HTMLElement) {
+            equipChip.classList.toggle('d-none', !state.pendingEquipment);
+            const nameEl = equipChip.querySelector('[data-order-pending-equipment-name]');
+            if (nameEl && state.pendingEquipment) {
+                const p = state.pendingEquipment;
+                nameEl.textContent = [p.marca_nome, p.modelo_nome].filter(Boolean).join(' ')
+                    || p.tipo_nome || p.numero_serie_visual || 'Novo equipamento';
+            }
+        }
+    };
+
+    const applyPendingClient = (data) => {
+        state.pendingClient = data && typeof data === 'object' ? data : null;
+        setHiddenGroup('novo_cliente', state.pendingClient);
+        if (els.clientSelect instanceof HTMLSelectElement) {
+            setClientSelectValue('');
+            els.clientSelect.required = false;
+        }
+        if (hasWizardForm) {
+            clearEquipmentSelection();
+        }
+        renderPendingRecords();
+        updateSummary();
+    };
+
+    const clearPendingClient = () => {
+        if (state.pendingClient === null) {
+            return;
+        }
+        state.pendingClient = null;
+        setHiddenGroup('novo_cliente', null);
+        if (els.clientSelect instanceof HTMLSelectElement) {
+            els.clientSelect.required = true;
+        }
+        renderPendingRecords();
+        updateSummary();
+    };
+
+    // Mantém um input file oculto (novo_equipamento_fotos[]) com as fotos do
+    // equipamento capturado — enviadas junto com a OS (criação atômica).
+    const syncPendingEquipmentPhotosInput = () => {
+        if (!(form instanceof HTMLFormElement)) {
+            return;
+        }
+        let input = form.querySelector('input[data-novo-equipamento-fotos]');
+        const photos = Array.isArray(state.pendingEquipmentPhotos) ? state.pendingEquipmentPhotos : [];
+        if (photos.length === 0) {
+            if (input) {
+                input.remove();
+            }
+            return;
+        }
+        if (!(input instanceof HTMLInputElement)) {
+            input = document.createElement('input');
+            input.type = 'file';
+            input.name = 'novo_equipamento_fotos[]';
+            input.multiple = true;
+            input.setAttribute('data-novo-equipamento-fotos', '');
+            input.style.display = 'none';
+            form.appendChild(input);
+        }
+        const dt = new DataTransfer();
+        photos.forEach((file) => {
+            if (file instanceof File) {
+                dt.items.add(file);
+            }
+        });
+        input.files = dt.files;
+    };
+
+    const applyPendingEquipment = (data) => {
+        state.pendingEquipment = data && typeof data === 'object' ? data : null;
+        setHiddenGroup('novo_equipamento', state.pendingEquipment);
+        syncPendingEquipmentPhotosInput();
+        if (els.equipmentSelect instanceof HTMLSelectElement) {
+            setEquipmentSelectValue('');
+            els.equipmentSelect.required = false;
+        }
+        const tipoId = Number(state.pendingEquipment?.tipo_id || 0) || 0;
+        loadDefectSuggestions(tipoId);
+        loadEntryChecklistModel(tipoId);
+        renderPendingRecords();
+        updateSummary();
+    };
+
+    const clearPendingEquipment = () => {
+        if (state.pendingEquipment === null) {
+            return;
+        }
+        state.pendingEquipment = null;
+        state.pendingEquipmentPhotos = [];
+        setHiddenGroup('novo_equipamento', null);
+        syncPendingEquipmentPhotosInput();
+        if (els.equipmentSelect instanceof HTMLSelectElement) {
+            els.equipmentSelect.required = true;
+        }
+        renderPendingRecords();
+        updateSummary();
+    };
+
+    const initPendingRecordActions = () => {
+        document.querySelector('[data-order-pending-client-remove]')?.addEventListener('click', clearPendingClient);
+        document.querySelector('[data-order-pending-client-edit]')?.addEventListener('click', () => {
+            prefillQuickClientFromPendingOrBudget();
+            getModal(els.quickClientModal)?.show();
+        });
+        document.querySelector('[data-order-pending-equipment-remove]')?.addEventListener('click', clearPendingEquipment);
+        document.querySelector('[data-order-pending-equipment-edit]')?.addEventListener('click', () => {
+            getModal(els.quickEquipmentModal)?.show();
+        });
+    };
+
     const applyClientSelection = (client) => {
         syncClientOptions(client);
 
@@ -2032,53 +2371,47 @@
 
         updateSummary();
         showToast('success', 'Cliente cadastrado e selecionado.');
+
+        // Encadeia o equipamento eventual do orçamento (deixa o modal de cliente
+        // fechar antes de abrir o de equipamento).
+        if (linkedBudgetHasEventualEquipment() && !isEquipmentSelected()) {
+            window.setTimeout(openQuickEquipmentForEventual, 450);
+        }
     };
 
     const initQuickClient = () => {
         const quickClientForm = els.quickClientForm;
 
         els.quickClientButton?.addEventListener('click', () => {
-            prefillQuickClientFromLinkedBudget();
+            prefillQuickClientFromPendingOrBudget();
             const modal = getModal(els.quickClientModal);
             modal?.show();
         });
 
-        if (!(quickClientForm instanceof HTMLFormElement) || !config.quickClientStoreUrl) {
+        if (!(quickClientForm instanceof HTMLFormElement)) {
             return;
         }
 
-        const submitQuickClientForm = async (event) => {
+        // Criação diferida: NÃO persiste o cliente aqui. Captura os dados no
+        // formulário da OS (novo_cliente[...]); o backend cria tudo junto com a
+        // OS ao salvar. Cancelar a abertura da OS não deixa nada no banco.
+        const submitQuickClientForm = (event) => {
             event.preventDefault();
 
             clearQuickClientErrors();
 
             if (!quickClientForm.reportValidity()) {
-                renderQuickClientErrors([], 'Informe nome/razao social e telefone principal antes de salvar.');
+                renderQuickClientErrors([], 'Informe nome/razao social e telefone principal antes de continuar.');
                 return;
             }
 
-            setQuickClientSubmitState(true);
+            const data = Object.fromEntries(new FormData(quickClientForm).entries());
+            applyPendingClient(data);
+            getModal(els.quickClientModal)?.hide();
+            showToast('success', 'Cliente será cadastrado ao salvar a OS.');
 
-            try {
-                const payload = Object.fromEntries(new FormData(quickClientForm).entries());
-                const response = await requestJson(config.quickClientStoreUrl, {
-                    method: 'POST',
-                    body: payload,
-                });
-
-                applyClientSelection(response.client || {});
-                getModal(els.quickClientModal)?.hide();
-            } catch (error) {
-                const details = Array.isArray(error?.details)
-                    ? error.details
-                    : error?.details && typeof error.details === 'object'
-                        ? Object.values(error.details).flat().filter(Boolean)
-                        : [];
-
-                renderQuickClientErrors(details, error.message);
-                showAlert('error', 'Falha ao cadastrar cliente', error.message);
-            } finally {
-                setQuickClientSubmitState(false);
+            if (linkedBudgetHasEventualEquipment() && !isEquipmentSelected() && !state.pendingEquipment) {
+                window.setTimeout(openQuickEquipmentForEventual, 450);
             }
         };
 
@@ -2095,6 +2428,7 @@
             quickClientForm.reset();
             clearQuickClientErrors();
             setQuickClientSubmitState(false);
+            handleQuickClientModalDismissed();
         });
     };
 
@@ -2104,8 +2438,12 @@
         }
 
         els.quickEquipmentModal.addEventListener('show.bs.modal', syncEquipmentCreateFrame);
-        els.quickEquipmentModal.addEventListener('hidden.bs.modal', resetEquipmentCreateFrame);
+        els.quickEquipmentModal.addEventListener('hidden.bs.modal', () => {
+            resetEquipmentCreateFrame();
+            handleQuickEquipmentModalDismissed();
+        });
         window.addEventListener('message', handleEmbeddedEquipmentCreated);
+        window.addEventListener('message', handleEmbeddedEquipmentCaptured);
     };
 
     const initAccessoryPresets = () => {
@@ -2222,6 +2560,34 @@
         setIfEmpty('quickClientEmail', banner.dataset.linkedBudgetAvulsoEmail);
     }
 
+    // Ao reabrir o cadastro rápido: se já houver um cliente capturado (pendente),
+    // recarrega os dados dele para edição; senão, pré-preenche do orçamento.
+    function prefillQuickClientFromPendingOrBudget() {
+        if (state.pendingClient) {
+            const setVal = (id, value) => {
+                const field = document.getElementById(id);
+                if (field instanceof HTMLInputElement) {
+                    field.value = String(value || '');
+                }
+            };
+            const p = state.pendingClient;
+            setVal('quickClientNomeRazao', p.nome_razao);
+            setVal('quickClientTelefone1', p.telefone1);
+            setVal('quickClientEmail', p.email);
+            setVal('quickClientCpfCnpj', p.cpf_cnpj);
+            setVal('quickClientTelefoneContato', p.telefone_contato);
+            setVal('quickClientNomeContato', p.nome_contato);
+            setVal('quickClientCep', p.cep);
+            setVal('quickClientNumero', p.numero);
+            setVal('quickClientEndereco', p.endereco);
+            setVal('quickClientBairro', p.bairro);
+            setVal('quickClientCidade', p.cidade);
+            setVal('quickClientUf', p.uf);
+            return;
+        }
+        prefillQuickClientFromLinkedBudget();
+    }
+
     // Seletor "vincular orçamento avulso" (caminho B): recarrega a criação de OS
     // já vinculada ao orçamento escolhido, reaproveitando o pré-preenchimento.
     const initBudgetPicker = () => {
@@ -2233,7 +2599,7 @@
         picker.addEventListener('change', () => {
             const target = picker.value.trim();
             if (target !== '') {
-                window.location.href = target;
+                navigateInternal(target);
             }
         });
     };
@@ -2244,8 +2610,13 @@
     initQuickClient();
     initQuickEquipment();
     initBudgetPicker();
+    initPendingRecordActions();
     initAccessoryPresets();
     initFormValidation();
     initSubmitButton();
     updateSummary();
+
+    // Após inicializar selects/modais, abre o cadastro rápido pré-preenchido do
+    // cliente/equipamento do orçamento (geração de OS a partir de avulso).
+    window.setTimeout(autoStartBudgetGeneration, 250);
 })();
