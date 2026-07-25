@@ -63,6 +63,7 @@
             'isEditMode' => true,
             'budgetId' => (int) ($budget['id'] ?? 0),
             'clientSearchUrl' => route('orcamentos.clients.search'),
+            'clientContextUrl' => route('orcamentos.client_context'),
             'quickCatalogs' => $quickCatalogs ?? [],
             'catalogs' => [
                 'services' => collect($form['services'] ?? [])->map(static function (array $service): array {

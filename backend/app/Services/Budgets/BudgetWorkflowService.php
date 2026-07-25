@@ -265,54 +265,36 @@ class BudgetWorkflowService
             ->values()
             ->all();
 
-        $equipmentQuery = Equipment::query()
-            ->with(['client', 'type', 'brand', 'model'])
-            ->select(['id', 'cliente_id', 'tipo_id', 'marca_id', 'modelo_id', 'resumo_tecnico', 'numero_serie', 'imei', 'status'])
-            ->orderByDesc('id')
-            ->limit(80);
+        $equipmentQuery = $this->clientEquipmentQuery();
 
         if ($selectedClientId > 0) {
             $equipmentQuery->where('cliente_id', $selectedClientId);
         }
 
-        $equipments = $equipmentQuery->get()->map(static fn (Equipment $equipment): array => [
-            'id' => (int) $equipment->id,
-            'cliente_id' => (int) ($equipment->cliente_id ?? 0),
-            'cliente_nome' => (string) ($equipment->client?->nome_razao ?? ''),
-            'tipo_nome' => (string) ($equipment->type?->nome ?? ''),
-            'marca_nome' => (string) ($equipment->brand?->nome ?? ''),
-            'modelo_nome' => (string) ($equipment->model?->nome ?? ''),
-            'resumo_tecnico' => (string) ($equipment->resumo_tecnico ?? ''),
-            'numero_serie' => (string) ($equipment->numero_serie ?? ''),
-            'imei' => (string) ($equipment->imei ?? ''),
-            'status' => (string) ($equipment->status ?? ''),
-        ])->values()->all();
+        $equipments = $equipmentQuery->get()
+            ->map(fn (Equipment $equipment): array => $this->mapEquipmentOption($equipment))
+            ->values()
+            ->all();
 
-        $ordersQuery = Order::query()
-            ->with(['client', 'equipment'])
-            ->select(['id', 'numero_os', 'cliente_id', 'equipamento_id', 'status', 'estado_fluxo', 'data_abertura'])
-            ->orderByDesc('id')
-            ->limit(80);
+        $ordersQuery = $this->clientOrdersQuery();
 
         if ($selectedClientId > 0) {
             $ordersQuery->where('cliente_id', $selectedClientId);
         }
 
+        // Com uma OS pré-selecionada (orçamento aberto a partir da OS) mostramos
+        // só aquela — mesmo encerrada. Sem OS pré-selecionada, listamos apenas as
+        // OS abertas (status fora do grupo_macro 'encerrado').
         if ($selectedOrderId > 0) {
             $ordersQuery->where('id', $selectedOrderId);
+        } else {
+            $this->constrainToOpenOrders($ordersQuery);
         }
 
-        $orders = $ordersQuery->get()->map(static fn (Order $order): array => [
-            'id' => (int) $order->id,
-            'numero_os' => (string) ($order->numero_os ?? ''),
-            'cliente_id' => (int) ($order->cliente_id ?? 0),
-            'cliente_nome' => (string) ($order->client?->nome_razao ?? ''),
-            'equipamento_id' => (int) ($order->equipamento_id ?? 0),
-            'equipamento_resumo' => (string) ($order->equipment?->resumo_tecnico ?? ''),
-            'status' => (string) ($order->status ?? ''),
-            'estado_fluxo' => (string) ($order->estado_fluxo ?? ''),
-            'data_abertura' => optional($order->data_abertura)->format('Y-m-d H:i:s'),
-        ])->values()->all();
+        $orders = $ordersQuery->get()
+            ->map(fn (Order $order): array => $this->mapOrderOption($order))
+            ->values()
+            ->all();
 
         $services = Servico::query()
             ->select(['id', 'nome', 'descricao', 'valor', 'tipo_equipamento', 'status'])
@@ -366,6 +348,140 @@ class BudgetWorkflowService
             'origin_options' => Budget::originOptions(),
             'default_validity_days' => 10,
         ];
+    }
+
+    /**
+     * Contexto dependente do cliente escolhido no formulário de orçamento: as OS
+     * abertas e os equipamentos cadastrados daquele cliente. Consumido de forma
+     * assíncrona quando o usuário troca o cliente no Select2, para que os campos
+     * "OS vinculada" e "Equipamento cadastrado" listem apenas o que pertence ao
+     * cliente selecionado (e a OS vinculada só apareça se houver OS aberta).
+     *
+     * @return array{orders: array<int, array<string, mixed>>, equipments: array<int, array<string, mixed>>}
+     */
+    public function clientContext(int $clientId): array
+    {
+        if ($clientId <= 0) {
+            return ['orders' => [], 'equipments' => []];
+        }
+
+        $ordersQuery = $this->clientOrdersQuery()->where('cliente_id', $clientId);
+        $this->constrainToOpenOrders($ordersQuery);
+
+        $orders = $ordersQuery->get()
+            ->map(fn (Order $order): array => $this->mapOrderOption($order))
+            ->values()
+            ->all();
+
+        $equipments = $this->clientEquipmentQuery()
+            ->where('cliente_id', $clientId)
+            ->get()
+            ->map(fn (Equipment $equipment): array => $this->mapEquipmentOption($equipment))
+            ->values()
+            ->all();
+
+        return [
+            'orders' => $orders,
+            'equipments' => $equipments,
+        ];
+    }
+
+    /**
+     * @return Builder<Equipment>
+     */
+    private function clientEquipmentQuery(): Builder
+    {
+        return Equipment::query()
+            ->with(['client', 'type', 'brand', 'model', 'photos' => static function ($photoQuery): void {
+                $photoQuery->select(['id', 'equipamento_id', 'is_principal']);
+            }])
+            ->select(['id', 'cliente_id', 'tipo_id', 'marca_id', 'modelo_id', 'resumo_tecnico', 'numero_serie', 'imei', 'status'])
+            ->orderByDesc('id')
+            ->limit(80);
+    }
+
+    /**
+     * @return Builder<Order>
+     */
+    private function clientOrdersQuery(): Builder
+    {
+        return Order::query()
+            ->with(['client', 'equipment'])
+            ->select(['id', 'numero_os', 'cliente_id', 'equipamento_id', 'status', 'estado_fluxo', 'data_abertura'])
+            ->orderByDesc('id')
+            ->limit(80);
+    }
+
+    /**
+     * Restringe a query de OS às abertas — status fora do grupo_macro
+     * 'encerrado' (ver OrderStatus::closureCodes()). Se o catálogo não devolver
+     * nenhum código de encerramento, mantém a query intacta.
+     *
+     * @param  Builder<Order>  $query
+     */
+    private function constrainToOpenOrders(Builder $query): void
+    {
+        $closureCodes = OrderStatus::closureCodes();
+
+        if ($closureCodes !== []) {
+            $query->whereNotIn('status', $closureCodes);
+        }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function mapEquipmentOption(Equipment $equipment): array
+    {
+        return [
+            'id' => (int) $equipment->id,
+            'cliente_id' => (int) ($equipment->cliente_id ?? 0),
+            'cliente_nome' => (string) ($equipment->client?->nome_razao ?? ''),
+            'tipo_nome' => (string) ($equipment->type?->nome ?? ''),
+            'marca_nome' => (string) ($equipment->brand?->nome ?? ''),
+            'modelo_nome' => (string) ($equipment->model?->nome ?? ''),
+            'resumo_tecnico' => (string) ($equipment->resumo_tecnico ?? ''),
+            'numero_serie' => (string) ($equipment->numero_serie ?? ''),
+            'imei' => (string) ($equipment->imei ?? ''),
+            'status' => (string) ($equipment->status ?? ''),
+            'foto_principal_id' => $this->principalPhotoId($equipment),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function mapOrderOption(Order $order): array
+    {
+        return [
+            'id' => (int) $order->id,
+            'numero_os' => (string) ($order->numero_os ?? ''),
+            'cliente_id' => (int) ($order->cliente_id ?? 0),
+            'cliente_nome' => (string) ($order->client?->nome_razao ?? ''),
+            'equipamento_id' => (int) ($order->equipamento_id ?? 0),
+            'equipamento_resumo' => (string) ($order->equipment?->resumo_tecnico ?? ''),
+            'status' => (string) ($order->status ?? ''),
+            'estado_fluxo' => (string) ($order->estado_fluxo ?? ''),
+            'data_abertura' => optional($order->data_abertura)->format('Y-m-d H:i:s'),
+        ];
+    }
+
+    /**
+     * ID da foto principal do equipamento (0 quando não há foto). Prioriza a
+     * marcada como principal; na ausência, a de menor id (a mais antiga).
+     */
+    private function principalPhotoId(Equipment $equipment): int
+    {
+        $photos = $equipment->relationLoaded('photos') ? $equipment->photos : $equipment->photos()->get();
+
+        if ($photos->isEmpty()) {
+            return 0;
+        }
+
+        $principal = $photos->firstWhere('is_principal', true)
+            ?? $photos->sortBy('id')->first();
+
+        return (int) ($principal->id ?? 0);
     }
 
     /**

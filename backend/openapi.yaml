@@ -5749,6 +5749,55 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
+  /orcamentos/cliente-contexto:
+    get:
+      tags:
+        - Orçamentos
+      summary: OS abertas e equipamentos do cliente selecionado no orçamento.
+      description: |
+        Contexto dependente do cliente para o formulário de orçamento: as OS
+        abertas (status fora do grupo_macro `encerrado`) e os equipamentos
+        cadastrados daquele cliente, com o id da foto principal. Consumido de
+        forma assíncrona quando o usuário troca o cliente no Select2, para que os
+        campos "OS vinculada" e "Equipamento cadastrado" listem apenas o que
+        pertence ao cliente. Exige `orcamentos:visualizar` e ao menos uma das
+        capacidades `orcamentos:criar` ou `orcamentos:editar`.
+      parameters:
+        - name: cliente_id
+          in: query
+          required: true
+          description: Identificador do cliente selecionado.
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: OS abertas e equipamentos do cliente.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          orders:
+                            type: array
+                            items:
+                              type: object
+                          equipments:
+                            type: array
+                            items:
+                              type: object
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
   /orcamentos/vinculaveis-os:
     get:
       tags:

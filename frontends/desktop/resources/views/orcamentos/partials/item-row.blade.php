@@ -108,7 +108,7 @@
                 </div>
 
                 <div class="budget-item-field budget-item-field-description">
-                    <label for="{{ $descriptionId }}" class="budget-item-field-label">Descrição</label>
+                    <label for="{{ $descriptionId }}" class="budget-item-field-label">Descrição <span class="text-danger" aria-hidden="true">*</span></label>
                     <input
                         id="{{ $descriptionId }}"
                         type="text"
@@ -117,27 +117,29 @@
                         value="{{ $field('descricao') }}"
                         placeholder="Descrição do item"
                         data-budget-item-description
+                        @if (! ($isEditMode ?? false)) required aria-required="true" @endif
                     >
                 </div>
             </div>
 
             <div class="budget-item-line budget-item-line-financial">
                 <div class="budget-item-field budget-item-field-quantity">
-                    <label for="{{ $quantityId }}" class="budget-item-field-label">Qtd</label>
+                    <label for="{{ $quantityId }}" class="budget-item-field-label">Qtd <span class="text-danger" aria-hidden="true">*</span></label>
                     <input
                         id="{{ $quantityId }}"
                         type="number"
                         name="itens[{{ $indexKey }}][quantidade]"
                         class="form-control"
-                        min="0"
+                        min="0.01"
                         step="0.01"
                         value="{{ $field('quantidade', 1) }}"
                         data-budget-item-quantity
+                        @if (! ($isEditMode ?? false)) required aria-required="true" @endif
                     >
                 </div>
 
                 <div class="budget-item-field budget-item-field-unit-price">
-                    <label for="{{ $unitPriceId }}" class="budget-item-field-label">Valor unit.</label>
+                    <label for="{{ $unitPriceId }}" class="budget-item-field-label">Valor unit. <span class="text-danger" aria-hidden="true">*</span></label>
                     <input
                         id="{{ $unitPriceId }}"
                         type="text"
@@ -147,6 +149,7 @@
                         value="{{ $formatMoney($field('valor_unitario', 0)) }}"
                         data-budget-item-unit-price
                         data-budget-money
+                        @if (! ($isEditMode ?? false)) required aria-required="true" @endif
                     >
                 </div>
 

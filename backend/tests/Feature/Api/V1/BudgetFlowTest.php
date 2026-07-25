@@ -163,6 +163,83 @@ class BudgetFlowTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_budget_client_context_returns_only_open_orders_and_client_equipment_with_photo(): void
+    {
+        $admin = $this->createUserRecord([
+            'nome' => 'Administrador Contexto',
+            'email' => 'admin.contexto.orcamento@example.com',
+            'perfil' => 'admin',
+            'grupo_id' => 1,
+        ]);
+
+        $clientA = $this->createClientRecord(['nome_razao' => 'Cliente Contexto A']);
+        $clientB = $this->createClientRecord(['nome_razao' => 'Cliente Contexto B']);
+
+        $equipmentA = $this->createEquipmentRecord($clientA, ['resumo_tecnico' => 'Notebook Contexto A']);
+        $equipmentB = $this->createEquipmentRecord($clientB, ['resumo_tecnico' => 'Notebook Contexto B']);
+
+        $photoId = (int) DB::table('equipamentos_fotos')->insertGetId([
+            'equipamento_id' => $equipmentA,
+            'arquivo' => 'equipamentos/'.$equipmentA.'/principal.jpg',
+            'is_principal' => true,
+            'created_at' => now(),
+        ]);
+
+        $openOrderA = $this->createOrderRecord([
+            'cliente_id' => $clientA,
+            'equipamento_id' => $equipmentA,
+            'numero_os' => 'OS-CTX-OPEN-A',
+            'status' => 'triagem',
+        ]);
+        // OS encerrada do mesmo cliente: não deve aparecer.
+        $this->createOrderRecord([
+            'cliente_id' => $clientA,
+            'equipamento_id' => $equipmentA,
+            'numero_os' => 'OS-CTX-CLOSED-A',
+            'status' => 'entregue_reparado_pago',
+        ]);
+        // OS aberta de OUTRO cliente: não deve aparecer.
+        $this->createOrderRecord([
+            'cliente_id' => $clientB,
+            'equipamento_id' => $equipmentB,
+            'numero_os' => 'OS-CTX-OPEN-B',
+            'status' => 'triagem',
+        ]);
+
+        $token = $this->loginAndGetToken($admin->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orcamentos/cliente-contexto?cliente_id='.$clientA);
+
+        $response->assertOk()
+            ->assertJsonPath('status', 'success')
+            ->assertJsonCount(1, 'data.orders')
+            ->assertJsonPath('data.orders.0.id', $openOrderA)
+            ->assertJsonPath('data.orders.0.numero_os', 'OS-CTX-OPEN-A')
+            ->assertJsonCount(1, 'data.equipments')
+            ->assertJsonPath('data.equipments.0.id', $equipmentA)
+            ->assertJsonPath('data.equipments.0.cliente_id', $clientA)
+            ->assertJsonPath('data.equipments.0.foto_principal_id', $photoId);
+    }
+
+    public function test_budget_client_context_requires_create_or_edit_permission(): void
+    {
+        $viewer = $this->createUserRecord([
+            'nome' => 'Leitor Contexto',
+            'email' => 'leitor.contexto.orcamento@example.com',
+            'perfil' => 'usuario',
+            'grupo_id' => 3,
+        ]);
+        app(RbacAuthorizationService::class)->forgetUser((int) $viewer->id);
+
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Contexto Bloqueado']);
+        $token = $this->loginAndGetToken($viewer->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orcamentos/cliente-contexto?cliente_id='.$clientId)
+            ->assertForbidden();
+    }
+
     public function test_admin_can_create_update_and_delete_budget_with_items(): void
     {
         $admin = $this->createUserRecord([

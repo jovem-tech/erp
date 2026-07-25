@@ -224,6 +224,23 @@ class SessionSecurityTest extends TestCase
         $response->assertOk()->assertSee('__DESKTOP_SESSION_GUARD', false);
     }
 
+    public function test_reopen_guard_internal_navigation_window_tolerates_slow_submissions(): void
+    {
+        // Criar OS com envio de PDF ao cliente encadeia, na mesma requisição,
+        // a geração do PDF e até duas tentativas de envio por WhatsApp (cada
+        // uma com timeout de até 20s no backend) — facilmente > 10s. Uma
+        // janela curta demais expira antes da resposta lenta chegar, fazendo
+        // o pagehide da navegação real (sem a flag) marcar a saída como
+        // fechamento do navegador e deslogar o usuário na página seguinte.
+        $response = $this
+            ->withSession($this->desktopSession(['dashboard' => ['visualizar']], false))
+            ->get('/dashboard');
+
+        $response->assertOk()
+            ->assertDontSee('internalNavigation = false; }, 10000)', false)
+            ->assertSee('internalNavigation = false; }, 60000)', false);
+    }
+
     public function test_reopen_guard_script_is_absent_for_remembered_session(): void
     {
         $response = $this
