@@ -95,7 +95,7 @@
         'formAction' => route('orcamentos.store'),
         'formMethod' => 'POST',
         'formTitle' => '',
-        'submitLabel' => 'Salvar orçamento',
+        'submitLabel' => 'Criar orçamento',
         'cancelUrl' => route('orcamentos.index'),
         'isEditMode' => false,
         'lockedOrderContext' => $lockedOrderContext,
@@ -109,6 +109,7 @@
             'isEditMode' => false,
             'budgetId' => 0,
             'clientSearchUrl' => route('orcamentos.clients.search'),
+            'clientContextUrl' => route('orcamentos.client_context'),
             'quickCatalogs' => $quickCatalogs ?? [],
             'catalogs' => [
                 'services' => collect($form['services'] ?? [])->map(static function (array $service): array {

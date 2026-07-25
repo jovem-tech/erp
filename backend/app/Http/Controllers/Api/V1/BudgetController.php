@@ -85,6 +85,33 @@ class BudgetController extends BaseApiController
         );
     }
 
+    public function clientContext(Request $request): JsonResponse
+    {
+        $this->authorize('orcamentos:visualizar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+        if (! $user->can('orcamentos:criar') && ! $user->can('orcamentos:editar')) {
+            $this->authorize('orcamentos:criar');
+        }
+
+        $validated = $request->validate([
+            'cliente_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        $context = $this->budgetWorkflowService->clientContext((int) $validated['cliente_id']);
+
+        return $this->success(
+            [
+                'orders' => $context['orders'],
+                'equipments' => $context['equipments'],
+            ],
+            request: $request
+        );
+    }
+
     public function linkableForOrder(Request $request): JsonResponse
     {
         $this->authorize('os:criar');

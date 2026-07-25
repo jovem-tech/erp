@@ -3,6 +3,15 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.12.2.0 - 2026-07-24
+
+- o cadastro de orçamento novo mantém o botão principal como `Próximo` enquanto existir qualquer pendência e conduz o operador diretamente à primeira aba/campo incompleto;
+- `Salvar orçamento` só aparece quando há cliente, telefone válido, contexto de equipamento quando aplicável, ao menos um item válido e total positivo;
+- a mesma regra é aplicada pelo controller desktop, impedindo bypass por manipulação do DOM ou POST manual;
+- os totais são recalculados no servidor para detectar descontos ou acréscimos que zerem o item ou o orçamento;
+- edição de dados legados permanece compatível; a trava de completude é aplicada somente à criação;
+- nota: `2026-07-24-hardening-trava-orcamento-completo.md`.
+
 ## v5.12.1.0 - 2026-07-24
 
 - botão principal do cadastro de orçamento novo (`/orcamentos/novo`) vira "Próximo" enquanto qualquer aba tiver campo obrigatório pendente; só volta a ser "Salvar orçamento" com as 4 abas completas;

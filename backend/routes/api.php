@@ -128,6 +128,8 @@ Route::prefix('v1')->group(function (): void {
         Route::get('orcamentos/form-data', [BudgetController::class, 'formData'])->name('api.v1.orcamentos.form_data');
         Route::get('orcamentos/clientes', [BudgetController::class, 'clientOptions'])
             ->name('api.v1.orcamentos.clients.index');
+        Route::get('orcamentos/cliente-contexto', [BudgetController::class, 'clientContext'])
+            ->name('api.v1.orcamentos.client_context');
         Route::get('orcamentos/vinculaveis-os', [BudgetController::class, 'linkableForOrder'])
             ->name('api.v1.orcamentos.linkable_orders.index');
         Route::get('orcamentos/vinculaveis-os/{budget}', [BudgetController::class, 'showLinkableForOrder'])

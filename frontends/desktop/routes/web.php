@@ -215,6 +215,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/orcamentos/clientes/buscar', [OrcamentoController::class, 'searchClients'])
         ->middleware('desktop.permission:orcamentos,criar|editar')
         ->name('orcamentos.clients.search');
+    Route::get('/orcamentos/cliente-contexto', [OrcamentoController::class, 'clientContext'])
+        ->middleware('desktop.permission:orcamentos,criar|editar')
+        ->name('orcamentos.client_context');
     Route::get('/orcamentos/novo', [OrcamentoController::class, 'create'])
         ->middleware('desktop.permission:orcamentos,criar')
         ->name('orcamentos.create');

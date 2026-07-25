@@ -1361,17 +1361,134 @@ class DesktopFrontendTest extends TestCase
         Http::allowStrayRequests();
     }
 
+    public function test_orcamentos_client_context_proxies_open_orders_and_equipment_photo_urls(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orcamentos/cliente-contexto*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'orders' => [
+                        [
+                            'id' => 401,
+                            'numero_os' => 'OS401',
+                            'cliente_id' => 901,
+                            'cliente_nome' => 'Cliente Remoto',
+                        ],
+                    ],
+                    'equipments' => [
+                        [
+                            'id' => 301,
+                            'cliente_id' => 901,
+                            'tipo_nome' => 'Notebook',
+                            'marca_nome' => 'Dell',
+                            'modelo_nome' => 'Inspiron 15',
+                            'numero_serie' => 'SN-12345',
+                            'cliente_nome' => 'Cliente Remoto',
+                            'foto_principal_id' => 77,
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'orcamentos' => ['visualizar', 'criar'],
+            ]))
+            ->getJson('/orcamentos/cliente-contexto?cliente_id=901');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('orders.0.id', 401)
+            ->assertJsonPath('orders.0.label', 'OS401 - Cliente Remoto')
+            ->assertJsonPath('equipments.0.id', 301)
+            ->assertJsonPath('equipments.0.cliente_id', 901)
+            ->assertJsonPath('equipments.0.foto_url', route('equipments.photos.show', [301, 77]));
+
+        Http::assertSent(static function ($request): bool {
+            return str_contains($request->url(), '/api/v1/orcamentos/cliente-contexto')
+                && str_contains($request->url(), 'cliente_id=901');
+        });
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_client_context_returns_null_photo_url_when_equipment_has_no_photo(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orcamentos/cliente-contexto*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'orders' => [],
+                    'equipments' => [
+                        [
+                            'id' => 305,
+                            'cliente_id' => 901,
+                            'tipo_nome' => 'Smartphone',
+                            'foto_principal_id' => 0,
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'orcamentos' => ['visualizar', 'criar'],
+            ]))
+            ->getJson('/orcamentos/cliente-contexto?cliente_id=901');
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonCount(0, 'orders')
+            ->assertJsonPath('equipments.0.id', 305)
+            ->assertJsonPath('equipments.0.foto_url', null);
+
+        Http::allowStrayRequests();
+    }
+
     public function test_orcamentos_client_select_uses_remote_pagination_and_preserves_draft_selection_metadata(): void
     {
         $script = file_get_contents(public_path('assets/js/orcamentos-form.js'));
 
         $this->assertIsString($script);
         $this->assertStringContainsString('const clientSearchUrl =', $script);
+        $this->assertStringContainsString('const clientContextUrl =', $script);
         $this->assertStringContainsString('minimumInputLength: 0', $script);
         $this->assertStringContainsString('per_page: 15', $script);
         $this->assertStringContainsString('more: Boolean(payload?.pagination?.more)', $script);
         $this->assertStringContainsString('selectedClient', $script);
         $this->assertStringContainsString('rememberClientOption(option, restoredClient || {})', $script);
+    }
+
+    public function test_orcamentos_create_primary_action_guides_pending_fields_and_only_submits_when_ready(): void
+    {
+        $script = file_get_contents(public_path('assets/js/orcamentos-form.js'));
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('const collectCreatePendencies = () =>', $script);
+        $this->assertStringContainsString('const focusCreatePendency = (pendency) =>', $script);
+        $this->assertStringContainsString('const budgetTabOrder = tabButtons', $script);
+        $this->assertStringContainsString('const handlePrimaryActionClick = (event) =>', $script);
+        $this->assertStringContainsString('const currentTabPendency = pendencies.find', $script);
+        $this->assertStringContainsString('switchTab(budgetTabOrder[currentTabIndex + 1])', $script);
+        $this->assertStringContainsString("showAlert(\n                    'error',\n                    'Não foi possível avançar'", $script);
+        $this->assertStringContainsString("addEventListener('click', handlePrimaryActionClick, { capture: true })", $script);
+        $this->assertStringContainsString('primaryActionButton.dataset.budgetReady', $script);
+        $this->assertStringContainsString('form.requestSubmit()', $script);
+        $this->assertStringContainsString('Informe um telefone de contato válido, com DDD.', $script);
+        $this->assertStringContainsString('Adicione ao menos um item ao orçamento.', $script);
+        $this->assertStringContainsString('O total final do orçamento deve ser maior que zero.', $script);
     }
 
     public function test_orcamentos_create_page_renders_review_modal_for_save_decision(): void
@@ -1431,6 +1548,11 @@ class DesktopFrontendTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('id="orcamentoReviewModal"', false)
+            ->assertSee('data-budget-primary-action', false)
+            ->assertSee('data-budget-next-label="Próximo"', false)
+            ->assertSee('data-budget-submit-label="Criar orçamento"', false)
+            ->assertSee('data-budget-primary-action-label', false)
+            ->assertSee('>Próximo</span>', false)
             ->assertSee('data-budget-submission-mode', false)
             ->assertSee('data-budget-review-pendencies', false)
             ->assertSee('data-budget-review-items', false)
@@ -1805,6 +1927,8 @@ class DesktopFrontendTest extends TestCase
                 'status' => 'rascunho',
                 'origem' => 'manual',
                 'cliente_nome_avulso' => 'Cliente moeda BRL',
+                'relato_cliente' => 'Defeito relatado no teste',
+                'telefone_contato' => '(11) 99999-9999',
                 'titulo' => 'Orçamento moeda BRL',
                 'validade_dias' => 10,
                 'subtotal' => 'R$ 330,00',
@@ -1840,7 +1964,7 @@ class DesktopFrontendTest extends TestCase
         });
     }
 
-    public function test_orcamentos_store_ignores_default_placeholder_item_before_forwarding_to_backend(): void
+    public function test_orcamentos_store_rejects_default_placeholder_item_without_calling_backend(): void
     {
         Http::fake([
             'http://127.0.0.1:8000/api/v1/orcamentos' => Http::response([
@@ -1856,6 +1980,7 @@ class DesktopFrontendTest extends TestCase
         ]);
 
         $response = $this
+            ->from('/orcamentos/novo')
             ->withSession(array_merge(
                 $this->desktopSession([
                     'orcamentos' => ['visualizar', 'criar'],
@@ -1867,6 +1992,7 @@ class DesktopFrontendTest extends TestCase
                 'status' => 'rascunho',
                 'origem' => 'manual',
                 'cliente_nome_avulso' => 'Cliente sem itens',
+                'telefone_contato' => '(11) 99999-9999',
                 'titulo' => 'Orcamento em rascunho',
                 'validade_dias' => 10,
                 'subtotal' => 'R$ 0,00',
@@ -1893,14 +2019,143 @@ class DesktopFrontendTest extends TestCase
             ]);
 
         $response
-            ->assertRedirect(route('orcamentos.show', 953))
-            ->assertSessionHas('success', 'Orçamento criado com sucesso.');
+            ->assertRedirect('/orcamentos/novo')
+            ->assertSessionHasErrors([
+                'total',
+                'itens.0.descricao',
+                'itens.0.valor_unitario',
+            ]);
 
-        Http::assertSent(static function ($request): bool {
-            return $request->url() === 'http://127.0.0.1:8000/api/v1/orcamentos'
-                && isset($request['itens'])
-                && $request['itens'] === [];
-        });
+        Http::assertNothingSent();
+    }
+
+    public function test_orcamentos_store_rejects_invalid_phone_without_calling_backend(): void
+    {
+        Http::fake();
+
+        $response = $this
+            ->from('/orcamentos/novo')
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->post('/orcamentos', [
+                'tipo_orcamento' => 'previo',
+                'status' => 'rascunho',
+                'origem' => 'manual',
+                'cliente_nome_avulso' => 'Cliente telefone inválido',
+                'telefone_contato' => '1234',
+                'subtotal' => 'R$ 100,00',
+                'desconto' => 'R$ 0,00',
+                'acrescimo' => 'R$ 0,00',
+                'total' => 'R$ 100,00',
+                'itens' => [
+                    [
+                        'tipo_item' => 'servico',
+                        'descricao' => 'Diagnóstico',
+                        'quantidade' => 1,
+                        'valor_unitario' => 'R$ 100,00',
+                        'desconto' => 'R$ 0,00',
+                        'acrescimo' => 'R$ 0,00',
+                    ],
+                ],
+            ]);
+
+        $response
+            ->assertRedirect('/orcamentos/novo')
+            ->assertSessionHasErrors('telefone_contato');
+
+        Http::assertNothingSent();
+    }
+
+    public function test_orcamentos_store_requires_relato_cliente_without_calling_backend(): void
+    {
+        Http::fake();
+
+        $response = $this
+            ->from('/orcamentos/novo')
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->post('/orcamentos', [
+                'tipo_orcamento' => 'previo',
+                'status' => 'rascunho',
+                'origem' => 'manual',
+                'cliente_nome_avulso' => 'Cliente sem relato',
+                'telefone_contato' => '(11) 99999-9999',
+                'envolve_equipamento' => '0',
+                'subtotal' => 'R$ 100,00',
+                'desconto' => 'R$ 0,00',
+                'acrescimo' => 'R$ 0,00',
+                'total' => 'R$ 100,00',
+                'itens' => [
+                    [
+                        'tipo_item' => 'servico',
+                        'descricao' => 'Diagnóstico',
+                        'quantidade' => 1,
+                        'valor_unitario' => 'R$ 100,00',
+                        'desconto' => 'R$ 0,00',
+                        'acrescimo' => 'R$ 0,00',
+                    ],
+                ],
+            ]);
+
+        $response
+            ->assertRedirect('/orcamentos/novo')
+            ->assertSessionHasErrors('relato_cliente');
+
+        Http::assertNothingSent();
+    }
+
+    public function test_orcamentos_store_recalculates_financials_before_accepting_forged_total(): void
+    {
+        Http::fake();
+
+        $response = $this
+            ->from('/orcamentos/novo')
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->post('/orcamentos', [
+                'tipo_orcamento' => 'previo',
+                'status' => 'rascunho',
+                'origem' => 'manual',
+                'cliente_nome_avulso' => 'Cliente total forjado',
+                'relato_cliente' => 'Defeito relatado no teste',
+                'telefone_contato' => '(11) 99999-9999',
+                'subtotal' => 'R$ 999,00',
+                'desconto' => 'R$ 0,00',
+                'acrescimo' => 'R$ 0,00',
+                'total' => 'R$ 999,00',
+                'itens' => [
+                    [
+                        'tipo_item' => 'servico',
+                        'descricao' => 'Item zerado por desconto',
+                        'quantidade' => 1,
+                        'valor_unitario' => 'R$ 100,00',
+                        'desconto_tipo' => 'valor',
+                        'desconto' => 'R$ 100,00',
+                        'acrescimo' => 'R$ 0,00',
+                    ],
+                ],
+            ]);
+
+        $response
+            ->assertRedirect('/orcamentos/novo')
+            ->assertSessionHasErrors([
+                'itens.0.valor_unitario',
+                'total',
+            ]);
+
+        Http::assertNothingSent();
     }
 
     public function test_orcamentos_store_with_send_for_approval_dispatches_second_backend_request(): void
@@ -1944,6 +2199,7 @@ class DesktopFrontendTest extends TestCase
                 'status' => 'rascunho',
                 'origem' => 'manual',
                 'cliente_nome_avulso' => 'Cliente aprovacao',
+                'relato_cliente' => 'Defeito relatado no teste',
                 'telefone_contato' => '(11) 99999-9999',
                 'titulo' => 'Orcamento com envio',
                 'validade_dias' => 10,
@@ -2260,7 +2516,8 @@ class DesktopFrontendTest extends TestCase
                 'status' => 'rascunho',
                 'origem' => 'manual',
                 'cliente_nome_avulso' => 'Cliente sem whatsapp',
-                'telefone_contato' => '',
+                'relato_cliente' => 'Defeito relatado no teste',
+                'telefone_contato' => '(11) 99999-9999',
                 'titulo' => 'Orcamento salvo com pendencia',
                 'validade_dias' => 10,
                 'subtotal' => 'R$ 120,00',
@@ -2318,6 +2575,8 @@ class DesktopFrontendTest extends TestCase
                 'status' => 'rascunho',
                 'origem' => 'manual',
                 'cliente_nome_avulso' => 'Cliente percentual',
+                'relato_cliente' => 'Defeito relatado no teste',
+                'telefone_contato' => '(11) 99999-9999',
                 'titulo' => 'Orçamento com ajuste percentual',
                 'validade_dias' => 10,
                 'subtotal' => 'R$ 100,00',
@@ -3793,6 +4052,76 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('data-order-link-budget', false)
             ->assertSee(route('orders.linkable-budgets.search'), false)
             ->assertSee('A troca pede confirmação');
+    }
+
+    public function test_nova_os_linked_budget_shows_summary_row_with_info_modal_instead_of_banner(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orcamentos/vinculaveis-os/50' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'budget' => [
+                        'id' => 50,
+                        'numero' => 'ORC-2607-000025',
+                        'cliente' => null,
+                        'cliente_nome_avulso' => 'Otavio Conceicao',
+                        'telefone_contato' => '22992741003',
+                        'email_contato' => '',
+                        'equipamento' => null,
+                        'equipamento_tipo_avulso' => 'Smartphone',
+                        'equipamento_marca_avulso' => 'samsung',
+                        'equipamento_modelo_avulso' => 's26',
+                        'equipamento_cor' => 'preto',
+                        'equipamento_eventual_label' => 'Smartphone samsung s26 · preto',
+                        'relato_cliente' => 'Nao liga',
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/team-members*' => Http::response([
+                'status' => 'success',
+                'data' => ['team_members' => [], 'available_users' => []],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/users*' => Http::response([
+                'status' => 'success',
+                'data' => ['users' => []],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response([
+                'status' => 'success',
+                'data' => ['items' => [], 'unread_count' => 0],
+                'error' => null,
+                'meta' => ['pagination' => []],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'os' => ['criar'],
+                'orcamentos' => ['converter_os'],
+            ]))
+            ->get('/os/criar?orcamento_id=50');
+
+        $response
+            ->assertOk()
+            // A antiga faixa/alerta grande sumiu do topo do formulario.
+            ->assertDontSee('order-create-linked-budget', false)
+            // Vira uma linha no resumo, com o numero do orcamento e um botao de info.
+            ->assertSee('ORC-2607-000025')
+            ->assertSee('order-create-summary-row-info', false)
+            ->assertSee('data-bs-target="#orderLinkedBudgetInfoModal"', false)
+            // O modal preserva o texto explicativo e o link de remover/trocar.
+            ->assertSee('id="orderLinkedBudgetInfoModal"', false)
+            ->assertSee('Este orçamento não tinha cliente cadastrado')
+            ->assertSee('Smartphone samsung s26 · preto')
+            ->assertSee('data-order-unlink-budget', false)
+            // Os atributos que orders-create.js le continuam presentes no DOM.
+            ->assertSee('data-linked-budget-avulso-name="Otavio Conceicao"', false)
+            ->assertSee('data-linked-budget-equip-modelo="s26"', false);
     }
 
     public function test_nova_os_linkable_budget_search_returns_paginated_select2_contract(): void
@@ -6827,6 +7156,11 @@ class DesktopFrontendTest extends TestCase
     /**
      * @return array<string, Response>
      */
+
+
+
+
+
     private function notificationsFixture(): array
     {
         return [

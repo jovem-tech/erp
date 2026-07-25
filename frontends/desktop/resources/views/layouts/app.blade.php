@@ -153,15 +153,27 @@
             // Sinaliza que a próxima saída da página é uma navegação legítima
             // dentro do sistema (clique em link, envio de form, F5, logout) —
             // nesses casos nem o aviso de fechamento nem o marcador de
-            // fechamento devem ser acionados. A flag expira sozinha em 10s
-            // (caso a navegação seja cancelada) e NÃO é consumida no
-            // beforeunload, porque o pagehide ainda precisa lê-la depois.
+            // fechamento devem ser acionados. A flag expira sozinha (caso a
+            // navegação seja cancelada) e NÃO é consumida no beforeunload,
+            // porque o pagehide ainda precisa lê-la depois.
+            // Janela de 60s (era 10s): a criação de OS com envio de PDF ao
+            // cliente faz, dentro da mesma requisição POST /orders, a geração
+            // do PDF (dois formatos) e até duas tentativas de envio por
+            // WhatsApp (inbox + fallback direto), cada uma com timeout de até
+            // 20s no backend (IntegrationSettingsService). Com 10s, esse
+            // fluxo — o único lento o bastante — sempre estourava a janela: o
+            // submit disparava markInternalNavigation(), mas a flag expirava
+            // antes da resposta lenta chegar, então o pagehide da navegação
+            // real (já sem a flag) marcava a saída como fechamento do
+            // navegador e deslogava o usuário na página seguinte. 60s cobre
+            // com folga o pior caso (2x20s + geração do PDF) sem enfraquecer
+            // a detecção de fechamento real do navegador.
             var internalNavigation = false;
             var internalNavTimer = null;
             function markInternalNavigation() {
                 internalNavigation = true;
                 if (internalNavTimer) { clearTimeout(internalNavTimer); }
-                internalNavTimer = setTimeout(function () { internalNavigation = false; }, 10000);
+                internalNavTimer = setTimeout(function () { internalNavigation = false; }, 60000);
             }
 
             function forceLogout() {

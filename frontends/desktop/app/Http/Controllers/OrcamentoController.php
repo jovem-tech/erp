@@ -142,10 +142,85 @@ class OrcamentoController extends DesktopController
         ]);
     }
 
+    public function clientContext(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'cliente_id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        try {
+            $context = $this->orcamentoService->clientContext((int) $validated['cliente_id']);
+        } catch (ApiAuthenticationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 401);
+        } catch (ApiAuthorizationException $exception) {
+            return $this->jsonFailure($exception->getMessage(), 403);
+        } catch (ApiRequestException $exception) {
+            return $this->jsonFailure(
+                $exception->getMessage(),
+                $exception->statusCode() > 0 ? $exception->statusCode() : 422,
+                $exception->details()
+            );
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->jsonFailure('Não foi possível carregar as OS e equipamentos do cliente agora.', 500);
+        }
+
+        $orders = array_values(array_filter(array_map(static function (array $order): array {
+            $id = (int) ($order['id'] ?? 0);
+            $numero = trim((string) ($order['numero_os'] ?? ''));
+            $clientName = trim((string) ($order['cliente_nome'] ?? ''));
+            $label = $numero !== '' ? $numero : ('OS #'.$id);
+
+            return [
+                'id' => $id,
+                'cliente_id' => (int) ($order['cliente_id'] ?? 0),
+                'label' => $label.($clientName !== '' ? ' - '.$clientName : ''),
+            ];
+        }, (array) ($context['orders'] ?? [])), static fn (array $order): bool => $order['id'] > 0));
+
+        $equipments = array_values(array_filter(array_map(function (array $equipment): array {
+            $id = (int) ($equipment['id'] ?? 0);
+            $tipo = trim((string) ($equipment['tipo_nome'] ?? ''));
+            $marcaModelo = trim(implode(' ', array_filter([
+                trim((string) ($equipment['marca_nome'] ?? '')),
+                trim((string) ($equipment['modelo_nome'] ?? '')),
+            ])));
+            $label = trim(implode(' - ', array_filter([$tipo, $marcaModelo])));
+            if ($label === '') {
+                $label = trim((string) ($equipment['resumo_tecnico'] ?? ''));
+            }
+            if ($label === '') {
+                $label = 'Equipamento #'.$id;
+            }
+
+            $serial = trim((string) ($equipment['numero_serie'] ?? ''));
+            $clientName = trim((string) ($equipment['cliente_nome'] ?? ''));
+            $fullLabel = $label
+                .($serial !== '' ? ' · S/N '.$serial : '')
+                .($clientName !== '' ? ' · '.$clientName : '');
+
+            $photoId = (int) ($equipment['foto_principal_id'] ?? 0);
+
+            return [
+                'id' => $id,
+                'cliente_id' => (int) ($equipment['cliente_id'] ?? 0),
+                'label' => $fullLabel,
+                'foto_url' => $photoId > 0 ? route('equipments.photos.show', [$id, $photoId]) : null,
+            ];
+        }, (array) ($context['equipments'] ?? [])), static fn (array $equipment): bool => $equipment['id'] > 0));
+
+        return response()->json([
+            'success' => true,
+            'orders' => $orders,
+            'equipments' => $equipments,
+        ]);
+    }
+
     public function store(Request $request): RedirectResponse
     {
         $submissionMode = $this->resolveSubmissionMode($request);
-        $payload = $this->validatedBudgetPayload($request);
+        $payload = $this->validatedBudgetPayload($request, requireComplete: true);
 
         try {
             $budget = $this->orcamentoService->create($payload);
@@ -396,7 +471,7 @@ class OrcamentoController extends DesktopController
     /**
      * @return array<string, mixed>
      */
-    private function validatedBudgetPayload(Request $request): array
+    private function validatedBudgetPayload(Request $request, bool $requireComplete = false): array
     {
         $normalized = $this->normalizeMoneyPayload(
             $request->all(),
@@ -433,7 +508,20 @@ class OrcamentoController extends DesktopController
             'origem' => ['nullable', 'string', Rule::in(['manual', 'os', 'conversa', 'cliente'])],
             'cliente_id' => ['nullable', 'integer', 'min:1'],
             'cliente_nome_avulso' => ['nullable', 'string', 'max:255', Rule::requiredIf(fn () => ! $request->filled('cliente_id'))],
-            'telefone_contato' => ['nullable', 'string', 'max:30'],
+            'telefone_contato' => array_values(array_filter([
+                $requireComplete ? 'required' : 'nullable',
+                'string',
+                'max:30',
+                $requireComplete
+                    ? static function (string $attribute, mixed $value, \Closure $fail): void {
+                        $digits = preg_replace('/\D+/', '', (string) $value) ?? '';
+
+                        if (strlen($digits) < 10 || strlen($digits) > 11) {
+                            $fail('Informe um telefone de contato válido, com DDD.');
+                        }
+                    }
+                    : null,
+            ])),
             'email_contato' => ['nullable', 'email', 'max:255'],
             'os_id' => ['nullable', 'integer', 'min:1'],
             'equipamento_id' => ['nullable', 'integer', 'min:1'],
@@ -441,16 +529,35 @@ class OrcamentoController extends DesktopController
             // Equipamento eventual (aparelho sem cadastro). Modelo é obrigatório
             // quando o orçamento é para reparo de um equipamento e não há
             // equipamento cadastrado nem OS vinculada.
-            'equipamento_tipo_avulso' => ['nullable', 'string', 'max:120'],
-            'equipamento_marca_avulso' => ['nullable', 'string', 'max:120'],
+            'equipamento_tipo_avulso' => ['nullable', 'string', 'max:120', Rule::requiredIf(
+                fn (): bool => $requireComplete
+                    && $request->boolean('envolve_equipamento')
+                    && ! $request->filled('equipamento_id')
+                    && ! $request->filled('os_id')
+            )],
+            'equipamento_marca_avulso' => ['nullable', 'string', 'max:120', Rule::requiredIf(
+                fn (): bool => $requireComplete
+                    && $request->boolean('envolve_equipamento')
+                    && ! $request->filled('equipamento_id')
+                    && ! $request->filled('os_id')
+            )],
             'equipamento_modelo_avulso' => ['nullable', 'string', 'max:120', Rule::requiredIf(
                 fn (): bool => $request->boolean('envolve_equipamento')
                     && ! $request->filled('equipamento_id')
                     && ! $request->filled('os_id')
             )],
-            'equipamento_cor' => ['nullable', 'string', 'max:100'],
+            'equipamento_cor' => ['nullable', 'string', 'max:100', Rule::requiredIf(
+                fn (): bool => $requireComplete
+                    && $request->boolean('envolve_equipamento')
+                    && ! $request->filled('equipamento_id')
+                    && ! $request->filled('os_id')
+            )],
             'titulo' => ['nullable', 'string', 'max:255'],
-            'relato_cliente' => ['nullable', 'string', 'max:5000'],
+            // Relato do cliente / defeito relatado: obrigatório em qualquer
+            // orçamento novo (inclusive serviço sem aparelho).
+            'relato_cliente' => ['nullable', 'string', 'max:5000', Rule::requiredIf(
+                fn (): bool => $requireComplete
+            )],
             'validade_dias' => ['nullable', 'integer', 'min:0'],
             'validade_data' => ['nullable', 'date'],
             'prazo_execucao' => ['nullable', 'string', 'max:255'],
@@ -463,13 +570,23 @@ class OrcamentoController extends DesktopController
             'acrescimo' => ['nullable', 'numeric'],
             'acrescimo_tipo' => ['nullable', 'string', Rule::in(['valor', 'percentual'])],
             'acrescimo_percentual' => ['nullable', 'numeric', 'min:0'],
-            'total' => ['nullable', 'numeric'],
-            'itens' => ['nullable', 'array'],
+            'total' => $requireComplete
+                ? ['required', 'numeric', 'gt:0']
+                : ['nullable', 'numeric'],
+            'itens' => $requireComplete
+                ? ['required', 'array', 'min:1']
+                : ['nullable', 'array'],
             'itens.*.tipo_item' => ['required_with:itens', 'string', Rule::in(['servico', 'peca'])],
             'itens.*.referencia_id' => ['nullable', 'integer', 'min:1'],
-            'itens.*.descricao' => ['nullable', 'string', 'max:255'],
-            'itens.*.quantidade' => ['nullable', 'numeric', 'min:0'],
-            'itens.*.valor_unitario' => ['nullable', 'numeric', 'min:0'],
+            'itens.*.descricao' => $requireComplete
+                ? ['required', 'string', 'max:255']
+                : ['nullable', 'string', 'max:255'],
+            'itens.*.quantidade' => $requireComplete
+                ? ['required', 'numeric', 'gt:0']
+                : ['nullable', 'numeric', 'min:0'],
+            'itens.*.valor_unitario' => $requireComplete
+                ? ['required', 'numeric', 'gt:0']
+                : ['nullable', 'numeric', 'min:0'],
             'itens.*.desconto' => ['nullable', 'numeric', 'min:0'],
             'itens.*.desconto_tipo' => ['nullable', 'string', Rule::in(['valor', 'percentual'])],
             'itens.*.desconto_percentual' => ['nullable', 'numeric', 'min:0'],
@@ -498,6 +615,7 @@ class OrcamentoController extends DesktopController
             'equipamento_marca_avulso' => 'marca do equipamento',
             'equipamento_modelo_avulso' => 'modelo do equipamento',
             'equipamento_cor' => 'cor do equipamento',
+            'relato_cliente' => 'relato do cliente',
             'titulo' => 'título',
             'validade_dias' => 'validade em dias',
             'validade_data' => 'validade',
@@ -519,7 +637,76 @@ class OrcamentoController extends DesktopController
             ->values()
             ->all();
 
+        if ($requireComplete) {
+            $this->ensureCompleteBudgetFinancials($validated);
+        }
+
         return $validated;
+    }
+
+    /**
+     * Recalcula os totais com os mesmos modos de ajuste usados pelo backend
+     * central. O total enviado pelo navegador nunca é usado como prova de que o
+     * orçamento está completo.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function ensureCompleteBudgetFinancials(array $payload): void
+    {
+        $subtotal = 0.0;
+        $errors = [];
+
+        foreach ((array) ($payload['itens'] ?? []) as $index => $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $base = round(
+                max(0, (float) ($item['quantidade'] ?? 0))
+                    * max(0, (float) ($item['valor_unitario'] ?? 0)),
+                2
+            );
+            $discount = $this->resolveBudgetAdjustment($base, $item, 'desconto');
+            $addition = $this->resolveBudgetAdjustment($base, $item, 'acrescimo');
+            $itemTotal = round($base - $discount + $addition, 2);
+
+            if ($itemTotal <= 0) {
+                $errors["itens.$index.valor_unitario"] = [
+                    'Os ajustes deste item não podem resultar em total igual ou menor que zero.',
+                ];
+            }
+
+            $subtotal += $itemTotal;
+        }
+
+        $subtotal = round($subtotal, 2);
+        $discount = $this->resolveBudgetAdjustment($subtotal, $payload, 'desconto');
+        $addition = $this->resolveBudgetAdjustment($subtotal, $payload, 'acrescimo');
+        $total = round($subtotal - $discount + $addition, 2);
+
+        if ($total <= 0) {
+            $errors['total'] = ['O total final do orçamento deve ser maior que zero.'];
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $scope
+     */
+    private function resolveBudgetAdjustment(float $base, array $scope, string $prefix): float
+    {
+        $mode = trim((string) ($scope[$prefix.'_tipo'] ?? 'valor'));
+
+        if ($mode === 'percentual') {
+            $percent = max(0, (float) ($scope[$prefix.'_percentual'] ?? 0));
+
+            return round($base * ($percent / 100), 2);
+        }
+
+        return round(max(0, (float) ($scope[$prefix] ?? 0)), 2);
     }
 
     /**
@@ -679,5 +866,17 @@ class OrcamentoController extends DesktopController
                 'full_url' => route('estoque.create'),
             ],
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>|null  $details
+     */
+    private function jsonFailure(string $message, int $status, ?array $details = null): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $message,
+            'errors' => $details ?? [],
+        ], $status);
     }
 }

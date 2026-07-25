@@ -4105,20 +4105,24 @@ a {
     max-width: 150px;
 }
 
-.order-create-summary-row-edit {
+.order-create-summary-row-edit,
+.order-create-summary-row-info {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 22px;
     height: 22px;
     border-radius: 999px;
+    border: 0;
     color: var(--desktop-primary);
     background: rgba(111, 90, 252, 0.1);
     font-size: 0.7rem;
     flex-shrink: 0;
+    cursor: pointer;
 }
 
-.order-create-summary-row-edit:hover {
+.order-create-summary-row-edit:hover,
+.order-create-summary-row-info:hover {
     background: rgba(111, 90, 252, 0.18);
 }
 

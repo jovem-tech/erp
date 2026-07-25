@@ -84,6 +84,23 @@ class OrcamentoService
     }
 
     /**
+     * OS abertas e equipamentos do cliente selecionado — usado para filtrar os
+     * campos "OS vinculada" e "Equipamento cadastrado" do formulário conforme o
+     * cliente escolhido no Select2.
+     *
+     * @return array{orders: array<int, array<string, mixed>>, equipments: array<int, array<string, mixed>>}
+     */
+    public function clientContext(int $clientId): array
+    {
+        $response = $this->apiClient->get('/orcamentos/cliente-contexto', ['cliente_id' => $clientId]);
+
+        return [
+            'orders' => $response['data']['orders'] ?? [],
+            'equipments' => $response['data']['equipments'] ?? [],
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
      */

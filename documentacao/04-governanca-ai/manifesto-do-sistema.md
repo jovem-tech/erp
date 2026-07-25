@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-24T04:08:30-03:00`
-- Versao do sistema: `5.12.1`
+- Gerado em: `2026-07-25T01:16:09-03:00`
+- Versao do sistema: `5.13.8`
 - Versao da API: `1.6.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -168,6 +168,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-21-sidebar-reorganizacao-e-atalhos.md` - Reorganização da sidebar e atalhos de submenu
 - `documentacao/07-novas-implementacoes/2026-07-23-hardening-vinculo-orcamento-os.md` - Hardening do vínculo de orçamento avulso com Ordem de Serviço
 - `documentacao/07-novas-implementacoes/2026-07-24-foto-diferida-equipamento-na-criacao-os.md` - Foto diferida do equipamento na criação de OS
+- `documentacao/07-novas-implementacoes/2026-07-24-hardening-trava-orcamento-completo.md` - Hardening da trava de completude do novo orçamento
 - `documentacao/07-novas-implementacoes/2026-07-24-select2-clientes-orcamento-paginado.md` - Select2 paginado de clientes no orçamento
 - `documentacao/07-novas-implementacoes/2026-07-24-trava-campos-obrigatorios-orcamento.md` - Cadastro de orçamento: trava o salvamento até completar os campos obrigatórios de todas as abas
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes

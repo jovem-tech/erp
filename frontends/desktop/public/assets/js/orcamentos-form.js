@@ -27,6 +27,9 @@
     const draftKey = String(config.draftKey || 'orcamentos:create');
     const isEditMode = Boolean(config.isEditMode);
     const clientSearchUrl = String(config.clientSearchUrl || '').trim();
+    // Endpoint que devolve as OS abertas e os equipamentos do cliente escolhido,
+    // para filtrar "OS vinculada" e "Equipamento cadastrado" conforme o cliente.
+    const clientContextUrl = String(config.clientContextUrl || '').trim();
 
     const moneyFormatter = new Intl.NumberFormat('pt-BR', {
         minimumFractionDigits: 2,
@@ -415,6 +418,9 @@
         const clientFallbackForExclusivity = clientFallbackInput;
         const envolveCheckbox = document.querySelector('[data-budget-envolve-equipamento]');
         const eventualInputs = Array.from(document.querySelectorAll('[data-budget-eventual-input]'));
+        // Campo "Tipo" do equipamento eventual: agora é um Select2 com os tipos do
+        // banco (EquipmentType), com tags para permitir digitar um novo.
+        const equipTypeSelect = document.querySelector('[data-budget-equip-type-select]');
         const equipmentFieldWraps = Array.from(document.querySelectorAll('[data-budget-equipment-field]'));
         const registeredOnlyWraps = Array.from(document.querySelectorAll('[data-budget-registered-only]'));
         const eventualWrap = document.querySelector('[data-budget-eventual-equipment]');
@@ -561,6 +567,8 @@
         const filledSelect = (el) => el instanceof HTMLSelectElement && String(el.value || '').trim() !== '';
         const filledInput = (el) => (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement)
             && String(el.value || '').trim() !== '';
+        // Preenchido independentemente do tipo de controle (input/textarea/select).
+        const filledControl = (el) => filledInput(el) || filledSelect(el);
 
         const syncClientExclusivity = () => {
             if (clientLocked) {
@@ -572,7 +580,32 @@
             setControlDisabled(clientFallbackForExclusivity, clientFilled && ! avulsoFilled);
         };
 
-        const syncEquipmentMode = () => {
+        // "OS vinculada" (agora na aba do cliente) só deve aparecer quando o
+        // cliente selecionado tem OS aberta. Este bloco NUNCA reexibe o campo —
+        // apenas o esconde se não houver OS na lista; a exibição é decidida por
+        // syncEquipmentModeCore (regras de eventual/sem-equipamento). A composição
+        // resulta em: visível só quando (modo registrado) E (há OS aberta).
+        const orderFieldWrap = document.querySelector('[data-budget-order-field]');
+        const orderOptionCount = () => {
+            if (!(orderSelect instanceof HTMLSelectElement)) {
+                return 0;
+            }
+
+            return Array.from(orderSelect.options)
+                .filter((option) => String(option.value || '').trim() !== '')
+                .length;
+        };
+        const applyOrderFieldVisibility = () => {
+            if (!(orderFieldWrap instanceof HTMLElement)) {
+                return;
+            }
+
+            if (orderOptionCount() === 0) {
+                orderFieldWrap.classList.add('d-none');
+            }
+        };
+
+        const syncEquipmentModeCore = () => {
             const envolve = envolveCheckbox instanceof HTMLInputElement ? envolveCheckbox.checked : true;
             const hasEventualClient = ! clientLocked
                 && filledInput(clientFallbackForExclusivity)
@@ -605,7 +638,7 @@
             setWrapHidden(eventualWrap, false);
 
             const hasRegistered = filledSelect(orderSelect) || filledSelect(equipmentSelect);
-            const hasEventual = eventualInputs.some(filledInput);
+            const hasEventual = eventualInputs.some(filledControl);
             if (hasRegistered) {
                 setControlDisabled(orderSelect, false);
                 setControlDisabled(equipmentSelect, false);
@@ -622,9 +655,274 @@
             syncDerivedClassification();
         };
 
+        // Wrapper: além das regras de eventual/sem-equipamento, aplica a
+        // visibilidade de "OS vinculada" conforme haver OS aberta do cliente.
+        const syncEquipmentMode = () => {
+            syncEquipmentModeCore();
+            applyOrderFieldVisibility();
+        };
+
         const syncEventualFields = () => {
             syncClientExclusivity();
             syncEquipmentMode();
+        };
+
+        // --- Filtragem por cliente: OS abertas e equipamentos (com foto) --------
+        const cssAttrEscape = (value) => String(value ?? '').replace(/["\\]/g, '\\$&');
+
+        const rebuildSelectOptions = (select, items, buildOption, desiredValue) => {
+            if (!(select instanceof HTMLSelectElement)) {
+                return;
+            }
+
+            // desiredValue (opcional) força uma seleção — usado ao reaplicar a OS
+            // ou o equipamento restaurados de um rascunho depois que a lista do
+            // cliente chega. Sem ele, preserva o que já estava selecionado.
+            const previous = desiredValue != null && String(desiredValue) !== ''
+                ? String(desiredValue)
+                : String(select.value || '');
+            select.innerHTML = '';
+
+            const emptyOption = document.createElement('option');
+            emptyOption.value = '';
+            select.appendChild(emptyOption);
+
+            (Array.isArray(items) ? items : []).forEach((item) => {
+                const option = buildOption(item);
+                if (option instanceof HTMLOptionElement) {
+                    select.appendChild(option);
+                }
+            });
+
+            // Preserva a seleção desejada apenas se ainda existir na nova lista.
+            if (previous !== '' && select.querySelector(`option[value="${cssAttrEscape(previous)}"]`)) {
+                select.value = previous;
+            } else {
+                select.value = '';
+            }
+        };
+
+        const setOrderOptions = (orders, desiredValue) => {
+            rebuildSelectOptions(orderSelect, orders, (order) => {
+                const id = String(order?.id ?? '');
+                if (id === '') {
+                    return null;
+                }
+
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = normalizeText(order?.label) || `OS #${id}`;
+                if (order?.cliente_id != null) {
+                    option.dataset.clienteId = String(order.cliente_id);
+                }
+
+                return option;
+            }, desiredValue);
+
+            // OS usa o Select2 genérico do desktop.js — reinicializa para refletir
+            // as novas opções e o placeholder.
+            if (window.DesktopUi && typeof window.DesktopUi.refreshSelect2 === 'function') {
+                window.DesktopUi.refreshSelect2(orderSelect);
+            } else {
+                const $ = jq();
+                if ($ && orderSelect instanceof HTMLSelectElement) {
+                    $(orderSelect).trigger('change.select2');
+                }
+            }
+        };
+
+        const setEquipmentOptions = (equipments, desiredValue) => {
+            rebuildSelectOptions(equipmentSelect, equipments, (equipment) => {
+                const id = String(equipment?.id ?? '');
+                if (id === '') {
+                    return null;
+                }
+
+                const option = document.createElement('option');
+                option.value = id;
+                option.textContent = normalizeText(equipment?.label) || `Equipamento #${id}`;
+                const fotoUrl = normalizeText(equipment?.foto_url);
+                if (fotoUrl !== '') {
+                    option.dataset.fotoUrl = fotoUrl;
+                }
+                if (equipment?.cliente_id != null) {
+                    option.dataset.clienteId = String(equipment.cliente_id);
+                }
+
+                return option;
+            }, desiredValue);
+
+            // Equipamento é totalmente gerido aqui (data-select2="false" no HTML):
+            // reinicializa o Select2 com o template de miniatura.
+            initEquipmentSelect();
+        };
+
+        // Template do resultado do Select2 do equipamento: miniatura da foto
+        // principal + rótulo. Reaproveita as classes do seletor de equipamento da
+        // criação de OS (order-create-equipment-result / equipment-list-photo).
+        const buildEquipmentResultMarkup = (state) => {
+            const $ = jq();
+            const text = normalizeText(state?.text);
+
+            if (!$ || !state || !state.id) {
+                return text;
+            }
+
+            const option = state.element instanceof HTMLOptionElement ? state.element : null;
+            const fotoUrl = option ? normalizeText(option.dataset.fotoUrl) : '';
+            // Divide "Tipo - Marca Modelo · S/N ... · Cliente" em título + metadados.
+            const parts = text.split(' · ');
+            const title = normalizeText(parts.shift());
+            const meta = parts.map(normalizeText).filter(Boolean).join(' / ');
+
+            const $wrap = $('<div class="order-create-equipment-result"></div>');
+            const $thumb = $('<span class="equipment-list-photo-link order-create-equipment-result-thumb" aria-hidden="true"></span>');
+            const emptyThumbMarkup = '<span class="equipment-list-photo-placeholder"><i class="bi bi-laptop"></i></span>';
+
+            if (fotoUrl !== '') {
+                const $img = $('<img class="equipment-list-photo" alt="" loading="lazy">');
+                $img.attr('src', fotoUrl);
+                // Foto inacessível (permissão/arquivo ausente): cai no ícone padrão
+                // em vez de mostrar uma imagem quebrada.
+                $img.on('error', function handleThumbError() {
+                    $thumb.html(emptyThumbMarkup);
+                });
+                $thumb.append($img);
+            } else {
+                $thumb.append(emptyThumbMarkup);
+            }
+
+            const $content = $('<div class="order-create-equipment-result-content"></div>');
+            $content.append($('<strong class="order-create-equipment-result-title"></strong>').text(title !== '' ? title : text));
+            if (meta !== '') {
+                $content.append($('<small class="order-create-equipment-result-meta"></small>').text(meta));
+            }
+
+            return $wrap.append($thumb).append($content);
+        };
+
+        const initEquipmentSelect = () => {
+            const $ = jq();
+            if (!(equipmentSelect instanceof HTMLSelectElement) || !$ || !$.fn || typeof $.fn.select2 !== 'function') {
+                return;
+            }
+
+            if ($(equipmentSelect).data('select2')) {
+                try {
+                    $(equipmentSelect).select2('destroy');
+                } catch (error) {
+                    console.error('[OrcamentosForm] Falha ao reinicializar o seletor de equipamentos.', error);
+                }
+            }
+
+            const placeholder = equipmentSelect.dataset.select2Placeholder || 'Selecione um equipamento...';
+
+            $(equipmentSelect).select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                placeholder,
+                allowClear: true,
+                dropdownParent: $(document.body),
+                minimumResultsForSearch: 0,
+                templateResult: buildEquipmentResultMarkup,
+                // Na seleção fechada, só o texto (miniatura fica no dropdown).
+                templateSelection: (state) => normalizeText(state?.text) || placeholder,
+                language: {
+                    noResults: () => 'Nenhum equipamento cadastrado para este cliente.',
+                    searching: () => 'Buscando...',
+                },
+            });
+
+            equipmentSelect.dataset.select2Ready = '1';
+        };
+
+        let lastContextClientId = null;
+        // Valores crus de OS/equipamento vindos de um rascunho restaurado: usados
+        // uma única vez para reaplicar a seleção após a lista do cliente chegar,
+        // mesmo que a opção ainda não exista no <select> no momento da restauração.
+        let pendingRestoreOrderId = '';
+        let pendingRestoreEquipmentId = '';
+        const loadClientContext = async (clientId, desiredOrderId = '', desiredEquipmentId = '') => {
+            if (clientContextUrl === '') {
+                return;
+            }
+
+            const separator = clientContextUrl.includes('?') ? '&' : '?';
+            const url = `${clientContextUrl}${separator}cliente_id=${encodeURIComponent(clientId)}`;
+
+            try {
+                const payload = await requestJson(url);
+
+                // Resposta obsoleta (o cliente já mudou de novo): descarta.
+                if (String(clientSelect?.value || '').trim() !== String(clientId)) {
+                    return;
+                }
+
+                // desiredOrderId/desiredEquipmentId reaplicam uma seleção
+                // pré-existente (ex.: restauração de rascunho) se ainda pertencer
+                // ao cliente.
+                setOrderOptions(payload.orders || [], desiredOrderId);
+                setEquipmentOptions(payload.equipments || [], desiredEquipmentId);
+            } catch (error) {
+                setOrderOptions([]);
+                setEquipmentOptions([]);
+            } finally {
+                syncEventualFields();
+            }
+        };
+
+        const handleClientChange = () => {
+            if (clientLocked) {
+                return;
+            }
+
+            const clientId = clientSelect instanceof HTMLSelectElement ? String(clientSelect.value || '').trim() : '';
+
+            if (clientId === '') {
+                lastContextClientId = '';
+                setOrderOptions([]);
+                setEquipmentOptions([]);
+                syncEventualFields();
+                return;
+            }
+
+            if (clientId === lastContextClientId) {
+                return;
+            }
+
+            lastContextClientId = clientId;
+            // Guarda a seleção atual de OS/equipamento (pode vir de um rascunho
+            // restaurado) para reaplicá-la depois que a lista do cliente chegar.
+            // pendingRestore* têm prioridade (valor cru do rascunho) e são
+            // consumidos uma única vez.
+            const desiredOrderId = pendingRestoreOrderId
+                || (orderSelect instanceof HTMLSelectElement ? String(orderSelect.value || '') : '');
+            const desiredEquipmentId = pendingRestoreEquipmentId
+                || (equipmentSelect instanceof HTMLSelectElement ? String(equipmentSelect.value || '') : '');
+            pendingRestoreOrderId = '';
+            pendingRestoreEquipmentId = '';
+            // Limpeza otimista: some imediatamente com as OS/equipamentos do
+            // cliente anterior enquanto a resposta não chega.
+            setOrderOptions([]);
+            setEquipmentOptions([]);
+            applyOrderFieldVisibility();
+            loadClientContext(clientId, desiredOrderId, desiredEquipmentId);
+        };
+
+        // Na carga: mantemos as opções pré-renderadas quando já há cliente
+        // (edição, vindo de OS, ou aberto com ?cliente_id — o backend já filtrou
+        // por cliente). Sem cliente (novo em branco), as listas vêm sem filtro e
+        // devem ser esvaziadas até que um cliente seja escolhido.
+        const initClientDependentFields = () => {
+            if (clientLocked || filledSelect(clientSelect)) {
+                lastContextClientId = clientLocked || !(clientSelect instanceof HTMLSelectElement)
+                    ? lastContextClientId
+                    : String(clientSelect.value || '').trim();
+                return;
+            }
+
+            setOrderOptions([]);
+            setEquipmentOptions([]);
         };
         const executionDeadlineInput = document.getElementById('orcamentoPrazoExecucao');
         const observationsInput = document.getElementById('orcamentoObservacoes');
@@ -1661,9 +1959,10 @@
                     return;
                 }
 
-                const requiresReadyState = button.dataset.budgetReviewSubmit === 'send_for_approval';
+                const requiresReadyState = !isEditMode
+                    || button.dataset.budgetReviewSubmit === 'send_for_approval';
                 button.disabled = requiresReadyState && pendencies.length > 0;
-                button.title = button.disabled ? 'Resolva as pendencias antes de enviar para aprovacao.' : '';
+                button.title = button.disabled ? 'Resolva as pendências obrigatórias antes de concluir.' : '';
             });
 
             return { pendencies };
@@ -1986,6 +2285,12 @@
                 field.value = String(value ?? '');
             });
 
+            // Guarda os ids crus de OS/equipamento do rascunho para que o
+            // recarregamento por cliente (disparado pelo change abaixo) os
+            // reaplique quando pertencerem ao cliente restaurado.
+            pendingRestoreOrderId = normalizeText(fields.os_id || '');
+            pendingRestoreEquipmentId = normalizeText(fields.equipamento_id || '');
+
             if (clientSelect instanceof HTMLSelectElement && restoredClientId !== '') {
                 clientSelect.value = restoredClientId;
 
@@ -2111,103 +2416,272 @@
             });
         });
 
-        // Trava do botao principal: so libera "Salvar orcamento" quando os campos
-        // obrigatorios de TODAS as abas estiverem preenchidos; antes disso o botao
-        // vira "Proximo" (so avanca a aba corrente, nao bloqueia clicar direto numa
-        // aba especifica). So se aplica ao cadastro novo — orcamentos existentes
-        // (edicao) foram salvos sob as regras antigas, mais permissivas, e nao devem
-        // ficar travados por uma regra que nao existia quando foram criados.
+        // Trava do botão principal. Na criação, o navegador guia o operador até a
+        // primeira pendência; a validação equivalente também existe no controller
+        // desktop, portanto alterar o DOM ou enviar POST manual não cria rascunho
+        // incompleto no banco.
         const budgetIsEdit = form.dataset.budgetIsEdit === '1';
         const primaryActionButton = form.querySelector('[data-budget-primary-action]');
-        const primaryActionSaveLabel = primaryActionButton instanceof HTMLButtonElement
-            ? primaryActionButton.textContent.trim()
-            : 'Salvar orçamento';
-        const budgetTabOrder = ['cliente', 'equipamento', 'operacional', 'financeiro'];
+        const primaryActionIcon = form.querySelector('[data-budget-primary-action-icon]');
+        const primaryActionLabel = form.querySelector('[data-budget-primary-action-label]');
         const budgetTabFlags = new Map(
             tabButtons.map((button) => [button.dataset.budgetTab, button.querySelector('[data-budget-tab-flag]')])
         );
+        const budgetTabOrder = tabButtons
+            .map((button) => normalizeText(button.dataset.budgetTab))
+            .filter(Boolean);
 
-        const isEquipmentTabComplete = () => {
-            const envolve = envolveCheckbox instanceof HTMLInputElement ? envolveCheckbox.checked : true;
-            if (!envolve) {
-                return true;
-            }
-            if (filledSelect(equipmentSelect)) {
-                return true;
-            }
-            const tipo = document.getElementById('orcamentoEquipTipoAvulso');
-            const marca = document.getElementById('orcamentoEquipMarcaAvulso');
-            const modelo = document.getElementById('orcamentoEquipModeloAvulso');
-            return filledInput(tipo) && filledInput(marca) && filledInput(modelo);
-        };
-
-        const isFinanceiroTabComplete = () => {
-            const rows = Array.from(itemsBody.querySelectorAll('[data-budget-item-row]')).filter(rowHasMeaningfulContent);
-            if (rows.length === 0) {
-                return false;
+        const collectCreatePendencies = () => {
+            if (budgetIsEdit) {
+                return [];
             }
 
-            const allRowsValid = rows.every((row) => {
+            const pendencies = [];
+            const phoneDigits = normalizeText(phoneInput?.value).replace(/\D/g, '');
+
+            if (!filledSelect(clientSelect) && !filledInput(clientFallbackInput)) {
+                pendencies.push({
+                    tab: 'cliente',
+                    field: clientSelect instanceof HTMLSelectElement && !clientSelect.disabled
+                        ? clientSelect
+                        : clientFallbackInput,
+                    message: 'Selecione um cliente cadastrado ou informe o nome do cliente eventual.',
+                });
+            }
+
+            if (phoneDigits.length < 10 || phoneDigits.length > 11) {
+                pendencies.push({
+                    tab: 'cliente',
+                    field: phoneInput,
+                    message: 'Informe um telefone de contato válido, com DDD.',
+                });
+            }
+
+            if (emailInput instanceof HTMLInputElement
+                && normalizeText(emailInput.value) !== ''
+                && !emailInput.validity.valid) {
+                pendencies.push({
+                    tab: 'cliente',
+                    field: emailInput,
+                    message: 'Corrija o endereço de e-mail informado.',
+                });
+            }
+
+            if (envolveCheckbox instanceof HTMLInputElement && envolveCheckbox.checked) {
+                const hasOrder = orderSelect instanceof HTMLSelectElement
+                    && !orderSelect.disabled
+                    && filledSelect(orderSelect);
+                const hasRegisteredEquipment = equipmentSelect instanceof HTMLSelectElement
+                    && !equipmentSelect.disabled
+                    && filledSelect(equipmentSelect);
+
+                if (!hasOrder && !hasRegisteredEquipment) {
+                    [
+                        ['orcamentoEquipTipoAvulso', 'Informe o tipo do equipamento eventual.'],
+                        ['orcamentoEquipMarcaAvulso', 'Informe a marca do equipamento eventual.'],
+                        ['orcamentoEquipModeloAvulso', 'Informe o modelo do equipamento eventual.'],
+                        ['orcamentoEquipCorAvulso', 'Informe a cor do equipamento eventual.'],
+                    ].forEach(([id, message]) => {
+                        const field = document.getElementById(id);
+
+                        // Tipo virou Select2 (HTMLSelectElement); os demais seguem inputs.
+                        if (!(field instanceof HTMLElement) || !filledControl(field)) {
+                            pendencies.push({ tab: 'equipamento', field: field instanceof HTMLElement ? field : null, message });
+                        }
+                    });
+                }
+            }
+
+            // Relato do cliente / defeito relatado: obrigatório sempre (inclusive
+            // em serviço sem aparelho). O campo fica na aba "Dados do equipamento".
+            const relatoField = document.getElementById('orcamentoRelatoCliente');
+            if (!filledInput(relatoField)) {
+                pendencies.push({
+                    tab: 'equipamento',
+                    field: relatoField instanceof HTMLElement ? relatoField : null,
+                    message: 'Informe o relato do cliente / defeito relatado.',
+                });
+            }
+
+            const meaningfulRows = Array.from(itemsBody.querySelectorAll('[data-budget-item-row]'))
+                .filter((row) => rowHasMeaningfulContent(row));
+
+            if (meaningfulRows.length === 0) {
+                const firstRow = itemsBody.querySelector('[data-budget-item-row]');
+                pendencies.push({
+                    tab: 'financeiro',
+                    field: firstRow?.querySelector('[data-budget-item-description]') || addButton,
+                    message: 'Adicione ao menos um item ao orçamento.',
+                });
+            }
+
+            meaningfulRows.forEach((row, index) => {
                 const descriptionInput = row.querySelector('[data-budget-item-description]');
-                const rowTotalInput = row.querySelector('[data-budget-item-total]');
-                const description = descriptionInput instanceof HTMLInputElement ? normalizeText(descriptionInput.value) : '';
-                const rowTotal = rowTotalInput instanceof HTMLInputElement ? toNumber(rowTotalInput.value) : 0;
-                return description !== '' && rowTotal > 0;
-            });
+                const quantityInput = row.querySelector('[data-budget-item-quantity]');
+                const unitPriceInput = row.querySelector('[data-budget-item-unit-price]');
+                const itemTotalInput = row.querySelector('[data-budget-item-total]');
+                const itemNumber = index + 1;
 
-            return allRowsValid && toNumber(totalInput?.value) > 0;
-        };
+                if (!(descriptionInput instanceof HTMLInputElement) || normalizeText(descriptionInput.value) === '') {
+                    pendencies.push({
+                        tab: 'financeiro',
+                        field: descriptionInput,
+                        message: `Informe a descrição do item ${itemNumber}.`,
+                    });
+                }
 
-        // Le o estado atual direto do DOM (nao usa collectReviewSnapshot(): essa
-        // funcao chama updateSummary(), e syncPrimaryAction() e chamada de dentro
-        // de updateSummary() — reusar o snapshot aqui criaria uma recursao infinita).
-        const computeBudgetTabValidity = () => ({
-            cliente: filledSelect(clientSelect) || filledInput(clientFallbackInput),
-            equipamento: isEquipmentTabComplete(),
-            operacional: true,
-            financeiro: isFinanceiroTabComplete(),
-        });
+                if (!(quantityInput instanceof HTMLInputElement) || toNumber(quantityInput.value) <= 0) {
+                    pendencies.push({
+                        tab: 'financeiro',
+                        field: quantityInput,
+                        message: `Informe uma quantidade maior que zero no item ${itemNumber}.`,
+                    });
+                }
 
-        const syncPrimaryAction = () => {
-            if (budgetIsEdit || !(primaryActionButton instanceof HTMLButtonElement)) {
-                return;
-            }
-
-            const validity = computeBudgetTabValidity();
-
-            budgetTabFlags.forEach((flag, name) => {
-                if (flag instanceof HTMLElement) {
-                    flag.hidden = validity[name] !== false;
+                if (!(unitPriceInput instanceof HTMLInputElement) || toNumber(unitPriceInput.value) <= 0) {
+                    pendencies.push({
+                        tab: 'financeiro',
+                        field: unitPriceInput,
+                        message: `Informe um valor unitário maior que zero no item ${itemNumber}.`,
+                    });
+                } else if (!(itemTotalInput instanceof HTMLInputElement) || toNumber(itemTotalInput.value) <= 0) {
+                    pendencies.push({
+                        tab: 'financeiro',
+                        field: unitPriceInput,
+                        message: `Os ajustes do item ${itemNumber} não podem resultar em total igual ou menor que zero.`,
+                    });
                 }
             });
 
-            const allValid = budgetTabOrder.every((name) => validity[name] !== false);
+            if (meaningfulRows.length > 0
+                && (!(totalInput instanceof HTMLInputElement) || toNumber(totalInput.value) <= 0)) {
+                pendencies.push({
+                    tab: 'financeiro',
+                    field: totalInput,
+                    message: 'O total final do orçamento deve ser maior que zero.',
+                });
+            }
 
-            if (allValid) {
-                primaryActionButton.type = 'submit';
-                primaryActionButton.textContent = primaryActionSaveLabel;
-                primaryActionButton.removeAttribute('title');
-                delete primaryActionButton.dataset.budgetNextMode;
-            } else {
-                primaryActionButton.type = 'button';
-                primaryActionButton.textContent = 'Próximo';
-                primaryActionButton.title = 'Preencha os campos obrigatórios destacados nas abas antes de salvar.';
-                primaryActionButton.dataset.budgetNextMode = '1';
+            return pendencies;
+        };
+
+        const focusCreatePendency = (pendency) => {
+            if (!pendency || typeof pendency !== 'object') {
+                return;
+            }
+
+            switchTab(String(pendency.tab || 'cliente'));
+            showToast('warning', String(pendency.message || 'Preencha os campos obrigatórios.'));
+
+            window.requestAnimationFrame(() => {
+                const field = pendency.field;
+                const focusTarget = field instanceof HTMLElement
+                    ? (field.closest('[data-budget-item-row]') || field)
+                    : null;
+
+                focusTarget?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                if (field instanceof HTMLSelectElement
+                    && !field.disabled
+                    && typeof window.jQuery !== 'undefined'
+                    && window.jQuery.fn
+                    && Boolean(window.jQuery(field).data('select2'))) {
+                    window.jQuery(field).select2('open');
+                    return;
+                }
+
+                if (field instanceof HTMLElement && !field.hasAttribute('disabled')) {
+                    field.focus({ preventScroll: true });
+                }
+            });
+        };
+
+        const syncPrimaryAction = () => {
+            if (budgetIsEdit
+                || !(primaryActionButton instanceof HTMLButtonElement)
+                || !(primaryActionLabel instanceof HTMLElement)) {
+                return;
+            }
+
+            const pendencies = collectCreatePendencies();
+
+            budgetTabFlags.forEach((flag, name) => {
+                if (flag instanceof HTMLElement) {
+                    flag.hidden = !pendencies.some((pendency) => pendency.tab === name);
+                }
+            });
+
+            const firstPendency = pendencies[0] || null;
+            const ready = firstPendency === null;
+            const nextLabel = normalizeText(primaryActionButton.dataset.budgetNextLabel) || 'Próximo';
+            const submitLabel = normalizeText(primaryActionButton.dataset.budgetSubmitLabel) || 'Criar orçamento';
+
+            primaryActionLabel.textContent = ready ? submitLabel : nextLabel;
+            primaryActionButton.dataset.budgetReady = ready ? '1' : '0';
+            primaryActionButton.setAttribute(
+                'aria-label',
+                ready ? submitLabel : `${nextLabel}: ${firstPendency.message}`
+            );
+
+            if (primaryActionIcon instanceof HTMLElement) {
+                primaryActionIcon.classList.toggle('bi-arrow-right-circle', !ready);
+                primaryActionIcon.classList.toggle('bi-check2-circle', ready);
             }
         };
 
-        primaryActionButton?.addEventListener('click', (event) => {
-            if (primaryActionButton.dataset.budgetNextMode !== '1') {
+        const handlePrimaryActionClick = (event) => {
+            if (budgetIsEdit) {
                 return;
             }
 
             event.preventDefault();
+            event.stopPropagation();
 
-            const activeButton = tabButtons.find((button) => button.classList.contains('is-active'));
-            const currentIndex = activeButton ? budgetTabOrder.indexOf(activeButton.dataset.budgetTab) : -1;
-            const nextTab = budgetTabOrder[(currentIndex + 1) % budgetTabOrder.length];
-            switchTab(nextTab);
-        });
+            try {
+                const pendencies = collectCreatePendencies();
+                const firstPendency = pendencies[0] || null;
+                const activeTabButton = tabButtons.find((button) => button.classList.contains('is-active'));
+                const currentTabName = normalizeText(activeTabButton?.dataset.budgetTab);
+                const currentTabPendency = pendencies.find((pendency) => pendency.tab === currentTabName);
+
+                if (currentTabPendency) {
+                    focusCreatePendency(currentTabPendency);
+                    return;
+                }
+
+                if (!firstPendency) {
+                    if (typeof form.requestSubmit === 'function') {
+                        form.requestSubmit();
+                        return;
+                    }
+
+                    form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+                    return;
+                }
+
+                const currentTabIndex = budgetTabOrder.indexOf(currentTabName);
+                if (currentTabIndex >= 0 && currentTabIndex < budgetTabOrder.length - 1) {
+                    switchTab(budgetTabOrder[currentTabIndex + 1]);
+                    return;
+                }
+
+                focusCreatePendency(firstPendency);
+            } catch (error) {
+                if (window.DesktopUi && typeof window.DesktopUi.logError === 'function') {
+                    window.DesktopUi.logError('orcamentos-form.primary-action', error);
+                } else {
+                    console.error('[OrcamentosForm] Falha ao avançar o formulário.', error);
+                }
+
+                showAlert(
+                    'error',
+                    'Não foi possível avançar',
+                    'Recarregue a página e tente novamente. Se o problema persistir, informe o suporte.'
+                );
+            }
+        };
+
+        primaryActionButton?.addEventListener('click', handlePrimaryActionClick, { capture: true });
 
         const formatDateInput = (date) => {
             const year = date.getFullYear();
@@ -2255,6 +2729,17 @@
         form.addEventListener('input', () => updateSummary());
         form.addEventListener('change', () => updateSummary());
         form.addEventListener('submit', (event) => {
+            if (!budgetIsEdit) {
+                const firstPendency = collectCreatePendencies()[0] || null;
+
+                if (firstPendency) {
+                    event.preventDefault();
+                    state.reviewConfirmed = false;
+                    focusCreatePendency(firstPendency);
+                    return;
+                }
+            }
+
             if (state.reviewConfirmed) {
                 if (budgetIsEncerrada && !state.adminConfirmed) {
                     event.preventDefault();
@@ -2339,7 +2824,7 @@
                     : 'save_only';
 
                 if (button.disabled) {
-                    showAlert('warning', 'Existem pendencias', 'Resolva as pendencias destacadas antes de enviar para aprovacao.');
+                    showAlert('warning', 'Existem pendências', 'Resolva os campos obrigatórios antes de concluir o orçamento.');
                     return;
                 }
 
@@ -2406,14 +2891,32 @@
         onSelectEvent(clientSelect, 'change', syncEventualFields);
         onSelectEvent(clientSelect, 'select2:select', syncEventualFields);
         onSelectEvent(clientSelect, 'select2:clear', syncEventualFields);
+        // Trocar o cliente recarrega as OS abertas e os equipamentos daquele
+        // cliente (filtra "OS vinculada" e "Equipamento cadastrado").
+        onSelectEvent(clientSelect, 'change', handleClientChange);
+        onSelectEvent(clientSelect, 'select2:select', handleClientChange);
+        onSelectEvent(clientSelect, 'select2:clear', handleClientChange);
         onSelectEvent(equipmentSelect, 'change', syncEquipmentMode);
         onSelectEvent(equipmentSelect, 'select2:select', syncEquipmentMode);
         onSelectEvent(equipmentSelect, 'select2:clear', syncEquipmentMode);
         clientFallbackInput?.addEventListener('input', syncEventualFields);
         envolveCheckbox?.addEventListener('change', syncEquipmentMode);
         eventualInputs.forEach((input) => input.addEventListener('input', syncEquipmentMode));
+        // O Select2 do "Tipo" dispara 'change' só via jQuery — não cai no listener
+        // nativo de 'input' do form. Ligamos explicitamente para reavaliar as
+        // pendências (rótulo do botão) e a exclusividade registrado × eventual.
+        const handleEquipTypeChange = () => {
+            syncEquipmentMode();
+            updateSummary();
+        };
+        onSelectEvent(equipTypeSelect, 'change', handleEquipTypeChange);
+        onSelectEvent(equipTypeSelect, 'select2:select', handleEquipTypeChange);
+        onSelectEvent(equipTypeSelect, 'select2:clear', handleEquipTypeChange);
 
         initClientSelect();
+        initEquipmentSelect();
+        initEquipmentTypeSelect(equipTypeSelect);
+        initClientDependentFields();
         loadDraft();
         syncEventualFields();
         updateSummary();

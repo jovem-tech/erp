@@ -238,41 +238,7 @@
             <input type="hidden" name="orcamento_id" value="{{ $linkedBudgetId }}">
         @endif
 
-        @if (! $isEditing && $linkedBudget !== null)
-            <div class="alert alert-info order-create-linked-budget" role="alert"
-                data-linked-budget-avulso-name="{{ $linkedBudgetAvulsoName }}"
-                data-linked-budget-avulso-phone="{{ $linkedBudgetAvulsoPhone }}"
-                data-linked-budget-avulso-email="{{ $linkedBudgetAvulsoEmail }}"
-                data-linked-budget-equip-tipo="{{ $linkedBudgetEquipTipo }}"
-                data-linked-budget-equip-marca="{{ $linkedBudgetEquipMarca }}"
-                data-linked-budget-equip-modelo="{{ $linkedBudgetEquipModelo }}"
-                data-linked-budget-equip-cor="{{ $linkedBudgetEquipCor }}">
-                <div class="d-flex align-items-start gap-2">
-                    <i class="bi bi-receipt-cutoff"></i>
-                    <div class="flex-grow-1">
-                        <strong>Gerando OS a partir do orçamento {{ (string) data_get($linkedBudget, 'numero', '') }}.</strong>
-                        <div class="small">
-                            Os valores do orçamento serão vinculados a esta OS e o orçamento passará a "Convertido" ao salvar.
-                            @if (! $linkedBudgetHasClient)
-                                <br>
-                                Este orçamento não tinha cliente cadastrado (cliente eventual: <strong>{{ $linkedBudgetAvulsoName !== '' ? $linkedBudgetAvulsoName : 'não informado' }}</strong>).
-                                Selecione um cliente existente ou use <strong>Novo cliente</strong> para cadastrá-lo antes de salvar.
-                            @endif
-                            @if ($linkedBudgetEquipLabel !== '')
-                                <br>
-                                Equipamento eventual do orçamento: <strong>{{ $linkedBudgetEquipLabel }}</strong>.
-                                Use <strong>Novo equipamento</strong> — o cadastro já abre pré-preenchido; complete série/foto.
-                            @endif
-                        </div>
-                    </div>
-                    <a href="{{ route('orders.create') }}"
-                        class="btn btn-sm btn-outline-primary ms-auto"
-                        data-order-unlink-budget>
-                        <i class="bi bi-arrow-repeat me-1"></i>Remover ou trocar
-                    </a>
-                </div>
-            </div>
-        @elseif (! $isEditing && $canLinkBudgets)
+        @if (! $isEditing && $canLinkBudgets && $linkedBudget === null)
             <div class="order-create-budget-picker mb-2">
                 <label for="orderLinkBudget" class="mb-1">Vincular orçamento avulso aprovado (opcional)</label>
                 <select id="orderLinkBudget"
@@ -294,6 +260,34 @@
                 <span class="summary-card-eyebrow">Resumo da OS</span>
 
                 <ul class="order-create-summary-list">
+                    @if (! $isEditing && $linkedBudget !== null)
+                        <li class="order-create-summary-row"
+                            data-linked-budget-avulso-name="{{ $linkedBudgetAvulsoName }}"
+                            data-linked-budget-avulso-phone="{{ $linkedBudgetAvulsoPhone }}"
+                            data-linked-budget-avulso-email="{{ $linkedBudgetAvulsoEmail }}"
+                            data-linked-budget-equip-tipo="{{ $linkedBudgetEquipTipo }}"
+                            data-linked-budget-equip-marca="{{ $linkedBudgetEquipMarca }}"
+                            data-linked-budget-equip-modelo="{{ $linkedBudgetEquipModelo }}"
+                            data-linked-budget-equip-cor="{{ $linkedBudgetEquipCor }}"
+                        >
+                            <span class="order-create-summary-row-label">Orçamento</span>
+                            <span class="order-create-summary-row-value">
+                                <span class="order-create-summary-row-text">{{ (string) data_get($linkedBudget, 'numero', '') }}</span>
+                                <button
+                                    type="button"
+                                    class="order-create-summary-row-info"
+                                    data-bs-toggle="modal"
+                                    data-bs-target="#orderLinkedBudgetInfoModal"
+                                    aria-label="Detalhes do vínculo com o orçamento"
+                                    title="Detalhes do vínculo com o orçamento"
+                                >
+                                    <i class="bi bi-info-circle"></i>
+                                </button>
+                                <i class="bi bi-check-circle-fill is-complete order-create-summary-row-icon"></i>
+                            </span>
+                        </li>
+                    @endif
+
                     <li class="order-create-summary-row" title="{{ $selectedClientPhone !== '' || $selectedClientEmail !== '' ? trim($selectedClientPhone . ' ' . $selectedClientEmail) : '' }}">
                         <span class="order-create-summary-row-label">Cliente</span>
                         <span class="order-create-summary-row-value">
@@ -982,6 +976,47 @@
 @endif
 
 @push('modals')
+    @if (! $isEditing && $linkedBudget !== null)
+        <div class="modal fade" id="orderLinkedBudgetInfoModal" tabindex="-1" aria-labelledby="orderLinkedBudgetInfoModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content modal-shell">
+                    <div class="modal-header border-0 pb-0">
+                        <div>
+                            <p class="desktop-eyebrow mb-2">Orçamento vinculado</p>
+                            <h4 id="orderLinkedBudgetInfoModalLabel" class="surface-title fs-5 mb-1">
+                                Gerando OS a partir do orçamento {{ (string) data_get($linkedBudget, 'numero', '') }}
+                            </h4>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p class="mb-2">
+                            Os valores do orçamento serão vinculados a esta OS e o orçamento passará a "Convertido" ao salvar.
+                        </p>
+                        @if (! $linkedBudgetHasClient)
+                            <p class="mb-2">
+                                Este orçamento não tinha cliente cadastrado (cliente eventual: <strong>{{ $linkedBudgetAvulsoName !== '' ? $linkedBudgetAvulsoName : 'não informado' }}</strong>).
+                                Selecione um cliente existente ou use <strong>Novo cliente</strong> para cadastrá-lo antes de salvar.
+                            </p>
+                        @endif
+                        @if ($linkedBudgetEquipLabel !== '')
+                            <p class="mb-0">
+                                Equipamento eventual do orçamento: <strong>{{ $linkedBudgetEquipLabel }}</strong>.
+                                Use <strong>Novo equipamento</strong> — o cadastro já abre pré-preenchido; complete série/foto.
+                            </p>
+                        @endif
+                    </div>
+                    <div class="modal-footer border-0 pt-0">
+                        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Fechar</button>
+                        <a href="{{ route('orders.create') }}" class="btn btn-primary" data-order-unlink-budget>
+                            <i class="bi bi-arrow-repeat me-1"></i>Remover ou trocar
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
     @include('orders._photo_crop_modal')
 
     @if ($canCreateClient)

@@ -7,6 +7,8 @@
     $orders = $form['orders'] ?? [];
     $services = $form['services'] ?? [];
     $parts = $form['parts'] ?? [];
+    // Tipos de equipamento do banco (EquipmentType ativos) para o Select2 do campo Tipo.
+    $tiposEquipamento = is_array($form['tipos_equipamento'] ?? null) ? $form['tipos_equipamento'] : [];
     $quickCatalogs = is_array($quickCatalogs ?? null) ? $quickCatalogs : [];
     $quickServiceEnabled = (bool) data_get($quickCatalogs, 'service.enabled', false);
     $quickPartEnabled = (bool) data_get($quickCatalogs, 'part.enabled', false);
@@ -265,7 +267,7 @@
         <div class="equipment-tab-panel is-active" data-budget-panel="cliente">
             <div class="desktop-grid desktop-grid-two">
                 <div>
-                    <label for="orcamentoClienteId">Cliente cadastrado</label>
+                    <label for="orcamentoClienteId">Cliente cadastrado <span class="text-danger" aria-hidden="true">*</span></label>
                     <select id="orcamentoClienteId" name="{{ $clientLocked ? '' : 'cliente_id' }}" class="form-select" data-select2-placeholder="Selecione um cliente..." data-select2-allow-clear="true" data-budget-client-select @disabled($clientLocked)>
                         <option value=""></option>
                         @foreach ($clients as $client)
@@ -293,18 +295,38 @@
                 </div>
 
                 <div>
-                    <label for="orcamentoClienteAvulso">Nome do cliente eventual</label>
+                    <label for="orcamentoClienteAvulso">Nome do cliente eventual <span class="text-danger" aria-hidden="true">*</span></label>
                     <input type="text" id="orcamentoClienteAvulso" name="cliente_nome_avulso" class="form-control" value="{{ old('cliente_nome_avulso', $budget['cliente_nome_avulso'] ?? '') }}" placeholder="Preencher apenas se não houver cadastro" data-budget-client-avulso @disabled($clientLocked)>
                 </div>
 
                 <div>
-                    <label for="orcamentoTelefoneContato">Telefone de contato</label>
-                    <input type="text" id="orcamentoTelefoneContato" name="telefone_contato" class="form-control" value="{{ old('telefone_contato', $budget['telefone_contato'] ?? ($form['selected_client_phone'] ?? '')) }}" placeholder="(11) 98765-4321">
+                    <label for="orcamentoTelefoneContato">Telefone de contato <span class="text-danger" aria-hidden="true">*</span></label>
+                    <input type="text" id="orcamentoTelefoneContato" name="telefone_contato" class="form-control" value="{{ old('telefone_contato', $budget['telefone_contato'] ?? ($form['selected_client_phone'] ?? '')) }}" placeholder="(11) 98765-4321" @if (! $isEditMode) required aria-required="true" @endif>
                 </div>
 
                 <div>
                     <label for="orcamentoEmailContato">E-mail de contato</label>
                     <input type="email" id="orcamentoEmailContato" name="email_contato" class="form-control" value="{{ old('email_contato', $budget['email_contato'] ?? ($form['selected_client_email'] ?? '')) }}" placeholder="cliente@dominio.com">
+                </div>
+
+                {{-- OS vinculada: só aparece quando o cliente selecionado tem OS
+                     aberta. As opções são recarregadas via AJAX ao trocar o
+                     cliente (data-budget-order-field controla a visibilidade). --}}
+                <div class="desktop-grid-span-2 d-none" data-budget-equipment-field data-budget-registered-only data-budget-order-field>
+                    <label for="orcamentoOsId">OS vinculada</label>
+                    <select id="orcamentoOsId" name="os_id" class="form-select" data-select2-placeholder="Selecione uma OS..." data-select2-allow-clear="true">
+                        <option value=""></option>
+                        @foreach ($orders as $order)
+                            @php
+                                $orderId = (int) ($order['id'] ?? 0);
+                                $orderClienteId = (int) ($order['cliente_id'] ?? 0);
+                                $orderLabel = trim((string) ($order['numero_os'] ?? 'OS #' . $orderId));
+                                $orderClient = trim((string) ($order['cliente_nome'] ?? ''));
+                            @endphp
+                            <option value="{{ $orderId }}" data-cliente-id="{{ $orderClienteId }}" @selected($selectedOrderId === $orderId)>{{ $orderLabel }}{{ $orderClient !== '' ? ' - ' . $orderClient : '' }}</option>
+                        @endforeach
+                    </select>
+                    <small class="text-secondary d-block mt-2">Somente OS abertas do cliente selecionado.</small>
                 </div>
             </div>
         </div>
@@ -320,28 +342,20 @@
                     <small class="text-secondary d-block mt-1">Desmarque para serviços sem aparelho (visita técnica, instalação de cabo de rede, etc.).</small>
                 </div>
 
-                <div data-budget-equipment-field data-budget-registered-only>
-                    <label for="orcamentoOsId">OS vinculada</label>
-                    <select id="orcamentoOsId" name="os_id" class="form-select" data-select2-placeholder="Selecione uma OS..." data-select2-allow-clear="true">
-                        <option value=""></option>
-                        @foreach ($orders as $order)
-                            @php
-                                $orderId = (int) ($order['id'] ?? 0);
-                                $orderLabel = trim((string) ($order['numero_os'] ?? 'OS #' . $orderId));
-                                $orderClient = trim((string) ($order['cliente_nome'] ?? ''));
-                            @endphp
-                            <option value="{{ $orderId }}" @selected($selectedOrderId === $orderId)>{{ $orderLabel }}{{ $orderClient !== '' ? ' - ' . $orderClient : '' }}</option>
-                        @endforeach
-                    </select>
-                </div>
-
-                <div data-budget-equipment-field data-budget-registered-only>
+                <div class="desktop-grid-span-2" data-budget-equipment-field data-budget-registered-only>
                     <label for="orcamentoEquipamentoId">Equipamento cadastrado</label>
+                    {{-- O Select2 deste campo é montado pelo orcamentos-form.js
+                         (initEquipmentSelect) com template de miniatura (foto do
+                         equipamento) e marcado com data-select2Ready para o init
+                         genérico do desktop.js não o reinicializar. As opções são
+                         recarregadas via AJAX ao trocar o cliente (apenas
+                         equipamentos do cliente escolhido). --}}
                     <select id="orcamentoEquipamentoId" name="equipamento_id" class="form-select" data-select2-placeholder="Selecione um equipamento..." data-select2-allow-clear="true" data-budget-equipment-select>
                         <option value=""></option>
                         @foreach ($equipments as $equipment)
                             @php
                                 $equipmentId = (int) ($equipment['id'] ?? 0);
+                                $equipmentClienteId = (int) ($equipment['cliente_id'] ?? 0);
                                 $equipmentTipoNome = trim((string) ($equipment['tipo_nome'] ?? ''));
                                 $equipmentMarcaNome = trim((string) ($equipment['marca_nome'] ?? ''));
                                 $equipmentModeloNome = trim((string) ($equipment['modelo_nome'] ?? ''));
@@ -352,8 +366,12 @@
                                 }
                                 $serial = trim((string) ($equipment['numero_serie'] ?? ''));
                                 $clientName = trim((string) ($equipment['cliente_nome'] ?? ''));
+                                $equipmentFotoId = (int) ($equipment['foto_principal_id'] ?? 0);
+                                $equipmentFotoUrl = $equipmentFotoId > 0 && $equipmentId > 0
+                                    ? route('equipments.photos.show', [$equipmentId, $equipmentFotoId])
+                                    : '';
                             @endphp
-                            <option value="{{ $equipmentId }}" @selected($selectedEquipmentId === $equipmentId)>{{ $equipmentLabel !== '' ? $equipmentLabel : 'Equipamento #' . $equipmentId }}{{ $serial !== '' ? ' · S/N ' . $serial : '' }}{{ $clientName !== '' ? ' · ' . $clientName : '' }}</option>
+                            <option value="{{ $equipmentId }}" data-cliente-id="{{ $equipmentClienteId }}" data-foto-url="{{ $equipmentFotoUrl }}" @selected($selectedEquipmentId === $equipmentId)>{{ $equipmentLabel !== '' ? $equipmentLabel : 'Equipamento #' . $equipmentId }}{{ $serial !== '' ? ' · S/N ' . $serial : '' }}{{ $clientName !== '' ? ' · ' . $clientName : '' }}</option>
                         @endforeach
                     </select>
                 </div>
@@ -364,19 +382,32 @@
                         <small class="text-secondary d-block mb-3">Aparelho que ainda não veio à assistência. Preencha o que souber — estes dados pré-preenchem o cadastro do equipamento ao gerar a OS.</small>
                         <div class="desktop-grid desktop-grid-two">
                             <div>
-                                <label for="orcamentoEquipTipoAvulso">Tipo</label>
-                                <input type="text" id="orcamentoEquipTipoAvulso" name="equipamento_tipo_avulso" class="form-control" value="{{ $equipTipoAvulso }}" placeholder="Ex.: Smartphone" data-budget-eventual-input maxlength="120">
+                                <label for="orcamentoEquipTipoAvulso">Tipo <span class="text-danger" aria-hidden="true">*</span></label>
+                                @php
+                                    // Se o valor salvo não estiver no catálogo (tipo digitado antes),
+                                    // acrescentamos como opção para não perder a seleção.
+                                    $tipoAvulsoIsCustom = $equipTipoAvulso !== '' && ! in_array($equipTipoAvulso, $tiposEquipamento, true);
+                                @endphp
+                                <select id="orcamentoEquipTipoAvulso" name="equipamento_tipo_avulso" class="form-select" data-native-select="true" data-select2-placeholder="Selecione ou digite o tipo..." data-budget-eventual-input data-budget-equip-type-select>
+                                    <option value=""></option>
+                                    @foreach ($tiposEquipamento as $tipo)
+                                        <option value="{{ $tipo }}" @selected($equipTipoAvulso === $tipo)>{{ $tipo }}</option>
+                                    @endforeach
+                                    @if ($tipoAvulsoIsCustom)
+                                        <option value="{{ $equipTipoAvulso }}" selected>{{ $equipTipoAvulso }}</option>
+                                    @endif
+                                </select>
                             </div>
                             <div>
-                                <label for="orcamentoEquipMarcaAvulso">Marca</label>
+                                <label for="orcamentoEquipMarcaAvulso">Marca <span class="text-danger" aria-hidden="true">*</span></label>
                                 <input type="text" id="orcamentoEquipMarcaAvulso" name="equipamento_marca_avulso" class="form-control" value="{{ $equipMarcaAvulso }}" placeholder="Ex.: Apple" data-budget-eventual-input maxlength="120">
                             </div>
                             <div>
-                                <label for="orcamentoEquipModeloAvulso">Modelo</label>
+                                <label for="orcamentoEquipModeloAvulso">Modelo <span class="text-danger" aria-hidden="true">*</span></label>
                                 <input type="text" id="orcamentoEquipModeloAvulso" name="equipamento_modelo_avulso" class="form-control" value="{{ $equipModeloAvulso }}" placeholder="Ex.: iPhone 16" data-budget-eventual-input maxlength="120">
                             </div>
                             <div>
-                                <label for="orcamentoEquipCorAvulso">Cor</label>
+                                <label for="orcamentoEquipCorAvulso">Cor <span class="text-danger" aria-hidden="true">*</span></label>
                                 <input type="text" id="orcamentoEquipCorAvulso" name="equipamento_cor" class="form-control" value="{{ $equipCorAvulso }}" placeholder="Ex.: Preto" data-budget-eventual-input maxlength="100">
                             </div>
                         </div>
@@ -384,7 +415,7 @@
                 </div>
 
                 <div class="desktop-grid-span-2">
-                    <label for="orcamentoRelatoCliente">Relato do cliente / defeito relatado</label>
+                    <label for="orcamentoRelatoCliente">Relato do cliente / defeito relatado <span class="text-danger" aria-hidden="true">*</span></label>
                     <textarea id="orcamentoRelatoCliente" name="relato_cliente" class="form-control" rows="3" placeholder="Descreva o problema relatado pelo cliente. Ao gerar a OS, isto preenche o relato da ordem.">{{ old('relato_cliente', $budget['relato_cliente'] ?? '') }}</textarea>
                 </div>
 
@@ -484,7 +515,24 @@
 
                 <div>
                     <label for="orcamentoPrazoExecucao">Prazo de execução</label>
-                    <input type="text" id="orcamentoPrazoExecucao" name="prazo_execucao" class="form-control" value="{{ $prazoExecucaoValue }}" placeholder="Ex.: 3 dias úteis">
+                    @php
+                        $prazoExecucaoDiasOptions = [1, 3, 7, 15, 30];
+                        $formatPrazoExecucaoLabel = static fn (int $dias): string => $dias . ' dia' . ($dias === 1 ? '' : 's');
+                        // Valor legado/vindo da OS (ex.: "Previsão: 25/07/2026") que não bate
+                        // com nenhuma opção fixa: preservado como opção extra para não se perder.
+                        $prazoExecucaoIsCustom = $prazoExecucaoValue !== ''
+                            && ! in_array($prazoExecucaoValue, array_map($formatPrazoExecucaoLabel, $prazoExecucaoDiasOptions), true);
+                    @endphp
+                    <select id="orcamentoPrazoExecucao" name="prazo_execucao" class="form-select">
+                        <option value=""></option>
+                        @foreach ($prazoExecucaoDiasOptions as $prazoExecucaoDias)
+                            @php $prazoExecucaoLabel = $formatPrazoExecucaoLabel($prazoExecucaoDias); @endphp
+                            <option value="{{ $prazoExecucaoLabel }}" @selected($prazoExecucaoValue === $prazoExecucaoLabel)>{{ $prazoExecucaoLabel }}</option>
+                        @endforeach
+                        @if ($prazoExecucaoIsCustom)
+                            <option value="{{ $prazoExecucaoValue }}" selected>{{ $prazoExecucaoValue }}</option>
+                        @endif
+                    </select>
                 </div>
 
                 <div class="desktop-grid-span-2">
@@ -655,12 +703,20 @@
                     </div>
                 </div>
             </section>
-            </div>
         </div>
 
         <div class="desktop-form-actions">
             <a href="{{ $cancelUrl ?? route('orcamentos.index') }}" class="btn btn-outline-light">Cancelar</a>
-            <button type="submit" class="btn btn-primary" data-budget-primary-action>{{ $submitLabel ?? 'Salvar orçamento' }}</button>
+            <button
+                type="{{ $isEditMode ? 'submit' : 'button' }}"
+                class="btn btn-primary"
+                data-budget-primary-action
+                data-budget-next-label="Próximo"
+                data-budget-submit-label="{{ $submitLabel ?? ($isEditMode ? 'Salvar alterações' : 'Criar orçamento') }}"
+            >
+                <i class="bi {{ $isEditMode ? 'bi-check2-circle' : 'bi-arrow-right-circle' }} me-2" data-budget-primary-action-icon aria-hidden="true"></i>
+                <span data-budget-primary-action-label>{{ $isEditMode ? ($submitLabel ?? 'Salvar alterações') : 'Próximo' }}</span>
+            </button>
         </div>
     </form>
 </section>
@@ -712,8 +768,8 @@
                         <div class="budget-review-pendencies-head">
                             <i class="bi bi-exclamation-triangle"></i>
                             <div>
-                                <strong>Existem pendencias que bloqueiam o envio para aprovacao.</strong>
-                                <p class="mb-0">Voce ainda pode salvar sem enviar o PDF agora.</p>
+                                <strong>Existem pendências que impedem a conclusão do orçamento.</strong>
+                                <p class="mb-0">Volte ao formulário e preencha os campos obrigatórios indicados.</p>
                             </div>
                         </div>
                         <ul class="mb-0" data-budget-review-pendencies></ul>
