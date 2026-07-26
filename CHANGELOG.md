@@ -1,5 +1,113 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.16.8.0 — 2026-07-25 22:18
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige a inicializacao do seletor remoto de orcamentos na Nova OS, evitando colisao com o Select2 global.
+- **Arquivos:** frontends/desktop/public/assets/js/orders-create.js,frontends/desktop/resources/views/orders/_wizard.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/07-novas-implementacoes/2026-07-25-orcamentos-avulsos-vinculaveis-nova-os.md
+
+## v5.16.7.0 — 2026-07-25 21:23
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Amplia o vinculo da Nova OS para todos os orcamentos avulsos ativos, preservando a aprovacao pendente e bloqueando estados terminais.
+- **Arquivos:** backend/app/Models/Budget.php,backend/app/Services/Budgets/BudgetWorkflowService.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/app/Http/Requests/Api/V1/UpsertOrderRequest.php,backend/openapi.yaml,backend/tests/Feature/Api/V1/BudgetAvulsoFlowTest.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/resources/views/orders/_wizard.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/07-novas-implementacoes/2026-07-25-orcamentos-avulsos-vinculaveis-nova-os.md
+
+## v5.16.6.0 — 2026-07-25 20:41
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Torna marca e modelo obrigatorios no cadastro de equipamentos e na criacao diferida da Nova OS.
+- **Arquivos:** frontends/desktop/resources/views/equipments/create.blade.php,frontends/desktop/public/assets/js/equipments-create.js,frontends/desktop/app/Http/Controllers/EquipmentController.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,backend/app/Http/Requests/Api/V1/StoreEquipmentRequest.php,backend/app/Http/Requests/Api/V1/UpdateEquipmentRequest.php,backend/app/Http/Requests/Api/V1/UpsertOrderRequest.php,backend/openapi.yaml,backend/tests/Feature/Api/V1/EquipmentCreationTest.php,backend/tests/Feature/Api/V1/BudgetAvulsoFlowTest.php,documentacao/07-novas-implementacoes/2026-07-25-marca-modelo-obrigatorios-equipamento.md
+
+## v5.16.5.0 — 2026-07-25 20:24
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Move a decisão obrigatória Enviar PDF ao cliente para um rodapé de largura total na abertura da OS, mantendo a opção à esquerda e Cancelar/Próximo agrupados à direita.
+- **Arquivos:** frontends/desktop/resources/views/orders/_wizard.blade.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/07-novas-implementacoes/2026-07-25-envio-pdf-rodape-nova-os.md
+
+## v5.16.4.0 — 2026-07-25 20:11
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Restringe a aba Informações técnicas à edição de equipamentos Desktop e Notebook, ocultando-a para Smartphone e demais famílias e atualizando sua visibilidade ao trocar o tipo.
+- **Arquivos:** frontends/desktop/resources/views/equipments/create.blade.php,frontends/desktop/public/assets/js/equipments-create.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/07-novas-implementacoes/2026-07-25-aba-informacoes-tecnicas-equipamento.md
+
+## v5.16.3.0 — 2026-07-25 20:04
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige a aba Informações técnicas vazia em equipamentos não computacionais: o Painel técnico permanece visível em toda edição, enquanto o Coletor continua restrito a Desktop e Notebook.
+- **Arquivos:** frontends/desktop/public/assets/js/equipments-create.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/07-novas-implementacoes/2026-07-25-aba-informacoes-tecnicas-equipamento.md
+
+## v5.16.2.0 — 2026-07-25 17:35
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Reorganiza o cadastro de equipamentos: Coletor de hardware e Painel técnico passam para a aba Informações técnicas, visível somente na edição, mantendo Estado físico e Observações na aba Informações.
+- **Arquivos:** frontends/desktop/resources/views/equipments/create.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/07-novas-implementacoes/2026-07-25-aba-informacoes-tecnicas-equipamento.md
+
+## v5.16.1.0 — 2026-07-25 17:16
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Torna o checklist de entrada obrigatório e sem classificação automática na abertura da OS, adiciona Não se aplica e Todos OK, e exige observação para discrepâncias no desktop e na API.
+- **Arquivos:** backend/app/Http/Requests/Api/V1/UpsertOrderRequest.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/app/Http/Controllers/Api/V1/OrderController.php,backend/app/Services/Pdf/Contexts/OrderPdfContextFactory.php,backend/openapi.yaml,backend/tests/Feature/Api/V1/OrderFlowTest.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/public/assets/js/orders-create.js,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/resources/views/orders/_wizard.blade.php,frontends/desktop/resources/views/orders/_checklist_detail_modal.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/07-novas-implementacoes/2026-07-25-checklist-entrada-obrigatorio.md
+
+## v5.16.0.0 — 2026-07-25 16:07
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Orcamento avulso ainda aguardando resposta do cliente agora pode ser vinculado na abertura da OS: a OS nasce automaticamente com status 'aguardando_autorizacao' e o orcamento permanece aberto/editavel (nao vira convertido/imutavel) ate o cliente aprovar de fato pelo link publico; orcamento ja aprovado (pendente_abertura_os) continua com o comportamento definitivo de sempre
+- **Arquivos:** backend/app/Models/Budget.php,backend/app/Services/Budgets/BudgetWorkflowService.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/tests/Feature/Api/V1/BudgetAvulsoFlowTest.php
+
+## v5.15.1.0 — 2026-07-25 14:56
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Reposiciona o campo 'Vincular orcamento avulso aprovado' na Nova OS: sai do topo da pagina e passa a ficar logo abaixo do campo Cliente, dentro da propria aba Cliente (sem alterar busca/vinculo, so a posicao)
+- **Arquivos:** frontends/desktop/resources/views/orders/_wizard.blade.php
+
+## v5.15.0.0 — 2026-07-25 14:35
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Sugestao de orcamento avulso (nome/telefone) no cadastro rapido de cliente da Nova OS: busca contatos avulsos em aberto, autopreenche o formulario e oferece vincular a OS reaproveitando o fluxo existente de conversao orcamento->OS (sem alterar as regras de elegibilidade/hardening do spec 023)
+- **Arquivos:** backend/app/Services/Budgets/BudgetWorkflowService.php,backend/app/Http/Controllers/Api/V1/BudgetController.php,backend/routes/api.php,backend/tests/Feature/Api/V1/BudgetAvulsoFlowTest.php,frontends/desktop/app/Services/OrcamentoService.php,frontends/desktop/app/Http/Controllers/ClientController.php,frontends/desktop/routes/web.php,frontends/desktop/resources/views/clients/quick-modal.blade.php,frontends/desktop/resources/views/orders/_wizard.blade.php,frontends/desktop/public/assets/js/orders-create.js,frontends/desktop/public/assets/css/desktop.css
+
+## v5.14.4.0 — 2026-07-25 13:08
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Reduz a latencia do fallback das filas documentais: o worker agendado permanece ativo por ate 55 segundos e consome novos jobs em poucos segundos quando o Supervisor esta indisponivel.
+- **Arquivos:** backend/routes/console.php,backend/tests/Feature/Queue/QueueResilienceTest.php,documentacao/02-infraestrutura-ambientes/cors-urls-logs-filas-scheduler.md,documentacao/07-novas-implementacoes/2026-07-11-central-documentos-cliente-os.md
+
+## v5.14.3.0 — 2026-07-25 12:53
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige envios documentais presos na fila: adiciona fallback limitado pelo scheduler quando o Supervisor entra em FATAL, torna a saúde dos workers obrigatória no deploy, registra falha terminal sanitizada, remove a cópia do destino em texto puro dos metadados e mantém `retry_after` acima do timeout do job para impedir processamento concorrente.
+- **Arquivos:** backend/app/Jobs/ProcessOrderDocumentSendJob.php,backend/app/Services/Orders/OrderDocumentCenterService.php,backend/config/queue.php,backend/routes/console.php,backend/database/migrations/2026_07_25_130000_remove_plaintext_destination_from_document_sends.php,backend/tests/Feature/Api/V1/OrderFlowTest.php,backend/tests/Feature/Queue/QueueResilienceTest.php,documentacao/02-infraestrutura-ambientes/cors-urls-logs-filas-scheduler.md,documentacao/07-novas-implementacoes/2026-07-11-central-documentos-cliente-os.md,scripts/bash/atualizar-dev.sh
+
+## v5.14.2.0 — 2026-07-25 09:08
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Campo 'Condições comerciais' movido da aba 'Dados operacionais' para a aba 'Orçamento e financeiro', logo após os itens do orçamento e antes do resumo financeiro — por ser um campo de natureza financeira, não operacional.
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/BudgetController.php,backend/app/Services/Budgets/BudgetWorkflowService.php,backend/openapi.yaml,backend/tests/Feature/Api/V1/BudgetFlowTest.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/app/Http/Controllers/OrcamentoController.php,frontends/desktop/app/Services/OrcamentoService.php,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/resources/views/orcamentos/form.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v5.14.1.0 — 2026-07-25 09:02
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Campo 'Prazo de execução' do orçamento passa a ser obrigatório em qualquer orçamento novo (aba 'Dados operacionais'). O assistente 'Próximo' passa a exigi-lo antes de liberar 'Criar orçamento'; validação equivalente adicionada no servidor (controller desktop).
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/BudgetController.php,backend/app/Services/Budgets/BudgetWorkflowService.php,backend/openapi.yaml,backend/tests/Feature/Api/V1/BudgetFlowTest.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/app/Http/Controllers/OrcamentoController.php,frontends/desktop/app/Services/OrcamentoService.php,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/resources/views/orcamentos/form.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v5.14.0.0 — 2026-07-25 08:37
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** OS que já possuem um orçamento vinculado (qualquer status — inclusive rascunho, rejeitado, vencido ou cancelado) deixam de ser listadas em 'OS vinculada' ao criar um novo orçamento avulso, evitando um segundo orçamento na mesma OS. Ao editar um orçamento já vinculado a uma OS, a própria OS continua aparecendo normalmente na lista (a exclusão não se aplica ao orçamento que está sendo editado).
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/BudgetController.php,backend/app/Services/Budgets/BudgetWorkflowService.php,backend/openapi.yaml,backend/tests/Feature/Api/V1/BudgetFlowTest.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/app/Http/Controllers/OrcamentoController.php,frontends/desktop/app/Services/OrcamentoService.php,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/resources/views/orcamentos/form.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v5.13.10.0 — 2026-07-25 08:14
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** No orçamento avulso, escolher uma 'OS vinculada' passa a pré-selecionar automaticamente o equipamento cadastrado vinculado a ela no campo 'Equipamento cadastrado' (uma OS sempre tem um único equipamento). Evita o técnico ter que escolher o mesmo aparelho duas vezes e já aciona a ocultação do card de equipamento eventual.
+- **Arquivos:** documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/app/Http/Controllers/OrcamentoController.php,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/resources/views/orcamentos/form.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v5.13.9.0 — 2026-07-25 08:01
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** No orçamento avulso, o card 'Equipamento eventual' (Tipo/Marca/Modelo/Cor) passa a ficar oculto — não só desabilitado — quando o técnico escolhe um equipamento já cadastrado do cliente selecionado. Antes o card continuava visível com os campos travados, dando a impressão de que ainda era possível preenchê-los. Volta a aparecer normalmente se o equipamento cadastrado for removido da seleção.
+- **Arquivos:** frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
 ## v5.13.8.0 — 2026-07-25 01:16
 - **Tier:** patch
 - **Autor/Agente:** Codex

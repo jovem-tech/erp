@@ -320,10 +320,11 @@
                             @php
                                 $orderId = (int) ($order['id'] ?? 0);
                                 $orderClienteId = (int) ($order['cliente_id'] ?? 0);
+                                $orderEquipamentoId = (int) ($order['equipamento_id'] ?? 0);
                                 $orderLabel = trim((string) ($order['numero_os'] ?? 'OS #' . $orderId));
                                 $orderClient = trim((string) ($order['cliente_nome'] ?? ''));
                             @endphp
-                            <option value="{{ $orderId }}" data-cliente-id="{{ $orderClienteId }}" @selected($selectedOrderId === $orderId)>{{ $orderLabel }}{{ $orderClient !== '' ? ' - ' . $orderClient : '' }}</option>
+                            <option value="{{ $orderId }}" data-cliente-id="{{ $orderClienteId }}" data-equipamento-id="{{ $orderEquipamentoId }}" @selected($selectedOrderId === $orderId)>{{ $orderLabel }}{{ $orderClient !== '' ? ' - ' . $orderClient : '' }}</option>
                         @endforeach
                     </select>
                     <small class="text-secondary d-block mt-2">Somente OS abertas do cliente selecionado.</small>
@@ -514,7 +515,7 @@
                 </div>
 
                 <div>
-                    <label for="orcamentoPrazoExecucao">Prazo de execução</label>
+                    <label for="orcamentoPrazoExecucao">Prazo de execução <span class="text-danger" aria-hidden="true">*</span></label>
                     @php
                         $prazoExecucaoDiasOptions = [1, 3, 7, 15, 30];
                         $formatPrazoExecucaoLabel = static fn (int $dias): string => $dias . ' dia' . ($dias === 1 ? '' : 's');
@@ -538,11 +539,6 @@
                 <div class="desktop-grid-span-2">
                     <label for="orcamentoObservacoes">Observações</label>
                     <textarea id="orcamentoObservacoes" name="observacoes" class="form-control" rows="4" placeholder="Notas internas do orçamento">{{ old('observacoes', $budget['observacoes'] ?? '') }}</textarea>
-                </div>
-
-                <div class="desktop-grid-span-2">
-                    <label for="orcamentoCondicoes">Condições comerciais</label>
-                    <textarea id="orcamentoCondicoes" name="condicoes" class="form-control" rows="4" placeholder="Condições, garantias e observações de pagamento">{{ old('condicoes', $budget['condicoes'] ?? '') }}</textarea>
                 </div>
             </div>
         </div>
@@ -585,6 +581,11 @@
             <template id="orcamentoItemTemplate">
                 @include('orcamentos.partials.item-row', ['index' => '__INDEX__', 'item' => [], 'quickCatalogs' => $quickCatalogs])
             </template>
+
+            <div class="mb-4">
+                <label for="orcamentoCondicoes">Condições comerciais</label>
+                <textarea id="orcamentoCondicoes" name="condicoes" class="form-control" rows="4" placeholder="Condições, garantias e observações de pagamento">{{ old('condicoes', $budget['condicoes'] ?? '') }}</textarea>
+            </div>
 
             <section class="budget-summary-card" aria-labelledby="orcamentoResumoFinanceiro">
                 <div class="surface-card-header align-items-start budget-summary-card-header">

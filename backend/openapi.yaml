@@ -460,6 +460,8 @@ components:
         - equipamento_resumo
         - total
         - total_formatado
+        - status
+        - status_label
       properties:
         id:
           type: integer
@@ -477,6 +479,12 @@ components:
         total_formatado:
           type: string
           example: "1.250,00"
+        status:
+          type: string
+          description: Status operacional atual do orçamento.
+        status_label:
+          type: string
+          description: Rótulo localizado do status para apresentação.
         aprovado_em:
           type: string
           nullable: true
@@ -490,16 +498,11 @@ components:
           additionalProperties: true
           required:
             - tipo_orcamento
-            - status
           properties:
             tipo_orcamento:
               type: string
               enum:
                 - previo
-            status:
-              type: string
-              enum:
-                - pendente_abertura_os
             relato_cliente:
               type: string
             cliente_nome_avulso:
@@ -1214,6 +1217,40 @@ components:
         ativo:
           type: boolean
 
+    OrderEntryChecklistRequest:
+      type: object
+      required:
+        - respostas
+      properties:
+        observacoes_estado:
+          type: string
+          maxLength: 2000
+          nullable: true
+        respostas:
+          type: array
+          minItems: 1
+          maxItems: 100
+          description: |
+            Deve conter exatamente uma resposta para cada item ativo do modelo
+            vigente. Nenhum status é assumido automaticamente.
+          items:
+            type: object
+            required:
+              - checklist_item_id
+              - status
+            properties:
+              checklist_item_id:
+                type: integer
+                minimum: 1
+              status:
+                type: string
+                enum: [ok, discrepancia, nao_verificado, nao_se_aplica]
+              observacao:
+                type: string
+                maxLength: 1000
+                nullable: true
+                description: Obrigatória quando o status for `discrepancia`.
+
     UpsertOrderRequest:
       type: object
       properties:
@@ -1222,10 +1259,12 @@ components:
           minimum: 1
           nullable: true
           description: |
-            Orçamento avulso aprovado a converter atomicamente. Quando
+            Orçamento avulso disponível a vincular atomicamente. Quando
             informado, exige simultaneamente `os:criar` e
-            `orcamentos:converter_os`; somente orçamento `previo`, em
-            `pendente_abertura_os` e sem OS vinculada é aceito.
+            `orcamentos:converter_os`; somente orçamento `previo`, sem OS
+            vinculada e fora dos estados `cancelado`, `rejeitado` e
+            `convertido` é aceito. Orçamentos ainda não aprovados permanecem
+            abertos após o vínculo.
         cliente_id:
           type: integer
           minimum: 1
@@ -1261,6 +1300,8 @@ components:
           description: Cadastro diferido; só é persistido na transação que cria a OS.
           required:
             - tipo_id
+            - marca_id
+            - modelo_id
           properties:
             tipo_id:
               type: integer
@@ -1268,11 +1309,9 @@ components:
             marca_id:
               type: integer
               minimum: 1
-              nullable: true
             modelo_id:
               type: integer
               minimum: 1
-              nullable: true
             numero_serie_visual:
               type: string
               nullable: true
@@ -1433,6 +1472,12 @@ components:
         observacoes_cliente:
           type: string
           nullable: true
+        checklist_entrada:
+          allOf:
+            - $ref: "#/components/schemas/OrderEntryChecklistRequest"
+          description: |
+            Obrigatório na abertura quando o tipo de equipamento possuir um
+            modelo ativo com itens. Todos os itens devem ser classificados.
 
     UpdateOrderStatusRequest:
       type: object
@@ -5756,17 +5801,28 @@ paths:
       summary: OS abertas e equipamentos do cliente selecionado no orçamento.
       description: |
         Contexto dependente do cliente para o formulário de orçamento: as OS
-        abertas (status fora do grupo_macro `encerrado`) e os equipamentos
-        cadastrados daquele cliente, com o id da foto principal. Consumido de
-        forma assíncrona quando o usuário troca o cliente no Select2, para que os
-        campos "OS vinculada" e "Equipamento cadastrado" listem apenas o que
-        pertence ao cliente. Exige `orcamentos:visualizar` e ao menos uma das
-        capacidades `orcamentos:criar` ou `orcamentos:editar`.
+        abertas (status fora do grupo_macro `encerrado`) que ainda não têm
+        nenhum orçamento vinculado, e os equipamentos cadastrados daquele
+        cliente, com o id da foto principal. Consumido de forma assíncrona
+        quando o usuário troca o cliente no Select2, para que os campos "OS
+        vinculada" e "Equipamento cadastrado" listem apenas o que pertence ao
+        cliente. Exige `orcamentos:visualizar` e ao menos uma das capacidades
+        `orcamentos:criar` ou `orcamentos:editar`.
       parameters:
         - name: cliente_id
           in: query
           required: true
           description: Identificador do cliente selecionado.
+          schema:
+            type: integer
+            minimum: 1
+        - name: orcamento_id
+          in: query
+          required: false
+          description: |
+            Orçamento em edição. Quando informado, a própria OS vinculada a
+            este orçamento não é excluída da lista por já "ter orçamento" —
+            o orçamento vinculado a ela é este mesmo.
           schema:
             type: integer
             minimum: 1
@@ -5805,9 +5861,9 @@ paths:
       summary: Pesquisar orçamentos aptos a gerar uma OS.
       description: |
         Catálogo mínimo, paginado e protegido pela permissão
-        `orcamentos:converter_os` em conjunto com `os:criar`. Retorna somente
-        orçamentos do tipo `previo`, no estado `pendente_abertura_os` e sem
-        `os_id`.
+        `orcamentos:converter_os` em conjunto com `os:criar`. Retorna
+        orçamentos do tipo `previo` em todos os status, exceto `cancelado`,
+        `rejeitado` e `convertido`, sempre sem `os_id`.
       parameters:
         - $ref: "#/components/parameters/PageParam"
         - name: per_page
@@ -6495,6 +6551,8 @@ paths:
               required:
                 - cliente_id
                 - tipo_id
+                - marca_id
+                - modelo_id
                 - fotos
               properties:
                 cliente_id:
@@ -6505,10 +6563,10 @@ paths:
                   minimum: 1
                 marca_id:
                   type: integer
-                  nullable: true
+                  minimum: 1
                 modelo_id:
                   type: integer
-                  nullable: true
+                  minimum: 1
                 numero_serie:
                   type: string
                   nullable: true
@@ -6675,6 +6733,8 @@ paths:
               required:
                 - cliente_id
                 - tipo_id
+                - marca_id
+                - modelo_id
               properties:
                 cliente_id:
                   type: integer
@@ -6684,10 +6744,10 @@ paths:
                   minimum: 1
                 marca_id:
                   type: integer
-                  nullable: true
+                  minimum: 1
                 modelo_id:
                   type: integer
-                  nullable: true
+                  minimum: 1
                 numero_serie:
                   type: string
                   nullable: true
@@ -6808,6 +6868,8 @@ paths:
               required:
                 - cliente_id
                 - tipo_id
+                - marca_id
+                - modelo_id
               properties:
                 cliente_id:
                   type: integer
@@ -6817,10 +6879,10 @@ paths:
                   minimum: 1
                 marca_id:
                   type: integer
-                  nullable: true
+                  minimum: 1
                 modelo_id:
                   type: integer
-                  nullable: true
+                  minimum: 1
                 numero_serie:
                   type: string
                   nullable: true

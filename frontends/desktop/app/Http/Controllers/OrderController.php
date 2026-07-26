@@ -225,7 +225,7 @@ class OrderController extends DesktopController
             abort(403, 'Você não tem permissão para converter orçamento em OS.');
         }
 
-        // Geração de OS a partir de um orçamento avulso aprovado (botão "Gerar OS"):
+        // Geração de OS a partir de um orçamento avulso disponível (botão "Gerar OS"):
         // pré-preenche cliente/equipamento e mantém o vínculo via orcamento_id.
         try {
             $linkedBudget = $this->resolveLinkedBudgetForCreation($requestedBudgetId);
@@ -281,7 +281,7 @@ class OrderController extends DesktopController
     }
 
     /**
-     * Carrega o orçamento avulso aprovado que está sendo convertido em OS.
+     * Carrega o orçamento avulso disponível que está sendo vinculado à OS.
      * O endpoint dedicado já garante tipo, status e ausência de OS.
      *
      * @return array<string, mixed>|null
@@ -337,11 +337,13 @@ class OrderController extends DesktopController
             $id = (int) ($budget['id'] ?? 0);
             $total = trim((string) ($budget['total_formatado'] ?? ''));
             $approvedAt = trim((string) ($budget['aprovado_em'] ?? ''));
+            $statusLabel = trim((string) ($budget['status_label'] ?? ''));
             $parts = array_values(array_filter([
                 trim((string) ($budget['numero'] ?? '')) ?: ($id > 0 ? 'Orçamento #'.$id : ''),
                 trim((string) ($budget['cliente_nome'] ?? '')),
                 trim((string) ($budget['equipamento_resumo'] ?? '')),
                 $total !== '' ? 'R$ '.$total : '',
+                $statusLabel !== '' ? 'Status: '.$statusLabel : '',
                 $approvedAt !== '' ? 'Aprovado em '.$approvedAt : '',
             ], static fn (string $value): bool => $value !== ''));
 
@@ -714,7 +716,7 @@ class OrderController extends DesktopController
 
             $responses[] = [
                 'checklist_item_id' => $itemId,
-                'status' => trim((string) ($response['status'] ?? 'nao_verificado')),
+                'status' => trim((string) ($response['status'] ?? '')),
                 'observacao' => trim((string) ($response['observacao'] ?? '')),
             ];
         }
@@ -726,6 +728,22 @@ class OrderController extends DesktopController
         return [
             'observacoes_estado' => trim((string) ($checklist['observacoes_estado'] ?? '')),
             'respostas' => $responses,
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function entryChecklistValidationMessages(): array
+    {
+        return [
+            'novo_equipamento.marca_id.required_with' => 'Selecione uma marca para o equipamento.',
+            'novo_equipamento.modelo_id.required_with' => 'Selecione um modelo para o equipamento.',
+            'checklist_entrada.respostas.required_with' => 'Preencha o checklist de entrada.',
+            'checklist_entrada.respostas.min' => 'Preencha o checklist de entrada.',
+            'checklist_entrada.respostas.*.status.required' => 'Classifique todos os itens do checklist de entrada.',
+            'checklist_entrada.respostas.*.status.in' => 'A classificação informada para o checklist é inválida.',
+            'checklist_entrada.respostas.*.observacao.required_if' => 'Informe a observação do item classificado como discrepância.',
         ];
     }
 
@@ -742,6 +760,8 @@ class OrderController extends DesktopController
             'novo_cliente.telefone1' => ['nullable', 'required_with:novo_cliente', 'string', 'max:20'],
             'novo_equipamento' => ['nullable', 'array'],
             'novo_equipamento.tipo_id' => ['nullable', 'required_with:novo_equipamento', 'integer', 'min:1'],
+            'novo_equipamento.marca_id' => ['nullable', 'required_with:novo_equipamento', 'integer', 'min:1'],
+            'novo_equipamento.modelo_id' => ['nullable', 'required_with:novo_equipamento', 'integer', 'min:1'],
             'orcamento_id' => ['nullable', 'integer', 'min:1'],
             'relato_cliente' => ['required', 'string', 'min:5'],
             'prioridade' => ['nullable', 'string', 'in:baixa,normal,alta,urgente'],
@@ -752,16 +772,21 @@ class OrderController extends DesktopController
             'observacoes_internas' => ['nullable', 'string'],
             'checklist_entrada' => ['nullable', 'array'],
             'checklist_entrada.observacoes_estado' => ['nullable', 'string', 'max:2000'],
-            'checklist_entrada.respostas' => ['nullable', 'array', 'max:100'],
+            'checklist_entrada.respostas' => ['required_with:checklist_entrada', 'array', 'min:1', 'max:100'],
             'checklist_entrada.respostas.*.checklist_item_id' => ['required', 'integer', 'min:1'],
-            'checklist_entrada.respostas.*.status' => ['required', 'string', 'in:ok,discrepancia,nao_verificado'],
-            'checklist_entrada.respostas.*.observacao' => ['nullable', 'string', 'max:1000'],
+            'checklist_entrada.respostas.*.status' => ['required', 'string', 'in:ok,discrepancia,nao_verificado,nao_se_aplica'],
+            'checklist_entrada.respostas.*.observacao' => [
+                'nullable',
+                'required_if:checklist_entrada.respostas.*.status,discrepancia',
+                'string',
+                'max:1000',
+            ],
             'fotos' => ['nullable', 'array', 'max:4'],
             'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             // Fotos do equipamento novo capturado (criação diferida na abertura de OS).
             'novo_equipamento_fotos' => ['nullable', 'required_with:novo_equipamento', 'array', 'min:1', 'max:4'],
             'novo_equipamento_fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
-        ], [], [
+        ], $this->entryChecklistValidationMessages(), [
             'cliente_id' => 'cliente',
             'equipamento_id' => 'equipamento',
             'relato_cliente' => 'relato do cliente',
@@ -1119,16 +1144,21 @@ class OrderController extends DesktopController
             'observacoes_internas' => ['nullable', 'string'],
             'checklist_entrada' => ['nullable', 'array'],
             'checklist_entrada.observacoes_estado' => ['nullable', 'string', 'max:2000'],
-            'checklist_entrada.respostas' => ['nullable', 'array', 'max:100'],
+            'checklist_entrada.respostas' => ['required_with:checklist_entrada', 'array', 'min:1', 'max:100'],
             'checklist_entrada.respostas.*.checklist_item_id' => ['required', 'integer', 'min:1'],
-            'checklist_entrada.respostas.*.status' => ['required', 'string', 'in:ok,discrepancia,nao_verificado'],
-            'checklist_entrada.respostas.*.observacao' => ['nullable', 'string', 'max:1000'],
+            'checklist_entrada.respostas.*.status' => ['required', 'string', 'in:ok,discrepancia,nao_verificado,nao_se_aplica'],
+            'checklist_entrada.respostas.*.observacao' => [
+                'nullable',
+                'required_if:checklist_entrada.respostas.*.status,discrepancia',
+                'string',
+                'max:1000',
+            ],
             'fotos' => ['nullable', 'array', 'max:4'],
             'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             // Fotos do equipamento novo capturado (criação diferida na abertura de OS).
             'novo_equipamento_fotos' => ['nullable', 'array', 'max:4'],
             'novo_equipamento_fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
-        ], [], [
+        ], $this->entryChecklistValidationMessages(), [
             'cliente_id' => 'cliente',
             'equipamento_id' => 'equipamento',
             'relato_cliente' => 'relato do cliente',

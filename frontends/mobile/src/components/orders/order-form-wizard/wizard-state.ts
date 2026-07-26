@@ -1,0 +1,277 @@
+import type {
+  ClientSearchResult,
+  CreateOrderPayload,
+  EntryChecklistAnswerPayload,
+  EntryChecklistModel,
+  EntryChecklistPayload,
+  EntryChecklistResponseStatus,
+  EquipmentSearchResult,
+  LinkableBudget,
+  NovoClientePayload,
+  NovoEquipamentoPayload,
+  OrderDetail,
+  OrderPriority,
+  UpdateOrderPayload,
+} from '@/lib/types';
+
+export type WizardMode = 'create' | 'edit';
+
+export interface ChecklistAnswerState {
+  status: EntryChecklistResponseStatus;
+  observacao: string;
+}
+
+export interface WizardFormState {
+  cliente: ClientSearchResult | null;
+  pendingNewClient: NovoClientePayload | null;
+
+  equipamento: EquipmentSearchResult | null;
+  pendingNewEquipment: NovoEquipamentoPayload | null;
+  pendingNewEquipmentPhotos: File[];
+
+  checklistModel: EntryChecklistModel | null;
+  checklistAnswers: Record<number, ChecklistAnswerState>;
+  checklistObservacoesEstado: string;
+
+  relatoCliente: string;
+  acessorios: string;
+
+  prioridade: OrderPriority;
+  dataPrevisao: string;
+  tecnicoId: number | null;
+  tecnicoLabel: string | null;
+  observacoesInternas: string;
+
+  fotos: File[];
+
+  enviarPdfCliente: boolean;
+  orcamentoVinculado: LinkableBudget | null;
+}
+
+export function createInitialWizardState(): WizardFormState {
+  return {
+    cliente: null,
+    pendingNewClient: null,
+    equipamento: null,
+    pendingNewEquipment: null,
+    pendingNewEquipmentPhotos: [],
+    checklistModel: null,
+    checklistAnswers: {},
+    checklistObservacoesEstado: '',
+    relatoCliente: '',
+    acessorios: '',
+    prioridade: 'normal',
+    dataPrevisao: '',
+    tecnicoId: null,
+    tecnicoLabel: null,
+    observacoesInternas: '',
+    fotos: [],
+    enviarPdfCliente: false,
+    orcamentoVinculado: null,
+  };
+}
+
+export function createWizardStateFromOrder(order: OrderDetail): WizardFormState {
+  const base = createInitialWizardState();
+
+  return {
+    ...base,
+    cliente: order.cliente
+      ? {
+          id: order.cliente.id,
+          tipo_pessoa: '',
+          nome_razao: order.cliente.nome_razao,
+          cpf_cnpj: order.cliente.cpf_cnpj,
+          nome_contato: order.cliente.nome_contato,
+          orders_count: 0,
+          equipments_count: 0,
+          email: order.cliente.email,
+          telefone1: order.cliente.telefone1,
+          telefone_contato: order.cliente.telefone_contato,
+          cidade: order.cliente.cidade,
+          uf: order.cliente.uf,
+          status_cadastro: '',
+        }
+      : null,
+    equipamento: order.equipamento
+      ? {
+          id: order.equipamento.id,
+          cliente_id: order.equipamento.cliente_id,
+          cliente_nome: order.cliente_nome,
+          tipo_id: order.equipamento.tipo_id,
+          tipo_nome: order.equipamento_tipo_nome ?? '',
+          marca_nome: '',
+          modelo_nome: '',
+          resumo_tecnico: order.equipamento.resumo_tecnico,
+          numero_serie: order.equipamento.numero_serie,
+          imei: order.equipamento.imei,
+          desktop_modalidade: order.equipamento.desktop_modalidade,
+          status_operacional: '',
+          orders_count: 0,
+          primary_photo_id: null,
+          primary_photo_url: null,
+        }
+      : null,
+    relatoCliente: order.relato_cliente ?? '',
+    acessorios: order.acessorios ?? '',
+    prioridade: (order.prioridade as OrderPriority) || 'normal',
+    dataPrevisao: order.data_previsao ?? '',
+    tecnicoId: order.tecnico?.id ?? null,
+    tecnicoLabel: order.tecnico?.nome ?? null,
+    observacoesInternas: order.observacoes_internas ?? '',
+  };
+}
+
+export function resolveEquipmentTypeId(state: WizardFormState): number | null {
+  if (state.equipamento) {
+    return state.equipamento.tipo_id;
+  }
+
+  if (state.pendingNewEquipment) {
+    return state.pendingNewEquipment.tipo_id;
+  }
+
+  return null;
+}
+
+function buildChecklistPayload(state: WizardFormState): EntryChecklistPayload | undefined {
+  const items = state.checklistModel?.itens ?? [];
+
+  if (items.length === 0) {
+    return undefined;
+  }
+
+  const respostas: EntryChecklistAnswerPayload[] = items.map((item) => {
+    const answer = state.checklistAnswers[item.id];
+    const status: EntryChecklistResponseStatus = answer?.status ?? 'nao_verificado';
+
+    return {
+      checklist_item_id: item.id,
+      status,
+      observacao: status === 'discrepancia' ? answer?.observacao?.trim() || null : null,
+    };
+  });
+
+  return {
+    observacoes_estado: state.checklistObservacoesEstado.trim() || null,
+    respostas,
+  };
+}
+
+export function isChecklistComplete(state: WizardFormState): boolean {
+  const items = state.checklistModel?.itens ?? [];
+
+  return items.every((item) => {
+    const answer = state.checklistAnswers[item.id];
+
+    if (!answer) {
+      return false;
+    }
+
+    if (answer.status === 'discrepancia') {
+      return answer.observacao.trim() !== '';
+    }
+
+    return true;
+  });
+}
+
+export function buildOrderPayload(state: WizardFormState, mode: 'create', idempotencyKey: string): CreateOrderPayload;
+export function buildOrderPayload(state: WizardFormState, mode: 'edit', idempotencyKey?: string): UpdateOrderPayload;
+export function buildOrderPayload(
+  state: WizardFormState,
+  mode: WizardMode,
+  idempotencyKey: string = ''
+): CreateOrderPayload | UpdateOrderPayload {
+  const checklistPayload = buildChecklistPayload(state);
+
+  if (mode === 'create') {
+    const payload: CreateOrderPayload = {
+      idempotency_key: idempotencyKey,
+      relato_cliente: state.relatoCliente.trim(),
+      enviar_pdf_cliente: state.enviarPdfCliente,
+    };
+
+    if (state.cliente) {
+      payload.cliente_id = state.cliente.id;
+    } else if (state.pendingNewClient) {
+      payload.novo_cliente = state.pendingNewClient;
+    }
+
+    if (state.equipamento) {
+      payload.equipamento_id = state.equipamento.id;
+    } else if (state.pendingNewEquipment) {
+      payload.novo_equipamento = state.pendingNewEquipment;
+    }
+
+    if (state.orcamentoVinculado) {
+      payload.orcamento_id = state.orcamentoVinculado.id;
+    }
+
+    if (state.tecnicoId) {
+      payload.tecnico_id = state.tecnicoId;
+    }
+
+    if (state.prioridade) {
+      payload.prioridade = state.prioridade;
+    }
+
+    if (state.acessorios.trim()) {
+      payload.acessorios = state.acessorios.trim();
+    }
+
+    if (state.observacoesInternas.trim()) {
+      payload.observacoes_internas = state.observacoesInternas.trim();
+    }
+
+    if (state.dataPrevisao) {
+      payload.data_previsao = state.dataPrevisao;
+    }
+
+    if (checklistPayload) {
+      payload.checklist_entrada = checklistPayload;
+    }
+
+    return payload;
+  }
+
+  const payload: UpdateOrderPayload = {};
+
+  if (state.cliente) {
+    payload.cliente_id = state.cliente.id;
+  }
+
+  if (state.equipamento) {
+    payload.equipamento_id = state.equipamento.id;
+  }
+
+  if (state.tecnicoId) {
+    payload.tecnico_id = state.tecnicoId;
+  }
+
+  if (state.prioridade) {
+    payload.prioridade = state.prioridade;
+  }
+
+  if (state.relatoCliente.trim()) {
+    payload.relato_cliente = state.relatoCliente.trim();
+  }
+
+  if (state.acessorios.trim()) {
+    payload.acessorios = state.acessorios.trim();
+  }
+
+  if (state.observacoesInternas.trim()) {
+    payload.observacoes_internas = state.observacoesInternas.trim();
+  }
+
+  if (state.dataPrevisao) {
+    payload.data_previsao = state.dataPrevisao;
+  }
+
+  if (checklistPayload) {
+    payload.checklist_entrada = checklistPayload;
+  }
+
+  return payload;
+}

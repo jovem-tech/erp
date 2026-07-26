@@ -1,14 +1,37 @@
 import type {
+  ClientSearchResult,
+  CreateOrderPayload,
+  CreateOrderResponse,
+  EntryChecklistModel,
+  EquipmentFormData,
+  EquipmentSearchResult,
+  EquipmentBrandCatalogItem,
+  EquipmentModelCatalogItem,
+  LinkableBudget,
   OrderAttachment,
   OrderDetail,
   OrderDocument,
   OrderListPayload,
   OrderPhoto,
   OrderSummary,
+  ReportedDefect,
+  TeamMemberOption,
+  UpdateOrderPayload,
 } from '@/lib/types';
 import {
+  apiCreateEquipmentBrand,
+  apiCreateEquipmentModel,
+  apiCreateOrder,
+  apiEntryChecklistModel,
+  apiEquipmentFormData,
   apiListOrders,
   apiOrderDetail,
+  apiSearchClients,
+  apiSearchEquipments,
+  apiSearchLinkableBudgets,
+  apiSearchReportedDefects,
+  apiTechnicians,
+  apiUpdateOrder,
   apiUpdateOrderStatus,
 } from '@/lib/api';
 
@@ -36,6 +59,66 @@ export function orderPhotoPath(orderId: number | string, photoId: number | strin
 
 export function orderDocumentPath(orderId: number | string, documentId: number | string): string {
   return `/orders/${orderId}/documents/${documentId}`;
+}
+
+export async function createOrder(
+  payload: CreateOrderPayload,
+  photos: File[] = [],
+  newEquipmentPhotos: File[] = []
+): Promise<CreateOrderResponse> {
+  return apiCreateOrder(payload, photos, newEquipmentPhotos);
+}
+
+export async function updateOrder(
+  orderId: number | string,
+  payload: UpdateOrderPayload,
+  newPhotos: File[] = []
+): Promise<{ order: OrderDetail }> {
+  return apiUpdateOrder(orderId, payload, newPhotos);
+}
+
+export async function searchClients(search: string): Promise<ClientSearchResult[]> {
+  const { clients } = await apiSearchClients({ search });
+  return clients;
+}
+
+export async function searchEquipments(params: { clientId?: number; search?: string }): Promise<EquipmentSearchResult[]> {
+  const { equipments } = await apiSearchEquipments(params);
+  return equipments;
+}
+
+export async function getEquipmentFormData(): Promise<EquipmentFormData> {
+  return apiEquipmentFormData();
+}
+
+export async function createEquipmentBrand(nome: string, tipoId: number): Promise<EquipmentBrandCatalogItem> {
+  const { brand } = await apiCreateEquipmentBrand({ nome, tipo_id: tipoId });
+  return brand;
+}
+
+export async function createEquipmentModel(marcaId: number, nome: string, tipoId: number): Promise<EquipmentModelCatalogItem> {
+  const { model } = await apiCreateEquipmentModel({ marca_id: marcaId, nome, tipo_id: tipoId });
+  return model;
+}
+
+export async function searchReportedDefects(tipoEquipamentoId: number): Promise<ReportedDefect[]> {
+  const { defeitos_relatados: defeitosRelatados } = await apiSearchReportedDefects({ tipoEquipamentoId });
+  return defeitosRelatados;
+}
+
+export async function getEntryChecklistModel(tipoEquipamentoId: number): Promise<EntryChecklistModel | null> {
+  const { modelo } = await apiEntryChecklistModel(tipoEquipamentoId);
+  return modelo;
+}
+
+export async function searchLinkableBudgets(q: string): Promise<LinkableBudget[]> {
+  const { budgets } = await apiSearchLinkableBudgets({ q });
+  return budgets;
+}
+
+export async function listTechnicians(search?: string): Promise<TeamMemberOption[]> {
+  const { team_members: teamMembers } = await apiTechnicians({ search });
+  return teamMembers;
 }
 
 export function orderStatusBadgeClass(statusColor: string): string {

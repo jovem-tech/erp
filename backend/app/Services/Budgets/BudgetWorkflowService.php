@@ -194,6 +194,43 @@ class BudgetWorkflowService
     }
 
     /**
+     * Catálogo paginado de orçamentos avulsos (sem cliente cadastrado) em
+     * aberto, usado para sugerir vínculo ao cadastrar um cliente rápido a
+     * partir da Nova OS. Não altera elegibilidade de vínculo — quem decide
+     * isso continua sendo linkableForOrderQuery()/validateBudgetForOrderLink.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array{paginator: LengthAwarePaginator}
+     */
+    public function paginateAvulsoContacts(array $filters = []): array
+    {
+        $search = trim((string) ($filters['q'] ?? ''));
+        $perPage = max(1, min(15, (int) ($filters['per_page'] ?? 15)));
+        $page = max(1, (int) ($filters['page'] ?? 1));
+
+        $query = $this->avulsoContactsQuery();
+        if ($search !== '') {
+            $likeSearch = addcslashes($search, '\\%_');
+            $query->where(function (Builder $builder) use ($likeSearch): void {
+                $builder
+                    ->where('orcamentos.cliente_nome_avulso', 'like', '%'.$likeSearch.'%')
+                    ->orWhere('orcamentos.telefone_contato', 'like', '%'.$likeSearch.'%');
+            });
+        }
+
+        $paginator = $query
+            ->orderByDesc('orcamentos.id')
+            ->paginate(perPage: $perPage, page: $page);
+        $paginator->setCollection(
+            $paginator->getCollection()->map(
+                fn (Budget $budget): array => $this->avulsoContactListItem($budget)
+            )
+        );
+
+        return ['paginator' => $paginator];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function showLinkableForOrder(int $budgetId): array
@@ -217,6 +254,9 @@ class BudgetWorkflowService
     {
         $selectedClientId = (int) ($context['cliente_id'] ?? 0);
         $selectedOrderId = (int) ($context['os_id'] ?? 0);
+        // Orçamento em edição: sua própria OS vinculada nunca deve sumir da
+        // lista por já "ter orçamento" — o orçamento é este mesmo.
+        $excludeBudgetId = (int) ($context['orcamento_id'] ?? 0);
         $selectedEquipmentId = 0;
         $selectedClientPhone = '';
         $selectedClientEmail = '';
@@ -284,11 +324,13 @@ class BudgetWorkflowService
 
         // Com uma OS pré-selecionada (orçamento aberto a partir da OS) mostramos
         // só aquela — mesmo encerrada. Sem OS pré-selecionada, listamos apenas as
-        // OS abertas (status fora do grupo_macro 'encerrado').
+        // OS abertas (status fora do grupo_macro 'encerrado') que ainda não têm
+        // nenhum orçamento vinculado.
         if ($selectedOrderId > 0) {
             $ordersQuery->where('id', $selectedOrderId);
         } else {
             $this->constrainToOpenOrders($ordersQuery);
+            $this->excludeOrdersWithExistingBudget($ordersQuery, $excludeBudgetId);
         }
 
         $orders = $ordersQuery->get()
@@ -359,7 +401,7 @@ class BudgetWorkflowService
      *
      * @return array{orders: array<int, array<string, mixed>>, equipments: array<int, array<string, mixed>>}
      */
-    public function clientContext(int $clientId): array
+    public function clientContext(int $clientId, int $excludeBudgetId = 0): array
     {
         if ($clientId <= 0) {
             return ['orders' => [], 'equipments' => []];
@@ -367,6 +409,7 @@ class BudgetWorkflowService
 
         $ordersQuery = $this->clientOrdersQuery()->where('cliente_id', $clientId);
         $this->constrainToOpenOrders($ordersQuery);
+        $this->excludeOrdersWithExistingBudget($ordersQuery, $excludeBudgetId);
 
         $orders = $ordersQuery->get()
             ->map(fn (Order $order): array => $this->mapOrderOption($order))
@@ -426,6 +469,30 @@ class BudgetWorkflowService
         if ($closureCodes !== []) {
             $query->whereNotIn('status', $closureCodes);
         }
+    }
+
+    /**
+     * Exclui OS que já têm QUALQUER orçamento vinculado (independente do
+     * status — inclusive rascunho, rejeitado, vencido ou cancelado): o
+     * histórico de orçamentos é por OS, então uma nova OS deve ser aberta (ou
+     * o orçamento existente reaproveitado/excluído) em vez de vincular um
+     * segundo orçamento à mesma OS. $excludeBudgetId preserva a própria OS do
+     * orçamento em edição, que não deve sumir da lista por já "ter orçamento"
+     * — o orçamento é este mesmo.
+     *
+     * @param  Builder<Order>  $query
+     */
+    private function excludeOrdersWithExistingBudget(Builder $query, int $excludeBudgetId = 0): void
+    {
+        $query->whereNotIn('id', function ($subQuery) use ($excludeBudgetId): void {
+            $subQuery->select('os_id')
+                ->from('orcamentos')
+                ->whereNotNull('os_id');
+
+            if ($excludeBudgetId > 0) {
+                $subQuery->where('id', '!=', $excludeBudgetId);
+            }
+        });
     }
 
     /**
@@ -852,14 +919,33 @@ class BudgetWorkflowService
                 'equipment:id,cliente_id,resumo_tecnico',
             ])
             ->where('orcamentos.tipo_orcamento', Budget::TYPE_PREVIEW)
-            ->where('orcamentos.status', Budget::STATUS_PENDING_OS)
+            ->whereIn('orcamentos.status', Budget::linkableToOrderStatuses())
             ->whereNull('orcamentos.os_id');
+    }
+
+    /**
+     * Orçamentos avulsos (sem cliente cadastrado) ainda ativos — exclui
+     * rascunho e estados terminais (recusado/vencido/cancelado/convertido),
+     * que não representam mais um atendimento em aberto.
+     */
+    private function avulsoContactsQuery(): Builder
+    {
+        return Budget::query()
+            ->where('orcamentos.tipo_orcamento', Budget::TYPE_PREVIEW)
+            ->whereNull('orcamentos.cliente_id')
+            ->whereNotIn('orcamentos.status', [
+                Budget::STATUS_DRAFT,
+                Budget::STATUS_REJECTED,
+                Budget::STATUS_EXPIRED,
+                Budget::STATUS_CANCELLED,
+                Budget::STATUS_CONVERTED,
+            ]);
     }
 
     private function isLinkableForOrder(Budget $budget): bool
     {
         return (string) ($budget->tipo_orcamento ?? '') === Budget::TYPE_PREVIEW
-            && (string) ($budget->status ?? '') === Budget::STATUS_PENDING_OS
+            && in_array((string) ($budget->status ?? ''), Budget::linkableToOrderStatuses(), true)
             && (int) ($budget->os_id ?? 0) <= 0;
     }
 
@@ -880,6 +966,27 @@ class BudgetWorkflowService
             'total' => round((float) ($budget->total ?? 0), 2),
             'total_formatado' => number_format((float) ($budget->total ?? 0), 2, ',', '.'),
             'aprovado_em' => optional($budget->aprovado_em)->format('d/m/Y H:i'),
+            'status' => (string) ($budget->status ?? ''),
+            'status_label' => Budget::statusLabel($budget->status),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function avulsoContactListItem(Budget $budget): array
+    {
+        return [
+            'id' => (int) $budget->id,
+            'numero' => (string) ($budget->numero ?? ('ORC-'.(int) $budget->id)),
+            'cliente_nome_avulso' => trim((string) ($budget->cliente_nome_avulso ?? '')),
+            'telefone_contato' => trim((string) ($budget->telefone_contato ?? '')),
+            'email_contato' => trim((string) ($budget->email_contato ?? '')),
+            'equipamento_resumo' => $this->eventualEquipmentLabel($budget),
+            'total_formatado' => number_format((float) ($budget->total ?? 0), 2, ',', '.'),
+            'status' => (string) ($budget->status ?? ''),
+            'status_label' => Budget::statusLabel($budget->status),
+            'linkable' => in_array((string) ($budget->status ?? ''), Budget::linkableToOrderStatuses(), true),
         ];
     }
 

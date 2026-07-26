@@ -27,7 +27,20 @@ Em producao, estas URLs devem vir do ambiente e nao do codigo.
 ## Filas
 
 - Local (Windows/XAMPP): a partir de 2026-06-30 a fila padrao e `database` (`QUEUE_CONNECTION=database`), pois ja existem jobs assincronos reais (ex.: `SendWhatsappMessageJob`) que antes rodavam de forma sincrona e bloqueante dentro da requisicao HTTP. Isso substitui a decisao anterior (2026-06-25) de manter `sync` localmente por praticidade. Rodar `php artisan queue:work` em um terminal separado para que jobs enfileirados sejam processados; sem o worker ativo, os jobs ficam apenas na tabela `jobs` e nao sao executados. Redis nao esta instalado localmente (sem extensao phpredis, sem servidor na porta 6379).
-- Producao: `QUEUE_CONNECTION=redis` ja e o padrao planejado desde 2026-06-25 (`backend/.env.production.example`), com worker via `infra/linux/supervisor-queue-worker.conf` (`php artisan queue:work --sleep=3 --tries=3 --max-time=3600`, 2 processos). Nao alterado nesta entrega.
+- Ambientes oficiais Linux: `QUEUE_CONNECTION=redis`, com dois workers do Supervisor consumindo prioritariamente `documents,default`.
+- O scheduler executa a cada minuto um worker limitado (`--max-jobs=50`, `--max-time=55`, `--sleep=1`) como rede de seguranca. Ele permanece ouvindo as filas durante quase todo o minuto, reduzindo a latencia do fallback para poucos segundos, e nao substitui o Supervisor.
+- O Redis usa `retry_after=180s`, acima do timeout documental de `120s`, para que um lote ainda em execucao nao seja reservado simultaneamente por outro worker.
+- O job documental grava erro sanitizado quando esgota as tentativas. O destino de WhatsApp/e-mail fica somente na coluna criptografada; os metadados nao podem manter uma segunda copia em texto puro.
+
+Validacao operacional minima apos qualquer deploy:
+
+```bash
+sudo supervisorctl status
+php artisan schedule:list
+php artisan queue:failed
+```
+
+Os dois processos `sistema-erp-queue-worker_*` devem aparecer como `RUNNING`. O script `scripts/bash/atualizar-dev.sh` deve falhar explicitamente se essa pos-condicao nao for atendida; reinicio de fila nao pode ser ocultado com `|| true`.
 
 ## Cache e Sessao
 

@@ -27,7 +27,9 @@ class UpsertOrderRequest extends BaseApiFormRequest
             'novo_cliente.email' => ['nullable', 'email', 'max:100'],
             'novo_equipamento' => ['nullable', 'array'],
             'novo_equipamento.tipo_id' => ['nullable', 'required_with:novo_equipamento', 'integer', 'min:1', Rule::exists('equipamentos_tipos', 'id')],
-            // Vínculo opcional de um orçamento avulso aprovado a ser convertido nesta OS.
+            'novo_equipamento.marca_id' => ['nullable', 'required_with:novo_equipamento', 'integer', 'min:1', Rule::exists('equipamentos_marcas', 'id')],
+            'novo_equipamento.modelo_id' => ['nullable', 'required_with:novo_equipamento', 'integer', 'min:1', Rule::exists('equipamentos_modelos', 'id')],
+            // Vínculo opcional de orçamento avulso ainda disponível.
             'orcamento_id' => ['nullable', 'integer', 'min:1', Rule::exists('orcamentos', 'id')],
             'tecnico_id' => ['nullable', 'integer', 'min:1', Rule::exists('usuarios', 'id')],
             'fotos' => ['nullable', 'array', 'max:4'],
@@ -66,10 +68,28 @@ class UpsertOrderRequest extends BaseApiFormRequest
             'observacoes_cliente' => ['nullable', 'string'],
             'checklist_entrada' => ['nullable', 'array'],
             'checklist_entrada.observacoes_estado' => ['nullable', 'string', 'max:2000'],
-            'checklist_entrada.respostas' => ['nullable', 'array', 'max:100'],
+            'checklist_entrada.respostas' => ['required_with:checklist_entrada', 'array', 'min:1', 'max:100'],
             'checklist_entrada.respostas.*.checklist_item_id' => ['required', 'integer', 'min:1'],
-            'checklist_entrada.respostas.*.status' => ['required', 'string', Rule::in(['ok', 'discrepancia', 'nao_verificado'])],
-            'checklist_entrada.respostas.*.observacao' => ['nullable', 'string', 'max:1000'],
+            'checklist_entrada.respostas.*.status' => ['required', 'string', Rule::in(['ok', 'discrepancia', 'nao_verificado', 'nao_se_aplica'])],
+            'checklist_entrada.respostas.*.observacao' => [
+                'nullable',
+                'required_if:checklist_entrada.respostas.*.status,discrepancia',
+                'string',
+                'max:1000',
+            ],
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'novo_equipamento.marca_id.required_with' => 'Selecione uma marca para o equipamento.',
+            'novo_equipamento.modelo_id.required_with' => 'Selecione um modelo para o equipamento.',
+            'checklist_entrada.respostas.required_with' => 'Preencha o checklist de entrada.',
+            'checklist_entrada.respostas.min' => 'Preencha o checklist de entrada.',
+            'checklist_entrada.respostas.*.status.required' => 'Classifique todos os itens do checklist de entrada.',
+            'checklist_entrada.respostas.*.status.in' => 'A classificação informada para o checklist é inválida.',
+            'checklist_entrada.respostas.*.observacao.required_if' => 'Informe a observação do item classificado como discrepância.',
         ];
     }
 }

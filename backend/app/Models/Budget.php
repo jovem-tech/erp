@@ -121,6 +121,33 @@ class Budget extends Model
         return self::statusLabels()[$value] ?? ($value !== '' ? ucfirst(str_replace('_', ' ', $value)) : 'Rascunho');
     }
 
+    /**
+     * Status de orçamento avulso que ainda podem ser vinculados a uma OS.
+     *
+     * Cancelados e rejeitados são decisões terminais. Convertidos também
+     * ficam fora porque já foram consumidos por outra conversão, mesmo se um
+     * registro legado estiver inconsistente e sem os_id.
+     *
+     * @return array<int, string>
+     */
+    public static function linkableToOrderStatuses(): array
+    {
+        return array_values(array_diff(
+            array_column(self::statusOptions(), 'value'),
+            [self::STATUS_CANCELLED, self::STATUS_REJECTED, self::STATUS_CONVERTED]
+        ));
+    }
+
+    /**
+     * Status que comprovam aprovação antes do vínculo com a OS.
+     *
+     * @return array<int, string>
+     */
+    public static function approvedForOrderLinkStatuses(): array
+    {
+        return [self::STATUS_PENDING_OS, self::STATUS_APPROVED];
+    }
+
     public static function typeOptions(): array
     {
         return [

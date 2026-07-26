@@ -367,6 +367,7 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
             'ok' => 'OK',
             'discrepancia' => 'Discrepância',
             'nao_verificado' => 'Não verificado',
+            'nao_se_aplica' => 'Não se aplica',
             default => ucwords(str_replace('_', ' ', trim($status))),
         };
     }

@@ -8,6 +8,7 @@ use App\Exceptions\ApiRequestException;
 use App\Services\ClientService;
 use App\Services\EquipmentService;
 use App\Services\FinanceiroService;
+use App\Services\OrcamentoService;
 use App\Services\OrderService;
 use App\Support\DesktopSession;
 use Illuminate\Http\JsonResponse;
@@ -23,7 +24,8 @@ class ClientController extends DesktopController
         private readonly ClientService $clientService,
         private readonly OrderService $orderService,
         private readonly EquipmentService $equipmentService,
-        private readonly FinanceiroService $financeiroService
+        private readonly FinanceiroService $financeiroService,
+        private readonly OrcamentoService $orcamentoService
     ) {
     }
 
@@ -104,6 +106,84 @@ class ClientController extends DesktopController
             'message' => 'Cliente cadastrado com sucesso.',
             'client' => $client,
         ], 201);
+    }
+
+    /**
+     * Sugestões de orçamento avulso (sem cliente cadastrado) para os campos
+     * de nome/telefone do cadastro rápido de cliente na Nova OS.
+     */
+    public function searchAvulsoBudgets(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:15'],
+        ]);
+        $page = max(1, (int) ($validated['page'] ?? 1));
+        $perPage = max(1, min(15, (int) ($validated['per_page'] ?? 15)));
+
+        try {
+            $result = $this->orcamentoService->avulsoContacts([
+                'q' => trim((string) ($validated['q'] ?? '')),
+                'page' => $page,
+                'per_page' => $perPage,
+            ]);
+        } catch (ApiAuthenticationException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage() ?: 'Sua sessão expirou. Faça login novamente.',
+            ], 401);
+        } catch (ApiAuthorizationException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage() ?: 'Você não tem permissão para executar esta ação.',
+            ], 403);
+        } catch (ApiRequestException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage() ?: 'Não foi possível pesquisar os orçamentos agora.',
+                'errors' => $exception->details() ?? [],
+            ], $exception->statusCode() > 0 ? $exception->statusCode() : 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Não foi possível pesquisar os orçamentos agora.',
+            ], 500);
+        }
+
+        $items = array_values(array_filter(array_map(static function (array $budget): array {
+            $id = (int) ($budget['id'] ?? 0);
+            $nome = trim((string) ($budget['cliente_nome_avulso'] ?? ''));
+            $telefone = trim((string) ($budget['telefone_contato'] ?? ''));
+            $equipamento = trim((string) ($budget['equipamento_resumo'] ?? ''));
+            $status = trim((string) ($budget['status_label'] ?? ''));
+            $parts = array_values(array_filter([
+                trim((string) ($budget['numero'] ?? '')) ?: ($id > 0 ? 'Orçamento #'.$id : ''),
+                $nome,
+                $telefone,
+                $equipamento,
+                $status,
+            ], static fn (string $value): bool => $value !== ''));
+
+            return [
+                'id' => $id,
+                'text' => implode(' · ', $parts),
+                'budget' => $budget,
+            ];
+        }, (array) ($result['items'] ?? [])), static fn (array $item): bool => $item['id'] > 0));
+        $pagination = is_array($result['pagination'] ?? null) ? $result['pagination'] : [];
+        $currentPage = (int) ($pagination['current_page'] ?? $page);
+        $lastPage = (int) ($pagination['last_page'] ?? $currentPage);
+
+        return response()->json([
+            'success' => true,
+            'results' => $items,
+            'pagination' => [
+                'more' => $currentPage < $lastPage,
+            ],
+        ]);
     }
 
     public function show(int $client): View

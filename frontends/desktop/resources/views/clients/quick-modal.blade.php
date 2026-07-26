@@ -24,17 +24,38 @@
                     class="desktop-grid desktop-grid-two"
                     method="post"
                     action="{{ $quickStoreUrl ?? route('clients.quick.store') }}"
+                    @if (! empty($avulsoBudgetSearchUrl))
+                        data-avulso-budget-search-url="{{ $avulsoBudgetSearchUrl }}"
+                        data-avulso-budget-link-url="{{ route('orders.create') }}"
+                    @endif
                 >
                     @csrf
+                    <input type="hidden" id="quickClientMatchedOrcamentoId" data-quick-client-matched-orcamento-id value="">
 
-                    <div class="desktop-grid-span-2">
+                    <div class="desktop-grid-span-2 position-relative">
                         <label for="quickClientNomeRazao">Nome / razão social *</label>
-                        <input type="text" id="quickClientNomeRazao" name="nome_razao" class="form-control" required autocomplete="off">
+                        <input type="text" id="quickClientNomeRazao" name="nome_razao" class="form-control" required autocomplete="off" data-avulso-search-field="nome">
+                        <div class="quick-client-avulso-suggestions d-none" data-avulso-suggestions="nome"></div>
                     </div>
 
-                    <div>
+                    <div class="position-relative">
                         <label for="quickClientTelefone1">Telefone principal *</label>
-                        <input type="text" id="quickClientTelefone1" name="telefone1" class="form-control" required autocomplete="off">
+                        <input type="text" id="quickClientTelefone1" name="telefone1" class="form-control" required autocomplete="off" data-avulso-search-field="telefone">
+                        <div class="quick-client-avulso-suggestions d-none" data-avulso-suggestions="telefone"></div>
+                    </div>
+
+                    <div class="desktop-grid-span-2 d-none" data-avulso-budget-callout>
+                        <div class="alert alert-info d-flex align-items-center justify-content-between gap-3 mb-0">
+                            <span data-avulso-budget-callout-text></span>
+                            <div class="d-flex align-items-center gap-2">
+                                <button type="button" class="btn btn-sm btn-primary" data-avulso-budget-link>
+                                    Vincular à OS
+                                </button>
+                                <button type="button" class="btn btn-sm btn-outline-light" data-avulso-budget-dismiss>
+                                    Não vincular
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     <div>

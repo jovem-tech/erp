@@ -146,10 +146,14 @@ class OrcamentoController extends DesktopController
     {
         $validated = $request->validate([
             'cliente_id' => ['required', 'integer', 'min:1'],
+            'orcamento_id' => ['nullable', 'integer', 'min:1'],
         ]);
 
         try {
-            $context = $this->orcamentoService->clientContext((int) $validated['cliente_id']);
+            $context = $this->orcamentoService->clientContext(
+                (int) $validated['cliente_id'],
+                (int) ($validated['orcamento_id'] ?? 0)
+            );
         } catch (ApiAuthenticationException $exception) {
             return $this->jsonFailure($exception->getMessage(), 401);
         } catch (ApiAuthorizationException $exception) {
@@ -175,6 +179,9 @@ class OrcamentoController extends DesktopController
             return [
                 'id' => $id,
                 'cliente_id' => (int) ($order['cliente_id'] ?? 0),
+                // Equipamento vinculado à OS: usado para pré-selecionar
+                // automaticamente o "Equipamento cadastrado" ao escolher a OS.
+                'equipamento_id' => (int) ($order['equipamento_id'] ?? 0),
                 'label' => $label.($clientName !== '' ? ' - '.$clientName : ''),
             ];
         }, (array) ($context['orders'] ?? [])), static fn (array $order): bool => $order['id'] > 0));
@@ -286,6 +293,9 @@ class OrcamentoController extends DesktopController
             $form = $this->orcamentoService->formData([
                 'cliente_id' => (int) ($budget['cliente']['id'] ?? $budget['cliente_id'] ?? 0),
                 'os_id' => (int) ($budget['os']['id'] ?? $budget['os_id'] ?? 0),
+                // Preserva a própria OS vinculada na lista de "OS vinculada" —
+                // ela não deve sumir por já "ter orçamento" (é este mesmo).
+                'orcamento_id' => $orcamento,
             ]);
         } catch (ApiAuthenticationException $exception) {
             return redirect()->route('login')->with('error', $exception->getMessage());
@@ -560,7 +570,10 @@ class OrcamentoController extends DesktopController
             )],
             'validade_dias' => ['nullable', 'integer', 'min:0'],
             'validade_data' => ['nullable', 'date'],
-            'prazo_execucao' => ['nullable', 'string', 'max:255'],
+            // Obrigatório em qualquer orçamento novo.
+            'prazo_execucao' => ['nullable', 'string', 'max:255', Rule::requiredIf(
+                fn (): bool => $requireComplete
+            )],
             'observacoes' => ['nullable', 'string'],
             'condicoes' => ['nullable', 'string'],
             'subtotal' => ['nullable', 'numeric'],

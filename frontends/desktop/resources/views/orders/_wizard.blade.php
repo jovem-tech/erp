@@ -8,7 +8,7 @@
     $selectedEquipmentId = (int) old('equipamento_id', $selectedEquipmentId ?? 0);
     $selectedTechnicianId = (int) old('tecnico_id', $selectedTechnicianId ?? 0);
 
-    // Geração de OS a partir de orçamento avulso aprovado (ver OrderController::create).
+    // Geração de OS a partir de orçamento avulso disponível (ver OrderController::create).
     $linkedBudget = is_array($linkedBudget ?? null) ? $linkedBudget : null;
     $canLinkBudgets = (bool) ($canLinkBudgets ?? false);
     $linkableBudgetSearchUrl = trim((string) ($linkableBudgetSearchUrl ?? ''));
@@ -107,7 +107,10 @@
     $existingPhotosCount = count($existingPhotos);
     $entryChecklist = is_array(data_get($order, 'checklist')) ? (array) data_get($order, 'checklist') : [];
     $entryChecklistModel = is_array($entryChecklistModel ?? null) ? $entryChecklistModel : [];
-    $entryChecklistResponses = (array) data_get($entryChecklist, 'respostas', []);
+    $entryChecklistResponses = (array) old(
+        'checklist_entrada.respostas',
+        data_get($entryChecklist, 'respostas', [])
+    );
     $entryChecklistDiscrepancies = (int) data_get($entryChecklist, 'total_discrepancias', 0);
     $entryChecklistItemsCount = count((array) data_get($entryChecklistModel, 'itens', []));
     $statusDisponiveis = $isEditing ? (array) data_get($order, 'status_disponiveis', []) : [];
@@ -236,23 +239,6 @@
 
         @if (! $isEditing && $linkedBudgetId > 0)
             <input type="hidden" name="orcamento_id" value="{{ $linkedBudgetId }}">
-        @endif
-
-        @if (! $isEditing && $canLinkBudgets && $linkedBudget === null)
-            <div class="order-create-budget-picker mb-2">
-                <label for="orderLinkBudget" class="mb-1">Vincular orçamento avulso aprovado (opcional)</label>
-                <select id="orderLinkBudget"
-                    class="form-select"
-                    data-order-link-budget
-                    data-search-url="{{ $linkableBudgetSearchUrl }}"
-                    data-link-url="{{ route('orders.create') }}">
-                    <option value=""></option>
-                </select>
-                <small class="text-secondary d-block mt-1">
-                    Pesquise por número, cliente ou equipamento. A troca pede confirmação se este formulário já tiver alterações.
-                </small>
-                <small class="text-danger d-none mt-1" data-order-link-budget-feedback role="alert"></small>
-            </div>
         @endif
 
         <aside class="order-create-preview">
@@ -486,6 +472,27 @@
                             <small class="text-secondary d-block mt-2">Se o cliente ainda nao estiver cadastrado, abra o cadastro rapido sem sair da OS.</small>
                         @endif
                     </div>
+
+                    @if (! $isEditing && $canLinkBudgets && $linkedBudget === null)
+                        <div class="order-create-field order-create-field-span-2">
+                            <div class="order-create-budget-picker">
+                                <label for="orderLinkBudget" class="mb-1">Vincular orçamento avulso (opcional)</label>
+                                <select id="orderLinkBudget"
+                                    class="form-select"
+                                    data-native-select="true"
+                                    data-order-link-budget
+                                    data-search-url="{{ $linkableBudgetSearchUrl }}"
+                                    data-link-url="{{ route('orders.create') }}">
+                                    <option value=""></option>
+                                </select>
+                                <small class="text-secondary d-block mt-1">
+                                    Exibe todos os status, exceto cancelados, rejeitados e os já vinculados ou convertidos.
+                                    Pesquise por número, cliente ou equipamento. A troca pede confirmação se este formulário já tiver alterações.
+                                </small>
+                                <small class="text-danger d-none mt-1" data-order-link-budget-feedback role="alert"></small>
+                            </div>
+                        </div>
+                    @endif
                 </div>
             </section>
 
@@ -628,7 +635,17 @@
                                 <h3 class="surface-title mb-1" data-order-entry-checklist-title>Checklist de entrada</h3>
                                 <p class="surface-subtitle mb-0" data-order-entry-checklist-description>Conferência inicial do equipamento recebido.</p>
                             </div>
-                            <span class="desktop-chip" data-order-entry-checklist-count>0 itens</span>
+                            <div class="order-entry-checklist-header-actions">
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-primary"
+                                    data-order-entry-checklist-all-ok
+                                >
+                                    <i class="bi bi-check2-all" aria-hidden="true"></i>
+                                    Todos OK
+                                </button>
+                                <span class="desktop-chip" data-order-entry-checklist-count>0 itens</span>
+                            </div>
                         </div>
 
                         <div class="order-entry-checklist-items" data-order-entry-checklist-items></div>
@@ -828,42 +845,45 @@
                 </div>
             </section>
 
-            <div class="order-create-actions">
-                @unless ($isEditing)
-                    @php
-                        $enviarPdfClienteOld = old('enviar_pdf_cliente', '0');
-                    @endphp
-                    <div class="order-create-actions-option">
-                        <div class="order-create-send-toggle">
-                            <span class="order-create-send-toggle-text">
-                                <strong>Enviar PDF ao cliente <span class="order-create-required-mark">*</span></strong>
-                                <small>Gera o comprovante de abertura com o modelo <code>abertura</code> e tenta enviar via template WhatsApp <code>os_aberta</code>.</small>
-                            </span>
-                            <div class="order-create-yes-no" role="radiogroup" aria-label="Enviar PDF ao cliente">
-                                <label class="order-create-yes-no-option">
-                                    <input
-                                        type="radio"
-                                        name="enviar_pdf_cliente"
-                                        value="0"
-                                        required
-                                        @checked($enviarPdfClienteOld !== '1')
-                                    >
-                                    <span>Nao</span>
-                                </label>
-                                <label class="order-create-yes-no-option">
-                                    <input
-                                        type="radio"
-                                        name="enviar_pdf_cliente"
-                                        value="1"
-                                        required
-                                        @checked($enviarPdfClienteOld === '1')
-                                    >
-                                    <span>Sim</span>
-                                </label>
-                            </div>
+        </div>
+
+        <footer class="order-create-actions order-create-footer" data-order-create-footer>
+            @unless ($isEditing)
+                @php
+                    $enviarPdfClienteOld = old('enviar_pdf_cliente', '0');
+                @endphp
+                <div class="order-create-actions-option" data-order-create-pdf-option>
+                    <div class="order-create-send-toggle">
+                        <span class="order-create-send-toggle-text">
+                            <strong>Enviar PDF ao cliente <span class="order-create-required-mark">*</span></strong>
+                            <small>Gera o comprovante de abertura com o modelo <code>abertura</code> e tenta enviar via template WhatsApp <code>os_aberta</code>.</small>
+                        </span>
+                        <div class="order-create-yes-no" role="radiogroup" aria-label="Enviar PDF ao cliente">
+                            <label class="order-create-yes-no-option">
+                                <input
+                                    type="radio"
+                                    name="enviar_pdf_cliente"
+                                    value="0"
+                                    required
+                                    @checked($enviarPdfClienteOld !== '1')
+                                >
+                                <span>Nao</span>
+                            </label>
+                            <label class="order-create-yes-no-option">
+                                <input
+                                    type="radio"
+                                    name="enviar_pdf_cliente"
+                                    value="1"
+                                    required
+                                    @checked($enviarPdfClienteOld === '1')
+                                >
+                                <span>Sim</span>
+                            </label>
                         </div>
                     </div>
-                @endunless
+                </div>
+            @endunless
+            <div class="order-create-footer-buttons">
                 <a href="{{ $cancelUrl }}" class="btn btn-outline-light">Cancelar</a>
                 <button
                     type="button"
@@ -878,7 +898,7 @@
                     <span data-order-create-submit-label>{{ $submitLabel }}</span>
                 </button>
             </div>
-        </div>
+        </footer>
     </form>
 </section>
 
@@ -1022,6 +1042,9 @@
     @if ($canCreateClient)
         @include('clients.quick-modal', [
             'fullCreateUrl' => route('clients.create'),
+            'avulsoBudgetSearchUrl' => (! $isEditing && $canLinkBudgets && $linkedBudget === null)
+                ? route('clients.avulso_budgets.search')
+                : null,
         ])
     @endif
 

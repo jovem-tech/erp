@@ -10,6 +10,7 @@
         'ok' => 'OK',
         'discrepancia' => 'Discrepância',
         'nao_verificado' => 'Não verificado',
+        'nao_se_aplica' => 'Não se aplica',
     ];
     $checklistRespostas = $checklist['respostas'] ?? [];
 @endphp

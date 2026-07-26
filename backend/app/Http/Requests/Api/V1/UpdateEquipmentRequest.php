@@ -22,8 +22,6 @@ class UpdateEquipmentRequest extends StoreEquipmentRequest
 
     public function withValidator(Validator $validator): void
     {
-        parent::withValidator($validator);
-
         $validator->after(function (Validator $validator): void {
             $equipmentId = (int) $this->route('equipment', 0);
             if ($equipmentId <= 0) {

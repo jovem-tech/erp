@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-25T01:16:09-03:00`
-- Versao do sistema: `5.13.8`
+- Gerado em: `2026-07-25T22:18:53-03:00`
+- Versao do sistema: `5.16.8`
 - Versao da API: `1.6.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -171,6 +171,11 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-24-hardening-trava-orcamento-completo.md` - Hardening da trava de completude do novo orçamento
 - `documentacao/07-novas-implementacoes/2026-07-24-select2-clientes-orcamento-paginado.md` - Select2 paginado de clientes no orçamento
 - `documentacao/07-novas-implementacoes/2026-07-24-trava-campos-obrigatorios-orcamento.md` - Cadastro de orçamento: trava o salvamento até completar os campos obrigatórios de todas as abas
+- `documentacao/07-novas-implementacoes/2026-07-25-aba-informacoes-tecnicas-equipamento.md` - Aba Informações técnicas do equipamento
+- `documentacao/07-novas-implementacoes/2026-07-25-checklist-entrada-obrigatorio.md` - Checklist de entrada obrigatório na abertura da OS
+- `documentacao/07-novas-implementacoes/2026-07-25-envio-pdf-rodape-nova-os.md` - Envio de PDF no rodapé da Nova OS
+- `documentacao/07-novas-implementacoes/2026-07-25-marca-modelo-obrigatorios-equipamento.md` - Marca e modelo obrigatórios no cadastro de equipamento
+- `documentacao/07-novas-implementacoes/2026-07-25-orcamentos-avulsos-vinculaveis-nova-os.md` - Orçamentos avulsos vinculáveis na Nova OS
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 - `documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md` - Revisão de segurança — Fluxo de orçamento na assistência (com OS)
 

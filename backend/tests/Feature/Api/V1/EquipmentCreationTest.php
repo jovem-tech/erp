@@ -147,6 +147,8 @@ class EquipmentCreationTest extends TestCase
             ->post('/api/v1/equipments', [
                 'cliente_id' => $clientId,
                 'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
                 'numero_serie' => 'SN-DESKTOP-001',
                 'senha_tipo' => 'desenho',
                 'senha_desenho' => '1-2-5-8',
@@ -249,6 +251,8 @@ class EquipmentCreationTest extends TestCase
             ->post('/api/v1/equipments', [
                 'cliente_id' => $clientId,
                 'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
                 'numero_serie' => 'SN-SEM-FOTO-001',
             ]);
 
@@ -273,6 +277,8 @@ class EquipmentCreationTest extends TestCase
             ->post('/api/v1/equipments', [
                 'cliente_id' => $clientId,
                 'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
                 'numero_serie' => 'SN-ACESSORIO-OS-001',
                 'acessorios' => 'Carregador original',
                 'fotos' => [UploadedFile::fake()->image('equipamento.jpg')],
@@ -303,6 +309,8 @@ class EquipmentCreationTest extends TestCase
             ->post('/api/v1/equipments', [
                 'cliente_id' => $clientId,
                 'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
                 'numero_serie' => 'SN-EDIT-001',
                 'desktop_modalidade' => 'montado',
                 'foto_principal_index' => 1,
@@ -336,6 +344,8 @@ class EquipmentCreationTest extends TestCase
                 '_method' => 'PATCH',
                 'cliente_id' => $clientId,
                 'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
                 'numero_serie' => 'SN-EDIT-002',
                 'desktop_modalidade' => 'montado',
                 'existing_photo_sync' => 1,
@@ -388,6 +398,8 @@ class EquipmentCreationTest extends TestCase
             ->post('/api/v1/equipments', [
                 'cliente_id' => $clientId,
                 'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
                 'numero_serie' => 'SN-RESUMO-001',
                 'desktop_modalidade' => 'montado',
                 'fotos' => [
@@ -412,6 +424,8 @@ class EquipmentCreationTest extends TestCase
                 '_method' => 'PATCH',
                 'cliente_id' => $clientId,
                 'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
                 'numero_serie' => 'SN-RESUMO-002',
                 'desktop_modalidade' => 'montado',
                 'gabinete_tipo' => $long120,
@@ -440,7 +454,7 @@ class EquipmentCreationTest extends TestCase
         ]);
     }
 
-    public function test_store_requires_brand_and_model_for_notebook_type(): void
+    public function test_store_requires_brand_and_model_for_every_equipment_type(): void
     {
         $clientId = $this->createClientRecord([
             'nome_razao' => 'Cliente Notebook Sem Catalogo',
@@ -453,8 +467,8 @@ class EquipmentCreationTest extends TestCase
             ->withHeader('Accept', 'application/json')
             ->post('/api/v1/equipments', [
                 'cliente_id' => $clientId,
-                'tipo_id' => 2,
-                'numero_serie' => 'SN-NOTEBOOK-001',
+                'tipo_id' => 1,
+                'numero_serie' => 'SN-SEM-CATALOGO-001',
                 'fotos' => [
                     UploadedFile::fake()->image('notebook-sem-catalogo.jpg'),
                 ],

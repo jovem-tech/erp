@@ -284,6 +284,20 @@ class OrderController extends BaseApiController
                 null,
                 request: $request
             ),
+            'entry_checklist_incomplete' => $this->error(
+                'Classifique todos os itens do checklist de entrada.',
+                422,
+                'ORDER_ENTRY_CHECKLIST_INCOMPLETE',
+                null,
+                request: $request
+            ),
+            'entry_checklist_discrepancy_observation_required' => $this->error(
+                'Informe a observação de cada item classificado como discrepância.',
+                422,
+                'ORDER_ENTRY_CHECKLIST_DISCREPANCY_OBSERVATION_REQUIRED',
+                null,
+                request: $request
+            ),
             'entry_checklist_invalid_items', 'entry_checklist_invalid_payload' => $this->error(
                 'O checklist de entrada contem itens invalidos para o modelo vigente.',
                 422,
@@ -361,6 +375,20 @@ class OrderController extends BaseApiController
                 'O modelo de checklist de entrada nao possui itens ativos.',
                 422,
                 'ORDER_ENTRY_CHECKLIST_MODEL_EMPTY',
+                null,
+                request: $request
+            ),
+            'entry_checklist_incomplete' => $this->error(
+                'Classifique todos os itens do checklist de entrada.',
+                422,
+                'ORDER_ENTRY_CHECKLIST_INCOMPLETE',
+                null,
+                request: $request
+            ),
+            'entry_checklist_discrepancy_observation_required' => $this->error(
+                'Informe a observação de cada item classificado como discrepância.',
+                422,
+                'ORDER_ENTRY_CHECKLIST_DISCREPANCY_OBSERVATION_REQUIRED',
                 null,
                 request: $request
             ),

@@ -16,6 +16,32 @@ function toNumberValue(value: unknown): number {
   return Number.isFinite(numeric) ? numeric : 0;
 }
 
+function normalizePermissions(value: unknown): Record<string, string[]> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return {};
+  }
+
+  return Object.entries(value).reduce<Record<string, string[]>>((permissions, [rawModule, rawActions]) => {
+    const moduleName = rawModule.trim();
+    if (moduleName === '' || !Array.isArray(rawActions)) {
+      return permissions;
+    }
+
+    const actions = Array.from(new Set(
+      rawActions
+        .filter((action): action is string => typeof action === 'string')
+        .map((action) => action.trim())
+        .filter((action) => action !== '')
+    ));
+
+    if (actions.length > 0) {
+      permissions[moduleName] = actions;
+    }
+
+    return permissions;
+  }, {});
+}
+
 export function normalizeSession(session: MobileSession): MobileSession {
   return {
     accessToken: toStringValue(session.accessToken).trim(),
@@ -30,6 +56,7 @@ export function normalizeSession(session: MobileSession): MobileSession {
       foto: toStringValue(session.user?.foto),
       ativo: Boolean(session.user?.ativo),
       ultimo_acesso: session.user?.ultimo_acesso ?? null,
+      permissions: normalizePermissions(session.user?.permissions),
     },
   };
 }

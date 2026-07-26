@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api\V1;
 
+use App\Models\Budget;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -13,7 +14,7 @@ use Tests\TestCase;
 /**
  * Cobre a divisão avulso × OS: derivação de tipo, ações de decisão do técnico
  * (aprovar/rejeitar/cancelar por outros meios) e a geração de OS a partir de um
- * orçamento avulso aprovado.
+ * orçamento avulso disponível.
  */
 class BudgetAvulsoFlowTest extends TestCase
 {
@@ -408,6 +409,8 @@ class BudgetAvulsoFlowTest extends TestCase
                 ],
                 'novo_equipamento' => [
                     'tipo_id' => 1,
+                    'marca_id' => 2,
+                    'modelo_id' => 2,
                     'numero_serie_visual' => 'SN-DIFERIDO',
                     'cor' => 'Preto',
                 ],
@@ -445,6 +448,8 @@ class BudgetAvulsoFlowTest extends TestCase
                 ],
                 'novo_equipamento' => [
                     'tipo_id' => 1,
+                    'marca_id' => 2,
+                    'modelo_id' => 2,
                     'cor' => 'Prata',
                     'foto_principal_index' => 1,
                 ],
@@ -486,6 +491,46 @@ class BudgetAvulsoFlowTest extends TestCase
             ->assertStatus(422);
     }
 
+    public function test_create_order_requires_brand_and_model_for_deferred_equipment(): void
+    {
+        Storage::fake('local');
+
+        $admin = $this->admin();
+        $token = $this->loginAndGetToken($admin->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->post('/api/v1/orders', [
+                'novo_cliente' => [
+                    'nome_razao' => 'Cliente Sem Catálogo',
+                    'telefone1' => '22999996666',
+                ],
+                'novo_equipamento' => [
+                    'tipo_id' => 1,
+                    'numero_serie_visual' => 'SN-SEM-CATALOGO',
+                ],
+                'novo_equipamento_fotos' => [
+                    UploadedFile::fake()->image('equipamento-sem-catalogo.jpg'),
+                ],
+                'relato_cliente' => 'Equipamento sem marca e modelo.',
+                'garantia_dias' => 90,
+            ], ['Accept' => 'application/json']);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+
+        $details = $response->json('error.details');
+
+        $this->assertIsArray($details);
+        $this->assertSame(
+            ['Selecione uma marca para o equipamento.'],
+            $details['novo_equipamento.marca_id'] ?? null
+        );
+        $this->assertSame(
+            ['Selecione um modelo para o equipamento.'],
+            $details['novo_equipamento.modelo_id'] ?? null
+        );
+    }
+
     public function test_create_order_with_deferred_equipment_without_photo_is_rejected_without_persisting_records(): void
     {
         $admin = $this->admin();
@@ -503,6 +548,8 @@ class BudgetAvulsoFlowTest extends TestCase
                 ],
                 'novo_equipamento' => [
                     'tipo_id' => 1,
+                    'marca_id' => 2,
+                    'modelo_id' => 2,
                     'numero_serie_visual' => 'SN-SEM-FOTO',
                 ],
                 'relato_cliente' => 'Equipamento sem imagem obrigatória.',
@@ -547,7 +594,12 @@ class BudgetAvulsoFlowTest extends TestCase
         $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->post('/api/v1/orders', [
                 'novo_cliente' => ['nome_razao' => 'Otavio Eventual', 'telefone1' => '2299990000'],
-                'novo_equipamento' => ['tipo_id' => 1, 'numero_serie_visual' => 'SN-9'],
+                'novo_equipamento' => [
+                    'tipo_id' => 1,
+                    'marca_id' => 2,
+                    'modelo_id' => 2,
+                    'numero_serie_visual' => 'SN-9',
+                ],
                 'novo_equipamento_fotos' => [
                     UploadedFile::fake()->image('iphone-eventual.jpg'),
                 ],
@@ -679,28 +731,42 @@ class BudgetAvulsoFlowTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_linkable_budget_catalog_only_returns_canonical_candidates(): void
+    public function test_linkable_budget_catalog_returns_every_available_status_and_excludes_terminal_candidates(): void
     {
         $admin = $this->admin();
         $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Catálogo Seguro']);
         $equipmentId = $this->createEquipmentRecord($clientId, ['resumo_tecnico' => 'Notebook catálogo']);
-        $validId = $this->createBudgetRecord([
-            'numero' => 'ORC-LINK-VALIDO',
-            'cliente_id' => $clientId,
-            'equipamento_id' => $equipmentId,
-            'tipo_orcamento' => 'previo',
-            'status' => 'pendente_abertura_os',
-            'os_id' => null,
-            'aprovado_em' => now(),
-            'total' => 345.67,
-        ]);
-        $this->createBudgetRecord([
-            'numero' => 'ORC-STATUS-ERRADO',
-            'cliente_id' => $clientId,
-            'tipo_orcamento' => 'previo',
-            'status' => 'aprovado',
-            'os_id' => null,
-        ]);
+        $linkableIds = [];
+        $detailId = 0;
+
+        foreach (Budget::linkableToOrderStatuses() as $index => $status) {
+            $budgetId = $this->createBudgetRecord([
+                'numero' => sprintf('ORC-LINK-%02d', $index + 1),
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'tipo_orcamento' => 'previo',
+                'status' => $status,
+                'os_id' => null,
+                'aprovado_em' => $status === Budget::STATUS_PENDING_OS ? now() : null,
+                'total' => 345.67,
+            ]);
+            $linkableIds[] = $budgetId;
+
+            if ($status === Budget::STATUS_PENDING_OS) {
+                $detailId = $budgetId;
+            }
+        }
+
+        foreach ([Budget::STATUS_CANCELLED, Budget::STATUS_REJECTED, Budget::STATUS_CONVERTED] as $index => $status) {
+            $this->createBudgetRecord([
+                'numero' => sprintf('ORC-TERMINAL-%02d', $index + 1),
+                'cliente_id' => $clientId,
+                'tipo_orcamento' => 'previo',
+                'status' => $status,
+                'os_id' => null,
+            ]);
+        }
+
         $this->createBudgetRecord([
             'numero' => 'ORC-TIPO-ERRADO',
             'cliente_id' => $clientId,
@@ -711,16 +777,19 @@ class BudgetAvulsoFlowTest extends TestCase
         $token = $this->loginAndGetToken($admin->email);
 
         $response = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->getJson('/api/v1/orcamentos/vinculaveis-os?q=Cat%C3%A1logo&per_page=10');
+            ->getJson('/api/v1/orcamentos/vinculaveis-os?q=Cat%C3%A1logo&per_page=30');
 
-        $response->assertOk()
-            ->assertJsonCount(1, 'data.budgets')
-            ->assertJsonPath('data.budgets.0.id', $validId)
-            ->assertJsonPath('data.budgets.0.equipamento_resumo', 'Notebook catálogo')
-            ->assertJsonPath('data.budgets.0.total_formatado', '345,67');
+        $response->assertOk()->assertJsonCount(count($linkableIds), 'data.budgets');
+        $this->assertEqualsCanonicalizing(
+            $linkableIds,
+            array_map('intval', (array) $response->json('data.budgets.*.id'))
+        );
+        $response
+            ->assertJsonFragment(['status' => Budget::STATUS_SENT, 'status_label' => 'Enviado'])
+            ->assertJsonFragment(['equipamento_resumo' => 'Notebook catálogo', 'total_formatado' => '345,67']);
 
         $detailResponse = $this->withHeader('Authorization', 'Bearer '.$token)
-            ->getJson('/api/v1/orcamentos/vinculaveis-os/'.$validId)
+            ->getJson('/api/v1/orcamentos/vinculaveis-os/'.$detailId)
             ->assertOk()
             ->assertJsonPath('data.budget.status', 'pendente_abertura_os')
             ->assertJsonPath('data.budget.equipamento.id', $equipmentId);
@@ -950,5 +1019,221 @@ class BudgetAvulsoFlowTest extends TestCase
                     ],
                 ],
             ]);
+    }
+
+    public function test_avulso_contacts_endpoint_finds_by_name_or_phone_and_excludes_ineligible(): void
+    {
+        $admin = $this->admin();
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Cadastrado Avulso']);
+
+        $openId = $this->createBudgetRecord([
+            'numero' => 'ORC-AVULSO-ABERTO',
+            'cliente_id' => null,
+            'cliente_nome_avulso' => 'Marcia Contato Avulso',
+            'telefone_contato' => '22988887777',
+            'status' => 'aguardando_resposta',
+            'tipo_orcamento' => 'previo',
+        ]);
+        // Cliente já cadastrado: não é avulso, não deve aparecer na busca.
+        $this->createBudgetRecord([
+            'numero' => 'ORC-AVULSO-CADASTRADO',
+            'cliente_id' => $clientId,
+            'status' => 'aguardando_resposta',
+            'tipo_orcamento' => 'previo',
+        ]);
+        // Estado terminal: não representa mais atendimento em aberto.
+        $this->createBudgetRecord([
+            'numero' => 'ORC-AVULSO-CANCELADO',
+            'cliente_id' => null,
+            'cliente_nome_avulso' => 'Marcia Cancelada',
+            'status' => 'cancelado',
+            'tipo_orcamento' => 'previo',
+        ]);
+        $this->createBudgetRecord([
+            'numero' => 'ORC-AVULSO-RASCUNHO',
+            'cliente_id' => null,
+            'cliente_nome_avulso' => 'Marcia Rascunho',
+            'status' => 'rascunho',
+            'tipo_orcamento' => 'previo',
+        ]);
+
+        $token = $this->loginAndGetToken($admin->email);
+
+        $byName = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orcamentos/contatos-avulsos?q=Marcia+Contato');
+        $byName->assertOk()
+            ->assertJsonCount(1, 'data.budgets')
+            ->assertJsonPath('data.budgets.0.id', $openId)
+            // aguardando_resposta agora é vinculável: a OS nasce em
+            // aguardando_autorizacao e o orçamento continua aberto até o
+            // cliente responder de fato.
+            ->assertJsonPath('data.budgets.0.linkable', true);
+
+        $byPhone = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orcamentos/contatos-avulsos?q=988887777');
+        $byPhone->assertOk()
+            ->assertJsonCount(1, 'data.budgets')
+            ->assertJsonPath('data.budgets.0.id', $openId);
+    }
+
+    public function test_avulso_contacts_endpoint_flags_pending_os_budget_as_linkable(): void
+    {
+        $admin = $this->admin();
+        $budgetId = $this->createBudgetRecord([
+            'numero' => 'ORC-AVULSO-LINKAVEL',
+            'cliente_id' => null,
+            'cliente_nome_avulso' => 'Renato Pronto Pra OS',
+            'telefone_contato' => '22977776666',
+            'status' => 'pendente_abertura_os',
+            'tipo_orcamento' => 'previo',
+        ]);
+        $token = $this->loginAndGetToken($admin->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orcamentos/contatos-avulsos?q=Renato')
+            ->assertOk()
+            ->assertJsonCount(1, 'data.budgets')
+            ->assertJsonPath('data.budgets.0.id', $budgetId)
+            ->assertJsonPath('data.budgets.0.linkable', true);
+    }
+
+    public function test_avulso_contacts_endpoint_requires_conversion_permission(): void
+    {
+        $this->grantGroupPermissions(2, [
+            'os' => ['criar'],
+        ]);
+        $technician = $this->createUserRecord([
+            'nome' => 'Técnico sem conversão avulso',
+            'email' => 'tecnico.sem.conversao.avulso@example.com',
+            'perfil' => 'tecnico',
+            'grupo_id' => 2,
+        ]);
+        $this->createBudgetRecord([
+            'numero' => 'ORC-AVULSO-PROTEGIDO',
+            'cliente_id' => null,
+            'cliente_nome_avulso' => 'Contato Protegido',
+            'status' => 'aguardando_resposta',
+            'tipo_orcamento' => 'previo',
+        ]);
+        $token = $this->loginAndGetToken($technician->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orcamentos/contatos-avulsos?q=Contato')
+            ->assertForbidden();
+    }
+
+    public function test_generate_os_from_budget_awaiting_client_reply_sets_awaiting_authorization_status_and_keeps_budget_open(): void
+    {
+        $admin = $this->admin();
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Aguardando Resposta']);
+        $equipmentId = $this->createEquipmentRecord($clientId, ['resumo_tecnico' => 'Celular aguardando resposta']);
+        $budgetId = $this->createBudgetRecord([
+            'numero' => 'ORC-AGUARDANDO-RESPOSTA',
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'status' => 'aguardando_resposta',
+            'tipo_orcamento' => 'previo',
+            'os_id' => null,
+            'subtotal' => 180.00,
+            'total' => 180.00,
+        ]);
+        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Troca de bateria', 'valor_unitario' => 180, 'total' => 180]);
+
+        $token = $this->loginAndGetToken($admin->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'orcamento_id' => $budgetId,
+                'relato_cliente' => 'Cliente ainda decidindo sobre o orçamento.',
+            ]);
+
+        $response->assertCreated();
+        $orderId = (int) $response->json('data.order.id');
+        $this->assertGreaterThan(0, $orderId);
+
+        // A OS nasce aguardando a decisão do cliente, independente do status
+        // padrão de abertura (triagem).
+        $this->assertDatabaseHas('os', [
+            'id' => $orderId,
+            'status' => 'aguardando_autorizacao',
+        ]);
+
+        // O orçamento fica vinculado (os_id preenchido) mas continua aberto:
+        // não vira "convertido", não fica imutável, mantém o status original.
+        $this->assertDatabaseHas('orcamentos', [
+            'id' => $budgetId,
+            'os_id' => $orderId,
+            'status' => 'aguardando_resposta',
+            'convertido_tipo' => null,
+            'convertido_id' => null,
+        ]);
+    }
+
+    public function test_generate_os_from_sent_budget_keeps_it_open_and_waits_for_authorization(): void
+    {
+        $admin = $this->admin();
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente orçamento enviado']);
+        $equipmentId = $this->createEquipmentRecord($clientId);
+        $budgetId = $this->createBudgetRecord([
+            'numero' => 'ORC-ENVIADO-VINCULAVEL',
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'status' => 'enviado',
+            'tipo_orcamento' => 'previo',
+            'os_id' => null,
+        ]);
+        $token = $this->loginAndGetToken($admin->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'orcamento_id' => $budgetId,
+                'relato_cliente' => 'Orçamento enviado, cliente ainda não respondeu.',
+            ]);
+
+        $response->assertCreated();
+        $orderId = (int) $response->json('data.order.id');
+        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'aguardando_autorizacao']);
+        $this->assertDatabaseHas('orcamentos', [
+            'id' => $budgetId,
+            'status' => 'enviado',
+            'os_id' => $orderId,
+            'convertido_tipo' => null,
+            'convertido_id' => null,
+        ]);
+    }
+
+    public function test_generate_os_rejects_cancelled_and_rejected_budgets(): void
+    {
+        $admin = $this->admin();
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente orçamento terminal']);
+        $equipmentId = $this->createEquipmentRecord($clientId);
+        $token = $this->loginAndGetToken($admin->email);
+
+        foreach (['cancelado', 'rejeitado'] as $index => $status) {
+            $budgetId = $this->createBudgetRecord([
+                'numero' => sprintf('ORC-TERMINAL-OS-%02d', $index + 1),
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'status' => $status,
+                'tipo_orcamento' => 'previo',
+                'os_id' => null,
+            ]);
+
+            $this->withHeader('Authorization', 'Bearer '.$token)
+                ->postJson('/api/v1/orders', [
+                    'cliente_id' => $clientId,
+                    'equipamento_id' => $equipmentId,
+                    'orcamento_id' => $budgetId,
+                    'relato_cliente' => 'Tentativa com orçamento em estado terminal.',
+                ])
+                ->assertStatus(409)
+                ->assertJsonPath('error.code', 'ORDER_BUDGET_LINK_CONFLICT');
+
+            $this->assertDatabaseHas('orcamentos', ['id' => $budgetId, 'status' => $status, 'os_id' => null]);
+        }
     }
 }

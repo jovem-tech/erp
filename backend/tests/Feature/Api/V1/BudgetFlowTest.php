@@ -222,6 +222,78 @@ class BudgetFlowTest extends TestCase
             ->assertJsonPath('data.equipments.0.foto_principal_id', $photoId);
     }
 
+    public function test_budget_client_context_excludes_orders_that_already_have_a_budget(): void
+    {
+        $admin = $this->createUserRecord([
+            'nome' => 'Administrador Contexto Duplicado',
+            'email' => 'admin.contexto.duplicado@example.com',
+            'perfil' => 'admin',
+            'grupo_id' => 1,
+        ]);
+
+        $client = $this->createClientRecord(['nome_razao' => 'Cliente Contexto Duplicado']);
+        $equipment = $this->createEquipmentRecord($client, ['resumo_tecnico' => 'Notebook Contexto Duplicado']);
+
+        $orderWithoutBudget = $this->createOrderRecord([
+            'cliente_id' => $client,
+            'equipamento_id' => $equipment,
+            'numero_os' => 'OS-CTX-SEM-ORC',
+            'status' => 'triagem',
+        ]);
+        $orderWithRejectedBudget = $this->createOrderRecord([
+            'cliente_id' => $client,
+            'equipamento_id' => $equipment,
+            'numero_os' => 'OS-CTX-COM-ORC-REJEITADO',
+            'status' => 'triagem',
+        ]);
+        $orderWithDraftBudget = $this->createOrderRecord([
+            'cliente_id' => $client,
+            'equipamento_id' => $equipment,
+            'numero_os' => 'OS-CTX-COM-ORC-RASCUNHO',
+            'status' => 'triagem',
+        ]);
+
+        // Qualquer status conta como "já tem orçamento" — inclusive rejeitado.
+        $rejectedBudgetId = $this->createBudgetRecord([
+            'numero' => 'ORC-CTX-REJEITADO',
+            'os_id' => $orderWithRejectedBudget,
+            'cliente_id' => $client,
+            'status' => 'rejeitado',
+        ]);
+        $draftBudgetId = $this->createBudgetRecord([
+            'numero' => 'ORC-CTX-RASCUNHO',
+            'os_id' => $orderWithDraftBudget,
+            'cliente_id' => $client,
+            'status' => 'rascunho',
+        ]);
+
+        $token = $this->loginAndGetToken($admin->email);
+
+        // Sem orcamento_id: as duas OS com orçamento (rejeitado ou rascunho) somem da lista.
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orcamentos/cliente-contexto?cliente_id='.$client);
+
+        $response->assertOk()
+            ->assertJsonCount(1, 'data.orders')
+            ->assertJsonPath('data.orders.0.id', $orderWithoutBudget);
+
+        // Editando o orçamento rascunho: a própria OS dele reaparece na lista,
+        // a outra (com orçamento rejeitado, de terceiros) continua ausente.
+        $responseEditing = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orcamentos/cliente-contexto?cliente_id='.$client.'&orcamento_id='.$draftBudgetId);
+
+        $responseEditing->assertOk()
+            ->assertJsonCount(2, 'data.orders');
+        $returnedIds = collect($responseEditing->json('data.orders'))->pluck('id')->sort()->values()->all();
+        $this->assertSame(
+            collect([$orderWithoutBudget, $orderWithDraftBudget])->sort()->values()->all(),
+            $returnedIds
+        );
+
+        // Sanity: o orçamento rejeitado existe mesmo (evita variável não utilizada / prova a fixture).
+        $this->assertDatabaseHas('orcamentos', ['id' => $rejectedBudgetId, 'os_id' => $orderWithRejectedBudget]);
+    }
+
     public function test_budget_client_context_requires_create_or_edit_permission(): void
     {
         $viewer = $this->createUserRecord([

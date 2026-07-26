@@ -55,6 +55,7 @@ class OrderWorkflowService
         'ok',
         'discrepancia',
         'nao_verificado',
+        'nao_se_aplica',
     ];
 
     public function __construct(
@@ -1195,9 +1196,10 @@ class OrderWorkflowService
      * @return array<string, mixed>
      */
     /**
-     * Valida se um orçamento avulso pode ser convertido na OS que está sendo
-     * criada. Regra de negócio: só gera OS se o cliente estiver cadastrado
-     * (cliente_id) e for o mesmo cliente da OS.
+     * Valida se um orçamento avulso pode ser vinculado à OS que está sendo
+     * criada. Cancelados, rejeitados, convertidos e registros já vinculados
+     * ficam indisponíveis. O cliente cadastrado, quando existir, precisa ser
+     * o mesmo cliente da OS.
      *
      * @return array<string, mixed>|null Erro pronto para retornar, ou null se ok.
      */
@@ -1212,18 +1214,18 @@ class OrderWorkflowService
         }
 
         if ((string) ($budget->tipo_orcamento ?? '') !== Budget::TYPE_PREVIEW
-            || (string) ($budget->status ?? '') !== Budget::STATUS_PENDING_OS
+            || ! in_array((string) ($budget->status ?? ''), Budget::linkableToOrderStatuses(), true)
         ) {
             return [
                 'result' => 'budget_link_conflict',
-                'message' => 'Somente orçamento avulso aprovado e pendente de abertura de OS pode ser convertido.',
+                'message' => 'Este orçamento avulso foi cancelado, rejeitado ou já convertido e não pode ser vinculado a uma OS.',
             ];
         }
 
         // Se o orçamento já tinha um cliente cadastrado, ele precisa ser o mesmo
         // da OS. Se era avulso (cliente_nome_avulso, sem cliente_id), a OS exige
         // um cliente cadastrado — escolhido ou criado na hora — e o orçamento o
-        // adota em linkApprovedBudgetToOrder(). Assim garantimos a regra "só gera
+        // adota em linkBudgetToOrder(). Assim garantimos a regra "só gera
         // OS com cliente na base" sem travar o avulso sem cadastro prévio.
         $budgetClientId = (int) ($budget->cliente_id ?? 0);
         if ($budgetClientId > 0 && $budgetClientId !== $clientId) {
@@ -1242,46 +1244,62 @@ class OrderWorkflowService
     }
 
     /**
-     * Vincula um orçamento avulso aprovado à OS recém-criada, marcando-o como
-     * convertido e propagando os valores para a OS. Executado dentro da mesma
-     * transação de createOrder(). O status da OS é o escolhido pelo técnico —
-     * por isso usamos syncFinancialsFromBudget (não o syncFromBudget completo).
+     * Vincula o orçamento à OS e propaga os valores dentro da transação de
+     * createOrder(). Orçamentos formalmente aprovados são convertidos. Os
+     * demais mantêm o status e continuam editáveis/aprováveis; quando houver
+     * aprovação posterior, BudgetApprovalService detectará o os_id existente.
      */
-    private function linkApprovedBudgetToOrder(Budget $budget, Order $order, User $actor, Carbon $now): void
+    private function linkBudgetToOrder(Budget $budget, Order $order, User $actor, Carbon $now): void
     {
         $previousStatus = (string) ($budget->status ?? '');
         $orderNumber = (string) ($order->numero_os ?? ('#'.(int) $order->id));
+        $approvedBeforeLink = in_array($previousStatus, Budget::approvedForOrderLinkStatuses(), true);
 
         // Adota o cliente/equipamento da OS quando o orçamento era avulso
         // (cliente_nome_avulso sem cliente_id, ou sem equipamento definido).
-        $budget->forceFill([
+        $attributes = [
             'os_id' => (int) $order->id,
             'cliente_id' => (int) ($order->cliente_id ?? 0) ?: $budget->cliente_id,
             'equipamento_id' => (int) ($budget->equipamento_id ?? 0) ?: (int) ($order->equipamento_id ?? 0),
-            'status' => Budget::STATUS_CONVERTED,
-            'convertido_tipo' => 'os',
-            'convertido_id' => (int) $order->id,
             'atualizado_por' => (int) $actor->id,
-        ])->save();
+        ];
 
-        BudgetStatusHistory::query()->create([
-            'orcamento_id' => (int) $budget->id,
-            'status_anterior' => $previousStatus,
-            'status_novo' => Budget::STATUS_CONVERTED,
-            'observacao' => sprintf('Orçamento convertido na OS %s.', $orderNumber),
-            'origem' => 'sistema',
-            'alterado_por' => (int) $actor->id,
-            'created_at' => $now,
-        ]);
+        if ($approvedBeforeLink) {
+            $attributes['status'] = Budget::STATUS_CONVERTED;
+            $attributes['convertido_tipo'] = 'os';
+            $attributes['convertido_id'] = (int) $order->id;
+        }
+
+        $budget->forceFill($attributes)->save();
+
+        if ($approvedBeforeLink) {
+            BudgetStatusHistory::query()->create([
+                'orcamento_id' => (int) $budget->id,
+                'status_anterior' => $previousStatus,
+                'status_novo' => Budget::STATUS_CONVERTED,
+                'observacao' => sprintf('Orçamento convertido na OS %s.', $orderNumber),
+                'origem' => 'sistema',
+                'alterado_por' => (int) $actor->id,
+                'created_at' => $now,
+            ]);
+        }
 
         $this->budgetOrderSyncService->syncFinancialsFromBudget($budget, (int) $order->id);
 
         $this->orderEventService->record(
             (int) $order->id,
             OrderEvent::CATEGORIA_ORCAMENTO,
-            OrderEvent::TIPO_ORCAMENTO_CONVERTIDO,
+            $approvedBeforeLink
+                ? OrderEvent::TIPO_ORCAMENTO_CONVERTIDO
+                : OrderEvent::TIPO_ORCAMENTO_ATUALIZADO,
             'Orçamento vinculado à OS',
-            sprintf('Orçamento %s vinculado e convertido nesta OS.', (string) ($budget->numero ?? ('#'.(int) $budget->id))),
+            $approvedBeforeLink
+                ? sprintf('Orçamento %s vinculado e convertido nesta OS.', (string) ($budget->numero ?? ('#'.(int) $budget->id)))
+                : sprintf(
+                    'Orçamento %s vinculado a esta OS com status %s.',
+                    (string) ($budget->numero ?? ('#'.(int) $budget->id)),
+                    Budget::statusLabel($previousStatus)
+                ),
             [
                 'orcamento_id' => (int) $budget->id,
                 'numero' => (string) ($budget->numero ?? ''),
@@ -1290,6 +1308,26 @@ class OrderWorkflowService
             ],
             (int) $actor->id
         );
+    }
+
+    /**
+     * Status inicial seguro para uma OS vinculada a orçamento ainda não
+     * aprovado. O mapeamento acompanha BudgetOrderSyncService.
+     */
+    private function pendingOrderStatusForBudgetLink(string $budgetStatus): ?string
+    {
+        if (in_array($budgetStatus, Budget::approvedForOrderLinkStatuses(), true)) {
+            return null;
+        }
+
+        return match ($budgetStatus) {
+            Budget::STATUS_DRAFT,
+            Budget::STATUS_PENDING_SEND,
+            Budget::STATUS_PENDING,
+            Budget::STATUS_RESEND,
+            Budget::STATUS_EXPIRED => 'aguardando_orcamento',
+            default => 'aguardando_autorizacao',
+        };
     }
 
     /**
@@ -1399,12 +1437,21 @@ class OrderWorkflowService
             ];
         }
 
-        // Atrelamento de um orçamento avulso aprovado (status pendente_abertura_os):
-        // a OS gerada reaproveita cliente/valores e o orçamento passa a convertido.
-        // Ver Budget::STATUS_PENDING_OS e BudgetApprovalService::approvedStatus().
+        // Atrelamento de orçamento avulso ainda disponível: a OS reaproveita
+        // cliente/equipamento/valores. Só os formalmente aprovados viram
+        // "convertido"; os demais seguem abertos até a decisão do cliente.
         $linkBudgetId = (int) ($attributes['orcamento_id'] ?? 0);
 
-        $statusCode = trim((string) ($attributes['status'] ?? 'triagem'));
+        // Para orçamento ainda não aprovado, a OS nasce no estágio compatível
+        // com o orçamento. Esta leitura só escolhe o status inicial; a
+        // validação autoritativa ocorre sob lock dentro da transação.
+        $forcedStatusCode = null;
+        if ($linkBudgetId > 0) {
+            $linkBudgetStatusHint = Budget::query()->whereKey($linkBudgetId)->value('status');
+            $forcedStatusCode = $this->pendingOrderStatusForBudgetLink((string) $linkBudgetStatusHint);
+        }
+
+        $statusCode = $forcedStatusCode ?? trim((string) ($attributes['status'] ?? 'triagem'));
         $statusCode = $statusCode !== '' ? $statusCode : 'triagem';
         $statusRow = OrderStatus::activeByCode($statusCode);
         if (! $statusRow instanceof OrderStatus) {
@@ -1446,6 +1493,10 @@ class OrderWorkflowService
                     'result' => (string) ($entryChecklistPlan['result'] ?? 'entry_checklist_invalid'),
                 ];
             }
+        } elseif ($this->entryChecklistIsRequiredForEquipmentType($checklistTypeId)) {
+            return [
+                'result' => 'entry_checklist_incomplete',
+            ];
         }
 
         try {
@@ -1518,7 +1569,7 @@ class OrderWorkflowService
                 }
 
                 if ($linkBudget instanceof Budget) {
-                    $this->linkApprovedBudgetToOrder($linkBudget, $order, $actor, $now);
+                    $this->linkBudgetToOrder($linkBudget, $order, $actor, $now);
                 }
 
                 return $order;
@@ -3594,6 +3645,16 @@ class OrderWorkflowService
             && is_array($attributes['checklist_entrada']);
     }
 
+    private function entryChecklistIsRequiredForEquipmentType(int $equipmentTypeId): bool
+    {
+        $modelo = $this->resolveEntryChecklistModelForEquipmentType($equipmentTypeId);
+
+        return $modelo instanceof ChecklistModelo
+            && $modelo->itens->contains(
+                static fn ($item): bool => trim((string) ($item->descricao ?? '')) !== ''
+            );
+    }
+
     /**
      * @param  array<string, mixed>  $payload
      * @return array<string, mixed>
@@ -3620,16 +3681,39 @@ class OrderWorkflowService
             }
 
             $itemId = (int) ($response['checklist_item_id'] ?? 0);
-            $status = trim((string) ($response['status'] ?? 'nao_verificado'));
+            $status = trim((string) ($response['status'] ?? ''));
+            $observation = trim((string) ($response['observacao'] ?? ''));
 
             if ($itemId <= 0 || ! in_array($status, self::ENTRY_CHECKLIST_RESPONSE_STATUSES, true)) {
                 return ['result' => 'entry_checklist_invalid_payload'];
             }
 
+            if (array_key_exists($itemId, $responsesByItemId)) {
+                return ['result' => 'entry_checklist_invalid_payload'];
+            }
+
+            if ($status === 'discrepancia' && $observation === '') {
+                return ['result' => 'entry_checklist_discrepancy_observation_required'];
+            }
+
             $responsesByItemId[$itemId] = [
                 'status' => $status,
-                'observacao' => trim((string) ($response['observacao'] ?? '')),
+                'observacao' => $observation,
             ];
+        }
+
+        $expectedItemIds = $items
+            ->map(static fn ($item): int => (int) ($item->id ?? 0))
+            ->all();
+        $invalidItemIds = array_diff(array_keys($responsesByItemId), $expectedItemIds);
+
+        if ($invalidItemIds !== []) {
+            return ['result' => 'entry_checklist_invalid_items'];
+        }
+
+        $missingItemIds = array_diff($expectedItemIds, array_keys($responsesByItemId));
+        if ($missingItemIds !== []) {
+            return ['result' => 'entry_checklist_incomplete'];
         }
 
         $rows = [];
@@ -3637,25 +3721,8 @@ class OrderWorkflowService
 
         foreach ($items as $item) {
             $itemId = (int) ($item->id ?? 0);
-            $incoming = $responsesByItemId[$itemId] ?? null;
-
-            if ($incoming === null && array_key_exists($itemId, $responsesByItemId) === false) {
-                $incoming = [
-                    'status' => 'nao_verificado',
-                    'observacao' => '',
-                ];
-            }
-
-            if (! array_key_exists($itemId, $responsesByItemId) && $responsesByItemId !== []) {
-                // Item ausente no payload: mantém o checklist completo, mas
-                // marca explicitamente que não houve conferência do item.
-                $incoming = [
-                    'status' => 'nao_verificado',
-                    'observacao' => '',
-                ];
-            }
-
-            $status = (string) ($incoming['status'] ?? 'nao_verificado');
+            $incoming = $responsesByItemId[$itemId];
+            $status = (string) $incoming['status'];
             if (! in_array($status, self::ENTRY_CHECKLIST_RESPONSE_STATUSES, true)) {
                 return ['result' => 'entry_checklist_invalid_payload'];
             }
@@ -3669,17 +3736,8 @@ class OrderWorkflowService
                 'descricao_item' => trim((string) ($item->descricao ?? '')),
                 'ordem' => (int) ($item->ordem ?? 0),
                 'status' => $status,
-                'observacao' => mb_substr((string) ($incoming['observacao'] ?? ''), 0, 1000),
+                'observacao' => mb_substr((string) $incoming['observacao'], 0, 1000),
             ];
-        }
-
-        $invalidItemIds = array_diff(
-            array_keys($responsesByItemId),
-            $items->map(static fn ($item): int => (int) ($item->id ?? 0))->all()
-        );
-
-        if ($invalidItemIds !== []) {
-            return ['result' => 'entry_checklist_invalid_items'];
         }
 
         return [

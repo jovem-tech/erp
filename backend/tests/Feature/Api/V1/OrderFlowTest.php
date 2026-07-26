@@ -6,11 +6,13 @@ use App\Contracts\Files\PdfThumbnailRenderer;
 use App\DTO\Files\FileContext;
 use App\Enums\Files\FileCategory;
 use App\Enums\Files\FileOrigin;
+use App\Jobs\ProcessOrderDocumentSendJob;
 use App\Models\Files\ManagedFile;
 use App\Models\Files\ManagedFileLegacyAlias;
 use App\Models\Files\ManagedFileLink;
 use App\Models\Financeiro;
 use App\Models\FinanceiroMovimento;
+use App\Models\OrderDocumentSend;
 use App\Models\User;
 use App\Notifications\Channels\MobileInboxChannel;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
@@ -20,9 +22,12 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Mockery\MockInterface;
+use RuntimeException;
 use Tests\Concerns\BuildsLegacyErpSchema;
 use Tests\TestCase;
 
@@ -265,7 +270,7 @@ class OrderFlowTest extends TestCase
                     'respostas' => [
                         [
                             'checklist_item_id' => $screenItemId,
-                            'status' => 'ok',
+                            'status' => 'nao_se_aplica',
                             'observacao' => '',
                         ],
                         [
@@ -281,6 +286,7 @@ class OrderFlowTest extends TestCase
             ->assertJsonPath('data.order.acessorios', 'Carregador original, bolsa de transporte')
             ->assertJsonPath('data.order.checklist.total_itens', 2)
             ->assertJsonPath('data.order.checklist.total_discrepancias', 1)
+            ->assertJsonPath('data.order.checklist.respostas.0.status', 'nao_se_aplica')
             ->assertJsonPath('data.order.checklist.respostas.1.status', 'discrepancia')
             ->assertJsonPath('data.order.checklist_modelo_entrada.id', $modelId);
 
@@ -300,10 +306,68 @@ class OrderFlowTest extends TestCase
         ]);
 
         $this->assertDatabaseHas('checklist_respostas', [
+            'checklist_item_id' => $screenItemId,
+            'status' => 'nao_se_aplica',
+        ]);
+
+        $this->assertDatabaseHas('checklist_respostas', [
             'checklist_item_id' => $chargerItemId,
             'status' => 'discrepancia',
             'observacao' => 'Carregador com cabo exposto.',
         ]);
+    }
+
+    public function test_create_order_requires_every_checklist_item_and_discrepancy_observation(): void
+    {
+        [$manager, , , $clientId, , $equipmentId] = $this->seedAdminOrderActors();
+        [, $screenItemId] = $this->seedEntryChecklistModel(1);
+        $token = $this->loginAndGetToken($manager->email);
+        $basePayload = [
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'relato_cliente' => 'Notebook recebido para conferência completa.',
+        ];
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', $basePayload)
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'ORDER_ENTRY_CHECKLIST_INCOMPLETE');
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                ...$basePayload,
+                'checklist_entrada' => [
+                    'respostas' => [[
+                        'checklist_item_id' => $screenItemId,
+                        'status' => 'ok',
+                        'observacao' => '',
+                    ]],
+                ],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'ORDER_ENTRY_CHECKLIST_INCOMPLETE');
+
+        $missingObservation = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                ...$basePayload,
+                'checklist_entrada' => [
+                    'respostas' => [[
+                        'checklist_item_id' => $screenItemId,
+                        'status' => 'discrepancia',
+                        'observacao' => '   ',
+                    ]],
+                ],
+            ]);
+
+        $missingObservation
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+
+        $this->assertArrayHasKey(
+            'checklist_entrada.respostas.0.observacao',
+            (array) $missingObservation->json('error.details')
+        );
+        $this->assertDatabaseCount('os', 0);
     }
 
     public function test_index_open_status_scope_excludes_only_the_three_closure_codes(): void
@@ -1443,6 +1507,68 @@ class OrderFlowTest extends TestCase
         // erro disfarçada de binário — é exatamente o tipo de bug que passaria
         // despercebido só olhando o status HTTP.
         $this->assertStringStartsWith("PK\x03\x04", $response->streamedContent());
+    }
+
+    public function test_document_send_uses_encrypted_destination_and_exposes_terminal_queue_failure(): void
+    {
+        Storage::fake('local');
+
+        [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'tecnico_id' => $technician->id,
+        ]);
+        $relativePath = "private/os_documentos/{$orderId}/abertura_teste_a4.pdf";
+        Storage::disk('local')->put($relativePath, '%PDF-1.4 documento de teste');
+        $documentId = (int) DB::table('os_documentos')->insertGetId([
+            'os_id' => $orderId,
+            'tipo_documento' => 'abertura',
+            'arquivo' => $relativePath,
+            'versao' => 1,
+            'hash_sha1' => sha1('documento de teste'),
+            'gerado_por' => $manager->id,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $this->assertGreaterThan(0, $documentId);
+
+        Queue::fake();
+
+        $this
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/v1/orders/{$orderId}/documents/send", [
+                'document_ids' => [$documentId],
+                'channel' => 'whatsapp',
+                'format' => 'a4',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.send.status', 'na_fila');
+
+        Queue::assertPushedOn(
+            'documents',
+            ProcessOrderDocumentSendJob::class,
+            fn (ProcessOrderDocumentSendJob $job): bool => $job->sendId > 0
+        );
+
+        $send = OrderDocumentSend::query()->latest('id')->firstOrFail();
+        $metadata = is_array($send->metadados_json) ? $send->metadados_json : [];
+
+        $this->assertArrayNotHasKey('destination_value', $metadata);
+        $this->assertSame('(11) 3333-4444', Crypt::decryptString((string) $send->destino_criptografado));
+
+        (new ProcessOrderDocumentSendJob((int) $send->id))
+            ->failed(new RuntimeException('detalhe interno que não pode vazar'));
+
+        $send->refresh();
+        $this->assertSame('erro', $send->status);
+        $this->assertSame(
+            'O processador de envios ficou indisponível. Tente enviar o documento novamente.',
+            $send->erro_sanitizado
+        );
+        $this->assertStringNotContainsString('detalhe interno', (string) $send->erro_sanitizado);
     }
 
     public function test_document_center_can_create_public_share_link_for_selected_os_document(): void

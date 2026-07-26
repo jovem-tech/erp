@@ -26,6 +26,7 @@
 
     const draftKey = String(config.draftKey || 'orcamentos:create');
     const isEditMode = Boolean(config.isEditMode);
+    const budgetId = Number(config.budgetId || 0) || 0;
     const clientSearchUrl = String(config.clientSearchUrl || '').trim();
     // Endpoint que devolve as OS abertas e os equipamentos do cliente escolhido,
     // para filtrar "OS vinculada" e "Equipamento cadastrado" conforme o cliente.
@@ -635,19 +636,24 @@
 
             // Cliente cadastrado (ou travado por OS): registrado + eventual disponíveis.
             registeredOnlyWraps.forEach((w) => setWrapHidden(w, false));
-            setWrapHidden(eventualWrap, false);
 
             const hasRegistered = filledSelect(orderSelect) || filledSelect(equipmentSelect);
             const hasEventual = eventualInputs.some(filledControl);
             if (hasRegistered) {
+                // OS/equipamento cadastrado escolhido: o card de equipamento
+                // eventual não se aplica mais — some (não só desabilita), para
+                // não sugerir que ainda dá pra preencher tipo/marca/modelo/cor.
+                setWrapHidden(eventualWrap, true);
                 setControlDisabled(orderSelect, false);
                 setControlDisabled(equipmentSelect, false);
                 eventualInputs.forEach((i) => setControlDisabled(i, true));
             } else if (hasEventual) {
+                setWrapHidden(eventualWrap, false);
                 setControlDisabled(orderSelect, true);
                 setControlDisabled(equipmentSelect, true);
                 eventualInputs.forEach((i) => setControlDisabled(i, false));
             } else {
+                setWrapHidden(eventualWrap, false);
                 setControlDisabled(orderSelect, false);
                 setControlDisabled(equipmentSelect, false);
                 eventualInputs.forEach((i) => setControlDisabled(i, false));
@@ -714,6 +720,9 @@
                 option.textContent = normalizeText(order?.label) || `OS #${id}`;
                 if (order?.cliente_id != null) {
                     option.dataset.clienteId = String(order.cliente_id);
+                }
+                if (order?.equipamento_id != null) {
+                    option.dataset.equipamentoId = String(order.equipamento_id);
                 }
 
                 return option;
@@ -848,7 +857,10 @@
             }
 
             const separator = clientContextUrl.includes('?') ? '&' : '?';
-            const url = `${clientContextUrl}${separator}cliente_id=${encodeURIComponent(clientId)}`;
+            // orcamento_id (orçamento em edição) preserva a própria OS
+            // vinculada na lista — ela não deve sumir por já "ter orçamento".
+            const excludeBudgetParam = budgetId > 0 ? `&orcamento_id=${encodeURIComponent(budgetId)}` : '';
+            const url = `${clientContextUrl}${separator}cliente_id=${encodeURIComponent(clientId)}${excludeBudgetParam}`;
 
             try {
                 const payload = await requestJson(url);
@@ -2503,6 +2515,17 @@
                 });
             }
 
+            // Prazo de execução: obrigatório sempre. O campo fica na aba
+            // "Dados operacionais".
+            const prazoExecucaoField = document.getElementById('orcamentoPrazoExecucao');
+            if (!filledControl(prazoExecucaoField)) {
+                pendencies.push({
+                    tab: 'operacional',
+                    field: prazoExecucaoField instanceof HTMLElement ? prazoExecucaoField : null,
+                    message: 'Informe o prazo de execução.',
+                });
+            }
+
             const meaningfulRows = Array.from(itemsBody.querySelectorAll('[data-budget-item-row]'))
                 .filter((row) => rowHasMeaningfulContent(row));
 
@@ -2884,10 +2907,47 @@
             updateQuickItemMode(getResolvedQuickType('servico'));
         });
 
+        // Uma OS sempre está vinculada a um único equipamento cadastrado — ao
+        // escolher a OS, pré-seleciona esse equipamento automaticamente em
+        // "Equipamento cadastrado", para o técnico não precisar escolher o
+        // mesmo aparelho duas vezes.
+        const applyOrderLinkedEquipment = () => {
+            if (!(orderSelect instanceof HTMLSelectElement) || !(equipmentSelect instanceof HTMLSelectElement)) {
+                return;
+            }
+
+            const selectedOption = orderSelect.selectedOptions[0];
+            const linkedEquipmentId = selectedOption instanceof HTMLOptionElement
+                ? normalizeText(selectedOption.dataset.equipamentoId)
+                : '';
+
+            if (linkedEquipmentId === '' || linkedEquipmentId === '0' || equipmentSelect.value === linkedEquipmentId) {
+                return;
+            }
+
+            const hasMatchingOption = Array.from(equipmentSelect.options)
+                .some((option) => option.value === linkedEquipmentId);
+
+            if (!hasMatchingOption) {
+                return;
+            }
+
+            equipmentSelect.value = linkedEquipmentId;
+
+            const $ = jq();
+            if ($ && Boolean($(equipmentSelect).data('select2'))) {
+                $(equipmentSelect).val(linkedEquipmentId).trigger('change');
+            }
+        };
+
         // syncEquipmentMode() já chama syncDerivedClassification() ao final.
-        onSelectEvent(orderSelect, 'change', syncEquipmentMode);
-        onSelectEvent(orderSelect, 'select2:select', syncEquipmentMode);
-        onSelectEvent(orderSelect, 'select2:clear', syncEquipmentMode);
+        const handleOrderChange = () => {
+            applyOrderLinkedEquipment();
+            syncEquipmentMode();
+        };
+        onSelectEvent(orderSelect, 'change', handleOrderChange);
+        onSelectEvent(orderSelect, 'select2:select', handleOrderChange);
+        onSelectEvent(orderSelect, 'select2:clear', handleOrderChange);
         onSelectEvent(clientSelect, 'change', syncEventualFields);
         onSelectEvent(clientSelect, 'select2:select', syncEventualFields);
         onSelectEvent(clientSelect, 'select2:clear', syncEventualFields);

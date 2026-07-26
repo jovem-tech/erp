@@ -328,7 +328,6 @@ class OrderDocumentCenterService
                 'format' => $format,
                 'subject' => $this->buildEmailSubject($order, $documents),
                 'destination_name' => $destination['label'] ?? ($order->client?->nome_razao ?? ''),
-                'destination_value' => $destination['value'] ?? '',
             ],
             'created_at' => now(),
             'updated_at' => now(),
@@ -412,9 +411,21 @@ class OrderDocumentCenterService
             ];
         }
 
-        $destination = trim((string) ($metadata['destination_value'] ?? ''));
+        $destination = $this->resolveQueuedDestination($send, $metadata);
         $message = trim((string) ($send->mensagem_final ?? ''));
         $subject = trim((string) ($metadata['subject'] ?? $this->buildEmailSubject($order, $documents)));
+
+        if ($destination === '') {
+            $send->forceFill([
+                'status' => 'erro',
+                'erro_sanitizado' => 'O destino protegido deste envio não pôde ser recuperado.',
+                'updated_at' => now(),
+            ])->save();
+
+            return [
+                'result' => 'invalid_destination',
+            ];
+        }
 
         try {
             $dispatch = match ($send->canal) {
@@ -2189,6 +2200,27 @@ class OrderDocumentCenterService
             'masked' => $this->maskSensitiveDestination($value, $channel),
             'label' => (string) ($order->client?->nome_razao ?? 'Cliente'),
         ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $metadata
+     */
+    private function resolveQueuedDestination(OrderDocumentSend $send, array $metadata): string
+    {
+        $encryptedDestination = trim((string) ($send->destino_criptografado ?? ''));
+        if ($encryptedDestination !== '') {
+            try {
+                return trim(Crypt::decryptString($encryptedDestination));
+            } catch (Throwable $exception) {
+                report($exception);
+
+                return '';
+            }
+        }
+
+        // Compatibilidade temporária com registros criados antes de o destino
+        // criptografado se tornar a fonte única de verdade.
+        return trim((string) ($metadata['destination_value'] ?? ''));
     }
 
     private function resolveDefaultDestinationValue(Order $order, string $channel): string

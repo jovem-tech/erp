@@ -1928,6 +1928,7 @@ class DesktopFrontendTest extends TestCase
                 'origem' => 'manual',
                 'cliente_nome_avulso' => 'Cliente moeda BRL',
                 'relato_cliente' => 'Defeito relatado no teste',
+                'prazo_execucao' => '3 dias',
                 'telefone_contato' => '(11) 99999-9999',
                 'titulo' => 'Orçamento moeda BRL',
                 'validade_dias' => 10,
@@ -2112,6 +2113,49 @@ class DesktopFrontendTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_orcamentos_store_requires_prazo_execucao_without_calling_backend(): void
+    {
+        Http::fake();
+
+        $response = $this
+            ->from('/orcamentos/novo')
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->post('/orcamentos', [
+                'tipo_orcamento' => 'previo',
+                'status' => 'rascunho',
+                'origem' => 'manual',
+                'cliente_nome_avulso' => 'Cliente sem prazo',
+                'telefone_contato' => '(11) 99999-9999',
+                'envolve_equipamento' => '0',
+                'relato_cliente' => 'Defeito relatado no teste',
+                'subtotal' => 'R$ 100,00',
+                'desconto' => 'R$ 0,00',
+                'acrescimo' => 'R$ 0,00',
+                'total' => 'R$ 100,00',
+                'itens' => [
+                    [
+                        'tipo_item' => 'servico',
+                        'descricao' => 'Diagnóstico',
+                        'quantidade' => 1,
+                        'valor_unitario' => 'R$ 100,00',
+                        'desconto' => 'R$ 0,00',
+                        'acrescimo' => 'R$ 0,00',
+                    ],
+                ],
+            ]);
+
+        $response
+            ->assertRedirect('/orcamentos/novo')
+            ->assertSessionHasErrors('prazo_execucao');
+
+        Http::assertNothingSent();
+    }
+
     public function test_orcamentos_store_recalculates_financials_before_accepting_forged_total(): void
     {
         Http::fake();
@@ -2130,6 +2174,7 @@ class DesktopFrontendTest extends TestCase
                 'origem' => 'manual',
                 'cliente_nome_avulso' => 'Cliente total forjado',
                 'relato_cliente' => 'Defeito relatado no teste',
+                'prazo_execucao' => '3 dias',
                 'telefone_contato' => '(11) 99999-9999',
                 'subtotal' => 'R$ 999,00',
                 'desconto' => 'R$ 0,00',
@@ -2200,6 +2245,7 @@ class DesktopFrontendTest extends TestCase
                 'origem' => 'manual',
                 'cliente_nome_avulso' => 'Cliente aprovacao',
                 'relato_cliente' => 'Defeito relatado no teste',
+                'prazo_execucao' => '3 dias',
                 'telefone_contato' => '(11) 99999-9999',
                 'titulo' => 'Orcamento com envio',
                 'validade_dias' => 10,
@@ -2517,6 +2563,7 @@ class DesktopFrontendTest extends TestCase
                 'origem' => 'manual',
                 'cliente_nome_avulso' => 'Cliente sem whatsapp',
                 'relato_cliente' => 'Defeito relatado no teste',
+                'prazo_execucao' => '3 dias',
                 'telefone_contato' => '(11) 99999-9999',
                 'titulo' => 'Orcamento salvo com pendencia',
                 'validade_dias' => 10,
@@ -2576,6 +2623,7 @@ class DesktopFrontendTest extends TestCase
                 'origem' => 'manual',
                 'cliente_nome_avulso' => 'Cliente percentual',
                 'relato_cliente' => 'Defeito relatado no teste',
+                'prazo_execucao' => '3 dias',
                 'telefone_contato' => '(11) 99999-9999',
                 'titulo' => 'Orçamento com ajuste percentual',
                 'validade_dias' => 10,
@@ -4003,6 +4051,12 @@ class DesktopFrontendTest extends TestCase
             ]))
             ->get('/os/criar');
 
+        $html = $response->getContent();
+        $lastPanelPosition = strrpos($html, 'data-order-tab-panel=');
+        $footerPosition = strpos($html, 'data-order-create-footer');
+        $pdfOptionPosition = strpos($html, 'data-order-create-pdf-option');
+        $footerButtonsPosition = strpos($html, 'class="order-create-footer-buttons"');
+
         $response
             ->assertOk()
             ->assertSee('Nova OS')
@@ -4017,9 +4071,22 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Este registro pertence somente a esta ordem de serviço')
             ->assertSee('Relato do cliente')
             ->assertSee('Enviar PDF ao cliente')
+            ->assertSee('data-order-create-footer', false)
+            ->assertSee('data-order-create-pdf-option', false)
+            ->assertSee('class="order-create-footer-buttons"', false)
+            ->assertSee('Todos OK')
+            ->assertSee('data-order-entry-checklist-all-ok', false)
             ->assertSee('name="idempotency_key"', false)
             ->assertSee('data-order-create-idempotency-key', false)
             ->assertDontSee('Vincular orçamento avulso aprovado');
+
+        $this->assertNotFalse($lastPanelPosition);
+        $this->assertNotFalse($footerPosition);
+        $this->assertNotFalse($pdfOptionPosition);
+        $this->assertNotFalse($footerButtonsPosition);
+        $this->assertTrue($lastPanelPosition < $footerPosition);
+        $this->assertTrue($footerPosition < $pdfOptionPosition);
+        $this->assertTrue($pdfOptionPosition < $footerButtonsPosition);
     }
 
     public function test_nova_os_budget_picker_requires_dedicated_permission_and_uses_remote_catalog(): void
@@ -4048,10 +4115,17 @@ class DesktopFrontendTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertSee('Vincular orçamento avulso aprovado')
+            ->assertSee('Vincular orçamento avulso (opcional)')
+            ->assertSee('exceto cancelados, rejeitados e os já vinculados ou convertidos')
             ->assertSee('data-order-link-budget', false)
             ->assertSee(route('orders.linkable-budgets.search'), false)
             ->assertSee('A troca pede confirmação');
+
+        $this->assertMatchesRegularExpression(
+            '/<select\s+id="orderLinkBudget"[^>]*data-native-select="true"[^>]*data-order-link-budget/s',
+            (string) $response->getContent(),
+            'O seletor remoto de orçamento não pode ser capturado pelo inicializador Select2 global.'
+        );
     }
 
     public function test_nova_os_linked_budget_shows_summary_row_with_info_modal_instead_of_banner(): void
@@ -4136,6 +4210,8 @@ class DesktopFrontendTest extends TestCase
                         'cliente_nome' => 'Cliente Seguro',
                         'equipamento_resumo' => 'Notebook Dell',
                         'total_formatado' => '1.234,56',
+                        'status' => 'aguardando_resposta',
+                        'status_label' => 'Aguardando resposta',
                         'aprovado_em' => '23/07/2026 10:00',
                     ]],
                 ],
@@ -4162,7 +4238,7 @@ class DesktopFrontendTest extends TestCase
             ->assertJsonPath('results.0.id', 901)
             ->assertJsonPath(
                 'results.0.text',
-                'ORC-2607-000901 · Cliente Seguro · Notebook Dell · R$ 1.234,56 · Aprovado em 23/07/2026 10:00'
+                'ORC-2607-000901 · Cliente Seguro · Notebook Dell · R$ 1.234,56 · Status: Aguardando resposta · Aprovado em 23/07/2026 10:00'
             )
             ->assertJsonPath('pagination.more', true);
 
@@ -4295,6 +4371,13 @@ class DesktopFrontendTest extends TestCase
                 'data_previsao' => '2026-06-24',
                 'observacoes_internas' => 'Prioridade do balcão.',
                 'enviar_pdf_cliente' => '1',
+                'checklist_entrada' => [
+                    'respostas' => [[
+                        'checklist_item_id' => 91,
+                        'status' => 'nao_se_aplica',
+                        'observacao' => '',
+                    ]],
+                ],
             ]);
 
         $response
@@ -4305,8 +4388,68 @@ class DesktopFrontendTest extends TestCase
             return $request->url() === 'http://127.0.0.1:8000/api/v1/orders'
                 && $request['idempotency_key'] === '4a137b0d-18a8-4576-b6f9-a79381948d6c'
                 && $request['acessorios'] === 'Carregador original, Bolsa'
+                && $request['checklist_entrada']['respostas'][0]['status'] === 'nao_se_aplica'
                 && $request['enviar_pdf_cliente'] === true;
         });
+    }
+
+    public function test_nova_os_requires_checklist_status_and_discrepancy_observation_before_api_call(): void
+    {
+        Http::preventStrayRequests();
+        $session = $this->desktopSession(['os' => ['criar']]);
+        $basePayload = [
+            'idempotency_key' => '7aaf8c9f-8b1a-4ce2-93c6-e5ed05b9837a',
+            'cliente_id' => 11,
+            'equipamento_id' => 21,
+            'relato_cliente' => 'Notebook recebido para conferência.',
+        ];
+
+        $this
+            ->withSession($session)
+            ->from('/os/criar')
+            ->post('/os', [
+                ...$basePayload,
+                'checklist_entrada' => [
+                    'respostas' => [[
+                        'checklist_item_id' => 91,
+                        'status' => '',
+                        'observacao' => '',
+                    ]],
+                ],
+            ])
+            ->assertRedirect('/os/criar')
+            ->assertSessionHasErrors('checklist_entrada.respostas.0.status');
+
+        $this
+            ->withSession($session)
+            ->from('/os/criar')
+            ->post('/os', [
+                ...$basePayload,
+                'checklist_entrada' => [
+                    'respostas' => [[
+                        'checklist_item_id' => 91,
+                        'status' => 'discrepancia',
+                        'observacao' => '',
+                    ]],
+                ],
+            ])
+            ->assertRedirect('/os/criar')
+            ->assertSessionHasErrors('checklist_entrada.respostas.0.observacao');
+
+        Http::assertNothingSent();
+    }
+
+    public function test_entry_checklist_script_starts_blank_and_supports_bulk_ok_and_not_applicable(): void
+    {
+        $script = file_get_contents(public_path('assets/js/orders-create.js'));
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString("nao_se_aplica: 'Não se aplica'", $script);
+        $this->assertStringContainsString('<option value=""', $script);
+        $this->assertStringContainsString('data-order-entry-checklist-status', $script);
+        $this->assertStringContainsString('select.value = \'ok\';', $script);
+        $this->assertStringContainsString("select.value === 'discrepancia'", $script);
+        $this->assertStringNotContainsString("response.status || 'ok'", $script);
     }
 
     public function test_nova_os_submission_forwards_budget_when_conversion_permission_exists(): void
@@ -4436,6 +4579,8 @@ class DesktopFrontendTest extends TestCase
                 ],
                 'novo_equipamento' => [
                     'tipo_id' => 1,
+                    'marca_id' => 2,
+                    'modelo_id' => 2,
                     'numero_serie_visual' => 'SN-EVENTUAL-44',
                     'foto_principal_index' => 0,
                 ],
@@ -4462,6 +4607,8 @@ class DesktopFrontendTest extends TestCase
                 && str_contains($body, 'name="novo_cliente[nome_razao]"')
                 && str_contains($body, 'Cliente Eventual')
                 && str_contains($body, 'name="novo_equipamento[tipo_id]"')
+                && str_contains($body, 'name="novo_equipamento[marca_id]"')
+                && str_contains($body, 'name="novo_equipamento[modelo_id]"')
                 && str_contains($body, 'name="novo_equipamento_fotos[]"')
                 && str_contains($body, 'equipamento-eventual.jpg');
         });
@@ -4486,12 +4633,49 @@ class DesktopFrontendTest extends TestCase
                 ],
                 'novo_equipamento' => [
                     'tipo_id' => 1,
+                    'marca_id' => 2,
+                    'modelo_id' => 2,
                     'numero_serie_visual' => 'SN-SEM-FOTO',
                 ],
                 'relato_cliente' => 'Equipamento sem imagem obrigatória.',
             ])
             ->assertRedirect('/os/criar?orcamento_id=44')
             ->assertSessionHasErrors('novo_equipamento_fotos');
+
+        Http::assertNothingSent();
+    }
+
+    public function test_nova_os_submission_requires_brand_and_model_for_deferred_equipment(): void
+    {
+        Http::preventStrayRequests();
+
+        $this
+            ->withSession($this->desktopSession([
+                'os' => ['criar'],
+                'orcamentos' => ['converter_os'],
+            ]))
+            ->from('/os/criar?orcamento_id=44')
+            ->post('/os', [
+                'idempotency_key' => 'ab0b97f4-9046-4d45-a13b-a8be20ffcc21',
+                'orcamento_id' => 44,
+                'novo_cliente' => [
+                    'nome_razao' => 'Cliente Sem Catálogo',
+                    'telefone1' => '22999990003',
+                ],
+                'novo_equipamento' => [
+                    'tipo_id' => 1,
+                    'numero_serie_visual' => 'SN-SEM-CATALOGO',
+                ],
+                'novo_equipamento_fotos' => [
+                    UploadedFile::fake()->image('equipamento-sem-catalogo.jpg'),
+                ],
+                'relato_cliente' => 'Equipamento sem marca e modelo.',
+            ])
+            ->assertRedirect('/os/criar?orcamento_id=44')
+            ->assertSessionHasErrors([
+                'novo_equipamento.marca_id',
+                'novo_equipamento.modelo_id',
+            ]);
 
         Http::assertNothingSent();
     }
@@ -6335,7 +6519,7 @@ class DesktopFrontendTest extends TestCase
         });
     }
 
-    public function test_equipment_create_page_renders_tabs_quick_actions_and_collector_flow(): void
+    public function test_equipment_create_page_renders_tabs_and_quick_actions_without_technical_fields(): void
     {
         Http::fake([
             'http://127.0.0.1:8000/api/v1/equipments/form-data' => Http::response([
@@ -6436,14 +6620,16 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('select2.min.js', false)
             ->assertSee('select2-bootstrap-5-theme.min.css', false)
             ->assertSee('id="equipmentClientSelect"', false)
-            ->assertSee('id="equipmentBrand" class="form-select" disabled', false)
-            ->assertSee('id="equipmentModel" class="form-select" disabled', false)
+            ->assertSee('id="equipmentBrand" class="form-select" required disabled', false)
+            ->assertSee('id="equipmentModel" class="form-select" required disabled', false)
             ->assertSee('id="quickModelBrand" class="form-select" disabled', false)
             ->assertSee('Selecione o tipo primeiro...', false)
             ->assertSee('Cliente Alpha', false)
             ->assertSee('Contato Alpha', false)
             ->assertSee('alpha@example.com', false)
-            ->assertSee('id="equipmentCollectorCard" aria-hidden="true"', false)
+            ->assertDontSee('data-equipment-tab="informacoes-tecnicas"', false)
+            ->assertDontSee('id="equipmentCollectorCard"', false)
+            ->assertDontSee('id="equipmentTechnicalPanel"', false)
             ->assertSee('window.__EQUIPMENT_CREATE', false)
             ->assertSee('catalog_relations', false)
             ->assertSee('desktopPhotoViewerModal', false)
@@ -6454,8 +6640,8 @@ class DesktopFrontendTest extends TestCase
         $response->assertSeeInOrder([
             'Cliente *',
             'Tipo *',
-            'Marca',
-            'Modelo',
+            'Marca *',
+            'Modelo *',
             'Senha de acesso',
             'Estado f',
             'Observa',
@@ -6488,6 +6674,12 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('quickClient', false)
             ->assertSee('quickBrand', false)
             ->assertSee('createPairing', false);
+
+        $equipmentScript = file_get_contents(public_path('assets/js/equipments-create.js'));
+
+        $this->assertIsString($equipmentScript);
+        $this->assertStringContainsString("const marca = document.getElementById('equipmentBrand');", $equipmentScript);
+        $this->assertStringContainsString("const modelo = document.getElementById('equipmentModel');", $equipmentScript);
     }
 
     public function test_equipment_create_embedded_mode_omits_desktop_chrome_and_keeps_form_visible(): void
@@ -6576,10 +6768,13 @@ class DesktopFrontendTest extends TestCase
             ->assertDontSee('Voltar', false)
             ->assertSee('desktop-body-embedded', false)
             ->assertSee('data-equipment-embedded-cancel', false)
-            ->assertSee('id="equipmentClientLabel" value="Cliente Alpha"', false);
+            ->assertSee('id="equipmentClientLabel" value="Cliente Alpha"', false)
+            ->assertDontSee('data-equipment-tab="informacoes-tecnicas"', false)
+            ->assertDontSee('id="equipmentCollectorCard"', false)
+            ->assertDontSee('id="equipmentTechnicalPanel"', false);
     }
 
-    public function test_equipment_create_page_shows_local_collector_for_desktop_family_types(): void
+    public function test_equipment_edit_page_shows_technical_information_tab_after_photos(): void
     {
         Http::fake([
             'http://127.0.0.1:8000/api/v1/equipments/form-data' => Http::response([
@@ -6618,6 +6813,29 @@ class DesktopFrontendTest extends TestCase
                 'error' => null,
                 'meta' => [],
             ]),
+            'http://127.0.0.1:8000/api/v1/equipments/301' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'equipment' => [
+                        'id' => 301,
+                        'cliente_id' => 201,
+                        'client' => [
+                            'id' => 201,
+                            'nome_razao' => 'Cliente Alpha',
+                        ],
+                        'tipo_id' => 1,
+                        'marca_id' => 2,
+                        'modelo_id' => 2,
+                        'numero_serie' => 'SN-TECH-301',
+                        'desktop_modalidade' => 'montado',
+                        'estado_fisico' => 'Marcas de uso',
+                        'observacoes' => 'Equipamento em manutenção',
+                        'photos' => [],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
             'http://127.0.0.1:8000/api/v1/notifications*' => Http::response([
                 'status' => 'success',
                 'data' => [
@@ -6639,24 +6857,42 @@ class DesktopFrontendTest extends TestCase
         ]);
 
         $response = $this
-            ->withSession(array_merge($this->desktopSession([
-                'equipamentos' => ['visualizar', 'criar'],
+            ->withSession($this->desktopSession([
+                'equipamentos' => ['visualizar', 'editar'],
                 'clientes' => ['visualizar', 'criar'],
                 'os' => ['visualizar', 'criar'],
-            ]), [
-                '_old_input' => [
-                    'tipo_id' => 1,
-                ],
             ]))
-            ->get('/equipamentos/novo');
+            ->get('/equipamentos/301/editar');
+
+        $html = $response->getContent();
+        $photosTabPosition = strpos($html, 'data-equipment-tab="fotos"');
+        $technicalTabPosition = strpos($html, 'data-equipment-tab="informacoes-tecnicas"');
+        $physicalStatePosition = strpos($html, 'id="equipmentPhysicalState"');
+        $notesPosition = strpos($html, 'id="equipmentNotes"');
+        $technicalPanelPosition = strpos($html, 'data-equipment-panel="informacoes-tecnicas"');
 
         $response
             ->assertOk()
+            ->assertSee('Editar equipamento')
+            ->assertSee('data-equipment-tab="informacoes-tecnicas"', false)
+            ->assertSee('data-equipment-panel="informacoes-tecnicas"', false)
             ->assertSee('id="equipmentCollectorCard"', false)
-            ->assertSee('id="equipmentCollectorCard" aria-hidden="false"', false);
+            ->assertSee('id="equipmentCollectorCard" aria-hidden="false"', false)
+            ->assertSee('id="equipmentTechnicalPanel"', false)
+            ->assertSee('id="equipmentPhysicalState"', false)
+            ->assertSee('id="equipmentNotes"', false);
+
+        $this->assertNotFalse($photosTabPosition);
+        $this->assertNotFalse($technicalTabPosition);
+        $this->assertNotFalse($physicalStatePosition);
+        $this->assertNotFalse($notesPosition);
+        $this->assertNotFalse($technicalPanelPosition);
+        $this->assertTrue($photosTabPosition < $technicalTabPosition);
+        $this->assertTrue($physicalStatePosition < $technicalPanelPosition);
+        $this->assertTrue($notesPosition < $technicalPanelPosition);
     }
 
-    public function test_equipment_create_page_locks_modalidade_to_oem_for_notebook_type(): void
+    public function test_equipment_edit_page_locks_modalidade_to_oem_for_notebook_type(): void
     {
         Http::fake([
             'http://127.0.0.1:8000/api/v1/equipments/form-data' => Http::response([
@@ -6694,6 +6930,27 @@ class DesktopFrontendTest extends TestCase
                 'error' => null,
                 'meta' => [],
             ]),
+            'http://127.0.0.1:8000/api/v1/equipments/302' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'equipment' => [
+                        'id' => 302,
+                        'cliente_id' => 201,
+                        'client' => [
+                            'id' => 201,
+                            'nome_razao' => 'Cliente Alpha',
+                        ],
+                        'tipo_id' => 2,
+                        'marca_id' => 3,
+                        'modelo_id' => 3,
+                        'numero_serie' => 'SN-NOTEBOOK-302',
+                        'desktop_modalidade' => 'oem',
+                        'photos' => [],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
             'http://127.0.0.1:8000/api/v1/notifications*' => Http::response([
                 'status' => 'success',
                 'data' => [
@@ -6715,16 +6972,12 @@ class DesktopFrontendTest extends TestCase
         ]);
 
         $response = $this
-            ->withSession(array_merge($this->desktopSession([
-                'equipamentos' => ['visualizar', 'criar'],
+            ->withSession($this->desktopSession([
+                'equipamentos' => ['visualizar', 'editar'],
                 'clientes' => ['visualizar', 'criar'],
                 'os' => ['visualizar', 'criar'],
-            ]), [
-                '_old_input' => [
-                    'tipo_id' => 2,
-                ],
             ]))
-            ->get('/equipamentos/novo');
+            ->get('/equipamentos/302/editar');
 
         $response
             ->assertOk()
@@ -6735,6 +6988,103 @@ class DesktopFrontendTest extends TestCase
                 'selected',
                 'OEM / fabricante',
             ], false);
+    }
+
+    public function test_equipment_edit_hides_technical_tab_for_non_computer_types(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/equipments/form-data' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'types' => [
+                            ['id' => 6, 'nome' => 'Smartphone', 'slug' => 'smartphone', 'family' => 'mobile'],
+                        ],
+                        'brands' => [],
+                        'models' => [],
+                        'catalog_relations' => [],
+                        'password_modes' => [
+                            ['value' => 'desenho', 'label' => 'Desenho'],
+                            ['value' => 'texto', 'label' => 'Texto'],
+                        ],
+                        'max_photos' => 4,
+                        'collector' => [
+                            'pairing_ttl_minutes' => 30,
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/equipments/3616' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'equipment' => [
+                        'id' => 3616,
+                        'cliente_id' => 1337,
+                        'client' => [
+                            'id' => 1337,
+                            'nome_razao' => 'Cliente Smartphone',
+                        ],
+                        'tipo_id' => 6,
+                        'numero_serie' => '',
+                        'photos' => [],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'equipamentos' => ['visualizar', 'editar'],
+                'clientes' => ['visualizar'],
+            ]))
+            ->get('/equipamentos/3616/editar');
+
+        $response
+            ->assertOk()
+            ->assertSee('data-equipment-tab="informacoes-tecnicas"', false)
+            ->assertSee('id="equipmentTechnicalPanel"', false)
+            ->assertSee('id="equipmentCollectorCard"', false);
+
+        $document = new \DOMDocument();
+        @$document->loadHTML($response->getContent());
+        $xpath = new \DOMXPath($document);
+        $technicalTab = $xpath->query('//*[@data-equipment-tab="informacoes-tecnicas"]')->item(0);
+        $technicalPanel = $xpath->query('//*[@data-equipment-panel="informacoes-tecnicas"]')->item(0);
+        $collectorCard = $document->getElementById('equipmentCollectorCard');
+
+        $this->assertInstanceOf(\DOMElement::class, $technicalTab);
+        $this->assertInstanceOf(\DOMElement::class, $technicalPanel);
+        $this->assertInstanceOf(\DOMElement::class, $collectorCard);
+        $this->assertTrue($technicalTab->hasAttribute('hidden'));
+        $this->assertSame('true', $technicalTab->getAttribute('aria-hidden'));
+        $this->assertTrue($technicalPanel->hasAttribute('hidden'));
+        $this->assertSame('true', $technicalPanel->getAttribute('aria-hidden'));
+        $this->assertTrue($collectorCard->hasAttribute('hidden'));
+        $this->assertSame('true', $collectorCard->getAttribute('aria-hidden'));
+
+        $script = file_get_contents(public_path('assets/js/equipments-create.js'));
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString(
+            "if (!computerFamily && els.technicalTab.classList.contains('is-active')) {",
+            $script
+        );
+        $this->assertStringContainsString(
+            'els.technicalTab.hidden = !computerFamily;',
+            $script
+        );
+        $this->assertStringContainsString(
+            'els.technicalPanel.hidden = !computerFamily;',
+            $script
+        );
+        $this->assertStringContainsString(
+            'const visible = isCollectorCompatibleType();',
+            $script
+        );
     }
 
     public function test_equipment_quick_brand_route_forwards_selected_type_to_backend(): void
@@ -6863,6 +7213,8 @@ class DesktopFrontendTest extends TestCase
                 'cliente_id' => 201,
                 'cliente_busca_label' => 'Cliente Alpha',
                 'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
                 'numero_serie_visual' => 'SN-NEW-001',
                 'desktop_modalidade' => 'montado',
                 'foto_principal_index' => 0,
@@ -6885,6 +7237,9 @@ class DesktopFrontendTest extends TestCase
                 && str_contains($body, "\r\n\r\n201\r\n")
                 && str_contains($body, 'name="tipo_id"')
                 && str_contains($body, "\r\n\r\n1\r\n")
+                && str_contains($body, 'name="marca_id"')
+                && str_contains($body, "\r\n\r\n2\r\n")
+                && str_contains($body, 'name="modelo_id"')
                 && str_contains($body, 'name="numero_serie"')
                 && str_contains($body, 'SN-NEW-001')
                 && str_contains($body, 'name="desktop_modalidade"')
@@ -6906,6 +7261,8 @@ class DesktopFrontendTest extends TestCase
                 'cliente_id' => 201,
                 'cliente_busca_label' => 'Cliente Alpha',
                 'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
                 'numero_serie_visual' => 'SN-SEM-FOTO-001',
                 'desktop_modalidade' => 'montado',
                 'foto_principal_index' => 0,
@@ -6914,6 +7271,35 @@ class DesktopFrontendTest extends TestCase
         $response
             ->assertRedirect('/equipamentos/novo')
             ->assertSessionHasErrors(['fotos']);
+
+        Http::assertNothingSent();
+    }
+
+    public function test_equipment_create_submission_requires_brand_and_model_before_calling_backend(): void
+    {
+        Http::preventStrayRequests();
+
+        $response = $this
+            ->from('/equipamentos/novo')
+            ->withSession($this->desktopSession([
+                'equipamentos' => ['visualizar', 'criar'],
+                'clientes' => ['visualizar', 'criar'],
+            ]))
+            ->post('/equipamentos', [
+                'cliente_id' => 201,
+                'cliente_busca_label' => 'Cliente Alpha',
+                'tipo_id' => 1,
+                'numero_serie_visual' => 'SN-SEM-CATALOGO-001',
+                'desktop_modalidade' => 'montado',
+                'foto_principal_index' => 0,
+                'fotos' => [
+                    UploadedFile::fake()->image('equipamento-sem-catalogo.jpg'),
+                ],
+            ]);
+
+        $response
+            ->assertRedirect('/equipamentos/novo')
+            ->assertSessionHasErrors(['marca_id', 'modelo_id']);
 
         Http::assertNothingSent();
     }
@@ -6949,6 +7335,8 @@ class DesktopFrontendTest extends TestCase
                 'cliente_id' => 201,
                 'cliente_busca_label' => 'Cliente Alpha',
                 'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
                 'numero_serie_visual' => 'SN-FOTO-001',
                 'desktop_modalidade' => 'montado',
                 'foto_principal_index' => 0,
@@ -6972,6 +7360,8 @@ class DesktopFrontendTest extends TestCase
                 && str_contains($body, "\r\n\r\n201\r\n")
                 && str_contains($body, 'name="tipo_id"')
                 && str_contains($body, "\r\n\r\n1\r\n")
+                && str_contains($body, 'name="marca_id"')
+                && str_contains($body, 'name="modelo_id"')
                 && str_contains($body, 'name="numero_serie"')
                 && str_contains($body, 'SN-FOTO-001');
         });
@@ -7027,6 +7417,8 @@ class DesktopFrontendTest extends TestCase
                 'cliente_id' => 201,
                 'cliente_busca_label' => 'Cliente Alpha',
                 'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 7,
                 'numero_serie_visual' => 'SN-EMBED-001',
                 'desktop_modalidade' => 'montado',
                 'foto_principal_index' => 0,
@@ -7156,6 +7548,10 @@ class DesktopFrontendTest extends TestCase
     /**
      * @return array<string, Response>
      */
+
+
+
+
 
 
 

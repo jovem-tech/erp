@@ -59,6 +59,23 @@ class OrcamentoService
     }
 
     /**
+     * Orçamentos avulsos (sem cliente cadastrado) que combinam com o nome ou
+     * telefone digitados no cadastro rápido de cliente da Nova OS.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array{items: array<int, array<string, mixed>>, pagination: array<string, mixed>}
+     */
+    public function avulsoContacts(array $filters = []): array
+    {
+        $response = $this->apiClient->get('/orcamentos/contatos-avulsos', $filters);
+
+        return [
+            'items' => $response['data']['budgets'] ?? [],
+            'pagination' => $response['meta']['pagination'] ?? [],
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $filters
      * @return array<string, mixed>
      */
@@ -86,13 +103,17 @@ class OrcamentoService
     /**
      * OS abertas e equipamentos do cliente selecionado — usado para filtrar os
      * campos "OS vinculada" e "Equipamento cadastrado" do formulário conforme o
-     * cliente escolhido no Select2.
+     * cliente escolhido no Select2. $excludeBudgetId (orçamento em edição)
+     * preserva a própria OS vinculada na lista.
      *
      * @return array{orders: array<int, array<string, mixed>>, equipments: array<int, array<string, mixed>>}
      */
-    public function clientContext(int $clientId): array
+    public function clientContext(int $clientId, int $excludeBudgetId = 0): array
     {
-        $response = $this->apiClient->get('/orcamentos/cliente-contexto', ['cliente_id' => $clientId]);
+        $response = $this->apiClient->get('/orcamentos/cliente-contexto', array_filter([
+            'cliente_id' => $clientId,
+            'orcamento_id' => $excludeBudgetId > 0 ? $excludeBudgetId : null,
+        ], static fn ($value): bool => $value !== null));
 
         return [
             'orders' => $response['data']['orders'] ?? [],

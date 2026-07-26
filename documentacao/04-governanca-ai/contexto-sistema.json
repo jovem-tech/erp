@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-07-25T01:16:09-03:00",
+    "generated_at": "2026-07-25T22:18:53-03:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "5.13.8",
+        "app_version": "5.16.8",
         "api_version": "1.6.1",
         "production_target": "Ubuntu VPS",
         "development_target": "Ubuntu Server LAN - BANCADA-02 (192.168.1.100)"
@@ -512,6 +512,26 @@
                 {
                     "file": "documentacao/07-novas-implementacoes/2026-07-24-trava-campos-obrigatorios-orcamento.md",
                     "title": "Cadastro de orçamento: trava o salvamento até completar os campos obrigatórios de todas as abas"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-25-aba-informacoes-tecnicas-equipamento.md",
+                    "title": "Aba Informações técnicas do equipamento"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-25-checklist-entrada-obrigatorio.md",
+                    "title": "Checklist de entrada obrigatório na abertura da OS"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-25-envio-pdf-rodape-nova-os.md",
+                    "title": "Envio de PDF no rodapé da Nova OS"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-25-marca-modelo-obrigatorios-equipamento.md",
+                    "title": "Marca e modelo obrigatórios no cadastro de equipamento"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-25-orcamentos-avulsos-vinculaveis-nova-os.md",
+                    "title": "Orçamentos avulsos vinculáveis na Nova OS"
                 },
                 {
                     "file": "documentacao/07-novas-implementacoes/historico-de-versoes.md",
