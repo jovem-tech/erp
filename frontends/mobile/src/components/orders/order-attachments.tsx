@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { fetchAttachmentBlob } from '@/lib/api';
 import type { OrderDetail, OrderDocument, OrderPhoto } from '@/lib/types';
+
+type AttachmentItem = OrderPhoto | OrderDocument;
 
 type AttachmentPreview = {
   title: string;
@@ -15,16 +17,167 @@ type OrderAttachmentsProps = {
   order: Pick<OrderDetail, 'id' | 'fotos' | 'documentos'>;
 };
 
+function isOrderPhoto(item: AttachmentItem): item is OrderPhoto {
+  return 'tipo' in item;
+}
+
+function attachmentPath(orderId: number, item: AttachmentItem): string | null {
+  if (!Number.isSafeInteger(orderId) || orderId <= 0 || !Number.isSafeInteger(item.id) || item.id <= 0) {
+    return null;
+  }
+
+  return isOrderPhoto(item)
+    ? `/orders/${orderId}/photos/${item.id}`
+    : `/orders/${orderId}/documents/${item.id}`;
+}
+
+function AttachmentFallback({
+  item,
+  status,
+}: {
+  item: AttachmentItem;
+  status?: 'loading' | 'error';
+}) {
+  return (
+    <span className="attachment-card__thumb attachment-card__fallback">
+      <strong>{item.tipo_label}</strong>
+      <span>
+        {status === 'loading'
+          ? 'Carregando foto'
+          : status === 'error'
+            ? 'Foto indisponível'
+            : item.nome_arquivo}
+      </span>
+    </span>
+  );
+}
+
+function AttachmentThumbnail({
+  orderId,
+  item,
+  onOpen,
+}: {
+  orderId: number;
+  item: AttachmentItem;
+  onOpen: (item: AttachmentItem) => void;
+}) {
+  const containerRef = useRef<HTMLButtonElement>(null);
+  const [shouldLoad, setShouldLoad] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoFailed, setPhotoFailed] = useState(false);
+  const photo = isOrderPhoto(item);
+
+  useEffect(() => {
+    setShouldLoad(false);
+
+    if (!photo) {
+      return;
+    }
+
+    if (typeof IntersectionObserver === 'undefined') {
+      setShouldLoad(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setShouldLoad(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '160px' }
+    );
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [item.id, photo]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    setPhotoUrl(null);
+    setPhotoFailed(false);
+
+    if (!photo || !shouldLoad) {
+      return;
+    }
+
+    const sourcePath = attachmentPath(orderId, item);
+    if (!sourcePath) {
+      setPhotoFailed(true);
+      return;
+    }
+
+    fetchAttachmentBlob(sourcePath)
+      .then((attachment) => {
+        if (!attachment.contentType.toLowerCase().startsWith('image/')) {
+          if (!cancelled) {
+            setPhotoFailed(true);
+          }
+          return;
+        }
+
+        objectUrl = URL.createObjectURL(attachment.blob);
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+          return;
+        }
+
+        setPhotoUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setPhotoFailed(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [item, orderId, photo, shouldLoad]);
+
+  return (
+    <button
+      ref={containerRef}
+      type="button"
+      className="attachment-card__preview-button"
+      onClick={() => onOpen(item)}
+      aria-label={`Abrir ${item.nome_arquivo}`}
+    >
+      {photoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- blob privado obtido com Bearer e MIME de imagem validado
+        <img className="attachment-card__thumb" src={photoUrl} alt={`Foto ${item.tipo_label}`} />
+      ) : (
+        <AttachmentFallback
+          item={item}
+          status={photo ? (photoFailed ? 'error' : 'loading') : undefined}
+        />
+      )}
+    </button>
+  );
+}
+
 function AttachmentList({
+  orderId,
   title,
   items,
   onOpen,
   onDownload,
 }: {
+  orderId: number;
   title: string;
-  items: Array<OrderPhoto | OrderDocument>;
-  onOpen: (item: OrderPhoto | OrderDocument) => void;
-  onDownload?: (item: OrderPhoto | OrderDocument) => void;
+  items: AttachmentItem[];
+  onOpen: (item: AttachmentItem) => void;
+  onDownload?: (item: AttachmentItem) => void;
 }) {
   return (
     <div className="attachments">
@@ -36,19 +189,7 @@ function AttachmentList({
       <div className="attachments__grid">
         {items.map((item) => (
           <article key={item.id} className="attachment-card">
-            {'tipo_label' in item ? (
-              <img
-                className="attachment-card__thumb"
-                src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(
-                  `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
-                    <rect width="640" height="480" fill="#11243f"/>
-                    <text x="50%" y="48%" fill="#63b3ed" font-size="32" text-anchor="middle" font-family="Aptos, Segoe UI, sans-serif">${item.tipo_label}</text>
-                    <text x="50%" y="58%" fill="#edf3ff" font-size="18" text-anchor="middle" font-family="Aptos, Segoe UI, sans-serif">${item.nome_arquivo}</text>
-                  </svg>`
-                )}`}
-                alt={item.nome_arquivo}
-              />
-            ) : null}
+            <AttachmentThumbnail orderId={orderId} item={item} onOpen={onOpen} />
 
             <div>
               <p className="card__title" style={{ fontSize: '0.95rem' }}>
@@ -91,12 +232,25 @@ export function OrderAttachments({ order }: OrderAttachmentsProps) {
     };
   }, [preview]);
 
-  const openAttachment = async (attachment: OrderPhoto | OrderDocument): Promise<void> => {
+  const loadAttachment = (attachment: AttachmentItem) => {
+    const sourcePath = attachmentPath(order.id, attachment);
+    if (!sourcePath) {
+      throw new Error('Identificador de anexo inválido.');
+    }
+
+    return fetchAttachmentBlob(sourcePath);
+  };
+
+  const openAttachment = async (attachment: AttachmentItem): Promise<void> => {
     setLoading(true);
     setError(null);
 
     try {
-      const result = await fetchAttachmentBlob(attachment.url);
+      const result = await loadAttachment(attachment);
+      if (isOrderPhoto(attachment) && !result.contentType.toLowerCase().startsWith('image/')) {
+        throw new Error('A foto retornou um formato inválido.');
+      }
+
       const previewUrl = URL.createObjectURL(result.blob);
 
       setPreview((currentPreview) => {
@@ -119,17 +273,27 @@ export function OrderAttachments({ order }: OrderAttachmentsProps) {
     }
   };
 
-  const downloadAttachment = async (attachment: OrderPhoto | OrderDocument): Promise<void> => {
-    const result = await fetchAttachmentBlob(attachment.url);
-    const previewUrl = URL.createObjectURL(result.blob);
-    const link = document.createElement('a');
-    link.href = previewUrl;
-    link.download = result.filename;
-    link.rel = 'noopener noreferrer';
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(previewUrl), 1000);
+  const downloadAttachment = async (attachment: AttachmentItem): Promise<void> => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const result = await loadAttachment(attachment);
+      const previewUrl = URL.createObjectURL(result.blob);
+      const link = document.createElement('a');
+      link.href = previewUrl;
+      link.download = result.filename;
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(previewUrl), 1000);
+    } catch (attachmentError) {
+      console.error('[Mobile] falha ao baixar anexo', attachmentError);
+      setError('Não foi possível baixar este arquivo.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -150,13 +314,25 @@ export function OrderAttachments({ order }: OrderAttachmentsProps) {
 
       <div className="list">
         {photos.length > 0 ? (
-          <AttachmentList title="Fotos" items={photos} onOpen={openAttachment} onDownload={downloadAttachment} />
+          <AttachmentList
+            orderId={order.id}
+            title="Fotos"
+            items={photos}
+            onOpen={openAttachment}
+            onDownload={downloadAttachment}
+          />
         ) : (
           <div className="muted-box">Nenhuma foto vinculada a esta OS.</div>
         )}
 
         {documents.length > 0 ? (
-          <AttachmentList title="Documentos" items={documents} onOpen={openAttachment} onDownload={downloadAttachment} />
+          <AttachmentList
+            orderId={order.id}
+            title="Documentos"
+            items={documents}
+            onOpen={openAttachment}
+            onDownload={downloadAttachment}
+          />
         ) : (
           <div className="muted-box">Nenhum documento vinculado a esta OS.</div>
         )}
@@ -183,7 +359,7 @@ export function OrderAttachments({ order }: OrderAttachmentsProps) {
             </button>
           </div>
 
-          {preview.contentType.includes('image') ? (
+          {preview.contentType.toLowerCase().startsWith('image/') ? (
             <img
               src={preview.url}
               alt={preview.title}

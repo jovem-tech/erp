@@ -3,6 +3,17 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.19.2.0 - 2026-07-26
+
+- fotos do detalhe da OS passam a exibir miniatura privada real, sem corte, em
+  vez do placeholder textual;
+- tocar na miniatura abre a visualização ampliada;
+- o carregamento é lazy e cada URL `blob:` é revogada após o uso;
+- rotas de foto e documento são derivadas de IDs internos, sem encaminhar o
+  Bearer token para URLs absolutas recebidas no payload;
+- documentos mantêm fallback textual escapado pelo React;
+- nota: `2026-07-26-miniaturas-fotos-os-mobile.md`.
+
 ## v5.19.1.0 - 2026-07-26
 
 - o tema claro do PWA passa a iluminar também o fundo externo aos cartões;

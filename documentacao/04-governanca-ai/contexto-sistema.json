@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-07-26T14:02:39-03:00",
+    "generated_at": "2026-07-26T15:37:56-03:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "5.19.1",
+        "app_version": "5.19.2",
         "api_version": "1.6.1",
         "production_target": "Ubuntu VPS",
         "development_target": "Ubuntu Server LAN - BANCADA-02 (192.168.1.100)"
@@ -532,6 +532,10 @@
                 {
                     "file": "documentacao/07-novas-implementacoes/2026-07-25-orcamentos-avulsos-vinculaveis-nova-os.md",
                     "title": "Orçamentos avulsos vinculáveis na Nova OS"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-26-miniaturas-fotos-os-mobile.md",
+                    "title": "Miniaturas autenticadas das fotos da OS no PWA mobile"
                 },
                 {
                     "file": "documentacao/07-novas-implementacoes/2026-07-26-navegacao-mobile-e-consistencia-de-chunks.md",

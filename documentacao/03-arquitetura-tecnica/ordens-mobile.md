@@ -41,6 +41,11 @@ Este fluxo entrega ao PWA mobile o primeiro trabalho operacional real do técnic
 - A listagem mostra somente OS com `tecnico_id` igual ao usuário autenticado.
 - A listagem administrativa aceita `status`, `search`, `technician_id`, `client_id`, `page` e `per_page`.
 - O detalhe da OS traz cliente, equipamento, os últimos 5 registros de histórico, `status_disponiveis`, fotos e PDFs vinculados.
+- As fotos do detalhe são carregadas sob demanda como blobs autenticados,
+  sempre por rota interna derivada dos IDs da OS e da foto; a URL absoluta do
+  payload não é reutilizada com o Bearer token.
+- Miniaturas preservam a imagem inteira e revogam a URL local quando deixam de
+  ser utilizadas. Documentos mantêm fallback textual e abertura autenticada.
 - O status informado na atualização é validado em runtime contra o catálogo ativo `os_status`.
 - O catálogo `os_status` é a fonte de verdade dos códigos aceitos.
 - Quando o status muda, o backend atualiza `status` e `estado_fluxo` juntos.

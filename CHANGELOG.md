@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.19.2.0 — 2026-07-26 15:37
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Exibe as fotos reais da OS no mobile com miniatura autenticada, sem corte e carregamento seguro.
+- **Arquivos:** documentacao/03-arquitetura-tecnica/ordens-mobile.md,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,documentacao/07-novas-implementacoes/2026-07-26-miniaturas-fotos-os-mobile.md,documentacao/07-novas-implementacoes/historico-de-versoes.md,frontends/mobile/src/app/globals.css,frontends/mobile/src/components/orders/__tests__/order-attachments.test.tsx,frontends/mobile/src/components/orders/order-attachments.tsx
+
 ## v5.19.1.0 — 2026-07-26 14:02
 - **Tier:** patch
 - **Autor/Agente:** Codex
