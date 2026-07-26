@@ -134,6 +134,36 @@ export function resolveEquipmentTypeId(state: WizardFormState): number | null {
   return null;
 }
 
+export function selectClientForWizard(
+  state: WizardFormState,
+  cliente: ClientSearchResult | null
+): WizardFormState {
+  if (state.cliente?.id === cliente?.id) {
+    return { ...state, cliente };
+  }
+
+  return {
+    ...state,
+    cliente,
+    equipamento: null,
+    pendingNewEquipment: null,
+    pendingNewEquipmentPhotos: [],
+    checklistModel: null,
+    checklistAnswers: {},
+  };
+}
+
+export function selectEquipmentForWizard(
+  state: WizardFormState,
+  equipamento: EquipmentSearchResult | null
+): WizardFormState {
+  if (equipamento && state.cliente?.id !== equipamento.cliente_id) {
+    return state;
+  }
+
+  return { ...state, equipamento };
+}
+
 function buildChecklistPayload(state: WizardFormState): EntryChecklistPayload | undefined {
   const items = state.checklistModel?.itens ?? [];
 

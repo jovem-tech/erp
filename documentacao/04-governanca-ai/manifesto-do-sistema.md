@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-26T02:01:04-03:00`
-- Versao do sistema: `5.18.0`
+- Gerado em: `2026-07-26T07:58:03-03:00`
+- Versao do sistema: `5.19.0`
 - Versao da API: `1.6.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -177,6 +177,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-25-marca-modelo-obrigatorios-equipamento.md` - Marca e modelo obrigatórios no cadastro de equipamento
 - `documentacao/07-novas-implementacoes/2026-07-25-orcamentos-avulsos-vinculaveis-nova-os.md` - Orçamentos avulsos vinculáveis na Nova OS
 - `documentacao/07-novas-implementacoes/2026-07-26-navegacao-mobile-e-consistencia-de-chunks.md` - Navegação mobile e consistência de chunks no ambiente de desenvolvimento
+- `documentacao/07-novas-implementacoes/2026-07-26-selecao-equipamento-cliente-mobile.md` - Seleção de equipamento do cliente na Nova OS mobile
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 - `documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md` - Revisão de segurança — Fluxo de orçamento na assistência (com OS)
 

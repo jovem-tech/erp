@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StepEquipment, isStepEquipmentValid } from '@/components/orders/order-form-wizard/steps/step-equipment';
@@ -26,6 +26,15 @@ vi.mock('@/lib/orders', () => ({
   createEquipmentModel: vi.fn(),
 }));
 
+vi.mock('@/lib/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/api')>();
+
+  return {
+    ...actual,
+    fetchAttachmentBlob: vi.fn(),
+  };
+});
+
 function buildEquipment(): EquipmentSearchResult {
   return {
     id: 1,
@@ -47,6 +56,139 @@ function buildEquipment(): EquipmentSearchResult {
 }
 
 describe('StepEquipment', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('lista ao clicar somente os equipamentos do cliente, com miniatura à esquerda', async () => {
+    const { searchEquipments } = await import('@/lib/orders');
+    vi.mocked(searchEquipments).mockResolvedValue([buildEquipment()]);
+
+    const user = userEvent.setup();
+    const onSelectEquipamento = vi.fn();
+
+    const { container } = render(
+      <StepEquipment
+        mode="create"
+        clienteId={1}
+        equipamento={null}
+        pendingNewEquipment={null}
+        pendingNewEquipmentPhotos={[]}
+        onSelectEquipamento={onSelectEquipamento}
+        onChangePendingNewEquipment={vi.fn()}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByPlaceholderText('Marca, modelo, nº de série ou resumo técnico'));
+
+    await waitFor(() => expect(searchEquipments).toHaveBeenCalledWith({
+      clientId: 1,
+      search: '',
+      perPage: 50,
+    }));
+    await waitFor(() => expect(screen.getByText('Samsung A015')).toBeInTheDocument());
+    expect(container.querySelector('.equipment-thumbnail')).toBeInTheDocument();
+
+    await user.click(screen.getByText('Samsung A015'));
+    expect(onSelectEquipamento).toHaveBeenCalledWith(buildEquipment());
+  });
+
+  it('abre o cadastro novo automaticamente quando o cliente não tem equipamentos', async () => {
+    const { getEquipmentFormData, searchEquipments } = await import('@/lib/orders');
+    vi.mocked(searchEquipments).mockResolvedValue([]);
+    vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
+
+    const user = userEvent.setup();
+    const onChangePendingNewEquipment = vi.fn();
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={42}
+        equipamento={null}
+        pendingNewEquipment={null}
+        pendingNewEquipmentPhotos={[]}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={onChangePendingNewEquipment}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByPlaceholderText('Marca, modelo, nº de série ou resumo técnico'));
+
+    await waitFor(() => expect(screen.getByText(
+      /Nenhum equipamento cadastrado para este cliente\. Prossiga com o novo cadastro/
+    )).toBeInTheDocument());
+    expect(onChangePendingNewEquipment).toHaveBeenCalledWith({ tipo_id: 0, marca_id: 0, modelo_id: 0 });
+    await waitFor(() => expect(screen.getByText('Tipo de equipamento *')).toBeInTheDocument());
+  });
+
+  it('carrega a foto privada da opção pelo cliente autenticado da API', async () => {
+    const { fetchAttachmentBlob } = await import('@/lib/api');
+    const { searchEquipments } = await import('@/lib/orders');
+    const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:equipment-photo');
+    const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    const equipment = {
+      ...buildEquipment(),
+      primary_photo_id: 9,
+      primary_photo_url: 'https://api.example.test/api/v1/equipments/1/photos/9',
+    };
+
+    vi.mocked(searchEquipments).mockResolvedValue([equipment]);
+    vi.mocked(fetchAttachmentBlob).mockResolvedValue({
+      blob: new Blob(['foto'], { type: 'image/jpeg' }),
+      contentType: 'image/jpeg',
+      filename: 'equipamento.jpg',
+    });
+
+    const user = userEvent.setup();
+    const { unmount } = render(
+      <StepEquipment
+        mode="create"
+        clienteId={1}
+        equipamento={null}
+        pendingNewEquipment={null}
+        pendingNewEquipmentPhotos={[]}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={vi.fn()}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    await user.click(screen.getByPlaceholderText('Marca, modelo, nº de série ou resumo técnico'));
+
+    await waitFor(() => expect(fetchAttachmentBlob).toHaveBeenCalledWith('/equipments/1/photos/9'));
+    expect(await screen.findByAltText('Foto de Samsung A015')).toHaveAttribute('src', 'blob:equipment-photo');
+    expect(createObjectUrl).toHaveBeenCalled();
+
+    unmount();
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:equipment-photo');
+  });
+
+  it('mantém o cadastro novo quando o próprio cliente ainda será cadastrado', async () => {
+    const { getEquipmentFormData, searchEquipments } = await import('@/lib/orders');
+    vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={null}
+        equipamento={null}
+        pendingNewEquipment={null}
+        pendingNewEquipmentPhotos={[]}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={vi.fn()}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('Equipamento já cadastrado')).toBeDisabled();
+    expect(screen.getByText(/Como o cliente também é novo/)).toBeInTheDocument();
+    expect(searchEquipments).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByText('Tipo de equipamento *')).toBeInTheDocument());
+  });
+
   it('mostra o bloco de hardware só para tipo "desktop" em modalidade "montado"', async () => {
     const { getEquipmentFormData } = await import('@/lib/orders');
     vi.mocked(getEquipmentFormData).mockResolvedValue(formData);

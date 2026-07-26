@@ -3,6 +3,15 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.19.0.0 - 2026-07-26
+
+- ao tocar no campo da etapa Equipamento da Nova OS mobile, o PWA lista os equipamentos pertencentes ao cliente selecionado;
+- cada resultado é selecionável e mostra a foto principal à esquerda, carregada sob demanda por uma chamada autenticada;
+- cliente sem equipamento cadastrado é conduzido automaticamente ao formulário de novo equipamento, cujo vínculo é persistido atomicamente junto com a OS;
+- trocar o cliente limpa equipamento, fotos pendentes e checklist do contexto anterior;
+- a busca inicial é limitada a 50 resultados e mantém pesquisa remota para identificar catálogos maiores sem carregamento ilimitado;
+- nota: `2026-07-26-selecao-equipamento-cliente-mobile.md`.
+
 ## v5.12.2.0 - 2026-07-24
 
 - o cadastro de orçamento novo mantém o botão principal como `Próximo` enquanto existir qualquer pendência e conduz o operador diretamente à primeira aba/campo incompleto;

@@ -1369,6 +1369,24 @@ img {
   background: rgba(5, 12, 23, 0.7);
 }
 
+.search-select__option-content {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 12px;
+}
+
+.search-select__option-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.search-select__option-copy strong,
+.search-select__option-copy .muted {
+  overflow-wrap: anywhere;
+}
+
 .search-select__results {
   max-height: 320px;
   overflow-y: auto;
@@ -1378,6 +1396,29 @@ img {
   width: 100%;
   text-align: left;
   cursor: pointer;
+}
+
+.equipment-thumbnail {
+  display: grid;
+  flex: 0 0 58px;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(87, 218, 199, 0.28);
+  border-radius: 13px;
+  background: rgba(15, 44, 67, 0.85);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.equipment-thumbnail img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .photo-grid {

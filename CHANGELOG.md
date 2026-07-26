@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.19.0.0 — 2026-07-26 07:58
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Lista com foto os equipamentos do cliente na Nova OS mobile e inicia o cadastro vinculado quando a lista estiver vazia.
+- **Arquivos:** documentacao/07-novas-implementacoes/2026-07-26-selecao-equipamento-cliente-mobile.md,frontends/mobile/src/app/globals.css,frontends/mobile/src/components/orders/order-form-wizard/__tests__/search-select.test.tsx,frontends/mobile/src/components/orders/order-form-wizard/__tests__/step-equipment.test.tsx,frontends/mobile/src/components/orders/order-form-wizard/__tests__/wizard-state.test.ts,frontends/mobile/src/components/orders/order-form-wizard/index.tsx,frontends/mobile/src/components/orders/order-form-wizard/search-select.tsx,frontends/mobile/src/components/orders/order-form-wizard/steps/step-equipment.tsx,frontends/mobile/src/components/orders/order-form-wizard/wizard-state.ts,frontends/mobile/src/lib/__tests__/orders-wizard-api.test.ts,frontends/mobile/src/lib/api.ts,frontends/mobile/src/lib/orders.ts
+
 ## v5.18.0.0 — 2026-07-26 01:59
 - **Tier:** minor
 - **Autor/Agente:** Codex

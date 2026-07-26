@@ -13,6 +13,8 @@ import {
   createWizardStateFromOrder,
   isChecklistComplete,
   resolveEquipmentTypeId,
+  selectClientForWizard,
+  selectEquipmentForWizard,
   type WizardFormState,
   type WizardMode,
 } from '@/components/orders/order-form-wizard/wizard-state';
@@ -290,7 +292,7 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
           mode={mode}
           cliente={state.cliente}
           pendingNewClient={state.pendingNewClient}
-          onSelectCliente={(cliente) => setState((prev) => ({ ...prev, cliente }))}
+          onSelectCliente={(cliente) => setState((prev) => selectClientForWizard(prev, cliente))}
           onChangePendingNewClient={(pendingNewClient) => setState((prev) => ({ ...prev, pendingNewClient }))}
           disabled={busy}
         />
@@ -303,7 +305,7 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
           equipamento={state.equipamento}
           pendingNewEquipment={state.pendingNewEquipment}
           pendingNewEquipmentPhotos={state.pendingNewEquipmentPhotos}
-          onSelectEquipamento={(equipamento) => setState((prev) => ({ ...prev, equipamento }))}
+          onSelectEquipamento={(equipamento) => setState((prev) => selectEquipmentForWizard(prev, equipamento))}
           onChangePendingNewEquipment={(pendingNewEquipment) => setState((prev) => ({ ...prev, pendingNewEquipment }))}
           onChangePendingNewEquipmentPhotos={(pendingNewEquipmentPhotos) => setState((prev) => ({ ...prev, pendingNewEquipmentPhotos }))}
           disabled={busy}

@@ -55,6 +55,33 @@ describe('SearchSelect', () => {
     expect(fetchOptions).not.toHaveBeenCalled();
   });
 
+  it('carrega e expõe as opções iniciais ao focar o campo quando solicitado', async () => {
+    const user = userEvent.setup();
+    const options = [{ id: 1, nome: 'Notebook Dell' }];
+    const fetchOptions = vi.fn().mockResolvedValue(options);
+    const onInitialOptionsLoaded = vi.fn();
+
+    render(
+      <SearchSelect<Option>
+        label="Equipamento"
+        placeholder="Buscar equipamento"
+        value={null}
+        onSelect={vi.fn()}
+        fetchOptions={fetchOptions}
+        getOptionKey={(option) => option.id}
+        getOptionLabel={(option) => option.nome}
+        loadOnFocus
+        onInitialOptionsLoaded={onInitialOptionsLoaded}
+      />
+    );
+
+    await user.click(screen.getByPlaceholderText('Buscar equipamento'));
+
+    await waitFor(() => expect(fetchOptions).toHaveBeenCalledWith(''));
+    await waitFor(() => expect(onInitialOptionsLoaded).toHaveBeenCalledWith(options));
+    expect(screen.getByText('Notebook Dell')).toBeInTheDocument();
+  });
+
   it('mostra o valor selecionado e permite trocar', async () => {
     const user = userEvent.setup();
     const onSelect = vi.fn();
