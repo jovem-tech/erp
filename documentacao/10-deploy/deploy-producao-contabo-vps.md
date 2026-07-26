@@ -12,6 +12,7 @@ subdominios, conviver com o legado e reaproveitar os dados reais.
 |---|---|---|---|
 | Desktop | `https://erp.jovemtech.eco.br` | 443 | `/run/php/erp-desktop.sock` |
 | Backend/API | `https://api-erp.jovemtech.eco.br` | 443 | `/run/php/erp-backend.sock` |
+| PWA Mobile | `https://app.jovemtech.eco.br` | proxy 443 para 3100 | - |
 | WebSocket (Reverb) | `wss://erp.jovemtech.eco.br/app/` | proxy 443→8090 | — |
 | Legado (intocado) | `https://sistema.jovemtech.eco.br` | 443 | pool do legado |
 
@@ -48,6 +49,8 @@ subdominio tem certificado Let's Encrypt proprio.
      `DESKTOP_API_BASE_URL=https://api-erp.jovemtech.eco.br/api/v1`,
      `DESKTOP_BROADCAST_AUTH_URL=https://api-erp.jovemtech.eco.br/broadcasting/auth`,
      `REVERB_HOST=erp.jovemtech.eco.br`, `REVERB_PORT=443`, `REVERB_SCHEME=https`.
+   - mobile: `NEXT_PUBLIC_APP_URL=https://app.jovemtech.eco.br` e
+     `NEXT_PUBLIC_API_BASE_URL=https://api-erp.jovemtech.eco.br/api/v1`.
 5. **Colunas geradas de `os`** (a VPS nao as tem) **antes** do migrate:
    `ALTER TABLE os ADD COLUMN data_abertura_efetiva ... GENERATED ALWAYS AS (...) STORED`
    (idem `data_entrega_efetiva`). Sintaxe MySQL 8 — **sem** `IF NOT EXISTS`.
@@ -65,7 +68,7 @@ subdominio tem certificado Let's Encrypt proprio.
 
 ## TLS e Nginx por subdominio
 
-Para cada subdominio (`erp`, `api-erp`):
+Para cada subdominio (`erp`, `api-erp`, `app`):
 
 1. Criar registro DNS `A → 161.97.93.120` (o operador faz no painel).
 2. Bloco HTTP temporario servindo `/.well-known/acme-challenge/` no `root` correspondente.
@@ -87,6 +90,11 @@ Para cada subdominio (`erp`, `api-erp`):
   acesso fisico — a rede de seguranca e' o console web da Contabo).
 - **VERSION:** ao deployar so arquivos de codigo, enviar `VERSION`/`CHANGELOG` junto,
   senao o rodape mostra versao defasada. Ideal: publicar no GitHub e deployar por `git pull`.
+- **PWA sem opcao de instalar no celular:** validar primeiro
+  `https://app.jovemtech.eco.br/manifest.webmanifest`, `/sw.js`, `/icon-192.png` e
+  `/icon-512.png`, todos em HTTPS e com MIME correto. No iOS a instalacao e feita
+  pelo Safari em `Compartilhar > Adicionar a Tela de Inicio`; navegadores internos
+  de WhatsApp/Instagram podem exigir `Abrir no Safari/Chrome`.
 - **`git pull --ff-only` abortando por "untracked working tree files would be
   overwritten by merge":** acontece quando ha arquivos **nao versionados** na VPS
   (copiados manualmente, sobra de teste direto no servidor, ou de um deploy antigo
@@ -111,6 +119,10 @@ Para cada subdominio (`erp`, `api-erp`):
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' https://erp.jovemtech.eco.br/login          # 200
 curl -s https://api-erp.jovemtech.eco.br/                                            # {"service":"sistema-erp-api",...}
+curl -sI https://app.jovemtech.eco.br/manifest.webmanifest                            # 200 + application/manifest+json
+curl -sI https://app.jovemtech.eco.br/sw.js                                           # 200 + JavaScript + no-cache
+curl -sI https://app.jovemtech.eco.br/icon-192.png                                    # 200 + image/png
+curl -sI https://app.jovemtech.eco.br/icon-512.png                                    # 200 + image/png
 curl -s -X POST https://api-erp.jovemtech.eco.br/api/v1/auth/login -H 'Content-Type: application/json' \
   -d '{"email":"x@x.com","password":"errada123"}'                                    # AUTH_INVALID_CREDENTIALS
 # broadcasting com token real: 200 (com route:cache ativo)

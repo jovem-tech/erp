@@ -10,6 +10,16 @@ type BeforeInstallPromptEvent = Event & {
   }>;
 };
 
+type InstallPlatform = 'android' | 'ios' | 'other';
+
+declare global {
+  interface Window {
+    __SISTEMA_ERP_PWA_INSTALL_PROMPT__?: BeforeInstallPromptEvent | null;
+  }
+}
+
+const INSTALL_READY_EVENT = 'sistema-erp:pwa-install-ready';
+
 function isStandaloneMode(): boolean {
   if (typeof window === 'undefined') {
     return false;
@@ -18,6 +28,22 @@ function isStandaloneMode(): boolean {
   const navigatorWithStandalone = window.navigator as Navigator & { standalone?: boolean };
 
   return window.matchMedia('(display-mode: standalone)').matches || navigatorWithStandalone.standalone === true;
+}
+
+function detectInstallPlatform(): InstallPlatform {
+  const userAgent = window.navigator.userAgent.toLowerCase();
+  const navigatorWithTouchPoints = window.navigator as Navigator & { maxTouchPoints?: number };
+  const isIPadOs = userAgent.includes('macintosh') && (navigatorWithTouchPoints.maxTouchPoints ?? 0) > 1;
+
+  if (/iphone|ipad|ipod/.test(userAgent) || isIPadOs) {
+    return 'ios';
+  }
+
+  if (userAgent.includes('android')) {
+    return 'android';
+  }
+
+  return 'other';
 }
 
 function IconInstall() {
@@ -45,6 +71,7 @@ export function PwaInstallButton({ variant = 'navbar' }: PwaInstallButtonProps) 
   const [standalone, setStandalone] = useState(false);
   const [busy, setBusy] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [platform, setPlatform] = useState<InstallPlatform>('other');
 
   useEffect(() => {
     const syncStandalone = (): void => {
@@ -52,6 +79,7 @@ export function PwaInstallButton({ variant = 'navbar' }: PwaInstallButtonProps) 
     };
 
     syncStandalone();
+    setPlatform(detectInstallPlatform());
 
     const media = window.matchMedia('(display-mode: standalone)');
     const handleDisplayModeChange = (): void => {
@@ -76,11 +104,22 @@ export function PwaInstallButton({ variant = 'navbar' }: PwaInstallButtonProps) 
     const handleBeforeInstallPrompt = (event: Event): void => {
       const installEvent = event as BeforeInstallPromptEvent;
       event.preventDefault();
+      window.__SISTEMA_ERP_PWA_INSTALL_PROMPT__ = installEvent;
       setPromptEvent(installEvent);
       setInstallable(true);
     };
 
+    const syncCapturedPrompt = (): void => {
+      const capturedPrompt = window.__SISTEMA_ERP_PWA_INSTALL_PROMPT__;
+
+      if (capturedPrompt) {
+        setPromptEvent(capturedPrompt);
+        setInstallable(true);
+      }
+    };
+
     const handleAppInstalled = (): void => {
+      window.__SISTEMA_ERP_PWA_INSTALL_PROMPT__ = null;
       setInstallable(false);
       setPromptEvent(null);
       setStandalone(true);
@@ -88,10 +127,13 @@ export function PwaInstallButton({ variant = 'navbar' }: PwaInstallButtonProps) 
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener(INSTALL_READY_EVENT, syncCapturedPrompt);
     window.addEventListener('appinstalled', handleAppInstalled);
+    syncCapturedPrompt();
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener(INSTALL_READY_EVENT, syncCapturedPrompt);
       window.removeEventListener('appinstalled', handleAppInstalled);
     };
   }, [standalone]);
@@ -115,6 +157,7 @@ export function PwaInstallButton({ variant = 'navbar' }: PwaInstallButtonProps) 
       await promptEvent.prompt();
       await promptEvent.userChoice;
     } finally {
+      window.__SISTEMA_ERP_PWA_INSTALL_PROMPT__ = null;
       setBusy(false);
       setInstallable(false);
       setPromptEvent(null);
@@ -162,17 +205,51 @@ export function PwaInstallButton({ variant = 'navbar' }: PwaInstallButtonProps) 
           <div className="popover-header">
             <div>
               <span className="popover-kicker">Instalação</span>
-              <strong>Como instalar</strong>
-              <p>O navegador ainda não liberou o prompt automático.</p>
+              <strong>{platform === 'ios' ? 'Instalar no iPhone ou iPad' : 'Como instalar'}</strong>
+              <p>
+                {platform === 'ios'
+                  ? 'A instalação no iOS é concluída pelo menu Compartilhar do Safari.'
+                  : 'O navegador ainda não liberou o prompt automático.'}
+              </p>
             </div>
           </div>
 
           <div className="install-help">
-            <p>
-              Abra o menu do navegador e escolha <strong>Instalar aplicativo</strong> ou{' '}
-              <strong>Adicionar à tela inicial</strong>.
-            </p>
-            <p>Se a opção não aparecer, atualize a página e aguarde alguns segundos com esta aba aberta.</p>
+            {platform === 'ios' ? (
+              <>
+                <p>
+                  1. Abra este endereço no <strong>Safari</strong>. Se estiver no WhatsApp, Instagram ou
+                  outro app, escolha <strong>Abrir no Safari</strong>.
+                </p>
+                <p>
+                  2. Toque em <strong>Compartilhar</strong> e depois em{' '}
+                  <strong>Adicionar à Tela de Início</strong>.
+                </p>
+                <p>
+                  3. Confirme em <strong>Adicionar</strong>.
+                </p>
+              </>
+            ) : platform === 'android' ? (
+              <>
+                <p>
+                  1. Abra este endereço no <strong>Google Chrome</strong>. Se estiver dentro do WhatsApp,
+                  Instagram ou outro app, escolha <strong>Abrir no Chrome</strong>.
+                </p>
+                <p>
+                  2. Abra o menu <strong>⋮</strong> e escolha <strong>Instalar app</strong> ou{' '}
+                  <strong>Adicionar à tela inicial</strong>.
+                </p>
+                <p>3. Confirme a instalação.</p>
+              </>
+            ) : (
+              <>
+                <p>
+                  Abra o menu do navegador e escolha <strong>Instalar aplicativo</strong> ou{' '}
+                  <strong>Adicionar à tela inicial</strong>.
+                </p>
+                <p>Se a opção não aparecer, atualize a página e aguarde alguns segundos com esta aba aberta.</p>
+              </>
+            )}
           </div>
 
           <div className="popover-footer">

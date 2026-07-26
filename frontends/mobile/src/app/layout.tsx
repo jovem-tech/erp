@@ -35,6 +35,9 @@ export const metadata: Metadata = {
     title: 'Sistema ERP Mobile',
     statusBarStyle: 'black-translucent',
   },
+  other: {
+    'apple-mobile-web-app-capable': 'yes',
+  },
 };
 
 export const viewport: Viewport = {
@@ -49,6 +52,7 @@ export default function RootLayout({
   return (
     <html lang="pt-BR" suppressHydrationWarning>
       <body>
+        <Script src="/pwa-install-bootstrap.js" strategy="beforeInteractive" />
         <Script src="/theme-bootstrap.js" strategy="beforeInteractive" />
         <SessionProvider>{children}</SessionProvider>
         <PwaRegister />

@@ -3,6 +3,18 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.20.1.0 - 2026-07-26
+
+- o prompt nativo de instalacao do PWA e preservado mesmo quando o navegador o
+  emite antes da hidratacao do React;
+- iOS e Android recebem instrucoes proprias, incluindo a saida de navegadores
+  internos de WhatsApp/Instagram;
+- o manifesto passa a oferecer icone geral de 512 px sem perder a variante
+  `maskable`;
+- metadados Apple e layout do painel de ajuda foram corrigidos para instalacao
+  e leitura em telas estreitas;
+- nota: `2026-07-26-instalacao-pwa-mobile-vps.md`.
+
 ## v5.20.0.0 - 2026-07-26
 
 - durante a criação em `/os/novo`, a Bottom Nav vira um player com `Início`,
