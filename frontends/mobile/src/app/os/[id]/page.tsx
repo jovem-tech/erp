@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { ApiError } from '@/lib/api';
 import { fetchOrder } from '@/lib/orders';
+import { hasPermission } from '@/lib/permissions';
 import type { OrderDetail } from '@/lib/types';
 import { OrderAttachments } from '@/components/orders/order-attachments';
 import { OrderStatusForm } from '@/components/orders/order-status-form';
@@ -65,6 +67,11 @@ function OrderDetailScreen() {
             <button type="button" className="button button--ghost" onClick={() => router.back()}>
               Voltar
             </button>
+            {order && !order.is_encerrada && hasPermission(session?.user, 'os', 'editar') ? (
+              <Link href={`/os/${order.id}/editar`} className="button button--soft">
+                Editar OS
+              </Link>
+            ) : null}
             <button type="button" className="button button--soft" onClick={() => void loadOrder()} disabled={busy}>
               {busy ? <span className="spinner" aria-hidden="true" /> : null}
               {busy ? 'Atualizando' : 'Recarregar'}

@@ -384,6 +384,12 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/clientes/rapido', [ClientController::class, 'quickStore'])
         ->middleware('desktop.permission:clientes,criar')
         ->name('clients.quick.store');
+    Route::get('/clientes/orcamentos-avulsos/buscar', [ClientController::class, 'searchAvulsoBudgets'])
+        ->middleware([
+            'desktop.permission:clientes,criar',
+            'desktop.permission:orcamentos,converter_os',
+        ])
+        ->name('clients.avulso_budgets.search');
     Route::get('/clientes/{client}/editar', [ClientController::class, 'edit'])
         ->middleware('desktop.permission:clientes,editar')
         ->name('clients.edit');

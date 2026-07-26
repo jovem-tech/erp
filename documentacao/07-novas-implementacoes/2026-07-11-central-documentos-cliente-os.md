@@ -152,7 +152,20 @@ agora tenta:
 - `php artisan queue:restart`
 - `sudo supervisorctl restart all`
 
-de forma tolerante (`|| true`) quando a infraestrutura existir no servidor de desenvolvimento.
+O restart do Supervisor e a checagem de que os dois workers ficaram `RUNNING` sao
+pos-condicoes obrigatorias. O script deve encerrar com erro quando nao conseguir
+restabelecer a fila, em vez de ocultar a falha com `|| true`.
+
+Como defesa em profundidade, o scheduler inicia a cada minuto um worker limitado,
+sem sobreposicao e ativo por ate 55 segundos para `documents,default`. Esse
+fallback permanece ouvindo novos itens durante quase todo o minuto quando todos
+os processos supervisionados entram em `FATAL`/`BACKOFF`, mas nao substitui o
+Supervisor como consumidor principal.
+
+O destino do envio passa a ter uma unica fonte de verdade criptografada em
+`destino_criptografado`. A copia redundante em texto puro foi removida de
+`metadados_json`, inclusive para registros historicos que ja possuem a versao
+criptografada.
 
 ## Contrato técnico novo
 

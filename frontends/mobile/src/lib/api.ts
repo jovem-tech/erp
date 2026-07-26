@@ -1,5 +1,14 @@
 import type {
   AttachmentBlob,
+  ClientSearchResult,
+  CreateOrderPayload,
+  CreateOrderResponse,
+  EntryChecklistModel,
+  EquipmentFormData,
+  EquipmentSearchResult,
+  EquipmentBrandCatalogItem,
+  EquipmentModelCatalogItem,
+  LinkableBudget,
   MobileSession,
   MobileNotification,
   MobileNotificationListPayload,
@@ -7,12 +16,16 @@ import type {
   OrderDetail,
   OrderListPayload,
   OrderSummary,
+  ReportedDefect,
+  TeamMemberOption,
+  UpdateOrderPayload,
 } from '@/lib/types';
 import {
   clearStoredSession,
   readStoredSession,
   storeSessionWithAutoRefresh,
 } from '@/lib/session';
+import { buildFormData } from '@/lib/form-data';
 
 type ApiErrorPayload = {
   code?: string;
@@ -339,6 +352,33 @@ export async function apiOrderDetail(orderId: number | string): Promise<OrderDet
   return payload.order;
 }
 
+export async function apiUpdateOrder(
+  orderId: number | string,
+  payload: UpdateOrderPayload,
+  newPhotos: File[] = []
+): Promise<{ order: OrderDetail }> {
+  // PHP so' popula $_FILES em requisicoes POST reais (limitacao do SAPI, nao
+  // do Laravel). Quando ha fotos novas, enviamos um POST com "_method=PATCH"
+  // (method override padrao do Laravel) em vez de um PATCH real - e assim
+  // que o desktop faz (<form method=POST><input type=hidden name=_method>).
+  // Sem fotos, um PATCH real com JSON funciona normalmente.
+  if (newPhotos.length > 0) {
+    const formData = buildFormData(payload as unknown as Record<string, unknown>);
+    newPhotos.forEach((file) => formData.append('fotos[]', file));
+    formData.append('_method', 'PATCH');
+
+    return requestJson<{ order: OrderDetail }>(`/orders/${orderId}`, {
+      method: 'POST',
+      body: formData,
+    });
+  }
+
+  return requestJson<{ order: OrderDetail }>(`/orders/${orderId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function apiUpdateOrderStatus(orderId: number | string, status: string, observacao: string | null = null): Promise<{
   order: OrderSummary | null;
   status_anterior: string;
@@ -357,6 +397,132 @@ export async function apiUpdateOrderStatus(orderId: number | string, status: str
       observacao,
     }),
   });
+}
+
+export async function apiCreateOrder(
+  payload: CreateOrderPayload,
+  photos: File[] = [],
+  newEquipmentPhotos: File[] = []
+): Promise<CreateOrderResponse> {
+  const formData = buildFormData(payload as unknown as Record<string, unknown>);
+  photos.forEach((file) => formData.append('fotos[]', file));
+  newEquipmentPhotos.forEach((file) => formData.append('novo_equipamento_fotos[]', file));
+
+  return requestJson<CreateOrderResponse>('/orders', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+export async function apiSearchClients(params: { search?: string; per_page?: number } = {}): Promise<{
+  clients: ClientSearchResult[];
+}> {
+  const query = new URLSearchParams();
+
+  if (params.search?.trim()) {
+    query.set('search', params.search.trim());
+  }
+
+  if (params.per_page) {
+    query.set('per_page', String(params.per_page));
+  }
+
+  const queryString = query.toString();
+  return requestJson<{ clients: ClientSearchResult[] }>(`/clients${queryString ? `?${queryString}` : ''}`);
+}
+
+export async function apiSearchEquipments(params: { clientId?: number; search?: string } = {}): Promise<{
+  equipments: EquipmentSearchResult[];
+}> {
+  const query = new URLSearchParams();
+
+  if (params.clientId) {
+    query.set('client_id', String(params.clientId));
+  }
+
+  if (params.search?.trim()) {
+    query.set('search', params.search.trim());
+  }
+
+  const queryString = query.toString();
+  return requestJson<{ equipments: EquipmentSearchResult[] }>(`/equipments${queryString ? `?${queryString}` : ''}`);
+}
+
+export async function apiEquipmentFormData(): Promise<EquipmentFormData> {
+  const payload = await requestJson<{ form: EquipmentFormData }>('/equipments/form-data');
+  return payload.form;
+}
+
+export async function apiCreateEquipmentBrand(payload: { nome: string; tipo_id: number }): Promise<{
+  brand: EquipmentBrandCatalogItem;
+}> {
+  return requestJson<{ brand: EquipmentBrandCatalogItem }>('/equipments/brands', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function apiCreateEquipmentModel(payload: { marca_id: number; nome: string; tipo_id: number }): Promise<{
+  model: EquipmentModelCatalogItem;
+}> {
+  return requestJson<{ model: EquipmentModelCatalogItem }>('/equipments/models', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function apiSearchReportedDefects(params: { tipoEquipamentoId: number }): Promise<{
+  defeitos_relatados: ReportedDefect[];
+}> {
+  const query = new URLSearchParams({ tipo_equipamento_id: String(params.tipoEquipamentoId) });
+  return requestJson<{ defeitos_relatados: ReportedDefect[] }>(`/knowledge/reported-defects?${query.toString()}`);
+}
+
+export async function apiEntryChecklistModel(tipoEquipamentoId: number): Promise<{
+  modelo: EntryChecklistModel | null;
+}> {
+  return requestJson<{ modelo: EntryChecklistModel | null }>(`/orders/checklists/entrada/modelos/${tipoEquipamentoId}`);
+}
+
+export async function apiSearchLinkableBudgets(params: { q?: string; per_page?: number } = {}): Promise<{
+  budgets: LinkableBudget[];
+}> {
+  const query = new URLSearchParams();
+
+  if (params.q?.trim()) {
+    query.set('q', params.q.trim());
+  }
+
+  if (params.per_page) {
+    query.set('per_page', String(params.per_page));
+  }
+
+  const queryString = query.toString();
+  return requestJson<{ budgets: LinkableBudget[] }>(`/orcamentos/vinculaveis-os${queryString ? `?${queryString}` : ''}`);
+}
+
+type RawTeamMember = {
+  nome: string;
+  can_assign_orders: boolean;
+  order_technician_user_id: number;
+};
+
+export async function apiTechnicians(params: { search?: string } = {}): Promise<{
+  team_members: TeamMemberOption[];
+}> {
+  const query = new URLSearchParams({ assignable_orders: '1', active: '1' });
+
+  if (params.search?.trim()) {
+    query.set('search', params.search.trim());
+  }
+
+  const payload = await requestJson<{ team_members: RawTeamMember[] }>(`/team-members?${query.toString()}`);
+
+  return {
+    team_members: payload.team_members
+      .filter((member) => member.can_assign_orders && member.order_technician_user_id > 0)
+      .map((member) => ({ value: member.order_technician_user_id, label: member.nome })),
+  };
 }
 
 export async function fetchAttachmentBlob(path: string): Promise<AttachmentBlob> {

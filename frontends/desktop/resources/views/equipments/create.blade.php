@@ -29,7 +29,8 @@
         return (string) ($type['id'] ?? '') === (string) $fieldValue('tipo_id');
     });
     $selectedTypeFamily = (string) ($selectedType['family'] ?? 'other');
-    $collectorVisible = in_array($selectedTypeFamily, ['desktop', 'notebook'], true);
+    $technicalInformationVisible = in_array($selectedTypeFamily, ['desktop', 'notebook'], true);
+    $collectorVisible = $technicalInformationVisible;
     $isMountedDesktopFamily = $selectedTypeFamily === 'desktop';
 
     $allowedBrandIds = $selectedTypeId !== ''
@@ -203,6 +204,19 @@
                     <i class="bi bi-camera"></i>
                     Fotos *
                 </button>
+                @if ($isEditMode)
+                    <button
+                        type="button"
+                        class="equipment-tab"
+                        data-equipment-tab="informacoes-tecnicas"
+                        aria-pressed="false"
+                        aria-hidden="{{ $technicalInformationVisible ? 'false' : 'true' }}"
+                        @unless($technicalInformationVisible) hidden @endunless
+                    >
+                        <i class="bi bi-cpu"></i>
+                        Informações técnicas
+                    </button>
+                @endif
             </div>
 
             <div class="equipment-tab-panel is-active" data-equipment-panel="informacoes">
@@ -266,9 +280,9 @@
                     </div>
 
                     <div>
-                        <label for="equipmentBrand">Marca</label>
+                        <label for="equipmentBrand">Marca *</label>
                         <div class="equipment-inline-field">
-                            <select name="marca_id" id="equipmentBrand" class="form-select" @disabled($brandDisabled)>
+                            <select name="marca_id" id="equipmentBrand" class="form-select" required @disabled($brandDisabled)>
                                 <option value="">{{ $brandPlaceholder }}</option>
                                 @foreach ($filteredBrands as $brand)
                                     <option value="{{ $brand['id'] }}" @selected((string) $fieldValue('marca_id') === (string) $brand['id'])>{{ $brand['nome'] }}</option>
@@ -282,9 +296,9 @@
                     </div>
 
                     <div>
-                        <label for="equipmentModel">Modelo</label>
+                        <label for="equipmentModel">Modelo *</label>
                         <div class="equipment-inline-field">
-                            <select name="modelo_id" id="equipmentModel" class="form-select" @disabled($modelDisabled)>
+                            <select name="modelo_id" id="equipmentModel" class="form-select" required @disabled($modelDisabled)>
                                 <option value="">{{ $modelPlaceholder }}</option>
                                 @foreach ($filteredModels as $model)
                                     <option value="{{ $model['id'] }}" data-brand-id="{{ $model['marca_id'] }}" @selected((string) $fieldValue('modelo_id') === (string) $model['id'])>{{ $model['nome'] }}</option>
@@ -343,6 +357,26 @@
                     </div>
                 </div>
 
+                <div class="desktop-filter-grid equipment-create-grid mt-4">
+                    <div class="field-span-4">
+                        <label for="equipmentPhysicalState">Estado físico</label>
+                        <textarea name="estado_fisico" id="equipmentPhysicalState" class="form-control" rows="3" placeholder="Descreva avarias, faltas de peças, riscos ou estado geral">{{ $fieldValue('estado_fisico') }}</textarea>
+                    </div>
+
+                    <div class="field-span-4">
+                        <label for="equipmentNotes">Observações</label>
+                        <textarea name="observacoes" id="equipmentNotes" class="form-control" rows="4" placeholder="Informações livres para recepção, bancada e histórico operacional">{{ $fieldValue('observacoes') }}</textarea>
+                    </div>
+                </div>
+            </div>
+
+            @if ($isEditMode)
+                <div
+                    class="equipment-tab-panel"
+                    data-equipment-panel="informacoes-tecnicas"
+                    aria-hidden="{{ $technicalInformationVisible ? 'false' : 'true' }}"
+                    @unless($technicalInformationVisible) hidden @endunless
+                >
                 @php
                     $collectorLinuxDownloadUrl = trim((string) ($formData['collector']['download_url_linux'] ?? ''));
                     $collectorWindowsDownloadUrl = trim((string) ($formData['collector']['download_url_windows'] ?? ''));
@@ -455,19 +489,8 @@
                         <div class="field-span-2"><label for="equipmentPowerSupply">Fonte de alimentação</label><input type="text" name="fonte_alimentacao" id="equipmentPowerSupply" class="form-control" value="{{ $fieldValue('fonte_alimentacao') }}"></div>
                     </div>
                 </section>
-
-                <div class="desktop-filter-grid equipment-create-grid mt-4">
-                    <div class="field-span-4">
-                        <label for="equipmentPhysicalState">Estado físico</label>
-                        <textarea name="estado_fisico" id="equipmentPhysicalState" class="form-control" rows="3" placeholder="Descreva avarias, faltas de peças, riscos ou estado geral">{{ $fieldValue('estado_fisico') }}</textarea>
-                    </div>
-
-                    <div class="field-span-4">
-                        <label for="equipmentNotes">Observações</label>
-                        <textarea name="observacoes" id="equipmentNotes" class="form-control" rows="4" placeholder="Informações livres para recepção, bancada e histórico operacional">{{ $fieldValue('observacoes') }}</textarea>
-                    </div>
                 </div>
-            </div>
+            @endif
 
             <div class="equipment-tab-panel" data-equipment-panel="cor">
                 <div class="equipment-color-grid">

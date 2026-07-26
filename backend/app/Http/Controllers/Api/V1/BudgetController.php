@@ -99,9 +99,15 @@ class BudgetController extends BaseApiController
 
         $validated = $request->validate([
             'cliente_id' => ['required', 'integer', 'min:1'],
+            // Orçamento em edição: preserva a própria OS vinculada na lista,
+            // mesmo já "tendo orçamento" — o orçamento é este mesmo.
+            'orcamento_id' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $context = $this->budgetWorkflowService->clientContext((int) $validated['cliente_id']);
+        $context = $this->budgetWorkflowService->clientContext(
+            (int) $validated['cliente_id'],
+            (int) ($validated['orcamento_id'] ?? 0)
+        );
 
         return $this->success(
             [
@@ -129,6 +135,35 @@ class BudgetController extends BaseApiController
             'per_page' => ['nullable', 'integer', 'min:1', 'max:30'],
         ]);
         $result = $this->budgetWorkflowService->paginateLinkableForOrder($filters);
+
+        return $this->success(
+            ['budgets' => $result['paginator']->items()],
+            meta: $this->paginationMeta($result['paginator']),
+            request: $request
+        );
+    }
+
+    /**
+     * Sugestões de orçamento avulso (sem cliente cadastrado) para o cadastro
+     * rápido de cliente na Nova OS. Mesma permissão do vínculo de orçamento:
+     * não abre um canal novo de exposição desses dados.
+     */
+    public function avulsoContacts(Request $request): JsonResponse
+    {
+        $this->authorize('os:criar');
+        $this->authorize('orcamentos:converter_os');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $filters = $request->validate([
+            'q' => ['nullable', 'string', 'max:120'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:15'],
+        ]);
+        $result = $this->budgetWorkflowService->paginateAvulsoContacts($filters);
 
         return $this->success(
             ['budgets' => $result['paginator']->items()],

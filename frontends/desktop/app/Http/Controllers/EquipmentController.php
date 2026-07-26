@@ -613,8 +613,8 @@ class EquipmentController extends DesktopController
             'cliente_id' => ['required', 'integer', 'min:1'],
             'cliente_busca_label' => ['nullable', 'string', 'max:160'],
             'tipo_id' => ['required', 'integer', 'min:1'],
-            'marca_id' => ['nullable', 'integer', 'min:1'],
-            'modelo_id' => ['nullable', 'integer', 'min:1'],
+            'marca_id' => ['required', 'integer', 'min:1'],
+            'modelo_id' => ['required', 'integer', 'min:1'],
             'numero_serie_visual' => ['nullable', 'string', 'max:100'],
             'senha_tipo' => ['nullable', 'string', 'max:20'],
             'senha_acesso' => ['nullable', 'string', 'max:255'],
@@ -643,7 +643,10 @@ class EquipmentController extends DesktopController
             'existing_photo_ids.*' => ['integer', 'min:1'],
             'fotos' => $isUpdate ? ['nullable', 'array', 'max:4'] : ['required', 'array', 'min:1', 'max:4'],
             'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
-        ], [], [
+        ], [
+            'marca_id.required' => 'Selecione uma marca para o equipamento.',
+            'modelo_id.required' => 'Selecione um modelo para o equipamento.',
+        ], [
             'cliente_id' => 'cliente',
             'tipo_id' => 'tipo',
             'marca_id' => 'marca',

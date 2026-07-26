@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   useCallback,
   useEffect,
@@ -22,6 +22,7 @@ import {
 } from '@/lib/api';
 import { formatDateTime, firstWord, normalizeText } from '@/lib/format';
 import type { MobileNotification } from '@/lib/types';
+import { hasPermission } from '@/lib/permissions';
 import { useSession } from '@/components/session-provider';
 import { PwaInstallButton } from '@/components/pwa-install-button';
 import {
@@ -175,6 +176,29 @@ function IconCheck() {
   );
 }
 
+function IconOrders() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M6 4h12v16l-3-2-3 2-3-2-3 2V4Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+      />
+      <path d="M9 9h6M9 13h6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function IconPlus() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function Avatar({ name, size = 'md' }: { name: string; size?: 'md' | 'lg' }) {
   const initials = name
     .split(' ')
@@ -299,6 +323,7 @@ function NotificationItem({
 
 export function AuthenticatedShell({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname() ?? '';
   const { session, setSession, clearSession } = useSession();
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(THEME_DARK);
@@ -870,6 +895,28 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
       </header>
 
       <div className="authenticated-content">{children}</div>
+
+      <nav className="app-bottom-nav" aria-label="Navegação principal">
+        <div className="app-bottom-nav-inner">
+          <Link
+            href="/os"
+            className={`app-bottom-nav-item${pathname === '/os' ? ' app-bottom-nav-item--active' : ''}`}
+          >
+            <IconOrders />
+            <span>OS</span>
+          </Link>
+
+          {hasPermission(currentUser, 'os', 'criar') ? (
+            <Link
+              href="/os/novo"
+              className={`app-bottom-nav-item app-bottom-nav-item--primary${pathname === '/os/novo' ? ' app-bottom-nav-item--active' : ''}`}
+            >
+              <IconPlus />
+              <span>Nova OS</span>
+            </Link>
+          ) : null}
+        </div>
+      </nav>
 
       {profileDialogOpen ? (
         <ModalFrame

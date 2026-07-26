@@ -83,6 +83,16 @@ Schedule::command('app:dispatch-pending-document-signature-notifications')
     ->everyFiveMinutes()
     ->withoutOverlapping(5);
 
+// Rede de segurança operacional: o Supervisor continua sendo o consumidor
+// principal. Este worker curto impede que uma implantação parcial deixe as filas
+// paradas indefinidamente após o Supervisor entrar em FATAL/BACKOFF.
+Schedule::command('queue:work --queue=documents,default --max-jobs=50 --max-time=55 --sleep=1 --tries=3 --timeout=120')
+    ->everyMinute()
+    ->name('queue-supervisor-fallback')
+    ->onOneServer()
+    ->withoutOverlapping(10)
+    ->runInBackground();
+
 if ((bool) config('file-manager.automatic_sync.enabled', false)) {
     $fileSyncInterval = (int) config('file-manager.automatic_sync.interval_minutes', 5);
     Schedule::command('file-manager:sync --pending')

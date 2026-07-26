@@ -2,10 +2,7 @@
 
 namespace App\Http\Requests\Api\V1;
 
-use App\Models\EquipmentType;
-use App\Services\EquipmentWorkflowService;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Validator;
 
 class StoreEquipmentRequest extends BaseApiFormRequest
 {
@@ -14,8 +11,8 @@ class StoreEquipmentRequest extends BaseApiFormRequest
         return [
             'cliente_id' => ['required', 'integer', 'min:1', Rule::exists('clientes', 'id')],
             'tipo_id' => ['required', 'integer', 'min:1', Rule::exists('equipamentos_tipos', 'id')],
-            'marca_id' => ['nullable', 'integer', 'min:1', Rule::exists('equipamentos_marcas', 'id')],
-            'modelo_id' => ['nullable', 'integer', 'min:1', Rule::exists('equipamentos_modelos', 'id')],
+            'marca_id' => ['required', 'integer', 'min:1', Rule::exists('equipamentos_marcas', 'id')],
+            'modelo_id' => ['required', 'integer', 'min:1', Rule::exists('equipamentos_modelos', 'id')],
             'cor' => ['nullable', 'string', 'max:50'],
             'cor_hex' => ['nullable', 'string', 'max:7'],
             'cor_rgb' => ['nullable', 'string', 'max:30'],
@@ -51,32 +48,8 @@ class StoreEquipmentRequest extends BaseApiFormRequest
     {
         return [
             'acessorios.prohibited' => 'Registre os acessórios recebidos na ordem de serviço, não no equipamento.',
+            'marca_id.required' => 'Selecione uma marca para o equipamento.',
+            'modelo_id.required' => 'Selecione um modelo para o equipamento.',
         ];
-    }
-
-    public function withValidator(Validator $validator): void
-    {
-        $validator->after(function (Validator $validator): void {
-            $typeId = (int) $this->input('tipo_id', 0);
-            if ($typeId <= 0) {
-                return;
-            }
-
-            $typeName = trim((string) (EquipmentType::query()->find($typeId)?->nome ?? ''));
-            $family = EquipmentWorkflowService::resolveTypeFamily($typeName);
-
-            // Os defaults de catálogo do "Desktop montado" só existem para o tipo Desktop.
-            // Notebook é sempre OEM/fabricante e exige marca e modelo reais do catálogo.
-            $desktopMode = trim((string) $this->input('desktop_modalidade', ''));
-            $allowCatalogDefaults = $family === 'desktop' && ($desktopMode === '' || $desktopMode === 'montado');
-
-            if (! $allowCatalogDefaults && ! $this->filled('marca_id')) {
-                $validator->errors()->add('marca_id', 'Selecione uma marca para o equipamento.');
-            }
-
-            if (! $allowCatalogDefaults && ! $this->filled('modelo_id')) {
-                $validator->errors()->add('modelo_id', 'Selecione um modelo para o equipamento.');
-            }
-        });
     }
 }

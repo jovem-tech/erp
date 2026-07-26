@@ -13,6 +13,11 @@ Arquivos principais:
   Atendimento (`php artisan reverb:start`, porta 8090 — ver
   specs/010-inbox-whatsapp-tempo-real/plan.md). Sem isso, tempo real das
   conversas nao funciona em producao.
+- `nginx-mobile-site.conf`: vhost do frontend mobile (PWA Next.js) na porta
+  8444, fazendo proxy para o processo Node mantido em `127.0.0.1:3001`.
+- `supervisor-mobile.conf`: mantem `next start` (`frontends/mobile`) no ar via
+  Supervisor, rodando como `www-data` na porta 3001 (loopback apenas — o
+  acesso externo passa pelo Nginx acima).
 
 Recomendacao operacional:
 

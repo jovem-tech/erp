@@ -25,6 +25,9 @@ function buildSession(overrides: Partial<MobileSession> = {}): MobileSession {
       foto: '',
       ativo: true,
       ultimo_acesso: null,
+      permissions: {
+        os: ['visualizar', 'criar'],
+      },
     },
     ...overrides,
   };
@@ -41,6 +44,25 @@ describe('normalizeSession', () => {
 
     expect(normalized.user.id).toBe(7);
     expect(normalized.tokenType).toBe('Bearer');
+    expect(normalized.user.permissions).toEqual({
+      os: ['visualizar', 'criar'],
+    });
+  });
+
+  it('normalizes permission values received from untrusted storage', () => {
+    const session = buildSession({
+      user: {
+        ...buildSession().user,
+        permissions: {
+          ' os ': [' criar ', 'criar', '', 123] as unknown as string[],
+          invalid: 'visualizar' as unknown as string[],
+        },
+      },
+    });
+
+    expect(normalizeSession(session).user.permissions).toEqual({
+      os: ['criar'],
+    });
   });
 
   it('falls back to empty/zero values for missing user fields', () => {
@@ -54,6 +76,7 @@ describe('normalizeSession', () => {
     expect(normalized.user.id).toBe(0);
     expect(normalized.user.nome).toBe('');
     expect(normalized.user.ativo).toBe(false);
+    expect(normalized.user.permissions).toEqual({});
   });
 });
 
@@ -65,6 +88,7 @@ describe('readStoredSession / writeStoredSession / clearStoredSession', () => {
     const stored = readStoredSession();
     expect(stored?.accessToken).toBe('token-123');
     expect(stored?.user.email).toBe('tecnico@example.com');
+    expect(stored?.user.permissions?.os).toContain('criar');
   });
 
   it('returns null when nothing is stored', () => {

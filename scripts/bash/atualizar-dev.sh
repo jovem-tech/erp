@@ -50,7 +50,19 @@ php artisan route:clear && php artisan route:cache
 php artisan view:clear
 sudo -u www-data -- php artisan view:cache
 
-sudo systemctl reload php8.5-fpm 2>/dev/null || true
-sudo supervisorctl restart all 2>/dev/null || true
+echo ">>> Reiniciando serviços de runtime"
+sudo systemctl reload php8.5-fpm
+sudo supervisorctl reread
+sudo supervisorctl update
+sudo supervisorctl restart all
+
+sleep 2
+SUPERVISOR_STATUS="$(sudo supervisorctl status)"
+echo "$SUPERVISOR_STATUS"
+
+if ! grep -Eq '^sistema-erp-queue-worker_.+[[:space:]]+RUNNING' <<< "$SUPERVISOR_STATUS"; then
+  echo "ERRO: os workers de fila não ficaram RUNNING após a atualização." >&2
+  exit 1
+fi
 
 echo "DEV_ATUALIZADO_OK ($(git rev-parse --short HEAD))"

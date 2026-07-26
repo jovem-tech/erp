@@ -36,6 +36,7 @@
         tabs: Array.from(document.querySelectorAll('[data-equipment-tab]')),
         panels: Array.from(document.querySelectorAll('[data-equipment-panel]')),
         colorTab: document.querySelector('[data-equipment-tab="cor"]'),
+        technicalTab: document.querySelector('[data-equipment-tab="informacoes-tecnicas"]'),
         clientSelect: document.getElementById('equipmentClientSelect'),
         clientLabel: document.getElementById('equipmentClientLabel'),
         type: document.getElementById('equipmentType'),
@@ -561,9 +562,22 @@
     const updateTechnicalPanel = () => {
         const selected = els.type?.selectedOptions?.[0];
         const family = selected?.dataset.family || 'other';
-        const visible = family === 'desktop' || family === 'notebook';
+        const computerFamily = family === 'desktop' || family === 'notebook';
 
-        els.technicalPanel?.classList.toggle('is-hidden', !visible);
+        if (els.technicalTab instanceof HTMLButtonElement) {
+            if (!computerFamily && els.technicalTab.classList.contains('is-active')) {
+                setActiveTab('informacoes');
+            }
+
+            els.technicalTab.hidden = !computerFamily;
+            els.technicalTab.setAttribute('aria-hidden', computerFamily ? 'false' : 'true');
+        }
+
+        if (els.technicalPanel instanceof HTMLElement) {
+            els.technicalPanel.hidden = !computerFamily;
+            els.technicalPanel.setAttribute('aria-hidden', computerFamily ? 'false' : 'true');
+            els.technicalPanel.classList.toggle('is-hidden', !computerFamily);
+        }
 
         if (els.desktopMode instanceof HTMLSelectElement) {
             const montadoOption = els.desktopMode.querySelector('option[value="montado"]');
@@ -573,7 +587,7 @@
 
             toggleDisabled(els.desktopMode, family === 'notebook');
 
-            if (!visible) {
+            if (!computerFamily) {
                 els.desktopMode.value = '';
             } else if (family === 'notebook') {
                 els.desktopMode.value = 'oem';
@@ -1642,13 +1656,21 @@
     };
 
     // --- Gate Próximo/Criar: só libera "Criar equipamento" com os obrigatórios --
-    // Obrigatórios: Tipo sempre; Cliente só fora do modo diferido (no diferido o
-    // cliente vem da OS); Foto principal sempre. Enquanto faltar algo, o botão
-    // vira "Próximo" e leva para a aba/campo pendente.
+    // Obrigatórios: Tipo, marca e modelo sempre; Cliente só fora do modo diferido
+    // (no diferido o cliente vem da OS); Foto principal sempre. Enquanto faltar
+    // algo, o botão vira "Próximo" e leva para a aba/campo pendente.
     const getEquipmentPendingField = () => {
         const tipo = document.getElementById('equipmentType');
         if (!(tipo instanceof HTMLSelectElement) || String(tipo.value || '').trim() === '') {
             return { tab: 'informacoes', el: tipo };
+        }
+        const marca = document.getElementById('equipmentBrand');
+        if (!(marca instanceof HTMLSelectElement) || String(marca.value || '').trim() === '') {
+            return { tab: 'informacoes', el: marca };
+        }
+        const modelo = document.getElementById('equipmentModel');
+        if (!(modelo instanceof HTMLSelectElement) || String(modelo.value || '').trim() === '') {
+            return { tab: 'informacoes', el: modelo };
         }
         if (!isDeferMode) {
             const cliente = document.getElementById('equipmentClientSelect');

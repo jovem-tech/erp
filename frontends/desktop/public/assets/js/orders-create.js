@@ -71,6 +71,7 @@
         entryChecklistTitle: document.querySelector('[data-order-entry-checklist-title]'),
         entryChecklistDescription: document.querySelector('[data-order-entry-checklist-description]'),
         entryChecklistCount: document.querySelector('[data-order-entry-checklist-count]'),
+        entryChecklistAllOk: document.querySelector('[data-order-entry-checklist-all-ok]'),
         entryChecklistItems: document.querySelector('[data-order-entry-checklist-items]'),
         entryChecklistNotes: document.querySelector('[data-order-entry-checklist-notes]'),
         clientEditButton: document.querySelector('[data-order-create-client-edit-link]'),
@@ -601,6 +602,7 @@
         ok: 'OK',
         discrepancia: 'Discrepância',
         nao_verificado: 'Não verificado',
+        nao_se_aplica: 'Não se aplica',
     };
 
     const getChecklistResponseMap = () => {
@@ -611,7 +613,7 @@
             const itemId = Number(response?.checklist_item_id || 0) || 0;
             if (itemId > 0) {
                 map.set(itemId, {
-                    status: normalizeText(response?.status || 'ok') || 'ok',
+                    status: normalizeText(response?.status || ''),
                     observacao: normalizeText(response?.observacao || ''),
                 });
             }
@@ -635,11 +637,16 @@
 
         rows.forEach((row) => {
             const select = row.querySelector('[data-order-entry-checklist-status]');
+            const observationInput = row.querySelector('[data-order-entry-checklist-observation]');
             const status = select instanceof HTMLSelectElement ? select.value : '';
             if (status === 'discrepancia') {
                 discrepancies++;
             }
-            if (status === 'nao_verificado') {
+            if (status === ''
+                || (status === 'discrepancia'
+                    && observationInput instanceof HTMLInputElement
+                    && normalizeText(observationInput.value) === '')
+            ) {
                 unchecked++;
             }
         });
@@ -681,13 +688,15 @@
         els.entryChecklistItems.innerHTML = items.map((item, index) => {
             const itemId = Number(item?.id || 0) || 0;
             const response = responseMap.get(itemId) || {};
-            const selectedStatus = normalizeText(response.status || 'ok') || 'ok';
+            const selectedStatus = normalizeText(response.status || '');
             const observation = normalizeText(response.observacao || '');
             const description = normalizeText(item?.descricao || `Item ${index + 1}`);
 
-            const options = Object.entries(checklistStatusLabels)
+            const options = [
+                `<option value=""${selectedStatus === '' ? ' selected' : ''} disabled>Selecione</option>`,
+                ...Object.entries(checklistStatusLabels)
                 .map(([value, label]) => `<option value="${value}"${selectedStatus === value ? ' selected' : ''}>${escapeHtml(label)}</option>`)
-                .join('');
+            ].join('');
 
             return `
                 <article class="order-entry-checklist-item" data-order-entry-checklist-item>
@@ -697,16 +706,25 @@
                         <small>Item ${index + 1}</small>
                     </div>
                     <div class="order-entry-checklist-item-controls">
-                        <select class="form-select form-select-sm" name="checklist_entrada[respostas][${index}][status]" data-order-entry-checklist-status>
+                        <select
+                            id="checklistEntradaStatus${index}"
+                            class="form-select form-select-sm"
+                            name="checklist_entrada[respostas][${index}][status]"
+                            aria-label="Classificação do item ${index + 1}"
+                            required
+                            data-order-entry-checklist-status
+                        >
                             ${options}
                         </select>
                         <input
+                            id="checklistEntradaObservacao${index}"
                             type="text"
                             class="form-control form-control-sm"
                             name="checklist_entrada[respostas][${index}][observacao]"
                             value="${escapeHtml(observation)}"
                             maxlength="1000"
                             placeholder="Observação do item"
+                            aria-label="Observação do item ${index + 1}"
                             data-order-entry-checklist-observation
                         >
                     </div>
@@ -722,10 +740,58 @@
         }
 
         els.entryChecklistItems
-            .querySelectorAll('[data-order-entry-checklist-status], [data-order-entry-checklist-observation]')
-            .forEach((input) => {
-                input.addEventListener('input', updateSummary);
-                input.addEventListener('change', updateSummary);
+            .querySelectorAll('[data-order-entry-checklist-item]')
+            .forEach((row) => {
+                const select = row.querySelector('[data-order-entry-checklist-status]');
+                const observationInput = row.querySelector('[data-order-entry-checklist-observation]');
+
+                if (select instanceof HTMLSelectElement) {
+                    select.addEventListener('change', () => {
+                        syncChecklistObservationRequirement(row);
+                        updateSummary();
+                    });
+                }
+
+                if (observationInput instanceof HTMLInputElement) {
+                    observationInput.addEventListener('input', updateSummary);
+                }
+
+                syncChecklistObservationRequirement(row);
+            });
+
+        updateSummary();
+    };
+
+    const syncChecklistObservationRequirement = (row) => {
+        if (!(row instanceof HTMLElement)) {
+            return;
+        }
+
+        const select = row.querySelector('[data-order-entry-checklist-status]');
+        const observationInput = row.querySelector('[data-order-entry-checklist-observation]');
+        if (!(select instanceof HTMLSelectElement) || !(observationInput instanceof HTMLInputElement)) {
+            return;
+        }
+
+        const isRequired = select.value === 'discrepancia';
+        observationInput.required = isRequired;
+        observationInput.setAttribute('aria-required', isRequired ? 'true' : 'false');
+        observationInput.placeholder = isRequired ? 'Observação obrigatória' : 'Observação do item';
+    };
+
+    const markAllChecklistItemsOk = () => {
+        if (!(els.entryChecklistItems instanceof HTMLElement)) {
+            return;
+        }
+
+        els.entryChecklistItems
+            .querySelectorAll('[data-order-entry-checklist-item]')
+            .forEach((row) => {
+                const select = row.querySelector('[data-order-entry-checklist-status]');
+                if (select instanceof HTMLSelectElement) {
+                    select.value = 'ok';
+                    syncChecklistObservationRequirement(row);
+                }
             });
 
         updateSummary();
@@ -1049,10 +1115,16 @@
         const equipmentPhotoCount = state.pendingEquipmentPhotos.length;
         const photoCount = entryPhotoCount + equipmentPhotoCount;
         const checklist = getChecklistSummary();
+        const checklistReady = checklist.total === 0 || checklist.unchecked === 0;
         // Cadastro novo capturado conta como "pronto" (será criado ao salvar a OS).
         const clientReady = client.id > 0 || client.pending === true;
         const equipmentReady = equipment.id > 0 || equipment.pending === true;
-        const isReady = clientReady && equipmentReady && relato.length >= 5 && technician.id > 0 && previsao !== '';
+        const isReady = clientReady
+            && equipmentReady
+            && relato.length >= 5
+            && checklistReady
+            && technician.id > 0
+            && previsao !== '';
 
         if (!config.lockStatus) {
             setText(els.summaryStatus, isReady ? 'Pronto para abrir' : 'Triagem em andamento');
@@ -1139,6 +1211,11 @@
     };
 
     const getFieldLabel = (field) => {
+        const ariaLabel = normalizeText(field.getAttribute?.('aria-label') || '');
+        if (ariaLabel !== '') {
+            return ariaLabel;
+        }
+
         if (field.id) {
             const label = document.querySelector(`label[for="${field.id}"]`);
             if (label) {
@@ -1190,6 +1267,13 @@
         }
         if (relatoValue.length < 5 && els.relatoField instanceof HTMLElement) {
             return els.relatoField;
+        }
+        if (els.entryChecklistItems instanceof HTMLElement) {
+            const invalidChecklistField = Array.from(els.entryChecklistItems.querySelectorAll('[required]'))
+                .find((field) => typeof field.checkValidity === 'function' && ! field.checkValidity());
+            if (invalidChecklistField instanceof HTMLElement) {
+                return invalidChecklistField;
+            }
         }
         if (technician.id <= 0 && els.technicianSelect instanceof HTMLElement) {
             return els.technicianSelect;
@@ -2609,6 +2693,12 @@
         });
     };
 
+    const initEntryChecklistActions = () => {
+        if (els.entryChecklistAllOk instanceof HTMLButtonElement) {
+            els.entryChecklistAllOk.addEventListener('click', markAllChecklistItemsOk);
+        }
+    };
+
     const initSelectors = () => {
         if (!hasWizardForm || (!(els.clientSelect instanceof HTMLSelectElement) && !(els.equipmentSelect instanceof HTMLSelectElement))) {
             return;
@@ -2824,6 +2914,15 @@
             && window.jQuery.fn
             && typeof window.jQuery.fn.select2 === 'function') {
             const $ = window.jQuery;
+
+            // O inicializador global do desktop transforma selects genéricos
+            // em Select2 local. Se outra integração já tiver inicializado este
+            // elemento, descarte-a antes de aplicar o adaptador AJAX correto.
+            if ($(picker).data('select2')) {
+                $(picker).select2('destroy');
+            }
+            $(picker).off('.orderBudgetPicker');
+
             $(picker).select2({
                 theme: 'bootstrap-5',
                 width: '100%',
@@ -2865,8 +2964,9 @@
                     },
                 },
             });
+            picker.dataset.select2Ready = '1';
 
-            $(picker).on('select2:select', (event) => {
+            $(picker).on('select2:select.orderBudgetPicker', (event) => {
                 navigateToBudget(event?.params?.data?.id);
             });
 
@@ -2913,14 +3013,192 @@
         });
     };
 
+    // Sugere, a partir do nome/telefone digitados no cadastro rápido de
+    // cliente, orçamentos avulsos (sem cliente cadastrado) já existentes para
+    // essa pessoa — evita recadastro do zero e oferece vincular o orçamento
+    // encontrado à OS. Reaproveita o mesmo mecanismo de navegação/confirmação
+    // do picker do topo (orders.create?orcamento_id=X); nenhuma regra de
+    // elegibilidade de vínculo é duplicada aqui.
+    const initAvulsoContactPickers = () => {
+        const form = els.quickClientForm;
+        if (!(form instanceof HTMLFormElement)) {
+            return;
+        }
+
+        const searchUrl = String(form.dataset.avulsoBudgetSearchUrl || '').trim();
+        const linkUrl = String(form.dataset.avulsoBudgetLinkUrl || '').trim();
+        if (searchUrl === '') {
+            return;
+        }
+
+        const nomeField = document.getElementById('quickClientNomeRazao');
+        const telefoneField = document.getElementById('quickClientTelefone1');
+        const emailField = document.getElementById('quickClientEmail');
+        const matchedIdField = form.querySelector('[data-quick-client-matched-orcamento-id]');
+        const callout = form.querySelector('[data-avulso-budget-callout]');
+        const calloutText = form.querySelector('[data-avulso-budget-callout-text]');
+        const linkButton = form.querySelector('[data-avulso-budget-link]');
+        const dismissButton = form.querySelector('[data-avulso-budget-dismiss]');
+
+        if (!(nomeField instanceof HTMLInputElement) || !(telefoneField instanceof HTMLInputElement)) {
+            return;
+        }
+
+        const initialSnapshot = orderFormSnapshot();
+        let applyingMatch = false;
+
+        const hideCallout = () => {
+            callout?.classList.add('d-none');
+            if (matchedIdField instanceof HTMLInputElement) {
+                matchedIdField.value = '';
+            }
+        };
+
+        const showCallout = (budget) => {
+            if (matchedIdField instanceof HTMLInputElement) {
+                matchedIdField.value = String(budget.id || '');
+            }
+
+            if (calloutText instanceof HTMLElement) {
+                const parts = [
+                    budget.numero ? `Orçamento ${budget.numero}` : `Orçamento #${budget.id}`,
+                    budget.equipamento_resumo || '',
+                    budget.total_formatado ? `R$ ${budget.total_formatado}` : '',
+                ].filter((part) => String(part || '').trim() !== '');
+                calloutText.textContent = budget.linkable
+                    ? `Encontramos ${parts.join(' · ')} em aberto para esse contato.`
+                    : `Existe ${parts.join(' · ')} para esse contato, mas ainda em "${budget.status_label || 'andamento'}" — finalize a aprovação no módulo de orçamentos antes de vincular.`;
+            }
+
+            if (linkButton instanceof HTMLElement) {
+                linkButton.classList.toggle('d-none', !budget.linkable);
+            }
+            callout?.classList.remove('d-none');
+        };
+
+        const applyMatch = (budget) => {
+            applyingMatch = true;
+            nomeField.value = String(budget.cliente_nome_avulso || nomeField.value);
+            if (budget.telefone_contato) {
+                telefoneField.value = String(budget.telefone_contato);
+            }
+            if ((emailField instanceof HTMLInputElement) && emailField.value.trim() === '' && budget.email_contato) {
+                emailField.value = String(budget.email_contato);
+            }
+            applyingMatch = false;
+            showCallout(budget);
+        };
+
+        const debounced = (fn, delay) => {
+            let timer = null;
+            return (...args) => {
+                if (timer !== null) {
+                    window.clearTimeout(timer);
+                }
+                timer = window.setTimeout(() => fn(...args), delay);
+            };
+        };
+
+        const search = async (field, container) => {
+            const term = field.value.trim();
+            if (term.length < 2) {
+                container.classList.add('d-none');
+                container.innerHTML = '';
+                return;
+            }
+
+            try {
+                const response = await fetch(`${searchUrl}?q=${encodeURIComponent(term)}&per_page=8`, {
+                    headers: { Accept: 'application/json' },
+                    credentials: 'same-origin',
+                });
+                const payload = await response.json();
+                if (!response.ok || !Array.isArray(payload?.results)) {
+                    container.classList.add('d-none');
+                    container.innerHTML = '';
+                    return;
+                }
+
+                if (payload.results.length === 0) {
+                    container.classList.add('d-none');
+                    container.innerHTML = '';
+                    return;
+                }
+
+                container.innerHTML = payload.results.map((item, index) => (
+                    `<button type="button" class="quick-client-avulso-suggestion" data-avulso-suggestion-index="${index}">${escapeHtml(item.text || '')}</button>`
+                )).join('');
+                container.classList.remove('d-none');
+
+                container.querySelectorAll('[data-avulso-suggestion-index]').forEach((button) => {
+                    button.addEventListener('click', () => {
+                        const index = Number(button.getAttribute('data-avulso-suggestion-index'));
+                        const item = payload.results[index];
+                        if (item?.budget) {
+                            applyMatch(item.budget);
+                        }
+                        container.classList.add('d-none');
+                        container.innerHTML = '';
+                    });
+                });
+            } catch {
+                container.classList.add('d-none');
+                container.innerHTML = '';
+            }
+        };
+
+        const wireField = (field, key) => {
+            const container = form.querySelector(`[data-avulso-suggestions="${key}"]`);
+            if (!(container instanceof HTMLElement)) {
+                return;
+            }
+
+            const debouncedSearch = debounced(() => search(field, container), 300);
+
+            field.addEventListener('input', () => {
+                if (applyingMatch) {
+                    return;
+                }
+                hideCallout();
+                debouncedSearch();
+            });
+
+            field.addEventListener('blur', () => {
+                window.setTimeout(() => {
+                    container.classList.add('d-none');
+                }, 150);
+            });
+        };
+
+        wireField(nomeField, 'nome');
+        wireField(telefoneField, 'telefone');
+
+        dismissButton?.addEventListener('click', hideCallout);
+
+        linkButton?.addEventListener('click', () => {
+            const budgetId = (matchedIdField instanceof HTMLInputElement) ? matchedIdField.value.trim() : '';
+            if (budgetId === '' || linkUrl === '') {
+                return;
+            }
+
+            const target = new URL(linkUrl, window.location.origin);
+            target.searchParams.set('orcamento_id', budgetId);
+            void confirmBudgetNavigation(target.toString(), initialSnapshot);
+        });
+
+        els.quickClientModal?.addEventListener('hidden.bs.modal', hideCallout);
+    };
+
     initTabs();
     initSelectors();
     initPhotos();
     initQuickClient();
     initQuickEquipment();
     initBudgetPicker();
+    initAvulsoContactPickers();
     initPendingRecordActions();
     initAccessoryPresets();
+    initEntryChecklistActions();
     initFormValidation();
     initSubmitButton();
     updateSummary();
