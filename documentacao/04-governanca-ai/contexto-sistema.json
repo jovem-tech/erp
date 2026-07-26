@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-07-26T01:40:39-03:00",
+    "generated_at": "2026-07-26T02:01:04-03:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "5.17.2",
+        "app_version": "5.18.0",
         "api_version": "1.6.1",
         "production_target": "Ubuntu VPS",
         "development_target": "Ubuntu Server LAN - BANCADA-02 (192.168.1.100)"
@@ -532,6 +532,10 @@
                 {
                     "file": "documentacao/07-novas-implementacoes/2026-07-25-orcamentos-avulsos-vinculaveis-nova-os.md",
                     "title": "Orçamentos avulsos vinculáveis na Nova OS"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-07-26-navegacao-mobile-e-consistencia-de-chunks.md",
+                    "title": "Navegação mobile e consistência de chunks no ambiente de desenvolvimento"
                 },
                 {
                     "file": "documentacao/07-novas-implementacoes/historico-de-versoes.md",

@@ -1,5 +1,6 @@
 import net from 'node:net';
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -7,6 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 const nextBin = path.join(projectRoot, 'node_modules', 'next', 'dist', 'bin', 'next');
+const buildIdFile = path.join(projectRoot, '.next', 'BUILD_ID');
 
 const command = process.argv[2] ?? 'dev';
 const explicitPort = normalizePort(process.env.PORT);
@@ -20,6 +22,14 @@ function normalizePort(value) {
 
   const port = Number.parseInt(value, 10);
   return Number.isInteger(port) && port > 0 ? port : null;
+}
+
+function readBuildId() {
+  try {
+    return readFileSync(buildIdFile, 'utf8').trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 async function isPortAvailable(port) {
@@ -78,6 +88,9 @@ async function resolvePort(startPort) {
 }
 
 function runNext(port) {
+  const initialBuildId = command === 'start' ? readBuildId() : null;
+  let restartingForNewBuild = false;
+
   const child = spawn(process.execPath, [nextBin, command, '-p', String(port)], {
     cwd: projectRoot,
     stdio: 'inherit',
@@ -87,12 +100,45 @@ function runNext(port) {
     },
   });
 
+  const buildMonitor = initialBuildId
+    ? setInterval(() => {
+        const currentBuildId = readBuildId();
+
+        if (
+          currentBuildId &&
+          currentBuildId !== initialBuildId &&
+          !restartingForNewBuild
+        ) {
+          restartingForNewBuild = true;
+          console.log(
+            `[mobile] Novo build detectado (${initialBuildId} -> ${currentBuildId}). ` +
+              'Reciclando o processo pelo Supervisor.'
+          );
+          child.kill('SIGTERM');
+        }
+      }, 5000)
+    : null;
+
+  buildMonitor?.unref();
+
   child.on('error', (error) => {
+    if (buildMonitor) {
+      clearInterval(buildMonitor);
+    }
+
     console.error(`[mobile] Falha ao iniciar o Next: ${error.message}`);
     process.exit(1);
   });
 
   child.on('exit', (code, signal) => {
+    if (buildMonitor) {
+      clearInterval(buildMonitor);
+    }
+
+    if (restartingForNewBuild) {
+      process.exit(0);
+    }
+
     if (signal) {
       process.kill(process.pid, signal);
       return;

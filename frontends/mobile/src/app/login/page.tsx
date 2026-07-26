@@ -6,12 +6,13 @@ import { ApiError, apiLogin } from '@/lib/api';
 import { useSession } from '@/components/session-provider';
 import { formatSessionExpiration } from '@/lib/session';
 import { PwaInstallButton } from '@/components/pwa-install-button';
+import { resolveInternalPath } from '@/lib/navigation';
 
 function LoginScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { ready, session, setSession } = useSession();
-  const destination = searchParams?.get('next') || '/os';
+  const destination = resolveInternalPath(searchParams?.get('next'), '/');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

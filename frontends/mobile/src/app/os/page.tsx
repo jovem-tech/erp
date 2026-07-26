@@ -178,7 +178,7 @@ function OrdersScreen() {
             <p className="hero__eyebrow">Sistema ERP Mobile</p>
             <h1 className="hero__title">Ordens de serviço</h1>
             <p className="hero__subtitle">
-              Foco total em operação. A nav bar agora guarda perfil, tema e notificações, deixando a fila mais limpa.
+              Foco total em operação. Use a navegação inferior para acessar o início, a fila, uma nova OS e seu perfil.
             </p>
           </div>
 

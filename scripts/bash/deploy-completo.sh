@@ -26,11 +26,105 @@ require_command() {
   }
 }
 
+validate_mobile_assets() {
+  local html
+  local asset
+  local response
+  local status
+  local content_type
+  local -a assets=()
+
+  html="$(
+    curl \
+      --fail \
+      --insecure \
+      --silent \
+      --show-error \
+      --max-time 10 \
+      "https://127.0.0.1:8444/os"
+  )"
+
+  mapfile -t assets < <(
+    grep -oE '(src|href)="(/_next/static/[^"]+\.(js|css))"' <<< "$html" \
+      | sed -E 's/^(src|href)="([^"]+)"$/\2/' \
+      | sort -u
+  )
+
+  [[ "${#assets[@]}" -gt 0 ]] || {
+    printf 'ERRO: o HTML do mobile nao referenciou assets Next.js para validacao.\n' >&2
+    return 1
+  }
+
+  for asset in "${assets[@]}"; do
+    response="$(
+      curl \
+        --insecure \
+        --silent \
+        --show-error \
+        --output /dev/null \
+        --max-time 10 \
+        --write-out '%{http_code} %{content_type}' \
+        "https://127.0.0.1:8444${asset}"
+    )"
+    read -r status content_type <<< "$response"
+
+    [[ "$status" == "200" ]] || {
+      printf 'ERRO: asset mobile retornou HTTP %s: %s\n' "$status" "$asset" >&2
+      return 1
+    }
+
+    case "$asset" in
+      *.js)
+        [[ "$content_type" == *javascript* ]] || {
+          printf 'ERRO: chunk JS retornou MIME inesperado (%s): %s\n' \
+            "$content_type" "$asset" >&2
+          return 1
+        }
+        ;;
+      *.css)
+        [[ "$content_type" == text/css* ]] || {
+          printf 'ERRO: asset CSS retornou MIME inesperado (%s): %s\n' \
+            "$content_type" "$asset" >&2
+          return 1
+        }
+        ;;
+    esac
+  done
+}
+
+restart_mobile_dev() {
+  printf '\n>>> Reiniciando o PWA mobile com o build validado\n'
+  sudo supervisorctl restart sistema-erp-mobile
+
+  for attempt in {1..15}; do
+    if curl \
+      --fail \
+      --insecure \
+      --silent \
+      --show-error \
+      --max-time 5 \
+      "https://127.0.0.1:8444/login" \
+      >/dev/null; then
+      validate_mobile_assets
+      printf 'PWA_MOBILE_DEV_OK (tentativa %s)\n' "$attempt"
+      return 0
+    fi
+
+    sleep 1
+  done
+
+  printf 'ERRO: o PWA mobile nao ficou saudavel apos o restart.\n' >&2
+  sudo supervisorctl status sistema-erp-mobile >&2 || true
+  return 1
+}
+
 validate_mobile() {
   printf '\n>>> [3/7] Validando PWA mobile antes do push\n'
 
   require_command node
   require_command corepack
+  require_command curl
+  require_command sudo
 
   cd "$MOBILE_DIR"
   corepack "pnpm@${PNPM_VERSION}" install --frozen-lockfile
@@ -41,6 +135,8 @@ validate_mobile() {
     printf 'ERRO: build mobile nao gerou .next/BUILD_ID.\n' >&2
     exit 1
   }
+
+  restart_mobile_dev
 
   cd "$REPO_ROOT"
 }

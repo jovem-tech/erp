@@ -602,6 +602,7 @@ img {
 
 .authenticated-content {
   position: relative;
+  padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
 }
 
 .app-navbar {
@@ -627,6 +628,13 @@ img {
 
 [data-theme='light'] .app-navbar-inner {
   background: rgba(255, 255, 255, 0.82);
+}
+
+.app-navbar-leading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .app-brand {
@@ -693,6 +701,12 @@ img {
   flex: none;
 }
 
+.install-action--menu {
+  display: grid;
+  width: 100%;
+  gap: 8px;
+}
+
 .install-button:disabled {
   opacity: 0.65;
   cursor: wait;
@@ -733,6 +747,27 @@ img {
 
 .install-button-label {
   line-height: 1;
+}
+
+.install-button--menu {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 12px;
+  border-radius: 16px;
+  text-align: left;
+}
+
+.install-button--installed {
+  opacity: 0.72;
+  cursor: default;
+}
+
+.install-action--menu .nav-popover-install {
+  position: static;
+  width: 100%;
+  max-height: none;
+  margin: 0;
+  box-shadow: none;
 }
 
 .nav-action-group {
@@ -860,6 +895,12 @@ img {
 
 .nav-popover-profile {
   width: min(320px, calc(100vw - 20px));
+}
+
+.nav-popover-menu {
+  right: auto;
+  left: 0;
+  width: min(360px, calc(100vw - 20px));
 }
 
 .nav-popover-install {
@@ -1167,6 +1208,11 @@ img {
   border-color: rgba(19, 127, 121, 0.28);
 }
 
+[data-theme='light'] .workspace-card {
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(24, 44, 78, 0.12);
+}
+
 [data-theme='light'] .button--soft,
 [data-theme='light'] .button-secondary {
   background: rgba(18, 34, 62, 0.05);
@@ -1262,23 +1308,24 @@ img {
   }
 
   .app-navbar-inner {
-    flex-direction: column;
-    align-items: stretch;
+    align-items: center;
   }
 
   .app-navbar-actions {
-    width: 100%;
-    justify-content: space-between;
-  }
-
-  .profile-trigger {
-    width: 100%;
-    justify-content: space-between;
+    width: auto;
   }
 
   .nav-popover,
   .nav-popover-profile {
-    width: min(100%, calc(100vw - 14px));
+    width: min(440px, calc(100vw - 42px));
+  }
+
+  .nav-popover-menu {
+    width: min(320px, calc(100vw - 42px));
+  }
+
+  .nav-popover-profile {
+    width: min(320px, calc(100vw - 42px));
   }
 
   .page-frame {
@@ -1494,6 +1541,78 @@ img {
   color: #0f5c5a;
 }
 
+.workspace-hero {
+  min-height: 190px;
+  align-content: end;
+}
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.workspace-card {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-height: 210px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.04);
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+a.workspace-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(87, 218, 199, 0.34);
+  box-shadow: 0 18px 38px rgba(3, 10, 22, 0.18);
+}
+
+.workspace-card:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px rgba(87, 218, 199, 0.16);
+}
+
+.workspace-card--accent {
+  background:
+    linear-gradient(135deg, rgba(87, 218, 199, 0.14), rgba(47, 239, 176, 0.06)),
+    rgba(255, 255, 255, 0.04);
+}
+
+.workspace-card--disabled {
+  opacity: 0.62;
+}
+
+.workspace-card__index {
+  color: var(--accent);
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.workspace-card strong {
+  font-size: 1.08rem;
+}
+
+.workspace-card p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.workspace-card__action {
+  align-self: end;
+  margin-top: auto;
+  color: var(--accent);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
 .app-bottom-nav {
   position: fixed;
   left: 0;
@@ -1508,11 +1627,13 @@ img {
 
 .app-bottom-nav-inner {
   pointer-events: auto;
-  display: flex;
-  align-items: stretch;
-  gap: 6px;
-  width: min(480px, 100%);
-  padding: 8px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  align-items: end;
+  gap: 2px;
+  width: min(540px, 100%);
+  min-height: 74px;
+  padding: 10px 6px 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   background: rgba(7, 16, 29, 0.86);
@@ -1525,18 +1646,23 @@ img {
 }
 
 .app-bottom-nav-item {
-  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 8px 6px;
+  min-width: 0;
+  min-height: 56px;
+  padding: 7px 3px;
+  border: 0;
   border-radius: 14px;
+  background: transparent;
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: clamp(0.58rem, 2.6vw, 0.7rem);
   font-weight: 700;
+  line-height: 1.1;
   text-align: center;
+  white-space: nowrap;
 }
 
 .app-bottom-nav-item svg {
@@ -1550,10 +1676,69 @@ img {
 }
 
 .app-bottom-nav-item--primary {
-  color: #03131b;
+  position: relative;
+  color: var(--text);
+  background: transparent;
+}
+
+.app-bottom-nav-item--primary svg {
+  width: 50px;
+  height: 50px;
+  margin-top: -25px;
+  padding: 13px;
+  border: 5px solid var(--panel-strong);
+  border-radius: 999px;
   background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #03131b;
+  box-shadow: 0 12px 26px rgba(47, 239, 176, 0.2);
 }
 
 .app-bottom-nav-item--primary.app-bottom-nav-item--active {
-  color: #03131b;
+  color: var(--accent);
+  background: transparent;
+}
+
+.app-bottom-nav-item--primary.app-bottom-nav-item--active svg {
+  box-shadow:
+    0 0 0 3px rgba(87, 218, 199, 0.22),
+    0 12px 26px rgba(47, 239, 176, 0.24);
+}
+
+.app-bottom-nav-item--disabled {
+  cursor: not-allowed;
+  opacity: 0.44;
+}
+
+.app-bottom-nav-item--disabled.app-bottom-nav-item--primary svg {
+  border-color: var(--panel-strong);
+  background: var(--panel-soft);
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.nav-action-group-profile-bottom {
+  width: 100%;
+  min-width: 0;
+}
+
+.nav-action-group-profile-bottom > .app-bottom-nav-item {
+  width: 100%;
+  height: 100%;
+}
+
+.nav-popover-profile-bottom {
+  top: auto;
+  right: 0;
+  bottom: calc(100% + 14px);
+  width: min(320px, calc(100vw - 20px));
+  max-height: min(65vh, 520px);
+}
+
+[data-theme='light'] .app-bottom-nav-item--primary svg {
+  border-color: rgba(255, 255, 255, 0.96);
+}
+
+[data-theme='light'] .app-bottom-nav-item--disabled.app-bottom-nav-item--primary svg {
+  border-color: rgba(255, 255, 255, 0.96);
+  background: rgba(18, 34, 62, 0.08);
 }
