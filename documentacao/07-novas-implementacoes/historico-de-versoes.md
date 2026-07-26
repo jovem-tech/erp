@@ -3,6 +3,19 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.19.1.0 - 2026-07-26
+
+- o tema claro do PWA passa a iluminar também o fundo externo aos cartões;
+- realces, ações, focos e navegação deixam a paleta verde e adotam o azul
+  institucional Jovem Tech;
+- a tipografia móvel passa a usar a pilha Aptos/Segoe UI/system-ui, sem carregar
+  fontes externas;
+- tokens RGB centralizam transparências e preservam contraste nos temas claro e
+  escuro;
+- favicon, miniaturas documentais e cor da barra do navegador acompanham a
+  identidade azul;
+- nota: `2026-07-26-tema-claro-identidade-jovem-tech-mobile.md`.
+
 ## v5.19.0.0 - 2026-07-26
 
 - ao tocar no campo da etapa Equipamento da Nova OS mobile, o PWA lista os equipamentos pertencentes ao cliente selecionado;

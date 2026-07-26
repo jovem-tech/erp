@@ -20,7 +20,7 @@
       document.head.appendChild(meta);
     }
 
-    meta.setAttribute('content', theme === light ? '#eef2ff' : '#06111f');
+    meta.setAttribute('content', theme === light ? '#f4f8ff' : '#06111f');
   } catch (error) {
     // Fallback to CSS defaults if localStorage or matchMedia is unavailable.
   }

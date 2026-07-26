@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.19.1.0 — 2026-07-26 14:02
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige o fundo do tema claro e alinha os acentos e a tipografia mobile a identidade azul Jovem Tech.
+- **Arquivos:** documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,documentacao/07-novas-implementacoes/2026-07-26-tema-claro-identidade-jovem-tech-mobile.md,documentacao/07-novas-implementacoes/historico-de-versoes.md,frontends/mobile/public/favicon.svg,frontends/mobile/public/theme-bootstrap.js,frontends/mobile/src/app/globals.css,frontends/mobile/src/components/orders/order-attachments.tsx,frontends/mobile/src/lib/__tests__/theme.test.ts,frontends/mobile/src/lib/theme.ts
+
 ## v5.19.0.0 — 2026-07-26 07:58
 - **Tier:** minor
 - **Autor/Agente:** Codex

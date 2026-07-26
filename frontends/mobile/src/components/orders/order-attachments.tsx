@@ -42,8 +42,8 @@ function AttachmentList({
                 src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(
                   `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
                     <rect width="640" height="480" fill="#11243f"/>
-                    <text x="50%" y="48%" fill="#57dac7" font-size="32" text-anchor="middle" font-family="Trebuchet MS, sans-serif">${item.tipo_label}</text>
-                    <text x="50%" y="58%" fill="#edf3ff" font-size="18" text-anchor="middle" font-family="Trebuchet MS, sans-serif">${item.nome_arquivo}</text>
+                    <text x="50%" y="48%" fill="#63b3ed" font-size="32" text-anchor="middle" font-family="Aptos, Segoe UI, sans-serif">${item.tipo_label}</text>
+                    <text x="50%" y="58%" fill="#edf3ff" font-size="18" text-anchor="middle" font-family="Aptos, Segoe UI, sans-serif">${item.nome_arquivo}</text>
                   </svg>`
                 )}`}
                 alt={item.nome_arquivo}
