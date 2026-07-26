@@ -60,6 +60,13 @@ script:
 Essa verificação transforma o incidente observado em uma falha detectável no
 próprio deploy, antes de o operador considerar a publicação concluída.
 
+Como segunda camada de resiliência, `frontends/mobile/scripts/run-next.mjs`
+monitora o `.next/BUILD_ID` no modo `start`. Se outro fluxo autorizado concluir
+um build sem executar o restart explícito, o wrapper encerra graciosamente o
+processo filho; `autorestart=true` do Supervisor sobe o Next novamente usando o
+novo conjunto de chunks. Um `BUILD_ID` temporariamente ausente durante a
+compilação é ignorado, evitando reciclagem sobre build incompleto.
+
 ## Segurança
 
 - o parâmetro `next` do login e as rotas recebidas por notificações agora

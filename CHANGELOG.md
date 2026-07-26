@@ -4,7 +4,7 @@
 - **Tier:** minor
 - **Autor/Agente:** Codex
 - **Descrição:** Reorganiza a navegacao mobile em cinco acoes e impede deploy com chunks Next.js inconsistentes.
-- **Arquivos:** documentacao/07-novas-implementacoes/2026-07-26-navegacao-mobile-e-consistencia-de-chunks.md,frontends/mobile/src/app/globals.css,frontends/mobile/src/app/login/page.tsx,frontends/mobile/src/app/os/page.tsx,frontends/mobile/src/app/page.tsx,frontends/mobile/src/components/__tests__/authenticated-shell.test.tsx,frontends/mobile/src/components/authenticated-shell.tsx,frontends/mobile/src/components/pwa-install-button.tsx,frontends/mobile/src/lib/__tests__/navigation.test.ts,frontends/mobile/src/lib/navigation.ts,scripts/bash/deploy-completo.sh
+- **Arquivos:** documentacao/07-novas-implementacoes/2026-07-26-navegacao-mobile-e-consistencia-de-chunks.md,frontends/mobile/scripts/run-next.mjs,frontends/mobile/src/app/globals.css,frontends/mobile/src/app/login/page.tsx,frontends/mobile/src/app/os/page.tsx,frontends/mobile/src/app/page.tsx,frontends/mobile/src/components/__tests__/authenticated-shell.test.tsx,frontends/mobile/src/components/authenticated-shell.tsx,frontends/mobile/src/components/pwa-install-button.tsx,frontends/mobile/src/lib/__tests__/navigation.test.ts,frontends/mobile/src/lib/navigation.ts,scripts/bash/deploy-completo.sh
 
 ## v5.17.2.0 — 2026-07-26 01:40
 - **Tier:** patch
