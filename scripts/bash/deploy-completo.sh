@@ -1,136 +1,194 @@
 #!/bin/bash
-# deploy-completo.sh — publica o trabalho do ambiente de dev (192.168.1.100) no GitHub,
-# do jeito completo: sincroniza `develop`, commita o que estiver pendente, sobe para
-# `develop` e promove para `main`. Pensado para ser rodado direto pelo usuário, sem
-# depender de IA (Claude/Codex) para o passo de "publicar".
+# deploy-completo.sh — publica o trabalho do ambiente de dev (192.168.1.100)
+# no GitHub, sincroniza `develop` e promove a versao validada para `main`.
 #
-# Depois de rodar este script aqui, o outro passo é rodar
-# scripts/bash/deploy-producao.sh NA VPS (161.97.93.120) para atualizar produção de
-# fato — esse script continua igual, sem mudanças.
+# Este script roda NA BANCADA. Depois dele, execute
+# scripts/bash/deploy-producao.sh NA VPS (161.97.93.120). O segundo script
+# atualiza backend, desktop e PWA mobile com release atomico e rollback.
 #
-# A mensagem do commit é lida automaticamente do topo do CHANGELOG.md (tier +
-# descrição) — ou seja, rode scripts/versionar.sh ANTES deste, sempre que a mudança
-# merecer entrada no changelog (ver VERSIONING.md).
+# A mensagem do commit e lida do topo do CHANGELOG.md. Rode
+# scripts/versionar.sh antes quando a mudanca merecer uma nova versao.
 #
-# Ver documentacao/10-deploy/workflow-git-multiambiente.md para o fluxo completo.
+# Ver documentacao/10-deploy/workflow-git-multiambiente.md.
 
-set -euo pipefail
+set -Eeuo pipefail
 
-REPO_ROOT="/var/www/sistema-erp"
+readonly REPO_ROOT="/var/www/sistema-erp"
+readonly MOBILE_DIR="${REPO_ROOT}/frontends/mobile"
+readonly PNPM_VERSION="10.15.0"
 
-if [ "$(pwd)" != "$REPO_ROOT" ] && [ -d "$REPO_ROOT" ]; then
+MOBILE_VALIDATED=0
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || {
+    printf 'ERRO: comando obrigatorio ausente: %s\n' "$1" >&2
+    exit 1
+  }
+}
+
+validate_mobile() {
+  printf '\n>>> [3/7] Validando PWA mobile antes do push\n'
+
+  require_command node
+  require_command corepack
+
+  cd "$MOBILE_DIR"
+  corepack "pnpm@${PNPM_VERSION}" install --frozen-lockfile
+  corepack "pnpm@${PNPM_VERSION}" test
+  NODE_ENV=production corepack "pnpm@${PNPM_VERSION}" build
+
+  [[ -s .next/BUILD_ID ]] || {
+    printf 'ERRO: build mobile nao gerou .next/BUILD_ID.\n' >&2
+    exit 1
+  }
+
+  cd "$REPO_ROOT"
+}
+
+if [[ "$(pwd)" != "$REPO_ROOT" && -d "$REPO_ROOT" ]]; then
   cd "$REPO_ROOT"
 fi
 
-if [ ! -d .git ]; then
-  echo "ERRO: $REPO_ROOT não é um repositório git." >&2
+[[ -d .git ]] || {
+  printf 'ERRO: %s nao e um repositorio Git.\n' "$REPO_ROOT" >&2
   exit 1
-fi
+}
 
-echo ">>> [1/6] Sincronizando develop (fast-forward apenas)"
+printf '>>> [1/7] Sincronizando develop (fast-forward apenas)\n'
 git fetch origin
 git checkout develop
 git pull --ff-only origin develop
 
 if [[ -n "$(git status --porcelain)" ]]; then
-  echo ""
-  echo ">>> [2/6] Alterações pendentes encontradas"
-  echo "--- git status -s ---"
+  printf '\n>>> [2/7] Alteracoes pendentes encontradas\n'
+  printf '%s\n' '--- git status -s ---'
   git status -s
-  echo "--- git diff --stat ---"
+  printf '%s\n' '--- git diff --stat ---'
   git diff --stat
 
-  RISKY=$(git status --porcelain \
-    | awk '{print $2}' \
-    | grep -E '(^|/)\.env($|\.)|\.pem$|\.key$|id_rsa|credentials\.json$' \
-    | grep -v -E '(^|/)\.env(\.[A-Za-z0-9_-]+)*\.example$' \
-    || true)
+  RISKY="$(
+    git status --porcelain \
+      | awk '{print $2}' \
+      | grep -E '(^|/)\.env($|\.)|\.pem$|\.key$|id_rsa|credentials\.json$' \
+      | grep -v -E '(^|/)\.env(\.[A-Za-z0-9_-]+)*\.example$' \
+      || true
+  )"
+
   if [[ -n "$RISKY" ]]; then
-    echo "" >&2
-    echo "ERRO: os arquivos abaixo parecem sensíveis e não serão commitados automaticamente:" >&2
-    echo "$RISKY" >&2
-    echo "Revise manualmente (git add nos arquivos certos, git commit) e rode este script de novo." >&2
+    printf '\nERRO: arquivos potencialmente sensiveis nao serao commitados:\n' >&2
+    printf '%s\n' "$RISKY" >&2
+    printf 'Revise os arquivos e faca o commit manualmente.\n' >&2
     exit 1
   fi
 
-  # Mensagem do commit: extraída do topo do CHANGELOG.md (entrada mais recente).
-  TOP_BLOCK=$(awk '/^## v/{n++} n==1' CHANGELOG.md 2>/dev/null || true)
-  TOP_VERSION=$(echo "$TOP_BLOCK" | grep -m1 '^## v' | sed -E 's/^## v([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*/\1/' || true)
-  TOP_TIER=$(echo "$TOP_BLOCK" | grep -m1 -oP '(?<=\*\*Tier:\*\* ).*' || true)
-  TOP_DESC=$(echo "$TOP_BLOCK" | grep -m1 -oP '(?<=\*\*Descrição:\*\* ).*' || true)
+  TOP_BLOCK="$(awk '/^## v/{n++} n==1' CHANGELOG.md 2>/dev/null || true)"
+  TOP_VERSION="$(
+    printf '%s\n' "$TOP_BLOCK" \
+      | grep -m1 '^## v' \
+      | sed -E 's/^## v([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+).*/\1/' \
+      || true
+  )"
+  TOP_TIER="$(
+    printf '%s\n' "$TOP_BLOCK" \
+      | grep -m1 -oP '(?<=\*\*Tier:\*\* ).*' \
+      || true
+  )"
+  TOP_DESC="$(
+    printf '%s\n' "$TOP_BLOCK" \
+      | grep -m1 -oP '(?<=\*\*Descricao:\*\* ).*' \
+      || true
+  )"
 
+  # Compatibilidade com changelogs antigos que usam "Descricao" acentuada.
   if [[ -z "$TOP_DESC" ]]; then
-    echo "" >&2
-    echo "AVISO: não consegui ler uma descrição no topo do CHANGELOG.md." >&2
-    echo "Rode scripts/versionar.sh antes deste script para ter uma mensagem de commit decente." >&2
-    read -r -p "Descrição para o commit (obrigatória): " TOP_DESC
-    [[ -z "$TOP_DESC" ]] && { echo "Cancelado — nada foi commitado." >&2; exit 1; }
+    TOP_DESC="$(
+      printf '%s\n' "$TOP_BLOCK" \
+        | grep -m1 -oP '(?<=\*\*Descrição:\*\* ).*' \
+        || true
+    )"
   fi
 
-  CURRENT_VERSION=$(cat VERSION 2>/dev/null || echo "")
+  if [[ -z "$TOP_DESC" ]]; then
+    printf '\nAVISO: nao foi encontrada uma descricao no topo do CHANGELOG.md.\n' >&2
+    printf 'Rode scripts/versionar.sh antes para gerar a entrada de versao.\n' >&2
+    read -r -p "Descricao para o commit (obrigatoria): " TOP_DESC
+    [[ -n "$TOP_DESC" ]] || {
+      printf 'Cancelado — nada foi commitado.\n' >&2
+      exit 1
+    }
+  fi
+
+  CURRENT_VERSION="$(cat VERSION 2>/dev/null || true)"
   if [[ -n "$CURRENT_VERSION" && -n "$TOP_VERSION" && "$CURRENT_VERSION" != "$TOP_VERSION" ]]; then
-    echo "" >&2
-    echo "AVISO: VERSION ($CURRENT_VERSION) não bate com o topo do CHANGELOG.md (v$TOP_VERSION)." >&2
-    echo "Confira se esqueceu de rodar scripts/versionar.sh antes." >&2
+    printf '\nAVISO: VERSION (%s) nao bate com o CHANGELOG (v%s).\n' \
+      "$CURRENT_VERSION" "$TOP_VERSION" >&2
   fi
 
   COMMIT_MSG="$TOP_DESC"
   if [[ -n "$TOP_VERSION" ]]; then
-    COMMIT_MSG="$COMMIT_MSG
+    COMMIT_MSG="${COMMIT_MSG}
 
-v$TOP_VERSION${TOP_TIER:+ ($TOP_TIER)} — commit gerado por scripts/bash/deploy-completo.sh"
+v${TOP_VERSION}${TOP_TIER:+ (${TOP_TIER})} — commit gerado por scripts/bash/deploy-completo.sh"
   fi
 
-  echo ""
-  echo "--- Mensagem do commit ---"
-  echo "$COMMIT_MSG"
-  echo "--------------------------"
-  read -r -p "Confirma commit + push + promoção para main? [s/N]: " CONFIRM
+  printf '\n%s\n' '--- Mensagem do commit ---'
+  printf '%s\n' "$COMMIT_MSG"
+  printf '%s\n' '--------------------------'
+  read -r -p "Confirma commit + validacao + push + promocao para main? [s/N]: " CONFIRM
+
   if [[ ! "$CONFIRM" =~ ^[sS]$ ]]; then
-    echo "Cancelado — nada foi alterado."
+    printf 'Cancelado — nada foi alterado.\n'
     exit 1
   fi
 
+  validate_mobile
+  MOBILE_VALIDATED=1
+
   git add -A
+  git diff --cached --check
   git commit -m "$COMMIT_MSG"
 else
-  echo ">>> [2/6] Nada pendente para commitar (working tree limpa)"
+  printf '>>> [2/7] Nada pendente para commitar (working tree limpa)\n'
 fi
 
-echo ">>> [3/6] Publicando develop no GitHub"
+if [[ "$MOBILE_VALIDATED" -eq 0 ]]; then
+  validate_mobile
+fi
+
+printf '\n>>> [4/7] Publicando develop no GitHub\n'
 git push origin develop
 
-echo ">>> [4/6] Promovendo develop para main"
+printf '>>> [5/7] Promovendo develop para main\n'
 
-# Lidos de `develop` (via git show), não do working tree depois do checkout —
-# depois do "git checkout main" o working tree ainda é o de main até o merge
-# de fato acontecer, então ler VERSION/CHANGELOG.md direto do disco aqui
-# pegaria a versão ANTIGA de main, não a nova que está vindo de develop.
-MERGE_VERSION=$(git show develop:VERSION 2>/dev/null || echo "")
-MERGE_DESC=$(git show develop:CHANGELOG.md 2>/dev/null | awk '/^## v/{n++} n==1' | grep -m1 -oP '(?<=\*\*Descrição:\*\* ).*' || true)
+MERGE_VERSION="$(git show develop:VERSION 2>/dev/null || true)"
+MERGE_DESC="$(
+  git show develop:CHANGELOG.md 2>/dev/null \
+    | awk '/^## v/{n++} n==1' \
+    | grep -m1 -oP '(?<=\*\*Descrição:\*\* ).*' \
+    || true
+)"
 
 git checkout main
 git pull --ff-only origin main
 
 MERGE_MSG="merge: promove develop para main"
 if [[ -n "$MERGE_VERSION" ]]; then
-  MERGE_MSG="merge: promove develop para main (v$MERGE_VERSION${MERGE_DESC:+ — $MERGE_DESC})"
+  MERGE_MSG="merge: promove develop para main (v${MERGE_VERSION}${MERGE_DESC:+ — ${MERGE_DESC}})"
 fi
 
 if ! git merge --no-ff develop -m "$MERGE_MSG"; then
-  echo "" >&2
-  echo "ERRO: conflito ao promover develop para main." >&2
-  echo "Resolva os conflitos e rode 'git commit' para concluir o merge," >&2
-  echo "ou rode 'git merge --abort' para desistir da promoção agora." >&2
+  printf '\nERRO: conflito ao promover develop para main.\n' >&2
+  printf 'Resolva e conclua com git commit, ou use git merge --abort.\n' >&2
   exit 1
 fi
 
-echo ">>> [5/6] Publicando main no GitHub"
+printf '>>> [6/7] Publicando main no GitHub\n'
 git push origin main
 
-echo ">>> [6/6] Voltando para develop"
+printf '>>> [7/7] Voltando para develop\n'
 git checkout develop
 
-echo ""
-echo "DEPLOY_COMPLETO_OK (main em $(git rev-parse --short main), v${MERGE_VERSION:-?})"
-echo "Agora rode ./scripts/bash/deploy-producao.sh na VPS para publicar em produção."
+printf '\nDEPLOY_COMPLETO_OK (main em %s, v%s)\n' \
+  "$(git rev-parse --short main)" \
+  "${MERGE_VERSION:-?}"
+printf 'Agora rode ./scripts/bash/deploy-producao.sh na VPS.\n'
