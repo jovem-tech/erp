@@ -3,6 +3,16 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.20.3.0 - 2026-07-26
+
+- o PWA standalone no iOS nao permanece mais indefinidamente em
+  `Sincronizando sessao`;
+- falhas do `localStorage` usam fallback efemero em memoria e nunca impedem a
+  conclusao do bootstrap;
+- validacoes `auth/me` e refresh recebem deadline abortavel de 8 segundos;
+- todos os caminhos liberam `ready` e `booting` por `finally`;
+- nota: `2026-07-26-bootstrap-sessao-pwa-ios.md`.
+
 ## v5.20.2.0 - 2026-07-26
 
 - Next foi atualizado para `15.5.21`, removendo advisories de SSRF e negacao

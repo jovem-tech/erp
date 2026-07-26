@@ -32,6 +32,35 @@ type SessionContextValue = {
 
 const SessionContext = createContext<SessionContextValue | null>(null);
 
+export const SESSION_BOOTSTRAP_TIMEOUT_MS = 8_000;
+
+class SessionBootstrapTimeoutError extends Error {
+  constructor() {
+    super('A validacao da sessao excedeu o tempo limite.');
+    this.name = 'SessionBootstrapTimeoutError';
+  }
+}
+
+async function runWithBootstrapDeadline<T>(request: (signal: AbortSignal) => Promise<T>): Promise<T> {
+  const controller = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      controller.abort();
+      reject(new SessionBootstrapTimeoutError());
+    }, SESSION_BOOTSTRAP_TIMEOUT_MS);
+  });
+
+  try {
+    return await Promise.race([request(controller.signal), timeout]);
+  } finally {
+    if (timeoutId !== null) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [session, setSessionState] = useState<MobileSession | null>(null);
   const [ready, setReady] = useState(false);
@@ -75,61 +104,65 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const bootstrap = async (): Promise<void> => {
       setBooting(true);
 
-      const storedSession = readStoredSession();
-      if (!storedSession || isSessionExpired(storedSession)) {
-        clearStoredSession();
-        if (!cancelled) {
-          setSessionState(null);
-          setReady(true);
-          setBooting(false);
-        }
-        return;
-      }
-
-      if (!cancelled) {
-        setSessionState(storedSession);
-      }
-
       try {
-        const currentUser = await apiMe();
-        if (cancelled) {
+        const storedSession = readStoredSession();
+        if (!storedSession || isSessionExpired(storedSession)) {
+          clearStoredSession();
+          if (!cancelled) {
+            setSessionState(null);
+          }
           return;
         }
 
-        const normalizedSession: MobileSession = {
-          ...storedSession,
-          user: currentUser,
-        };
+        if (!cancelled) {
+          setSessionState(storedSession);
+        }
 
-        setSessionState(writeStoredSession(normalizedSession));
+        try {
+          const currentUser = await runWithBootstrapDeadline((signal) => apiMe(signal));
+          if (cancelled) {
+            return;
+          }
 
-        if (isSessionExpiringSoon(normalizedSession)) {
-          try {
-            const refreshed = await apiRefresh();
-            if (cancelled) {
-              return;
-            }
+          const normalizedSession: MobileSession = {
+            ...storedSession,
+            user: currentUser,
+          };
 
-            setSessionState(writeStoredSession({
-              ...normalizedSession,
-              accessToken: refreshed.accessToken,
-              tokenType: refreshed.tokenType,
-              expiresAt: refreshed.expiresAt,
-            }));
-          } catch (refreshError) {
-            if (refreshError instanceof ApiError && refreshError.status === 401) {
-              clearStoredSession();
-              setSessionState(null);
+          setSessionState(writeStoredSession(normalizedSession));
+
+          if (isSessionExpiringSoon(normalizedSession)) {
+            try {
+              const refreshed = await runWithBootstrapDeadline((signal) => apiRefresh(signal));
+              if (cancelled) {
+                return;
+              }
+
+              setSessionState(writeStoredSession({
+                ...normalizedSession,
+                accessToken: refreshed.accessToken,
+                tokenType: refreshed.tokenType,
+                expiresAt: refreshed.expiresAt,
+              }));
+            } catch (refreshError) {
+              if (refreshError instanceof ApiError && refreshError.status === 401) {
+                clearStoredSession();
+                setSessionState(null);
+              }
             }
           }
-        }
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
+        } catch (error) {
+          if (cancelled) {
+            return;
+          }
 
-        if (error instanceof ApiError && error.status === 401) {
-          clearStoredSession();
+          if (error instanceof ApiError && error.status === 401) {
+            clearStoredSession();
+            setSessionState(null);
+          }
+        }
+      } catch {
+        if (!cancelled) {
           setSessionState(null);
         }
       } finally {
@@ -169,7 +202,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     };
 
     const onStorage = (event: StorageEvent): void => {
-      if (event.key === null || event.key === 'sistema-erp.mobile.session') {
+      if (
+        event.key === null ||
+        (event.key === 'sistema-erp.mobile.session' && event.newValue === null)
+      ) {
+        clearStoredSession();
+        setSessionState(null);
+        return;
+      }
+
+      if (event.key === 'sistema-erp.mobile.session') {
         syncFromStorage();
       }
     };

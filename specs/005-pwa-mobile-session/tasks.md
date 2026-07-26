@@ -82,6 +82,17 @@ Independent test criteria:
 - [X] T020 [US4] Criar a nota de implementação da fase em `documentacao/07-novas-implementacoes/2026-06-22-fase-5-pwa-mobile-sessao-seguranca.md`
 - [X] T021 [US4] Executar a validação final com `php artisan test --filter=AuthFlowTest` em `backend/`, `php artisan test` em `backend/` e `npm run lint && npm run build` em `frontends/mobile/`
 
+## Phase 7: Correção do bootstrap standalone no iOS
+
+Story goal: impedir que o PWA instalado permaneça indefinidamente na tela de
+sincronização quando o armazenamento do WebKit falhar ou a API não responder.
+
+- [X] T022 Tornar leitura, escrita e limpeza da sessão tolerantes a falhas de `localStorage`
+- [X] T023 Manter fallback efêmero em memória sem persistir token em outro mecanismo
+- [X] T024 Aplicar deadline abortável de 8 segundos em `auth/me` e no refresh do bootstrap
+- [X] T025 Garantir `ready=true` e `booting=false` por `finally` em todos os caminhos
+- [X] T026 Cobrir armazenamento indisponível e request pendente com testes automatizados
+
 ## Dependências
 
 - A Phase 1 precisa terminar antes de qualquer outra fase.

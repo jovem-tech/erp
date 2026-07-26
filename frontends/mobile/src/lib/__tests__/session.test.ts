@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   MOBILE_SESSION_STORAGE_KEY,
   clearStoredSession,
@@ -34,6 +34,13 @@ function buildSession(overrides: Partial<MobileSession> = {}): MobileSession {
 }
 
 beforeEach(() => {
+  clearStoredSession();
+  window.localStorage.clear();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  clearStoredSession();
   window.localStorage.clear();
 });
 
@@ -116,6 +123,27 @@ describe('readStoredSession / writeStoredSession / clearStoredSession', () => {
 
     expect(readStoredSession()).toBeNull();
     expect(window.localStorage.getItem(MOBILE_SESSION_STORAGE_KEY)).toBeNull();
+  });
+
+  it('keeps the active session in memory when iOS blocks localStorage writes', () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage unavailable', 'QuotaExceededError');
+    });
+
+    writeStoredSession(buildSession());
+
+    expect(readStoredSession()?.accessToken).toBe('token-123');
+  });
+
+  it('does not reuse stale storage when iOS blocks localStorage removal', () => {
+    writeStoredSession(buildSession());
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new DOMException('Storage unavailable', 'SecurityError');
+    });
+
+    clearStoredSession();
+
+    expect(readStoredSession()).toBeNull();
   });
 });
 
