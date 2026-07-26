@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.17.2.0 — 2026-07-26 01:40
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Atualiza PostCSS do PWA para versao corrigida contra path traversal em source maps (GHSA-r28c-9q8g-f849).
+- **Arquivos:** frontends/mobile/pnpm-lock.yaml,frontends/mobile/pnpm-workspace.yaml
+
 ## v5.17.1.0 — 2026-07-26 01:34
 - **Tier:** patch
 - **Autor/Agente:** Codex
