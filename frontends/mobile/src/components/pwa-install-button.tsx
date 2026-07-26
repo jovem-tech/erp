@@ -35,7 +35,11 @@ function IconInstall() {
   );
 }
 
-export function PwaInstallButton() {
+type PwaInstallButtonProps = {
+  variant?: 'navbar' | 'menu';
+};
+
+export function PwaInstallButton({ variant = 'navbar' }: PwaInstallButtonProps) {
   const [installable, setInstallable] = useState(false);
   const [promptEvent, setPromptEvent] = useState<BeforeInstallPromptEvent | null>(null);
   const [standalone, setStandalone] = useState(false);
@@ -97,6 +101,7 @@ export function PwaInstallButton() {
   const buttonTitle = canPrompt
     ? 'Instalar o Sistema ERP como aplicativo'
     : 'Abrir instruções para instalar como aplicativo';
+  const menuVariant = variant === 'menu';
 
   const handleInstall = async (): Promise<void> => {
     if (!canPrompt || !promptEvent) {
@@ -118,18 +123,32 @@ export function PwaInstallButton() {
   };
 
   if (standalone) {
-    return null;
+    return menuVariant ? (
+      <div
+        className="install-button install-button--menu install-button--installed"
+        role="menuitem"
+        aria-disabled="true"
+      >
+        <span className="install-button-icon">
+          <IconInstall />
+        </span>
+        <span className="install-button-label">Aplicativo instalado</span>
+      </div>
+    ) : null;
   }
 
   return (
-    <div className="nav-action-group install-action">
+    <div className={`nav-action-group install-action${menuVariant ? ' install-action--menu' : ''}`}>
       <button
-        className={`install-button ${canPrompt ? 'install-button--ready' : 'install-button--fallback'}`}
+        className={`install-button${menuVariant ? ' install-button--menu' : ''} ${
+          canPrompt ? 'install-button--ready' : 'install-button--fallback'
+        }`}
         type="button"
+        role={menuVariant ? 'menuitem' : undefined}
         onClick={() => void handleInstall()}
         disabled={busy}
         aria-expanded={helpOpen}
-        aria-haspopup={canPrompt ? 'dialog' : 'menu'}
+        aria-haspopup="dialog"
         title={buttonTitle}
       >
         <span className="install-button-icon">

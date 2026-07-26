@@ -20,7 +20,8 @@ import {
   apiUpdatePassword,
   apiUpdateProfile,
 } from '@/lib/api';
-import { formatDateTime, firstWord, normalizeText } from '@/lib/format';
+import { formatDateTime, normalizeText } from '@/lib/format';
+import { isSafeInternalPath } from '@/lib/navigation';
 import type { MobileNotification } from '@/lib/types';
 import { hasPermission } from '@/lib/permissions';
 import { useSession } from '@/components/session-provider';
@@ -87,16 +88,15 @@ function IconMoon() {
   );
 }
 
-function IconChevronDown() {
+function IconMenu() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path
-        d="m6 9 6 6 6-6"
+        d="M4 7h16M4 12h16M4 17h16"
         fill="none"
         stroke="currentColor"
         strokeWidth="1.9"
         strokeLinecap="round"
-        strokeLinejoin="round"
       />
     </svg>
   );
@@ -199,6 +199,51 @@ function IconPlus() {
   );
 }
 
+function IconHome() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9Z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconBudget() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        d="M5 4h14v16H5zM8 8h8M8 12h3M14 12h2M8 16h3M14 16h2"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function IconProfile() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" strokeWidth="1.7" />
+      <path
+        d="M5 20a7 7 0 0 1 14 0"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 function Avatar({ name, size = 'md' }: { name: string; size?: 'md' | 'lg' }) {
   const initials = name
     .split(' ')
@@ -269,7 +314,13 @@ function MenuAction({
   disabled?: boolean;
 }) {
   return (
-    <button className={`menu-action menu-action-${tone}`} type="button" onClick={onClick} disabled={disabled}>
+    <button
+      className={`menu-action menu-action-${tone}`}
+      type="button"
+      role="menuitem"
+      onClick={onClick}
+      disabled={disabled}
+    >
       {Icon ? (
         <span className="menu-action-icon">
           <Icon />
@@ -327,6 +378,7 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
   const { session, setSession, clearSession } = useSession();
   const [mounted, setMounted] = useState(false);
   const [theme, setTheme] = useState<ThemeMode>(THEME_DARK);
+  const [mainMenuOpen, setMainMenuOpen] = useState(false);
   const [bellOpen, setBellOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [notifications, setNotifications] = useState<MobileNotification[]>([]);
@@ -348,15 +400,17 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
     password_confirmation: '',
   });
 
+  const mainMenuRef = useRef<HTMLDivElement | null>(null);
   const bellMenuRef = useRef<HTMLDivElement | null>(null);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   const profileInputRef = useRef<HTMLInputElement | null>(null);
   const currentPasswordRef = useRef<HTMLInputElement | null>(null);
 
   const currentUser = session?.user ?? null;
-  const firstName = firstWord(currentUser?.nome, 'Operador');
   const themeActionLabel = theme === THEME_LIGHT ? 'Tema escuro' : 'Tema claro';
   const themeActionIcon = theme === THEME_LIGHT ? IconMoon : IconSun;
+  const canCreateOrder = hasPermission(currentUser, 'os', 'criar');
+  const ordersActive = pathname.startsWith('/os') && pathname !== '/os/novo';
 
   useEffect(() => {
     const initialTheme = getPreferredTheme();
@@ -484,7 +538,7 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
       setBellOpen(false);
       setProfileOpen(false);
 
-      if (route.startsWith('/')) {
+      if (isSafeInternalPath(route)) {
         router.push(route);
       }
     },
@@ -595,6 +649,10 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
       const target = event.target;
 
       if (target instanceof Node) {
+        if (mainMenuRef.current && !mainMenuRef.current.contains(target)) {
+          setMainMenuOpen(false);
+        }
+
         if (bellMenuRef.current && !bellMenuRef.current.contains(target)) {
           setBellOpen(false);
         }
@@ -607,6 +665,7 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
 
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        setMainMenuOpen(false);
         setBellOpen(false);
         setProfileOpen(false);
         setProfileDialogOpen(false);
@@ -740,6 +799,7 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
   const handleBellToggle = useCallback(() => {
     const next = !bellOpen;
     setBellOpen(next);
+    setMainMenuOpen(false);
     setProfileOpen(false);
 
     if (next) {
@@ -750,8 +810,16 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
   const handleProfileToggle = useCallback(() => {
     const next = !profileOpen;
     setProfileOpen(next);
+    setMainMenuOpen(false);
     setBellOpen(false);
   }, [profileOpen]);
+
+  const handleMainMenuToggle = useCallback(() => {
+    const next = !mainMenuOpen;
+    setMainMenuOpen(next);
+    setBellOpen(false);
+    setProfileOpen(false);
+  }, [mainMenuOpen]);
 
   if (!session?.accessToken) {
     return <>{children}</>;
@@ -761,17 +829,48 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
     <div className="authenticated-shell">
       <header className="app-navbar">
         <div className="app-navbar-inner">
-          <Link className="app-brand" href="/os" aria-label="Ir para a lista de OS">
-            <span className="app-brand-mark">ERP</span>
-            <span className="app-brand-copy">
-              <strong>Sistema ERP</strong>
-              <span>Mobile operacional</span>
-            </span>
-          </Link>
+          <div className="app-navbar-leading">
+            <div className="nav-action-group" ref={mainMenuRef}>
+              <button
+                className="icon-button"
+                type="button"
+                onClick={handleMainMenuToggle}
+                aria-controls="app-main-menu"
+                aria-haspopup="menu"
+                aria-expanded={mainMenuOpen}
+                aria-label="Abrir menu principal"
+              >
+                <IconMenu />
+              </button>
+
+              {mainMenuOpen ? (
+                <div
+                  id="app-main-menu"
+                  className="nav-popover nav-popover-menu"
+                  role="menu"
+                  aria-label="Menu principal"
+                >
+                  <div className="popover-header">
+                    <div>
+                      <span className="popover-kicker">Aplicativo</span>
+                      <strong>Menu principal</strong>
+                    </div>
+                  </div>
+                  <PwaInstallButton variant="menu" />
+                </div>
+              ) : null}
+            </div>
+
+            <Link className="app-brand" href="/" aria-label="Ir para a área de trabalho">
+              <span className="app-brand-mark">ERP</span>
+              <span className="app-brand-copy">
+                <strong>Sistema ERP</strong>
+                <span>Mobile operacional</span>
+              </span>
+            </Link>
+          </div>
 
           <div className="app-navbar-actions">
-            <PwaInstallButton />
-
             <div className="nav-action-group" ref={bellMenuRef}>
               <button
                 className="icon-button icon-button-badge"
@@ -845,51 +944,6 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
               ) : null}
             </div>
 
-            <div className="nav-action-group" ref={profileMenuRef}>
-              <button
-                className="profile-trigger"
-                type="button"
-                onClick={handleProfileToggle}
-                aria-haspopup="menu"
-                aria-expanded={profileOpen}
-              >
-                <Avatar name={normalizeText(currentUser?.nome, 'Operador')} />
-                <span className="profile-trigger-copy">
-                  <strong>{firstName}</strong>
-                  <span>{normalizeText(currentUser?.perfil, 'Perfil')}</span>
-                </span>
-                <span className="profile-trigger-chevron">
-                  <IconChevronDown />
-                </span>
-              </button>
-
-              {profileOpen ? (
-                <div className="nav-popover nav-popover-profile" role="menu" aria-label="Menu de perfil">
-                  <div className="popover-header popover-header-profile">
-                    <Avatar name={normalizeText(currentUser?.nome, 'Operador')} size="lg" />
-                    <div>
-                      <strong>{normalizeText(currentUser?.nome, 'Operador')}</strong>
-                      <p>{normalizeText(currentUser?.email, 'Sem e-mail informado')}</p>
-                    </div>
-                  </div>
-
-                  <div className="menu-stack">
-                    <MenuAction onClick={toggleTheme} icon={themeActionIcon}>
-                      {themeActionLabel}
-                    </MenuAction>
-                    <MenuAction onClick={openProfileDialog} icon={IconEdit}>
-                      Editar nome
-                    </MenuAction>
-                    <MenuAction onClick={openPasswordDialog} icon={IconLock}>
-                      Alterar senha
-                    </MenuAction>
-                    <MenuAction onClick={() => void handleLogout()} tone="danger" icon={IconLogout}>
-                      Sair
-                    </MenuAction>
-                  </div>
-                </div>
-              ) : null}
-            </div>
           </div>
         </div>
       </header>
@@ -899,22 +953,97 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
       <nav className="app-bottom-nav" aria-label="Navegação principal">
         <div className="app-bottom-nav-inner">
           <Link
+            href="/"
+            className={`app-bottom-nav-item${pathname === '/' ? ' app-bottom-nav-item--active' : ''}`}
+            aria-current={pathname === '/' ? 'page' : undefined}
+          >
+            <IconHome />
+            <span>Início</span>
+          </Link>
+
+          <Link
             href="/os"
-            className={`app-bottom-nav-item${pathname === '/os' ? ' app-bottom-nav-item--active' : ''}`}
+            className={`app-bottom-nav-item${ordersActive ? ' app-bottom-nav-item--active' : ''}`}
+            aria-current={ordersActive ? 'page' : undefined}
           >
             <IconOrders />
             <span>OS</span>
           </Link>
 
-          {hasPermission(currentUser, 'os', 'criar') ? (
+          {canCreateOrder ? (
             <Link
               href="/os/novo"
               className={`app-bottom-nav-item app-bottom-nav-item--primary${pathname === '/os/novo' ? ' app-bottom-nav-item--active' : ''}`}
+              aria-current={pathname === '/os/novo' ? 'page' : undefined}
+              aria-label="Criar nova OS"
             >
               <IconPlus />
               <span>Nova OS</span>
             </Link>
-          ) : null}
+          ) : (
+            <button
+              className="app-bottom-nav-item app-bottom-nav-item--primary app-bottom-nav-item--disabled"
+              type="button"
+              disabled
+              aria-label="Criar nova OS, sem permissão"
+              title="Seu perfil não possui permissão para criar OS"
+            >
+              <IconPlus />
+              <span>Nova OS</span>
+            </button>
+          )}
+
+          <button
+            className="app-bottom-nav-item app-bottom-nav-item--disabled"
+            type="button"
+            disabled
+            aria-label="Orçamentos, disponível futuramente"
+            title="Orçamentos será disponibilizado em uma próxima implementação"
+          >
+            <IconBudget />
+            <span>Orçamentos</span>
+          </button>
+
+          <div className="nav-action-group nav-action-group-profile-bottom" ref={profileMenuRef}>
+            <button
+              className={`app-bottom-nav-item${profileOpen ? ' app-bottom-nav-item--active' : ''}`}
+              type="button"
+              onClick={handleProfileToggle}
+              aria-haspopup="menu"
+              aria-expanded={profileOpen}
+              aria-label="Abrir perfil do usuário"
+            >
+              <IconProfile />
+              <span>Perfil</span>
+            </button>
+
+            {profileOpen ? (
+              <div className="nav-popover nav-popover-profile nav-popover-profile-bottom" role="menu" aria-label="Menu de perfil">
+                <div className="popover-header popover-header-profile">
+                  <Avatar name={normalizeText(currentUser?.nome, 'Operador')} size="lg" />
+                  <div>
+                    <strong>{normalizeText(currentUser?.nome, 'Operador')}</strong>
+                    <p>{normalizeText(currentUser?.email, 'Sem e-mail informado')}</p>
+                  </div>
+                </div>
+
+                <div className="menu-stack">
+                  <MenuAction onClick={toggleTheme} icon={themeActionIcon}>
+                    {themeActionLabel}
+                  </MenuAction>
+                  <MenuAction onClick={openProfileDialog} icon={IconEdit}>
+                    Editar nome
+                  </MenuAction>
+                  <MenuAction onClick={openPasswordDialog} icon={IconLock}>
+                    Alterar senha
+                  </MenuAction>
+                  <MenuAction onClick={() => void handleLogout()} tone="danger" icon={IconLogout}>
+                    Sair
+                  </MenuAction>
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
       </nav>
 
