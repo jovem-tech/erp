@@ -41,6 +41,11 @@ Este fluxo entrega ao PWA mobile o primeiro trabalho operacional real do técnic
 - A listagem mostra somente OS com `tecnico_id` igual ao usuário autenticado.
 - A listagem administrativa aceita `status`, `search`, `technician_id`, `client_id`, `page` e `per_page`.
 - O detalhe da OS traz cliente, equipamento, os últimos 5 registros de histórico, `status_disponiveis`, fotos e PDFs vinculados.
+- As fotos do detalhe são carregadas sob demanda como blobs autenticados,
+  sempre por rota interna derivada dos IDs da OS e da foto; a URL absoluta do
+  payload não é reutilizada com o Bearer token.
+- Miniaturas preservam a imagem inteira e revogam a URL local quando deixam de
+  ser utilizadas. Documentos mantêm fallback textual e abertura autenticada.
 - O status informado na atualização é validado em runtime contra o catálogo ativo `os_status`.
 - O catálogo `os_status` é a fonte de verdade dos códigos aceitos.
 - Quando o status muda, o backend atualiza `status` e `estado_fluxo` juntos.
@@ -50,6 +55,20 @@ Este fluxo entrega ao PWA mobile o primeiro trabalho operacional real do técnic
 - A criação e edição administrativas respeitam o mesmo RBAC central do restante da API.
 - A validação de transições entre status não entra nesta fase.
 - Cada alteração grava histórico em `os_status_historico` quando a tabela estiver disponível.
+
+## Navegação durante a criação
+
+- O pathname exato `/os/novo` substitui temporariamente a Bottom Nav global por
+  `Início`, `Voltar`, `Próximo`, `Salvar` e `Cancelar`.
+- Listagem, detalhe e edição de OS preservam a Bottom Nav global.
+- `Próximo` depende da validade da etapa atual.
+- `Salvar` depende da completude conjunta de cliente, equipamento, checklist
+  aplicável, relato e técnico responsável.
+- A completude no frontend orienta a experiência; autorização e validação
+  definitivas continuam no backend central.
+- A criação mantém a `idempotency_key` e acrescenta uma trava síncrona contra
+  submissões concorrentes.
+- Saídas com dados preenchidos exigem confirmação de descarte.
 
 ## Estrutura de resposta
 

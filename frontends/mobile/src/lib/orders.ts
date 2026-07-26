@@ -82,7 +82,11 @@ export async function searchClients(search: string): Promise<ClientSearchResult[
   return clients;
 }
 
-export async function searchEquipments(params: { clientId?: number; search?: string }): Promise<EquipmentSearchResult[]> {
+export async function searchEquipments(params: {
+  clientId: number;
+  search?: string;
+  perPage?: number;
+}): Promise<EquipmentSearchResult[]> {
   const { equipments } = await apiSearchEquipments(params);
   return equipments;
 }

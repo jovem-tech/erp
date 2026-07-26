@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { listTechnicians } from '@/lib/orders';
 import type { OrderPriority, TeamMemberOption } from '@/lib/types';
+import { isWizardOperationsComplete } from '@/components/orders/order-form-wizard/wizard-state';
 
 const PRIORITY_OPTIONS: Array<{ value: OrderPriority; label: string }> = [
   { value: 'baixa', label: 'Baixa' },
@@ -117,5 +118,5 @@ export function StepOperations({
 }
 
 export function isStepOperationsValid(tecnicoId: number | null): boolean {
-  return tecnicoId !== null;
+  return isWizardOperationsComplete(tecnicoId);
 }

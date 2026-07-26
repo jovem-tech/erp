@@ -27,6 +27,10 @@ import { hasPermission } from '@/lib/permissions';
 import { useSession } from '@/components/session-provider';
 import { PwaInstallButton } from '@/components/pwa-install-button';
 import {
+  OrderCreationPlayer,
+  OrderCreationPlayerProvider,
+} from '@/components/orders/order-creation-player';
+import {
   applyThemePreference,
   getPreferredTheme,
   resolveThemeToggle,
@@ -372,7 +376,7 @@ function NotificationItem({
   );
 }
 
-export function AuthenticatedShell({ children }: { children: ReactNode }) {
+function AuthenticatedShellContent({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname() ?? '';
   const { session, setSession, clearSession } = useSession();
@@ -950,7 +954,10 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
 
       <div className="authenticated-content">{children}</div>
 
-      <nav className="app-bottom-nav" aria-label="Navegação principal">
+      {pathname === '/os/novo' ? (
+        <OrderCreationPlayer />
+      ) : (
+        <nav className="app-bottom-nav" aria-label="Navegação principal">
         <div className="app-bottom-nav-inner">
           <Link
             href="/"
@@ -1045,7 +1052,8 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
             ) : null}
           </div>
         </div>
-      </nav>
+        </nav>
+      )}
 
       {profileDialogOpen ? (
         <ModalFrame
@@ -1143,6 +1151,14 @@ export function AuthenticatedShell({ children }: { children: ReactNode }) {
         </ModalFrame>
       ) : null}
     </div>
+  );
+}
+
+export function AuthenticatedShell({ children }: { children: ReactNode }) {
+  return (
+    <OrderCreationPlayerProvider>
+      <AuthenticatedShellContent>{children}</AuthenticatedShellContent>
+    </OrderCreationPlayerProvider>
   );
 }
 

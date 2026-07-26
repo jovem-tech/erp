@@ -15,6 +15,7 @@ type StepReviewProps = {
   errorMessage: string | null;
   warnings?: string[];
   disabled?: boolean;
+  showSubmit?: boolean;
 };
 
 export function StepReview({
@@ -26,6 +27,7 @@ export function StepReview({
   errorMessage,
   warnings = [],
   disabled = false,
+  showSubmit = true,
 }: StepReviewProps) {
   return (
     <section className="section">
@@ -76,12 +78,14 @@ export function StepReview({
         </div>
       ) : null}
 
-      <div className="toolbar" style={{ marginTop: 16 }}>
-        <button type="button" className="button button--primary button-full" onClick={onSubmit} disabled={busy || disabled}>
-          {busy ? <span className="spinner" aria-hidden="true" /> : null}
-          {busy ? 'Enviando...' : submitLabel}
-        </button>
-      </div>
+      {showSubmit ? (
+        <div className="toolbar" style={{ marginTop: 16 }}>
+          <button type="button" className="button button--primary button-full" onClick={onSubmit} disabled={busy || disabled}>
+            {busy ? <span className="spinner" aria-hidden="true" /> : null}
+            {busy ? 'Enviando...' : submitLabel}
+          </button>
+        </div>
+      ) : null}
     </section>
   );
 }

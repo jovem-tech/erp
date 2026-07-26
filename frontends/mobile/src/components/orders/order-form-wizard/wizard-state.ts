@@ -134,6 +134,36 @@ export function resolveEquipmentTypeId(state: WizardFormState): number | null {
   return null;
 }
 
+export function selectClientForWizard(
+  state: WizardFormState,
+  cliente: ClientSearchResult | null
+): WizardFormState {
+  if (state.cliente?.id === cliente?.id) {
+    return { ...state, cliente };
+  }
+
+  return {
+    ...state,
+    cliente,
+    equipamento: null,
+    pendingNewEquipment: null,
+    pendingNewEquipmentPhotos: [],
+    checklistModel: null,
+    checklistAnswers: {},
+  };
+}
+
+export function selectEquipmentForWizard(
+  state: WizardFormState,
+  equipamento: EquipmentSearchResult | null
+): WizardFormState {
+  if (equipamento && state.cliente?.id !== equipamento.cliente_id) {
+    return state;
+  }
+
+  return { ...state, equipamento };
+}
+
 function buildChecklistPayload(state: WizardFormState): EntryChecklistPayload | undefined {
   const items = state.checklistModel?.itens ?? [];
 
@@ -174,6 +204,77 @@ export function isChecklistComplete(state: WizardFormState): boolean {
 
     return true;
   });
+}
+
+export function isWizardClientComplete(
+  cliente: ClientSearchResult | null,
+  pendingNewClient: NovoClientePayload | null
+): boolean {
+  if (cliente) {
+    return true;
+  }
+
+  return Boolean(pendingNewClient?.nome_razao.trim() && pendingNewClient?.telefone1.trim());
+}
+
+export function isWizardEquipmentComplete(
+  equipamento: EquipmentSearchResult | null,
+  pendingNewEquipment: NovoEquipamentoPayload | null,
+  pendingNewEquipmentPhotos: File[]
+): boolean {
+  if (equipamento) {
+    return true;
+  }
+
+  return Boolean(
+    pendingNewEquipment?.tipo_id &&
+      pendingNewEquipment?.marca_id &&
+      pendingNewEquipment?.modelo_id &&
+      pendingNewEquipmentPhotos.length >= 1
+  );
+}
+
+export function isWizardDetailsComplete(relatoCliente: string): boolean {
+  return relatoCliente.trim().length >= 5;
+}
+
+export function isWizardOperationsComplete(tecnicoId: number | null): boolean {
+  return tecnicoId !== null;
+}
+
+export function areWizardRequiredFieldsComplete(state: WizardFormState): boolean {
+  return (
+    isWizardClientComplete(state.cliente, state.pendingNewClient) &&
+    isWizardEquipmentComplete(
+      state.equipamento,
+      state.pendingNewEquipment,
+      state.pendingNewEquipmentPhotos
+    ) &&
+    isChecklistComplete(state) &&
+    isWizardDetailsComplete(state.relatoCliente) &&
+    isWizardOperationsComplete(state.tecnicoId)
+  );
+}
+
+export function isWizardDirty(state: WizardFormState): boolean {
+  return Boolean(
+    state.cliente ||
+      state.pendingNewClient ||
+      state.equipamento ||
+      state.pendingNewEquipment ||
+      state.pendingNewEquipmentPhotos.length > 0 ||
+      Object.keys(state.checklistAnswers).length > 0 ||
+      state.checklistObservacoesEstado.trim() ||
+      state.relatoCliente.trim() ||
+      state.acessorios.trim() ||
+      state.prioridade !== 'normal' ||
+      state.dataPrevisao ||
+      state.tecnicoId ||
+      state.observacoesInternas.trim() ||
+      state.fotos.length > 0 ||
+      state.enviarPdfCliente ||
+      state.orcamentoVinculado
+  );
 }
 
 export function buildOrderPayload(state: WizardFormState, mode: 'create', idempotencyKey: string): CreateOrderPayload;

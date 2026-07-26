@@ -431,7 +431,7 @@ export async function apiSearchClients(params: { search?: string; per_page?: num
   return requestJson<{ clients: ClientSearchResult[] }>(`/clients${queryString ? `?${queryString}` : ''}`);
 }
 
-export async function apiSearchEquipments(params: { clientId?: number; search?: string } = {}): Promise<{
+export async function apiSearchEquipments(params: { clientId?: number; search?: string; perPage?: number } = {}): Promise<{
   equipments: EquipmentSearchResult[];
 }> {
   const query = new URLSearchParams();
@@ -442,6 +442,10 @@ export async function apiSearchEquipments(params: { clientId?: number; search?: 
 
   if (params.search?.trim()) {
     query.set('search', params.search.trim());
+  }
+
+  if (params.perPage) {
+    query.set('per_page', String(params.perPage));
   }
 
   const queryString = query.toString();

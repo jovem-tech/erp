@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { ApiError } from '@/lib/api';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ApiError, fetchAttachmentBlob } from '@/lib/api';
 import { createEquipmentBrand, createEquipmentModel, getEquipmentFormData, searchEquipments } from '@/lib/orders';
 import type {
   EquipmentBrandCatalogItem,
@@ -10,7 +10,10 @@ import type {
   EquipmentSearchResult,
   NovoEquipamentoPayload,
 } from '@/lib/types';
-import type { WizardMode } from '@/components/orders/order-form-wizard/wizard-state';
+import {
+  isWizardEquipmentComplete,
+  type WizardMode,
+} from '@/components/orders/order-form-wizard/wizard-state';
 import { SearchSelect } from '@/components/orders/order-form-wizard/search-select';
 import { PhotoPicker } from '@/components/orders/order-form-wizard/photo-picker';
 
@@ -28,6 +31,100 @@ type StepEquipmentProps = {
 
 const EMPTY_NEW_EQUIPMENT: NovoEquipamentoPayload = { tipo_id: 0, marca_id: 0, modelo_id: 0 };
 
+function equipmentLabel(equipment: EquipmentSearchResult): string {
+  return equipment.resumo_tecnico.trim()
+    || [equipment.marca_nome, equipment.modelo_nome].filter(Boolean).join(' ')
+    || `${equipment.tipo_nome || 'Equipamento'} #${equipment.id}`;
+}
+
+function EquipmentThumbnail({ equipment }: { equipment: EquipmentSearchResult }) {
+  const containerRef = useRef<HTMLSpanElement>(null);
+  const [shouldLoad, setShouldLoad] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!equipment.primary_photo_id) {
+      setShouldLoad(false);
+      return;
+    }
+
+    if (typeof IntersectionObserver === 'undefined') {
+      setShouldLoad(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setShouldLoad(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '120px' }
+    );
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [equipment.primary_photo_id]);
+
+  useEffect(() => {
+    const photoId = equipment.primary_photo_id;
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    setPhotoUrl(null);
+
+    if (!shouldLoad || !photoId) {
+      return;
+    }
+
+    // A rota é derivada exclusivamente de IDs numéricos retornados pela API.
+    // Não reutilizamos uma URL absoluta no header Authorization, evitando
+    // encaminhar o Bearer token para uma origem inesperada.
+    const sourcePath = `/equipments/${equipment.id}/photos/${photoId}`;
+
+    fetchAttachmentBlob(sourcePath)
+      .then((attachment) => {
+        if (!attachment.contentType.toLowerCase().startsWith('image/')) {
+          return;
+        }
+
+        objectUrl = URL.createObjectURL(attachment.blob);
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+          return;
+        }
+
+        setPhotoUrl(objectUrl);
+      })
+      .catch(() => {
+        // A opção continua identificável por texto caso a foto privada falhe.
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [equipment.id, equipment.primary_photo_id, shouldLoad]);
+
+  return (
+    <span className="equipment-thumbnail" ref={containerRef}>
+      {photoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element -- URL blob autenticada, criada somente após validar o MIME da API
+        <img src={photoUrl} alt={`Foto de ${equipmentLabel(equipment)}`} />
+      ) : (
+        <span aria-hidden="true">{(equipment.tipo_nome || 'EQ').slice(0, 2).toUpperCase()}</span>
+      )}
+    </span>
+  );
+}
+
 export function StepEquipment({
   mode,
   clienteId,
@@ -39,7 +136,12 @@ export function StepEquipment({
   onChangePendingNewEquipmentPhotos,
   disabled = false,
 }: StepEquipmentProps) {
-  const [view, setView] = useState<'buscar' | 'novo'>(equipamento ? 'buscar' : pendingNewEquipment ? 'novo' : 'buscar');
+  const [view, setView] = useState<'buscar' | 'novo'>(
+    equipamento ? 'buscar' : pendingNewEquipment || (mode === 'create' && !clienteId) ? 'novo' : 'buscar'
+  );
+  const [newEquipmentReason, setNewEquipmentReason] = useState<'new-client' | 'empty-client' | null>(
+    mode === 'create' && !clienteId ? 'new-client' : null
+  );
 
   const [formData, setFormData] = useState<EquipmentFormData | null>(null);
   const [loadingFormData, setLoadingFormData] = useState(false);
@@ -73,23 +175,43 @@ export function StepEquipment({
   }, [view, formData, loadingFormData]);
 
   const fetchEquipmentOptions = useCallback(
-    (query: string) => searchEquipments({ clientId: clienteId ?? undefined, search: query }),
+    (query: string) => (
+      clienteId
+        ? searchEquipments({ clientId: clienteId, search: query, perPage: 50 })
+        : Promise.resolve([])
+    ),
     [clienteId]
   );
 
   const switchToSearch = (): void => {
+    if (mode === 'create' && !clienteId) {
+      return;
+    }
+
     setView('buscar');
+    setNewEquipmentReason(null);
     onChangePendingNewEquipment(null);
     onChangePendingNewEquipmentPhotos([]);
   };
 
-  const switchToNew = (): void => {
+  const switchToNew = (reason: 'new-client' | 'empty-client' | null = null): void => {
     setView('novo');
+    setNewEquipmentReason(reason);
     onSelectEquipamento(null);
     if (!pendingNewEquipment) {
       onChangePendingNewEquipment(EMPTY_NEW_EQUIPMENT);
     }
   };
+
+  const handleInitialEquipmentOptions = useCallback(
+    (options: EquipmentSearchResult[]): void => {
+      if (mode === 'create' && clienteId && options.length === 0) {
+        switchToNew('empty-client');
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- callbacks do formulário são estáveis durante a etapa
+    [clienteId, mode, pendingNewEquipment]
+  );
 
   const updateField = <K extends keyof NovoEquipamentoPayload>(field: K, value: NovoEquipamentoPayload[K]): void => {
     onChangePendingNewEquipment({ ...(pendingNewEquipment ?? EMPTY_NEW_EQUIPMENT), [field]: value });
@@ -154,14 +276,15 @@ export function StepEquipment({
               type="button"
               className={view === 'buscar' ? 'button button--primary button-small' : 'button button--soft button-small'}
               onClick={switchToSearch}
-              disabled={disabled}
+              disabled={disabled || !clienteId}
+              title={!clienteId ? 'O cliente novo ainda não possui equipamentos cadastrados.' : undefined}
             >
               Equipamento já cadastrado
             </button>
             <button
               type="button"
               className={view === 'novo' ? 'button button--primary button-small' : 'button button--soft button-small'}
-              onClick={switchToNew}
+              onClick={() => switchToNew(null)}
               disabled={disabled}
             >
               Equipamento novo
@@ -178,12 +301,30 @@ export function StepEquipment({
           onSelect={onSelectEquipamento}
           fetchOptions={fetchEquipmentOptions}
           getOptionKey={(option) => option.id}
-          getOptionLabel={(option) => option.resumo_tecnico || `${option.marca_nome} ${option.modelo_nome}`}
-          getOptionSubtitle={(option) => [option.cliente_nome, option.numero_serie].filter(Boolean).join(' • ') || null}
+          getOptionLabel={equipmentLabel}
+          getOptionSubtitle={(option) => [
+            option.tipo_nome,
+            option.numero_serie ? `Série ${option.numero_serie}` : '',
+          ].filter(Boolean).join(' • ') || null}
+          renderOptionLeading={(option) => <EquipmentThumbnail equipment={option} />}
+          loadOnFocus
+          onInitialOptionsLoaded={handleInitialEquipmentOptions}
+          emptyMessage="Nenhum equipamento cadastrado para este cliente."
           disabled={disabled}
         />
       ) : (
         <div className="form">
+          {newEquipmentReason === 'empty-client' ? (
+            <div className="notice">
+              <span>Nenhum equipamento cadastrado para este cliente. Prossiga com o novo cadastro; o vínculo será feito ao criar a OS.</span>
+            </div>
+          ) : null}
+          {newEquipmentReason === 'new-client' ? (
+            <div className="notice">
+              <span>Como o cliente também é novo, cadastre o equipamento para que ambos sejam vinculados ao criar a OS.</span>
+            </div>
+          ) : null}
+
           {loadingFormData ? <span className="muted">Carregando catálogos...</span> : null}
           {formDataError ? (
             <div className="notice notice--danger">
@@ -488,14 +629,5 @@ export function isStepEquipmentValid(
   pendingNewEquipment: NovoEquipamentoPayload | null,
   pendingNewEquipmentPhotos: File[]
 ): boolean {
-  if (equipamento) {
-    return true;
-  }
-
-  return Boolean(
-    pendingNewEquipment?.tipo_id &&
-      pendingNewEquipment?.marca_id &&
-      pendingNewEquipment?.modelo_id &&
-      pendingNewEquipmentPhotos.length >= 1
-  );
+  return isWizardEquipmentComplete(equipamento, pendingNewEquipment, pendingNewEquipmentPhotos);
 }

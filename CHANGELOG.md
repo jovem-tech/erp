@@ -1,5 +1,29 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.20.0.0 — 2026-07-26 16:20
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Transforma a Bottom Nav em player exclusivo da criação de OS mobile, com navegação, validação completa, salvamento idempotente e cancelamento protegido.
+- **Arquivos:** documentacao/03-arquitetura-tecnica/ordens-mobile.md,documentacao/07-novas-implementacoes/2026-07-26-player-criacao-os-bottom-nav-mobile.md,documentacao/07-novas-implementacoes/historico-de-versoes.md,frontends/mobile/src/app/globals.css,frontends/mobile/src/app/os/novo/page.tsx,frontends/mobile/src/components/__tests__/authenticated-shell.test.tsx,frontends/mobile/src/components/authenticated-shell.tsx,frontends/mobile/src/components/orders/__tests__/order-creation-player.test.tsx,frontends/mobile/src/components/orders/order-creation-player.tsx,frontends/mobile/src/components/orders/order-form-wizard/__tests__/wizard-state.test.ts,frontends/mobile/src/components/orders/order-form-wizard/index.tsx,frontends/mobile/src/components/orders/order-form-wizard/steps/step-client.tsx,frontends/mobile/src/components/orders/order-form-wizard/steps/step-details.tsx,frontends/mobile/src/components/orders/order-form-wizard/steps/step-equipment.tsx,frontends/mobile/src/components/orders/order-form-wizard/steps/step-operations.tsx,frontends/mobile/src/components/orders/order-form-wizard/steps/step-review.tsx,frontends/mobile/src/components/orders/order-form-wizard/wizard-state.ts,specs/024-player-criacao-os-mobile/plan.md,specs/024-player-criacao-os-mobile/spec.md,specs/024-player-criacao-os-mobile/tasks.md
+
+## v5.19.2.0 — 2026-07-26 15:37
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Exibe as fotos reais da OS no mobile com miniatura autenticada, sem corte e carregamento seguro.
+- **Arquivos:** documentacao/03-arquitetura-tecnica/ordens-mobile.md,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,documentacao/07-novas-implementacoes/2026-07-26-miniaturas-fotos-os-mobile.md,documentacao/07-novas-implementacoes/historico-de-versoes.md,frontends/mobile/src/app/globals.css,frontends/mobile/src/components/orders/__tests__/order-attachments.test.tsx,frontends/mobile/src/components/orders/order-attachments.tsx
+
+## v5.19.1.0 — 2026-07-26 14:02
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige o fundo do tema claro e alinha os acentos e a tipografia mobile a identidade azul Jovem Tech.
+- **Arquivos:** documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,documentacao/07-novas-implementacoes/2026-07-26-tema-claro-identidade-jovem-tech-mobile.md,documentacao/07-novas-implementacoes/historico-de-versoes.md,frontends/mobile/public/favicon.svg,frontends/mobile/public/theme-bootstrap.js,frontends/mobile/src/app/globals.css,frontends/mobile/src/components/orders/order-attachments.tsx,frontends/mobile/src/lib/__tests__/theme.test.ts,frontends/mobile/src/lib/theme.ts
+
+## v5.19.0.0 — 2026-07-26 07:58
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Lista com foto os equipamentos do cliente na Nova OS mobile e inicia o cadastro vinculado quando a lista estiver vazia.
+- **Arquivos:** documentacao/07-novas-implementacoes/2026-07-26-selecao-equipamento-cliente-mobile.md,frontends/mobile/src/app/globals.css,frontends/mobile/src/components/orders/order-form-wizard/__tests__/search-select.test.tsx,frontends/mobile/src/components/orders/order-form-wizard/__tests__/step-equipment.test.tsx,frontends/mobile/src/components/orders/order-form-wizard/__tests__/wizard-state.test.ts,frontends/mobile/src/components/orders/order-form-wizard/index.tsx,frontends/mobile/src/components/orders/order-form-wizard/search-select.tsx,frontends/mobile/src/components/orders/order-form-wizard/steps/step-equipment.tsx,frontends/mobile/src/components/orders/order-form-wizard/wizard-state.ts,frontends/mobile/src/lib/__tests__/orders-wizard-api.test.ts,frontends/mobile/src/lib/api.ts,frontends/mobile/src/lib/orders.ts
+
 ## v5.18.0.0 — 2026-07-26 01:59
 - **Tier:** minor
 - **Autor/Agente:** Codex

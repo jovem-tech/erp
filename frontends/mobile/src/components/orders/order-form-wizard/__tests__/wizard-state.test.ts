@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { buildOrderPayload, createInitialWizardState, isChecklistComplete } from '@/components/orders/order-form-wizard/wizard-state';
+import {
+  areWizardRequiredFieldsComplete,
+  buildOrderPayload,
+  createInitialWizardState,
+  isChecklistComplete,
+  isWizardDirty,
+  selectClientForWizard,
+  selectEquipmentForWizard,
+} from '@/components/orders/order-form-wizard/wizard-state';
 import type { ClientSearchResult, EquipmentSearchResult } from '@/lib/types';
 
 function buildClient(overrides: Partial<ClientSearchResult> = {}): ClientSearchResult {
@@ -169,5 +177,64 @@ describe('isChecklistComplete', () => {
       checklistAnswers: { 100: { status: 'ok' as const, observacao: '' } },
     };
     expect(isChecklistComplete(state)).toBe(true);
+  });
+});
+
+describe('consistência entre cliente e equipamento', () => {
+  it('limpa equipamento, fotos pendentes e checklist ao trocar o cliente', () => {
+    const state = {
+      ...createInitialWizardState(),
+      cliente: buildClient(),
+      equipamento: buildEquipment(),
+      pendingNewEquipmentPhotos: [new File(['foto'], 'equipamento.jpg', { type: 'image/jpeg' })],
+      checklistModel: {
+        id: 1,
+        checklist_tipo_id: 1,
+        tipo_equipamento_id: 3,
+        nome: 'Entrada',
+        descricao: '',
+        itens: [{ id: 100, descricao: 'Tela', ordem: 1 }],
+      },
+      checklistAnswers: { 100: { status: 'ok' as const, observacao: '' } },
+    };
+
+    const nextState = selectClientForWizard(state, buildClient({ id: 11, nome_razao: 'Maria' }));
+
+    expect(nextState.equipamento).toBeNull();
+    expect(nextState.pendingNewEquipmentPhotos).toEqual([]);
+    expect(nextState.checklistModel).toBeNull();
+    expect(nextState.checklistAnswers).toEqual({});
+  });
+
+  it('recusa no estado local um equipamento pertencente a outro cliente', () => {
+    const state = {
+      ...createInitialWizardState(),
+      cliente: buildClient({ id: 10 }),
+    };
+
+    expect(selectEquipmentForWizard(state, buildEquipment({ cliente_id: 99 }))).toBe(state);
+    expect(selectEquipmentForWizard(state, buildEquipment({ cliente_id: 10 })).equipamento?.id).toBe(20);
+  });
+});
+
+describe('estado do player de criação', () => {
+  it('só libera o salvamento quando todos os campos obrigatórios estão completos', () => {
+    const incomplete = createInitialWizardState();
+    expect(areWizardRequiredFieldsComplete(incomplete)).toBe(false);
+
+    const complete = {
+      ...incomplete,
+      cliente: buildClient(),
+      equipamento: buildEquipment(),
+      relatoCliente: 'Tela quebrada',
+      tecnicoId: 7,
+    };
+
+    expect(areWizardRequiredFieldsComplete(complete)).toBe(true);
+  });
+
+  it('detecta dados preenchidos para proteger o cancelamento', () => {
+    expect(isWizardDirty(createInitialWizardState())).toBe(false);
+    expect(isWizardDirty({ ...createInitialWizardState(), relatoCliente: 'Não liga' })).toBe(true);
   });
 });

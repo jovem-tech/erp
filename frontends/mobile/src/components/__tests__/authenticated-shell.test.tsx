@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   updateProfile: vi.fn(),
   setSession: vi.fn(),
   clearSession: vi.fn(),
+  pathname: '/os',
 }));
 
 vi.mock('next/link', () => ({
@@ -30,7 +31,7 @@ vi.mock('next/link', () => ({
 }));
 
 vi.mock('next/navigation', () => ({
-  usePathname: () => '/os',
+  usePathname: () => mocks.pathname,
   useRouter: () => ({
     push: mocks.push,
     replace: mocks.replace,
@@ -84,6 +85,7 @@ vi.mock('@/lib/api', () => ({
 describe('AuthenticatedShell navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.pathname = '/os';
     mocks.listNotifications.mockResolvedValue({ items: [], unread_count: 0 });
     mocks.logout.mockResolvedValue(undefined);
     mocks.markAllNotificationsRead.mockResolvedValue(undefined);
@@ -118,6 +120,35 @@ describe('AuthenticatedShell navigation', () => {
     expect(within(navigation).getByRole('link', { name: 'Criar nova OS' })).toHaveAttribute('href', '/os/novo');
     expect(within(navigation).getByRole('button', { name: 'Orçamentos, disponível futuramente' })).toBeDisabled();
     expect(within(navigation).getByRole('button', { name: 'Abrir perfil do usuário' })).toBeEnabled();
+  });
+
+  it('replaces the bottom navigation only on the new OS route', () => {
+    mocks.pathname = '/os/novo';
+
+    const { rerender } = render(
+      <AuthenticatedShell>
+        <div>Nova OS</div>
+      </AuthenticatedShell>
+    );
+
+    const creationPlayer = screen.getByRole('navigation', { name: 'Controles da criação da OS' });
+    expect(within(creationPlayer).getAllByRole('button')).toHaveLength(5);
+    expect(within(creationPlayer).getByRole('button', { name: 'Início' })).toBeEnabled();
+    expect(within(creationPlayer).getByRole('button', { name: 'Voltar' })).toBeDisabled();
+    expect(within(creationPlayer).getByRole('button', { name: 'Próximo' })).toBeDisabled();
+    expect(within(creationPlayer).getByRole('button', { name: 'Salvar' })).toBeDisabled();
+    expect(within(creationPlayer).getByRole('button', { name: 'Cancelar' })).toBeEnabled();
+    expect(screen.queryByRole('navigation', { name: 'Navegação principal' })).not.toBeInTheDocument();
+
+    mocks.pathname = '/os/7/editar';
+    rerender(
+      <AuthenticatedShell>
+        <div>Editar OS</div>
+      </AuthenticatedShell>
+    );
+
+    expect(screen.getByRole('navigation', { name: 'Navegação principal' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Controles da criação da OS' })).not.toBeInTheDocument();
   });
 
   it('moves installation to the hamburger menu and profile to the bottom navigation', async () => {

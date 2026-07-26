@@ -4,6 +4,7 @@ import {
   apiEntryChecklistModel,
   apiEquipmentFormData,
   apiSearchClients,
+  apiSearchEquipments,
   apiSearchReportedDefects,
   apiTechnicians,
   apiUpdateOrder,
@@ -69,6 +70,18 @@ describe('funções auxiliares do wizard de OS', () => {
     const result = await apiEquipmentFormData();
 
     expect(result).toEqual(form);
+  });
+
+  it('apiSearchEquipments restringe a consulta ao cliente e respeita o limite solicitado', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ status: 'success', data: { equipments: [] }, error: null })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiSearchEquipments({ clientId: 42, search: '', perPage: 50 });
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/equipments?client_id=42&per_page=50');
   });
 
   it('apiEntryChecklistModel retorna null quando o tipo de equipamento não tem checklist ativo', async () => {
