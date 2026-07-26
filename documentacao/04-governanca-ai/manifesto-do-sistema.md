@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-26T01:34:59-03:00`
-- Versao do sistema: `5.17.1`
+- Gerado em: `2026-07-26T01:40:39-03:00`
+- Versao do sistema: `5.17.2`
 - Versao da API: `1.6.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
