@@ -233,8 +233,8 @@ export async function apiLogout(): Promise<void> {
   }
 }
 
-export async function apiMe(): Promise<MobileUser> {
-  return requestJson<MobileUser>('/auth/me');
+export async function apiMe(signal?: AbortSignal): Promise<MobileUser> {
+  return requestJson<MobileUser>('/auth/me', { signal });
 }
 
 export async function apiUpdateProfile(payload: {
@@ -306,7 +306,9 @@ export async function apiMarkAllNotificationsRead(): Promise<{
   });
 }
 
-export async function apiRefresh(): Promise<Pick<MobileSession, 'accessToken' | 'tokenType' | 'expiresAt'>> {
+export async function apiRefresh(
+  signal?: AbortSignal
+): Promise<Pick<MobileSession, 'accessToken' | 'tokenType' | 'expiresAt'>> {
   type RefreshResponse = {
     access_token: string;
     token_type: 'Bearer' | string;
@@ -315,6 +317,7 @@ export async function apiRefresh(): Promise<Pick<MobileSession, 'accessToken' | 
 
   const data = await requestJson<RefreshResponse>('/auth/refresh', {
     method: 'POST',
+    signal,
   });
 
   return {

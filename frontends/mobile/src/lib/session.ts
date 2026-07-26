@@ -3,6 +3,9 @@ import type { MobileSession } from '@/lib/types';
 export const MOBILE_SESSION_STORAGE_KEY = 'sistema-erp.mobile.session';
 export const MOBILE_SESSION_EVENT = 'sistema-erp:session-changed';
 
+let memorySession: MobileSession | null = null;
+let preferMemorySession = false;
+
 function hasWindow(): boolean {
   return typeof window !== 'undefined';
 }
@@ -66,9 +69,14 @@ export function readStoredSession(): MobileSession | null {
     return null;
   }
 
+  if (preferMemorySession) {
+    return memorySession;
+  }
+
   try {
     const raw = window.localStorage.getItem(MOBILE_SESSION_STORAGE_KEY);
     if (!raw) {
+      memorySession = null;
       return null;
     }
 
@@ -76,12 +84,15 @@ export function readStoredSession(): MobileSession | null {
     const normalized = normalizeSession(parsed);
 
     if (normalized.accessToken === '' || normalized.expiresAt === '') {
+      memorySession = null;
       return null;
     }
 
+    memorySession = normalized;
     return normalized;
   } catch {
-    return null;
+    preferMemorySession = true;
+    return memorySession;
   }
 }
 
@@ -91,7 +102,17 @@ export function writeStoredSession(session: MobileSession): MobileSession {
   }
 
   const normalized = normalizeSession(session);
-  window.localStorage.setItem(MOBILE_SESSION_STORAGE_KEY, JSON.stringify(normalized));
+  memorySession = normalized;
+
+  try {
+    window.localStorage.setItem(MOBILE_SESSION_STORAGE_KEY, JSON.stringify(normalized));
+    preferMemorySession = false;
+  } catch {
+    // O iOS pode indisponibilizar o armazenamento no modo standalone. A
+    // sessao continua valida somente em memoria ate o aplicativo ser fechado.
+    preferMemorySession = true;
+  }
+
   emitSessionChange();
 
   return normalized;
@@ -102,7 +123,17 @@ export function clearStoredSession(): void {
     return;
   }
 
-  window.localStorage.removeItem(MOBILE_SESSION_STORAGE_KEY);
+  memorySession = null;
+
+  try {
+    window.localStorage.removeItem(MOBILE_SESSION_STORAGE_KEY);
+    preferMemorySession = false;
+  } catch {
+    // Impede que um valor antigo seja reutilizado neste runtime quando o
+    // armazenamento do WebKit estiver temporariamente inacessivel.
+    preferMemorySession = true;
+  }
+
   emitSessionChange();
 }
 
@@ -111,7 +142,11 @@ export function emitSessionChange(): void {
     return;
   }
 
-  window.dispatchEvent(new Event(MOBILE_SESSION_EVENT));
+  try {
+    window.dispatchEvent(new Event(MOBILE_SESSION_EVENT));
+  } catch {
+    // Falha de eventos nao deve impedir login, logout ou bootstrap da sessao.
+  }
 }
 
 export function isSessionExpired(session: MobileSession | null): boolean {

@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.20.3.0 — 2026-07-26 18:52
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige o PWA standalone no iOS para nunca ficar preso na sincronizacao de sessao, com storage resiliente e deadline de validacao.
+- **Arquivos:** documentacao/07-novas-implementacoes/2026-07-26-bootstrap-sessao-pwa-ios.md,documentacao/07-novas-implementacoes/historico-de-versoes.md,frontends/mobile/README.md,frontends/mobile/src/components/__tests__/session-provider.test.tsx,frontends/mobile/src/components/session-provider.tsx,frontends/mobile/src/lib/__tests__/session.test.ts,frontends/mobile/src/lib/api.ts,frontends/mobile/src/lib/session.ts,specs/005-pwa-mobile-session/spec.md,specs/005-pwa-mobile-session/tasks.md
+
 ## v5.20.2.0 — 2026-07-26 16:59
 - **Tier:** patch
 - **Autor/Agente:** Codex

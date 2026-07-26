@@ -56,6 +56,7 @@ Como responsável pela plataforma, quero que o app mobile opere com regras de se
 - **FR-010** - O sistema deve aplicar restrições de segurança do navegador para impedir fontes externas não aprovadas.
 - **FR-011** - O sistema deve manter o contrato da API estável para permitir o uso por outros canais no futuro.
 - **FR-012** - O sistema deve documentar o fluxo de sessão, expiração e recuperação para facilitar onboarding.
+- **FR-013** - O bootstrap da sessão deve sempre concluir, inclusive quando o armazenamento do navegador estiver indisponível ou a validação remota não responder.
 
 ## Requisitos Não Funcionais
 
@@ -65,6 +66,7 @@ Como responsável pela plataforma, quero que o app mobile opere com regras de se
 - **NFR-004** - O app deve bloquear scripts de terceiros por padrão, salvo exceção explícita e documentada.
 - **NFR-005** - O tempo de reautenticação após expiração deve ser previsível e claro para o técnico.
 - **NFR-006** - O acesso a anexos deve seguir o mesmo princípio de controle do backend central, sem exposição pública direta.
+- **NFR-007** - A tela de sincronização não deve permanecer indefinidamente; a validação inicial deve possuir deadline e liberar a interface de forma segura.
 
 ## Critérios de Aceite
 
@@ -74,6 +76,7 @@ Como responsável pela plataforma, quero que o app mobile opere com regras de se
 - O técnico consegue atualizar o status de uma OS atribuída a ele.
 - O logout encerra a sessão no backend e limpa o estado local do app.
 - O navegador opera com política de segurança restritiva e sem dependências externas desnecessárias.
+- No modo standalone do iOS, uma falha de `localStorage` ou uma requisição de validação pendente não mantém o app preso em "Sincronizando sessão".
 - A documentação da fase permite que um novo dev entenda como subir backend, frontend e validar o fluxo.
 
 ## Premissas

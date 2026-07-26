@@ -4,7 +4,7 @@ PWA mobile do `sistema-erp`, consumindo o backend central Laravel via `Bearer to
 
 ## Requisitos
 
-- Node.js 18 ou superior;
+- Node.js 20.9 ou superior;
 - gerenciador de pacotes compatível com o projeto;
 - backend central disponível em `http://127.0.0.1:8000/api/v1` no ambiente local.
 
@@ -44,7 +44,8 @@ novos helpers de API.
 
 - login com credenciais do ERP;
 - persistência de sessão no navegador com expiração;
-- validação de sessão ao abrir o app;
+- validação de sessão ao abrir o app, com deadline de 8 segundos;
+- fallback de sessão em memória quando o WebKit/iOS indisponibiliza o `localStorage`;
 - listagem de OS atribuídas ao técnico;
 - detalhe da OS com histórico recente, fotos e PDFs controlados;
 - atualização de status com retorno ao backend central;
