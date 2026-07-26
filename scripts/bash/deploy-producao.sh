@@ -14,7 +14,7 @@
 # documentacao/10-deploy/deploy-producao-contabo-vps.md.
 
 set -Eeuo pipefail
-umask 027
+umask 022
 
 readonly REPO_ROOT="/var/www/sistema-erp"
 readonly BACKUP_DIR="/var/backups/sistema-erp"
@@ -132,6 +132,37 @@ run_mobile_pnpm() {
     corepack "pnpm@${PNPM_VERSION}" "$@"
 }
 
+rebuild_laravel_caches() {
+  local app_root="$1"
+
+  cd "$app_root"
+
+  install -d -o www-data -g www-data -m 0750 \
+    bootstrap/cache \
+    storage/framework \
+    storage/framework/cache \
+    storage/framework/sessions \
+    storage/framework/views \
+    storage/logs
+
+  chown -R www-data:www-data \
+    bootstrap/cache \
+    storage/framework \
+    storage/logs
+
+  runuser -u www-data -- php artisan config:clear
+  runuser -u www-data -- php artisan config:cache
+  runuser -u www-data -- php artisan route:clear
+  runuser -u www-data -- php artisan route:cache
+  runuser -u www-data -- php artisan view:clear
+  runuser -u www-data -- php artisan view:cache
+
+  find bootstrap/cache storage/framework storage/logs \
+    -type d -exec chmod 0750 {} +
+  find bootstrap/cache storage/framework storage/logs \
+    -type f -exec chmod 0640 {} +
+}
+
 wait_for_mobile_health() {
   local attempt
 
@@ -178,9 +209,12 @@ trap cleanup_mysql_credentials EXIT
 
 for required_command in \
   flock git mysqldump gzip composer php npm node corepack curl tar \
-  runuser supervisorctl systemctl install find grep mktemp readlink sed seq sort; do
+  runuser supervisorctl systemctl install chown chmod find grep mktemp \
+  readlink sed seq sort; do
   require_command "$required_command"
 done
+
+export COMPOSER_ALLOW_SUPERUSER=1
 
 exec 9>"$DEPLOY_LOCK"
 flock -n 9 || die "ja existe outro deploy de producao em andamento"
@@ -292,12 +326,7 @@ log "[4/7] Backend"
 cd "${REPO_ROOT}/backend"
 composer install --no-dev --optimize-autoloader
 php artisan migrate --force
-php artisan config:clear
-php artisan config:cache
-php artisan route:clear
-php artisan route:cache
-php artisan view:clear
-runuser -u www-data -- php artisan view:cache
+rebuild_laravel_caches "${REPO_ROOT}/backend"
 
 log "[5/7] Desktop"
 cd "${REPO_ROOT}/frontends/desktop"
@@ -307,12 +336,7 @@ if [[ -f package-lock.json ]]; then
 fi
 npm run build
 php artisan migrate --force
-php artisan config:clear
-php artisan config:cache
-php artisan route:clear
-php artisan route:cache
-php artisan view:clear
-runuser -u www-data -- php artisan view:cache
+rebuild_laravel_caches "${REPO_ROOT}/frontends/desktop"
 
 log "[6/7] Ativando servicos"
 systemctl reload php8.3-fpm

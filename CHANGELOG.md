@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.17.1.0 — 2026-07-26 01:34
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige permissoes do checkout e dos caches Laravel no deploy de producao, preservando leitura pelo PHP-FPM.
+- **Arquivos:** scripts/bash/deploy-producao.sh
+
 ## v5.17.0.0 — 2026-07-26 01:26
 - **Tier:** minor
 - **Autor/Agente:** Codex
