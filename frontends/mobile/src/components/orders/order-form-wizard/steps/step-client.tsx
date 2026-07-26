@@ -3,7 +3,10 @@
 import { useState } from 'react';
 import { searchClients } from '@/lib/orders';
 import type { ClientSearchResult, NovoClientePayload } from '@/lib/types';
-import type { WizardMode } from '@/components/orders/order-form-wizard/wizard-state';
+import {
+  isWizardClientComplete,
+  type WizardMode,
+} from '@/components/orders/order-form-wizard/wizard-state';
 import { SearchSelect } from '@/components/orders/order-form-wizard/search-select';
 
 type StepClientProps = {
@@ -219,9 +222,5 @@ export function StepClient({
 }
 
 export function isStepClientValid(cliente: ClientSearchResult | null, pendingNewClient: NovoClientePayload | null): boolean {
-  if (cliente) {
-    return true;
-  }
-
-  return Boolean(pendingNewClient?.nome_razao.trim() && pendingNewClient?.telefone1.trim());
+  return isWizardClientComplete(cliente, pendingNewClient);
 }

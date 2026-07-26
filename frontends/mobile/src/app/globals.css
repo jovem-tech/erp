@@ -1832,6 +1832,34 @@ a.workspace-card:hover {
   opacity: 0.44;
 }
 
+.app-bottom-nav-inner--creation {
+  align-items: stretch;
+}
+
+.app-bottom-nav-inner--creation .app-bottom-nav-item {
+  cursor: pointer;
+}
+
+.app-bottom-nav-inner--creation .app-bottom-nav-item:disabled {
+  cursor: not-allowed;
+  opacity: 0.38;
+}
+
+.app-bottom-nav-item--creation-primary:not(:disabled) {
+  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+.app-bottom-nav-item--save:not(:disabled) {
+  color: var(--on-accent);
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  box-shadow: 0 8px 18px rgba(var(--accent-strong-rgb), 0.2);
+}
+
+.app-bottom-nav-item--cancel:not(:disabled) {
+  color: var(--danger);
+}
+
 .app-bottom-nav-item--disabled.app-bottom-nav-item--primary svg {
   border-color: var(--panel-strong);
   background: var(--panel-soft);

@@ -10,7 +10,10 @@ import type {
   EquipmentSearchResult,
   NovoEquipamentoPayload,
 } from '@/lib/types';
-import type { WizardMode } from '@/components/orders/order-form-wizard/wizard-state';
+import {
+  isWizardEquipmentComplete,
+  type WizardMode,
+} from '@/components/orders/order-form-wizard/wizard-state';
 import { SearchSelect } from '@/components/orders/order-form-wizard/search-select';
 import { PhotoPicker } from '@/components/orders/order-form-wizard/photo-picker';
 
@@ -626,14 +629,5 @@ export function isStepEquipmentValid(
   pendingNewEquipment: NovoEquipamentoPayload | null,
   pendingNewEquipmentPhotos: File[]
 ): boolean {
-  if (equipamento) {
-    return true;
-  }
-
-  return Boolean(
-    pendingNewEquipment?.tipo_id &&
-      pendingNewEquipment?.marca_id &&
-      pendingNewEquipment?.modelo_id &&
-      pendingNewEquipmentPhotos.length >= 1
-  );
+  return isWizardEquipmentComplete(equipamento, pendingNewEquipment, pendingNewEquipmentPhotos);
 }

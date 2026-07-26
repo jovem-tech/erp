@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.20.0.0 — 2026-07-26 16:20
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Transforma a Bottom Nav em player exclusivo da criação de OS mobile, com navegação, validação completa, salvamento idempotente e cancelamento protegido.
+- **Arquivos:** documentacao/03-arquitetura-tecnica/ordens-mobile.md,documentacao/07-novas-implementacoes/2026-07-26-player-criacao-os-bottom-nav-mobile.md,documentacao/07-novas-implementacoes/historico-de-versoes.md,frontends/mobile/src/app/globals.css,frontends/mobile/src/app/os/novo/page.tsx,frontends/mobile/src/components/__tests__/authenticated-shell.test.tsx,frontends/mobile/src/components/authenticated-shell.tsx,frontends/mobile/src/components/orders/__tests__/order-creation-player.test.tsx,frontends/mobile/src/components/orders/order-creation-player.tsx,frontends/mobile/src/components/orders/order-form-wizard/__tests__/wizard-state.test.ts,frontends/mobile/src/components/orders/order-form-wizard/index.tsx,frontends/mobile/src/components/orders/order-form-wizard/steps/step-client.tsx,frontends/mobile/src/components/orders/order-form-wizard/steps/step-details.tsx,frontends/mobile/src/components/orders/order-form-wizard/steps/step-equipment.tsx,frontends/mobile/src/components/orders/order-form-wizard/steps/step-operations.tsx,frontends/mobile/src/components/orders/order-form-wizard/steps/step-review.tsx,frontends/mobile/src/components/orders/order-form-wizard/wizard-state.ts,specs/024-player-criacao-os-mobile/plan.md,specs/024-player-criacao-os-mobile/spec.md,specs/024-player-criacao-os-mobile/tasks.md
+
 ## v5.19.2.0 — 2026-07-26 15:37
 - **Tier:** patch
 - **Autor/Agente:** Codex

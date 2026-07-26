@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  areWizardRequiredFieldsComplete,
   buildOrderPayload,
   createInitialWizardState,
   isChecklistComplete,
+  isWizardDirty,
   selectClientForWizard,
   selectEquipmentForWizard,
 } from '@/components/orders/order-form-wizard/wizard-state';
@@ -212,5 +214,27 @@ describe('consistência entre cliente e equipamento', () => {
 
     expect(selectEquipmentForWizard(state, buildEquipment({ cliente_id: 99 }))).toBe(state);
     expect(selectEquipmentForWizard(state, buildEquipment({ cliente_id: 10 })).equipamento?.id).toBe(20);
+  });
+});
+
+describe('estado do player de criação', () => {
+  it('só libera o salvamento quando todos os campos obrigatórios estão completos', () => {
+    const incomplete = createInitialWizardState();
+    expect(areWizardRequiredFieldsComplete(incomplete)).toBe(false);
+
+    const complete = {
+      ...incomplete,
+      cliente: buildClient(),
+      equipamento: buildEquipment(),
+      relatoCliente: 'Tela quebrada',
+      tecnicoId: 7,
+    };
+
+    expect(areWizardRequiredFieldsComplete(complete)).toBe(true);
+  });
+
+  it('detecta dados preenchidos para proteger o cancelamento', () => {
+    expect(isWizardDirty(createInitialWizardState())).toBe(false);
+    expect(isWizardDirty({ ...createInitialWizardState(), relatoCliente: 'Não liga' })).toBe(true);
   });
 });

@@ -3,6 +3,18 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.20.0.0 - 2026-07-26
+
+- durante a criação em `/os/novo`, a Bottom Nav vira um player com `Início`,
+  `Voltar`, `Próximo`, `Salvar` e `Cancelar`;
+- a substituição é exclusiva da criação: edição e demais telas preservam a
+  navegação original;
+- `Próximo` segue a validade da etapa e `Salvar` somente habilita quando todas
+  as obrigatoriedades estão completas;
+- confirmação de descarte protege dados preenchidos e uma trava local, somada
+  à idempotência existente, impede dupla criação;
+- nota: `2026-07-26-player-criacao-os-bottom-nav-mobile.md`.
+
 ## v5.19.2.0 - 2026-07-26
 
 - fotos do detalhe da OS passam a exibir miniatura privada real, sem corte, em

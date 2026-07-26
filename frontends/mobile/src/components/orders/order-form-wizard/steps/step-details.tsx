@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { searchReportedDefects } from '@/lib/orders';
 import type { ReportedDefect } from '@/lib/types';
+import { isWizardDetailsComplete } from '@/components/orders/order-form-wizard/wizard-state';
 
 type StepDetailsProps = {
   tipoEquipamentoId: number | null;
@@ -122,5 +123,5 @@ export function StepDetails({
 }
 
 export function isStepDetailsValid(relatoCliente: string): boolean {
-  return relatoCliente.trim().length >= 5;
+  return isWizardDetailsComplete(relatoCliente);
 }

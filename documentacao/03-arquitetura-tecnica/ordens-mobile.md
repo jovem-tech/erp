@@ -56,6 +56,20 @@ Este fluxo entrega ao PWA mobile o primeiro trabalho operacional real do técnic
 - A validação de transições entre status não entra nesta fase.
 - Cada alteração grava histórico em `os_status_historico` quando a tabela estiver disponível.
 
+## Navegação durante a criação
+
+- O pathname exato `/os/novo` substitui temporariamente a Bottom Nav global por
+  `Início`, `Voltar`, `Próximo`, `Salvar` e `Cancelar`.
+- Listagem, detalhe e edição de OS preservam a Bottom Nav global.
+- `Próximo` depende da validade da etapa atual.
+- `Salvar` depende da completude conjunta de cliente, equipamento, checklist
+  aplicável, relato e técnico responsável.
+- A completude no frontend orienta a experiência; autorização e validação
+  definitivas continuam no backend central.
+- A criação mantém a `idempotency_key` e acrescenta uma trava síncrona contra
+  submissões concorrentes.
+- Saídas com dados preenchidos exigem confirmação de descarte.
+
 ## Estrutura de resposta
 
 ### Listagem

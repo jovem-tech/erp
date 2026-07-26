@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-26T15:37:56-03:00`
-- Versao do sistema: `5.19.2`
+- Gerado em: `2026-07-26T16:20:34-03:00`
+- Versao do sistema: `5.20.0`
 - Versao da API: `1.6.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -178,6 +178,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-25-orcamentos-avulsos-vinculaveis-nova-os.md` - Orçamentos avulsos vinculáveis na Nova OS
 - `documentacao/07-novas-implementacoes/2026-07-26-miniaturas-fotos-os-mobile.md` - Miniaturas autenticadas das fotos da OS no PWA mobile
 - `documentacao/07-novas-implementacoes/2026-07-26-navegacao-mobile-e-consistencia-de-chunks.md` - Navegação mobile e consistência de chunks no ambiente de desenvolvimento
+- `documentacao/07-novas-implementacoes/2026-07-26-player-criacao-os-bottom-nav-mobile.md` - Player de criação da OS na Bottom Nav mobile
 - `documentacao/07-novas-implementacoes/2026-07-26-selecao-equipamento-cliente-mobile.md` - Seleção de equipamento do cliente na Nova OS mobile
 - `documentacao/07-novas-implementacoes/2026-07-26-tema-claro-identidade-jovem-tech-mobile.md` - Tema claro e identidade Jovem Tech no PWA mobile
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
@@ -218,4 +219,5 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/021-gestao-contas-financeiras` - Feature Specification: Gestão de contas financeiras e disponibilidade de caixa | artefatos: spec, plan, tasks, quickstart, data_model, contracts
 - `specs/022-gerenciador-central-arquivos` - Feature Specification: Gerenciador Central de Arquivos | artefatos: spec, plan, tasks, research, quickstart, data_model, contracts, checklists
 - `specs/023-hardening-vinculo-orcamento-os` - Especificação — Hardening do vínculo orçamento avulso → OS | artefatos: spec, plan, tasks
+- `specs/024-player-criacao-os-mobile` - Especificação: player de criação da OS mobile | artefatos: spec, plan, tasks
 

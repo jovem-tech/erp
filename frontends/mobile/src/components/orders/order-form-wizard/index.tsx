@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ApiError } from '@/lib/api';
 import { createOrder, getEntryChecklistModel, updateOrder } from '@/lib/orders';
@@ -9,9 +9,11 @@ import { useSession } from '@/components/session-provider';
 import type { OrderDetail } from '@/lib/types';
 import {
   buildOrderPayload,
+  areWizardRequiredFieldsComplete,
   createInitialWizardState,
   createWizardStateFromOrder,
   isChecklistComplete,
+  isWizardDirty,
   resolveEquipmentTypeId,
   selectClientForWizard,
   selectEquipmentForWizard,
@@ -27,6 +29,7 @@ import { StepOperations, isStepOperationsValid } from '@/components/orders/order
 import { StepPhotos } from '@/components/orders/order-form-wizard/steps/step-photos';
 import { StepExtras } from '@/components/orders/order-form-wizard/steps/step-extras';
 import { StepReview, type ReviewSection } from '@/components/orders/order-form-wizard/steps/step-review';
+import { useOrderCreationPlayer } from '@/components/orders/order-creation-player';
 
 type OrderFormWizardProps = {
   mode: WizardMode;
@@ -127,8 +130,10 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
   const [currentIndex, setCurrentIndex] = useState(0);
   const [maxVisitedIndex, setMaxVisitedIndex] = useState(0);
   const [busy, setBusy] = useState(false);
+  const [checklistLoading, setChecklistLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successState, setSuccessState] = useState<{ orderId: number; warnings: string[] } | null>(null);
+  const submittingRef = useRef(false);
 
   const canLinkBudget = hasPermission(session?.user, 'orcamentos', 'converter_os');
   const equipmentTypeId = resolveEquipmentTypeId(state);
@@ -137,6 +142,7 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
     const prevId = state.checklistModel?.id ?? null;
 
     if (!equipmentTypeId) {
+      setChecklistLoading(false);
       if (prevId !== null) {
         setState((prev) => ({ ...prev, checklistModel: null, checklistAnswers: {} }));
       }
@@ -144,6 +150,7 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
     }
 
     let cancelled = false;
+    setChecklistLoading(true);
 
     getEntryChecklistModel(equipmentTypeId)
       .then((modelo) => {
@@ -165,6 +172,11 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
       .catch(() => {
         if (!cancelled) {
           setState((prev) => ({ ...prev, checklistModel: null, checklistAnswers: {} }));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setChecklistLoading(false);
         }
       });
 
@@ -205,7 +217,7 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
 
   const currentStepKey = steps[currentIndex]?.key;
 
-  const isCurrentStepValid = (): boolean => {
+  const isCurrentStepValid = useCallback((): boolean => {
     switch (currentStepKey) {
       case 'cliente':
         return isStepClientValid(state.cliente, state.pendingNewClient);
@@ -220,25 +232,40 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
       default:
         return true;
     }
-  };
+  }, [currentStepKey, state]);
 
-  const goNext = (): void => {
+  const goNext = useCallback((): void => {
     const nextIndex = Math.min(currentIndex + 1, steps.length - 1);
     setCurrentIndex(nextIndex);
     setMaxVisitedIndex((prev) => Math.max(prev, nextIndex));
-  };
+  }, [currentIndex, steps.length]);
 
-  const goBack = (): void => {
+  const goBack = useCallback((): void => {
     setCurrentIndex((prev) => Math.max(prev - 1, 0));
-  };
+  }, []);
 
-  const goToStep = (index: number): void => {
+  const goToStep = useCallback((index: number): void => {
     if (index <= maxVisitedIndex) {
       setCurrentIndex(index);
     }
-  };
+  }, [maxVisitedIndex]);
 
-  const handleSubmit = async (): Promise<void> => {
+  const requiredFieldsComplete = useMemo(
+    () => areWizardRequiredFieldsComplete(state),
+    [state]
+  );
+  const dirty = useMemo(() => isWizardDirty(state), [state]);
+
+  const handleSubmit = useCallback(async (): Promise<void> => {
+    if (
+      submittingRef.current ||
+      busy ||
+      (mode === 'create' && (!requiredFieldsComplete || checklistLoading))
+    ) {
+      return;
+    }
+
+    submittingRef.current = true;
     setBusy(true);
     setErrorMessage(null);
 
@@ -259,10 +286,72 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
       }
     } catch (error) {
       setErrorMessage(error instanceof ApiError ? error.message : 'Não foi possível salvar a OS. Tente novamente.');
+      if (mode === 'create') {
+        const reviewIndex = steps.length - 1;
+        setCurrentIndex(reviewIndex);
+        setMaxVisitedIndex(reviewIndex);
+      }
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
-  };
+  }, [
+    busy,
+    checklistLoading,
+    idempotencyKey,
+    mode,
+    order,
+    requiredFieldsComplete,
+    router,
+    state,
+    steps.length,
+  ]);
+
+  const creationPlayerController = useMemo(
+    () =>
+      mode === 'create'
+        ? {
+            canGoBack: !successState && currentIndex > 0,
+            canGoNext: !successState && currentIndex < steps.length - 1 && isCurrentStepValid(),
+            canSave: requiredFieldsComplete && !checklistLoading && !busy && !successState,
+            busy,
+            dirty: !successState && dirty,
+            onBack: goBack,
+            onNext: goNext,
+            onSave: () => void handleSubmit(),
+          }
+        : null,
+    [
+      busy,
+      checklistLoading,
+      currentIndex,
+      dirty,
+      goBack,
+      goNext,
+      handleSubmit,
+      isCurrentStepValid,
+      mode,
+      requiredFieldsComplete,
+      steps.length,
+      successState,
+    ]
+  );
+
+  useOrderCreationPlayer(creationPlayerController);
+
+  useEffect(() => {
+    if (mode !== 'create' || !dirty || successState) {
+      return;
+    }
+
+    const preventAccidentalExit = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = true;
+    };
+
+    window.addEventListener('beforeunload', preventAccidentalExit);
+    return () => window.removeEventListener('beforeunload', preventAccidentalExit);
+  }, [dirty, mode, successState]);
 
   if (successState) {
     return (
@@ -392,10 +481,11 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
           busy={busy}
           submitLabel={mode === 'create' ? 'Criar OS' : 'Salvar alterações'}
           errorMessage={errorMessage}
+          showSubmit={mode !== 'create'}
         />
       ) : null}
 
-      {currentStepKey !== 'revisao' ? (
+      {mode !== 'create' && currentStepKey !== 'revisao' ? (
         <div className="toolbar" style={{ marginTop: 16 }}>
           <button type="button" className="button button--soft" onClick={goBack} disabled={currentIndex === 0 || busy}>
             Voltar
