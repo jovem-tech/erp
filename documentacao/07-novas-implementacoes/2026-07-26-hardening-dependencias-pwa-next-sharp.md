@@ -30,6 +30,13 @@ O PWA nao usa Server Actions nem rewrites dinamicos, o que reduzia a
 explorabilidade de parte dos advisories, mas a atualizacao foi aplicada para
 eliminar a dependencia vulneravel em vez de depender apenas dessa mitigacao.
 
+Uma auditoria sem `--prod` ainda aponta advisories de negacao de servico em
+dependencias transitivas do ESLint. Elas sao carregadas somente durante lint e
+recebem exclusivamente arquivos e configuracoes controlados do repositorio;
+nao integram a release nem processam entrada de usuarios. A atualizacao do
+toolchain de lint deve ser tratada em manutencao separada, porque envolve
+migracao do ESLint 8 e de sua configuracao.
+
 ## Compatibilidade e performance
 
 As atualizacoes permanecem na mesma linha compativel do Next 15 e nao alteram
