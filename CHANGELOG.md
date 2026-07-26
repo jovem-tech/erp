@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.20.1.0 — 2026-07-26 16:48
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige a instalacao do PWA mobile na VPS com captura antecipada do prompt, manifest compativel e orientacao para iOS e Android.
+- **Arquivos:** .agents/skills/sistema-erp-deploy-producao/references/problemas-conhecidos.md,documentacao/07-novas-implementacoes/2026-07-26-instalacao-pwa-mobile-vps.md,documentacao/07-novas-implementacoes/historico-de-versoes.md,documentacao/10-deploy/deploy-producao-contabo-vps.md,frontends/mobile/public/pwa-install-bootstrap.js,frontends/mobile/src/app/__tests__/manifest.test.ts,frontends/mobile/src/app/globals.css,frontends/mobile/src/app/layout.tsx,frontends/mobile/src/app/manifest.ts,frontends/mobile/src/components/__tests__/pwa-install-button.test.tsx,frontends/mobile/src/components/pwa-install-button.tsx
+
 ## v5.20.0.0 — 2026-07-26 16:20
 - **Tier:** minor
 - **Autor/Agente:** Codex

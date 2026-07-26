@@ -27,6 +27,7 @@ raiz conhecida.
 | `git checkout`/`reset` recusa sobrescrever arquivos "untracked" ao transformar pasta tar-deployed em clone git | arquivos ja existem no disco sem estar rastreados | `git symbolic-ref HEAD refs/heads/main` + `git reset --hard origin/main` (reset, nao checkout de branch, sobrescreve untracked-que-vira-tracked sem reclamar) |
 | `git` recusa operar no diretorio da VPS | dono dos arquivos e' `www-data`, comando rodado como `root` | `git config --global --add safe.directory /var/www/sistema-erp` |
 | chave SSH recusada como deploy key no GitHub ("Key is already in use") | a chave ja esta cadastrada em outro lugar (conta pessoal, outro repo) | gerar uma chave **nova e dedicada** por servidor (`ssh-keygen -f ~/.ssh/id_ed25519_github_erp`), nunca reaproveitar uma chave existente |
+| PWA abre, mas nao oferece instalacao no celular | evento `beforeinstallprompt` perdido antes da hidratacao, navegador interno de outro app ou fluxo proprio do iOS | capturar o evento antes do React; validar manifest/SW/icones em HTTPS; no iOS usar Safari > Compartilhar > Adicionar a Tela de Inicio; no WhatsApp/Instagram abrir no Safari/Chrome |
 
 ## Migracao para deploy git-based (2026-07-05)
 
@@ -53,6 +54,7 @@ redis-cli -a '<senha>' ping                     # PONG
 
 - Desktop: `https://erp.jovemtech.eco.br` (443); Backend/API:
   `https://api-erp.jovemtech.eco.br` (443); WebSocket em `wss://erp.jovemtech.eco.br/app/`;
+  PWA mobile em `https://app.jovemtech.eco.br` (443 para o processo Next.js na 3100);
   legado intocado em `https://sistema.jovemtech.eco.br`.
 - Cada subdominio com Let's Encrypt proprio (auto-renovacao). `/etc/hosts` na VPS aponta
   `erp` e `api-erp` para `127.0.0.1` (resolucao interna robusta).

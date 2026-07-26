@@ -974,6 +974,12 @@ img {
   width: min(360px, calc(100vw - 20px));
 }
 
+.install-action:not(.install-action--menu) .nav-popover-install {
+  right: auto;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
 .popover-header {
   display: flex;
   justify-content: space-between;
