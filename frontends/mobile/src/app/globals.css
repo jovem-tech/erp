@@ -1359,14 +1359,18 @@ img {
 }
 
 .search-select__selected {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   padding: 13px 14px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(5, 12, 23, 0.7);
+}
+
+.search-select__selected > .button {
+  width: auto;
 }
 
 .search-select__option-content {
@@ -1388,7 +1392,10 @@ img {
 }
 
 .search-select__results {
+  margin: 0;
+  padding: 0;
   max-height: 320px;
+  list-style: none;
   overflow-y: auto;
 }
 
