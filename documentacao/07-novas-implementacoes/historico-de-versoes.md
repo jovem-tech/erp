@@ -3,6 +3,17 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.20.2.0 - 2026-07-26
+
+- Next foi atualizado para `15.5.21`, removendo advisories de SSRF e negacao
+  de servico que afetavam a versao anterior;
+- Sharp foi atualizado para `0.35.3`, eliminando vulnerabilidades herdadas do
+  libvips;
+- o lockfile e o override tornam as versoes seguras reproduziveis na VPS;
+- a auditoria de dependencias de producao passou sem vulnerabilidades
+  conhecidas;
+- nota: `2026-07-26-hardening-dependencias-pwa-next-sharp.md`.
+
 ## v5.20.1.0 - 2026-07-26
 
 - o prompt nativo de instalacao do PWA e preservado mesmo quando o navegador o

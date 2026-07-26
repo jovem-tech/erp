@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.20.2.0 — 2026-07-26 16:59
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Atualiza Next e Sharp do PWA para versoes corrigidas e zera vulnerabilidades conhecidas nas dependencias de producao.
+- **Arquivos:** documentacao/07-novas-implementacoes/2026-07-26-hardening-dependencias-pwa-next-sharp.md,documentacao/07-novas-implementacoes/historico-de-versoes.md,frontends/mobile/package.json,frontends/mobile/pnpm-lock.yaml,frontends/mobile/pnpm-workspace.yaml
+
 ## v5.20.1.0 — 2026-07-26 16:48
 - **Tier:** patch
 - **Autor/Agente:** Codex
