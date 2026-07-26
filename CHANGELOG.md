@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.17.0.0 — 2026-07-26 01:26
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Integra o PWA mobile ao deploy de producao com validacao, release atomico, cache versionado e rollback automatico.
+- **Arquivos:** frontends/mobile/pnpm-lock.yaml,infra/linux/supervisor-mobile-vps.conf,scripts/bash/deploy-completo.sh,scripts/bash/deploy-producao.sh
+
 ## v5.16.8.0 — 2026-07-25 22:18
 - **Tier:** patch
 - **Autor/Agente:** Codex
