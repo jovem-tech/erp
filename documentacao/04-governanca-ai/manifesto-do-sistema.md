@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-26T16:48:10-03:00`
-- Versao do sistema: `5.20.1`
+- Gerado em: `2026-07-26T16:59:17-03:00`
+- Versao do sistema: `5.20.2`
 - Versao da API: `1.6.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -176,6 +176,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-25-envio-pdf-rodape-nova-os.md` - Envio de PDF no rodapé da Nova OS
 - `documentacao/07-novas-implementacoes/2026-07-25-marca-modelo-obrigatorios-equipamento.md` - Marca e modelo obrigatórios no cadastro de equipamento
 - `documentacao/07-novas-implementacoes/2026-07-25-orcamentos-avulsos-vinculaveis-nova-os.md` - Orçamentos avulsos vinculáveis na Nova OS
+- `documentacao/07-novas-implementacoes/2026-07-26-hardening-dependencias-pwa-next-sharp.md` - Hardening das dependencias de producao do PWA
 - `documentacao/07-novas-implementacoes/2026-07-26-instalacao-pwa-mobile-vps.md` - Instalacao do PWA mobile na VPS
 - `documentacao/07-novas-implementacoes/2026-07-26-miniaturas-fotos-os-mobile.md` - Miniaturas autenticadas das fotos da OS no PWA mobile
 - `documentacao/07-novas-implementacoes/2026-07-26-navegacao-mobile-e-consistencia-de-chunks.md` - Navegação mobile e consistência de chunks no ambiente de desenvolvimento
