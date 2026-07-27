@@ -18,6 +18,7 @@ use App\Notifications\Channels\MobileInboxChannel;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
 use App\Services\Files\LegacyCompatibleFileAdapter;
 use App\Services\Orders\OrderClosureService;
+use App\Services\Pdf\PdfDefaultTemplates;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
@@ -2500,6 +2501,35 @@ class OrderFlowTest extends TestCase
 
     private function seedOpeningDocumentTemplates(): void
     {
+        $now = now();
+
+        foreach (PdfDefaultTemplates::all() as $tipoCodigo => $definition) {
+            $schemaJson = json_encode(
+                $definition['schema'],
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+            );
+            $templateId = DB::table('pdf_templates')->insertGetId([
+                'tipo_codigo' => $tipoCodigo,
+                'nome' => (string) $definition['nome'],
+                'arquivado' => false,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            DB::table('pdf_template_versoes')->insert([
+                'template_id' => $templateId,
+                'versao' => 1,
+                'status' => 'publicado',
+                'schema_json' => $schemaJson,
+                'papel' => 'a4',
+                'orientacao' => 'retrato',
+                'hash_schema' => hash('sha256', (string) $schemaJson),
+                'publicado_em' => $now,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+        }
+
         DB::table('os_pdf_templates')->insert([
             'codigo' => 'abertura',
             'nome' => 'Comprovante de abertura',
@@ -2525,8 +2555,8 @@ class OrderFlowTest extends TestCase
             ',
             'ordem' => 10,
             'ativo' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
+            'created_at' => $now,
+            'updated_at' => $now,
         ]);
 
         DB::table('whatsapp_templates')->insert([
@@ -2535,8 +2565,8 @@ class OrderFlowTest extends TestCase
             'evento' => 'os_aberta',
             'conteudo' => 'Sua OS {{numero_os}} foi aberta em {{data_abertura}}. Equipamento: {{equipamento}}.',
             'ativo' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
+            'created_at' => $now,
+            'updated_at' => $now,
         ]);
     }
 
