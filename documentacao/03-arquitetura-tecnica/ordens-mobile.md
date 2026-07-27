@@ -62,12 +62,24 @@ Este fluxo entrega ao PWA mobile o primeiro trabalho operacional real do técnic
   `Início`, `Voltar`, `Próximo`, `Salvar` e `Cancelar`.
 - Listagem, detalhe e edição de OS preservam a Bottom Nav global.
 - `Próximo` depende da validade da etapa atual.
+- O prazo de atendimento, selecionado entre 1, 3, 7, 15 ou 30 dias corridos,
+  preenche a previsão de entrega; o backend recalcula a data a partir do prazo
+  recebido para não confiar no relógio do dispositivo.
+- A etapa `Extras` não existe mais. A decisão de gerar e enviar o PDF e o
+  vínculo opcional de orçamento ficam em `Atendimento`.
+- Na revisão, cada card precisa ser verificado explicitamente. O card verificado
+  recebe fundo verde e qualquer edição posterior invalida a confirmação do item.
 - `Salvar` depende da completude conjunta de cliente, equipamento, checklist
-  aplicável, relato e técnico responsável.
+  aplicável, relato, técnico, prazo e de todos os cards da revisão confirmados.
 - A completude no frontend orienta a experiência; autorização e validação
   definitivas continuam no backend central.
 - A criação mantém a `idempotency_key` e acrescenta uma trava síncrona contra
   submissões concorrentes.
+- Cadastros novos e edições pendentes de cliente/equipamento permanecem apenas
+  em memória até o POST final. O backend aplica tudo na mesma transação da OS,
+  com bloqueio pessimista e validação do vínculo equipamento-cliente.
+- Quando `enviar_pdf_cliente=false`, o documento de abertura não é renderizado,
+  não é persistido e não é enviado.
 - Saídas com dados preenchidos exigem confirmação de descarte.
 
 ## Estrutura de resposta
@@ -169,6 +181,10 @@ Este fluxo entrega ao PWA mobile o primeiro trabalho operacional real do técnic
 
 - O frontend nunca acessa o banco diretamente.
 - O backend decide se o técnico pode ver ou alterar a OS.
+- Edições atômicas exigem, além de `os:criar`, as permissões específicas
+  `clientes:editar` e/ou `equipamentos:editar`.
+- O serviço usa listas permitidas de campos para impedir mass assignment e
+  confirma que o equipamento selecionado pertence ao cliente da operação.
 - O retorno `403` evita ambiguidade e mantém o bloqueio explícito.
 - O frontend mobile consome a API com token Bearer armazenado localmente e renovado por refresh controlado.
 

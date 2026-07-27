@@ -1,9 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { listTechnicians } from '@/lib/orders';
-import type { OrderPriority, TeamMemberOption } from '@/lib/types';
+import { listTechnicians, searchLinkableBudgets } from '@/lib/orders';
+import type {
+  DeliveryLeadDays,
+  LinkableBudget,
+  OrderPriority,
+  TeamMemberOption,
+} from '@/lib/types';
 import { isWizardOperationsComplete } from '@/components/orders/order-form-wizard/wizard-state';
+import { SearchSelect } from '@/components/orders/order-form-wizard/search-select';
 
 const PRIORITY_OPTIONS: Array<{ value: OrderPriority; label: string }> = [
   { value: 'baixa', label: 'Baixa' },
@@ -12,27 +18,56 @@ const PRIORITY_OPTIONS: Array<{ value: OrderPriority; label: string }> = [
   { value: 'urgente', label: 'Urgente' },
 ];
 
+const DELIVERY_LEAD_OPTIONS: DeliveryLeadDays[] = [1, 3, 7, 15, 30];
+
+export function calculateDeliveryDate(days: DeliveryLeadDays, baseDate = new Date()): string {
+  const deliveryDate = new Date(
+    baseDate.getFullYear(),
+    baseDate.getMonth(),
+    baseDate.getDate() + days,
+    12
+  );
+
+  const year = deliveryDate.getFullYear();
+  const month = String(deliveryDate.getMonth() + 1).padStart(2, '0');
+  const day = String(deliveryDate.getDate()).padStart(2, '0');
+
+  return `${year}-${month}-${day}`;
+}
+
 type StepOperationsProps = {
   prioridade: OrderPriority;
+  prazoEntregaDias: DeliveryLeadDays | null;
   dataPrevisao: string;
   tecnicoId: number | null;
   observacoesInternas: string;
+  enviarPdfCliente: boolean;
+  orcamentoVinculado: LinkableBudget | null;
+  canLinkBudget: boolean;
   onChangePrioridade: (value: OrderPriority) => void;
-  onChangeDataPrevisao: (value: string) => void;
+  onChangePrazoEntrega: (days: DeliveryLeadDays | null, date: string) => void;
   onChangeTecnico: (id: number | null, label: string | null) => void;
   onChangeObservacoesInternas: (value: string) => void;
+  onChangeEnviarPdfCliente: (value: boolean) => void;
+  onChangeOrcamentoVinculado: (budget: LinkableBudget | null) => void;
   disabled?: boolean;
 };
 
 export function StepOperations({
   prioridade,
+  prazoEntregaDias,
   dataPrevisao,
   tecnicoId,
   observacoesInternas,
+  enviarPdfCliente,
+  orcamentoVinculado,
+  canLinkBudget,
   onChangePrioridade,
-  onChangeDataPrevisao,
+  onChangePrazoEntrega,
   onChangeTecnico,
   onChangeObservacoesInternas,
+  onChangeEnviarPdfCliente,
+  onChangeOrcamentoVinculado,
   disabled = false,
 }: StepOperationsProps) {
   const [technicians, setTechnicians] = useState<TeamMemberOption[]>([]);
@@ -66,14 +101,41 @@ export function StepOperations({
         </label>
 
         <label className="field">
-          <span className="field__label">Previsão de entrega</span>
+          <span className="field__label">Prazo de entrega (dias corridos) *</span>
+          <select
+            className="select"
+            value={prazoEntregaDias ?? ''}
+            onChange={(event) => {
+              if (event.target.value === '') {
+                onChangePrazoEntrega(null, '');
+                return;
+              }
+
+              const days = Number(event.target.value) as DeliveryLeadDays;
+              onChangePrazoEntrega(days, calculateDeliveryDate(days));
+            }}
+            disabled={disabled}
+          >
+            <option value="">Selecione...</option>
+            {DELIVERY_LEAD_OPTIONS.map((days) => (
+              <option key={days} value={days}>
+                {days} {days === 1 ? 'dia corrido' : 'dias corridos'}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="field">
+          <span className="field__label">Previsão de entrega *</span>
           <input
             className="input"
             type="date"
             value={dataPrevisao}
-            onChange={(event) => onChangeDataPrevisao(event.target.value)}
-            disabled={disabled}
+            readOnly
+            aria-readonly="true"
+            disabled={disabled || prazoEntregaDias === null}
           />
+          <span className="muted">Calculada automaticamente em dias corridos.</span>
         </label>
 
         <label className="field">
@@ -112,11 +174,45 @@ export function StepOperations({
             disabled={disabled}
           />
         </label>
+
+        <label className="pdf-choice">
+          <input
+            type="checkbox"
+            checked={enviarPdfCliente}
+            onChange={(event) => onChangeEnviarPdfCliente(event.target.checked)}
+            disabled={disabled}
+          />
+          <span>
+            <strong>Gerar e enviar PDF ao cliente</strong>
+            <span className="muted" style={{ display: 'block', marginTop: 4 }}>
+              Desmarcado: nenhum PDF será criado ou enviado.
+            </span>
+          </span>
+        </label>
+
+        {canLinkBudget ? (
+          <SearchSelect<LinkableBudget>
+            label="Vincular orçamento avulso (opcional)"
+            placeholder="Buscar orçamento por número ou cliente"
+            value={orcamentoVinculado}
+            onSelect={onChangeOrcamentoVinculado}
+            fetchOptions={searchLinkableBudgets}
+            getOptionKey={(option) => option.id}
+            getOptionLabel={(option) => option.numero}
+            getOptionSubtitle={(option) => option.cliente_nome || null}
+            changeLabel="Desvincular"
+            disabled={disabled}
+          />
+        ) : null}
       </div>
     </section>
   );
 }
 
-export function isStepOperationsValid(tecnicoId: number | null): boolean {
-  return isWizardOperationsComplete(tecnicoId);
+export function isStepOperationsValid(
+  tecnicoId: number | null,
+  prazoEntregaDias: DeliveryLeadDays | null,
+  dataPrevisao: string
+): boolean {
+  return isWizardOperationsComplete(tecnicoId, prazoEntregaDias, dataPrevisao);
 }

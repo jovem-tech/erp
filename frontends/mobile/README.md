@@ -48,6 +48,8 @@ novos helpers de API.
 - fallback de sessão em memória quando o WebKit/iOS indisponibiliza o `localStorage`;
 - listagem de OS atribuídas ao técnico;
 - detalhe da OS com histórico recente, fotos e PDFs controlados;
+- abertura de OS em wizard com edição local de cliente/equipamento, checklist,
+  prazo automático e revisão confirmada antes do salvamento transacional;
 - atualização de status com retorno ao backend central;
 - nav bar autenticada com sino de notificações, menu do usuário e alternância de tema claro/escuro;
 - edição do nome de perfil e troca de senha para o usuário autenticado;

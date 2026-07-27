@@ -138,6 +138,7 @@ describe('funções auxiliares do wizard de OS', () => {
       idempotency_key: 'uuid-1',
       cliente_id: 10,
       relato_cliente: 'Tela quebrada',
+      prazo_entrega_dias: 3,
       enviar_pdf_cliente: false,
       novo_equipamento: undefined,
     };
@@ -180,6 +181,7 @@ describe('funções auxiliares do wizard de OS', () => {
       cliente_id: 10,
       equipamento_id: 20,
       relato_cliente: 'Teste',
+      prazo_entrega_dias: 3,
       enviar_pdf_cliente: false,
     };
 

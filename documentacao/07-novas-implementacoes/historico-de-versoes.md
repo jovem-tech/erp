@@ -3,6 +3,15 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.20.4.0 - 2026-07-26
+
+- cliente e equipamento existentes podem ser editados localmente na Nova OS;
+- checklist recebe a ação `Desmarcar tudo`;
+- prazo obrigatório calcula a previsão em dias corridos;
+- a etapa Extras foi removida e o PDF só é criado quando solicitado;
+- revisão verificável e transação única impedem salvamento parcial;
+- nota: `2026-07-26-revisao-atomica-nova-os-mobile.md`.
+
 ## v5.20.3.0 - 2026-07-26
 
 - o PWA standalone no iOS nao permanece mais indefinidamente em

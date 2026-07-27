@@ -1,8 +1,10 @@
 import type {
+  ClientDetail,
   ClientSearchResult,
   CreateOrderPayload,
   CreateOrderResponse,
   EntryChecklistModel,
+  EquipmentDetail,
   EquipmentFormData,
   EquipmentSearchResult,
   EquipmentBrandCatalogItem,
@@ -19,10 +21,12 @@ import type {
   UpdateOrderPayload,
 } from '@/lib/types';
 import {
+  apiClientDetail,
   apiCreateEquipmentBrand,
   apiCreateEquipmentModel,
   apiCreateOrder,
   apiEntryChecklistModel,
+  apiEquipmentDetail,
   apiEquipmentFormData,
   apiListOrders,
   apiOrderDetail,
@@ -82,6 +86,11 @@ export async function searchClients(search: string): Promise<ClientSearchResult[
   return clients;
 }
 
+export async function getClientDetail(clientId: number): Promise<ClientDetail> {
+  const { client } = await apiClientDetail(clientId);
+  return client;
+}
+
 export async function searchEquipments(params: {
   clientId: number;
   search?: string;
@@ -89,6 +98,11 @@ export async function searchEquipments(params: {
 }): Promise<EquipmentSearchResult[]> {
   const { equipments } = await apiSearchEquipments(params);
   return equipments;
+}
+
+export async function getEquipmentDetail(equipmentId: number): Promise<EquipmentDetail> {
+  const { equipment } = await apiEquipmentDetail(equipmentId);
+  return equipment;
 }
 
 export async function getEquipmentFormData(): Promise<EquipmentFormData> {

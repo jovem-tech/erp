@@ -6,6 +6,13 @@ import type { ClientSearchResult } from '@/lib/types';
 
 vi.mock('@/lib/orders', () => ({
   searchClients: vi.fn().mockResolvedValue([]),
+  getClientDetail: vi.fn().mockResolvedValue({
+    id: 1,
+    tipo_pessoa: 'fisica',
+    nome_razao: 'João Silva',
+    telefone1: '11999999999',
+    status_cadastro: 'completo',
+  }),
 }));
 
 function buildClient(): ClientSearchResult {
@@ -84,6 +91,33 @@ describe('StepClient', () => {
     await user.type(screen.getByLabelText('Nome / razão social *'), 'M');
 
     expect(onChangePendingNewClient).toHaveBeenCalledWith({ nome_razao: 'M', telefone1: '11988887777' });
+  });
+
+  it('carrega a edição local do cliente existente sem chamar uma API de atualização', async () => {
+    const user = userEvent.setup();
+    const onChangePendingClientUpdate = vi.fn();
+
+    render(
+      <StepClient
+        mode="create"
+        cliente={buildClient()}
+        pendingNewClient={null}
+        onSelectCliente={vi.fn()}
+        onChangePendingNewClient={vi.fn()}
+        onChangePendingClientUpdate={onChangePendingClientUpdate}
+        canEditExisting
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Editar' }));
+
+    expect(await screen.findByText('Editar cliente selecionado')).toBeInTheDocument();
+    expect(onChangePendingClientUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nome_razao: 'João Silva',
+        telefone1: '11999999999',
+      })
+    );
   });
 });
 

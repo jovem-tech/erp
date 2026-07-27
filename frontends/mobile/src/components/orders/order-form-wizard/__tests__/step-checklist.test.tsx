@@ -74,4 +74,28 @@ describe('StepChecklist', () => {
 
     expect(onMarkAllOk).toHaveBeenCalled();
   });
+
+  it('"Desmarcar tudo" limpa o checklist pelo callback correspondente', async () => {
+    const user = userEvent.setup();
+    const onUnmarkAll = vi.fn();
+
+    render(
+      <StepChecklist
+        model={model}
+        answers={{
+          100: { status: 'ok', observacao: '' },
+          101: { status: 'ok', observacao: '' },
+        }}
+        observacoesEstado=""
+        onChangeAnswer={vi.fn()}
+        onChangeObservacoesEstado={vi.fn()}
+        onMarkAllOk={vi.fn()}
+        onUnmarkAll={onUnmarkAll}
+      />
+    );
+
+    await user.click(screen.getByText('Desmarcar tudo'));
+
+    expect(onUnmarkAll).toHaveBeenCalledOnce();
+  });
 });

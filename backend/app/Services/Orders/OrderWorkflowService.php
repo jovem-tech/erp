@@ -1367,7 +1367,120 @@ class OrderWorkflowService
             return null;
         }
 
+        if (! array_key_exists('numero_serie', $data) && array_key_exists('numero_serie_visual', $data)) {
+            $data['numero_serie'] = $data['numero_serie_visual'];
+        }
+
         return $data;
+    }
+
+    /**
+     * Mantém somente os campos de cliente autorizados para atualização atômica
+     * durante a criação da OS.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function sanitizeExistingClientUpdate(mixed $data): ?array
+    {
+        if (! is_array($data)) {
+            return null;
+        }
+
+        $allowed = [
+            'tipo_pessoa',
+            'nome_razao',
+            'cpf_cnpj',
+            'rg_ie',
+            'email',
+            'telefone1',
+            'telefone2',
+            'nome_contato',
+            'telefone_contato',
+            'cep',
+            'endereco',
+            'numero',
+            'complemento',
+            'referencia',
+            'bairro',
+            'cidade',
+            'uf',
+            'observacoes',
+            'status_cadastro',
+            'preferencia_contato',
+        ];
+        $normalized = [];
+
+        foreach ($allowed as $field) {
+            if (! array_key_exists($field, $data)) {
+                continue;
+            }
+
+            $normalized[$field] = $this->normalizeString($data[$field]);
+        }
+
+        $normalized['tipo_pessoa'] = $normalized['tipo_pessoa'] ?? 'fisica';
+        $normalized['status_cadastro'] = $normalized['status_cadastro'] ?? 'completo';
+        $normalized['nome_razao'] = trim((string) ($normalized['nome_razao'] ?? ''));
+        $normalized['telefone1'] = trim((string) ($normalized['telefone1'] ?? ''));
+        if ($normalized['nome_razao'] === '' || $normalized['telefone1'] === '') {
+            return null;
+        }
+
+        if (isset($normalized['uf'])) {
+            $normalized['uf'] = mb_strtoupper((string) $normalized['uf']);
+        }
+
+        return $normalized;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function sanitizeExistingEquipmentUpdate(mixed $data): ?array
+    {
+        if (! is_array($data)) {
+            return null;
+        }
+
+        $allowed = [
+            'tipo_id',
+            'marca_id',
+            'modelo_id',
+            'cor',
+            'cor_hex',
+            'cor_rgb',
+            'numero_serie',
+            'imei',
+            'senha_tipo',
+            'senha_acesso',
+            'senha_desenho',
+            'estado_fisico',
+            'observacoes',
+            'desktop_modalidade',
+            'gabinete_tipo',
+            'gabinete_identificacao_status',
+            'gabinete_observacao',
+            'placa_mae',
+            'chipset',
+            'processador',
+            'memoria_ram',
+            'armazenamento',
+            'placa_video',
+            'fonte_alimentacao',
+            'status_operacional',
+            'status',
+        ];
+        $normalized = array_intersect_key($data, array_flip($allowed));
+
+        if (
+            (int) ($normalized['tipo_id'] ?? 0) <= 0
+            || (int) ($normalized['marca_id'] ?? 0) <= 0
+            || (int) ($normalized['modelo_id'] ?? 0) <= 0
+        ) {
+            return null;
+        }
+
+        return $normalized;
     }
 
     /**
@@ -1412,10 +1525,21 @@ class OrderWorkflowService
         // concluídas.
         $novoCliente = $this->sanitizeNovoClientePayload($attributes['novo_cliente'] ?? null);
         $novoEquipamento = $this->sanitizeNovoEquipamentoPayload($attributes['novo_equipamento'] ?? null);
+        $clienteAtualizacao = $this->sanitizeExistingClientUpdate($attributes['cliente_atualizacao'] ?? null);
+        $equipamentoAtualizacao = $this->sanitizeExistingEquipmentUpdate($attributes['equipamento_atualizacao'] ?? null);
         $deferClient = $clientId <= 0 && $novoCliente !== null;
         $deferEquipment = $equipmentId <= 0 && $novoEquipamento !== null;
 
         $shouldSendOpeningPdf = (bool) ($attributes['enviar_pdf_cliente'] ?? false);
+        $deliveryLeadDays = (int) ($attributes['prazo_entrega_dias'] ?? 0);
+        if ($deliveryLeadDays > 0 && ! in_array($deliveryLeadDays, [1, 3, 7, 15, 30], true)) {
+            return [
+                'result' => 'invalid_delivery_lead',
+            ];
+        }
+        if ($deliveryLeadDays > 0) {
+            $attributes['data_previsao'] = Carbon::today()->addDays($deliveryLeadDays)->toDateString();
+        }
         $idempotencyKey = strtolower(trim((string) ($attributes['idempotency_key'] ?? '')));
         $requestFingerprint = $idempotencyKey !== ''
             ? $this->orderCreationFingerprint($actor, $attributes)
@@ -1500,12 +1624,23 @@ class OrderWorkflowService
         }
 
         try {
-            $order = DB::transaction(function () use ($payload, $actor, $statusCode, $estadoFluxo, $now, $entryChecklistPlan, $linkBudgetId, $clientId, $equipmentId, $deferClient, $deferEquipment, $novoCliente, $novoEquipamento, $equipmentPhotos): Order {
+            $order = DB::transaction(function () use ($payload, $actor, $statusCode, $estadoFluxo, $now, $entryChecklistPlan, $linkBudgetId, $clientId, $equipmentId, $deferClient, $deferEquipment, $novoCliente, $novoEquipamento, $clienteAtualizacao, $equipamentoAtualizacao, $equipmentPhotos): Order {
                 // Cria cliente/equipamento novos DENTRO da transação (atômico): se
                 // qualquer passo abaixo falhar, o rollback desfaz também estes
                 // cadastros, e nada é persistido em aberturas de OS abandonadas.
                 if ($deferClient && is_array($novoCliente)) {
                     $clientId = (int) $this->createDeferredClient($novoCliente)->id;
+                } elseif ($clientId > 0) {
+                    $existingClient = Client::query()->whereKey($clientId)->lockForUpdate()->first();
+                    if (! $existingClient instanceof Client) {
+                        throw new \RuntimeException('Cliente selecionado não encontrado.');
+                    }
+
+                    if (is_array($clienteAtualizacao)) {
+                        $existingClient->fill($clienteAtualizacao);
+                        $existingClient->updated_at = $now;
+                        $existingClient->save();
+                    }
                 }
 
                 if ($deferEquipment && is_array($novoEquipamento)) {
@@ -1517,6 +1652,22 @@ class OrderWorkflowService
                         $equipmentPhotos
                     );
                     $equipmentId = (int) $equipment->id;
+                } elseif ($equipmentId > 0) {
+                    $existingEquipment = Equipment::query()->whereKey($equipmentId)->lockForUpdate()->first();
+                    if (! $existingEquipment instanceof Equipment) {
+                        throw new \RuntimeException('Equipamento selecionado não encontrado.');
+                    }
+                    if ((int) $existingEquipment->cliente_id !== $clientId) {
+                        throw new \RuntimeException('O equipamento não pertence ao cliente selecionado.');
+                    }
+
+                    if (is_array($equipamentoAtualizacao)) {
+                        $this->equipmentWorkflowService->updateEquipment(
+                            $equipmentId,
+                            array_merge($equipamentoAtualizacao, ['cliente_id' => $clientId]),
+                            []
+                        );
+                    }
                 }
 
                 $payload['cliente_id'] = $clientId;
@@ -1616,7 +1767,9 @@ class OrderWorkflowService
             }
         }
 
-        $openingDocument = $this->generateOpeningDocument($order, $actor);
+        $openingDocument = $shouldSendOpeningPdf
+            ? $this->generateOpeningDocument($order, $actor)
+            : null;
         $createdOrder = $order;
 
         try {
@@ -1641,7 +1794,10 @@ class OrderWorkflowService
 
         if ($shouldSendOpeningPdf) {
             try {
-                $openingDelivery = $this->sendOpeningDocumentToClient($createdOrder, $openingDocument);
+                $openingDelivery = $this->sendOpeningDocumentToClient(
+                    $createdOrder,
+                    is_array($openingDocument) ? $openingDocument : []
+                );
             } catch (Throwable $exception) {
                 $this->logOrderPostCreationFailure($order, 'opening_document_delivery', $exception);
                 $openingDelivery['message'] = 'A OS foi criada, mas o envio do PDF ao cliente não pôde ser concluído.';
@@ -1698,7 +1854,9 @@ class OrderWorkflowService
         return [
             'result' => 'ok',
             'order' => $mappedOrder,
-            'opening_document' => $this->sanitizeOpeningDocumentFeedback($openingDocument),
+            'opening_document' => is_array($openingDocument)
+                ? $this->sanitizeOpeningDocumentFeedback($openingDocument)
+                : null,
             'opening_delivery' => $openingDelivery,
             'idempotent_replay' => false,
             'warnings' => $warnings,

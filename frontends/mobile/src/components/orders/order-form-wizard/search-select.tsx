@@ -12,6 +12,7 @@ type SearchSelectProps<T> = {
   getOptionLabel: (option: T) => string;
   getOptionSubtitle?: (option: T) => string | null;
   renderOptionLeading?: (option: T) => ReactNode;
+  renderSelectedActions?: (option: T) => ReactNode;
   minChars?: number;
   loadOnFocus?: boolean;
   onInitialOptionsLoaded?: (options: T[]) => void;
@@ -30,6 +31,7 @@ export function SearchSelect<T>({
   getOptionLabel,
   getOptionSubtitle,
   renderOptionLeading,
+  renderSelectedActions,
   minChars = 1,
   loadOnFocus = false,
   onInitialOptionsLoaded,
@@ -113,9 +115,12 @@ export function SearchSelect<T>({
                 {getOptionSubtitle?.(value) ? <div className="muted">{getOptionSubtitle(value)}</div> : null}
               </div>
             </div>
-            <button type="button" className="button button--soft button-small" onClick={handleClear} disabled={disabled}>
-              {changeLabel}
-            </button>
+            <div className="search-select__selected-actions">
+              {renderSelectedActions?.(value)}
+              <button type="button" className="button button--soft button-small" onClick={handleClear} disabled={disabled}>
+                {changeLabel}
+              </button>
+            </div>
           </div>
         ) : (
           <>

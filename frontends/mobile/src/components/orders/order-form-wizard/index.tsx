@@ -27,8 +27,11 @@ import { StepChecklist } from '@/components/orders/order-form-wizard/steps/step-
 import { StepDetails, isStepDetailsValid } from '@/components/orders/order-form-wizard/steps/step-details';
 import { StepOperations, isStepOperationsValid } from '@/components/orders/order-form-wizard/steps/step-operations';
 import { StepPhotos } from '@/components/orders/order-form-wizard/steps/step-photos';
-import { StepExtras } from '@/components/orders/order-form-wizard/steps/step-extras';
-import { StepReview, type ReviewSection } from '@/components/orders/order-form-wizard/steps/step-review';
+import {
+  StepReview,
+  type ReviewSection,
+  type ReviewSectionKey,
+} from '@/components/orders/order-form-wizard/steps/step-review';
 import { useOrderCreationPlayer } from '@/components/orders/order-creation-player';
 
 type OrderFormWizardProps = {
@@ -37,15 +40,27 @@ type OrderFormWizardProps = {
   idempotencyKey?: string;
 };
 
-function buildReviewSections(state: WizardFormState, steps: WizardStepInfo[], mode: WizardMode): ReviewSection[] {
+function buildReviewSections(
+  state: WizardFormState,
+  steps: WizardStepInfo[],
+  mode: WizardMode,
+  verifiedSections: Partial<Record<ReviewSectionKey, boolean>>
+): ReviewSection[] {
   const stepIndex = (key: string): number => steps.findIndex((step) => step.key === key);
 
   const sections: ReviewSection[] = [];
 
   sections.push({
+    key: 'cliente',
     title: 'Cliente',
     stepIndex: stepIndex('cliente'),
-    rows: state.cliente
+    verified: verifiedSections.cliente === true,
+    rows: state.pendingClientUpdate
+      ? [
+          { label: 'Cliente editado', value: state.pendingClientUpdate.nome_razao },
+          { label: 'Telefone', value: state.pendingClientUpdate.telefone1 },
+        ]
+      : state.cliente
       ? [
           { label: 'Cliente', value: state.cliente.nome_razao },
           { label: 'Telefone', value: state.cliente.telefone1 },
@@ -59,9 +74,20 @@ function buildReviewSections(state: WizardFormState, steps: WizardStepInfo[], mo
   });
 
   sections.push({
+    key: 'equipamento',
     title: 'Equipamento',
     stepIndex: stepIndex('equipamento'),
-    rows: state.equipamento
+    verified: verifiedSections.equipamento === true,
+    rows: state.pendingEquipmentUpdate
+      ? [
+          {
+            label: 'Equipamento editado',
+            value: state.equipamento?.resumo_tecnico || state.equipamento?.tipo_nome || 'Equipamento selecionado',
+          },
+          { label: 'Número de série', value: state.pendingEquipmentUpdate.numero_serie ?? '' },
+          { label: 'IMEI', value: state.pendingEquipmentUpdate.imei ?? '' },
+        ]
+      : state.equipamento
       ? [{ label: 'Equipamento', value: state.equipamento.resumo_tecnico || `${state.equipamento.marca_nome} ${state.equipamento.modelo_nome}` }]
       : state.pendingNewEquipment
         ? [
@@ -75,15 +101,19 @@ function buildReviewSections(state: WizardFormState, steps: WizardStepInfo[], mo
     const total = state.checklistModel.itens.length;
     const answered = state.checklistModel.itens.filter((item) => state.checklistAnswers[item.id]).length;
     sections.push({
+      key: 'checklist',
       title: 'Checklist de entrada',
       stepIndex: stepIndex('checklist'),
+      verified: verifiedSections.checklist === true,
       rows: [{ label: 'Itens respondidos', value: `${answered}/${total}` }],
     });
   }
 
   sections.push({
+    key: 'detalhes',
     title: 'Relato e defeito',
     stepIndex: stepIndex('detalhes'),
+    verified: verifiedSections.detalhes === true,
     rows: [
       { label: 'Relato do cliente', value: state.relatoCliente },
       { label: 'Acessórios', value: state.acessorios },
@@ -91,25 +121,37 @@ function buildReviewSections(state: WizardFormState, steps: WizardStepInfo[], mo
   });
 
   sections.push({
+    key: 'atendimento',
     title: 'Atendimento',
     stepIndex: stepIndex('atendimento'),
+    verified: verifiedSections.atendimento === true,
     rows: [
       { label: 'Prioridade', value: state.prioridade },
+      {
+        label: 'Prazo',
+        value: state.prazoEntregaDias
+          ? `${state.prazoEntregaDias} ${state.prazoEntregaDias === 1 ? 'dia corrido' : 'dias corridos'}`
+          : '',
+      },
       { label: 'Previsão de entrega', value: state.dataPrevisao },
       { label: 'Técnico responsável', value: state.tecnicoLabel ?? '' },
     ],
   });
 
   sections.push({
+    key: 'fotos',
     title: 'Fotos',
     stepIndex: stepIndex('fotos'),
+    verified: verifiedSections.fotos === true,
     rows: [{ label: 'Fotos anexadas', value: String(state.fotos.length) }],
   });
 
   if (mode === 'create') {
     sections.push({
+      key: 'extras',
       title: 'Extras',
-      stepIndex: stepIndex('extras'),
+      stepIndex: stepIndex('atendimento'),
+      verified: verifiedSections.extras === true,
       rows: [
         { label: 'Enviar PDF ao cliente', value: state.enviarPdfCliente ? 'Sim' : 'Não' },
         { label: 'Orçamento vinculado', value: state.orcamentoVinculado?.numero ?? 'Nenhum' },
@@ -133,9 +175,12 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
   const [checklistLoading, setChecklistLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successState, setSuccessState] = useState<{ orderId: number; warnings: string[] } | null>(null);
+  const [verifiedSections, setVerifiedSections] = useState<Partial<Record<ReviewSectionKey, boolean>>>({});
   const submittingRef = useRef(false);
 
   const canLinkBudget = hasPermission(session?.user, 'orcamentos', 'converter_os');
+  const canEditClient = hasPermission(session?.user, 'clientes', 'editar');
+  const canEditEquipment = hasPermission(session?.user, 'equipamentos', 'editar');
   const equipmentTypeId = resolveEquipmentTypeId(state);
 
   useEffect(() => {
@@ -200,14 +245,10 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
     list.push({ key: 'atendimento', label: 'Atendimento' });
     list.push({ key: 'fotos', label: 'Fotos' });
 
-    if (mode === 'create') {
-      list.push({ key: 'extras', label: 'Extras' });
-    }
-
     list.push({ key: 'revisao', label: 'Revisão' });
 
     return list;
-  }, [mode, state.checklistModel]);
+  }, [state.checklistModel]);
 
   useEffect(() => {
     if (currentIndex >= steps.length) {
@@ -220,15 +261,20 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
   const isCurrentStepValid = useCallback((): boolean => {
     switch (currentStepKey) {
       case 'cliente':
-        return isStepClientValid(state.cliente, state.pendingNewClient);
+        return isStepClientValid(state.cliente, state.pendingNewClient, state.pendingClientUpdate);
       case 'equipamento':
-        return isStepEquipmentValid(state.equipamento, state.pendingNewEquipment, state.pendingNewEquipmentPhotos);
+        return isStepEquipmentValid(
+          state.equipamento,
+          state.pendingNewEquipment,
+          state.pendingNewEquipmentPhotos,
+          state.pendingEquipmentUpdate
+        );
       case 'checklist':
         return isChecklistComplete(state);
       case 'detalhes':
         return isStepDetailsValid(state.relatoCliente);
       case 'atendimento':
-        return isStepOperationsValid(state.tecnicoId);
+        return isStepOperationsValid(state.tecnicoId, state.prazoEntregaDias, state.dataPrevisao);
       default:
         return true;
     }
@@ -246,20 +292,52 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
 
   const goToStep = useCallback((index: number): void => {
     if (index <= maxVisitedIndex) {
+      const stepKey = steps[index]?.key;
+      setVerifiedSections((current) => {
+        const next = { ...current };
+
+        if (stepKey === 'cliente') {
+          delete next.cliente;
+          delete next.equipamento;
+          delete next.checklist;
+        }
+        if (stepKey === 'equipamento') {
+          delete next.equipamento;
+          delete next.checklist;
+        }
+        if (stepKey === 'checklist') delete next.checklist;
+        if (stepKey === 'detalhes') delete next.detalhes;
+        if (stepKey === 'atendimento') {
+          delete next.atendimento;
+          delete next.extras;
+        }
+        if (stepKey === 'fotos') delete next.fotos;
+
+        return next;
+      });
       setCurrentIndex(index);
     }
-  }, [maxVisitedIndex]);
+  }, [maxVisitedIndex, steps]);
 
   const requiredFieldsComplete = useMemo(
     () => areWizardRequiredFieldsComplete(state),
     [state]
   );
   const dirty = useMemo(() => isWizardDirty(state), [state]);
+  const reviewSections = useMemo(
+    () => buildReviewSections(state, steps, mode, verifiedSections),
+    [mode, state, steps, verifiedSections]
+  );
+  const reviewComplete = useMemo(
+    () => reviewSections.length > 0 && reviewSections.every((section) => section.verified),
+    [reviewSections]
+  );
 
   const handleSubmit = useCallback(async (): Promise<void> => {
     if (
       submittingRef.current ||
       busy ||
+      !reviewComplete ||
       (mode === 'create' && (!requiredFieldsComplete || checklistLoading))
     ) {
       return;
@@ -302,6 +380,7 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
     mode,
     order,
     requiredFieldsComplete,
+    reviewComplete,
     router,
     state,
     steps.length,
@@ -313,7 +392,7 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
         ? {
             canGoBack: !successState && currentIndex > 0,
             canGoNext: !successState && currentIndex < steps.length - 1 && isCurrentStepValid(),
-            canSave: requiredFieldsComplete && !checklistLoading && !busy && !successState,
+            canSave: requiredFieldsComplete && reviewComplete && !checklistLoading && !busy && !successState,
             busy,
             dirty: !successState && dirty,
             onBack: goBack,
@@ -332,6 +411,7 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
       isCurrentStepValid,
       mode,
       requiredFieldsComplete,
+      reviewComplete,
       steps.length,
       successState,
     ]
@@ -381,8 +461,13 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
           mode={mode}
           cliente={state.cliente}
           pendingNewClient={state.pendingNewClient}
+          pendingClientUpdate={state.pendingClientUpdate}
           onSelectCliente={(cliente) => setState((prev) => selectClientForWizard(prev, cliente))}
           onChangePendingNewClient={(pendingNewClient) => setState((prev) => ({ ...prev, pendingNewClient }))}
+          onChangePendingClientUpdate={(pendingClientUpdate) =>
+            setState((prev) => ({ ...prev, pendingClientUpdate }))
+          }
+          canEditExisting={canEditClient}
           disabled={busy}
         />
       ) : null}
@@ -393,10 +478,15 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
           clienteId={state.cliente?.id ?? null}
           equipamento={state.equipamento}
           pendingNewEquipment={state.pendingNewEquipment}
+          pendingEquipmentUpdate={state.pendingEquipmentUpdate}
           pendingNewEquipmentPhotos={state.pendingNewEquipmentPhotos}
           onSelectEquipamento={(equipamento) => setState((prev) => selectEquipmentForWizard(prev, equipamento))}
           onChangePendingNewEquipment={(pendingNewEquipment) => setState((prev) => ({ ...prev, pendingNewEquipment }))}
+          onChangePendingEquipmentUpdate={(pendingEquipmentUpdate) =>
+            setState((prev) => ({ ...prev, pendingEquipmentUpdate }))
+          }
           onChangePendingNewEquipmentPhotos={(pendingNewEquipmentPhotos) => setState((prev) => ({ ...prev, pendingNewEquipmentPhotos }))}
+          canEditExisting={canEditEquipment}
           disabled={busy}
         />
       ) : null}
@@ -424,6 +514,9 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
               return { ...prev, checklistAnswers: answers };
             })
           }
+          onUnmarkAll={() =>
+            setState((prev) => ({ ...prev, checklistAnswers: {} }))
+          }
           disabled={busy}
         />
       ) : null}
@@ -442,13 +535,25 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
       {currentStepKey === 'atendimento' ? (
         <StepOperations
           prioridade={state.prioridade}
+          prazoEntregaDias={state.prazoEntregaDias}
           dataPrevisao={state.dataPrevisao}
           tecnicoId={state.tecnicoId}
           observacoesInternas={state.observacoesInternas}
+          enviarPdfCliente={state.enviarPdfCliente}
+          orcamentoVinculado={state.orcamentoVinculado}
+          canLinkBudget={canLinkBudget}
           onChangePrioridade={(value) => setState((prev) => ({ ...prev, prioridade: value }))}
-          onChangeDataPrevisao={(value) => setState((prev) => ({ ...prev, dataPrevisao: value }))}
+          onChangePrazoEntrega={(prazoEntregaDias, dataPrevisao) =>
+            setState((prev) => ({ ...prev, prazoEntregaDias, dataPrevisao }))
+          }
           onChangeTecnico={(tecnicoId, tecnicoLabel) => setState((prev) => ({ ...prev, tecnicoId, tecnicoLabel }))}
           onChangeObservacoesInternas={(value) => setState((prev) => ({ ...prev, observacoesInternas: value }))}
+          onChangeEnviarPdfCliente={(enviarPdfCliente) =>
+            setState((prev) => ({ ...prev, enviarPdfCliente }))
+          }
+          onChangeOrcamentoVinculado={(orcamentoVinculado) =>
+            setState((prev) => ({ ...prev, orcamentoVinculado }))
+          }
           disabled={busy}
         />
       ) : null}
@@ -462,26 +567,26 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
         />
       ) : null}
 
-      {currentStepKey === 'extras' ? (
-        <StepExtras
-          enviarPdfCliente={state.enviarPdfCliente}
-          onChangeEnviarPdfCliente={(value) => setState((prev) => ({ ...prev, enviarPdfCliente: value }))}
-          orcamentoVinculado={state.orcamentoVinculado}
-          onChangeOrcamentoVinculado={(budget) => setState((prev) => ({ ...prev, orcamentoVinculado: budget }))}
-          canLinkBudget={canLinkBudget}
-          disabled={busy}
-        />
-      ) : null}
-
       {currentStepKey === 'revisao' ? (
         <StepReview
-          sections={buildReviewSections(state, steps, mode)}
-          onEditSection={goToStep}
+          sections={reviewSections}
+          onEditSection={(stepIndex, key) => {
+            setVerifiedSections((current) => {
+              const next = { ...current };
+              delete next[key];
+              return next;
+            });
+            goToStep(stepIndex);
+          }}
+          onVerifySection={(key) =>
+            setVerifiedSections((current) => ({ ...current, [key]: true }))
+          }
           onSubmit={handleSubmit}
           busy={busy}
           submitLabel={mode === 'create' ? 'Criar OS' : 'Salvar alterações'}
           errorMessage={errorMessage}
           showSubmit={mode !== 'create'}
+          submitDisabled={!reviewComplete}
         />
       ) : null}
 

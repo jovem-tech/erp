@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, fetchAttachmentBlob } from '@/lib/api';
-import { createEquipmentBrand, createEquipmentModel, getEquipmentFormData, searchEquipments } from '@/lib/orders';
+import { getEquipmentDetail, getEquipmentFormData, searchEquipments } from '@/lib/orders';
 import type {
-  EquipmentBrandCatalogItem,
+  EquipmentDetail,
   EquipmentFormData,
-  EquipmentModelCatalogItem,
   EquipmentSearchResult,
+  EquipmentUpdatePayload,
   NovoEquipamentoPayload,
 } from '@/lib/types';
 import {
@@ -22,14 +22,45 @@ type StepEquipmentProps = {
   clienteId: number | null;
   equipamento: EquipmentSearchResult | null;
   pendingNewEquipment: NovoEquipamentoPayload | null;
+  pendingEquipmentUpdate?: EquipmentUpdatePayload | null;
   pendingNewEquipmentPhotos: File[];
   onSelectEquipamento: (equipamento: EquipmentSearchResult | null) => void;
   onChangePendingNewEquipment: (payload: NovoEquipamentoPayload | null) => void;
+  onChangePendingEquipmentUpdate?: (payload: EquipmentUpdatePayload | null) => void;
   onChangePendingNewEquipmentPhotos: (files: File[]) => void;
+  canEditExisting?: boolean;
   disabled?: boolean;
 };
 
 const EMPTY_NEW_EQUIPMENT: NovoEquipamentoPayload = { tipo_id: 0, marca_id: 0, modelo_id: 0 };
+
+function equipmentDetailToUpdate(detail: EquipmentDetail): EquipmentUpdatePayload {
+  return {
+    tipo_id: detail.tipo_id,
+    marca_id: detail.marca_id,
+    modelo_id: detail.modelo_id,
+    cor: detail.cor,
+    cor_hex: detail.cor_hex,
+    cor_rgb: detail.cor_rgb,
+    numero_serie: detail.numero_serie,
+    imei: detail.imei,
+    estado_fisico: detail.estado_fisico,
+    observacoes: detail.observacoes,
+    desktop_modalidade: detail.desktop_modalidade,
+    gabinete_tipo: detail.gabinete_tipo,
+    gabinete_identificacao_status: detail.gabinete_identificacao_status,
+    gabinete_observacao: detail.gabinete_observacao,
+    placa_mae: detail.placa_mae,
+    chipset: detail.chipset,
+    processador: detail.processador,
+    memoria_ram: detail.memoria_ram,
+    armazenamento: detail.armazenamento,
+    placa_video: detail.placa_video,
+    fonte_alimentacao: detail.fonte_alimentacao,
+    status_operacional: detail.status_operacional,
+    status: detail.status,
+  };
+}
 
 function equipmentLabel(equipment: EquipmentSearchResult): string {
   return equipment.resumo_tecnico.trim()
@@ -130,10 +161,13 @@ export function StepEquipment({
   clienteId,
   equipamento,
   pendingNewEquipment,
+  pendingEquipmentUpdate = null,
   pendingNewEquipmentPhotos,
   onSelectEquipamento,
   onChangePendingNewEquipment,
+  onChangePendingEquipmentUpdate = () => undefined,
   onChangePendingNewEquipmentPhotos,
+  canEditExisting = false,
   disabled = false,
 }: StepEquipmentProps) {
   const [view, setView] = useState<'buscar' | 'novo'>(
@@ -142,22 +176,16 @@ export function StepEquipment({
   const [newEquipmentReason, setNewEquipmentReason] = useState<'new-client' | 'empty-client' | null>(
     mode === 'create' && !clienteId ? 'new-client' : null
   );
+  const [editingExisting, setEditingExisting] = useState(false);
+  const [loadingExisting, setLoadingExisting] = useState(false);
+  const [existingError, setExistingError] = useState<string | null>(null);
 
   const [formData, setFormData] = useState<EquipmentFormData | null>(null);
   const [loadingFormData, setLoadingFormData] = useState(false);
   const [formDataError, setFormDataError] = useState<string | null>(null);
-  const [brands, setBrands] = useState<EquipmentBrandCatalogItem[]>([]);
-  const [models, setModels] = useState<EquipmentModelCatalogItem[]>([]);
-
-  const [showNewBrand, setShowNewBrand] = useState(false);
-  const [newBrandName, setNewBrandName] = useState('');
-  const [showNewModel, setShowNewModel] = useState(false);
-  const [newModelName, setNewModelName] = useState('');
-  const [catalogBusy, setCatalogBusy] = useState(false);
-  const [catalogError, setCatalogError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (view !== 'novo' || formData || loadingFormData) {
+    if ((view !== 'novo' && !editingExisting) || formData || loadingFormData) {
       return;
     }
 
@@ -167,12 +195,10 @@ export function StepEquipment({
     getEquipmentFormData()
       .then((data) => {
         setFormData(data);
-        setBrands(data.brands);
-        setModels(data.models);
       })
       .catch(() => setFormDataError('Não foi possível carregar os catálogos de equipamento.'))
       .finally(() => setLoadingFormData(false));
-  }, [view, formData, loadingFormData]);
+  }, [view, editingExisting, formData, loadingFormData]);
 
   const fetchEquipmentOptions = useCallback(
     (query: string) => (
@@ -189,6 +215,7 @@ export function StepEquipment({
     }
 
     setView('buscar');
+    setEditingExisting(false);
     setNewEquipmentReason(null);
     onChangePendingNewEquipment(null);
     onChangePendingNewEquipmentPhotos([]);
@@ -196,6 +223,7 @@ export function StepEquipment({
 
   const switchToNew = (reason: 'new-client' | 'empty-client' | null = null): void => {
     setView('novo');
+    setEditingExisting(false);
     setNewEquipmentReason(reason);
     onSelectEquipamento(null);
     if (!pendingNewEquipment) {
@@ -213,53 +241,65 @@ export function StepEquipment({
     [clienteId, mode, pendingNewEquipment]
   );
 
-  const updateField = <K extends keyof NovoEquipamentoPayload>(field: K, value: NovoEquipamentoPayload[K]): void => {
-    onChangePendingNewEquipment({ ...(pendingNewEquipment ?? EMPTY_NEW_EQUIPMENT), [field]: value });
+  const updateField = (
+    field: keyof NovoEquipamentoPayload | keyof EquipmentUpdatePayload,
+    value: NovoEquipamentoPayload[keyof NovoEquipamentoPayload] | EquipmentUpdatePayload[keyof EquipmentUpdatePayload]
+  ): void => {
+    if (editingExisting && equipamento) {
+      const base = pendingEquipmentUpdate ?? {
+        tipo_id: equipamento.tipo_id,
+        marca_id: 0,
+        modelo_id: 0,
+      };
+      const next = { ...base, [field]: value } as EquipmentUpdatePayload;
+      if (field === 'marca_id' && base.marca_id !== value) {
+        next.modelo_id = 0;
+      }
+      onChangePendingEquipmentUpdate(next);
+      return;
+    }
+
+    const base = pendingNewEquipment ?? EMPTY_NEW_EQUIPMENT;
+    const next = {
+      ...base,
+      [field]: value,
+    } as NovoEquipamentoPayload;
+    if (field === 'marca_id' && base.marca_id !== value) {
+      next.modelo_id = 0;
+    }
+    onChangePendingNewEquipment(next);
   };
 
-  const selectedType = formData?.types.find((type) => type.id === pendingNewEquipment?.tipo_id) ?? null;
+  const activeEquipmentPayload = editingExisting ? pendingEquipmentUpdate : pendingNewEquipment;
+  const selectedType = formData?.types.find((type) => type.id === activeEquipmentPayload?.tipo_id) ?? null;
   const family = selectedType?.family ?? '';
-  const modelsForBrand = models.filter((model) => model.marca_id === pendingNewEquipment?.marca_id);
+  const modelsForBrand = (formData?.models ?? []).filter(
+    (model) => model.marca_id === activeEquipmentPayload?.marca_id
+  );
 
-  const handleCreateBrand = async (): Promise<void> => {
-    if (!newBrandName.trim() || !pendingNewEquipment?.tipo_id) {
+  const openExistingEditor = async (): Promise<void> => {
+    if (!equipamento || !canEditExisting || disabled) {
       return;
     }
 
-    setCatalogBusy(true);
-    setCatalogError(null);
-
-    try {
-      const brand = await createEquipmentBrand(newBrandName.trim(), pendingNewEquipment.tipo_id);
-      setBrands((current) => [...current, brand]);
-      updateField('marca_id', brand.id);
-      setNewBrandName('');
-      setShowNewBrand(false);
-    } catch (error) {
-      setCatalogError(error instanceof ApiError ? error.message : 'Não foi possível cadastrar a marca.');
-    } finally {
-      setCatalogBusy(false);
-    }
-  };
-
-  const handleCreateModel = async (): Promise<void> => {
-    if (!newModelName.trim() || !pendingNewEquipment?.marca_id || !pendingNewEquipment?.tipo_id) {
+    setExistingError(null);
+    if (pendingEquipmentUpdate) {
+      setEditingExisting(true);
       return;
     }
 
-    setCatalogBusy(true);
-    setCatalogError(null);
-
+    setLoadingExisting(true);
     try {
-      const model = await createEquipmentModel(pendingNewEquipment.marca_id, newModelName.trim(), pendingNewEquipment.tipo_id);
-      setModels((current) => [...current, model]);
-      updateField('modelo_id', model.id);
-      setNewModelName('');
-      setShowNewModel(false);
+      const detail = await getEquipmentDetail(equipamento.id);
+      if (detail.cliente_id !== clienteId) {
+        throw new Error('O equipamento não pertence ao cliente selecionado.');
+      }
+      onChangePendingEquipmentUpdate(equipmentDetailToUpdate(detail));
+      setEditingExisting(true);
     } catch (error) {
-      setCatalogError(error instanceof ApiError ? error.message : 'Não foi possível cadastrar o modelo.');
+      setExistingError(error instanceof ApiError ? error.message : 'Não foi possível carregar os dados do equipamento.');
     } finally {
-      setCatalogBusy(false);
+      setLoadingExisting(false);
     }
   };
 
@@ -293,33 +333,74 @@ export function StepEquipment({
         </div>
       ) : null}
 
-      {view === 'buscar' || mode === 'edit' ? (
-        <SearchSelect<EquipmentSearchResult>
-          label="Buscar equipamento"
-          placeholder="Marca, modelo, nº de série ou resumo técnico"
-          value={equipamento}
-          onSelect={onSelectEquipamento}
-          fetchOptions={fetchEquipmentOptions}
-          getOptionKey={(option) => option.id}
-          getOptionLabel={equipmentLabel}
-          getOptionSubtitle={(option) => [
-            option.tipo_nome,
-            option.numero_serie ? `Série ${option.numero_serie}` : '',
-          ].filter(Boolean).join(' • ') || null}
-          renderOptionLeading={(option) => <EquipmentThumbnail equipment={option} />}
-          loadOnFocus
-          onInitialOptionsLoaded={handleInitialEquipmentOptions}
-          emptyMessage="Nenhum equipamento cadastrado para este cliente."
-          disabled={disabled}
-        />
+      {(view === 'buscar' || mode === 'edit') && !editingExisting ? (
+        <>
+          <SearchSelect<EquipmentSearchResult>
+            label="Buscar equipamento"
+            placeholder="Marca, modelo, nº de série ou resumo técnico"
+            value={equipamento}
+            onSelect={(value) => {
+              setEditingExisting(false);
+              onSelectEquipamento(value);
+            }}
+            fetchOptions={fetchEquipmentOptions}
+            getOptionKey={(option) => option.id}
+            getOptionLabel={equipmentLabel}
+            getOptionSubtitle={(option) => [
+              option.tipo_nome,
+              option.numero_serie ? `Série ${option.numero_serie}` : '',
+            ].filter(Boolean).join(' • ') || null}
+            renderOptionLeading={(option) => <EquipmentThumbnail equipment={option} />}
+            renderSelectedActions={
+              mode === 'create'
+                ? () => (
+                    <button
+                      type="button"
+                      className="button button--ghost button-small"
+                      onClick={() => void openExistingEditor()}
+                      disabled={disabled || loadingExisting || !canEditExisting}
+                      title={!canEditExisting ? 'Sem permissão para editar equipamentos.' : undefined}
+                    >
+                      {loadingExisting ? 'Carregando...' : 'Editar'}
+                    </button>
+                  )
+                : undefined
+            }
+            loadOnFocus
+            onInitialOptionsLoaded={handleInitialEquipmentOptions}
+            emptyMessage="Nenhum equipamento cadastrado para este cliente."
+            disabled={disabled}
+          />
+          {existingError ? (
+            <div className="notice notice--danger">
+              <span>{existingError}</span>
+            </div>
+          ) : null}
+        </>
       ) : (
         <div className="form">
-          {newEquipmentReason === 'empty-client' ? (
+          {editingExisting ? (
+            <div className="toolbar">
+              <div>
+                <strong>Editar equipamento selecionado</strong>
+                <div className="muted">As alterações serão aplicadas somente ao salvar a OS.</div>
+              </div>
+              <button
+                type="button"
+                className="button button--soft button-small"
+                onClick={() => setEditingExisting(false)}
+                disabled={disabled}
+              >
+                Concluir edição
+              </button>
+            </div>
+          ) : null}
+          {!editingExisting && newEquipmentReason === 'empty-client' ? (
             <div className="notice">
               <span>Nenhum equipamento cadastrado para este cliente. Prossiga com o novo cadastro; o vínculo será feito ao criar a OS.</span>
             </div>
           ) : null}
-          {newEquipmentReason === 'new-client' ? (
+          {!editingExisting && newEquipmentReason === 'new-client' ? (
             <div className="notice">
               <span>Como o cliente também é novo, cadastre o equipamento para que ambos sejam vinculados ao criar a OS.</span>
             </div>
@@ -338,7 +419,7 @@ export function StepEquipment({
                 <span className="field__label">Tipo de equipamento *</span>
                 <select
                   className="select"
-                  value={pendingNewEquipment?.tipo_id || ''}
+                  value={activeEquipmentPayload?.tipo_id || ''}
                   onChange={(event) => updateField('tipo_id', Number(event.target.value))}
                   disabled={disabled}
                 >
@@ -355,49 +436,26 @@ export function StepEquipment({
                 <span className="field__label">Marca *</span>
                 <select
                   className="select"
-                  value={pendingNewEquipment?.marca_id || ''}
+                  value={activeEquipmentPayload?.marca_id || ''}
                   onChange={(event) => updateField('marca_id', Number(event.target.value))}
-                  disabled={disabled || !pendingNewEquipment?.tipo_id}
+                  disabled={disabled || !activeEquipmentPayload?.tipo_id}
                 >
                   <option value="">Selecione...</option>
-                  {brands.map((brand) => (
+                  {formData.brands.map((brand) => (
                     <option key={brand.id} value={brand.id}>
                       {brand.nome}
                     </option>
                   ))}
                 </select>
-                {!showNewBrand ? (
-                  <button
-                    type="button"
-                    className="button button--ghost button-small"
-                    onClick={() => setShowNewBrand(true)}
-                    disabled={disabled || !pendingNewEquipment?.tipo_id}
-                  >
-                    + Nova marca
-                  </button>
-                ) : (
-                  <div className="toolbar">
-                    <input
-                      className="input"
-                      placeholder="Nome da marca"
-                      value={newBrandName}
-                      onChange={(event) => setNewBrandName(event.target.value)}
-                      disabled={disabled || catalogBusy}
-                    />
-                    <button type="button" className="button button--soft button-small" onClick={handleCreateBrand} disabled={disabled || catalogBusy}>
-                      Salvar
-                    </button>
-                  </div>
-                )}
               </label>
 
               <label className="field">
                 <span className="field__label">Modelo *</span>
                 <select
                   className="select"
-                  value={pendingNewEquipment?.modelo_id || ''}
+                  value={activeEquipmentPayload?.modelo_id || ''}
                   onChange={(event) => updateField('modelo_id', Number(event.target.value))}
-                  disabled={disabled || !pendingNewEquipment?.marca_id}
+                  disabled={disabled || !activeEquipmentPayload?.marca_id}
                 >
                   <option value="">Selecione...</option>
                   {modelsForBrand.map((model) => (
@@ -406,62 +464,39 @@ export function StepEquipment({
                     </option>
                   ))}
                 </select>
-                {!showNewModel ? (
-                  <button
-                    type="button"
-                    className="button button--ghost button-small"
-                    onClick={() => setShowNewModel(true)}
-                    disabled={disabled || !pendingNewEquipment?.marca_id}
-                  >
-                    + Novo modelo
-                  </button>
-                ) : (
-                  <div className="toolbar">
-                    <input
-                      className="input"
-                      placeholder="Nome do modelo"
-                      value={newModelName}
-                      onChange={(event) => setNewModelName(event.target.value)}
-                      disabled={disabled || catalogBusy}
-                    />
-                    <button type="button" className="button button--soft button-small" onClick={handleCreateModel} disabled={disabled || catalogBusy}>
-                      Salvar
-                    </button>
-                  </div>
-                )}
               </label>
-
-              {catalogError ? (
-                <div className="notice notice--danger">
-                  <span>{catalogError}</span>
-                </div>
-              ) : null}
 
               <label className="field">
                 <span className="field__label">Cor</span>
-                <input className="input" value={pendingNewEquipment?.cor ?? ''} onChange={(event) => updateField('cor', event.target.value)} disabled={disabled} />
+                <input className="input" value={activeEquipmentPayload?.cor ?? ''} onChange={(event) => updateField('cor', event.target.value)} disabled={disabled} />
               </label>
 
               <label className="field">
                 <span className="field__label">Número de série</span>
                 <input
                   className="input"
-                  value={pendingNewEquipment?.numero_serie_visual ?? ''}
-                  onChange={(event) => updateField('numero_serie_visual', event.target.value)}
+                  value={
+                    editingExisting
+                      ? pendingEquipmentUpdate?.numero_serie ?? ''
+                      : pendingNewEquipment?.numero_serie_visual ?? ''
+                  }
+                  onChange={(event) =>
+                    updateField(editingExisting ? 'numero_serie' : 'numero_serie_visual', event.target.value)
+                  }
                   disabled={disabled}
                 />
               </label>
 
               <label className="field">
                 <span className="field__label">IMEI</span>
-                <input className="input" value={pendingNewEquipment?.imei ?? ''} onChange={(event) => updateField('imei', event.target.value)} disabled={disabled} />
+                <input className="input" value={activeEquipmentPayload?.imei ?? ''} onChange={(event) => updateField('imei', event.target.value)} disabled={disabled} />
               </label>
 
               <label className="field">
                 <span className="field__label">Tipo de senha</span>
                 <select
                   className="select"
-                  value={pendingNewEquipment?.senha_tipo ?? ''}
+                  value={activeEquipmentPayload?.senha_tipo ?? ''}
                   onChange={(event) => updateField('senha_tipo', (event.target.value || undefined) as 'desenho' | 'texto' | undefined)}
                   disabled={disabled}
                 >
@@ -474,25 +509,25 @@ export function StepEquipment({
                 </select>
               </label>
 
-              {pendingNewEquipment?.senha_tipo === 'texto' ? (
+              {activeEquipmentPayload?.senha_tipo === 'texto' ? (
                 <label className="field">
                   <span className="field__label">Senha de acesso</span>
                   <input
                     className="input"
-                    value={pendingNewEquipment?.senha_acesso ?? ''}
+                    value={activeEquipmentPayload?.senha_acesso ?? ''}
                     onChange={(event) => updateField('senha_acesso', event.target.value)}
                     disabled={disabled}
                   />
                 </label>
               ) : null}
 
-              {pendingNewEquipment?.senha_tipo === 'desenho' ? (
+              {activeEquipmentPayload?.senha_tipo === 'desenho' ? (
                 <label className="field">
                   <span className="field__label">Padrão do desenho</span>
                   <input
                     className="input"
                     placeholder="Ex.: 1-2-3-6-9"
-                    value={pendingNewEquipment?.senha_desenho ?? ''}
+                    value={activeEquipmentPayload?.senha_desenho ?? ''}
                     onChange={(event) => updateField('senha_desenho', event.target.value)}
                     disabled={disabled}
                   />
@@ -503,7 +538,7 @@ export function StepEquipment({
                 <span className="field__label">Estado físico</span>
                 <textarea
                   className="textarea"
-                  value={pendingNewEquipment?.estado_fisico ?? ''}
+                  value={activeEquipmentPayload?.estado_fisico ?? ''}
                   onChange={(event) => updateField('estado_fisico', event.target.value)}
                   disabled={disabled}
                 />
@@ -513,7 +548,7 @@ export function StepEquipment({
                 <span className="field__label">Observações</span>
                 <textarea
                   className="textarea"
-                  value={pendingNewEquipment?.observacoes ?? ''}
+                  value={activeEquipmentPayload?.observacoes ?? ''}
                   onChange={(event) => updateField('observacoes', event.target.value)}
                   disabled={disabled}
                 />
@@ -525,7 +560,7 @@ export function StepEquipment({
                     <span className="field__label">Modalidade</span>
                     <select
                       className="select"
-                      value={pendingNewEquipment?.desktop_modalidade ?? ''}
+                      value={activeEquipmentPayload?.desktop_modalidade ?? ''}
                       onChange={(event) => updateField('desktop_modalidade', (event.target.value || undefined) as 'montado' | 'oem' | undefined)}
                       disabled={disabled}
                     >
@@ -535,30 +570,30 @@ export function StepEquipment({
                     </select>
                   </label>
 
-                  {pendingNewEquipment?.desktop_modalidade === 'montado' ? (
+                  {activeEquipmentPayload?.desktop_modalidade === 'montado' ? (
                     <>
                       <label className="field">
                         <span className="field__label">Tipo de gabinete</span>
                         <input
                           className="input"
-                          value={pendingNewEquipment?.gabinete_tipo ?? ''}
+                          value={activeEquipmentPayload?.gabinete_tipo ?? ''}
                           onChange={(event) => updateField('gabinete_tipo', event.target.value)}
                           disabled={disabled}
                         />
                       </label>
                       <label className="field">
                         <span className="field__label">Placa-mãe</span>
-                        <input className="input" value={pendingNewEquipment?.placa_mae ?? ''} onChange={(event) => updateField('placa_mae', event.target.value)} disabled={disabled} />
+                        <input className="input" value={activeEquipmentPayload?.placa_mae ?? ''} onChange={(event) => updateField('placa_mae', event.target.value)} disabled={disabled} />
                       </label>
                       <label className="field">
                         <span className="field__label">Chipset</span>
-                        <input className="input" value={pendingNewEquipment?.chipset ?? ''} onChange={(event) => updateField('chipset', event.target.value)} disabled={disabled} />
+                        <input className="input" value={activeEquipmentPayload?.chipset ?? ''} onChange={(event) => updateField('chipset', event.target.value)} disabled={disabled} />
                       </label>
                       <label className="field">
                         <span className="field__label">Processador</span>
                         <input
                           className="input"
-                          value={pendingNewEquipment?.processador ?? ''}
+                          value={activeEquipmentPayload?.processador ?? ''}
                           onChange={(event) => updateField('processador', event.target.value)}
                           disabled={disabled}
                         />
@@ -567,7 +602,7 @@ export function StepEquipment({
                         <span className="field__label">Memória RAM</span>
                         <input
                           className="input"
-                          value={pendingNewEquipment?.memoria_ram ?? ''}
+                          value={activeEquipmentPayload?.memoria_ram ?? ''}
                           onChange={(event) => updateField('memoria_ram', event.target.value)}
                           disabled={disabled}
                         />
@@ -576,7 +611,7 @@ export function StepEquipment({
                         <span className="field__label">Armazenamento</span>
                         <input
                           className="input"
-                          value={pendingNewEquipment?.armazenamento ?? ''}
+                          value={activeEquipmentPayload?.armazenamento ?? ''}
                           onChange={(event) => updateField('armazenamento', event.target.value)}
                           disabled={disabled}
                         />
@@ -585,7 +620,7 @@ export function StepEquipment({
                         <span className="field__label">Placa de vídeo</span>
                         <input
                           className="input"
-                          value={pendingNewEquipment?.placa_video ?? ''}
+                          value={activeEquipmentPayload?.placa_video ?? ''}
                           onChange={(event) => updateField('placa_video', event.target.value)}
                           disabled={disabled}
                         />
@@ -594,7 +629,7 @@ export function StepEquipment({
                         <span className="field__label">Fonte de alimentação</span>
                         <input
                           className="input"
-                          value={pendingNewEquipment?.fonte_alimentacao ?? ''}
+                          value={activeEquipmentPayload?.fonte_alimentacao ?? ''}
                           onChange={(event) => updateField('fonte_alimentacao', event.target.value)}
                           disabled={disabled}
                         />
@@ -604,17 +639,23 @@ export function StepEquipment({
                 </>
               ) : null}
 
-              <PhotoPicker
-                label="Fotos do equipamento *"
-                value={pendingNewEquipmentPhotos}
-                onChange={onChangePendingNewEquipmentPhotos}
-                maxFiles={4}
-                disabled={disabled}
-                helpText="Pelo menos 1 foto é obrigatória para cadastrar um equipamento novo."
-              />
+              {!editingExisting ? (
+                <PhotoPicker
+                  label="Fotos do equipamento *"
+                  value={pendingNewEquipmentPhotos}
+                  onChange={onChangePendingNewEquipmentPhotos}
+                  maxFiles={4}
+                  disabled={disabled}
+                  helpText="Pelo menos 1 foto é obrigatória para cadastrar um equipamento novo."
+                />
+              ) : null}
 
               <div className="notice notice--warning">
-                <span>Este equipamento será cadastrado somente ao criar a OS.</span>
+                <span>
+                  {editingExisting
+                    ? 'Nenhuma alteração será gravada antes do salvamento final da OS.'
+                    : 'Este equipamento será cadastrado somente ao criar a OS.'}
+                </span>
               </div>
             </>
           ) : null}
@@ -627,7 +668,16 @@ export function StepEquipment({
 export function isStepEquipmentValid(
   equipamento: EquipmentSearchResult | null,
   pendingNewEquipment: NovoEquipamentoPayload | null,
-  pendingNewEquipmentPhotos: File[]
+  pendingNewEquipmentPhotos: File[],
+  pendingEquipmentUpdate: EquipmentUpdatePayload | null = null
 ): boolean {
+  if (pendingEquipmentUpdate) {
+    return Boolean(
+      pendingEquipmentUpdate.tipo_id &&
+      pendingEquipmentUpdate.marca_id &&
+      pendingEquipmentUpdate.modelo_id
+    );
+  }
+
   return isWizardEquipmentComplete(equipamento, pendingNewEquipment, pendingNewEquipmentPhotos);
 }
