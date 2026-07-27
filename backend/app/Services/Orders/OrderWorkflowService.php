@@ -1767,7 +1767,9 @@ class OrderWorkflowService
             }
         }
 
-        $openingDocument = null;
+        $openingDocument = $shouldSendOpeningPdf
+            ? $this->generateOpeningDocument($order, $actor)
+            : null;
         $createdOrder = $order;
 
         try {
@@ -1792,8 +1794,10 @@ class OrderWorkflowService
 
         if ($shouldSendOpeningPdf) {
             try {
-                $openingDocument = $this->generateOpeningDocument($createdOrder, $actor);
-                $openingDelivery = $this->sendOpeningDocumentToClient($createdOrder, $openingDocument);
+                $openingDelivery = $this->sendOpeningDocumentToClient(
+                    $createdOrder,
+                    is_array($openingDocument) ? $openingDocument : []
+                );
             } catch (Throwable $exception) {
                 $this->logOrderPostCreationFailure($order, 'opening_document_delivery', $exception);
                 $openingDelivery['message'] = 'A OS foi criada, mas o envio do PDF ao cliente não pôde ser concluído.';
