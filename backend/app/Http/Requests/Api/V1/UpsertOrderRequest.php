@@ -11,6 +11,16 @@ class UpsertOrderRequest extends BaseApiFormRequest
     {
         $requiredOrSometimes = $this->isMethod('post') ? 'required' : 'sometimes';
         $createOnlyArray = $this->isMethod('post') ? 'nullable' : 'prohibited';
+        $requiresSelectedClient = function (string $attribute, mixed $value, \Closure $fail): void {
+            if ($value !== null && ! $this->filled('cliente_id')) {
+                $fail('Selecione o cliente antes de enviar alterações do cadastro.');
+            }
+        };
+        $requiresSelectedEquipment = function (string $attribute, mixed $value, \Closure $fail): void {
+            if ($value !== null && ! $this->filled('equipamento_id')) {
+                $fail('Selecione o equipamento antes de enviar alterações do cadastro.');
+            }
+        };
         // Criação atômica: no POST, cliente/equipamento podem vir como registro
         // existente (cliente_id/equipamento_id) OU como cadastro novo, capturado
         // no formulário e só persistido junto com a OS (novo_cliente/novo_equipamento).
@@ -26,7 +36,7 @@ class UpsertOrderRequest extends BaseApiFormRequest
             'novo_cliente.nome_razao' => ['nullable', 'required_with:novo_cliente', 'string', 'max:100'],
             'novo_cliente.telefone1' => ['nullable', 'required_with:novo_cliente', 'string', 'max:20'],
             'novo_cliente.email' => ['nullable', 'email', 'max:100'],
-            'cliente_atualizacao' => [$createOnlyArray, 'array', 'prohibited_without:cliente_id'],
+            'cliente_atualizacao' => [$createOnlyArray, 'array', $requiresSelectedClient],
             'cliente_atualizacao.tipo_pessoa' => ['required_with:cliente_atualizacao', 'string', 'max:20'],
             'cliente_atualizacao.nome_razao' => ['required_with:cliente_atualizacao', 'string', 'max:100'],
             'cliente_atualizacao.cpf_cnpj' => [
@@ -56,7 +66,7 @@ class UpsertOrderRequest extends BaseApiFormRequest
             'novo_equipamento.tipo_id' => ['nullable', 'required_with:novo_equipamento', 'integer', 'min:1', Rule::exists('equipamentos_tipos', 'id')],
             'novo_equipamento.marca_id' => ['nullable', 'required_with:novo_equipamento', 'integer', 'min:1', Rule::exists('equipamentos_marcas', 'id')],
             'novo_equipamento.modelo_id' => ['nullable', 'required_with:novo_equipamento', 'integer', 'min:1', Rule::exists('equipamentos_modelos', 'id')],
-            'equipamento_atualizacao' => [$createOnlyArray, 'array', 'prohibited_without:equipamento_id'],
+            'equipamento_atualizacao' => [$createOnlyArray, 'array', $requiresSelectedEquipment],
             'equipamento_atualizacao.tipo_id' => ['required_with:equipamento_atualizacao', 'integer', 'min:1', Rule::exists('equipamentos_tipos', 'id')],
             'equipamento_atualizacao.marca_id' => ['required_with:equipamento_atualizacao', 'integer', 'min:1', Rule::exists('equipamentos_marcas', 'id')],
             'equipamento_atualizacao.modelo_id' => ['required_with:equipamento_atualizacao', 'integer', 'min:1', Rule::exists('equipamentos_modelos', 'id')],

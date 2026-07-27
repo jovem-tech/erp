@@ -1348,6 +1348,34 @@ class OrderFlowTest extends TestCase
         ]);
     }
 
+    public function test_create_order_rejects_atomic_record_edits_without_the_selected_record_id(): void
+    {
+        [$manager, $technician, , $equipmentId] = $this->seedManagerCreateContext();
+        $token = $this->loginAndGetToken($manager->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                'cliente_atualizacao' => [
+                    'tipo_pessoa' => 'fisica',
+                    'nome_razao' => 'Cliente sem identificador',
+                    'telefone1' => '22999990000',
+                    'status_cadastro' => 'completo',
+                ],
+                'equipamento_id' => $equipmentId,
+                'tecnico_id' => $technician->id,
+                'relato_cliente' => 'Payload ambíguo sem cliente selecionado.',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['cliente_atualizacao']);
+
+        $this->assertDatabaseMissing('clientes', [
+            'nome_razao' => 'Cliente sem identificador',
+        ]);
+        $this->assertDatabaseMissing('os', [
+            'relato_cliente' => 'Payload ambíguo sem cliente selecionado.',
+        ]);
+    }
+
     public function test_create_order_does_not_generate_or_persist_pdf_when_option_is_unchecked(): void
     {
         Storage::fake('local');
