@@ -65,8 +65,9 @@ Este fluxo entrega ao PWA mobile o primeiro trabalho operacional real do técnic
 - O prazo de atendimento, selecionado entre 1, 3, 7, 15 ou 30 dias corridos,
   preenche a previsão de entrega; o backend recalcula a data a partir do prazo
   recebido para não confiar no relógio do dispositivo.
-- A etapa `Extras` não existe mais. A decisão de gerar e enviar o PDF e o
-  vínculo opcional de orçamento ficam em `Atendimento`.
+- A etapa `Extras` não existe mais. O vínculo opcional de orçamento permanece
+  em `Atendimento`, enquanto a decisão de gerar e enviar o PDF fica diretamente
+  no card `Extras` da revisão.
 - Na revisão, cada card precisa ser verificado explicitamente. O card verificado
   recebe fundo verde e qualquer edição posterior invalida a confirmação do item.
 - `Salvar` depende da completude conjunta de cliente, equipamento, checklist

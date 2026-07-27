@@ -12,8 +12,9 @@ explícita antes da persistência definitiva.
 - o checklist oferece `Marcar tudo OK` e `Desmarcar tudo`;
 - `Atendimento` exige um prazo de 1, 3, 7, 15 ou 30 dias corridos e calcula a
   previsão de entrega automaticamente;
-- a antiga etapa `Extras` foi removida; a decisão de gerar/enviar PDF e o
-  orçamento opcional passaram para `Atendimento`;
+- a antiga etapa `Extras` foi removida; o orçamento opcional permanece em
+  `Atendimento` e a decisão de gerar/enviar PDF fica no card `Extras` da
+  revisão;
 - cada card da revisão possui `Editar` e `Verificar`;
 - cards confirmados recebem fundo verde;
 - editar novamente um item invalida sua confirmação;

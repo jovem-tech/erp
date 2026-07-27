@@ -15,8 +15,8 @@ Reposicionar a decisão obrigatória **Enviar PDF ao cliente** para o rodapé do
 
 Foram preservados o campo `enviar_pdf_cliente`, os valores `0` e `1`, a obrigatoriedade, o estado anterior após erro de validação e toda a lógica de geração e envio do PDF.
 
-> Atualização em 2026-07-26: no PWA mobile, a decisão passou para a etapa
-> `Atendimento` e deixou de existir uma etapa `Extras`. O backend agora só
+> Atualização em 2026-07-26: no PWA mobile, deixou de existir uma etapa
+> `Extras`; a decisão passou para o card `Extras` da revisão. O backend agora só
 > renderiza, persiste e envia o PDF quando o valor é explicitamente verdadeiro.
 > A organização de rodapé descrita nesta nota continua referente ao frontend
 > desktop.

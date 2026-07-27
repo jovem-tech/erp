@@ -41,14 +41,12 @@ type StepOperationsProps = {
   dataPrevisao: string;
   tecnicoId: number | null;
   observacoesInternas: string;
-  enviarPdfCliente: boolean;
   orcamentoVinculado: LinkableBudget | null;
   canLinkBudget: boolean;
   onChangePrioridade: (value: OrderPriority) => void;
   onChangePrazoEntrega: (days: DeliveryLeadDays | null, date: string) => void;
   onChangeTecnico: (id: number | null, label: string | null) => void;
   onChangeObservacoesInternas: (value: string) => void;
-  onChangeEnviarPdfCliente: (value: boolean) => void;
   onChangeOrcamentoVinculado: (budget: LinkableBudget | null) => void;
   disabled?: boolean;
 };
@@ -59,14 +57,12 @@ export function StepOperations({
   dataPrevisao,
   tecnicoId,
   observacoesInternas,
-  enviarPdfCliente,
   orcamentoVinculado,
   canLinkBudget,
   onChangePrioridade,
   onChangePrazoEntrega,
   onChangeTecnico,
   onChangeObservacoesInternas,
-  onChangeEnviarPdfCliente,
   onChangeOrcamentoVinculado,
   disabled = false,
 }: StepOperationsProps) {
@@ -173,21 +169,6 @@ export function StepOperations({
             onChange={(event) => onChangeObservacoesInternas(event.target.value)}
             disabled={disabled}
           />
-        </label>
-
-        <label className="pdf-choice">
-          <input
-            type="checkbox"
-            checked={enviarPdfCliente}
-            onChange={(event) => onChangeEnviarPdfCliente(event.target.checked)}
-            disabled={disabled}
-          />
-          <span>
-            <strong>Gerar e enviar PDF ao cliente</strong>
-            <span className="muted" style={{ display: 'block', marginTop: 4 }}>
-              Desmarcado: nenhum PDF será criado ou enviado.
-            </span>
-          </span>
         </label>
 
         {canLinkBudget ? (

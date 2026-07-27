@@ -153,7 +153,6 @@ function buildReviewSections(
       stepIndex: stepIndex('atendimento'),
       verified: verifiedSections.extras === true,
       rows: [
-        { label: 'Enviar PDF ao cliente', value: state.enviarPdfCliente ? 'Sim' : 'Não' },
         { label: 'Orçamento vinculado', value: state.orcamentoVinculado?.numero ?? 'Nenhum' },
       ],
     });
@@ -539,7 +538,6 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
           dataPrevisao={state.dataPrevisao}
           tecnicoId={state.tecnicoId}
           observacoesInternas={state.observacoesInternas}
-          enviarPdfCliente={state.enviarPdfCliente}
           orcamentoVinculado={state.orcamentoVinculado}
           canLinkBudget={canLinkBudget}
           onChangePrioridade={(value) => setState((prev) => ({ ...prev, prioridade: value }))}
@@ -548,9 +546,6 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
           }
           onChangeTecnico={(tecnicoId, tecnicoLabel) => setState((prev) => ({ ...prev, tecnicoId, tecnicoLabel }))}
           onChangeObservacoesInternas={(value) => setState((prev) => ({ ...prev, observacoesInternas: value }))}
-          onChangeEnviarPdfCliente={(enviarPdfCliente) =>
-            setState((prev) => ({ ...prev, enviarPdfCliente }))
-          }
           onChangeOrcamentoVinculado={(orcamentoVinculado) =>
             setState((prev) => ({ ...prev, orcamentoVinculado }))
           }
@@ -570,13 +565,30 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
       {currentStepKey === 'revisao' ? (
         <StepReview
           sections={reviewSections}
+          extrasControl={
+            mode === 'create'
+              ? {
+                  enviarPdfCliente: state.enviarPdfCliente,
+                  onChangeEnviarPdfCliente: (enviarPdfCliente) => {
+                    setState((prev) => ({ ...prev, enviarPdfCliente }));
+                    setVerifiedSections((current) => {
+                      const next = { ...current };
+                      delete next.extras;
+                      return next;
+                    });
+                  },
+                }
+              : undefined
+          }
           onEditSection={(stepIndex, key) => {
             setVerifiedSections((current) => {
               const next = { ...current };
               delete next[key];
               return next;
             });
-            goToStep(stepIndex);
+            if (key !== 'extras') {
+              goToStep(stepIndex);
+            }
           }}
           onVerifySection={(key) =>
             setVerifiedSections((current) => ({ ...current, [key]: true }))
