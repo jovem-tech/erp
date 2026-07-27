@@ -17,8 +17,14 @@ export type ReviewSection = {
   verified: boolean;
 };
 
+export type ReviewExtrasControl = {
+  enviarPdfCliente: boolean;
+  onChangeEnviarPdfCliente: (value: boolean) => void;
+};
+
 type StepReviewProps = {
   sections: ReviewSection[];
+  extrasControl?: ReviewExtrasControl;
   onEditSection: (stepIndex: number, key: ReviewSectionKey) => void;
   onVerifySection: (key: ReviewSectionKey) => void;
   onSubmit: () => void;
@@ -33,6 +39,7 @@ type StepReviewProps = {
 
 export function StepReview({
   sections,
+  extrasControl,
   onEditSection,
   onVerifySection,
   onSubmit,
@@ -91,6 +98,23 @@ export function StepReview({
             ) : (
               <span className="muted">Nada preenchido.</span>
             )}
+
+            {section.key === 'extras' && extrasControl ? (
+              <label className="pdf-choice" style={{ marginTop: 12 }}>
+                <input
+                  type="checkbox"
+                  checked={extrasControl.enviarPdfCliente}
+                  onChange={(event) => extrasControl.onChangeEnviarPdfCliente(event.target.checked)}
+                  disabled={busy || disabled || section.verified}
+                />
+                <span>
+                  <strong>Gerar e enviar PDF ao cliente</strong>
+                  <span className="muted" style={{ display: 'block', marginTop: 4 }}>
+                    Desmarcado: nenhum PDF será criado ou enviado.
+                  </span>
+                </span>
+              </label>
+            ) : null}
           </div>
         ))}
       </div>

@@ -19,8 +19,9 @@ explícita sobre PDF e confirmação item a item antes do único salvamento.
 - **FR-005** — Atendimento deve exigir prazo de 1, 3, 7, 15 ou 30 dias corridos
   e preencher automaticamente a previsão de entrega.
 - **FR-006** — A etapa `Extras` não deve existir.
-- **FR-007** — A decisão de gerar/enviar PDF deve ser um checkbox dentro do
-  fluxo; desmarcado significa não gerar, persistir nem enviar o PDF.
+- **FR-007** — A decisão de gerar/enviar PDF deve ser um checkbox dentro do card
+  `Extras` da revisão; desmarcado significa não gerar, persistir nem enviar o
+  PDF.
 - **FR-008** — A revisão deve conter cliente, equipamento, checklist quando
   aplicável, relato, atendimento, fotos e extras.
 - **FR-009** — Cada card da revisão deve ter `Editar` e `Verificar`; verificado
@@ -46,4 +47,3 @@ explícita sobre PDF e confirmação item a item antes do único salvamento.
 - Falha transacional não deixa cliente/equipamento parcialmente alterado.
 - PDF desmarcado retorna `opening_document: null` e não cria `os_documentos`.
 - Todos os cards confirmados ficam verdes e liberam `Salvar`.
-

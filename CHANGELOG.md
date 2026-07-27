@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.20.5.0 — 2026-07-26 22:25
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Move a decisão de gerar e enviar o PDF de Atendimento para o card Extras da Revisão da Nova OS mobile.
+- **Arquivos:** frontends/mobile/src/components/orders/order-form-wizard,documentacao/03-arquitetura-tecnica/ordens-mobile.md,documentacao/07-novas-implementacoes/2026-07-26-pdf-card-extras-revisao-nova-os.md,specs/025-revisao-atomica-nova-os-mobile
+
 ## v5.20.4.0 — 2026-07-26 21:33
 - **Tier:** patch
 - **Autor/Agente:** Codex

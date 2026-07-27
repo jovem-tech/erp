@@ -17,10 +17,9 @@ describe('StepOperations', () => {
     expect(calculateDeliveryDate(7, new Date(2026, 6, 26, 23, 55))).toBe('2026-08-02');
   });
 
-  it('preenche a previsão automaticamente e oferece o checkbox de PDF', async () => {
+  it('preenche a previsão automaticamente sem exibir a decisão de PDF', async () => {
     const user = userEvent.setup();
     const onChangePrazoEntrega = vi.fn();
-    const onChangeEnviarPdfCliente = vi.fn();
 
     render(
       <StepOperations
@@ -29,23 +28,19 @@ describe('StepOperations', () => {
         dataPrevisao=""
         tecnicoId={null}
         observacoesInternas=""
-        enviarPdfCliente={false}
         orcamentoVinculado={null}
         canLinkBudget={false}
         onChangePrioridade={vi.fn()}
         onChangePrazoEntrega={onChangePrazoEntrega}
         onChangeTecnico={vi.fn()}
         onChangeObservacoesInternas={vi.fn()}
-        onChangeEnviarPdfCliente={onChangeEnviarPdfCliente}
         onChangeOrcamentoVinculado={vi.fn()}
       />
     );
 
     await user.selectOptions(screen.getByLabelText('Prazo de entrega (dias corridos) *'), '15');
     expect(onChangePrazoEntrega).toHaveBeenCalledWith(15, calculateDeliveryDate(15));
-
-    await user.click(screen.getByRole('checkbox', { name: /Gerar e enviar PDF ao cliente/ }));
-    expect(onChangeEnviarPdfCliente).toHaveBeenCalledWith(true);
+    expect(screen.queryByRole('checkbox', { name: /Gerar e enviar PDF ao cliente/ })).not.toBeInTheDocument();
   });
 
   it('exige técnico, prazo e data calculada para avançar', () => {

@@ -16,8 +16,8 @@ transação que cria a ordem.
   permitidos e validados;
 - retirar o cadastro rápido de marca/modelo do wizard, pois ele persistia antes
   do salvamento final;
-- mover PDF e orçamento para Atendimento, preservando a revisão `Extras` sem
-  manter uma etapa própria;
+- manter o orçamento em Atendimento e mover o checkbox do PDF para o card
+  `Extras` da revisão, sem recriar uma etapa própria;
 - considerar a verificação como estado de UX local, nunca como autorização;
 - invalidar a confirmação do card quando o operador volta para editá-lo.
 
@@ -34,4 +34,3 @@ primária e continua em complexidade constante, sem novas consultas N+1.
   ausência de PDF;
 - TypeScript, Vitest, ESLint, build Next e suíte Laravel no Linux oficial;
 - validação visual em viewport mobile.
-

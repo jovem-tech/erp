@@ -42,4 +42,37 @@ describe('StepReview', () => {
     await user.click(screen.getByRole('button', { name: 'Verificar' }));
     expect(onVerifySection).toHaveBeenCalledWith('equipamento');
   });
+
+  it('permite escolher a geração do PDF somente dentro do card Extras', async () => {
+    const user = userEvent.setup();
+    const onChangeEnviarPdfCliente = vi.fn();
+
+    render(
+      <StepReview
+        sections={[
+          {
+            key: 'extras',
+            title: 'Extras',
+            stepIndex: 4,
+            rows: [{ label: 'Orçamento vinculado', value: 'Nenhum' }],
+            verified: false,
+          },
+        ]}
+        extrasControl={{
+          enviarPdfCliente: false,
+          onChangeEnviarPdfCliente,
+        }}
+        onEditSection={vi.fn()}
+        onVerifySection={vi.fn()}
+        onSubmit={vi.fn()}
+        busy={false}
+        submitLabel="Criar OS"
+        errorMessage={null}
+      />
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: /Gerar e enviar PDF ao cliente/ }));
+
+    expect(onChangeEnviarPdfCliente).toHaveBeenCalledWith(true);
+  });
 });

@@ -3,6 +3,14 @@
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 
+## v5.20.5.0 - 2026-07-26
+
+- a decisão de gerar e enviar o PDF saiu de Atendimento;
+- o checkbox agora fica diretamente no card Extras da revisão;
+- editar essa decisão invalida a verificação do card e bloqueia novamente o
+  salvamento;
+- nota: `2026-07-26-pdf-card-extras-revisao-nova-os.md`.
+
 ## v5.20.4.0 - 2026-07-26
 
 - cliente e equipamento existentes podem ser editados localmente na Nova OS;
