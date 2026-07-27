@@ -1269,7 +1269,7 @@ class OrderFlowTest extends TestCase
         [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
         $equipment = DB::table('equipamentos')->where('id', $equipmentId)->first();
         $token = $this->loginAndGetToken($manager->email);
-        $expectedDeliveryDate = now()->startOfDay()->addDays(7)->format('Y-m-d');
+        $expectedDeliveryDate = now()->startOfDay()->addDays(7)->format('Y-m-d H:i:s');
 
         $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/orders', [
@@ -1366,7 +1366,12 @@ class OrderFlowTest extends TestCase
                 'relato_cliente' => 'Payload ambíguo sem cliente selecionado.',
             ])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors(['cliente_atualizacao']);
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR')
+            ->assertJsonStructure([
+                'error' => [
+                    'details' => ['cliente_atualizacao'],
+                ],
+            ]);
 
         $this->assertDatabaseMissing('clientes', [
             'nome_razao' => 'Cliente sem identificador',
