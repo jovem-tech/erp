@@ -24,8 +24,8 @@ etapas sem precisar procurar botões no fim do formulário.
 - **FR-004** — `Próximo` deve avançar somente quando a etapa atual estiver
   válida e deve ficar indisponível na revisão.
 - **FR-005** — `Salvar` deve permanecer visível, porém desabilitado, até que
-  cliente, equipamento, checklist aplicável, relato e técnico responsável
-  estejam válidos.
+  cliente, equipamento, checklist aplicável, relato, técnico responsável e
+  prazo estejam válidos e todos os cards da revisão tenham sido confirmados.
 - **FR-006** — `Salvar` deve reutilizar a criação idempotente já existente e
   impedir submissões concorrentes.
 - **FR-007** — `Início` deve sair para a área de trabalho e `Cancelar` deve sair

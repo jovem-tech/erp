@@ -1300,6 +1300,21 @@ img {
   border-color: rgba(24, 44, 78, 0.14);
 }
 
+[data-theme='light'] .button--success {
+  background: rgba(31, 157, 103, 0.14);
+  color: #176845;
+}
+
+[data-theme='light'] .review-card--verified {
+  background: rgba(31, 157, 103, 0.1);
+  border-color: rgba(31, 157, 103, 0.34);
+}
+
+[data-theme='light'] .pdf-choice {
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(24, 44, 78, 0.12);
+}
+
 [data-theme='light'] .badge {
   background: rgba(18, 34, 62, 0.06);
 }
@@ -1446,8 +1461,56 @@ img {
   background: rgba(5, 12, 23, 0.7);
 }
 
-.search-select__selected > .button {
+.search-select__selected-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.search-select__selected-actions > .button {
   width: auto;
+}
+
+.review-card {
+  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.review-card--verified {
+  background: rgba(94, 230, 168, 0.13);
+  border-color: rgba(94, 230, 168, 0.45);
+  box-shadow: inset 3px 0 0 var(--success);
+}
+
+.review-card__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.button--success {
+  background: rgba(94, 230, 168, 0.18);
+  color: #c8ffe3;
+}
+
+.pdf-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(5, 12, 23, 0.7);
+}
+
+.pdf-choice input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--accent);
 }
 
 .search-select__option-content {

@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.20.4.0 — 2026-07-26 21:33
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Adiciona revisão verificável, prazo automático, PDF sob demanda e salvamento atômico à Nova OS mobile.
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/OrderController.php,backend/app/Http/Requests/Api/V1/UpsertOrderRequest.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/openapi.yaml,backend/tests/Feature/Api/V1/OrderFlowTest.php,frontends/mobile/src/components/orders/order-form-wizard,frontends/mobile/src/lib,documentacao/03-arquitetura-tecnica/ordens-mobile.md,documentacao/07-novas-implementacoes/2026-07-26-revisao-atomica-nova-os-mobile.md,specs/025-revisao-atomica-nova-os-mobile
+
 ## v5.20.3.0 — 2026-07-26 18:52
 - **Tier:** patch
 - **Autor/Agente:** Codex

@@ -186,6 +186,12 @@ class OrderController extends BaseApiController
         if ((int) $request->input('orcamento_id', 0) > 0) {
             $this->authorize('orcamentos:converter_os');
         }
+        if (is_array($request->input('cliente_atualizacao'))) {
+            $this->authorize('clientes:editar');
+        }
+        if (is_array($request->input('equipamento_atualizacao'))) {
+            $this->authorize('equipamentos:editar');
+        }
 
         $user = $this->authenticatedUser($request);
         if ($user === null) {
@@ -267,6 +273,13 @@ class OrderController extends BaseApiController
                 'O status informado não é válido para o catálogo atual.',
                 422,
                 'ORDER_STATUS_INVALID',
+                null,
+                request: $request
+            ),
+            'invalid_delivery_lead' => $this->error(
+                'Selecione um prazo de entrega válido: 1, 3, 7, 15 ou 30 dias corridos.',
+                422,
+                'ORDER_DELIVERY_LEAD_INVALID',
                 null,
                 request: $request
             ),

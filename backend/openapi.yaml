@@ -1294,6 +1294,36 @@ components:
               format: email
               maxLength: 100
               nullable: true
+        cliente_atualizacao:
+          type: object
+          nullable: true
+          description: |
+            Alterações locais de um cliente já selecionado. Aceito somente no
+            POST final da OS, exige `clientes:editar` e é aplicado na mesma
+            transação da criação da ordem.
+          required:
+            - tipo_pessoa
+            - nome_razao
+            - telefone1
+            - status_cadastro
+          properties:
+            tipo_pessoa:
+              type: string
+              maxLength: 20
+            nome_razao:
+              type: string
+              maxLength: 100
+            telefone1:
+              type: string
+              maxLength: 20
+            email:
+              type: string
+              format: email
+              maxLength: 100
+              nullable: true
+            status_cadastro:
+              type: string
+              maxLength: 20
         novo_equipamento:
           type: object
           nullable: true
@@ -1329,6 +1359,35 @@ components:
           items:
             type: string
             format: binary
+        equipamento_atualizacao:
+          type: object
+          nullable: true
+          description: |
+            Alterações locais do equipamento já selecionado. Aceito somente no
+            POST final da OS, exige `equipamentos:editar`, valida o vínculo com
+            `cliente_id` e é aplicado na mesma transação da criação da ordem.
+          required:
+            - tipo_id
+            - marca_id
+            - modelo_id
+          properties:
+            tipo_id:
+              type: integer
+              minimum: 1
+            marca_id:
+              type: integer
+              minimum: 1
+            modelo_id:
+              type: integer
+              minimum: 1
+            numero_serie:
+              type: string
+              maxLength: 100
+              nullable: true
+            imei:
+              type: string
+              maxLength: 20
+              nullable: true
         tecnico_id:
           type: integer
           minimum: 1
@@ -1356,10 +1415,21 @@ components:
             - alta
             - urgente
           nullable: true
+        prazo_entrega_dias:
+          type: integer
+          enum: [1, 3, 7, 15, 30]
+          nullable: true
+          description: |
+            Prazo em dias corridos selecionado no PWA. Quando informado, o
+            backend recalcula `data_previsao` a partir da data corrente e não
+            confia na data enviada pelo cliente.
         enviar_pdf_cliente:
           type: boolean
           nullable: true
-          description: Quando verdadeiro, o backend gera o PDF de abertura com o modelo "abertura" e tenta enviar o documento ao cliente pelo fluxo WhatsApp configurado.
+          description: |
+            Quando verdadeiro, o backend gera o PDF de abertura com o modelo
+            "abertura" e tenta enviá-lo pelo fluxo WhatsApp configurado. Quando
+            falso ou ausente, nenhum PDF de abertura é gerado ou persistido.
         relato_cliente:
           type: string
         diagnostico_tecnico:

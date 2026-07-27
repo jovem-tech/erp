@@ -327,6 +327,20 @@ export interface NovoClientePayload {
   status_cadastro?: string;
 }
 
+export interface ClientUpdatePayload extends NovoClientePayload {
+  tipo_pessoa: string;
+  status_cadastro: string;
+  referencia?: string;
+  observacoes?: string;
+  preferencia_contato?: string;
+}
+
+export interface ClientDetail extends ClientUpdatePayload {
+  id: number;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface NovoEquipamentoPayload {
   tipo_id: number;
   marca_id: number;
@@ -355,15 +369,41 @@ export interface NovoEquipamentoPayload {
   foto_principal_index?: number;
 }
 
+export interface EquipmentUpdatePayload
+  extends Omit<NovoEquipamentoPayload, 'numero_serie_visual' | 'foto_principal_index'> {
+  numero_serie?: string;
+  status_operacional?: string;
+  status?: string;
+}
+
+export interface EquipmentDetail extends EquipmentUpdatePayload {
+  id: number;
+  cliente_id: number;
+  tipo_nome: string;
+  marca_nome: string;
+  modelo_nome: string;
+  resumo_tecnico: string;
+  primary_photo_id: number | null;
+  primary_photo_url: string | null;
+  photos: Array<{ id: number; is_principal: boolean; url: string }>;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export type DeliveryLeadDays = 1 | 3 | 7 | 15 | 30;
+
 export interface CreateOrderPayload {
   idempotency_key: string;
   cliente_id?: number;
   novo_cliente?: NovoClientePayload;
+  cliente_atualizacao?: ClientUpdatePayload;
   equipamento_id?: number;
   novo_equipamento?: NovoEquipamentoPayload;
+  equipamento_atualizacao?: EquipmentUpdatePayload;
   orcamento_id?: number;
   tecnico_id?: number;
   prioridade?: OrderPriority;
+  prazo_entrega_dias: DeliveryLeadDays;
   enviar_pdf_cliente: boolean;
   relato_cliente: string;
   acessorios?: string;
@@ -377,6 +417,7 @@ export interface UpdateOrderPayload {
   equipamento_id?: number;
   tecnico_id?: number;
   prioridade?: OrderPriority;
+  prazo_entrega_dias?: DeliveryLeadDays;
   relato_cliente?: string;
   acessorios?: string;
   observacoes_internas?: string;

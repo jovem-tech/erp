@@ -1259,6 +1259,120 @@ class OrderFlowTest extends TestCase
         ]);
     }
 
+    public function test_create_order_atomically_updates_selected_client_and_equipment_and_calculates_delivery_date(): void
+    {
+        $this->grantGroupPermissions(1, [
+            'clientes' => ['editar'],
+            'equipamentos' => ['editar'],
+        ]);
+
+        [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
+        $equipment = DB::table('equipamentos')->where('id', $equipmentId)->first();
+        $token = $this->loginAndGetToken($manager->email);
+        $expectedDeliveryDate = now()->startOfDay()->addDays(7)->format('Y-m-d');
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'cliente_atualizacao' => [
+                    'tipo_pessoa' => 'fisica',
+                    'nome_razao' => 'Cliente atualizado na OS',
+                    'telefone1' => '22999990000',
+                    'status_cadastro' => 'completo',
+                ],
+                'equipamento_id' => $equipmentId,
+                'equipamento_atualizacao' => [
+                    'tipo_id' => (int) $equipment->tipo_id,
+                    'marca_id' => (int) $equipment->marca_id,
+                    'modelo_id' => (int) $equipment->modelo_id,
+                    'numero_serie' => 'SERIE-EDITADA-NA-OS',
+                    'status_operacional' => 'ativo',
+                    'status' => 'ativo',
+                ],
+                'tecnico_id' => $technician->id,
+                'relato_cliente' => 'Dados revisados antes do salvamento final.',
+                'prazo_entrega_dias' => 7,
+                'data_previsao' => '2099-01-01',
+                'enviar_pdf_cliente' => false,
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.opening_document', null)
+            ->assertJsonPath('data.opening_delivery.requested', false);
+
+        $orderId = (int) $response->json('data.order.id');
+        $this->assertDatabaseHas('clientes', [
+            'id' => $clientId,
+            'nome_razao' => 'Cliente atualizado na OS',
+            'telefone1' => '22999990000',
+        ]);
+        $this->assertDatabaseHas('equipamentos', [
+            'id' => $equipmentId,
+            'cliente_id' => $clientId,
+            'numero_serie' => 'SERIE-EDITADA-NA-OS',
+        ]);
+        $this->assertDatabaseHas('os', [
+            'id' => $orderId,
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'data_previsao' => $expectedDeliveryDate,
+        ]);
+    }
+
+    public function test_create_order_rejects_atomic_record_edits_without_specific_permissions(): void
+    {
+        [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
+        $token = $this->loginAndGetToken($manager->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'cliente_atualizacao' => [
+                    'tipo_pessoa' => 'fisica',
+                    'nome_razao' => 'Alteração sem permissão',
+                    'telefone1' => '22999990000',
+                    'status_cadastro' => 'completo',
+                ],
+                'equipamento_id' => $equipmentId,
+                'tecnico_id' => $technician->id,
+                'relato_cliente' => 'Tentativa sem autorização específica.',
+            ])
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('clientes', [
+            'id' => $clientId,
+            'nome_razao' => 'Alteração sem permissão',
+        ]);
+        $this->assertDatabaseMissing('os', [
+            'relato_cliente' => 'Tentativa sem autorização específica.',
+        ]);
+    }
+
+    public function test_create_order_does_not_generate_or_persist_pdf_when_option_is_unchecked(): void
+    {
+        Storage::fake('local');
+
+        [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
+        $this->seedOpeningDocumentTemplates();
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'tecnico_id' => $technician->id,
+                'relato_cliente' => 'Abertura sem geração de comprovante.',
+                'enviar_pdf_cliente' => false,
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.opening_document', null)
+            ->assertJsonPath('data.opening_delivery.requested', false)
+            ->assertJsonPath('data.opening_delivery.sent', false);
+
+        $this->assertDatabaseCount('os_documentos', 0);
+    }
+
     public function test_create_order_is_idempotent_when_the_same_request_is_retried(): void
     {
         [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
@@ -1429,6 +1543,7 @@ class OrderFlowTest extends TestCase
                 'tecnico_id' => $technician->id,
                 'status' => 'triagem',
                 'relato_cliente' => 'Cliente relata falha intermitente no vídeo.',
+                'enviar_pdf_cliente' => true,
                 'garantia_dias' => 90,
             ]);
 
@@ -1487,6 +1602,7 @@ class OrderFlowTest extends TestCase
                 'tecnico_id' => $technician->id,
                 'status' => 'triagem',
                 'relato_cliente' => 'Cliente relata falha intermitente no vídeo.',
+                'enviar_pdf_cliente' => true,
                 'garantia_dias' => 90,
             ]);
 
@@ -1587,6 +1703,7 @@ class OrderFlowTest extends TestCase
                 'tecnico_id' => $technician->id,
                 'status' => 'triagem',
                 'relato_cliente' => 'Cliente precisa do comprovante para acompanhamento.',
+                'enviar_pdf_cliente' => true,
                 'garantia_dias' => 90,
             ]);
 

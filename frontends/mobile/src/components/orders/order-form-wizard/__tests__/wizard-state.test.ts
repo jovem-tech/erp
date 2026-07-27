@@ -57,6 +57,8 @@ describe('buildOrderPayload', () => {
       cliente: buildClient(),
       equipamento: buildEquipment(),
       relatoCliente: 'Tela quebrada',
+      prazoEntregaDias: 3 as const,
+      dataPrevisao: '2026-07-29',
       enviarPdfCliente: true,
     };
 
@@ -79,6 +81,8 @@ describe('buildOrderPayload', () => {
       pendingNewClient: { nome_razao: 'Maria Souza', telefone1: '11988887777' },
       pendingNewEquipment: { tipo_id: 3, marca_id: 5, modelo_id: 8 },
       relatoCliente: 'Não liga',
+      prazoEntregaDias: 3 as const,
+      dataPrevisao: '2026-07-29',
     };
 
     const payload = buildOrderPayload(state, 'create', 'uuid-456');
@@ -89,6 +93,44 @@ describe('buildOrderPayload', () => {
     });
     expect(payload).not.toHaveProperty('cliente_id');
     expect(payload).not.toHaveProperty('equipamento_id');
+  });
+
+  it('inclui alterações locais de cliente e equipamento somente no payload final da OS', () => {
+    const state = {
+      ...createInitialWizardState(),
+      cliente: buildClient(),
+      pendingClientUpdate: {
+        tipo_pessoa: 'fisica',
+        nome_razao: 'João Atualizado',
+        telefone1: '11911112222',
+        status_cadastro: 'completo',
+      },
+      equipamento: buildEquipment(),
+      pendingEquipmentUpdate: {
+        tipo_id: 3,
+        marca_id: 5,
+        modelo_id: 8,
+        numero_serie: 'SERIE-EDITADA',
+      },
+      relatoCliente: 'Tela quebrada',
+      prazoEntregaDias: 7 as const,
+      dataPrevisao: '2026-08-02',
+    };
+
+    const payload = buildOrderPayload(state, 'create', 'uuid-atomic');
+
+    expect(payload).toMatchObject({
+      cliente_id: 10,
+      cliente_atualizacao: {
+        nome_razao: 'João Atualizado',
+      },
+      equipamento_id: 20,
+      equipamento_atualizacao: {
+        numero_serie: 'SERIE-EDITADA',
+      },
+      prazo_entrega_dias: 7,
+      data_previsao: '2026-08-02',
+    });
   });
 
   it('edição não inclui idempotency_key/novo_cliente/novo_equipamento/orcamento_id mesmo que o state os tenha', () => {
@@ -117,6 +159,8 @@ describe('buildOrderPayload', () => {
       cliente: buildClient(),
       equipamento: buildEquipment(),
       relatoCliente: 'Teste',
+      prazoEntregaDias: 3 as const,
+      dataPrevisao: '2026-07-29',
       checklistModel: {
         id: 1,
         checklist_tipo_id: 1,
@@ -228,6 +272,8 @@ describe('estado do player de criação', () => {
       equipamento: buildEquipment(),
       relatoCliente: 'Tela quebrada',
       tecnicoId: 7,
+      prazoEntregaDias: 3 as const,
+      dataPrevisao: '2026-07-29',
     };
 
     expect(areWizardRequiredFieldsComplete(complete)).toBe(true);

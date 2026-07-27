@@ -1,11 +1,14 @@
 import type {
   ClientSearchResult,
+  ClientUpdatePayload,
   CreateOrderPayload,
+  DeliveryLeadDays,
   EntryChecklistAnswerPayload,
   EntryChecklistModel,
   EntryChecklistPayload,
   EntryChecklistResponseStatus,
   EquipmentSearchResult,
+  EquipmentUpdatePayload,
   LinkableBudget,
   NovoClientePayload,
   NovoEquipamentoPayload,
@@ -24,9 +27,11 @@ export interface ChecklistAnswerState {
 export interface WizardFormState {
   cliente: ClientSearchResult | null;
   pendingNewClient: NovoClientePayload | null;
+  pendingClientUpdate: ClientUpdatePayload | null;
 
   equipamento: EquipmentSearchResult | null;
   pendingNewEquipment: NovoEquipamentoPayload | null;
+  pendingEquipmentUpdate: EquipmentUpdatePayload | null;
   pendingNewEquipmentPhotos: File[];
 
   checklistModel: EntryChecklistModel | null;
@@ -37,6 +42,7 @@ export interface WizardFormState {
   acessorios: string;
 
   prioridade: OrderPriority;
+  prazoEntregaDias: DeliveryLeadDays | null;
   dataPrevisao: string;
   tecnicoId: number | null;
   tecnicoLabel: string | null;
@@ -52,8 +58,10 @@ export function createInitialWizardState(): WizardFormState {
   return {
     cliente: null,
     pendingNewClient: null,
+    pendingClientUpdate: null,
     equipamento: null,
     pendingNewEquipment: null,
+    pendingEquipmentUpdate: null,
     pendingNewEquipmentPhotos: [],
     checklistModel: null,
     checklistAnswers: {},
@@ -61,6 +69,7 @@ export function createInitialWizardState(): WizardFormState {
     relatoCliente: '',
     acessorios: '',
     prioridade: 'normal',
+    prazoEntregaDias: null,
     dataPrevisao: '',
     tecnicoId: null,
     tecnicoLabel: null,
@@ -145,8 +154,10 @@ export function selectClientForWizard(
   return {
     ...state,
     cliente,
+    pendingClientUpdate: null,
     equipamento: null,
     pendingNewEquipment: null,
+    pendingEquipmentUpdate: null,
     pendingNewEquipmentPhotos: [],
     checklistModel: null,
     checklistAnswers: {},
@@ -161,7 +172,11 @@ export function selectEquipmentForWizard(
     return state;
   }
 
-  return { ...state, equipamento };
+  if (state.equipamento?.id === equipamento?.id) {
+    return { ...state, equipamento };
+  }
+
+  return { ...state, equipamento, pendingEquipmentUpdate: null };
 }
 
 function buildChecklistPayload(state: WizardFormState): EntryChecklistPayload | undefined {
@@ -238,13 +253,25 @@ export function isWizardDetailsComplete(relatoCliente: string): boolean {
   return relatoCliente.trim().length >= 5;
 }
 
-export function isWizardOperationsComplete(tecnicoId: number | null): boolean {
-  return tecnicoId !== null;
+export function isWizardOperationsComplete(
+  tecnicoId: number | null,
+  prazoEntregaDias: DeliveryLeadDays | null,
+  dataPrevisao: string
+): boolean {
+  return tecnicoId !== null && prazoEntregaDias !== null && dataPrevisao !== '';
 }
 
 export function areWizardRequiredFieldsComplete(state: WizardFormState): boolean {
   return (
+    (!state.pendingClientUpdate ||
+      Boolean(state.pendingClientUpdate.nome_razao.trim() && state.pendingClientUpdate.telefone1.trim())) &&
     isWizardClientComplete(state.cliente, state.pendingNewClient) &&
+    (!state.pendingEquipmentUpdate ||
+      Boolean(
+        state.pendingEquipmentUpdate.tipo_id &&
+        state.pendingEquipmentUpdate.marca_id &&
+        state.pendingEquipmentUpdate.modelo_id
+      )) &&
     isWizardEquipmentComplete(
       state.equipamento,
       state.pendingNewEquipment,
@@ -252,22 +279,25 @@ export function areWizardRequiredFieldsComplete(state: WizardFormState): boolean
     ) &&
     isChecklistComplete(state) &&
     isWizardDetailsComplete(state.relatoCliente) &&
-    isWizardOperationsComplete(state.tecnicoId)
+    isWizardOperationsComplete(state.tecnicoId, state.prazoEntregaDias, state.dataPrevisao)
   );
 }
 
 export function isWizardDirty(state: WizardFormState): boolean {
   return Boolean(
-    state.cliente ||
+      state.cliente ||
       state.pendingNewClient ||
+      state.pendingClientUpdate ||
       state.equipamento ||
       state.pendingNewEquipment ||
+      state.pendingEquipmentUpdate ||
       state.pendingNewEquipmentPhotos.length > 0 ||
       Object.keys(state.checklistAnswers).length > 0 ||
       state.checklistObservacoesEstado.trim() ||
       state.relatoCliente.trim() ||
       state.acessorios.trim() ||
       state.prioridade !== 'normal' ||
+      state.prazoEntregaDias ||
       state.dataPrevisao ||
       state.tecnicoId ||
       state.observacoesInternas.trim() ||
@@ -287,20 +317,31 @@ export function buildOrderPayload(
   const checklistPayload = buildChecklistPayload(state);
 
   if (mode === 'create') {
+    if (state.prazoEntregaDias === null) {
+      throw new Error('Selecione o prazo de entrega antes de criar a OS.');
+    }
+
     const payload: CreateOrderPayload = {
       idempotency_key: idempotencyKey,
       relato_cliente: state.relatoCliente.trim(),
+      prazo_entrega_dias: state.prazoEntregaDias,
       enviar_pdf_cliente: state.enviarPdfCliente,
     };
 
     if (state.cliente) {
       payload.cliente_id = state.cliente.id;
+      if (state.pendingClientUpdate) {
+        payload.cliente_atualizacao = state.pendingClientUpdate;
+      }
     } else if (state.pendingNewClient) {
       payload.novo_cliente = state.pendingNewClient;
     }
 
     if (state.equipamento) {
       payload.equipamento_id = state.equipamento.id;
+      if (state.pendingEquipmentUpdate) {
+        payload.equipamento_atualizacao = state.pendingEquipmentUpdate;
+      }
     } else if (state.pendingNewEquipment) {
       payload.novo_equipamento = state.pendingNewEquipment;
     }
@@ -352,6 +393,10 @@ export function buildOrderPayload(
 
   if (state.prioridade) {
     payload.prioridade = state.prioridade;
+  }
+
+  if (state.prazoEntregaDias) {
+    payload.prazo_entrega_dias = state.prazoEntregaDias;
   }
 
   if (state.relatoCliente.trim()) {

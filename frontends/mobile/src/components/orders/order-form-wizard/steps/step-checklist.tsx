@@ -17,6 +17,7 @@ type StepChecklistProps = {
   onChangeAnswer: (itemId: number, answer: ChecklistAnswerState) => void;
   onChangeObservacoesEstado: (value: string) => void;
   onMarkAllOk: () => void;
+  onUnmarkAll?: () => void;
   disabled?: boolean;
 };
 
@@ -27,6 +28,7 @@ export function StepChecklist({
   onChangeAnswer,
   onChangeObservacoesEstado,
   onMarkAllOk,
+  onUnmarkAll = () => undefined,
   disabled = false,
 }: StepChecklistProps) {
   const items = [...model.itens].sort((a, b) => a.ordem - b.ordem);
@@ -41,6 +43,9 @@ export function StepChecklist({
       <div className="toolbar" style={{ marginBottom: 16 }}>
         <button type="button" className="button button--soft button-small" onClick={onMarkAllOk} disabled={disabled}>
           Marcar tudo OK
+        </button>
+        <button type="button" className="button button--soft button-small" onClick={onUnmarkAll} disabled={disabled}>
+          Desmarcar tudo
         </button>
       </div>
 

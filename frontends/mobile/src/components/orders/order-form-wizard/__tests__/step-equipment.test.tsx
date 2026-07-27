@@ -21,6 +21,25 @@ const formData: EquipmentFormData = {
 
 vi.mock('@/lib/orders', () => ({
   getEquipmentFormData: vi.fn(),
+  getEquipmentDetail: vi.fn().mockResolvedValue({
+    id: 1,
+    cliente_id: 1,
+    tipo_id: 1,
+    tipo_nome: 'Desktop',
+    marca_id: 10,
+    marca_nome: 'Samsung',
+    modelo_id: 100,
+    modelo_nome: 'A015',
+    resumo_tecnico: 'Samsung A015',
+    numero_serie: 'SERIE-1',
+    imei: '',
+    desktop_modalidade: 'montado',
+    status_operacional: 'ativo',
+    status: 'ativo',
+    primary_photo_id: null,
+    primary_photo_url: null,
+    photos: [],
+  }),
   searchEquipments: vi.fn().mockResolvedValue([]),
   createEquipmentBrand: vi.fn(),
   createEquipmentModel: vi.fn(),
@@ -260,13 +279,11 @@ describe('StepEquipment', () => {
     expect(screen.queryByText('Modalidade')).not.toBeInTheDocument();
   });
 
-  it('cadastro rápido de marca chama a API e seleciona a marca criada', async () => {
+  it('não grava marca ou modelo no backend durante o rascunho da OS', async () => {
     const { getEquipmentFormData, createEquipmentBrand } = await import('@/lib/orders');
     vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
-    vi.mocked(createEquipmentBrand).mockResolvedValue({ id: 99, nome: 'Motorola' });
 
     const user = userEvent.setup();
-    const onChangePendingNewEquipment = vi.fn();
 
     render(
       <StepEquipment
@@ -276,21 +293,50 @@ describe('StepEquipment', () => {
         pendingNewEquipment={{ tipo_id: 1, marca_id: 0, modelo_id: 0 }}
         pendingNewEquipmentPhotos={[]}
         onSelectEquipamento={vi.fn()}
-        onChangePendingNewEquipment={onChangePendingNewEquipment}
+        onChangePendingNewEquipment={vi.fn()}
         onChangePendingNewEquipmentPhotos={vi.fn()}
       />
     );
 
     await user.click(screen.getByText('Equipamento novo'));
-    await waitFor(() => expect(screen.getByText('+ Nova marca')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Marca *')).toBeInTheDocument());
 
-    await user.click(screen.getByText('+ Nova marca'));
-    await user.type(screen.getByPlaceholderText('Nome da marca'), 'Motorola');
-    await user.click(screen.getByText('Salvar'));
+    expect(screen.queryByText('+ Nova marca')).not.toBeInTheDocument();
+    expect(screen.queryByText('+ Novo modelo')).not.toBeInTheDocument();
+    expect(createEquipmentBrand).not.toHaveBeenCalled();
+  });
 
-    await waitFor(() => expect(createEquipmentBrand).toHaveBeenCalledWith('Motorola', 1));
-    await waitFor(() =>
-      expect(onChangePendingNewEquipment).toHaveBeenCalledWith(expect.objectContaining({ marca_id: 99 }))
+  it('carrega a edição local do equipamento selecionado ao lado de Trocar', async () => {
+    const { getEquipmentFormData } = await import('@/lib/orders');
+    vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
+    const user = userEvent.setup();
+    const onChangePendingEquipmentUpdate = vi.fn();
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={1}
+        equipamento={buildEquipment()}
+        pendingNewEquipment={null}
+        pendingNewEquipmentPhotos={[]}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={vi.fn()}
+        onChangePendingEquipmentUpdate={onChangePendingEquipmentUpdate}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+        canEditExisting
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Editar' }));
+
+    expect(await screen.findByText('Editar equipamento selecionado')).toBeInTheDocument();
+    expect(onChangePendingEquipmentUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tipo_id: 1,
+        marca_id: 10,
+        modelo_id: 100,
+        numero_serie: 'SERIE-1',
+      })
     );
   });
 });

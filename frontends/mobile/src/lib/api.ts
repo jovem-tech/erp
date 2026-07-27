@@ -1,9 +1,11 @@
 import type {
   AttachmentBlob,
+  ClientDetail,
   ClientSearchResult,
   CreateOrderPayload,
   CreateOrderResponse,
   EntryChecklistModel,
+  EquipmentDetail,
   EquipmentFormData,
   EquipmentSearchResult,
   EquipmentBrandCatalogItem,
@@ -434,6 +436,10 @@ export async function apiSearchClients(params: { search?: string; per_page?: num
   return requestJson<{ clients: ClientSearchResult[] }>(`/clients${queryString ? `?${queryString}` : ''}`);
 }
 
+export async function apiClientDetail(clientId: number): Promise<{ client: ClientDetail }> {
+  return requestJson<{ client: ClientDetail }>(`/clients/${clientId}`);
+}
+
 export async function apiSearchEquipments(params: { clientId?: number; search?: string; perPage?: number } = {}): Promise<{
   equipments: EquipmentSearchResult[];
 }> {
@@ -453,6 +459,10 @@ export async function apiSearchEquipments(params: { clientId?: number; search?: 
 
   const queryString = query.toString();
   return requestJson<{ equipments: EquipmentSearchResult[] }>(`/equipments${queryString ? `?${queryString}` : ''}`);
+}
+
+export async function apiEquipmentDetail(equipmentId: number): Promise<{ equipment: EquipmentDetail }> {
+  return requestJson<{ equipment: EquipmentDetail }>(`/equipments/${equipmentId}`);
 }
 
 export async function apiEquipmentFormData(): Promise<EquipmentFormData> {
