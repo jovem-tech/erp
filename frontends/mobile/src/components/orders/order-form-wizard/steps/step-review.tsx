@@ -63,7 +63,7 @@ export function StepReview({
             className={`card review-card${section.verified ? ' review-card--verified' : ''}`}
             key={section.key}
           >
-            <div className="section__header" style={{ marginBottom: 8 }}>
+            <div className="section__header section__header--tight">
               <strong>{section.title}</strong>
               <div className="review-card__actions">
                 <button
@@ -100,7 +100,7 @@ export function StepReview({
             )}
 
             {section.key === 'extras' && extrasControl ? (
-              <label className="pdf-choice" style={{ marginTop: 12 }}>
+              <label className="pdf-choice pdf-choice--spaced">
                 <input
                   type="checkbox"
                   checked={extrasControl.enviarPdfCliente}
@@ -109,7 +109,7 @@ export function StepReview({
                 />
                 <span>
                   <strong>Gerar e enviar PDF ao cliente</strong>
-                  <span className="muted" style={{ display: 'block', marginTop: 4 }}>
+                  <span className="muted muted--block-spaced">
                     Desmarcado: nenhum PDF será criado ou enviado.
                   </span>
                 </span>
@@ -120,25 +120,25 @@ export function StepReview({
       </div>
 
       {!sections.every((section) => section.verified) ? (
-        <div className="notice notice--warning" style={{ marginTop: 16 }}>
+        <div className="notice notice--warning notice--spaced">
           <span>Verifique todos os itens da revisão para liberar o salvamento.</span>
         </div>
       ) : null}
 
       {warnings.length > 0 ? (
-        <div className="notice notice--warning" style={{ marginTop: 16 }}>
+        <div className="notice notice--warning notice--spaced">
           <span>{warnings.join(' ')}</span>
         </div>
       ) : null}
 
       {errorMessage ? (
-        <div className="notice notice--danger" style={{ marginTop: 16 }}>
+        <div className="notice notice--danger notice--spaced">
           <span>{errorMessage}</span>
         </div>
       ) : null}
 
       {showSubmit ? (
-        <div className="toolbar" style={{ marginTop: 16 }}>
+        <div className="toolbar toolbar--spaced">
           <button
             type="button"
             className="button button--primary button-full"

@@ -724,6 +724,9 @@
                 if (order?.equipamento_id != null) {
                     option.dataset.equipamentoId = String(order.equipamento_id);
                 }
+                if (order?.relato_cliente != null) {
+                    option.dataset.relatoCliente = String(order.relato_cliente);
+                }
 
                 return option;
             }, desiredValue);
@@ -2940,9 +2943,35 @@
             }
         };
 
+        // Uma OS tem um único relato do cliente / defeito relatado registrado —
+        // ao escolher a OS, preenche esse texto em "Relato do cliente / defeito
+        // relatado" para o técnico não digitar de novo o que já está na OS.
+        const applyOrderLinkedRelato = () => {
+            if (!(orderSelect instanceof HTMLSelectElement)) {
+                return;
+            }
+
+            const relatoField = document.getElementById('orcamentoRelatoCliente');
+            if (!(relatoField instanceof HTMLTextAreaElement)) {
+                return;
+            }
+
+            const selectedOption = orderSelect.selectedOptions[0];
+            const linkedRelato = selectedOption instanceof HTMLOptionElement
+                ? normalizeText(selectedOption.dataset.relatoCliente)
+                : '';
+
+            if (linkedRelato === '' || relatoField.value === linkedRelato) {
+                return;
+            }
+
+            relatoField.value = linkedRelato;
+        };
+
         // syncEquipmentMode() já chama syncDerivedClassification() ao final.
         const handleOrderChange = () => {
             applyOrderLinkedEquipment();
+            applyOrderLinkedRelato();
             syncEquipmentMode();
         };
         onSelectEvent(orderSelect, 'change', handleOrderChange);

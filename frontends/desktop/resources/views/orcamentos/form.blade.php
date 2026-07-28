@@ -136,6 +136,7 @@
     $typeValue = old('tipo_orcamento', $budget['tipo_orcamento'] ?? ($fromOrderListing ? 'assistencia' : 'previo'));
     $originValue = old('origem', $budget['origem'] ?? ($fromOrderListing ? 'os' : 'manual'));
     $prazoExecucaoValue = old('prazo_execucao', $budget['prazo_execucao'] ?? ($fromOrderListing ? ($form['selected_order_deadline'] ?? '') : ''));
+    $relatoClienteValue = old('relato_cliente', $budget['relato_cliente'] ?? ($fromOrderListing ? ($form['selected_order_relato'] ?? '') : ''));
     $lockedOrderContext = is_array($lockedOrderContext ?? null) ? $lockedOrderContext : [];
     $clientLocked = (bool) ($lockedOrderContext['locked'] ?? (! $isEditMode && $selectedOrderId > 0 && $selectedClientId > 0));
     $lockedOrderNumber = trim((string) ($lockedOrderContext['order_number'] ?? ''));
@@ -323,8 +324,9 @@
                                 $orderEquipamentoId = (int) ($order['equipamento_id'] ?? 0);
                                 $orderLabel = trim((string) ($order['numero_os'] ?? 'OS #' . $orderId));
                                 $orderClient = trim((string) ($order['cliente_nome'] ?? ''));
+                                $orderRelato = trim((string) ($order['relato_cliente'] ?? ''));
                             @endphp
-                            <option value="{{ $orderId }}" data-cliente-id="{{ $orderClienteId }}" data-equipamento-id="{{ $orderEquipamentoId }}" @selected($selectedOrderId === $orderId)>{{ $orderLabel }}{{ $orderClient !== '' ? ' - ' . $orderClient : '' }}</option>
+                            <option value="{{ $orderId }}" data-cliente-id="{{ $orderClienteId }}" data-equipamento-id="{{ $orderEquipamentoId }}" data-relato-cliente="{{ $orderRelato }}" @selected($selectedOrderId === $orderId)>{{ $orderLabel }}{{ $orderClient !== '' ? ' - ' . $orderClient : '' }}</option>
                         @endforeach
                     </select>
                     <small class="text-secondary d-block mt-2">Somente OS abertas do cliente selecionado.</small>
@@ -417,7 +419,7 @@
 
                 <div class="desktop-grid-span-2">
                     <label for="orcamentoRelatoCliente">Relato do cliente / defeito relatado <span class="text-danger" aria-hidden="true">*</span></label>
-                    <textarea id="orcamentoRelatoCliente" name="relato_cliente" class="form-control" rows="3" placeholder="Descreva o problema relatado pelo cliente. Ao gerar a OS, isto preenche o relato da ordem.">{{ old('relato_cliente', $budget['relato_cliente'] ?? '') }}</textarea>
+                    <textarea id="orcamentoRelatoCliente" name="relato_cliente" class="form-control" rows="3" placeholder="Descreva o problema relatado pelo cliente. Ao gerar a OS, isto preenche o relato da ordem.">{{ $relatoClienteValue }}</textarea>
                 </div>
 
                 <div class="desktop-grid-span-2">

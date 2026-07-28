@@ -693,11 +693,10 @@ function AuthenticatedShellContent({ children }: { children: ReactNode }) {
 
     profileInputRef.current?.focus();
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    document.body.classList.add('profile-dialog-open');
 
     return () => {
-      document.body.style.overflow = previousOverflow;
+      document.body.classList.remove('profile-dialog-open');
     };
   }, [profileDialogOpen]);
 
@@ -708,11 +707,10 @@ function AuthenticatedShellContent({ children }: { children: ReactNode }) {
 
     currentPasswordRef.current?.focus();
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    document.body.classList.add('password-dialog-open');
 
     return () => {
-      document.body.style.overflow = previousOverflow;
+      document.body.classList.remove('password-dialog-open');
     };
   }, [passwordDialogOpen]);
 

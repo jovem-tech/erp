@@ -188,6 +188,11 @@ Este fluxo entrega ao PWA mobile o primeiro trabalho operacional real do técnic
   confirma que o equipamento selecionado pertence ao cliente da operação.
 - O retorno `403` evita ambiguidade e mantém o bloqueio explícito.
 - O frontend mobile consome a API com token Bearer armazenado localmente e renovado por refresh controlado.
+- A CSP de produção mantém `style-src 'self'`: componentes executados no
+  cliente não podem usar a prop React `style` nem mutações em `element.style`.
+  Variações visuais devem usar classes CSS ou atributos de estado. O lint
+  bloqueia ambas as formas de estilo inline; apenas os geradores de ícone
+  `ImageResponse`, executados no servidor e fora do DOM, são excepcionados.
 
 ## Observação
 

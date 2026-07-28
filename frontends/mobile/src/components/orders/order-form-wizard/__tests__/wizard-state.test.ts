@@ -219,6 +219,11 @@ describe('isChecklistComplete', () => {
       ...createInitialWizardState(),
       checklistModel: model,
       checklistAnswers: { 100: { status: 'ok' as const, observacao: '' } },
+      orcamentoVinculado: {
+        id: 99,
+        numero: 'ORC-0099',
+        status: 'aguardando_resposta',
+      },
     };
     expect(isChecklistComplete(state)).toBe(true);
   });
@@ -248,6 +253,7 @@ describe('consistência entre cliente e equipamento', () => {
     expect(nextState.pendingNewEquipmentPhotos).toEqual([]);
     expect(nextState.checklistModel).toBeNull();
     expect(nextState.checklistAnswers).toEqual({});
+    expect(nextState.orcamentoVinculado).toBeNull();
   });
 
   it('recusa no estado local um equipamento pertencente a outro cliente', () => {

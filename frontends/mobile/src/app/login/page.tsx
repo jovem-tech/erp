@@ -64,7 +64,7 @@ function LoginScreen() {
           Entre com suas credenciais do ERP para continuar com o fluxo de OS, fotos e documentos.
         </p>
 
-        <form className="form" onSubmit={handleSubmit} style={{ marginTop: '18px' }}>
+        <form className="form login-form" onSubmit={handleSubmit}>
           <label className="field">
             <span className="field__label">E-mail</span>
             <input
@@ -110,12 +110,12 @@ function LoginScreen() {
           <span className="badge">Sessão persistente</span>
         </div>
 
-        <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'center' }}>
+        <div className="login-actions">
           <PwaInstallButton />
         </div>
 
         {ready && session ? (
-          <p className="muted" style={{ marginTop: '14px' }}>
+          <p className="muted login-hint">
             Sessão ativa até {formatSessionExpiration(session)}
           </p>
         ) : null}

@@ -8,6 +8,7 @@ import type {
   EquipmentFormData,
   EquipmentSearchResult,
   EquipmentUpdatePayload,
+  LinkableBudget,
   NovoEquipamentoPayload,
 } from '@/lib/types';
 import {
@@ -24,6 +25,7 @@ type StepEquipmentProps = {
   pendingNewEquipment: NovoEquipamentoPayload | null;
   pendingEquipmentUpdate?: EquipmentUpdatePayload | null;
   pendingNewEquipmentPhotos: File[];
+  linkedBudget?: LinkableBudget | null;
   onSelectEquipamento: (equipamento: EquipmentSearchResult | null) => void;
   onChangePendingNewEquipment: (payload: NovoEquipamentoPayload | null) => void;
   onChangePendingEquipmentUpdate?: (payload: EquipmentUpdatePayload | null) => void;
@@ -33,6 +35,14 @@ type StepEquipmentProps = {
 };
 
 const EMPTY_NEW_EQUIPMENT: NovoEquipamentoPayload = { tipo_id: 0, marca_id: 0, modelo_id: 0 };
+
+function normalizeCatalogLabel(value: string | undefined): string {
+  return (value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLocaleLowerCase('pt-BR');
+}
 
 function equipmentDetailToUpdate(detail: EquipmentDetail): EquipmentUpdatePayload {
   return {
@@ -163,6 +173,7 @@ export function StepEquipment({
   pendingNewEquipment,
   pendingEquipmentUpdate = null,
   pendingNewEquipmentPhotos,
+  linkedBudget = null,
   onSelectEquipamento,
   onChangePendingNewEquipment,
   onChangePendingEquipmentUpdate = () => undefined,
@@ -183,6 +194,7 @@ export function StepEquipment({
   const [formData, setFormData] = useState<EquipmentFormData | null>(null);
   const [loadingFormData, setLoadingFormData] = useState(false);
   const [formDataError, setFormDataError] = useState<string | null>(null);
+  const appliedBudgetIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     if ((view !== 'novo' && !editingExisting) || formData || loadingFormData) {
@@ -199,6 +211,73 @@ export function StepEquipment({
       .catch(() => setFormDataError('Não foi possível carregar os catálogos de equipamento.'))
       .finally(() => setLoadingFormData(false));
   }, [view, editingExisting, formData, loadingFormData]);
+
+  useEffect(() => {
+    if (
+      mode !== 'create'
+      || view !== 'novo'
+      || editingExisting
+      || !formData
+      || !linkedBudget
+      || appliedBudgetIdRef.current === linkedBudget.id
+    ) {
+      return;
+    }
+
+    appliedBudgetIdRef.current = linkedBudget.id;
+    const current = pendingNewEquipment ?? EMPTY_NEW_EQUIPMENT;
+    const next: NovoEquipamentoPayload = { ...current };
+
+    const typeLabel = normalizeCatalogLabel(linkedBudget.equipamento_tipo_avulso);
+    const type = typeLabel
+      ? formData.types.find((item) => normalizeCatalogLabel(item.nome) === typeLabel)
+      : undefined;
+    if (!next.tipo_id && type) {
+      next.tipo_id = type.id;
+    }
+
+    const brandLabel = normalizeCatalogLabel(linkedBudget.equipamento_marca_avulso);
+    const brand = brandLabel
+      ? formData.brands.find((item) => normalizeCatalogLabel(item.nome) === brandLabel)
+      : undefined;
+    if (!next.marca_id && brand) {
+      next.marca_id = brand.id;
+    }
+
+    const modelLabel = normalizeCatalogLabel(linkedBudget.equipamento_modelo_avulso);
+    const effectiveBrandId = next.marca_id || brand?.id || 0;
+    const model = modelLabel && effectiveBrandId
+      ? formData.models.find(
+          (item) =>
+            item.marca_id === effectiveBrandId
+            && normalizeCatalogLabel(item.nome) === modelLabel
+        )
+      : undefined;
+    if (!next.modelo_id && model) {
+      next.modelo_id = model.id;
+    }
+
+    if (!next.cor?.trim() && linkedBudget.equipamento_cor?.trim()) {
+      next.cor = linkedBudget.equipamento_cor.trim();
+    }
+
+    if (
+      next.tipo_id !== current.tipo_id
+      || next.marca_id !== current.marca_id
+      || next.modelo_id !== current.modelo_id
+      || next.cor !== current.cor
+    ) {
+      onChangePendingNewEquipment(next);
+    }
+  }, [
+    editingExisting,
+    formData,
+    linkedBudget,
+    mode,
+    onChangePendingNewEquipment,
+    pendingNewEquipment,
+    view,
+  ]);
 
   const fetchEquipmentOptions = useCallback(
     (query: string) => (
@@ -310,7 +389,7 @@ export function StepEquipment({
       </div>
 
       {mode === 'create' ? (
-        <div className="toolbar" style={{ marginBottom: 16 }}>
+        <div className="toolbar toolbar--section-leading">
           <div className="toolbar__group">
             <button
               type="button"
@@ -403,6 +482,15 @@ export function StepEquipment({
           {!editingExisting && newEquipmentReason === 'new-client' ? (
             <div className="notice">
               <span>Como o cliente também é novo, cadastre o equipamento para que ambos sejam vinculados ao criar a OS.</span>
+            </div>
+          ) : null}
+          {!editingExisting && linkedBudget ? (
+            <div className="notice">
+              <span>
+                Equipamento informado no orçamento {linkedBudget.numero}:{' '}
+                {linkedBudget.equipamento_resumo || 'não detalhado'}. Os dados reconhecidos foram
+                pré-preenchidos; confirme os campos antes de avançar.
+              </span>
             </div>
           ) : null}
 

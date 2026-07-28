@@ -261,6 +261,7 @@ class BudgetWorkflowService
         $selectedClientPhone = '';
         $selectedClientEmail = '';
         $selectedOrderDeadline = '';
+        $selectedOrderRelato = '';
 
         if ($selectedOrderId > 0) {
             $contextOrder = Order::query()->with('client')->find($selectedOrderId);
@@ -280,6 +281,8 @@ class BudgetWorkflowService
                 if ($contextOrder->data_previsao !== null) {
                     $selectedOrderDeadline = 'Previsão: '.$contextOrder->data_previsao->format('d/m/Y');
                 }
+
+                $selectedOrderRelato = trim((string) ($contextOrder->relato_cliente ?? ''));
             }
         }
 
@@ -379,6 +382,7 @@ class BudgetWorkflowService
             'selected_client_phone' => $selectedClientPhone,
             'selected_client_email' => $selectedClientEmail,
             'selected_order_deadline' => $selectedOrderDeadline,
+            'selected_order_relato' => $selectedOrderRelato,
             'clients' => $clients,
             'equipments' => $equipments,
             'orders' => $orders,
@@ -450,7 +454,7 @@ class BudgetWorkflowService
     {
         return Order::query()
             ->with(['client', 'equipment'])
-            ->select(['id', 'numero_os', 'cliente_id', 'equipamento_id', 'status', 'estado_fluxo', 'data_abertura'])
+            ->select(['id', 'numero_os', 'cliente_id', 'equipamento_id', 'status', 'estado_fluxo', 'data_abertura', 'relato_cliente'])
             ->orderByDesc('id')
             ->limit(80);
     }
@@ -527,6 +531,7 @@ class BudgetWorkflowService
             'cliente_nome' => (string) ($order->client?->nome_razao ?? ''),
             'equipamento_id' => (int) ($order->equipamento_id ?? 0),
             'equipamento_resumo' => (string) ($order->equipment?->resumo_tecnico ?? ''),
+            'relato_cliente' => (string) ($order->relato_cliente ?? ''),
             'status' => (string) ($order->status ?? ''),
             'estado_fluxo' => (string) ($order->estado_fluxo ?? ''),
             'data_abertura' => optional($order->data_abertura)->format('Y-m-d H:i:s'),

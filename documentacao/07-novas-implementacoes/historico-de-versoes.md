@@ -1,5 +1,20 @@
 # Historico de versoes
 
+## v5.20.7.0 - 2026-07-28
+
+- nota tecnica criada em `documentacao/07-novas-implementacoes/2026-07-28-relato-cliente-orcamento-os.md`
+- orcamento novo com OS vinculada preenche automaticamente o relato do cliente/defeito relatado a partir da OS selecionada, no load inicial (`?os_id=`) e ao trocar a OS no select
+- backend passou a expor `relato_cliente` da OS nos endpoints `orcamentos/form-data` e `orcamentos/cliente-contexto`
+
+## v5.20.6.0 - 2026-07-27
+
+- nota tecnica criada em `documentacao/07-novas-implementacoes/2026-07-27-csp-estilos-inline-mobile.md`
+- remove estilos inline dos componentes mobile sem afrouxar
+  `style-src 'self'`;
+- move tema, modais, cards, anexos e wizard para classes CSS;
+- adiciona lint preventivo contra `style` no DOM.
+- normaliza `meta.pagination` da API e elimina o falso erro após a listagem.
+
 > Fonte detalhada e autoritativa: `CHANGELOG.md`. Esta página mantém um resumo
 > executivo das entregas mais relevantes e links para a documentação técnica.
 

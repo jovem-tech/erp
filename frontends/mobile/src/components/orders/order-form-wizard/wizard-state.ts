@@ -16,6 +16,7 @@ import type {
   OrderPriority,
   UpdateOrderPayload,
 } from '@/lib/types';
+import { isPhoneComplete } from '@/lib/input-masks';
 
 export type WizardMode = 'create' | 'edit';
 
@@ -161,6 +162,7 @@ export function selectClientForWizard(
     pendingNewEquipmentPhotos: [],
     checklistModel: null,
     checklistAnswers: {},
+    orcamentoVinculado: null,
   };
 }
 
@@ -229,7 +231,10 @@ export function isWizardClientComplete(
     return true;
   }
 
-  return Boolean(pendingNewClient?.nome_razao.trim() && pendingNewClient?.telefone1.trim());
+  return Boolean(
+    pendingNewClient?.nome_razao.trim()
+    && isPhoneComplete(pendingNewClient.telefone1)
+  );
 }
 
 export function isWizardEquipmentComplete(

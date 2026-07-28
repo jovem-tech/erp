@@ -85,9 +85,9 @@ export function StepDetails({
           <div className="field">
             <span className="field__label">Defeitos comuns deste equipamento</span>
             {groupedDefects.map(([categoria, items]) => (
-              <div key={categoria} style={{ marginBottom: 8 }}>
+              <div key={categoria} className="detail-category">
                 <span className="muted">{categoria}</span>
-                <div className="toolbar" style={{ marginTop: 6 }}>
+                <div className="toolbar toolbar--compact-spaced">
                   <div className="toolbar__group">
                     {items.map((defect) => (
                       <button

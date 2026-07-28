@@ -182,6 +182,9 @@ class OrcamentoController extends DesktopController
                 // Equipamento vinculado à OS: usado para pré-selecionar
                 // automaticamente o "Equipamento cadastrado" ao escolher a OS.
                 'equipamento_id' => (int) ($order['equipamento_id'] ?? 0),
+                // Defeito relatado na OS: usado para preencher automaticamente
+                // "Relato do cliente / defeito relatado" ao escolher a OS.
+                'relato_cliente' => trim((string) ($order['relato_cliente'] ?? '')),
                 'label' => $label.($clientName !== '' ? ' - '.$clientName : ''),
             ];
         }, (array) ($context['orders'] ?? [])), static fn (array $order): bool => $order['id'] > 0));
