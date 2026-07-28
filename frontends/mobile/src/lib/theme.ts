@@ -33,7 +33,6 @@ export function applyThemePreference(theme: ThemeMode): void {
   const resolvedTheme = theme === THEME_LIGHT ? THEME_LIGHT : THEME_DARK;
   const root = document.documentElement;
   root.dataset.theme = resolvedTheme;
-  root.style.colorScheme = resolvedTheme;
   window.localStorage.setItem(THEME_STORAGE_KEY, resolvedTheme);
 
   const themeColor = resolvedTheme === THEME_LIGHT ? '#f4f8ff' : '#06111f';

@@ -282,9 +282,29 @@ export interface EntryChecklistModel {
 export interface LinkableBudget {
   id: number;
   numero: string;
-  cliente_nome: string;
-  valor_total: number;
+  cliente_nome?: string;
+  cliente_nome_avulso?: string;
+  telefone_contato?: string;
+  email_contato?: string;
+  equipamento_resumo?: string;
+  equipamento_tipo_avulso?: string;
+  equipamento_marca_avulso?: string;
+  equipamento_modelo_avulso?: string;
+  equipamento_cor?: string;
+  valor_total?: number;
+  total?: number;
+  total_formatado?: string;
   status: string;
+  status_label?: string;
+  linkable?: boolean;
+}
+
+export interface CepAddress {
+  cep: string;
+  endereco: string;
+  bairro: string;
+  cidade: string;
+  uf: string;
 }
 
 export interface TeamMemberOption {

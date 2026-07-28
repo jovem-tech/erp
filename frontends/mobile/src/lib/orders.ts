@@ -1,4 +1,5 @@
 import type {
+  CepAddress,
   ClientDetail,
   ClientSearchResult,
   CreateOrderPayload,
@@ -29,8 +30,10 @@ import {
   apiEquipmentDetail,
   apiEquipmentFormData,
   apiListOrders,
+  apiLookupCep,
   apiOrderDetail,
   apiSearchClients,
+  apiSearchAvulsoBudgetContacts,
   apiSearchEquipments,
   apiSearchLinkableBudgets,
   apiSearchReportedDefects,
@@ -131,6 +134,16 @@ export async function getEntryChecklistModel(tipoEquipamentoId: number): Promise
 
 export async function searchLinkableBudgets(q: string): Promise<LinkableBudget[]> {
   const { budgets } = await apiSearchLinkableBudgets({ q });
+  return budgets;
+}
+
+export async function lookupCepAddress(cep: string): Promise<CepAddress> {
+  const { address } = await apiLookupCep(cep);
+  return address;
+}
+
+export async function searchAvulsoBudgetContacts(q: string): Promise<LinkableBudget[]> {
+  const { budgets } = await apiSearchAvulsoBudgetContacts({ q, per_page: 8 });
   return budgets;
 }
 

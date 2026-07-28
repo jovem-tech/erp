@@ -1,5 +1,17 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.20.7.0 — 2026-07-28 07:31
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Preenche automaticamente o relato do cliente / defeito relatado no orçamento com base na OS vinculada selecionada.
+- **Arquivos:** backend/app/Services/Budgets/BudgetWorkflowService.php,frontends/desktop/app/Http/Controllers/OrcamentoController.php,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/resources/views/orcamentos/form.blade.php
+
+## v5.20.6.0 — 2026-07-27 07:25
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige conflitos da CSP no mobile removendo estilos inline, impede regressões no lint e normaliza `meta.pagination` para eliminar o falso erro após carregar as OS.
+- **Arquivos:** frontends/mobile,documentacao/03-arquitetura-tecnica/ordens-mobile.md,documentacao/07-novas-implementacoes/2026-07-27-csp-estilos-inline-mobile.md,documentacao/07-novas-implementacoes/historico-de-versoes.md
+
 ## v5.20.5.0 — 2026-07-26 22:25
 - **Tier:** patch
 - **Autor/Agente:** Codex

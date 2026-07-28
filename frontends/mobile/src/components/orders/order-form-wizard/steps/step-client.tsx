@@ -1,9 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '@/lib/api';
-import { getClientDetail, searchClients } from '@/lib/orders';
-import type { ClientDetail, ClientSearchResult, ClientUpdatePayload, NovoClientePayload } from '@/lib/types';
+import {
+  getClientDetail,
+  lookupCepAddress,
+  searchAvulsoBudgetContacts,
+  searchClients,
+} from '@/lib/orders';
+import { formatCep, formatPhone, isPhoneComplete, onlyDigits } from '@/lib/input-masks';
+import type {
+  ClientDetail,
+  ClientSearchResult,
+  ClientUpdatePayload,
+  LinkableBudget,
+  NovoClientePayload,
+} from '@/lib/types';
 import {
   isWizardClientComplete,
   type WizardMode,
@@ -18,6 +30,9 @@ type StepClientProps = {
   onSelectCliente: (cliente: ClientSearchResult | null) => void;
   onChangePendingNewClient: (payload: NovoClientePayload | null) => void;
   onChangePendingClientUpdate?: (payload: ClientUpdatePayload | null) => void;
+  linkedBudget?: LinkableBudget | null;
+  onChangeLinkedBudget?: (budget: LinkableBudget | null) => void;
+  canLinkBudget?: boolean;
   canEditExisting?: boolean;
   disabled?: boolean;
 };
@@ -31,11 +46,11 @@ function clientDetailToUpdate(detail: ClientDetail): ClientUpdatePayload {
     cpf_cnpj: detail.cpf_cnpj,
     rg_ie: detail.rg_ie,
     email: detail.email,
-    telefone1: detail.telefone1,
-    telefone2: detail.telefone2,
+    telefone1: formatPhone(detail.telefone1),
+    telefone2: formatPhone(detail.telefone2),
     nome_contato: detail.nome_contato,
-    telefone_contato: detail.telefone_contato,
-    cep: detail.cep,
+    telefone_contato: formatPhone(detail.telefone_contato),
+    cep: formatCep(detail.cep),
     endereco: detail.endereco,
     numero: detail.numero,
     complemento: detail.complemento,
@@ -57,6 +72,9 @@ export function StepClient({
   onSelectCliente,
   onChangePendingNewClient,
   onChangePendingClientUpdate = () => undefined,
+  linkedBudget = null,
+  onChangeLinkedBudget = () => undefined,
+  canLinkBudget = false,
   canEditExisting = false,
   disabled = false,
 }: StepClientProps) {
@@ -64,34 +82,198 @@ export function StepClient({
   const [editingExisting, setEditingExisting] = useState(false);
   const [loadingExisting, setLoadingExisting] = useState(false);
   const [existingError, setExistingError] = useState<string | null>(null);
+  const [budgetMatches, setBudgetMatches] = useState<LinkableBudget[]>([]);
+  const [budgetCandidate, setBudgetCandidate] = useState<LinkableBudget | null>(null);
+  const [dismissedBudgetId, setDismissedBudgetId] = useState<number | null>(null);
+  const [budgetLoading, setBudgetLoading] = useState(false);
+  const [budgetError, setBudgetError] = useState<string | null>(null);
+  const [cepLoading, setCepLoading] = useState(false);
+  const [cepMessage, setCepMessage] = useState<string | null>(null);
+  const [cepError, setCepError] = useState<string | null>(null);
+  const cepRequestId = useRef(0);
+
+  const activePayload = editingExisting ? pendingClientUpdate : pendingNewClient;
+  const activePayloadRef = useRef<ClientUpdatePayload | NovoClientePayload | null>(activePayload);
+  activePayloadRef.current = activePayload;
+
+  useEffect(() => {
+    if (
+      mode !== 'create'
+      || view !== 'novo'
+      || !canLinkBudget
+      || budgetCandidate
+      || linkedBudget
+    ) {
+      setBudgetMatches([]);
+      setBudgetLoading(false);
+      return;
+    }
+
+    const name = pendingNewClient?.nome_razao.trim() ?? '';
+    const phone = onlyDigits(pendingNewClient?.telefone1 ?? '', 11);
+    const query = phone.length >= 8 ? phone : name.length >= 3 ? name : '';
+    if (!query) {
+      setBudgetMatches([]);
+      setBudgetError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setBudgetLoading(true);
+      setBudgetError(null);
+
+      searchAvulsoBudgetContacts(query)
+        .then((budgets) => {
+          if (!cancelled) {
+            setBudgetMatches(
+              budgets.filter((budget) => budget.linkable !== false && budget.id !== dismissedBudgetId)
+            );
+          }
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setBudgetMatches([]);
+            setBudgetError(
+              error instanceof ApiError
+                ? error.message
+                : 'Não foi possível consultar os orçamentos em aberto.'
+            );
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setBudgetLoading(false);
+          }
+        });
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    budgetCandidate,
+    canLinkBudget,
+    dismissedBudgetId,
+    linkedBudget,
+    mode,
+    pendingNewClient?.nome_razao,
+    pendingNewClient?.telefone1,
+    view,
+  ]);
 
   const switchToSearch = (): void => {
     setView('buscar');
     setEditingExisting(false);
+    setBudgetCandidate(null);
+    setBudgetMatches([]);
+    onChangeLinkedBudget(null);
     onChangePendingNewClient(null);
   };
 
   const switchToNew = (): void => {
     setView('novo');
     setEditingExisting(false);
+    setBudgetCandidate(null);
+    setBudgetMatches([]);
+    onChangeLinkedBudget(null);
     onSelectCliente(null);
     if (!pendingNewClient) {
       onChangePendingNewClient(EMPTY_NEW_CLIENT);
     }
   };
 
-  const updateField = (field: keyof ClientUpdatePayload, value: string): void => {
+  const patchFields = (fields: Partial<ClientUpdatePayload>): void => {
     if (editingExisting && cliente) {
-      const base = pendingClientUpdate ?? {
+      const base = (activePayloadRef.current as ClientUpdatePayload | null) ?? {
         ...EMPTY_NEW_CLIENT,
         tipo_pessoa: cliente.tipo_pessoa || 'fisica',
         status_cadastro: cliente.status_cadastro || 'completo',
       };
-      onChangePendingClientUpdate({ ...base, [field]: value });
+      const next = { ...base, ...fields };
+      activePayloadRef.current = next;
+      onChangePendingClientUpdate(next);
       return;
     }
 
-    onChangePendingNewClient({ ...(pendingNewClient ?? EMPTY_NEW_CLIENT), [field]: value });
+    const next = {
+      ...((activePayloadRef.current as NovoClientePayload | null) ?? EMPTY_NEW_CLIENT),
+      ...fields,
+    };
+    activePayloadRef.current = next;
+    onChangePendingNewClient(next);
+  };
+
+  const updateField = (field: keyof ClientUpdatePayload, value: string): void => {
+    patchFields({ [field]: value });
+  };
+
+  const updateIdentityField = (field: 'nome_razao' | 'telefone1', value: string): void => {
+    if (budgetCandidate || linkedBudget) {
+      setBudgetCandidate(null);
+      setDismissedBudgetId(null);
+      onChangeLinkedBudget(null);
+    }
+    updateField(field, value);
+  };
+
+  const selectBudgetCandidate = (budget: LinkableBudget): void => {
+    setBudgetCandidate(budget);
+    setBudgetMatches([]);
+    setDismissedBudgetId(null);
+    patchFields({
+      nome_razao: budget.cliente_nome_avulso?.trim() || pendingNewClient?.nome_razao || '',
+      telefone1: formatPhone(
+        budget.telefone_contato?.trim() || pendingNewClient?.telefone1 || ''
+      ),
+      email: budget.email_contato?.trim() || pendingNewClient?.email || '',
+    });
+  };
+
+  const handleCepChange = (value: string): void => {
+    const cep = formatCep(value);
+    const requestId = ++cepRequestId.current;
+    updateField('cep', cep);
+    setCepMessage(null);
+    setCepError(null);
+
+    if (onlyDigits(cep).length !== 8) {
+      setCepLoading(false);
+      return;
+    }
+
+    setCepLoading(true);
+    lookupCepAddress(cep)
+      .then((address) => {
+        if (cepRequestId.current !== requestId) {
+          return;
+        }
+
+        patchFields({
+          cep: formatCep(address.cep),
+          endereco: address.endereco,
+          bairro: address.bairro,
+          cidade: address.cidade,
+          uf: address.uf,
+        });
+        setCepMessage('Endereço preenchido automaticamente. Confira o número e o complemento.');
+      })
+      .catch((error) => {
+        if (cepRequestId.current !== requestId) {
+          return;
+        }
+        setCepError(
+          error instanceof ApiError
+            ? error.message
+            : 'Não foi possível consultar o CEP. Preencha o endereço manualmente.'
+        );
+      })
+      .finally(() => {
+        if (cepRequestId.current === requestId) {
+          setCepLoading(false);
+        }
+      });
   };
 
   const openExistingEditor = async (): Promise<void> => {
@@ -117,8 +299,6 @@ export function StepClient({
     }
   };
 
-  const activePayload = editingExisting ? pendingClientUpdate : pendingNewClient;
-
   return (
     <section className="section">
       <div className="section__header">
@@ -126,7 +306,7 @@ export function StepClient({
       </div>
 
       {mode === 'create' ? (
-        <div className="toolbar" style={{ marginBottom: 16 }}>
+        <div className="toolbar toolbar--section-leading">
           <div className="toolbar__group">
             <button
               type="button"
@@ -209,17 +389,94 @@ export function StepClient({
             <input
               className="input"
               value={activePayload?.nome_razao ?? ''}
-              onChange={(event) => updateField('nome_razao', event.target.value)}
+              onChange={(event) => updateIdentityField('nome_razao', event.target.value)}
               disabled={disabled}
             />
           </label>
+
+          {!editingExisting && canLinkBudget && budgetLoading ? (
+            <span className="muted" role="status">Consultando orçamentos em aberto...</span>
+          ) : null}
+          {!editingExisting && canLinkBudget && budgetError ? (
+            <div className="notice notice--danger" role="alert">
+              <span>{budgetError}</span>
+            </div>
+          ) : null}
+          {!editingExisting && canLinkBudget && budgetMatches.length > 0 ? (
+            <div className="notice notice--warning">
+              <div>
+                <strong>Orçamento em aberto encontrado</strong>
+                <div className="muted">Confira se algum orçamento pertence a este atendimento.</div>
+                <div className="toolbar__group toolbar__group--offset">
+                  {budgetMatches.map((budget) => (
+                    <button
+                      key={budget.id}
+                      type="button"
+                      className="button button--soft button-small"
+                      onClick={() => selectBudgetCandidate(budget)}
+                      disabled={disabled}
+                    >
+                      {budget.numero} · {budget.equipamento_resumo || 'Equipamento não informado'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
+          {!editingExisting && canLinkBudget && (budgetCandidate || linkedBudget) ? (
+            <div className="notice">
+              <div>
+                <strong>
+                  {linkedBudget ? 'Orçamento vinculado à OS' : 'Este é o orçamento do cliente?'}
+                </strong>
+                <div>
+                  {(linkedBudget ?? budgetCandidate)?.numero}
+                  {' · '}
+                  {(linkedBudget ?? budgetCandidate)?.equipamento_resumo || 'Equipamento não informado'}
+                </div>
+                {(linkedBudget ?? budgetCandidate)?.total_formatado ? (
+                  <div className="muted">
+                    Total: R$ {(linkedBudget ?? budgetCandidate)?.total_formatado}
+                  </div>
+                ) : null}
+                <div className="toolbar__group toolbar__group--offset">
+                  {!linkedBudget && budgetCandidate ? (
+                    <button
+                      type="button"
+                      className="button button--primary button-small"
+                      onClick={() => onChangeLinkedBudget(budgetCandidate)}
+                      disabled={disabled}
+                    >
+                      Vincular à OS
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="button button--soft button-small"
+                    onClick={() => {
+                      const budget = linkedBudget ?? budgetCandidate;
+                      setDismissedBudgetId(budget?.id ?? null);
+                      setBudgetCandidate(null);
+                      onChangeLinkedBudget(null);
+                    }}
+                    disabled={disabled}
+                  >
+                    {linkedBudget ? 'Desvincular' : 'Não vincular'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <label className="field">
             <span className="field__label">Telefone *</span>
             <input
               className="input"
+              type="tel"
+              inputMode="tel"
+              maxLength={14}
               value={activePayload?.telefone1 ?? ''}
-              onChange={(event) => updateField('telefone1', event.target.value)}
+              onChange={(event) => updateIdentityField('telefone1', formatPhone(event.target.value))}
               disabled={disabled}
             />
           </label>
@@ -228,8 +485,11 @@ export function StepClient({
             <span className="field__label">Telefone secundário</span>
             <input
               className="input"
+              type="tel"
+              inputMode="tel"
+              maxLength={14}
               value={activePayload?.telefone2 ?? ''}
-              onChange={(event) => updateField('telefone2', event.target.value)}
+              onChange={(event) => updateField('telefone2', formatPhone(event.target.value))}
               disabled={disabled}
             />
           </label>
@@ -269,8 +529,11 @@ export function StepClient({
             <span className="field__label">Telefone do contato</span>
             <input
               className="input"
+              type="tel"
+              inputMode="tel"
+              maxLength={14}
               value={activePayload?.telefone_contato ?? ''}
-              onChange={(event) => updateField('telefone_contato', event.target.value)}
+              onChange={(event) => updateField('telefone_contato', formatPhone(event.target.value))}
               disabled={disabled}
             />
           </label>
@@ -279,10 +542,15 @@ export function StepClient({
             <span className="field__label">CEP</span>
             <input
               className="input"
+              inputMode="numeric"
+              maxLength={9}
               value={activePayload?.cep ?? ''}
-              onChange={(event) => updateField('cep', event.target.value)}
+              onChange={(event) => handleCepChange(event.target.value)}
               disabled={disabled}
             />
+            {cepLoading ? <span className="muted" role="status">Buscando endereço...</span> : null}
+            {cepMessage ? <span className="muted" role="status">{cepMessage}</span> : null}
+            {cepError ? <span className="field__error" role="alert">{cepError}</span> : null}
           </label>
 
           <label className="field">
@@ -389,7 +657,10 @@ export function isStepClientValid(
   pendingClientUpdate: ClientUpdatePayload | null = null
 ): boolean {
   if (pendingClientUpdate) {
-    return Boolean(pendingClientUpdate.nome_razao.trim() && pendingClientUpdate.telefone1.trim());
+    return Boolean(
+      pendingClientUpdate.nome_razao.trim()
+      && isPhoneComplete(pendingClientUpdate.telefone1)
+    );
   }
 
   return isWizardClientComplete(cliente, pendingNewClient);

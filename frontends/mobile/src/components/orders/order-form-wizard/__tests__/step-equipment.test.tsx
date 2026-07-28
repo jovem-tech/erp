@@ -208,6 +208,43 @@ describe('StepEquipment', () => {
     await waitFor(() => expect(screen.getByText('Tipo de equipamento *')).toBeInTheDocument());
   });
 
+  it('pré-preenche por correspondência exata os dados do equipamento do orçamento vinculado', async () => {
+    const { getEquipmentFormData } = await import('@/lib/orders');
+    vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
+    const onChangePendingNewEquipment = vi.fn();
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={null}
+        equipamento={null}
+        pendingNewEquipment={null}
+        pendingNewEquipmentPhotos={[]}
+        linkedBudget={{
+          id: 77,
+          numero: 'ORC-0077',
+          status: 'aguardando_resposta',
+          equipamento_resumo: 'Notebook Samsung A015',
+          equipamento_tipo_avulso: 'Notebook',
+          equipamento_marca_avulso: 'Samsung',
+          equipamento_modelo_avulso: 'A015',
+          equipamento_cor: 'Cinza',
+        }}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={onChangePendingNewEquipment}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByText(/Equipamento informado no orçamento ORC-0077/)).toBeInTheDocument();
+    await waitFor(() => expect(onChangePendingNewEquipment).toHaveBeenCalledWith({
+      tipo_id: 2,
+      marca_id: 10,
+      modelo_id: 100,
+      cor: 'Cinza',
+    }));
+  });
+
   it('mostra o bloco de hardware só para tipo "desktop" em modalidade "montado"', async () => {
     const { getEquipmentFormData } = await import('@/lib/orders');
     vi.mocked(getEquipmentFormData).mockResolvedValue(formData);

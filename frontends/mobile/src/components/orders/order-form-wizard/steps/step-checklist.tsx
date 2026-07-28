@@ -40,7 +40,7 @@ export function StepChecklist({
         <span className="muted">{model.nome}</span>
       </div>
 
-      <div className="toolbar" style={{ marginBottom: 16 }}>
+      <div className="toolbar toolbar--section-leading">
         <button type="button" className="button button--soft button-small" onClick={onMarkAllOk} disabled={disabled}>
           Marcar tudo OK
         </button>
@@ -93,7 +93,7 @@ export function StepChecklist({
         })}
       </div>
 
-      <label className="field" style={{ marginTop: 16 }}>
+      <label className="field field--spaced">
         <span className="field__label">Observações gerais do estado do equipamento</span>
         <textarea
           className="textarea"

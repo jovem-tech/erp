@@ -286,7 +286,7 @@ function OrdersScreen() {
         </form>
 
         {error ? (
-          <div className="notice notice--danger" style={{ marginTop: 14 }}>
+          <div className="notice notice--danger notice--spaced-sm">
             {error}
           </div>
         ) : null}

@@ -19,7 +19,7 @@ describe('mobile theme preference', () => {
     applyThemePreference(THEME_LIGHT);
 
     expect(document.documentElement.dataset.theme).toBe(THEME_LIGHT);
-    expect(document.documentElement.style.colorScheme).toBe(THEME_LIGHT);
+    expect(document.documentElement.hasAttribute('style')).toBe(false);
     expect(window.localStorage.getItem(THEME_STORAGE_KEY)).toBe(THEME_LIGHT);
     expect(document.querySelector('meta[name="theme-color"]')?.getAttribute('content')).toBe(
       '#f4f8ff'

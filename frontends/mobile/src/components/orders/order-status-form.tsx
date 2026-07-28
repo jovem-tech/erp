@@ -44,7 +44,7 @@ export function OrderStatusForm({ order, onUpdated }: OrderStatusFormProps) {
 
   return (
     <section className="card">
-      <div className="section__header" style={{ marginBottom: 12 }}>
+      <div className="section__header section__header--medium">
         <h3 className="section__title">Atualizar status</h3>
         <span className={orderStatusBadgeClass(order.status_cor)}>{order.status_nome || order.status}</span>
       </div>

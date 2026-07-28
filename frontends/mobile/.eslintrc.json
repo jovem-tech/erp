@@ -1,6 +1,32 @@
 {
   "extends": ["next/core-web-vitals"],
   "rules": {
-    "@next/next/no-img-element": "off"
-  }
+    "@next/next/no-img-element": "off",
+    "react/forbid-dom-props": [
+      "error",
+      {
+        "forbid": [
+          {
+            "propName": "style",
+            "message": "Use uma classe CSS: a CSP de produção bloqueia estilos inline."
+          }
+        ]
+      }
+    ],
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "MemberExpression[property.name='style']",
+        "message": "Use classList ou data attributes: a CSP de produção bloqueia mutações em element.style."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/app/icon.tsx", "src/app/apple-icon.tsx"],
+      "rules": {
+        "react/forbid-dom-props": "off"
+      }
+    }
+  ]
 }

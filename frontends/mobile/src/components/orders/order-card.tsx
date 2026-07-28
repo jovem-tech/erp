@@ -12,7 +12,7 @@ export function OrderCard({ order }: OrderCardProps) {
       <div className="toolbar">
         <div>
           <p className="card__title">OS {order.numero_os}</p>
-          <p className="muted" style={{ margin: '8px 0 0' }}>
+          <p className="muted order-card__client">
             {order.cliente_nome || 'Cliente não informado'}
           </p>
         </div>
@@ -26,7 +26,7 @@ export function OrderCard({ order }: OrderCardProps) {
         <span className="badge">{order.equipamento_numero_serie || 'Sem série'}</span>
       </div>
 
-      <div className="split" style={{ marginTop: '14px' }}>
+      <div className="split order-card__details">
         <div className="kpi">
           <span className="kpi__label">Equipamento</span>
           <span className="kpi__value">{order.equipamento_resumo_tecnico || 'Não informado'}</span>

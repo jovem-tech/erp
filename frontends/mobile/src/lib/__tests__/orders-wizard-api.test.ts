@@ -3,6 +3,8 @@ import {
   apiCreateOrder,
   apiEntryChecklistModel,
   apiEquipmentFormData,
+  apiLookupCep,
+  apiSearchAvulsoBudgetContacts,
   apiSearchClients,
   apiSearchEquipments,
   apiSearchReportedDefects,
@@ -59,6 +61,43 @@ describe('funções auxiliares do wizard de OS', () => {
 
     const [url] = fetchMock.mock.calls[0];
     expect(String(url)).toContain('/clients?search=jo%C3%A3o');
+  });
+
+  it('apiSearchAvulsoBudgetContacts consulta somente o catálogo de contatos avulsos', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ status: 'success', data: { budgets: [] }, error: null })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiSearchAvulsoBudgetContacts({ q: 'Márcia Souza', per_page: 8 });
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/orcamentos/contatos-avulsos?q=M%C3%A1rcia+Souza&per_page=8');
+  });
+
+  it('apiLookupCep envia somente os oito dígitos normalizados', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        status: 'success',
+        data: {
+          address: {
+            cep: '01001-000',
+            endereco: 'Praça da Sé',
+            bairro: 'Sé',
+            cidade: 'São Paulo',
+            uf: 'SP',
+          },
+        },
+        error: null,
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await apiLookupCep('01001-000');
+
+    expect(result.address.cidade).toBe('São Paulo');
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/clients/cep/01001000');
   });
 
   it('apiEquipmentFormData desembrulha a chave "form" da resposta', async () => {

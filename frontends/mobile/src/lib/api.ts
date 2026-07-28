@@ -1,5 +1,6 @@
 import type {
   AttachmentBlob,
+  CepAddress,
   ClientDetail,
   ClientSearchResult,
   CreateOrderPayload,
@@ -39,6 +40,10 @@ type ApiEnvelope<T> = {
   status: 'success' | 'error';
   data: T | null;
   error: ApiErrorPayload | null;
+  meta?: {
+    pagination?: OrderListPayload['pagination'];
+    [key: string]: unknown;
+  };
 };
 
 export class ApiError extends Error {
@@ -164,7 +169,11 @@ async function requestRaw(path: string, init: RequestInit = {}, includeAuth = tr
   return response;
 }
 
-async function requestJson<T>(path: string, init: RequestInit = {}, includeAuth = true): Promise<T> {
+async function requestJsonEnvelope<T>(
+  path: string,
+  init: RequestInit = {},
+  includeAuth = true
+): Promise<ApiEnvelope<T>> {
   const response = await requestRaw(path, init, includeAuth);
   const payload = await tryReadJson(response);
 
@@ -185,7 +194,14 @@ async function requestJson<T>(path: string, init: RequestInit = {}, includeAuth 
     throw new ApiError('A requisição não pôde ser concluída.', response.status, 'API_ERROR');
   }
 
-  return unwrapJson<T>(payload as ApiEnvelope<T>);
+  const typedPayload = payload as ApiEnvelope<T>;
+  unwrapJson(typedPayload);
+
+  return typedPayload;
+}
+
+async function requestJson<T>(path: string, init: RequestInit = {}, includeAuth = true): Promise<T> {
+  return unwrapJson(await requestJsonEnvelope<T>(path, init, includeAuth));
 }
 
 export async function apiLogin(payload: {
@@ -349,7 +365,24 @@ export async function apiListOrders(filters: {
   }
 
   const query = params.toString();
-  return requestJson<OrderListPayload>(`/orders${query ? `?${query}` : ''}`);
+  const payload = await requestJsonEnvelope<{ orders: OrderSummary[] }>(
+    `/orders${query ? `?${query}` : ''}`
+  );
+  const data = unwrapJson(payload);
+  const pagination = payload.meta?.pagination;
+
+  if (!pagination) {
+    throw new ApiError(
+      'A API retornou a lista de OS sem os dados de paginação.',
+      502,
+      'INVALID_API_RESPONSE'
+    );
+  }
+
+  return {
+    orders: data.orders,
+    pagination,
+  };
 }
 
 export async function apiOrderDetail(orderId: number | string): Promise<OrderDetail> {
@@ -516,6 +549,22 @@ export async function apiSearchLinkableBudgets(params: { q?: string; per_page?: 
 
   const queryString = query.toString();
   return requestJson<{ budgets: LinkableBudget[] }>(`/orcamentos/vinculaveis-os${queryString ? `?${queryString}` : ''}`);
+}
+
+export async function apiSearchAvulsoBudgetContacts(params: { q: string; per_page?: number }): Promise<{
+  budgets: LinkableBudget[];
+}> {
+  const query = new URLSearchParams({ q: params.q.trim() });
+  if (params.per_page) {
+    query.set('per_page', String(params.per_page));
+  }
+
+  return requestJson<{ budgets: LinkableBudget[] }>(`/orcamentos/contatos-avulsos?${query.toString()}`);
+}
+
+export async function apiLookupCep(cep: string): Promise<{ address: CepAddress }> {
+  const digits = cep.replace(/\D+/g, '').slice(0, 8);
+  return requestJson<{ address: CepAddress }>(`/clients/cep/${digits}`);
 }
 
 type RawTeamMember = {

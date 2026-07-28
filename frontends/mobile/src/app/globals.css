@@ -66,6 +66,11 @@ body {
   background-attachment: fixed;
 }
 
+body.profile-dialog-open,
+body.password-dialog-open {
+  overflow: hidden;
+}
+
 body::before {
   content: "";
   position: fixed;
@@ -192,6 +197,22 @@ img {
   align-items: center;
 }
 
+.toolbar__group--offset {
+  margin-top: 8px;
+}
+
+.toolbar--spaced {
+  margin-top: 16px;
+}
+
+.toolbar--section-leading {
+  margin-bottom: 16px;
+}
+
+.toolbar--compact-spaced {
+  margin-top: 6px;
+}
+
 .stats {
   display: grid;
   gap: 12px;
@@ -237,6 +258,18 @@ img {
   margin-bottom: 16px;
 }
 
+.section__header--flush {
+  margin-bottom: 0;
+}
+
+.section__header--tight {
+  margin-bottom: 8px;
+}
+
+.section__header--medium {
+  margin-bottom: 12px;
+}
+
 .section__title {
   margin: 0;
   font-size: 1.15rem;
@@ -244,6 +277,11 @@ img {
 
 .muted {
   color: var(--muted);
+}
+
+.muted--block-spaced {
+  display: block;
+  margin-top: 4px;
 }
 
 .grid {
@@ -447,6 +485,14 @@ img {
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
+.order-card__client {
+  margin: 8px 0 0;
+}
+
+.order-card__details {
+  margin-top: 14px;
+}
+
 .kpi {
   display: grid;
   gap: 6px;
@@ -508,6 +554,15 @@ img {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.attachment-card__title {
+  font-size: 0.95rem;
+}
+
+.attachment-card__meta {
+  margin: 6px 0 0;
+  font-size: 0.84rem;
+}
+
 .attachment-card__thumb {
   display: block;
   width: 100%;
@@ -561,6 +616,21 @@ img {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.preview-panel--spaced {
+  margin-top: 16px;
+}
+
+.preview-panel__filename {
+  margin: 6px 0 0;
+}
+
+.preview-panel__image {
+  width: 100%;
+  max-height: 520px;
+  object-fit: contain;
+  border-radius: 16px;
+}
+
 .preview-panel__frame {
   width: 100%;
   min-height: 280px;
@@ -604,6 +674,20 @@ img {
   line-height: 1.5;
 }
 
+.login-form {
+  margin-top: 18px;
+}
+
+.login-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.login-hint {
+  margin-top: 14px;
+}
+
 .auth-footer {
   margin-top: 14px;
   display: flex;
@@ -634,6 +718,14 @@ img {
 .notice-error {
   background: rgba(255, 112, 112, 0.14);
   color: #ffd1d1;
+}
+
+.notice--spaced {
+  margin-top: 16px;
+}
+
+.notice--spaced-sm {
+  margin-top: 14px;
 }
 
 .chip {
@@ -1506,6 +1598,10 @@ img {
   background: rgba(5, 12, 23, 0.7);
 }
 
+.pdf-choice--spaced {
+  margin-top: 12px;
+}
+
 .pdf-choice input {
   width: 18px;
   height: 18px;
@@ -1518,6 +1614,14 @@ img {
   align-items: center;
   min-width: 0;
   gap: 12px;
+}
+
+.field--spaced {
+  margin-top: 16px;
+}
+
+.detail-category {
+  margin-bottom: 8px;
 }
 
 .search-select__option-copy {

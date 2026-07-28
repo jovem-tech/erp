@@ -181,7 +181,7 @@ function AttachmentList({
 }) {
   return (
     <div className="attachments">
-      <div className="section__header" style={{ marginBottom: 0 }}>
+      <div className="section__header section__header--flush">
         <h4 className="section__title">{title}</h4>
         <span className="muted">{items.length} item(ns)</span>
       </div>
@@ -192,10 +192,10 @@ function AttachmentList({
             <AttachmentThumbnail orderId={orderId} item={item} onOpen={onOpen} />
 
             <div>
-              <p className="card__title" style={{ fontSize: '0.95rem' }}>
+              <p className="card__title attachment-card__title">
                 {item.nome_arquivo}
               </p>
-              <p className="muted" style={{ margin: '6px 0 0', fontSize: '0.84rem' }}>
+              <p className="muted attachment-card__meta">
                 {item.tipo_label}
               </p>
             </div>
@@ -339,11 +339,11 @@ export function OrderAttachments({ order }: OrderAttachmentsProps) {
       </div>
 
       {preview ? (
-        <div className="preview-panel" style={{ marginTop: '16px' }}>
+        <div className="preview-panel preview-panel--spaced">
           <div className="toolbar">
             <div>
               <p className="card__title">{preview.title}</p>
-              <p className="muted" style={{ margin: '6px 0 0' }}>
+              <p className="muted preview-panel__filename">
                 {preview.filename}
               </p>
             </div>
@@ -363,7 +363,7 @@ export function OrderAttachments({ order }: OrderAttachmentsProps) {
             <img
               src={preview.url}
               alt={preview.title}
-              style={{ width: '100%', maxHeight: '520px', objectFit: 'contain', borderRadius: '16px' }}
+              className="preview-panel__image"
             />
           ) : (
             <iframe

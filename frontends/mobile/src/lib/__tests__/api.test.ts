@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, apiLogout } from '@/lib/api';
+import { ApiError, apiListOrders, apiLogout } from '@/lib/api';
 import { MOBILE_SESSION_STORAGE_KEY, writeStoredSession } from '@/lib/session';
 
 function jsonResponse(body: unknown, init: { ok?: boolean; status?: number } = {}): Response {
@@ -80,5 +80,59 @@ describe('apiLogout', () => {
     await expect(apiLogout()).rejects.toThrow();
 
     expect(window.localStorage.getItem(MOBILE_SESSION_STORAGE_KEY)).toBeNull();
+  });
+});
+
+describe('apiListOrders', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    storeFakeSession();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('normalizes pagination from the API envelope metadata', async () => {
+    const pagination = {
+      current_page: 1,
+      per_page: 24,
+      total: 37,
+      last_page: 2,
+      from: 1,
+      to: 24,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        status: 'success',
+        data: { orders: [{ id: 3648 }] },
+        error: null,
+        meta: { pagination },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await apiListOrders({ status: 'triagem', per_page: 24 });
+
+    expect(result).toEqual({
+      orders: [{ id: 3648 }],
+      pagination,
+    });
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/orders?status=triagem&per_page=24');
+  });
+
+  it('rejects a successful response that omits pagination metadata', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      jsonResponse({
+        status: 'success',
+        data: { orders: [] },
+        error: null,
+      })
+    ));
+
+    await expect(apiListOrders()).rejects.toMatchObject({
+      status: 502,
+      code: 'INVALID_API_RESPONSE',
+    });
   });
 });

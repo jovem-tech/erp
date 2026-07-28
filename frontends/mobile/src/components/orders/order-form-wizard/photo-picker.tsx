@@ -105,7 +105,7 @@ export function PhotoPicker({ label, value, onChange, maxFiles, disabled = false
         accept="image/jpeg,image/png,image/webp"
         capture="environment"
         multiple
-        style={{ display: 'none' }}
+        hidden
         onChange={(event) => handleFiles(event.target.files)}
         disabled={disabled}
       />

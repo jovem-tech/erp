@@ -438,7 +438,7 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
         <div className="notice">
           <span>OS criada com sucesso. Alguns passos extras não puderam ser concluídos: {successState.warnings.join(' ')}</span>
         </div>
-        <div className="toolbar" style={{ marginTop: 16 }}>
+        <div className="toolbar toolbar--spaced">
           <button
             type="button"
             className="button button--primary"
@@ -466,6 +466,11 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
           onChangePendingClientUpdate={(pendingClientUpdate) =>
             setState((prev) => ({ ...prev, pendingClientUpdate }))
           }
+          linkedBudget={state.orcamentoVinculado}
+          onChangeLinkedBudget={(orcamentoVinculado) =>
+            setState((prev) => ({ ...prev, orcamentoVinculado }))
+          }
+          canLinkBudget={canLinkBudget}
           canEditExisting={canEditClient}
           disabled={busy}
         />
@@ -479,6 +484,7 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
           pendingNewEquipment={state.pendingNewEquipment}
           pendingEquipmentUpdate={state.pendingEquipmentUpdate}
           pendingNewEquipmentPhotos={state.pendingNewEquipmentPhotos}
+          linkedBudget={state.orcamentoVinculado}
           onSelectEquipamento={(equipamento) => setState((prev) => selectEquipmentForWizard(prev, equipamento))}
           onChangePendingNewEquipment={(pendingNewEquipment) => setState((prev) => ({ ...prev, pendingNewEquipment }))}
           onChangePendingEquipmentUpdate={(pendingEquipmentUpdate) =>
@@ -603,7 +609,7 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
       ) : null}
 
       {mode !== 'create' && currentStepKey !== 'revisao' ? (
-        <div className="toolbar" style={{ marginTop: 16 }}>
+        <div className="toolbar toolbar--spaced">
           <button type="button" className="button button--soft" onClick={goBack} disabled={currentIndex === 0 || busy}>
             Voltar
           </button>
