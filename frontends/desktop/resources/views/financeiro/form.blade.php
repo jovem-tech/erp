@@ -11,6 +11,20 @@
     $selectedClienteLabel = $selectedClienteNome !== ''
         ? $selectedClienteNome
         : ($selectedClienteId > 0 ? 'Cliente #' . $selectedClienteId : '');
+    $selectedOsId = (int) old('os_id', $lancamento['os_id'] ?? 0);
+    $selectedOsNumero = trim((string) ($lancamento['order']['numero_os'] ?? ''));
+    $selectedOsLabel = $selectedOsNumero !== ''
+        ? 'OS ' . $selectedOsNumero
+        : ($selectedOsId > 0 ? 'OS #' . $selectedOsId : '');
+    $selectedFornecedorId = (int) old('fornecedor_id', $lancamento['fornecedor_id'] ?? 0);
+    $selectedFornecedorNome = trim((string) (
+        $lancamento['supplier']['nome_fantasia']
+        ?? $lancamento['supplier']['razao_social']
+        ?? ''
+    ));
+    $selectedFornecedorLabel = $selectedFornecedorNome !== ''
+        ? $selectedFornecedorNome
+        : ($selectedFornecedorId > 0 ? 'Fornecedor #' . $selectedFornecedorId : '');
     $currentCategoria = old('categoria', (string) ($lancamento['categoria'] ?? ''));
     $catalogNomes = array_filter(array_map(fn($c) => (string) ($c['nome'] ?? ''), $categorias ?? []));
     $valorRaw = old('valor', (string) ($lancamento['valor'] ?? ''));
@@ -184,9 +198,21 @@
 
             <div class="desktop-grid desktop-grid-three">
                 <div>
-                    <label for="financeiroOsId">OS vinculada (ID)</label>
-                    <input type="number" id="financeiroOsId" name="os_id" class="form-control" min="1" value="{{ old('os_id', $lancamento['os_id'] ?? '') }}">
-                    <small id="financeiroOsHelp" class="text-muted d-block mt-1">Lançamentos vinculados à OS não podem ser avulsos.</small>
+                    <label for="financeiroOsId">OS vinculada</label>
+                    <select
+                        id="financeiroOsId"
+                        name="os_id"
+                        class="form-select @error('os_id') is-invalid @enderror"
+                        data-native-select="true"
+                        data-select2-placeholder="Buscar OS pelo número..."
+                    >
+                        <option value=""></option>
+                        @if ($selectedOsId > 0)
+                            <option value="{{ $selectedOsId }}" selected>{{ $selectedOsLabel }}</option>
+                        @endif
+                    </select>
+                    @error('os_id')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                    <small id="financeiroOsHelp" class="text-muted d-block mt-1">Busque pelo número da OS (só aparecem OS em aberto). Selecionar uma OS preenche o cliente automaticamente e desmarca o lançamento avulso.</small>
                 </div>
 
                 <div>
@@ -223,8 +249,21 @@
                 </div>
 
                 <div id="financeiroFornecedorWrapper" @class(['d-none' => $tipo === 'receber'])>
-                    <label for="financeiroFornecedorId">Fornecedor (ID)</label>
-                    <input type="number" id="financeiroFornecedorId" name="fornecedor_id" class="form-control" min="1" value="{{ old('fornecedor_id', $lancamento['fornecedor_id'] ?? '') }}">
+                    <label for="financeiroFornecedorId">Fornecedor</label>
+                    <select
+                        id="financeiroFornecedorId"
+                        name="fornecedor_id"
+                        class="form-select @error('fornecedor_id') is-invalid @enderror"
+                        data-native-select="true"
+                        data-select2-placeholder="Buscar fornecedor pelo nome..."
+                    >
+                        <option value=""></option>
+                        @if ($selectedFornecedorId > 0)
+                            <option value="{{ $selectedFornecedorId }}" selected>{{ $selectedFornecedorLabel }}</option>
+                        @endif
+                    </select>
+                    @error('fornecedor_id')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                    <small class="text-muted d-block mt-1">Toda conta a pagar deve estar vinculada a um fornecedor.</small>
                 </div>
             </div>
         </div>
@@ -246,13 +285,9 @@
 </section>
 
 <script>
+    {{-- Avulso/OS/fornecedor coordination lives in financeiro-form.js (initVinculos),
+         since it now needs to talk to the OS/fornecedor select2 ajax widgets. --}}
     (() => {
-        const avulsoInput = document.getElementById('financeiroAvulso');
-        const osInput = document.getElementById('financeiroOsId');
-        const osHelp = document.getElementById('financeiroOsHelp');
-        const tipoSelect = document.getElementById('financeiroTipo');
-        const fornecedorWrapper = document.getElementById('financeiroFornecedorWrapper');
-        const fornecedorInput = document.getElementById('financeiroFornecedorId');
         const dateInput = document.getElementById('financeiroDataVencimento');
 
         if (dateInput && dateInput.dataset.setToday === '1') {
@@ -262,51 +297,6 @@
             const dd = String(now.getDate()).padStart(2, '0');
             dateInput.value = `${yyyy}-${mm}-${dd}`;
         }
-
-        const syncFornecedorVisibility = () => {
-            if (!fornecedorWrapper || !tipoSelect) {
-                return;
-            }
-
-            const isReceber = tipoSelect.value === 'receber';
-            fornecedorWrapper.classList.toggle('d-none', isReceber);
-
-            if (isReceber && fornecedorInput) {
-                fornecedorInput.value = '';
-            }
-        };
-
-        if (tipoSelect) {
-            tipoSelect.addEventListener('change', syncFornecedorVisibility);
-            syncFornecedorVisibility();
-        }
-
-        if (!avulsoInput || !osInput || !osHelp) {
-            return;
-        }
-
-        const syncAvulsoState = () => {
-            const isAvulso = avulsoInput.checked;
-
-            if (isAvulso) {
-                osInput.value = '';
-            }
-
-            osInput.disabled = isAvulso;
-            osHelp.textContent = isAvulso
-                ? 'OS desabilitada: lançamentos avulsos são sempre independentes de ordem de serviço.'
-                : 'Lançamentos vinculados à OS não podem ser avulsos.';
-        };
-
-        avulsoInput.addEventListener('change', syncAvulsoState);
-        osInput.addEventListener('input', () => {
-            if (osInput.value.trim() !== '') {
-                avulsoInput.checked = false;
-                syncAvulsoState();
-            }
-        });
-
-        syncAvulsoState();
     })();
 </script>
 

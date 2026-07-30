@@ -434,6 +434,12 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/financeiro/clientes/buscar', [FinanceiroController::class, 'searchClients'])
         ->middleware('desktop.permission:financeiro,criar|editar')
         ->name('financeiro.clients.search');
+    Route::get('/financeiro/ordens/buscar', [FinanceiroController::class, 'searchOrders'])
+        ->middleware('desktop.permission:financeiro,criar|editar')
+        ->name('financeiro.orders.search');
+    Route::get('/financeiro/fornecedores/buscar', [FinanceiroController::class, 'searchSuppliers'])
+        ->middleware('desktop.permission:financeiro,criar|editar')
+        ->name('financeiro.suppliers.search');
     Route::get('/financeiro/novo', [FinanceiroController::class, 'create'])
         ->middleware('desktop.permission:financeiro,criar')
         ->name('financeiro.create');

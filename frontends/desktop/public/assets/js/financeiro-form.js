@@ -2,6 +2,8 @@
     const config = window.__DESKTOP_FINANCEIRO_FORM || {};
 
     const clientSearchUrl = String(config.clientSearchUrl || '').trim();
+    const orderSearchUrl = String(config.orderSearchUrl || '').trim();
+    const supplierSearchUrl = String(config.supplierSearchUrl || '').trim();
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
 
     const els = {
@@ -17,6 +19,12 @@
         paymentMethodSelect: document.getElementById('financeiroFormaPagamento'),
         accountWrapper: document.getElementById('financeiroContaWrapper'),
         accountSelect: document.getElementById('financeiroConta'),
+        osSelect: document.getElementById('financeiroOsId'),
+        osHelp: document.getElementById('financeiroOsHelp'),
+        avulsoInput: document.getElementById('financeiroAvulso'),
+        tipoSelect: document.getElementById('financeiroTipo'),
+        fornecedorWrapper: document.getElementById('financeiroFornecedorWrapper'),
+        fornecedorSelect: document.getElementById('financeiroFornecedorId'),
     };
 
     const escapeHtml = (unsafe) => String(unsafe ?? '')
@@ -346,6 +354,277 @@
         });
     };
 
+    // --- OS (ordem de serviço) Select2 ---
+
+    const renderOrderTemplate = (order) => {
+        if (!order || order.loading) {
+            return escapeHtml(order?.text || '');
+        }
+
+        const title = escapeHtml(normalizeText(
+            order.text || (order.numero_os ? `OS ${order.numero_os}` : `OS #${order.id}`)
+        ));
+        const meta = [
+            normalizeText(order.cliente_nome || ''),
+            normalizeText(order.equipamento || ''),
+            normalizeText(order.status_nome || ''),
+        ].filter(Boolean);
+
+        return `
+            <div class="d-flex flex-column py-1">
+                <strong>${title}</strong>
+                ${meta.length > 0 ? `<small class="text-secondary">${escapeHtml(meta.join(' / '))}</small>` : ''}
+            </div>
+        `;
+    };
+
+    const initOrderSelect = () => {
+        if (!(els.osSelect instanceof HTMLSelectElement) || orderSearchUrl === '') {
+            return;
+        }
+
+        if (
+            typeof window.jQuery === 'undefined'
+            || !window.jQuery.fn
+            || typeof window.jQuery.fn.select2 !== 'function'
+        ) {
+            return;
+        }
+
+        const $ = window.jQuery;
+
+        if ($(els.osSelect).data('select2')) {
+            return;
+        }
+
+        const placeholder = els.osSelect.dataset.select2Placeholder || 'Buscar OS pelo número...';
+
+        $(els.osSelect).select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder,
+            allowClear: true,
+            minimumInputLength: 0,
+            language: {
+                ...select2Language,
+                noResults: () => 'Nenhuma OS em aberto encontrada.',
+            },
+            escapeMarkup: (markup) => markup,
+            templateResult: renderOrderTemplate,
+            templateSelection: (order) => {
+                if (!order || order.loading) {
+                    return escapeHtml(order?.text || placeholder);
+                }
+
+                return escapeHtml(normalizeText(order.text || placeholder));
+            },
+            ajax: {
+                url: orderSearchUrl,
+                dataType: 'json',
+                delay: 250,
+                cache: true,
+                data: (params) => ({
+                    q: params.term || '',
+                    client_id: els.clientSelect instanceof HTMLSelectElement ? (els.clientSelect.value || '') : '',
+                    page: params.page || 1,
+                    per_page: 10,
+                }),
+                processResults: (data, params) => {
+                    const page = params.page || 1;
+                    const orders = Array.isArray(data?.orders) ? data.orders : [];
+
+                    return {
+                        results: orders.map((item) => ({
+                            id: String(item?.id || ''),
+                            text: normalizeText(item?.text || ''),
+                            numero_os: normalizeText(item?.numero_os || ''),
+                            cliente_id: item?.cliente_id ? String(item.cliente_id) : '',
+                            cliente_nome: normalizeText(item?.cliente_nome || ''),
+                            equipamento: normalizeText(item?.equipamento || ''),
+                            status_nome: normalizeText(item?.status_nome || ''),
+                        })),
+                        pagination: {
+                            more:
+                                Number(data?.pagination?.current_page || page)
+                                < Number(data?.pagination?.last_page || page),
+                        },
+                    };
+                },
+            },
+        });
+    };
+
+    // --- Fornecedor Select2 ---
+
+    const renderSupplierTemplate = (supplier) => {
+        if (!supplier || supplier.loading) {
+            return escapeHtml(supplier?.text || '');
+        }
+
+        const title = escapeHtml(normalizeText(supplier.name || supplier.text || `Fornecedor #${supplier.id}`));
+        const meta = [normalizeText(supplier.phone || '')].filter(Boolean);
+
+        return `
+            <div class="d-flex flex-column py-1">
+                <strong>${title}</strong>
+                ${meta.length > 0 ? `<small class="text-secondary">${escapeHtml(meta.join(' / '))}</small>` : ''}
+            </div>
+        `;
+    };
+
+    const initSupplierSelect = () => {
+        if (!(els.fornecedorSelect instanceof HTMLSelectElement) || supplierSearchUrl === '') {
+            return;
+        }
+
+        if (
+            typeof window.jQuery === 'undefined'
+            || !window.jQuery.fn
+            || typeof window.jQuery.fn.select2 !== 'function'
+        ) {
+            return;
+        }
+
+        const $ = window.jQuery;
+
+        if ($(els.fornecedorSelect).data('select2')) {
+            return;
+        }
+
+        const placeholder = els.fornecedorSelect.dataset.select2Placeholder || 'Buscar fornecedor pelo nome...';
+
+        $(els.fornecedorSelect).select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder,
+            allowClear: true,
+            minimumInputLength: 1,
+            language: {
+                ...select2Language,
+                noResults: () => 'Nenhum fornecedor encontrado.',
+            },
+            escapeMarkup: (markup) => markup,
+            templateResult: renderSupplierTemplate,
+            templateSelection: (supplier) => {
+                if (!supplier || supplier.loading) {
+                    return escapeHtml(supplier?.text || placeholder);
+                }
+
+                return escapeHtml(normalizeText(supplier.name || supplier.text || placeholder));
+            },
+            ajax: {
+                url: supplierSearchUrl,
+                dataType: 'json',
+                delay: 250,
+                cache: true,
+                data: (params) => ({
+                    q: params.term || '',
+                    page: params.page || 1,
+                    per_page: 10,
+                }),
+                processResults: (data, params) => {
+                    const page = params.page || 1;
+                    const suppliers = Array.isArray(data?.suppliers) ? data.suppliers : [];
+
+                    return {
+                        results: suppliers.map((item) => ({
+                            id: String(item?.id || ''),
+                            text: normalizeText(item?.text || ''),
+                            name: normalizeText(item?.name || item?.text || ''),
+                            phone: normalizeText(item?.phone || ''),
+                        })),
+                        pagination: {
+                            more:
+                                Number(data?.pagination?.current_page || page)
+                                < Number(data?.pagination?.last_page || page),
+                        },
+                    };
+                },
+            },
+        });
+    };
+
+    // --- Avulso / OS / Fornecedor coordination ---
+    //
+    // Compra de peças quase sempre serve para fechar a OS de um cliente, raramente
+    // é para estoque — por isso selecionar uma OS preenche o cliente automaticamente
+    // e desmarca "avulso". Trocar o cliente limpa a OS selecionada (ela pertencia ao
+    // cliente anterior). Como o cliente é setado via `change.select2` (evento
+    // namespaced), esse listener plain 'change' só dispara em edições feitas pelo
+    // usuário na UI, não quando o próprio código preenche o cliente a partir da OS.
+
+    const initVinculos = () => {
+        const $ = window.jQuery;
+        const hasSelect2 = typeof $ !== 'undefined' && $.fn && typeof $.fn.select2 === 'function';
+
+        const clearSelect2Value = (select) => {
+            if (!(select instanceof HTMLSelectElement)) { return; }
+            if (hasSelect2 && $(select).data('select2')) {
+                $(select).val(null).trigger('change');
+            } else {
+                select.value = '';
+            }
+        };
+
+        const syncFornecedorState = () => {
+            if (!els.fornecedorWrapper || !els.tipoSelect) { return; }
+
+            const isReceber = els.tipoSelect.value === 'receber';
+            els.fornecedorWrapper.classList.toggle('d-none', isReceber);
+
+            if (els.fornecedorSelect instanceof HTMLSelectElement) {
+                els.fornecedorSelect.required = !isReceber;
+                if (isReceber) { clearSelect2Value(els.fornecedorSelect); }
+            }
+        };
+
+        if (els.tipoSelect) {
+            els.tipoSelect.addEventListener('change', syncFornecedorState);
+            syncFornecedorState();
+        }
+
+        if (!(els.avulsoInput instanceof HTMLInputElement) || !(els.osSelect instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        const syncAvulsoState = () => {
+            const isAvulso = els.avulsoInput.checked;
+
+            if (isAvulso) { clearSelect2Value(els.osSelect); }
+            els.osSelect.disabled = isAvulso;
+
+            if (els.osHelp instanceof HTMLElement) {
+                els.osHelp.textContent = isAvulso
+                    ? 'OS desabilitada: lançamentos avulsos são sempre independentes de ordem de serviço.'
+                    : 'Busque pelo número da OS (só aparecem OS em aberto). Selecionar uma OS preenche o cliente automaticamente e desmarca o lançamento avulso.';
+            }
+        };
+
+        els.avulsoInput.addEventListener('change', syncAvulsoState);
+
+        if (hasSelect2) {
+            $(els.osSelect).on('select2:select', (event) => {
+                const order = event.params?.data;
+                if (!order) { return; }
+
+                if (els.avulsoInput.checked) {
+                    els.avulsoInput.checked = false;
+                    syncAvulsoState();
+                }
+
+                if (order.cliente_id) {
+                    setClientSelectValue(order.cliente_id, order.cliente_nome);
+                }
+            });
+
+            if (els.clientSelect instanceof HTMLSelectElement) {
+                $(els.clientSelect).on('change', () => clearSelect2Value(els.osSelect));
+            }
+        }
+
+        syncAvulsoState();
+    };
+
     // --- Quick Client Modal ---
 
     const renderQuickClientErrors = (messages, fallback = '') => {
@@ -462,5 +741,8 @@
     initCategoriaSelect();
     initFinancialAccount();
     initClientSelect();
+    initOrderSelect();
+    initSupplierSelect();
+    initVinculos();
     initQuickClient();
 })();

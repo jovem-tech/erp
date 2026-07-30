@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-07-28T07:31:37-03:00`
-- Versao do sistema: `5.20.7`
+- Gerado em: `2026-07-30T20:06:49-03:00`
+- Versao do sistema: `5.21.0`
 - Versao da API: `1.6.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -187,6 +187,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-26-selecao-equipamento-cliente-mobile.md` - Seleção de equipamento do cliente na Nova OS mobile
 - `documentacao/07-novas-implementacoes/2026-07-26-tema-claro-identidade-jovem-tech-mobile.md` - Tema claro e identidade Jovem Tech no PWA mobile
 - `documentacao/07-novas-implementacoes/2026-07-27-csp-estilos-inline-mobile.md` - CSP mobile sem estilos inline
+- `documentacao/07-novas-implementacoes/2026-07-28-relato-cliente-orcamento-os.md` - Auto-preenchimento do relato do cliente a partir da OS vinculada no orçamento
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 - `documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md` - Revisão de segurança — Fluxo de orçamento na assistência (com OS)
 

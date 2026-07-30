@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.21.0.0 — 2026-07-30 20:06
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Financeiro: OS e fornecedor por busca select2 no lançamento, com autofill de cliente pela OS
+- **Arquivos:** frontends/desktop/app/Http/Controllers/FinanceiroController.php,frontends/desktop/public/assets/js/financeiro-form.js,frontends/desktop/resources/views/financeiro/create.blade.php,frontends/desktop/resources/views/financeiro/edit.blade.php,frontends/desktop/resources/views/financeiro/form.blade.php,frontends/desktop/routes/web.php
+
 ## v5.20.7.0 — 2026-07-28 07:31
 - **Tier:** patch
 - **Autor/Agente:** Codex
