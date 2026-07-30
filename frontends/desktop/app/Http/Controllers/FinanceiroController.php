@@ -7,6 +7,8 @@ use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
 use App\Services\ClientService;
 use App\Services\FinanceiroService;
+use App\Services\OrderService;
+use App\Services\SupplierService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,6 +21,8 @@ class FinanceiroController extends DesktopController
     public function __construct(
         private readonly FinanceiroService $financeiroService,
         private readonly ClientService $clientService,
+        private readonly OrderService $orderService,
+        private readonly SupplierService $supplierService,
     ) {
     }
 
@@ -67,6 +71,113 @@ class FinanceiroController extends DesktopController
         return response()->json([
             'success'    => true,
             'clients'    => $clients,
+            'pagination' => $result['pagination'] ?? [],
+        ]);
+    }
+
+    /**
+     * Busca OS's em aberto para vincular ao lançamento. Filtra por cliente
+     * quando informado, pois a compra de peças quase sempre é para
+     * finalizar a OS de um cliente específico, raramente para estoque.
+     */
+    public function searchOrders(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q'         => ['nullable', 'string', 'max:100'],
+            'client_id' => ['nullable', 'integer', 'min:1'],
+            'page'      => ['nullable', 'integer', 'min:1'],
+            'per_page'  => ['nullable', 'integer', 'min:1', 'max:20'],
+        ]);
+
+        $search   = trim((string) ($validated['q'] ?? ''));
+        $clientId = (int) ($validated['client_id'] ?? 0);
+        $page     = max(1, (int) ($validated['page'] ?? 1));
+        $perPage  = max(1, min(20, (int) ($validated['per_page'] ?? 10)));
+
+        try {
+            $result = $this->orderService->paginate(array_filter([
+                'search'       => $search,
+                'client_id'    => $clientId,
+                'status_scope' => 'open',
+                'page'         => $page,
+                'per_page'     => $perPage,
+            ], static fn ($v): bool => $v !== '' && $v !== 0));
+        } catch (ApiAuthenticationException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 401);
+        } catch (ApiAuthorizationException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 403);
+        } catch (ApiRequestException $e) {
+            $status = $e->statusCode() > 0 ? $e->statusCode() : 422;
+            return response()->json(['success' => false, 'message' => $e->getMessage()], $status);
+        }
+
+        $orders = array_map(static function (array $order): array {
+            $id          = (int) ($order['id'] ?? 0);
+            $numero      = trim((string) ($order['numero_os'] ?? ''));
+            $clienteNome = trim((string) ($order['cliente_nome'] ?? ''));
+            $equipamento = trim((string) ($order['equipamento_resumo_curto'] ?? ''));
+            $label       = $numero !== '' ? 'OS '.$numero : ('OS #'.$id);
+
+            return [
+                'id'           => $id,
+                'text'         => implode(' — ', array_filter([$label, $clienteNome, $equipamento])),
+                'numero_os'    => $numero,
+                'cliente_id'   => (int) ($order['cliente_id'] ?? 0),
+                'cliente_nome' => $clienteNome,
+                'equipamento'  => $equipamento,
+                'status_nome'  => trim((string) ($order['status_nome'] ?? '')),
+            ];
+        }, $result['items'] ?? []);
+
+        return response()->json([
+            'success'    => true,
+            'orders'     => $orders,
+            'pagination' => $result['pagination'] ?? [],
+        ]);
+    }
+
+    public function searchSuppliers(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q'        => ['nullable', 'string', 'max:100'],
+            'page'     => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:20'],
+        ]);
+
+        $search  = trim((string) ($validated['q'] ?? ''));
+        $page    = max(1, (int) ($validated['page'] ?? 1));
+        $perPage = max(1, min(20, (int) ($validated['per_page'] ?? 10)));
+
+        try {
+            $result = $this->supplierService->paginate(array_filter([
+                'search'   => $search,
+                'page'     => $page,
+                'per_page' => $perPage,
+            ], static fn ($v): bool => $v !== '' && $v !== 0));
+        } catch (ApiAuthenticationException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 401);
+        } catch (ApiAuthorizationException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 403);
+        } catch (ApiRequestException $e) {
+            $status = $e->statusCode() > 0 ? $e->statusCode() : 422;
+            return response()->json(['success' => false, 'message' => $e->getMessage()], $status);
+        }
+
+        $suppliers = array_map(static function (array $supplier): array {
+            $id    = (int) ($supplier['id'] ?? 0);
+            $label = trim((string) ($supplier['nome_fantasia'] ?? '')) ?: trim((string) ($supplier['razao_social'] ?? ''));
+
+            return [
+                'id'    => $id,
+                'text'  => $label !== '' ? $label : ('Fornecedor #'.$id),
+                'name'  => $label,
+                'phone' => trim((string) ($supplier['telefone1'] ?? '')),
+            ];
+        }, $result['items'] ?? []);
+
+        return response()->json([
+            'success'    => true,
+            'suppliers'  => $suppliers,
             'pagination' => $result['pagination'] ?? [],
         ]);
     }

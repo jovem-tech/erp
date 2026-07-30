@@ -34,6 +34,8 @@
     <script>
         window.__DESKTOP_FINANCEIRO_FORM = {!! json_encode([
             'clientSearchUrl' => route('financeiro.clients.search'),
+            'orderSearchUrl' => route('financeiro.orders.search'),
+            'supplierSearchUrl' => route('financeiro.suppliers.search'),
             'quickClientStoreUrl' => route('clients.quick.store'),
             'contasFinanceiras' => $accountDataset ?? ['contas' => [], 'contas_padrao' => []],
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
