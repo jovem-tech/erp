@@ -944,13 +944,6 @@ class OrderController extends BaseApiController
                 null,
                 request: $request
             ),
-            'invalid_transition' => $this->error(
-                'A transição de status solicitada não é permitida a partir da etapa atual.',
-                422,
-                'ORDER_STATUS_TRANSITION_INVALID',
-                ['proximas_etapas' => $result['proximas_etapas'] ?? []],
-                request: $request
-            ),
             'closure_status_requires_baixa_flow' => $this->error(
                 'Este status só pode ser aplicado pela tela de baixa da OS (Encerramento), não por aqui.',
                 422,

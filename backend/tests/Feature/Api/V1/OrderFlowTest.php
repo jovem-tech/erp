@@ -1011,7 +1011,7 @@ class OrderFlowTest extends TestCase
         $this->assertNotEmpty($response->json('error.details.status'));
     }
 
-    public function test_patch_status_blocks_transition_not_allowed_by_catalog(): void
+    public function test_patch_status_allows_any_active_non_closure_destination_regardless_of_catalog(): void
     {
         [$user, $assignedOrder] = $this->seedTechnicianOrders();
         $token = $this->loginAndGetToken($user->email);
@@ -1019,7 +1019,11 @@ class OrderFlowTest extends TestCase
         $triagemId = (int) DB::table('os_status')->where('codigo', 'triagem')->value('id');
         $aguardandoId = (int) DB::table('os_status')->where('codigo', 'aguardando_reparo')->value('id');
 
-        // Só existe transição triagem -> aguardando_reparo.
+        // Só existe transição triagem -> aguardando_reparo cadastrada, mas o
+        // catálogo de transições deixou de ser uma trava no backend (decisão
+        // de produto 2026-08-09): o modal "Alterar status" agora mostra todos
+        // os status ativos (exceto baixa) agrupados por macrofase, e o
+        // técnico pode escolher qualquer um deles, não só o registrado aqui.
         DB::table('os_status_transicoes')->insert([
             'status_origem_id' => $triagemId,
             'status_destino_id' => $aguardandoId,
@@ -1028,31 +1032,30 @@ class OrderFlowTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        // Destino fora das transições permitidas é recusado. Usa um status
-        // que nao seja um dos closureCodes() (ex.: entregue_reparado_pago) para
-        // isolar a rejeicao de catalogo de transicoes da regra separada de
+        // Destino fora das transições cadastradas é aceito normalmente. Usa um
+        // status que nao seja um dos closureCodes() (ex.: entregue_reparado_pago)
+        // para isolar este comportamento da regra separada de
         // "closure_status_requires_baixa_flow" (ver OrderWorkflowService::updateStatus()).
-        $blocked = $this->withHeader('Authorization', 'Bearer '.$token)
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
                 'status' => 'aguardando_orcamento',
             ]);
 
-        $blocked->assertUnprocessable()
-            ->assertJsonPath('error.code', 'ORDER_STATUS_TRANSITION_INVALID')
-            ->assertJsonPath('error.details.proximas_etapas.0.codigo', 'aguardando_reparo');
+        $response->assertOk()
+            ->assertJsonPath('data.status_novo', 'aguardando_orcamento');
 
         $this->assertDatabaseHas('os', [
             'id' => $assignedOrder,
-            'status' => 'triagem',
+            'status' => 'aguardando_orcamento',
         ]);
 
-        // Destino permitido continua funcionando.
-        $allowed = $this->withHeader('Authorization', 'Bearer '.$token)
+        // O destino cadastrado no catálogo também continua funcionando normalmente.
+        $viaCatalog = $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
                 'status' => 'aguardando_reparo',
             ]);
 
-        $allowed->assertOk()
+        $viaCatalog->assertOk()
             ->assertJsonPath('data.status_novo', 'aguardando_reparo');
     }
 

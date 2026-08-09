@@ -134,12 +134,16 @@ aberto.
 
 - `OrderWorkflowService::mapNextStatusOptionsFromCatalog()` — filtra
   `grupo_macro = OrderStatus::CLOSURE_MACRO_GROUP` de `proximas_etapas`. Isso
-  cobre o modal "Alterar status da OS" (`_status_modal.blade.php`), o
-  quick-status da listagem, e o form "Atualizar status" da tela de detalhe
-  (`orders/show.blade.php`), que consomem `proximas_etapas`.
-- `frontends/desktop/resources/views/orders/_wizard.blade.php` — o modal de
-  status da tela de EDICAO da OS usa `status_disponiveis` (catalogo completo,
-  nao `proximas_etapas`); filtra `grupo_macro !== 'encerrado'` no proprio blade.
+  cobre o quick-status da listagem e o form "Atualizar status" da tela de
+  detalhe (`orders/show.blade.php`), que ainda consomem `proximas_etapas`
+  como lista fechada de opcoes.
+- `frontends/desktop/resources/views/orders/_wizard.blade.php` e
+  `orders-status-modal.js` (modal "Alterar status da OS",
+  `_status_modal.blade.php`) — usam `status_disponiveis` (catalogo completo,
+  nao `proximas_etapas`) e filtram `grupo_macro !== 'encerrado'` no proprio
+  frontend. Ver secao "Modal 'Alterar status' mostra todos os status" abaixo
+  para o porque do modal ter migrado de `proximas_etapas` pra
+  `status_disponiveis` em 2026-08-09.
 - A tela de baixa (`orders/closure.blade.php`) e o UNICO lugar que exibe os 3
   status — via `OrderClosureService::closureOptions()`.
 
@@ -340,6 +344,63 @@ aplicação. Detalhes completos (schema, categorias, pontos de emissão, backfil
 `os:backfill-eventos`): `documentacao/03-arquitetura-tecnica/eventos-os.md`.
 Ao criar qualquer NOVO caminho que mexa em OS, emita o evento correspondente
 pelo `OrderEventService` — nunca escreva direto na tabela.
+
+## Modal "Alterar status" mostra todos os status (exceto baixa) por macrofase (2026-08-09)
+
+Decisao de produto do usuario: a UI deixou de restringir a escolha do
+tecnico as poucas etapas cadastradas em `os_status_transicoes` a partir do
+status atual — na pratica o tecnico avanca varias etapas do atendimento
+antes de mexer no sistema, entao uma maquina de estados rigida no backend
+nao refletia o fluxo real (o técnico "avançava de cabeça" e só conseguia
+registrar tudo de uma vez, no final).
+
+- `_status_modal.blade.php` / `orders-status-modal.js`: passaram a consumir
+  `status_disponiveis` (catalogo completo, igual `_wizard.blade.php` ja
+  fazia) em vez de `proximas_etapas`, filtrando so `grupo_macro = 'encerrado'`
+  (a regra central deste skill, **inalterada**) e agrupando o restante por
+  `grupo_macro` (macrofase), na ordem em que aparecem em `status_disponiveis`
+  (que ja vem ordenado por `ordem_fluxo`). `cancelado` continua com secao
+  propria fixa "Cancelar atendimento", igual antes.
+- `OrderWorkflowService::updateStatus()` — o bloco que rejeitava com
+  `result => 'invalid_transition'` quando o destino nao estava cadastrado em
+  `os_status_transicoes` para a origem atual foi **removido**. As duas
+  checagens da regra central deste skill (`closure_status_requires_baixa_flow`
+  e `order_is_closed`, ambas logo acima na mesma funcao) continuam
+  **intactas** — a baixa continua so podendo ser aplicada por
+  `OrderClosureService::close()`. `allowedTransitionCodes()` /
+  `mapNextStatusOptions()` / `mapNextStatusOptionsFromCatalog()` nao foram
+  removidos: `proximas_etapas` continua sendo calculado e volta na resposta,
+  agora so como sugestao em destaque visual na grade (chip com borda
+  realçada), nao mais como filtro do que pode ser salvo.
+- `'invalid_transition'` / `ORDER_STATUS_TRANSITION_INVALID` foi removido do
+  `match()` de `OrderController::updateStatus()` (era o unico emissor desse
+  erro) — nenhum client deve mais esperar esse codigo.
+- Teste que cobria a rejeicao (`test_patch_status_blocks_transition_not_allowed_by_catalog`)
+  foi reescrito para `test_patch_status_allows_any_active_non_closure_destination_regardless_of_catalog`
+  (`backend/tests/Feature/Api/V1/OrderFlowTest.php`), validando o novo
+  comportamento permissivo.
+- Aviso de "pulo de fase" (nao bloqueia, so confirma) fica inteiramente no
+  frontend: `orders-status-modal.js::confirmPhaseSkipIfNeeded()` compara o
+  indice da macrofase atual com o da selecionada (`phaseRankByGroup`,
+  calculado a partir da ordem de chegada em `status_disponiveis`) e pede
+  confirmacao via SweetAlert2 se a diferenca for maior que 1 fase. E so UX —
+  o backend aceita a mudanca de qualquer forma, mesmo sem confirmar.
+- **Escopo desta mudanca**: so o modal "Alterar status da OS" (incluido em
+  `show.blade.php`, `index.blade.php`, `closure.blade.php`,
+  `documents-center.blade.php`). O quick-status da listagem
+  (`orders/index.blade.php`) e o form "Atualizar status" da aba Informacoes
+  (`orders/show.blade.php`) continuam consumindo `proximas_etapas` sem
+  mudanca visual — nao ficaram errados (o backend permissivo e um superset
+  do que aceitavam antes), so nao foram migrados pra grade por macrofase
+  nesta rodada.
+
+**Ao tocar neste modal de novo:** nao reintroduza uma checagem de transicao
+rigida no backend sem decisao explicita do usuario — foi removida de
+proposito, com o usuario ciente do tradeoff (perde-se a trava automatica
+contra pular etapa; fica so o aviso client-side). Qualquer novo bloqueio de
+"para onde a OS pode ir" deve ser feito como aviso na UI (como o de pulo de
+fase), nunca como 422 no backend, a menos que envolva os `closureCodes()`
+(aí sim, a regra central deste skill continua valendo sem excecao).
 
 ## Checklist ao tocar em status de OS ou relatorios financeiros
 
