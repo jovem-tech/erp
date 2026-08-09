@@ -67,6 +67,21 @@
         display: flex;
         flex-direction: column;
         gap: 0.85rem;
+        max-height: 360px;
+        overflow-y: auto;
+        padding-right: 0.25rem;
+    }
+
+    .os-status-phase-grid {
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+    }
+
+    .os-status-phase-group--cancel {
+        padding-top: 0.85rem;
+        margin-top: 0.15rem;
+        border-top: 1px dashed var(--desktop-border);
     }
 
     .os-status-chip-group-label {
@@ -114,15 +129,8 @@
         outline-offset: 2px;
     }
 
-    .os-status-chip--avancar {
-        border-color: rgba(111, 90, 252, 0.28);
-        background: var(--desktop-primary-soft);
-        color: var(--desktop-primary);
-    }
-
-    .os-status-chip--retornar {
-        border-style: dashed;
-        background: var(--desktop-surface-soft);
+    .os-status-chip--fase {
+        background: var(--desktop-surface);
         color: var(--desktop-text-soft);
     }
 
@@ -130,6 +138,25 @@
         border-color: rgba(239, 68, 68, 0.28);
         background: rgba(239, 68, 68, 0.06);
         color: var(--desktop-danger-text);
+    }
+
+    /* Etapa atual da OS: destaque neutro (não é uma opção "selecionada"),
+       só orienta o técnico sobre onde a OS está agora na grade. */
+    .os-status-chip.is-current {
+        border-color: var(--desktop-text-soft);
+        font-weight: 800;
+    }
+
+    .os-status-chip-current-dot {
+        font-size: 0.5rem !important;
+        color: var(--desktop-primary);
+    }
+
+    /* Próxima etapa sugerida pelo catálogo de transições padrão — só um
+       realce sutil, não restringe mais a escolha (ver orders-status-modal.js). */
+    .os-status-chip.is-suggested:not(.is-selected) {
+        border-color: rgba(111, 90, 252, 0.45);
+        box-shadow: 0 0 0 1px rgba(111, 90, 252, 0.18) inset;
     }
 
     .os-status-chip.is-selected {
@@ -142,13 +169,12 @@
         color: #fff;
     }
 
-    .os-status-chip--avancar.is-selected {
-        background: linear-gradient(135deg, var(--desktop-primary), #8b7bfd);
+    .os-status-chip.is-selected .os-status-chip-current-dot {
+        color: #fff;
     }
 
-    .os-status-chip--retornar.is-selected {
-        background: var(--desktop-text-soft);
-        border-style: solid;
+    .os-status-chip--fase.is-selected {
+        background: linear-gradient(135deg, var(--desktop-primary), #8b7bfd);
     }
 
     .os-status-chip--cancelar.is-selected {
@@ -296,9 +322,9 @@
                                     {{-- Coluna esquerda: formulário de mudança --}}
                                     <div class="col-12 col-xl-7">
                                         <div class="os-status-modal-panel">
-                                            {{-- Próxima etapa (chips clicáveis) --}}
+                                            {{-- Etapas do fluxo (chips clicáveis, agrupados por macrofase) --}}
                                             <div class="os-status-modal-section">
-                                                <div class="os-status-modal-section-title">Próxima etapa</div>
+                                                <div class="os-status-modal-section-title">Etapas do fluxo</div>
                                                 <div class="small text-muted mb-2" id="orderStatusModalCurrentHint">Status atual da OS: aguardando contexto.</div>
 
                                                 <div class="os-status-chip-groups" id="orderStatusModalChipGroups">
@@ -306,7 +332,7 @@
                                                 </div>
 
                                                 <div class="small text-muted mt-2" id="orderStatusModalTargetHint">Selecione um fluxo para continuar.</div>
-                                                <div class="form-text">Clique numa etapa para selecioná-la; a mudança só é aplicada ao salvar. Status de encerramento (equipamento entregue, devolvido, descartado) não aparecem aqui — são feitos pela tela de baixa da OS.</div>
+                                                <div class="form-text">Todas as etapas ficam disponíveis, agrupadas por macrofase — clique em qualquer uma para selecioná-la, a mudança só é aplicada ao salvar. A etapa atual vem marcada com <i class="bi bi-record-fill text-primary"></i> e a próxima etapa sugerida pelo fluxo padrão vem com borda destacada, mas isso não impede escolher outra. Status de encerramento (equipamento entregue, devolvido, descartado) não aparecem aqui — são feitos pela tela de baixa da OS.</div>
 
                                                 {{-- Campo real do form; escondido, a fonte de verdade é a
                                                     seleção via chip. Segue existindo pra manter toda a lógica

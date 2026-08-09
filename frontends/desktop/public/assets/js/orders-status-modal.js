@@ -29,7 +29,30 @@
 
     let currentOrderId = null;
     let statusLabelsByCode = {};
+    let statusMetaByCode = {};
+    let phaseRankByGroup = {};
+    let currentStatusCode = '';
     let statusCongelaPrazoAtual = false;
+
+    // Rótulo em PT-BR de cada macrofase (os_status.grupo_macro). 'encerrado'
+    // (baixa) nunca chega aqui — filtrado antes de montar a grade (ver
+    // sistema-erp-os-fluxo-fechamento). 'cancelado' também não entra no mapa:
+    // continua com sua própria seção fixa "Cancelar atendimento".
+    const MACRO_PHASE_LABELS = {
+        recepcao: 'Recepção',
+        diagnostico: 'Diagnóstico',
+        orcamento: 'Orçamento',
+        execucao: 'Execução',
+        qualidade: 'Qualidade',
+        interrupcao: 'Em espera',
+        concluido: 'Concluído',
+        finalizado_sem_reparo: 'Finalizado sem reparo',
+    };
+
+    const macroPhaseLabel = (grupoMacro) => {
+        const code = String(grupoMacro || '').trim();
+        return MACRO_PHASE_LABELS[code] || (code !== '' ? code.charAt(0).toUpperCase() + code.slice(1).replace(/_/g, ' ') : 'Outra fase');
+    };
 
     // Sugestão padrão: hoje + 7 dias, no formato aceito pelo <input type="date">.
     const suggestedNovoPrazo = () => {
@@ -144,72 +167,104 @@
         `;
     };
 
-    // Uma etapa vira chip clicável. O grupo (avançar/retornar/cancelar) é
-    // decidido comparando o ordem_fluxo da etapa com o do status atual —
-    // mesma leitura usada no diagrama de fluxo da OS (azul = avançar, cinza
-    // tracejado = retornar). Encerramentos (equipamento entregue/devolvido/
-    // descartado) nunca aparecem aqui: o backend já os filtra de
-    // proximas_etapas (grupo_macro='encerrado' só é alcançável pela baixa da
-    // OS, ver OrderWorkflowService::mapNextStatusOptionsFromCatalog).
-    const buildChipGroup = (label, modifierClass, etapas) => {
-        if (etapas.length === 0) return '';
-
-        const chips = etapas.map((etapa) => {
-            const code = String(etapa.codigo || '').trim();
-            if (!code) return '';
-            const nome = String(etapa.nome || code);
-            const icone = String(etapa.icone || '').trim();
-            const cor = String(etapa.cor || '').trim();
-            const style = cor ? ` style="--status-color: ${cor}"` : '';
-
-            return `
-                <button type="button" class="os-status-chip ${modifierClass}" data-status-code="${code}"${style}>
-                    ${icone ? `<i class="bi ${icone}"></i>` : ''}
-                    <span>${nome}</span>
-                </button>
-            `;
-        }).join('');
+    // Uma etapa vira chip clicável. Antes o grupo (avançar/retornar/cancelar)
+    // vinha só das transições cadastradas em os_status_transicoes a partir do
+    // status atual; agora a grade mostra TODOS os status ativos (exceto os de
+    // baixa) organizados por macrofase, porque na prática o técnico avança
+    // várias etapas do atendimento antes de mexer no sistema — uma máquina de
+    // estados rígida não reflete esse fluxo. Encerramentos (equipamento
+    // entregue/devolvido/descartado) nunca aparecem aqui, só na tela de baixa
+    // (grupo_macro='encerrado', ver skill sistema-erp-os-fluxo-fechamento).
+    const buildChip = (etapa, modifierClass, { isCurrent = false, isSuggested = false } = {}) => {
+        const code = String(etapa.codigo || '').trim();
+        if (!code) return '';
+        const nome = String(etapa.nome || code);
+        const icone = String(etapa.icone || '').trim();
+        const cor = String(etapa.cor || '').trim();
+        const style = cor ? ` style="--status-color: ${cor}"` : '';
+        const classes = [
+            'os-status-chip',
+            modifierClass,
+            isCurrent ? 'is-current' : '',
+            isSuggested ? 'is-suggested' : '',
+        ].filter(Boolean).join(' ');
 
         return `
-            <div>
-                <div class="os-status-chip-group-label">${label}</div>
-                <div class="os-status-chip-row">${chips}</div>
-            </div>
+            <button type="button" class="${classes}" data-status-code="${code}"${style} title="${isCurrent ? 'Etapa atual' : (isSuggested ? 'Próxima etapa sugerida pelo fluxo padrão' : '')}">
+                ${icone ? `<i class="bi ${icone}"></i>` : ''}
+                <span>${nome}</span>
+                ${isCurrent ? '<i class="bi bi-record-fill os-status-chip-current-dot"></i>' : ''}
+            </button>
         `;
     };
 
-    const renderChipGroups = (etapas, currentOrdemFluxo) => {
+    // Grade principal: todos os status ativos exceto baixa (grupo_macro
+    // 'encerrado') e cancelamento (grupo_macro 'cancelado', que mantém sua
+    // própria seção fixa "Cancelar atendimento" abaixo). Como o backend já
+    // devolve status_disponiveis ordenado por ordem_fluxo, agrupar mantendo a
+    // ordem de chegada já entrega as macrofases na sequência certa do fluxo,
+    // sem precisar hardcodar a ordem aqui.
+    const renderStatusGrid = (statusCatalog, proximasEtapas, currentCode) => {
         if (!chipGroupsEl) return;
 
-        if (etapas.length === 0) {
-            chipGroupsEl.innerHTML = '<p class="os-status-chip-empty">Sem próxima etapa definida no fluxo.</p>';
-            return;
-        }
+        const suggested = new Set(
+            (Array.isArray(proximasEtapas) ? proximasEtapas : [])
+                .map((etapa) => String(etapa.codigo || '').trim())
+                .filter(Boolean)
+        );
 
-        const avancar = [];
-        const retornar = [];
-        const cancelar = [];
+        const groups = new Map();
+        let cancelStatus = null;
+        phaseRankByGroup = {};
 
-        etapas.forEach((etapa) => {
-            if (String(etapa.grupo_macro || '') === 'cancelado') {
-                cancelar.push(etapa);
+        statusCatalog.forEach((etapa) => {
+            const grupoMacro = String(etapa.grupo_macro || '').trim();
+            if (grupoMacro === 'encerrado') return; // baixa: só pela tela de Encerramento.
+
+            if (grupoMacro === 'cancelado') {
+                cancelStatus = cancelStatus || etapa;
                 return;
             }
 
-            const ordemEtapa = Number(etapa.ordem_fluxo);
-            const ehRetorno = Number.isFinite(ordemEtapa)
-                && Number.isFinite(currentOrdemFluxo)
-                && currentOrdemFluxo > 0
-                && ordemEtapa < currentOrdemFluxo;
-
-            (ehRetorno ? retornar : avancar).push(etapa);
+            if (!groups.has(grupoMacro)) {
+                phaseRankByGroup[grupoMacro] = groups.size;
+                groups.set(grupoMacro, []);
+            }
+            groups.get(grupoMacro).push(etapa);
         });
 
-        chipGroupsEl.innerHTML = [
-            buildChipGroup('Avançar', 'os-status-chip--avancar', avancar),
-            buildChipGroup('Retornar etapa', 'os-status-chip--retornar', retornar),
-            buildChipGroup('Cancelar atendimento', 'os-status-chip--cancelar', cancelar),
-        ].join('');
+        if (groups.size === 0 && !cancelStatus) {
+            chipGroupsEl.innerHTML = '<p class="os-status-chip-empty">Nenhum status disponível para esta OS.</p>';
+            return;
+        }
+
+        const phaseSections = Array.from(groups.entries()).map(([grupoMacro, etapas]) => {
+            const chips = etapas.map((etapa) => buildChip(etapa, 'os-status-chip--fase', {
+                isCurrent: String(etapa.codigo || '').trim() === currentCode,
+                isSuggested: suggested.has(String(etapa.codigo || '').trim()),
+            })).join('');
+
+            return `
+                <div class="os-status-phase-group">
+                    <div class="os-status-chip-group-label">${macroPhaseLabel(grupoMacro)}</div>
+                    <div class="os-status-chip-row">${chips}</div>
+                </div>
+            `;
+        }).join('');
+
+        const cancelSection = cancelStatus ? `
+            <div class="os-status-phase-group os-status-phase-group--cancel">
+                <div class="os-status-chip-group-label">Cancelar atendimento</div>
+                <div class="os-status-chip-row">${buildChip(cancelStatus, 'os-status-chip--cancelar', {
+                    isCurrent: String(cancelStatus.codigo || '').trim() === currentCode,
+                })}</div>
+            </div>
+        ` : '';
+
+        chipGroupsEl.innerHTML = `
+            <div class="os-status-phase-grid">${phaseSections}</div>
+            ${cancelSection}
+        `;
     };
 
     // Clique no chip: só seleciona (preenche o <select> escondido e dispara
@@ -238,16 +293,21 @@
         statusCongelaPrazoAtual = Boolean(data.status_congela_prazo);
         hideNovoPrazoSection();
 
-        // Catálogo de status (código → nome), usado pra traduzir o histórico
-        // e evitar mostrar códigos crus tipo "aguardando_reparo" na tela.
+        // Catálogo de status (código → nome/macrofase), usado pra traduzir o
+        // histórico, montar a grade por macrofase e checar salto de fase
+        // antes de salvar.
         statusLabelsByCode = {};
+        statusMetaByCode = {};
         const statusCatalog = Array.isArray(data.status_disponiveis) ? data.status_disponiveis : [];
         statusCatalog.forEach((status) => {
             const code = String(status?.codigo || '').trim();
             if (code !== '') {
                 statusLabelsByCode[code] = String(status?.nome || code);
+                statusMetaByCode[code] = { grupo_macro: String(status?.grupo_macro || '').trim() };
             }
         });
+
+        currentStatusCode = String(data.status || '').trim();
 
         // Cliente
         setText('orderStatusModalClientName', data.cliente_nome || '-');
@@ -271,26 +331,33 @@
         const statusAtual = String(data.status_nome || '');
         setText('orderStatusModalCurrentHint', `Status atual da OS: ${statusAtual}.`);
 
-        // Próximas etapas
-        const etapas = Array.isArray(data.proximas_etapas) ? data.proximas_etapas : [];
+        // Todos os status ativos, exceto os de baixa (grupo_macro='encerrado'
+        // — só a tela de Encerramento pode aplicá-los). Sugestões do fluxo
+        // padrão continuam vindo de proximas_etapas, só que agora só como
+        // destaque visual na grade, não como filtro do que pode ser escolhido.
+        const etapasDisponiveis = statusCatalog.filter(
+            (etapa) => String(etapa?.grupo_macro || '').trim() !== 'encerrado'
+        );
+        const etapasSugeridas = Array.isArray(data.proximas_etapas) ? data.proximas_etapas : [];
 
         // Preenche o select escondido (fonte de verdade do form; os chips só
-        // escrevem nele) e a fileira de chips clicáveis.
+        // escrevem nele) e a grade de chips por macrofase.
         if (selectEl) {
             selectEl.innerHTML = '<option value="">Selecione um status</option>';
-            etapas.forEach((etapa) => {
+            etapasDisponiveis.forEach((etapa) => {
                 const code = String(etapa.codigo || '').trim();
                 if (!code) return;
                 const opt = document.createElement('option');
                 opt.value = code;
                 opt.textContent = String(etapa.nome || code);
                 opt.dataset.congelaPrazo = etapa.congela_prazo ? '1' : '0';
+                opt.dataset.grupoMacro = String(etapa.grupo_macro || '').trim();
                 selectEl.appendChild(opt);
             });
             selectEl.value = '';
         }
 
-        renderChipGroups(etapas, Number(data.status_ordem_fluxo));
+        renderStatusGrid(etapasDisponiveis, etapasSugeridas, currentStatusCode);
 
         setText('orderStatusModalTargetHint', 'Selecione um fluxo para continuar.');
         // "Salvar status" fica sempre liberado: também é usado para salvar
@@ -441,6 +508,37 @@
         }
     });
 
+    // Aviso (não bloqueia) quando o destino escolhido fica a mais de uma
+    // macrofase de distância da fase atual — ex.: Recepção -> Qualidade sem
+    // passar por Diagnóstico/Orçamento/Execução no meio. Decisão de produto
+    // (2026-08-09): o backend passou a aceitar qualquer status não-baixa
+    // (ver OrderWorkflowService::updateStatus()), então esta confirmação é a
+    // única rede de segurança contra clique errado ao pular fases do fluxo.
+    const confirmPhaseSkipIfNeeded = async () => {
+        const targetGroup = selectEl?.selectedOptions[0]?.dataset.grupoMacro || '';
+        const currentGroup = statusMetaByCode[currentStatusCode]?.grupo_macro || '';
+        const currentRank = phaseRankByGroup[currentGroup];
+        const targetRank = phaseRankByGroup[targetGroup];
+
+        const ehSaltoDeFase = targetGroup !== '' && targetGroup !== currentGroup
+            && Number.isFinite(currentRank) && Number.isFinite(targetRank)
+            && Math.abs(targetRank - currentRank) > 1;
+
+        if (!ehSaltoDeFase || typeof Swal === 'undefined') return true;
+
+        const result = await Swal.fire({
+            icon: 'warning',
+            title: 'Pulando etapas do fluxo',
+            html: `Isso muda a OS de <b>${macroPhaseLabel(currentGroup)}</b> direto para <b>${macroPhaseLabel(targetGroup)}</b>, sem passar pelas fases intermediárias. Confirma mesmo assim?`,
+            showCancelButton: true,
+            confirmButtonText: 'Confirmar mudança',
+            cancelButtonText: 'Revisar seleção',
+            reverseButtons: true,
+        });
+
+        return Boolean(result.isConfirmed);
+    };
+
     // Submissão via AJAX
     form?.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -450,6 +548,10 @@
         const novoPrazoVisivel = novoPrazoWrapper && !novoPrazoWrapper.classList.contains('d-none');
         if (novoPrazoVisivel && !novoPrazoInput?.value) {
             showToast('Informe o novo prazo de entrega para reabrir esta OS.', 'error');
+            return;
+        }
+
+        if (!(await confirmPhaseSkipIfNeeded())) {
             return;
         }
 

@@ -987,21 +987,14 @@ class OrderWorkflowService
             ];
         }
 
-        // Só permite mover para uma etapa de destino prevista no catálogo de transições.
-        // Se a origem não possui transições cadastradas, mantém o comportamento permissivo.
-        // Exceção: a baixa da OS já restringe o destino aos únicos 3 status de
-        // OrderStatus::closureCodes() e precisa poder fechar a OS a partir de
-        // qualquer etapa aberta — por isso pede para pular esta validação.
-        if ($statusChanged && ! $viaClosureFlow) {
-            $allowed = $this->allowedTransitionCodes($previousStatus);
-            if ($allowed !== [] && ! in_array($newStatus, $allowed, true)) {
-                return [
-                    'result' => 'invalid_transition',
-                    'status_atual' => $previousStatus,
-                    'proximas_etapas' => $this->mapNextStatusOptions($previousStatus),
-                ];
-            }
-        }
+        // Decisão de produto (2026-08-09): o modal "Alterar status" deixou de
+        // restringir o destino ao catálogo de transições cadastrado (o técnico
+        // avança várias etapas do atendimento antes de mexer no sistema, então
+        // uma máquina de estados rígida não reflete o fluxo real). Qualquer
+        // status ativo fora de OrderStatus::closureCodes() (bloqueado acima) é
+        // aceito aqui — os_status_transicoes/mapNextStatusOptions() continuam
+        // alimentando 'proximas_etapas' como sugestão em destaque na UI, mas
+        // não é mais uma trava no backend.
 
         $estadoFluxo = trim((string) ($statusRow->estado_fluxo_padrao ?? '')) ?: 'em_atendimento';
 
