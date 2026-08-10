@@ -148,6 +148,20 @@ class Budget extends Model
         return [self::STATUS_PENDING_OS, self::STATUS_APPROVED];
     }
 
+    /**
+     * Status em que a proposta já foi enviada e depende da resposta do cliente
+     * pelo link público — os únicos que podem virar "vencido" quando o prazo passa.
+     *
+     * Decisões terminais (aprovado/rejeitado/cancelado/convertido) e estados que
+     * ainda nem geraram link (rascunho/pendente de envio) ficam de fora.
+     *
+     * @return array<int, string>
+     */
+    public static function awaitingCustomerReplyStatuses(): array
+    {
+        return [self::STATUS_SENT, self::STATUS_WAITING_REPLY];
+    }
+
     public static function typeOptions(): array
     {
         return [

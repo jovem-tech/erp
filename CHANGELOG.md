@@ -1,5 +1,17 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.22.0.0 — 2026-08-10 07:51
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Orcamento vencido passa a ter status Vencido: comando agendado app:expire-budgets, marcacao imediata no acesso ao link publico, historico/evento/aviso no sino e protecao contra reabrir OS ja encerrada
+- **Arquivos:** backend/app/Console/Commands/ExpireStaleBudgets.php,backend/app/Models/Budget.php,backend/app/Models/OrderEvent.php,backend/app/Services/Budgets/BudgetApprovalService.php,backend/resources/views/errors/404.blade.php,backend/resources/views/errors/410.blade.php,backend/resources/views/errors/419.blade.php,backend/resources/views/errors/429.blade.php,backend/resources/views/errors/500.blade.php,backend/resources/views/errors/layout.blade.php,backend/routes/console.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md
+
+## v5.21.1.0 — 2026-08-10 07:43
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige o link publico de orcamento vencido: paginas de erro proprias em portugues (404/410/419/429/500) e renovacao da validade no reenvio, para o link nao nascer expirado
+- **Arquivos:** backend/app/Services/Budgets/BudgetApprovalService.php,backend/resources/views/errors/404.blade.php,backend/resources/views/errors/410.blade.php,backend/resources/views/errors/419.blade.php,backend/resources/views/errors/429.blade.php,backend/resources/views/errors/500.blade.php,backend/resources/views/errors/layout.blade.php
+
 ## v5.21.0.0 — 2026-07-30 20:06
 - **Tier:** minor
 - **Autor/Agente:** Codex
