@@ -8,6 +8,7 @@ use App\Models\BudgetSend;
 use App\Models\BudgetStatusHistory;
 use App\Models\Order;
 use App\Models\OrderEvent;
+use App\Models\OrderStatus;
 use App\Models\User;
 use App\Services\Channels\Whatsapp\PhoneNumberNormalizationService;
 use App\Services\Company\CompanyProfileService;
@@ -75,6 +76,10 @@ class BudgetApprovalService
                 ],
             ];
         }
+
+        // Antes de gerar o PDF: o documento e a pagina publica exibem a validade,
+        // entao ela precisa estar renovada para nao contradizer o prazo do link.
+        $this->refreshValidityForDispatch($budget);
 
         $token = $this->ensurePublicToken($budget);
         $approvalLink = $this->publicUrl($token);
@@ -259,6 +264,10 @@ class BudgetApprovalService
         }
 
         if ($this->tokenExpired($budget)) {
+            // O cliente abrindo um link morto e a confirmacao mais imediata de que
+            // a proposta venceu: nao espera o agendador para refletir isso no painel.
+            $this->markExpired($budget);
+
             return ['result' => 'expired'];
         }
 
@@ -283,6 +292,8 @@ class BudgetApprovalService
         }
 
         if ($this->tokenExpired($budget)) {
+            $this->markExpired($budget);
+
             return [
                 'result' => 'expired',
                 'message' => 'O link desta proposta expirou. Solicite um novo envio à equipe responsável.',
@@ -340,6 +351,8 @@ class BudgetApprovalService
         }
 
         if ($this->tokenExpired($budget)) {
+            $this->markExpired($budget);
+
             return [
                 'result' => 'expired',
                 'message' => 'O link desta proposta expirou. Solicite um novo envio à equipe responsável.',
@@ -780,6 +793,8 @@ class BudgetApprovalService
         }
 
         if ($this->tokenExpired($budget)) {
+            $this->markExpired($budget);
+
             return [
                 'ok' => false,
                 'result' => 'expired',
@@ -869,12 +884,45 @@ class BudgetApprovalService
     private function resolveTokenExpiry(Budget $budget): Carbon
     {
         if ($budget->validade_data instanceof Carbon) {
-            return $budget->validade_data->copy()->endOfDay();
+            $expiry = $budget->validade_data->copy()->endOfDay();
+
+            // Rede de seguranca: nunca devolver um prazo no passado, senao o link
+            // publico nasce morto e o cliente recebe 410 ao abrir a proposta.
+            if ($expiry->isFuture()) {
+                return $expiry;
+            }
         }
 
+        return $this->defaultTokenExpiry($budget);
+    }
+
+    private function defaultTokenExpiry(Budget $budget): Carbon
+    {
         $days = max(1, (int) ($budget->validade_dias ?? 10));
 
         return now()->addDays($days)->endOfDay();
+    }
+
+    /**
+     * Renova a validade da proposta quando ela ja venceu antes do (re)envio.
+     *
+     * A validade_data e congelada na criacao do orcamento (now + validade_dias) e nao
+     * acompanha reenvios. Sem esta renovacao, reenviar uma proposta vencida regenera
+     * PDF e mensagem mas grava o mesmo token_expira_em passado: o link continua em 410.
+     */
+    private function refreshValidityForDispatch(Budget $budget): void
+    {
+        if (! $budget->validade_data instanceof Carbon) {
+            return;
+        }
+
+        if ($budget->validade_data->copy()->endOfDay()->isFuture()) {
+            return;
+        }
+
+        $budget->forceFill([
+            'validade_data' => $this->defaultTokenExpiry($budget)->copy()->startOfDay(),
+        ])->save();
     }
 
     private function buildWhatsappCaption(Budget $budget, string $companyName, string $approvalLink): string
@@ -937,11 +985,155 @@ class BudgetApprovalService
 
     private function tokenExpired(Budget $budget): bool
     {
-        if (! $budget->token_expira_em instanceof Carbon) {
+        $deadline = $this->expiryDeadline($budget);
+
+        return $deadline instanceof Carbon && now()->greaterThan($deadline);
+    }
+
+    /**
+     * OS ja encerrada (entregue, irreparavel, descartada...) ou cancelada: o
+     * atendimento acabou e nenhum status de orcamento deve mais move-la.
+     */
+    private function orderIsSettled(Budget $budget): bool
+    {
+        $flowState = strtolower(trim((string) ($budget->order?->estado_fluxo ?? '')));
+
+        return in_array($flowState, [OrderStatus::CLOSURE_MACRO_GROUP, 'cancelado'], true);
+    }
+
+    /**
+     * Prazo efetivo da proposta: o token manda, porque e ele que fecha o link
+     * publico. Sem token, cai na validade comercial exibida ao cliente.
+     */
+    private function expiryDeadline(Budget $budget): ?Carbon
+    {
+        if ($budget->token_expira_em instanceof Carbon) {
+            return $budget->token_expira_em;
+        }
+
+        if ($budget->validade_data instanceof Carbon) {
+            return $budget->validade_data->copy()->endOfDay();
+        }
+
+        return null;
+    }
+
+    /**
+     * Marca como "vencido" toda proposta que passou do prazo e continua parada
+     * esperando a resposta do cliente. Chamado pelo agendador (app:expire-budgets)
+     * e tambem no acesso ao link publico, para o painel nao ficar mostrando
+     * "Aguardando resposta" num orcamento cujo link ja devolve 410.
+     */
+    public function expireStaleBudgets(int $limit = 200): int
+    {
+        $expired = 0;
+
+        Budget::query()
+            ->with(['client', 'equipment', 'order', 'items'])
+            ->whereIn('status', Budget::awaitingCustomerReplyStatuses())
+            ->where(function ($query): void {
+                $query
+                    ->where(function ($tokenQuery): void {
+                        $tokenQuery
+                            ->whereNotNull('token_expira_em')
+                            ->where('token_expira_em', '<', now());
+                    })
+                    ->orWhere(function ($validityQuery): void {
+                        $validityQuery
+                            ->whereNull('token_expira_em')
+                            ->whereNotNull('validade_data')
+                            ->whereDate('validade_data', '<', now()->toDateString());
+                    });
+            })
+            ->orderBy('id')
+            ->limit(max(1, $limit))
+            ->get()
+            ->each(function (Budget $budget) use (&$expired): void {
+                if ($this->markExpired($budget)) {
+                    $expired++;
+                }
+            });
+
+        return $expired;
+    }
+
+    /**
+     * Transicao para "vencido" de um orcamento especifico. Devolve false quando
+     * o orcamento nao esta mais elegivel (ja decidido, cancelado, prazo renovado),
+     * para nunca sobrescrever uma decisao ja registrada.
+     */
+    public function markExpired(Budget $budget): bool
+    {
+        $previousStatus = trim((string) ($budget->status ?? ''));
+
+        if (! in_array($previousStatus, Budget::awaitingCustomerReplyStatuses(), true)) {
             return false;
         }
 
-        return now()->greaterThan($budget->token_expira_em);
+        if (! $this->tokenExpired($budget)) {
+            return false;
+        }
+
+        DB::transaction(function () use ($budget, $previousStatus): void {
+            $expiredAt = now();
+
+            $budget->forceFill(['status' => Budget::STATUS_EXPIRED])->save();
+
+            $this->recordStatusHistory(
+                $budget,
+                $previousStatus,
+                Budget::STATUS_EXPIRED,
+                'Prazo da proposta encerrado sem resposta do cliente. É necessário enviar um novo orçamento.',
+                'sistema',
+                null
+            );
+
+            $osId = (int) ($budget->os_id ?? 0);
+            if ($osId > 0) {
+                $this->orderEventService->record(
+                    $osId,
+                    OrderEvent::CATEGORIA_ORCAMENTO,
+                    OrderEvent::TIPO_ORCAMENTO_VENCIDO,
+                    'Orçamento vencido sem resposta',
+                    sprintf('O prazo do orçamento %s terminou sem resposta do cliente.', $budget->numero),
+                    [
+                        'orcamento_id' => (int) $budget->id,
+                        'numero' => (string) $budget->numero,
+                        'status_anterior' => $previousStatus,
+                        'venceu_em' => optional($this->expiryDeadline($budget))->toDateTimeString(),
+                    ],
+                    null,
+                    OrderEvent::ORIGEM_SISTEMA,
+                    $expiredAt
+                );
+            }
+
+            // A sincronizacao devolveria a OS para "aguardando_orcamento". Isso e
+            // correto numa OS em andamento, mas nao pode reabrir uma OS ja encerrada
+            // ou cancelada so porque um orcamento antigo ficou parado em
+            // "aguardando resposta" — o fluxo dela seguiu por fora do orcamento.
+            if (! $this->orderIsSettled($budget)) {
+                $this->budgetOrderSyncService->syncFromBudget($budget, null);
+            }
+
+            $this->notificationDispatchService->toUsers(
+                $this->budgetDecisionRecipients($budget),
+                [
+                    'kind' => 'orcamento.expired',
+                    'title' => 'Orçamento vencido sem resposta',
+                    'body' => sprintf(
+                        'O orçamento %s venceu sem resposta do cliente. Envie uma nova proposta para reabrir o link.',
+                        $budget->numero
+                    ),
+                    'route' => '/orcamentos/' . (int) $budget->id,
+                    'icon' => 'receipt',
+                    'orcamento_id' => (int) $budget->id,
+                    'os_id' => (int) ($budget->os_id ?? 0),
+                ]
+            );
+        });
+
+        return true;
     }
 
     private function approvedStatus(Budget $budget): string

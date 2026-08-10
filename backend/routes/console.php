@@ -79,6 +79,14 @@ Schedule::command('app:process-pending-os-collections')->everyFifteenMinutes();
 // OS/tipo/dia, e OS cujo prazo foi definido AO LONGO do proprio dia ainda
 // recebem o aviso de "termina hoje".
 Schedule::command('app:notify-order-deadlines')->hourly();
+// De hora em hora: a validade fecha no fim do dia, mas o token pode vencer em
+// qualquer horario, e o painel nao pode continuar mostrando "Aguardando
+// resposta" num orcamento cujo link publico ja devolve 410.
+Schedule::command('app:expire-budgets')
+    ->hourly()
+    ->name('expire-stale-budgets')
+    ->onOneServer()
+    ->withoutOverlapping(10);
 Schedule::command('app:dispatch-pending-document-signature-notifications')
     ->everyFiveMinutes()
     ->withoutOverlapping(5);
