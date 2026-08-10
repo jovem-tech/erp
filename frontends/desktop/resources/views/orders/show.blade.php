@@ -636,6 +636,8 @@
             statusContextUrlTemplate: '{{ route('orders.status.context', ['order' => '__ORDER__']) }}',
             statusUpdateUrlTemplate: '{{ route('orders.status.update', ['order' => '__ORDER__']) }}',
             proceduresUrlTemplate: '{{ route('orders.procedures.store', ['order' => '__ORDER__']) }}',
+            mapDataUrlTemplate: '{{ route('orders.map.data', ['order' => '__ORDER__']) }}',
+            closureUrlTemplate: '{{ route('orders.closure.show', ['order' => '__ORDER__']) }}',
             csrfToken: '{{ csrf_token() }}',
         };
         window.__DESKTOP_CANCEL_CLOSURE_MODAL = {
@@ -643,7 +645,11 @@
             csrfToken: '{{ csrf_token() }}',
         };
     </script>
-    <script src="{{ asset('assets/js/orders-status-modal.js') }}"></script>
+    {{-- orders-map.js registra window.DesktopOsMap.create(), usado pela aba
+         "Mapa de status" do modal de alteração de status (_status_modal). Sem
+         ele o SVG do mapa fica estático: sem decoração, sem zoom/pan/clique. --}}
+    <script src="{{ asset('assets/js/orders-map.js') }}?v={{ filemtime(public_path('assets/js/orders-map.js')) }}"></script>
+    <script src="{{ asset('assets/js/orders-status-modal.js') }}?v={{ filemtime(public_path('assets/js/orders-status-modal.js')) }}"></script>
     <script src="{{ asset('assets/js/orders-cancel-closure-modal.js') }}"></script>
     <script>
         // Filtro por categoria da timeline de eventos da OS (client-side, sem reload).

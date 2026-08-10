@@ -66,119 +66,180 @@
     .os-status-chip-groups {
         display: flex;
         flex-direction: column;
-        gap: 0.85rem;
-        max-height: 360px;
-        overflow-y: auto;
-        padding-right: 0.25rem;
+        gap: 1rem;
     }
 
-    .os-status-phase-grid {
+    /* ---- Fluxograma de status por macrofase -----------------------------
+       Layout e cores seguem o fluxograma definido pelo usuário (2026-08-10):
+       faixa da macrofase à esquerda + etapas daquela fase fluindo para a
+       direita com setas. A ordem das fases é declarada em MACRO_PHASES
+       (orders-status-modal.js), não em os_status.ordem_fluxo. */
+    .os-flow {
         display: flex;
         flex-direction: column;
-        gap: 0.85rem;
+        gap: 0.5rem;
     }
 
-    .os-status-phase-group--cancel {
+    .os-flow-row {
+        display: flex;
+        align-items: stretch;
+        gap: 0.75rem;
+        min-width: 0;
+    }
+
+    /* Faixa da macrofase: retângulo com a "seta" para baixo do fluxograma,
+       indicando a continuidade para a fase seguinte. */
+    .os-flow-phase {
+        flex: 0 0 108px;
+        display: flex;
+        align-items: center;
+        padding: 0.55rem 0.6rem calc(0.55rem + 8px);
+        clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), 50% 100%, 0 calc(100% - 8px));
+        background: var(--phase-color, var(--desktop-text-soft));
+        color: var(--phase-text, #fff);
+        font-size: 0.68rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        line-height: 1.15;
+    }
+
+    /* align-items: stretch deixa todos os cards da mesma linha com a mesma
+       altura, mesmo quando um deles quebra em duas linhas (igual ao
+       fluxograma de referência). */
+    .os-flow-steps {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        align-items: stretch;
+        gap: 0;
+        overflow-x: auto;
+        padding-bottom: 0.15rem;
+    }
+
+    .os-flow-arrow {
+        flex: 0 0 18px;
+        align-self: center;
+        height: 2px;
+        background: var(--desktop-border-strong, #94a3b8);
+        position: relative;
+    }
+
+    .os-flow-arrow::after {
+        content: '';
+        position: absolute;
+        right: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        border-left: 6px solid var(--desktop-border-strong, #94a3b8);
+        border-top: 4px solid transparent;
+        border-bottom: 4px solid transparent;
+    }
+
+    .os-flow-step {
+        flex: 0 0 auto;
+        width: 150px;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.45rem 0.6rem;
+        border: 2px solid transparent;
+        border-radius: var(--desktop-radius-sm);
+        background: var(--phase-color, var(--desktop-surface));
+        color: var(--phase-text, #fff);
+        font-size: 0.74rem;
+        font-weight: 700;
+        line-height: 1.25;
+        text-align: left;
+        cursor: pointer;
+        transition: var(--desktop-transition);
+        /* Leve esmaecimento no estado "não é a etapa atual" — suficiente para
+           a atual/sugerida saltarem, sem prejudicar a leitura do rótulo (a
+           0.55 o texto sobre o amarelo ficava lavado). */
+        opacity: 0.82;
+    }
+
+    .os-flow-step:hover {
+        opacity: 1;
+        transform: translateY(-1px);
+    }
+
+    .os-flow-step:focus-visible {
+        outline: 2px solid var(--desktop-primary);
+        outline-offset: 2px;
+        opacity: 1;
+    }
+
+    .os-flow-step i {
+        font-size: 0.85rem;
+        flex-shrink: 0;
+    }
+
+    /* Rótulo quebra em até duas linhas em vez de truncar — nomes longos como
+       "Entregue - Pendência Financeira" precisam aparecer por inteiro. */
+    .os-flow-step-label {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
+
+    /* Etapa atual da OS: opaca e com anel escuro. */
+    .os-flow-step.is-current {
+        opacity: 1;
+        border-color: rgba(15, 23, 42, 0.55);
+        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.2);
+    }
+
+    .os-flow-step-dot {
+        font-size: 0.5rem !important;
+    }
+
+    /* Próxima etapa sugerida pelo catálogo de transições — realce sutil, não
+       restringe a escolha (qualquer etapa não-baixa é clicável). */
+    .os-flow-step.is-suggested {
+        opacity: 1;
+        border-color: rgba(255, 255, 255, 0.85);
+    }
+
+    /* Etapa escolhida (ainda não salva): anel roxo do sistema. */
+    .os-flow-step.is-selected {
+        opacity: 1;
+        border-color: var(--desktop-primary);
+        box-shadow: 0 0 0 3px var(--desktop-primary-soft);
+    }
+
+    /* Cores por macrofase — paleta definida pelo usuário no fluxograma. */
+    .os-flow-row[data-phase="recepcao"] { --phase-color: #10739E; --phase-text: #fff; }
+    .os-flow-row[data-phase="diagnostico"] { --phase-color: #F2931E; --phase-text: #fff; }
+    .os-flow-row[data-phase="orcamento"] { --phase-color: #66B2FF; --phase-text: #fff; }
+    .os-flow-row[data-phase="interrupcao"] { --phase-color: #FFD400; --phase-text: #3d3000; }
+    .os-flow-row[data-phase="execucao"] { --phase-color: #999900; --phase-text: #fff; }
+    .os-flow-row[data-phase="qualidade"] { --phase-color: #9999FF; --phase-text: #fff; }
+    .os-flow-row[data-phase="concluido"] { --phase-color: #00994D; --phase-text: #fff; }
+    .os-flow-row[data-phase="finalizado_sem_reparo"] { --phase-color: #CC0000; --phase-text: #fff; }
+    .os-flow-row[data-phase="cancelado"] { --phase-color: #CC0000; --phase-text: #fff; }
+
+    /* "Em espera" é amarelo com texto escuro; o anel de etapa atual/sugerida
+       precisa contrastar com o fundo claro. */
+    .os-flow-row[data-phase="interrupcao"] .os-flow-step.is-suggested {
+        border-color: rgba(61, 48, 0, 0.6);
+    }
+
+    /* Saídas do fluxo (sem reparo / cancelado): bloco à parte, separado das
+       fases de progresso por um divisor. */
+    .os-flow-exit {
+        margin-top: 0.35rem;
         padding-top: 0.85rem;
-        margin-top: 0.15rem;
         border-top: 1px dashed var(--desktop-border);
     }
 
-    .os-status-chip-group-label {
-        font-size: 0.68rem;
+    .os-flow-exit-title {
+        font-size: 0.66rem;
         font-weight: 800;
         text-transform: uppercase;
         letter-spacing: 0.07em;
         color: var(--desktop-text-muted);
-        margin-bottom: 0.4rem;
-    }
-
-    .os-status-chip-row {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-    }
-
-    .os-status-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-        padding: 0.5rem 0.9rem;
-        border-radius: 999px;
-        border: 1.5px solid var(--desktop-border);
-        background: var(--desktop-surface);
-        color: var(--desktop-text);
-        font-size: 0.83rem;
-        font-weight: 700;
-        line-height: 1.2;
-        cursor: pointer;
-        transition: var(--desktop-transition);
-    }
-
-    .os-status-chip i {
-        font-size: 0.95rem;
-    }
-
-    .os-status-chip:hover {
-        border-color: var(--desktop-border-strong);
-        transform: translateY(-1px);
-    }
-
-    .os-status-chip:focus-visible {
-        outline: 2px solid var(--desktop-primary);
-        outline-offset: 2px;
-    }
-
-    .os-status-chip--fase {
-        background: var(--desktop-surface);
-        color: var(--desktop-text-soft);
-    }
-
-    .os-status-chip--cancelar {
-        border-color: rgba(239, 68, 68, 0.28);
-        background: rgba(239, 68, 68, 0.06);
-        color: var(--desktop-danger-text);
-    }
-
-    /* Etapa atual da OS: destaque neutro (não é uma opção "selecionada"),
-       só orienta o técnico sobre onde a OS está agora na grade. */
-    .os-status-chip.is-current {
-        border-color: var(--desktop-text-soft);
-        font-weight: 800;
-    }
-
-    .os-status-chip-current-dot {
-        font-size: 0.5rem !important;
-        color: var(--desktop-primary);
-    }
-
-    /* Próxima etapa sugerida pelo catálogo de transições padrão — só um
-       realce sutil, não restringe mais a escolha (ver orders-status-modal.js). */
-    .os-status-chip.is-suggested:not(.is-selected) {
-        border-color: rgba(111, 90, 252, 0.45);
-        box-shadow: 0 0 0 1px rgba(111, 90, 252, 0.18) inset;
-    }
-
-    .os-status-chip.is-selected {
-        color: #fff;
-        border-color: transparent;
-        box-shadow: 0 4px 12px rgba(15, 23, 42, 0.16);
-    }
-
-    .os-status-chip.is-selected i {
-        color: #fff;
-    }
-
-    .os-status-chip.is-selected .os-status-chip-current-dot {
-        color: #fff;
-    }
-
-    .os-status-chip--fase.is-selected {
-        background: linear-gradient(135deg, var(--desktop-primary), #8b7bfd);
-    }
-
-    .os-status-chip--cancelar.is-selected {
-        background: linear-gradient(135deg, #ef4444, #f87171);
+        margin-bottom: 0.5rem;
     }
 
     .os-status-chip-empty {
@@ -248,10 +309,230 @@
     .os-status-modal-footer-notify {
         margin-right: auto;
     }
+
+    /* ---- Aba "Mapa de status" -------------------------------------------
+       Reaproveita literalmente o mesmo mapa interativo de orders/map.blade.php
+       (mesmo SVG estático, mesmo orders-map.js via window.DesktopOsMap.create)
+       — classes e nomes de variáveis de decoração idênticos de propósito, só
+       o dimensionamento do viewport muda (aqui é uma aba de modal em tela
+       cheia, lá é a página inteira). Ver skill sistema-erp-os-fluxo-fechamento
+       pra por que os nós de encerramento nunca são clicáveis aqui. */
+    .os-map-frame {
+        position: relative;
+        background: var(--desktop-surface);
+        border: 1px solid var(--desktop-border);
+        border-radius: var(--desktop-radius-lg);
+        overflow: hidden;
+        user-select: none;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+    }
+
+    /* Altura descontando o "cromo" do modal em tela cheia (cabeçalho, cards de
+       contexto, abas, dica, legenda, texto de ajuda e rodapé) — assim o mapa
+       cabe sem forçar rolagem do corpo do modal, que competiria com o pan. */
+    .os-map-viewport {
+        position: relative;
+        height: calc(100vh - 430px);
+        min-height: 360px;
+        overflow: hidden;
+        cursor: grab;
+        touch-action: none;
+    }
+
+    .os-map-viewport.is-panning {
+        cursor: grabbing;
+    }
+
+    .os-map-canvas {
+        transform-origin: 0 0;
+        will-change: transform;
+        width: 1780px;
+    }
+
+    .os-map-canvas svg {
+        display: block;
+        width: 1780px;
+        height: 1560px;
+    }
+
+    .os-map-toolbar {
+        position: absolute;
+        top: 0.75rem;
+        right: 0.75rem;
+        z-index: 5;
+        display: flex;
+        gap: 0.35rem;
+    }
+
+    .os-map-toolbar .btn {
+        background: var(--desktop-surface);
+        border: 1px solid var(--desktop-border);
+        color: var(--desktop-text);
+        box-shadow: var(--desktop-shadow-soft);
+    }
+
+    .os-map-close {
+        display: none;
+        position: absolute;
+        top: 0.75rem;
+        right: 0.75rem;
+        z-index: 10;
+        width: 2.6rem;
+        height: 2.6rem;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        border: 1px solid var(--desktop-border);
+        background: var(--desktop-surface);
+        color: var(--desktop-text);
+        box-shadow: var(--desktop-shadow);
+        font-size: 1.05rem;
+    }
+
+    .os-map-frame.is-fullscreen {
+        display: flex;
+        flex-direction: column;
+        border-radius: 0;
+        background: var(--desktop-surface);
+    }
+
+    .os-map-frame.is-fullscreen-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 1090;
+    }
+
+    .os-map-frame.is-fullscreen .os-map-viewport {
+        flex: 1;
+        height: auto;
+        min-height: 0;
+    }
+
+    .os-map-frame.is-fullscreen .os-map-close {
+        display: inline-flex;
+    }
+
+    .os-map-frame.is-fullscreen .os-map-toolbar {
+        top: 4rem;
+    }
+
+    .os-map-legend {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.5rem 1.1rem;
+        padding: 0.65rem 1rem;
+        border-bottom: 1px solid var(--desktop-border);
+        background: var(--desktop-surface-soft);
+        font-size: 0.78rem;
+        color: var(--desktop-text-soft);
+    }
+
+    .os-map-legend-items {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem 1.1rem;
+    }
+
+    .os-map-legend-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    .os-map-legend-swatch {
+        display: inline-block;
+        width: 22px;
+        height: 0;
+        border-top: 4px solid #AAB4C0;
+        border-radius: 2px;
+    }
+
+    .os-map-legend-swatch--traveled { border-top-color: #2B8A3E; }
+    .os-map-legend-swatch--suggested { border-top-style: dashed; border-top-color: #1864AB; }
+    .os-map-legend-swatch--baixa { border-top-color: #7048E8; }
+
+    .os-map-legend-dot {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+    }
+
+    .os-map-legend-dot--current { background: #1864AB; box-shadow: 0 0 0 3px rgba(24, 100, 171, 0.25); }
+    .os-map-legend-dot--clickable { background: #fff; border: 2px solid #1864AB; }
+
+    /* ---- Decoração do SVG (aplicada por orders-map.js) ------------------ */
+    .os-map--decorated .os-map-edge {
+        opacity: 0.18;
+    }
+
+    .os-map--decorated .os-map-node,
+    .os-map--decorated .os-map-port {
+        opacity: 0.45;
+    }
+
+    .os-map--decorated .os-map-node.is-visited,
+    .os-map--decorated .os-map-node.is-current,
+    .os-map--decorated .os-map-node.is-clickable,
+    .os-map--decorated .os-map-node.is-destination,
+    .os-map--decorated .os-map-port.is-suggested {
+        opacity: 1;
+    }
+
+    .os-map--decorated .os-map-edge.is-traveled {
+        opacity: 1;
+        stroke: #2B8A3E;
+    }
+
+    .os-map--decorated .os-map-edge.is-suggested {
+        opacity: 1;
+        stroke-dasharray: 10 7;
+        animation: os-map-dash 1.4s linear infinite;
+    }
+
+    @keyframes os-map-dash {
+        to { stroke-dashoffset: -34; }
+    }
+
+    .os-map-node.is-clickable {
+        cursor: pointer;
+    }
+
+    .os-map-node.is-clickable rect {
+        stroke: var(--desktop-primary);
+        stroke-width: 3;
+    }
+
+    .os-map-node.is-clickable:hover rect {
+        filter: brightness(1.05);
+        stroke-width: 4;
+    }
+
+    .os-map-port.is-actionable {
+        cursor: pointer;
+    }
+
+    .os-map-here {
+        fill: #1864AB;
+        stroke: #FFFFFF;
+        stroke-width: 2.5;
+        transform-box: fill-box;
+        transform-origin: center;
+        animation: os-map-pulse 1.6s ease-out infinite;
+    }
+
+    @keyframes os-map-pulse {
+        0% { transform: scale(0.85); opacity: 1; }
+        70% { transform: scale(1.5); opacity: 0.45; }
+        100% { transform: scale(0.85); opacity: 1; }
+    }
 </style>
 
 <div class="modal fade" id="orderStatusModal" tabindex="-1" aria-hidden="true" aria-labelledby="orderStatusModalTitleEl">
-    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-dialog modal-fullscreen modal-dialog-scrollable">
         <div class="modal-content modal-shell">
             <form id="orderStatusModalForm" novalidate>
                 <div class="modal-header">
@@ -308,6 +589,13 @@
                                 </button>
                             </li>
                             <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="orderStatusModalTabMapBtn" data-bs-toggle="tab"
+                                    data-bs-target="#orderStatusModalTabMap" type="button" role="tab"
+                                    aria-controls="orderStatusModalTabMap" aria-selected="false">
+                                    Mapa de status
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
                                 <button class="nav-link" id="orderStatusModalTabProceduresBtn" data-bs-toggle="tab"
                                     data-bs-target="#orderStatusModalTabProcedures" type="button" role="tab"
                                     aria-controls="orderStatusModalTabProcedures" aria-selected="false">
@@ -320,9 +608,9 @@
                             <div class="tab-pane fade show active" id="orderStatusModalTabStatus" role="tabpanel" aria-labelledby="orderStatusModalTabStatusBtn">
                                 <div class="row g-4">
                                     {{-- Coluna esquerda: formulário de mudança --}}
-                                    <div class="col-12 col-xl-7">
+                                    <div class="col-12 col-xl-8">
                                         <div class="os-status-modal-panel">
-                                            {{-- Etapas do fluxo (chips clicáveis, agrupados por macrofase) --}}
+                                            {{-- Fluxograma de etapas, uma linha por macrofase --}}
                                             <div class="os-status-modal-section">
                                                 <div class="os-status-modal-section-title">Etapas do fluxo</div>
                                                 <div class="small text-muted mb-2" id="orderStatusModalCurrentHint">Status atual da OS: aguardando contexto.</div>
@@ -332,7 +620,7 @@
                                                 </div>
 
                                                 <div class="small text-muted mt-2" id="orderStatusModalTargetHint">Selecione um fluxo para continuar.</div>
-                                                <div class="form-text">Todas as etapas ficam disponíveis, agrupadas por macrofase — clique em qualquer uma para selecioná-la, a mudança só é aplicada ao salvar. A etapa atual vem marcada com <i class="bi bi-record-fill text-primary"></i> e a próxima etapa sugerida pelo fluxo padrão vem com borda destacada, mas isso não impede escolher outra. Status de encerramento (equipamento entregue, devolvido, descartado) não aparecem aqui — são feitos pela tela de baixa da OS.</div>
+                                                <div class="form-text">Cada linha é uma macrofase do fluxo da OS, com suas etapas na ordem em que acontecem. Clique em qualquer etapa para selecioná-la — a mudança só é aplicada ao salvar. A etapa atual aparece destacada e marcada com <i class="bi bi-record-fill"></i>, e a próxima etapa sugerida pelo fluxo padrão vem com borda clara, mas isso não impede escolher outra. Status de encerramento (equipamento entregue, devolvido, descartado) não aparecem aqui — são feitos pela tela de baixa da OS.</div>
 
                                                 {{-- Campo real do form; escondido, a fonte de verdade é a
                                                     seleção via chip. Segue existindo pra manter toda a lógica
@@ -370,7 +658,7 @@
                                     </div>
 
                                     {{-- Coluna direita: histórico --}}
-                                    <div class="col-12 col-xl-5">
+                                    <div class="col-12 col-xl-4">
                                         <div class="os-status-modal-panel os-status-modal-workflow">
                                             <div class="os-status-modal-section-title">Histórico e progresso</div>
                                             <p class="small text-muted mb-3">Etapas percorridas e últimas movimentações desta OS.</p>
@@ -380,6 +668,38 @@
                                         </div>
                                     </div>
                                 </div>
+                            </div>
+
+                            <div class="tab-pane fade" id="orderStatusModalTabMap" role="tabpanel" aria-labelledby="orderStatusModalTabMapBtn">
+                                <div class="small text-muted mb-2" id="orderStatusModalMapCurrentHint">Status atual da OS: aguardando contexto.</div>
+                                <div class="alert alert-warning d-none" id="orderStatusModalMapError">Não foi possível carregar o mapa de status desta OS. Use a aba "Status" para alterar por lista.</div>
+                                <div class="os-map-frame" id="orderStatusModalMapFrame">
+                                    <div class="os-map-legend">
+                                        <div class="os-map-legend-items">
+                                            <span class="os-map-legend-item"><span class="os-map-legend-swatch os-map-legend-swatch--traveled"></span>trajeto percorrido</span>
+                                            <span class="os-map-legend-item"><span class="os-map-legend-dot os-map-legend-dot--current"></span>posição atual</span>
+                                            <span class="os-map-legend-item"><span class="os-map-legend-swatch os-map-legend-swatch--suggested"></span>rota provável</span>
+                                            <span class="os-map-legend-item"><span class="os-map-legend-dot os-map-legend-dot--clickable"></span>clique em qualquer etapa pra mover</span>
+                                            <span class="os-map-legend-item"><span class="os-map-legend-swatch os-map-legend-swatch--baixa"></span>baixa da OS (encerramento)</span>
+                                        </div>
+                                    </div>
+                                    <div class="os-map-viewport" data-os-map="viewport">
+                                        <div class="os-map-canvas" data-os-map="canvas">
+                                            @include('orders._flow_map_svg')
+                                        </div>
+                                        <div class="os-map-toolbar">
+                                            <button type="button" class="btn btn-sm" data-os-map="zoom-out" title="Reduzir"><i class="bi bi-dash-lg"></i></button>
+                                            <button type="button" class="btn btn-sm" data-os-map="zoom-in" title="Ampliar"><i class="bi bi-plus-lg"></i></button>
+                                            <button type="button" class="btn btn-sm" data-os-map="zoom-reset" title="Ajustar à tela"><i class="bi bi-aspect-ratio"></i></button>
+                                            <button type="button" class="btn btn-sm" data-os-map="center-current" title="Centralizar na posição atual"><i class="bi bi-crosshair"></i></button>
+                                            <button type="button" class="btn btn-sm" data-os-map="fullscreen" title="Tela cheia"><i class="bi bi-arrows-fullscreen"></i></button>
+                                        </div>
+                                        <button type="button" class="os-map-close" data-os-map="exit-fullscreen" title="Sair da tela cheia (Esc)" aria-label="Sair da tela cheia">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="form-text mt-2">Clique numa etapa pra selecioná-la e mover a OS direto — pede confirmação antes de salvar. Status de encerramento (equipamento entregue, devolvido, descartado) só pela tela de baixa, clicar neles aqui explica o porquê.</div>
                             </div>
 
                             <div class="tab-pane fade" id="orderStatusModalTabProcedures" role="tabpanel" aria-labelledby="orderStatusModalTabProceduresBtn">

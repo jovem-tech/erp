@@ -144,6 +144,13 @@ aberto.
   frontend. Ver secao "Modal 'Alterar status' mostra todos os status" abaixo
   para o porque do modal ter migrado de `proximas_etapas` pra
   `status_disponiveis` em 2026-08-09.
+- `orders-map.js` (`createOsMapWidget`, usado pela pagina `/os/{id}/mapa` E
+  pela aba "Mapa de status" do modal) — descarta `grupo_macro = 'encerrado'`
+  ao montar `etapaByCode`, entao nenhum no de encerramento fica clicavel; eles
+  recebem `.is-closure` e clicar neles abre o explicativo `explainBaixa()`,
+  que so oferece ir para a tela de baixa. O filtro fica DENTRO do widget (nao
+  so em quem chama) porque `status_disponiveis` e o catalogo COMPLETO e
+  inclui os status de baixa — ver secao "Mapa de status dentro do modal".
 - A tela de baixa (`orders/closure.blade.php`) e o UNICO lugar que exibe os 3
   status — via `OrderClosureService::closureOptions()`.
 
@@ -401,6 +408,86 @@ contra pular etapa; fica so o aviso client-side). Qualquer novo bloqueio de
 "para onde a OS pode ir" deve ser feito como aviso na UI (como o de pulo de
 fase), nunca como 422 no backend, a menos que envolva os `closureCodes()`
 (aí sim, a regra central deste skill continua valendo sem excecao).
+
+## Aba "Status": fluxograma por macrofase (2026-08-10)
+
+A listagem de chips agrupados virou um **fluxograma**: uma linha por
+macrofase (faixa colorida com o nome da fase à esquerda) e as etapas daquela
+fase fluindo para a direita, ligadas por setas — layout e paleta definidos
+pelo usuario. Implementado em `orders-status-modal.js`
+(`MACRO_PHASES`, `EXIT_PHASES`, `buildStep`, `buildPhaseRow`,
+`renderStatusGrid`) + CSS em `_status_modal.blade.php` (`.os-flow*`).
+
+- **A ordem das macrofases e declarada em `MACRO_PHASES`, NAO derivada de
+  `os_status.ordem_fluxo`** — decisao explicita do usuario: Recepcao >
+  Diagnostico > Orcamento > **Em espera** > Execucao > Qualidade > Concluido.
+  No banco `interrupcao` (Em espera) tem `ordem_fluxo` 120-140, ou seja,
+  cairia depois de Execucao/Qualidade. Ao adicionar uma macrofase nova ao
+  catalogo, inclua-a em `MACRO_PHASES` (ou em `EXIT_PHASES`) — fases fora
+  dessas listas ainda aparecem, mas caem no fim da tela.
+- **Dentro de cada fase** a ordem continua sendo a de `ordem_fluxo` (ordem em
+  que `status_disponiveis` chega do backend), sem override por status.
+- `finalizado_sem_reparo` e `cancelado` sao **saidas do fluxo**: ficam num
+  bloco separado por divisor, sob o titulo "Saida do fluxo", ambas em
+  vermelho. Cancelado tem linha propria (e `grupo_macro` proprio no banco e
+  o usuario o descreve como saida distinta), embora no fluxograma de
+  referencia ele apareca na mesma faixa de "sem reparo".
+- Paleta por fase (`--phase-color`/`--phase-text`, seletores
+  `.os-flow-row[data-phase="..."]`): recepcao `#10739E`, diagnostico
+  `#F2931E`, orcamento `#66B2FF`, interrupcao `#FFD400` (texto escuro),
+  execucao `#999900`, qualidade `#9999FF`, concluido `#00994D`,
+  finalizado_sem_reparo e cancelado `#CC0000`.
+- Continua valendo tudo da secao anterior: status de `grupo_macro='encerrado'`
+  nunca aparecem (so pela baixa), e qualquer etapa nao-baixa e clicavel.
+
+## Mapa de status dentro do modal "Alterar status" (2026-08-09)
+
+O modal virou `modal-fullscreen` e ganhou a aba **"Mapa de status"**, que
+reaproveita o MESMO mapa interativo da pagina `/os/{id}/mapa` — nao existe
+uma segunda implementacao do diagrama:
+
+- `orders-map.js` foi refatorado de IIFE-de-pagina para uma **fabrica de
+  widget**: `window.DesktopOsMap.create(rootEl, config)`. A pagina cheia
+  continua auto-inicializando (`if (window.__DESKTOP_OS_MAP)` no fim do
+  arquivo, root = `.os-map-frame`); o modal chama `create()` sob demanda.
+- Elementos passaram a ser localizados por `data-os-map="..."` dentro do
+  `root` (antes: `getElementById` global) — por isso a mesma partial pode
+  existir duas vezes na pagina sem conflito. Excecao: `status-pill`, `banner`
+  e `trail` seguem via `document.querySelector` porque na pagina cheia ficam
+  FORA de `.os-map-frame` (e nao existem no modal — que nunca chama
+  `refreshMap()`, ver `config.onMoved` abaixo).
+- `config.initialView`: `'fit'` (modal — abre com o fluxo inteiro visivel,
+  o ponto da aba e localizar a OS no mapa completo) vs. padrao (pagina cheia
+  — centraliza na posicao atual, `scale` minimo 0.85).
+- `config.onMoved`: no modal, mover a OS fecha o modal e recarrega a pagina
+  (mesmo desfecho dos chips + "Salvar status"); sem esse callback o widget
+  usa `refreshMap()` (comportamento da pagina cheia, que nao pode recarregar
+  sob risco de sair do fullscreen).
+- Clicabilidade acompanha a permissividade de 2026-08-09 (secao acima):
+  **qualquer** status ativo nao-baixa e clicavel no mapa, nao so os de
+  `proximas_etapas` — estes viram apenas destaque visual (`.is-destination`).
+- **Pegadinha ja corrigida (nao reintroduzir):** `status_disponiveis` inclui
+  os status de `grupo_macro='encerrado'`. Passar esse catalogo cru pro widget
+  tornava os nos de baixa clicaveis (e o backend recusaria com 422
+  `closure_status_requires_baixa_flow`). O descarte e feito dentro de
+  `applyState()`, nao no chamador.
+- **Ir para a baixa desloga o usuario (bug real, corrigido):** `explainBaixa()`
+  navega por `window.location.href = config.closureUrl`. O guard de sessao do
+  layout (`layouts/app.blade.php`) so reconhece navegacao interna por clique em
+  `<a href>`, `submit` e F5 — navegacao PROGRAMATICA nao dispara nenhum desses,
+  entao o `pagehide` gravava `erpDesktopClosedAt` ("navegador fechado") e a tela
+  de baixa, ao carregar, disparava `POST /logout` sozinha e jogava o usuario no
+  login. Corrigido expondo `window.erpMarkInternalNavigation` no layout e
+  chamando-o ANTES de navegar. **Qualquer** `window.location.href = ` /
+  `location.assign()` para pagina interna do desktop precisa desse hook —
+  ainda existem outros pontos sem ele (`dashboard.js`,
+  `configurations-integrations.js`), que continuam suscetiveis.
+- Os 5 arquivos que incluem `_status_modal.blade.php` (`show`, `index`,
+  `closure`, `documents-center`, `_wizard_scripts`) precisam carregar
+  **`orders-map.js` antes de `orders-status-modal.js`** — sem ele
+  `window.DesktopOsMap` nao existe e a aba fica com o SVG estatico, sem
+  decoracao nem zoom/pan/clique (bug real que apareceu na primeira versao).
+  Ambos os scripts usam cache-buster `?v=filemtime(...)`.
 
 ## Checklist ao tocar em status de OS ou relatorios financeiros
 
