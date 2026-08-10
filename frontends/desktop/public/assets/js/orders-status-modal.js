@@ -3,11 +3,15 @@
     const statusContextUrlTemplate = String(config.statusContextUrlTemplate || '');
     const statusUpdateUrlTemplate = String(config.statusUpdateUrlTemplate || '');
     const proceduresUrlTemplate = String(config.proceduresUrlTemplate || '');
+    const mapDataUrlTemplate = String(config.mapDataUrlTemplate || '');
+    const closureUrlTemplate = String(config.closureUrlTemplate || '');
     const csrfToken = String(config.csrfToken || '');
 
     const buildContextUrl = (orderId) => statusContextUrlTemplate.replaceAll('__ORDER__', String(orderId));
     const buildUpdateUrl = (orderId) => statusUpdateUrlTemplate.replaceAll('__ORDER__', String(orderId));
     const buildProceduresUrl = (orderId) => proceduresUrlTemplate.replaceAll('__ORDER__', String(orderId));
+    const buildMapDataUrl = (orderId) => mapDataUrlTemplate.replaceAll('__ORDER__', String(orderId));
+    const buildClosureUrl = (orderId) => closureUrlTemplate.replaceAll('__ORDER__', String(orderId));
 
     const modalEl = document.getElementById('orderStatusModal');
     if (!modalEl) return;
@@ -26,6 +30,9 @@
     const proceduresSaveBtn = document.getElementById('orderStatusModalProceduresSave');
     const novoPrazoWrapper = document.getElementById('orderStatusModalNovoPrazoWrapper');
     const novoPrazoInput = document.getElementById('orderStatusModalNovoPrazo');
+    const mapFrameEl = document.getElementById('orderStatusModalMapFrame');
+    const mapErrorEl = document.getElementById('orderStatusModalMapError');
+    const mapTabBtn = document.getElementById('orderStatusModalTabMapBtn');
 
     let currentOrderId = null;
     let statusLabelsByCode = {};
@@ -33,25 +40,45 @@
     let phaseRankByGroup = {};
     let currentStatusCode = '';
     let statusCongelaPrazoAtual = false;
+    let mapWidget = null;
+    let pendingMapConfig = null;
 
-    // Rótulo em PT-BR de cada macrofase (os_status.grupo_macro). 'encerrado'
-    // (baixa) nunca chega aqui — filtrado antes de montar a grade (ver
-    // sistema-erp-os-fluxo-fechamento). 'cancelado' também não entra no mapa:
-    // continua com sua própria seção fixa "Cancelar atendimento".
-    const MACRO_PHASE_LABELS = {
-        recepcao: 'Recepção',
-        diagnostico: 'Diagnóstico',
-        orcamento: 'Orçamento',
-        execucao: 'Execução',
-        qualidade: 'Qualidade',
-        interrupcao: 'Em espera',
-        concluido: 'Concluído',
-        finalizado_sem_reparo: 'Finalizado sem reparo',
-    };
+    // Macrofases = o fluxo de andamento da OS, na ordem definida pelo usuário
+    // (2026-08-10): Recepção > Diagnóstico > Orçamento > Em espera > Execução
+    // > Qualidade > Concluído; depois as SAÍDAS do fluxo (sem reparo,
+    // cancelado). Essa ordem é declarada aqui de propósito e NÃO é derivada de
+    // os_status.ordem_fluxo: no banco 'interrupcao' (Em espera) tem ordem
+    // 120-140, ou seja, cairia depois de Execução/Qualidade — o usuário quer
+    // "Em espera" logo após Orçamento, porque é onde a OS costuma parar
+    // esperando peça/pagamento antes de entrar em execução.
+    //
+    // 'encerrado' (baixa) nunca aparece aqui — filtrado antes (regra central
+    // do skill sistema-erp-os-fluxo-fechamento: só pela tela de baixa).
+    const MACRO_PHASES = [
+        { code: 'recepcao', label: 'Recepção' },
+        { code: 'diagnostico', label: 'Diagnóstico' },
+        { code: 'orcamento', label: 'Orçamento' },
+        { code: 'interrupcao', label: 'Em espera' },
+        { code: 'execucao', label: 'Execução' },
+        { code: 'qualidade', label: 'Qualidade' },
+        { code: 'concluido', label: 'Concluído' },
+    ];
+
+    // Saídas do fluxo: a OS termina sem seguir para Concluído. Ficam num bloco
+    // separado, depois de um divisor — não são etapas de progresso.
+    const EXIT_PHASES = [
+        { code: 'finalizado_sem_reparo', label: 'Sem reparo' },
+        { code: 'cancelado', label: 'Cancelado' },
+    ];
+
+    const PHASE_LABELS = [...MACRO_PHASES, ...EXIT_PHASES].reduce((acc, phase) => {
+        acc[phase.code] = phase.label;
+        return acc;
+    }, {});
 
     const macroPhaseLabel = (grupoMacro) => {
         const code = String(grupoMacro || '').trim();
-        return MACRO_PHASE_LABELS[code] || (code !== '' ? code.charAt(0).toUpperCase() + code.slice(1).replace(/_/g, ' ') : 'Outra fase');
+        return PHASE_LABELS[code] || (code !== '' ? code.charAt(0).toUpperCase() + code.slice(1).replace(/_/g, ' ') : 'Outra fase');
     };
 
     // Sugestão padrão: hoje + 7 dias, no formato aceito pelo <input type="date">.
@@ -167,43 +194,64 @@
         `;
     };
 
-    // Uma etapa vira chip clicável. Antes o grupo (avançar/retornar/cancelar)
-    // vinha só das transições cadastradas em os_status_transicoes a partir do
-    // status atual; agora a grade mostra TODOS os status ativos (exceto os de
-    // baixa) organizados por macrofase, porque na prática o técnico avança
+    // Uma etapa vira um "card" clicável do fluxograma. A grade mostra TODOS os
+    // status ativos (exceto os de baixa) porque na prática o técnico avança
     // várias etapas do atendimento antes de mexer no sistema — uma máquina de
     // estados rígida não reflete esse fluxo. Encerramentos (equipamento
     // entregue/devolvido/descartado) nunca aparecem aqui, só na tela de baixa
     // (grupo_macro='encerrado', ver skill sistema-erp-os-fluxo-fechamento).
-    const buildChip = (etapa, modifierClass, { isCurrent = false, isSuggested = false } = {}) => {
+    const buildStep = (etapa, { isCurrent = false, isSuggested = false } = {}) => {
         const code = String(etapa.codigo || '').trim();
         if (!code) return '';
         const nome = String(etapa.nome || code);
         const icone = String(etapa.icone || '').trim();
-        const cor = String(etapa.cor || '').trim();
-        const style = cor ? ` style="--status-color: ${cor}"` : '';
         const classes = [
-            'os-status-chip',
-            modifierClass,
+            'os-flow-step',
             isCurrent ? 'is-current' : '',
             isSuggested ? 'is-suggested' : '',
         ].filter(Boolean).join(' ');
 
+        const title = isCurrent
+            ? 'Etapa atual da OS'
+            : (isSuggested ? 'Próxima etapa sugerida pelo fluxo padrão' : '');
+
         return `
-            <button type="button" class="${classes}" data-status-code="${code}"${style} title="${isCurrent ? 'Etapa atual' : (isSuggested ? 'Próxima etapa sugerida pelo fluxo padrão' : '')}">
+            <button type="button" class="${classes}" data-status-code="${code}" title="${title}">
                 ${icone ? `<i class="bi ${icone}"></i>` : ''}
-                <span>${nome}</span>
-                ${isCurrent ? '<i class="bi bi-record-fill os-status-chip-current-dot"></i>' : ''}
+                <span class="os-flow-step-label">${nome}</span>
+                ${isCurrent ? '<i class="bi bi-record-fill os-flow-step-dot" aria-hidden="true"></i>' : ''}
             </button>
         `;
     };
 
-    // Grade principal: todos os status ativos exceto baixa (grupo_macro
-    // 'encerrado') e cancelamento (grupo_macro 'cancelado', que mantém sua
-    // própria seção fixa "Cancelar atendimento" abaixo). Como o backend já
-    // devolve status_disponiveis ordenado por ordem_fluxo, agrupar mantendo a
-    // ordem de chegada já entrega as macrofases na sequência certa do fluxo,
-    // sem precisar hardcodar a ordem aqui.
+    // Monta uma linha do fluxograma: faixa da macrofase à esquerda + as etapas
+    // daquela fase fluindo para a direita, separadas por setas. Dentro da fase
+    // a ordem vem de os_status.ordem_fluxo (ordem em que status_disponiveis já
+    // chega do backend) — só a ordem ENTRE fases é declarada em MACRO_PHASES.
+    const buildPhaseRow = (phase, etapas, currentCode, suggested) => {
+        if (etapas.length === 0) return '';
+
+        const steps = etapas.map((etapa, index) => {
+            const step = buildStep(etapa, {
+                isCurrent: String(etapa.codigo || '').trim() === currentCode,
+                isSuggested: suggested.has(String(etapa.codigo || '').trim()),
+            });
+            const arrow = index < etapas.length - 1
+                ? '<span class="os-flow-arrow" aria-hidden="true"></span>'
+                : '';
+            return step + arrow;
+        }).join('');
+
+        return `
+            <div class="os-flow-row" data-phase="${phase.code}">
+                <div class="os-flow-phase"><span>${phase.label}</span></div>
+                <div class="os-flow-steps">${steps}</div>
+            </div>
+        `;
+    };
+
+    // Fluxograma principal: uma linha por macrofase, na ordem do fluxo real da
+    // OS, seguida de um bloco separado com as saídas do fluxo.
     const renderStatusGrid = (statusCatalog, proximasEtapas, currentCode) => {
         if (!chipGroupsEl) return;
 
@@ -213,57 +261,57 @@
                 .filter(Boolean)
         );
 
-        const groups = new Map();
-        let cancelStatus = null;
-        phaseRankByGroup = {};
-
+        // Agrupa por grupo_macro preservando a ordem de chegada (= ordem_fluxo).
+        const byPhase = new Map();
         statusCatalog.forEach((etapa) => {
             const grupoMacro = String(etapa.grupo_macro || '').trim();
             if (grupoMacro === 'encerrado') return; // baixa: só pela tela de Encerramento.
-
-            if (grupoMacro === 'cancelado') {
-                cancelStatus = cancelStatus || etapa;
-                return;
-            }
-
-            if (!groups.has(grupoMacro)) {
-                phaseRankByGroup[grupoMacro] = groups.size;
-                groups.set(grupoMacro, []);
-            }
-            groups.get(grupoMacro).push(etapa);
+            if (!byPhase.has(grupoMacro)) byPhase.set(grupoMacro, []);
+            byPhase.get(grupoMacro).push(etapa);
         });
 
-        if (groups.size === 0 && !cancelStatus) {
+        // Rank usado pelo aviso de "pulo de fase" no submit: posição da fase no
+        // fluxo declarado. Saídas ficam depois de todas as fases de progresso.
+        phaseRankByGroup = {};
+        [...MACRO_PHASES, ...EXIT_PHASES].forEach((phase, index) => {
+            phaseRankByGroup[phase.code] = index;
+        });
+
+        const flowRows = MACRO_PHASES
+            .map((phase) => buildPhaseRow(phase, byPhase.get(phase.code) || [], currentCode, suggested))
+            .join('');
+
+        const exitRows = EXIT_PHASES
+            .map((phase) => buildPhaseRow(phase, byPhase.get(phase.code) || [], currentCode, suggested))
+            .join('');
+
+        // Fases fora do fluxo declarado (status novo no catálogo com um
+        // grupo_macro ainda não mapeado): não somem da tela — vão para o fim,
+        // com o rótulo derivado do próprio código.
+        const knownPhases = new Set([...MACRO_PHASES, ...EXIT_PHASES].map((p) => p.code));
+        const extraRows = Array.from(byPhase.keys())
+            .filter((code) => !knownPhases.has(code))
+            .map((code) => buildPhaseRow(
+                { code, label: macroPhaseLabel(code) },
+                byPhase.get(code) || [],
+                currentCode,
+                suggested
+            ))
+            .join('');
+
+        if (flowRows === '' && exitRows === '' && extraRows === '') {
             chipGroupsEl.innerHTML = '<p class="os-status-chip-empty">Nenhum status disponível para esta OS.</p>';
             return;
         }
 
-        const phaseSections = Array.from(groups.entries()).map(([grupoMacro, etapas]) => {
-            const chips = etapas.map((etapa) => buildChip(etapa, 'os-status-chip--fase', {
-                isCurrent: String(etapa.codigo || '').trim() === currentCode,
-                isSuggested: suggested.has(String(etapa.codigo || '').trim()),
-            })).join('');
-
-            return `
-                <div class="os-status-phase-group">
-                    <div class="os-status-chip-group-label">${macroPhaseLabel(grupoMacro)}</div>
-                    <div class="os-status-chip-row">${chips}</div>
-                </div>
-            `;
-        }).join('');
-
-        const cancelSection = cancelStatus ? `
-            <div class="os-status-phase-group os-status-phase-group--cancel">
-                <div class="os-status-chip-group-label">Cancelar atendimento</div>
-                <div class="os-status-chip-row">${buildChip(cancelStatus, 'os-status-chip--cancelar', {
-                    isCurrent: String(cancelStatus.codigo || '').trim() === currentCode,
-                })}</div>
-            </div>
-        ` : '';
-
         chipGroupsEl.innerHTML = `
-            <div class="os-status-phase-grid">${phaseSections}</div>
-            ${cancelSection}
+            <div class="os-flow">${flowRows}${extraRows}</div>
+            ${exitRows !== '' ? `
+                <div class="os-flow-exit">
+                    <div class="os-flow-exit-title">Saída do fluxo</div>
+                    <div class="os-flow">${exitRows}</div>
+                </div>
+            ` : ''}
         `;
     };
 
@@ -271,13 +319,13 @@
     // change), quem efetivamente aplica é o "Salvar status" no rodapé — mesmo
     // padrão que os antigos botões de ação rápida já usavam.
     chipGroupsEl?.addEventListener('click', (event) => {
-        const chip = event.target.closest('.os-status-chip');
+        const chip = event.target.closest('.os-flow-step');
         if (!chip || !chipGroupsEl.contains(chip)) return;
 
         const code = chip.dataset.statusCode || '';
         if (!code || !selectEl) return;
 
-        chipGroupsEl.querySelectorAll('.os-status-chip.is-selected').forEach((el) => {
+        chipGroupsEl.querySelectorAll('.os-flow-step.is-selected').forEach((el) => {
             el.classList.remove('is-selected');
         });
         chip.classList.add('is-selected');
@@ -286,7 +334,7 @@
         selectEl.dispatchEvent(new Event('change'));
     });
 
-    const populateModal = (data) => {
+    const populateModal = (data, mapData) => {
         const numeroOs = String(data.numero_os || '');
         setText('orderStatusModalNumero', numeroOs);
 
@@ -330,6 +378,50 @@
         // Status atual
         const statusAtual = String(data.status_nome || '');
         setText('orderStatusModalCurrentHint', `Status atual da OS: ${statusAtual}.`);
+        setText('orderStatusModalMapCurrentHint', `Status atual da OS: ${statusAtual}.`);
+
+        // Config da aba "Mapa de status" — só é aplicada (create/refresh do
+        // widget) quando a aba é exibida (shown.bs.tab), nunca aqui: o
+        // container ainda está escondido (display:none) neste ponto, e
+        // medir/decorar um SVG escondido dá dimensões erradas (ou falha em
+        // alguns navegadores). Ver window.DesktopOsMap.create() em
+        // orders-map.js.
+        pendingMapConfig = mapData && mapData.order ? {
+            statusAtual: currentStatusCode,
+            isEncerrada: Boolean(mapData.order.is_encerrada),
+            canEditStatus: Boolean(mapData.canEditStatus),
+            canClose: Boolean(mapData.canEditStatus) && !Boolean(mapData.order.is_encerrada),
+            statusCongelaPrazo: statusCongelaPrazoAtual,
+            proximasEtapas: Array.isArray(data.proximas_etapas) ? data.proximas_etapas : [],
+            statusDisponiveis: statusCatalog,
+            path: Array.isArray(mapData.path) ? mapData.path : [],
+            statusUpdateUrl: buildUpdateUrl(currentOrderId),
+            mapDataUrl: buildMapDataUrl(currentOrderId),
+            closureUrl: buildClosureUrl(currentOrderId),
+            csrfToken,
+            // Abre com o fluxo inteiro visível — o ponto da aba é localizar a
+            // OS dentro do mapa completo (ver applyInitialView em orders-map.js).
+            initialView: 'fit',
+            // O mapa nunca fica "aberto pra continuar clicando" dentro do
+            // modal (ao contrário da página cheia /os/{id}/mapa): mover a OS
+            // aqui fecha o modal e recarrega a página, igual ao fluxo dos
+            // chips + "Salvar status" — mesmo padrão de conclusão em todo o
+            // resto do modal, em vez de um segundo jeito independente de
+            // salvar. showToast do próprio widget já avisa o sucesso.
+            onMoved: () => {
+                const bsModal = bootstrap.Modal.getInstance(modalEl);
+                bsModal?.hide();
+                setTimeout(() => location.reload(), 1000);
+            },
+        } : null;
+
+        // O frame do mapa (SVG + toolbar) nunca é recriado — só create() uma
+        // vez e refresh() depois disso — pra não reanexar os listeners
+        // globais de fullscreen/Esc a cada abertura do modal (vazamento de
+        // listener). Erro de carregamento é um elemento irmão, alternado por
+        // classe, não uma troca de innerHTML do frame.
+        mapErrorEl?.classList.toggle('d-none', pendingMapConfig !== null);
+        mapFrameEl?.classList.toggle('d-none', pendingMapConfig === null);
 
         // Todos os status ativos, exceto os de baixa (grupo_macro='encerrado'
         // — só a tela de Encerramento pode aplicá-los). Sugestões do fluxo
@@ -394,28 +486,62 @@
         if (submitBtn) submitBtn.disabled = true;
 
         try {
-            const res = await fetch(buildContextUrl(currentOrderId), {
-                headers: {
-                    Accept: 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                },
-            });
+            // Mapa de status busca em paralelo com o contexto do form, mas
+            // falha isolada: se o mapa não carregar, a aba "Status" continua
+            // funcionando normalmente (só a aba "Mapa de status" mostra erro
+            // — ver populateModal). Por isso o catch fica só no fetch do
+            // mapa, não propaga pro try externo.
+            const [contextRes, mapRes] = await Promise.all([
+                fetch(buildContextUrl(currentOrderId), {
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                }),
+                buildMapDataUrl(currentOrderId)
+                    ? fetch(buildMapDataUrl(currentOrderId), {
+                        headers: {
+                            Accept: 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    }).catch(() => null)
+                    : Promise.resolve(null),
+            ]);
 
-            if (!res.ok) {
+            if (!contextRes.ok) {
                 throw new Error('Erro ao carregar dados da OS.');
             }
 
-            const data = await res.json();
+            const data = await contextRes.json();
 
             if (data.error) {
                 throw new Error(data.error);
             }
 
-            populateModal(data);
+            const mapData = mapRes && mapRes.ok ? await mapRes.json().catch(() => null) : null;
+
+            populateModal(data, mapData);
         } catch (err) {
             showState('error');
             if (errorTextEl) errorTextEl.textContent = err.message || 'Não foi possível carregar os dados da OS.';
         }
+    });
+
+    // Aba "Mapa de status": só cria/atualiza o widget quando a aba fica
+    // visível de fato (o container começa display:none — medir/decorar um
+    // SVG escondido dá dimensões erradas). Cria uma única vez por página
+    // (evita reanexar os listeners globais de fullscreen/Esc a cada abertura
+    // do modal) e reaproveita via refresh() nas aberturas seguintes,
+    // possivelmente pra uma OS diferente.
+    mapTabBtn?.addEventListener('shown.bs.tab', () => {
+        if (!pendingMapConfig || !mapFrameEl || typeof window.DesktopOsMap === 'undefined') return;
+
+        if (mapWidget) {
+            mapWidget.refresh(pendingMapConfig);
+            return;
+        }
+
+        mapWidget = window.DesktopOsMap.create(mapFrameEl, pendingMapConfig);
     });
 
     // Limpa o modal ao fechar

@@ -449,7 +449,7 @@
             <p class="desktop-eyebrow">Mapa da ordem de serviço</p>
             <div class="d-flex flex-wrap align-items-center gap-2">
                 <h2 class="surface-title fs-3 mb-0">{{ $numeroOs }}</h2>
-                <span id="osMapStatusPill">
+                <span id="osMapStatusPill" data-os-map="status-pill">
                     @include('layouts.partials.status-pill', [
                         'label' => ($order['status_nome'] ?? '') !== '' ? $order['status_nome'] : 'Sem status',
                         'color' => $order['status_cor'] ?? '#64748b',
@@ -464,7 +464,7 @@
         </div>
     </div>
 
-    <div id="osMapBanner">
+    <div id="osMapBanner" data-os-map="banner">
         @if ($isEncerrada)
             <div class="alert alert-info d-flex align-items-center gap-2">
                 <i class="bi bi-lock"></i>
@@ -495,18 +495,18 @@
                     @endif
                 </div>
             </div>
-            <div class="os-map-viewport" id="osMapViewport">
-                <div class="os-map-canvas" id="osMapCanvas">
+            <div class="os-map-viewport" id="osMapViewport" data-os-map="viewport">
+                <div class="os-map-canvas" id="osMapCanvas" data-os-map="canvas">
                     @include('orders._flow_map_svg')
                 </div>
                 <div class="os-map-toolbar">
-                    <button type="button" class="btn btn-sm" id="osMapZoomOut" title="Reduzir"><i class="bi bi-dash-lg"></i></button>
-                    <button type="button" class="btn btn-sm" id="osMapZoomIn" title="Ampliar"><i class="bi bi-plus-lg"></i></button>
-                    <button type="button" class="btn btn-sm" id="osMapZoomReset" title="Ajustar à tela"><i class="bi bi-aspect-ratio"></i></button>
-                    <button type="button" class="btn btn-sm" id="osMapCenterCurrent" title="Centralizar na posição atual"><i class="bi bi-crosshair"></i></button>
-                    <button type="button" class="btn btn-sm" id="osMapFullscreen" title="Tela cheia"><i class="bi bi-arrows-fullscreen"></i></button>
+                    <button type="button" class="btn btn-sm" id="osMapZoomOut" data-os-map="zoom-out" title="Reduzir"><i class="bi bi-dash-lg"></i></button>
+                    <button type="button" class="btn btn-sm" id="osMapZoomIn" data-os-map="zoom-in" title="Ampliar"><i class="bi bi-plus-lg"></i></button>
+                    <button type="button" class="btn btn-sm" id="osMapZoomReset" data-os-map="zoom-reset" title="Ajustar à tela"><i class="bi bi-aspect-ratio"></i></button>
+                    <button type="button" class="btn btn-sm" id="osMapCenterCurrent" data-os-map="center-current" title="Centralizar na posição atual"><i class="bi bi-crosshair"></i></button>
+                    <button type="button" class="btn btn-sm" id="osMapFullscreen" data-os-map="fullscreen" title="Tela cheia"><i class="bi bi-arrows-fullscreen"></i></button>
                 </div>
-                <button type="button" class="os-map-close" id="osMapExitFullscreen" title="Sair da tela cheia (Esc)" aria-label="Sair da tela cheia">
+                <button type="button" class="os-map-close" id="osMapExitFullscreen" data-os-map="exit-fullscreen" title="Sair da tela cheia (Esc)" aria-label="Sair da tela cheia">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </div>
@@ -542,7 +542,7 @@
             @endif
 
             <div class="os-map-side-title">Trajeto percorrido</div>
-            <div id="osMapTrailContainer">
+            <div id="osMapTrailContainer" data-os-map="trail">
                 @include('orders._map_trail', ['path' => $path, 'pathTruncated' => $pathTruncated, 'statusNames' => $statusNames])
             </div>
         </aside>

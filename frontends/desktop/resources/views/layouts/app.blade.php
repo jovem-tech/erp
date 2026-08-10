@@ -176,6 +176,18 @@
                 internalNavTimer = setTimeout(function () { internalNavigation = false; }, 60000);
             }
 
+            // O rastreio automático abaixo só cobre clique em <a href>, submit
+            // de form e F5/Ctrl+R. Navegação PROGRAMÁTICA
+            // (window.location.href = ... / location.assign(...)) não dispara
+            // nenhum desses eventos, então o pagehide seguinte marcaria a saída
+            // como "navegador fechado" e a próxima página deslogaria o usuário
+            // sozinha. Quem navegar por JS para uma página interna deve chamar
+            // este hook ANTES de navegar:
+            //     window.erpMarkInternalNavigation?.();
+            // (sempre com guarda: este IIFE tem returns antecipados quando não
+            // há localStorage utilizável, e aí o hook não existe).
+            window.erpMarkInternalNavigation = markInternalNavigation;
+
             function forceLogout() {
                 markInternalNavigation();
                 if (window.console && console.info) { console.info('[ERP Sessão] Navegador foi fechado e reaberto — encerrando a sessão.'); }
