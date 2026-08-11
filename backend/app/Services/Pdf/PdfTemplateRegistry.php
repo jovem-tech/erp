@@ -26,6 +26,9 @@ class PdfTemplateRegistry
     /** @var array<string, array<string, mixed>|null> */
     private array $customDescriptorCache = [];
 
+    /** @var array<string, array{nome?: string, descricao?: string}> */
+    private array $familyLabelCache = [];
+
     /**
      * Variáveis disponíveis em TODOS os tipos (empresa + metadados do documento).
      *
@@ -66,6 +69,8 @@ class PdfTemplateRegistry
         'os.forma_pagamento' => 'string',
         'os.garantia_dias' => 'inteiro',
         'os.garantia_validade' => 'data',
+        // Prazo por extenso: "90 dias", "1 ano", "2 anos".
+        'os.garantia_prazo' => 'string',
         'os.tecnico_nome' => 'string',
         // Blocos HTML derivados do checklist de entrada (legado do modelo de
         // abertura). Tipo `html`: pré-sanitizados na factory, injetados sem
@@ -143,6 +148,11 @@ class PdfTemplateRegistry
                     'orcamento.numero' => 'string',
                     'orcamento.titulo' => 'string',
                     'orcamento.validade_dias' => 'inteiro',
+                    'orcamento.validade_data' => 'data',
+                    // Prazo real do link público (token). É o que a legenda do
+                    // botão promete, então precisa ser a data que o backend
+                    // realmente honra, não a validade comercial.
+                    'orcamento.validade_link' => 'data',
                     'orcamento.prazo_execucao' => 'string',
                     'orcamento.condicoes' => 'string',
                     'orcamento.observacoes' => 'string',
@@ -150,6 +160,17 @@ class PdfTemplateRegistry
                     'orcamento.desconto' => 'moeda',
                     'orcamento.total' => 'moeda',
                     'orcamento.link_aprovacao' => 'string',
+                    // Condições comerciais estruturadas: montadas por
+                    // BudgetCommercialTermsService a partir do catálogo de
+                    // formas de pagamento e das chaves Pix cadastradas.
+                    'orcamento.formas_pagamento' => 'string',
+                    'orcamento.chaves_pix' => 'string',
+                    'orcamento.parcelamento' => 'string',
+                    'orcamento.garantia_dias' => 'inteiro',
+                    'orcamento.garantia_prazo' => 'string',
+                    'orcamento.garantia_texto' => 'string',
+                    // Bloco único com tudo acima + o texto livre complementar.
+                    'orcamento.condicoes_comerciais' => 'string',
                 ]),
                 'collections' => array_merge(self::ORDER_COLLECTIONS, [
                     'itens' => [
@@ -161,6 +182,15 @@ class PdfTemplateRegistry
                         'acrescimo' => 'moeda',
                         'valor_total' => 'moeda',
                         'observacoes' => 'string',
+                    ],
+                    'formas_pagamento' => [
+                        'nome' => 'string',
+                    ],
+                    'chaves_pix' => [
+                        'tipo' => 'string',
+                        'chave' => 'string',
+                        'titular' => 'string',
+                        'instituicao' => 'string',
                     ],
                 ]),
                 'message_template_code' => 'orcamento_enviado',
@@ -256,7 +286,15 @@ class PdfTemplateRegistry
     {
         $coreTypes = $this->types();
         if (isset($coreTypes[$codigo])) {
-            return array_merge($coreTypes[$codigo], [
+            // O nome impresso no documento ({{ documento.nome }}) e usado nas
+            // listagens sai do cadastro quando o usuário renomeou o modelo; o
+            // rótulo do código é só o padrão de fábrica.
+            $override = $this->familyLabel($codigo);
+
+            return array_merge($coreTypes[$codigo], array_filter([
+                'nome' => $override['nome'] ?? null,
+                'descricao' => $override['descricao'] ?? null,
+            ], static fn ($value): bool => $value !== null && $value !== ''), [
                 'personalizado' => false,
                 'tipo_base_codigo' => $codigo,
             ]);
@@ -298,9 +336,45 @@ class PdfTemplateRegistry
         ]);
     }
 
+    /**
+     * Nome/descrição gravados em `pdf_templates` para um tipo de sistema.
+     * Ambiente sem a tabela (instalação nova, teste sem schema) devolve vazio
+     * e o rótulo de fábrica continua valendo.
+     *
+     * @return array{nome?: string, descricao?: string}
+     */
+    private function familyLabel(string $codigo): array
+    {
+        if (array_key_exists($codigo, $this->familyLabelCache)) {
+            return $this->familyLabelCache[$codigo];
+        }
+
+        try {
+            if (! Schema::hasTable('pdf_templates')) {
+                return $this->familyLabelCache[$codigo] = [];
+            }
+
+            $family = PdfTemplate::query()
+                ->where('tipo_codigo', $codigo)
+                ->where('arquivado', false)
+                ->first(['nome', 'descricao']);
+        } catch (\Throwable) {
+            return $this->familyLabelCache[$codigo] = [];
+        }
+
+        if (! $family instanceof PdfTemplate) {
+            return $this->familyLabelCache[$codigo] = [];
+        }
+
+        return $this->familyLabelCache[$codigo] = array_filter([
+            'nome' => trim((string) $family->nome),
+            'descricao' => trim((string) ($family->descricao ?? '')),
+        ], static fn (string $value): bool => $value !== '');
+    }
+
     public function forget(string $codigo): void
     {
-        unset($this->customDescriptorCache[$codigo]);
+        unset($this->customDescriptorCache[$codigo], $this->familyLabelCache[$codigo]);
     }
 
     /**

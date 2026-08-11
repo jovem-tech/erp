@@ -761,6 +761,28 @@
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
                                 </div>
+                                @php
+                                    $garantiaConfig = is_array($closure['garantia'] ?? null) ? $closure['garantia'] : [];
+                                    $garantiaOpcoes = is_array($garantiaConfig['opcoes'] ?? null) ? $garantiaConfig['opcoes'] : [];
+                                    $garantiaSugerida = (string) old('garantia_dias', $garantiaConfig['dias_sugerido'] ?? '');
+                                @endphp
+                                <div class="col-12 col-md-6" id="garantiaWrapper">
+                                    <label class="form-label" for="garantiaDias">Garantia</label>
+                                    <select id="garantiaDias" name="garantia_dias" class="form-select @error('garantia_dias') is-invalid @enderror">
+                                        <option value="">Sem garantia</option>
+                                        @foreach ($garantiaOpcoes as $opcao)
+                                            <option value="{{ $opcao['value'] }}" {{ $garantiaSugerida === (string) $opcao['value'] ? 'selected' : '' }}>
+                                                {{ $opcao['label'] }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    <p class="form-text mb-0">
+                                        Contada a partir da data da entrega. Só vale para encerramentos com equipamento reparado.
+                                    </p>
+                                    @error('garantia_dias')
+                                        <div class="invalid-feedback">{{ $message }}</div>
+                                    @enderror
+                                </div>
                             </div>
 
                             {{-- Visível só quando Classificação = Adiantamento/Sinal --}}

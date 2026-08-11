@@ -197,6 +197,10 @@ Route::prefix('v1')->group(function (): void {
                 Route::match(['put', 'patch'], 'formas-pagamento/{formaPagamento}', [FinanceiroCatalogController::class, 'updateFormaPagamento'])->name('formas_pagamento.update');
                 Route::delete('formas-pagamento/{formaPagamento}', [FinanceiroCatalogController::class, 'destroyFormaPagamento'])->name('formas_pagamento.destroy');
 
+                Route::post('chaves-pix', [FinanceiroCatalogController::class, 'storeChavePix'])->name('chaves_pix.store');
+                Route::match(['put', 'patch'], 'chaves-pix/{chavePix}', [FinanceiroCatalogController::class, 'updateChavePix'])->name('chaves_pix.update');
+                Route::delete('chaves-pix/{chavePix}', [FinanceiroCatalogController::class, 'destroyChavePix'])->name('chaves_pix.destroy');
+
                 Route::post('comissoes', [FinanceiroCatalogController::class, 'storeComissao'])->name('comissoes.store');
                 Route::match(['put', 'patch'], 'comissoes/{comissao}', [FinanceiroCatalogController::class, 'updateComissao'])->name('comissoes.update');
                 Route::delete('comissoes/{comissao}', [FinanceiroCatalogController::class, 'destroyComissao'])->name('comissoes.destroy');
@@ -371,6 +375,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('knowledge/pdf-engine/types/{codigo}/variables', [PdfTemplateEngineController::class, 'typeMetadata'])->name('api.v1.knowledge.pdf_engine.type_variables');
         Route::post('knowledge/pdf-engine/templates', [PdfTemplateEngineController::class, 'store'])->name('api.v1.knowledge.pdf_engine.store');
         Route::get('knowledge/pdf-engine/templates/{template}', [PdfTemplateEngineController::class, 'show'])->whereNumber('template')->name('api.v1.knowledge.pdf_engine.show');
+        Route::match(['put', 'patch'], 'knowledge/pdf-engine/templates/{template}', [PdfTemplateEngineController::class, 'rename'])->whereNumber('template')->name('api.v1.knowledge.pdf_engine.rename');
         Route::post('knowledge/pdf-engine/templates/{template}/clone', [PdfTemplateEngineController::class, 'cloneTemplate'])->whereNumber('template')->name('api.v1.knowledge.pdf_engine.clone');
         Route::put('knowledge/pdf-engine/templates/{template}/draft', [PdfTemplateEngineController::class, 'saveDraft'])->whereNumber('template')->name('api.v1.knowledge.pdf_engine.draft');
         Route::post('knowledge/pdf-engine/templates/{template}/preview', [PdfTemplateEngineController::class, 'preview'])->whereNumber('template')->name('api.v1.knowledge.pdf_engine.preview');

@@ -226,9 +226,60 @@
                 <div class="detail-item"><strong>Prazo de execução</strong><span>{{ $budget['prazo_execucao'] !== '' ? $budget['prazo_execucao'] : 'Não informado' }}</span></div>
                 <div class="detail-item"><strong>Atualizado em</strong><span>{{ $budget['updated_at'] !== '' ? $budget['updated_at'] : 'Sem atualização' }}</span></div>
                 <div class="detail-item"><strong>Criado em</strong><span>{{ $budget['created_at'] !== '' ? $budget['created_at'] : 'Sem informação' }}</span></div>
-                <div class="detail-item"><strong>Condições</strong><p class="mb-0">{{ $budget['condicoes'] !== '' ? $budget['condicoes'] : 'Sem condições registradas' }}</p></div>
             </div>
         </article>
+    </section>
+
+    @php
+        $terms = is_array($budget['condicoes_comerciais'] ?? null) ? $budget['condicoes_comerciais'] : [];
+        $termPaymentMethods = is_array($terms['formas_pagamento'] ?? null) ? $terms['formas_pagamento'] : [];
+        $termPixKeys = is_array($terms['chaves_pix'] ?? null) ? $terms['chaves_pix'] : [];
+    @endphp
+
+    <section class="surface-card mb-4">
+        <div class="surface-card-header">
+            <div>
+                <h2 class="surface-title">Condições comerciais</h2>
+                <p class="surface-subtitle">Pagamento e garantia exatamente como o cliente lê no orçamento enviado.</p>
+            </div>
+        </div>
+
+        @if ($terms['tem_conteudo'] ?? false)
+            <div class="detail-list">
+                <div class="detail-item">
+                    <strong>Formas de pagamento</strong>
+                    <span>{{ $termPaymentMethods !== [] ? $terms['formas_pagamento_texto'] : 'Nenhuma forma selecionada' }}</span>
+                </div>
+
+                @if (($terms['parcelamento_texto'] ?? '') !== '')
+                    <div class="detail-item"><strong>Parcelamento</strong><span>{{ $terms['parcelamento_texto'] }}</span></div>
+                @endif
+
+                @if ($termPixKeys !== [])
+                    <div class="detail-item">
+                        <strong>Chave Pix</strong>
+                        <span>
+                            @foreach ($termPixKeys as $chave)
+                                {{ $chave['rotulo'] }}@if (! $loop->last)<br>@endif
+                            @endforeach
+                        </span>
+                    </div>
+                @endif
+
+                <div class="detail-item">
+                    <strong>Garantia</strong>
+                    <span>{{ ($terms['garantia_label'] ?? '') !== '' ? $terms['garantia_label'] : 'Sem garantia definida' }}</span>
+                </div>
+
+                @if (($terms['complemento'] ?? '') !== '')
+                    <div class="detail-item"><strong>Observações</strong><p class="mb-0">{{ $terms['complemento'] }}</p></div>
+                @endif
+            </div>
+        @else
+            <p class="text-secondary mb-0">
+                Nenhuma condição comercial registrada. Edite o orçamento para marcar formas de pagamento e prazo de garantia.
+            </p>
+        @endif
     </section>
 
     <section class="surface-card mb-4">

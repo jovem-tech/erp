@@ -70,6 +70,19 @@ class PdfTemplateEngineService
     }
 
     /**
+     * @return array<string, mixed>
+     */
+    public function rename(int $templateId, string $nome, ?string $descricao): array
+    {
+        $response = $this->apiClient->patch('/knowledge/pdf-engine/templates/' . $templateId, [
+            'nome' => $nome,
+            'descricao' => $descricao,
+        ]);
+
+        return $response['data']['template'] ?? [];
+    }
+
+    /**
      * @param array<string, mixed> $schema
      * @return array<string, mixed>
      */

@@ -33,6 +33,12 @@
     const mapFrameEl = document.getElementById('orderStatusModalMapFrame');
     const mapErrorEl = document.getElementById('orderStatusModalMapError');
     const mapTabBtn = document.getElementById('orderStatusModalTabMapBtn');
+    const notifyEl = document.getElementById('orderStatusModalNotify');
+    const notifyPreviewEl = document.getElementById('orderStatusModalNotifyPreview');
+    const notifyPreviewTextEl = document.getElementById('orderStatusModalNotifyPreviewText');
+    const notifyEditBtn = document.getElementById('orderStatusModalNotifyEdit');
+    const notifyMessageEl = document.getElementById('orderStatusModalNotifyMessage');
+    const observacaoEl = document.getElementById('orderStatusModalObservacao');
 
     let currentOrderId = null;
     let statusLabelsByCode = {};
@@ -42,6 +48,12 @@
     let statusCongelaPrazoAtual = false;
     let mapWidget = null;
     let pendingMapConfig = null;
+    let numeroOsAtual = '';
+    let mensagemClienteTemplate = '';
+    // true depois que o operador edita o texto à mão: a partir daí a mensagem
+    // não é mais regenerada sozinha ao trocar status/observação, para não
+    // apagar o que ele escreveu.
+    let mensagemClienteEditada = false;
 
     // Macrofases = o fluxo de andamento da OS, na ordem definida pelo usuário
     // (2026-08-10): Recepção > Diagnóstico > Orçamento > Em espera > Execução
@@ -219,7 +231,7 @@
             <button type="button" class="${classes}" data-status-code="${code}" title="${title}">
                 ${icone ? `<i class="bi ${icone}"></i>` : ''}
                 <span class="os-flow-step-label">${nome}</span>
-                ${isCurrent ? '<i class="bi bi-record-fill os-flow-step-dot" aria-hidden="true"></i>' : ''}
+                ${isCurrent ? '<span class="os-flow-step-tag" data-role="tag">atual</span>' : ''}
             </button>
         `;
     };
@@ -325,14 +337,152 @@
         const code = chip.dataset.statusCode || '';
         if (!code || !selectEl) return;
 
+        // Limpa a seleção anterior e devolve a etiqueta "atual" ao card da
+        // etapa em que a OS realmente está (ele pode ter sido o selecionado).
         chipGroupsEl.querySelectorAll('.os-flow-step.is-selected').forEach((el) => {
             el.classList.remove('is-selected');
+            const tag = el.querySelector('[data-role="tag"]');
+            if (tag) {
+                if (el.classList.contains('is-current')) {
+                    tag.textContent = 'atual';
+                } else {
+                    tag.remove();
+                }
+            }
         });
+
         chip.classList.add('is-selected');
+
+        // Etiqueta do card escolhido: "selecionado" (ou "atual • selecionado"
+        // quando o operador reescolhe a própria etapa atual).
+        let tag = chip.querySelector('[data-role="tag"]');
+        if (!tag) {
+            tag = document.createElement('span');
+            tag.className = 'os-flow-step-tag';
+            tag.dataset.role = 'tag';
+            chip.appendChild(tag);
+        }
+        tag.textContent = chip.classList.contains('is-current') ? 'atual • selecionado' : 'selecionado';
 
         selectEl.value = code;
         selectEl.dispatchEvent(new Event('change'));
     });
+
+    // ------------------------------------------------------------------
+    // Mensagem ao cliente ("Notificar o cliente sobre esta mudança")
+    // ------------------------------------------------------------------
+
+    // Monta a mensagem padrão a partir do template que veio do backend
+    // (OrderWorkflowService::CLIENT_STATUS_MESSAGE_TEMPLATE, repassado pelo
+    // contexto do modal) — a frase NÃO é escrita aqui, para não divergir do
+    // que o backend enviaria caso o campo chegue vazio.
+    const buildDefaultClientMessage = () => {
+        const statusNome = selectEl?.selectedOptions[0]?.text || statusLabelsByCode[currentStatusCode] || '';
+        const template = mensagemClienteTemplate
+            || 'Olá! O status da sua OS {numero_os} foi atualizado para: "{status}".';
+
+        let texto = template
+            .replaceAll('{numero_os}', numeroOsAtual)
+            .replaceAll('{status}', statusNome);
+
+        const observacao = (observacaoEl?.value || '').trim();
+        if (observacao !== '') texto += ` ${observacao}`;
+
+        return texto;
+    };
+
+    const renderNotifyPreview = () => {
+        const ligado = Boolean(notifyEl?.checked);
+        notifyPreviewEl?.classList.toggle('d-none', !ligado);
+        if (notifyPreviewTextEl) {
+            notifyPreviewTextEl.textContent = notifyMessageEl?.value || '';
+        }
+    };
+
+    // Regera a mensagem quando o operador ainda não a editou à mão.
+    const refreshClientMessage = () => {
+        if (!notifyEl?.checked || mensagemClienteEditada) {
+            renderNotifyPreview();
+            return;
+        }
+        if (notifyMessageEl) notifyMessageEl.value = buildDefaultClientMessage();
+        renderNotifyPreview();
+    };
+
+    // Modal de revisão: mostra a mensagem que será enviada e deixa editar.
+    // Cancelar aqui desliga o switch — evita notificar sem o operador ter
+    // conferido o texto.
+    const openClientMessageDialog = async ({ desligarSeCancelar = false } = {}) => {
+        if (typeof Swal === 'undefined') return true;
+
+        const atual = notifyMessageEl?.value || buildDefaultClientMessage();
+
+        const result = await Swal.fire({
+            title: 'Mensagem ao cliente',
+            html: `
+                <p class="small text-muted mb-2 text-start">
+                    Esta mensagem será enviada ao cliente por WhatsApp ao salvar o status.
+                    Ajuste o texto se quiser adaptá-lo à situação.
+                </p>
+                <textarea id="orderStatusModalClientMessageInput" class="form-control" rows="5">${atual.replace(/</g, '&lt;')}</textarea>
+                <p class="small text-muted mt-2 mb-0 text-start">
+                    O texto enviado fica registrado no histórico da OS.
+                </p>
+            `,
+            width: 620,
+            // Sem `target` o SweetAlert2 é anexado ao <body>, FORA do modal do
+            // Bootstrap — e o focus trap do modal devolve o foco para si a cada
+            // focusin, impedindo digitar no textarea. Ancorar o diálogo dentro
+            // do próprio modal resolve (verificado com Bootstrap real: sem
+            // target o activeElement volta para o .modal).
+            target: modalEl,
+            showCancelButton: true,
+            confirmButtonText: 'Usar esta mensagem',
+            cancelButtonText: desligarSeCancelar ? 'Não notificar' : 'Cancelar',
+            reverseButtons: true,
+            preConfirm: () => {
+                const texto = (document.getElementById('orderStatusModalClientMessageInput')?.value || '').trim();
+                if (texto === '') {
+                    Swal.showValidationMessage('A mensagem não pode ficar vazia.');
+                    return false;
+                }
+                if (texto.length > 2000) {
+                    Swal.showValidationMessage('A mensagem deve ter no máximo 2000 caracteres.');
+                    return false;
+                }
+                return texto;
+            },
+        });
+
+        if (!result.isConfirmed) {
+            if (desligarSeCancelar && notifyEl) {
+                notifyEl.checked = false;
+                renderNotifyPreview();
+            }
+            return false;
+        }
+
+        if (notifyMessageEl) notifyMessageEl.value = result.value;
+        mensagemClienteEditada = result.value !== buildDefaultClientMessage();
+        renderNotifyPreview();
+        return true;
+    };
+
+    // Ligar o switch abre o modal na hora, para o operador ver/ajustar o texto.
+    notifyEl?.addEventListener('change', () => {
+        if (notifyEl.checked) {
+            if (notifyMessageEl && !mensagemClienteEditada) {
+                notifyMessageEl.value = buildDefaultClientMessage();
+            }
+            renderNotifyPreview();
+            openClientMessageDialog({ desligarSeCancelar: true });
+            return;
+        }
+        renderNotifyPreview();
+    });
+
+    notifyEditBtn?.addEventListener('click', () => openClientMessageDialog());
+    observacaoEl?.addEventListener('input', refreshClientMessage);
 
     const populateModal = (data, mapData) => {
         const numeroOs = String(data.numero_os || '');
@@ -340,6 +490,15 @@
 
         statusCongelaPrazoAtual = Boolean(data.status_congela_prazo);
         hideNovoPrazoSection();
+
+        // Mensagem ao cliente: template vem do backend; estado começa zerado a
+        // cada abertura (switch desligado, sem texto, sem edição manual).
+        numeroOsAtual = numeroOs;
+        mensagemClienteTemplate = String(data.mensagem_cliente_template || '');
+        mensagemClienteEditada = false;
+        if (notifyEl) notifyEl.checked = false;
+        if (notifyMessageEl) notifyMessageEl.value = '';
+        renderNotifyPreview();
 
         // Catálogo de status (código → nome/macrofase), usado pra traduzir o
         // histórico, montar a grade por macrofase e checar salto de fase
@@ -552,6 +711,9 @@
         if (submitBtn) submitBtn.disabled = true;
         setText('orderStatusModalNumero', '-');
         hideNovoPrazoSection();
+        mensagemClienteEditada = false;
+        if (notifyMessageEl) notifyMessageEl.value = '';
+        renderNotifyPreview();
 
         const statusTabBtn = document.getElementById('orderStatusModalTabStatusBtn');
         if (statusTabBtn && typeof bootstrap !== 'undefined') {
@@ -586,6 +748,9 @@
         } else {
             hideNovoPrazoSection();
         }
+
+        // O nome do status entra na mensagem ao cliente — mantém em dia.
+        refreshClientMessage();
     };
 
     selectEl?.addEventListener('change', handleStatusSelectChange);
@@ -654,6 +819,7 @@
 
         const result = await Swal.fire({
             icon: 'warning',
+            target: modalEl,
             title: 'Pulando etapas do fluxo',
             html: `Isso muda a OS de <b>${macroPhaseLabel(currentGroup)}</b> direto para <b>${macroPhaseLabel(targetGroup)}</b>, sem passar pelas fases intermediárias. Confirma mesmo assim?`,
             showCancelButton: true,
@@ -675,6 +841,38 @@
         if (novoPrazoVisivel && !novoPrazoInput?.value) {
             showToast('Informe o novo prazo de entrega para reabrir esta OS.', 'error');
             return;
+        }
+
+        // Notificação ligada: garante que existe um texto (o operador pode ter
+        // ligado o switch e fechado o modal de revisão sem confirmar) e que o
+        // campo escondido vai preenchido. Desligada: limpa, para não mandar
+        // texto residual de uma edição que o operador acabou desfazendo.
+        if (notifyEl?.checked) {
+            if (notifyMessageEl && notifyMessageEl.value.trim() === '') {
+                notifyMessageEl.value = buildDefaultClientMessage();
+            }
+
+            // O backend só notifica o cliente quando o status DE FATO muda
+            // (ver OrderWorkflowService::updateStatus, guarda $statusChanged).
+            // Salvar com o switch ligado sem trocar de status não enviaria
+            // nada — avisa em vez de deixar o operador achar que enviou.
+            const semTrocaDeStatus = selectEl?.value === '' || selectEl?.value === currentStatusCode;
+            if (semTrocaDeStatus && typeof Swal !== 'undefined') {
+                const aviso = await Swal.fire({
+                    icon: 'warning',
+                    target: modalEl,
+                    title: 'O cliente não será notificado',
+                    text: 'A mensagem só é enviada quando o status da OS muda, e nenhuma mudança de status foi selecionada. Deseja salvar assim mesmo?',
+                    showCancelButton: true,
+                    confirmButtonText: 'Salvar sem notificar',
+                    cancelButtonText: 'Voltar e escolher a etapa',
+                    reverseButtons: true,
+                });
+
+                if (!aviso.isConfirmed) return;
+            }
+        } else if (notifyMessageEl) {
+            notifyMessageEl.value = '';
         }
 
         if (!(await confirmPhaseSkipIfNeeded())) {

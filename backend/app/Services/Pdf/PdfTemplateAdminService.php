@@ -188,6 +188,51 @@ class PdfTemplateAdminService
     /**
      * @return array<string, mixed>
      */
+    /**
+     * Renomeia o modelo. O nome vale para as listagens e para
+     * `{{ documento.nome }}` impresso no documento — inclusive nos tipos de
+     * sistema, cujo rótulo de fábrica passa a ser só o padrão inicial.
+     *
+     * O `tipo_codigo` nunca muda: documentos já emitidos apontam para ele.
+     *
+     * @return array<string, mixed>
+     */
+    public function rename(int $templateId, string $nome, ?string $descricao, ?int $actorId): array
+    {
+        $family = PdfTemplate::query()->find($templateId);
+
+        if (! $family instanceof PdfTemplate || (bool) $family->arquivado) {
+            return ['result' => 'not_found'];
+        }
+
+        $nome = trim($nome);
+
+        if ($nome === '') {
+            return ['result' => 'invalid_name'];
+        }
+
+        $family->forceFill([
+            'nome' => $nome,
+            'descricao' => $descricao !== null ? trim($descricao) : $family->descricao,
+            'atualizado_por' => $actorId,
+            'updated_at' => Carbon::now(),
+        ])->save();
+
+        // O descritor guarda nome/descrição em cache por request.
+        $this->registry->forget((string) $family->tipo_codigo);
+
+        return [
+            'result' => 'ok',
+            'template' => [
+                'id' => (int) $family->id,
+                'tipo_codigo' => (string) $family->tipo_codigo,
+                'nome' => (string) $family->nome,
+                'descricao' => (string) ($family->descricao ?? ''),
+                'personalizado' => (bool) $family->personalizado,
+            ],
+        ];
+    }
+
     public function templateDetail(int $templateId): array
     {
         $family = PdfTemplate::query()->with('versoes')->find($templateId);

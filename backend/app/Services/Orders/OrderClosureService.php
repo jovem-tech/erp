@@ -45,6 +45,18 @@ class OrderClosureService
 
     private const PENDING_PAYMENT_STATUS = 'entregue_pagamento_pendente';
 
+    // Encerramentos que entregam um equipamento REPARADO e, por isso, geram
+    // garantia. Devolvido sem reparo e descartado ficam de fora: não houve
+    // serviço a garantir. A regra olha o `encerrar_como` (a intenção da baixa),
+    // não o status finalmente aplicado — entrega com saldo pendente vira
+    // entregue_pagamento_pendente, mas o equipamento saiu reparado do mesmo
+    // jeito e a garantia do cliente começa a correr.
+    private const WARRANTY_CLOSURE_STATUSES = [
+        'entregue_reparado_pago',
+        'entregue_reparado_sem_custo',
+        'entregue_reparado_garantia',
+    ];
+
     // Encerramento como "Entregue - Reparado e Pago": exige ao menos algum valor
     // recebido (antes desta baixa OU nesta ação). Ver close(). O código real
     // (ver skill sistema-erp-os-fluxo-fechamento) é 'entregue_reparado_pago' — é
@@ -98,7 +110,36 @@ class OrderClosureService
             // orders-closure.js desabilita a opção "Entregue - Reparado e Pago"
             // nesse caso (o backend também bloqueia; ver close()).
             'orcamento_pendente_aprovacao' => $this->hasUnapprovedBudget((int) $order->id),
+            // Garantia entregue ao cliente: a tela já abre com o prazo que o
+            // orçamento aprovado prometeu, para o operador não ter que lembrar.
+            'garantia' => [
+                'opcoes' => Budget::warrantyOptions(),
+                'dias_sugerido' => $this->suggestedWarrantyDays($order),
+                'status_com_garantia' => self::WARRANTY_CLOSURE_STATUSES,
+            ],
         ];
+    }
+
+    /**
+     * Prazo de garantia que a tela de baixa deve sugerir: o que já estiver na
+     * OS, senão o prometido pelo orçamento aprovado mais recente.
+     */
+    private function suggestedWarrantyDays(Order $order): ?int
+    {
+        $atual = (int) ($order->garantia_dias ?? 0);
+        if ($atual > 0) {
+            return $atual;
+        }
+
+        $doOrcamento = (int) (Budget::query()
+            ->where('os_id', (int) $order->id)
+            ->whereNotNull('garantia_dias')
+            ->orderByRaw('aprovado_em is null')
+            ->orderByDesc('aprovado_em')
+            ->orderByDesc('id')
+            ->value('garantia_dias') ?? 0);
+
+        return $doOrcamento > 0 ? $doOrcamento : null;
     }
 
     /**
@@ -202,6 +243,17 @@ class OrderClosureService
             }
         }
 
+        // Garantia: só encerramentos que entregam reparo a concedem. O prazo
+        // enviado na baixa vence o que estava na OS; se nada for enviado, o
+        // prazo já registrado (herdado do orçamento) é mantido.
+        $concedeGarantia = in_array($encerrarComo, self::WARRANTY_CLOSURE_STATUSES, true);
+        $garantiaDias = $concedeGarantia
+            ? $this->normalizeWarrantyDays($payload['garantia_dias'] ?? null, $order)
+            : null;
+        $garantiaValidade = $garantiaDias !== null
+            ? Carbon::parse($dataEntrega)->addDays($garantiaDias)->toDateString()
+            : null;
+
         $observacao = trim((string) ($payload['observacao'] ?? ''));
         $agendarRetorno = filter_var($payload['agendar_retorno'] ?? false, FILTER_VALIDATE_BOOL);
         $retornoData = $this->normalizeDate($payload['retorno_data'] ?? null)
@@ -215,7 +267,9 @@ class OrderClosureService
                 $observacao,
                 $dataEntrega,
                 $recebimentos,
-                $isNonBilledClosure
+                $isNonBilledClosure,
+                $garantiaDias,
+                $garantiaValidade
             ): array {
                 ['titulo' => $titulo, 'saldo_aberto' => $saldoAberto] = $this->processReceipts($order, $recebimentos, $dataEntrega);
                 $temSaldoPendente = $saldoAberto > 0.009 && ! $isNonBilledClosure;
@@ -235,13 +289,22 @@ class OrderClosureService
                 }
 
                 $now = Carbon::now();
-                Order::query()->whereKey($order->id)->update([
+                $orderUpdate = [
                     'data_entrega' => $dataEntrega,
                     'baixa_tecnica_em' => $now,
                     'baixa_tecnica_por' => (int) $actor->id,
                     'status_final_pendente_pagamento' => $temSaldoPendente ? $encerrarComo : null,
                     'updated_at' => $now,
-                ]);
+                ];
+
+                // Encerramento sem garantia (devolução/descarte) não zera o que
+                // já estava gravado: só não escreve nada.
+                if ($garantiaDias !== null) {
+                    $orderUpdate['garantia_dias'] = $garantiaDias;
+                    $orderUpdate['garantia_validade'] = $garantiaValidade;
+                }
+
+                Order::query()->whereKey($order->id)->update($orderUpdate);
 
                 if ($temSaldoPendente) {
                     $this->schedulePendingCollections((int) $order->id, (int) $titulo->id, (int) $order->cliente_id);
@@ -260,6 +323,8 @@ class OrderClosureService
                         'encerrar_como' => $encerrarComo,
                         'status_aplicado' => $statusAplicado,
                         'data_entrega' => $dataEntrega,
+                        'garantia_dias' => $garantiaDias,
+                        'garantia_validade' => $garantiaValidade,
                         'valor_titulo' => round((float) $titulo->valor, 2),
                         'saldo_pendente' => round($saldoAberto, 2),
                         'recebimentos' => count($recebimentos),
@@ -1551,6 +1616,23 @@ class OrderClosureService
      * convertido, ou com aprovado_em preenchido). OS sem orçamento nenhum
      * retorna false (nada a aprovar).
      */
+    /**
+     * Prazo válido enviado na baixa; sem ele, o que a OS já tinha (herdado do
+     * orçamento na conversão). Prazos fora da lista oferecida são ignorados.
+     */
+    private function normalizeWarrantyDays(mixed $value, Order $order): ?int
+    {
+        $dias = (int) $value;
+
+        if (array_key_exists($dias, Budget::WARRANTY_TERMS)) {
+            return $dias;
+        }
+
+        $atual = (int) ($order->garantia_dias ?? 0);
+
+        return $atual > 0 ? $atual : null;
+    }
+
     private function hasUnapprovedBudget(int $orderId): bool
     {
         $hasAnyBudget = Budget::query()->where('os_id', $orderId)->exists();

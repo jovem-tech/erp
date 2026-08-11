@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
 class Budget extends Model
 {
@@ -30,6 +31,26 @@ class Budget extends Model
     public const STATUS_CANCELLED = 'cancelado';
     public const STATUS_CONVERTED = 'convertido';
 
+    /**
+     * Prazos de garantia oferecidos ao cliente, em dias.
+     *
+     * Lista fechada de propósito: o prazo vira compromisso no documento e é
+     * herdado pela OS na baixa, então precisa ser comparável entre orçamentos.
+     *
+     * @var array<int, string>
+     */
+    public const WARRANTY_TERMS = [
+        90 => '90 dias',
+        180 => '180 dias',
+        365 => '1 ano',
+        730 => '2 anos',
+    ];
+
+    /**
+     * Teto do parcelamento sem juros negociável por orçamento.
+     */
+    public const MAX_INTEREST_FREE_INSTALLMENTS = 24;
+
     protected $table = 'orcamentos';
 
     protected $primaryKey = 'id';
@@ -52,6 +73,8 @@ class Budget extends Model
         'criado_por' => 'integer',
         'atualizado_por' => 'integer',
         'validade_dias' => 'integer',
+        'garantia_dias' => 'integer',
+        'parcelas_sem_juros' => 'integer',
         'subtotal' => 'float',
         'desconto' => 'float',
         'desconto_percentual' => 'float',
@@ -87,6 +110,61 @@ class Budget extends Model
     public function publicApprovalUrl(): ?string
     {
         return self::publicApprovalUrlForToken((string) ($this->token_publico ?? ''));
+    }
+
+    /**
+     * Até quando o link público de aprovação vale.
+     *
+     * Regra única do sistema: vale o prazo do token quando existe; senão, o fim
+     * do dia da validade comercial. O link público (410), a legenda impressa no
+     * PDF e a decisão de exibir o botão leem daqui, para as três nunca
+     * discordarem entre si.
+     */
+    public function publicLinkDeadline(): ?Carbon
+    {
+        if ($this->token_expira_em instanceof Carbon) {
+            return $this->token_expira_em;
+        }
+
+        if ($this->validade_data instanceof Carbon) {
+            return $this->validade_data->copy()->endOfDay();
+        }
+
+        return null;
+    }
+
+    public function publicLinkExpired(): bool
+    {
+        $deadline = $this->publicLinkDeadline();
+
+        return $deadline instanceof Carbon && Carbon::now()->greaterThan($deadline);
+    }
+
+    /**
+     * @return array<int, array{value: int, label: string}>
+     */
+    public static function warrantyOptions(): array
+    {
+        return array_map(
+            static fn (int $dias, string $label): array => ['value' => $dias, 'label' => $label],
+            array_keys(self::WARRANTY_TERMS),
+            array_values(self::WARRANTY_TERMS)
+        );
+    }
+
+    /**
+     * Rótulo do prazo. Prazos fora da lista (legado ou herdados de OS antiga)
+     * continuam sendo exibidos como "N dias" em vez de sumirem do documento.
+     */
+    public static function warrantyLabel(?int $dias): string
+    {
+        $dias = (int) $dias;
+
+        if ($dias <= 0) {
+            return '';
+        }
+
+        return self::WARRANTY_TERMS[$dias] ?? ($dias.' dias');
     }
 
     public static function statusOptions(): array
@@ -279,6 +357,11 @@ class Budget extends Model
     public function items(): HasMany
     {
         return $this->hasMany(BudgetItem::class, 'orcamento_id', 'id');
+    }
+
+    public function paymentMethods(): HasMany
+    {
+        return $this->hasMany(BudgetPaymentMethod::class, 'orcamento_id', 'id');
     }
 
     public function histories(): HasMany

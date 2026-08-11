@@ -82,6 +82,31 @@ class PdfTemplateEngineController extends BaseApiController
         };
     }
 
+    public function rename(Request $request, int $template): JsonResponse
+    {
+        $this->authorize('conhecimento:editar');
+
+        $validated = $request->validate([
+            'nome' => ['required', 'string', 'min:3', 'max:120'],
+            'descricao' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $actor = $this->authenticatedUser($request);
+        $result = $this->adminService->rename(
+            $template,
+            (string) $validated['nome'],
+            array_key_exists('descricao', $validated) ? (string) $validated['descricao'] : null,
+            $actor?->id !== null ? (int) $actor->id : null
+        );
+
+        return match ($result['result'] ?? 'error') {
+            'ok' => $this->success(['template' => $result['template']], request: $request),
+            'not_found' => $this->error('Documento não encontrado.', 404, 'PDF_ENGINE_TEMPLATE_NOT_FOUND', null, request: $request),
+            'invalid_name' => $this->error('Informe um nome para o documento.', 422, 'PDF_ENGINE_NAME_INVALID', null, request: $request),
+            default => $this->error('Falha ao renomear o documento.', 500, 'PDF_ENGINE_RENAME_FAILED', null, request: $request),
+        };
+    }
+
     public function cloneTemplate(Request $request, int $template): JsonResponse
     {
         $this->authorize('conhecimento:editar');

@@ -1011,6 +1011,71 @@ class OrderFlowTest extends TestCase
         $this->assertNotEmpty($response->json('error.details.status'));
     }
 
+    /**
+     * A mensagem ao cliente tem de ficar registrada no histórico da OS mesmo
+     * quando o envio falha — no ambiente de teste não há integração de
+     * WhatsApp, então este teste percorre justamente o caminho de falha.
+     * Antes o evento só era gravado no caminho de sucesso: uma falha de
+     * integração deixava a OS sem nenhum vestígio da mensagem e o operador
+     * acreditava ter avisado o cliente.
+     */
+    public function test_patch_status_records_client_message_in_history_even_when_delivery_fails(): void
+    {
+        [$user, $assignedOrder] = $this->seedTechnicianOrders();
+        $token = $this->loginAndGetToken($user->email);
+
+        $mensagem = 'Olá! Seu equipamento foi considerado irreparável e já está disponível para retirada.';
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
+                'status' => 'aguardando_reparo',
+                'comunicar_cliente' => true,
+                'mensagem_cliente' => $mensagem,
+            ])->assertOk();
+
+        $evento = DB::table('os_eventos')
+            ->where('os_id', $assignedOrder)
+            ->where('categoria', 'mensagem')
+            ->orderByDesc('id')
+            ->first();
+
+        $this->assertNotNull($evento, 'Nenhum evento de mensagem registrado no histórico da OS.');
+        $this->assertStringContainsString($mensagem, (string) $evento->descricao);
+
+        $dados = json_decode((string) $evento->dados, true);
+        $this->assertSame($mensagem, (string) data_get($dados, 'mensagem'));
+
+        // Confirma que este teste percorre mesmo o caminho de falha (sem
+        // integração de WhatsApp no ambiente de teste) — é justamente esse o
+        // caminho que antes não registrava nada no histórico.
+        $this->assertFalse((bool) data_get($dados, 'enviado'));
+        $this->assertContains((string) data_get($dados, 'canal'), ['falha', 'sem_telefone']);
+    }
+
+    public function test_patch_status_records_the_default_message_when_none_is_provided(): void
+    {
+        [$user, $assignedOrder] = $this->seedTechnicianOrders();
+        $token = $this->loginAndGetToken($user->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
+                'status' => 'aguardando_reparo',
+                'comunicar_cliente' => true,
+            ])->assertOk();
+
+        $evento = DB::table('os_eventos')
+            ->where('os_id', $assignedOrder)
+            ->where('categoria', 'mensagem')
+            ->orderByDesc('id')
+            ->first();
+
+        $this->assertNotNull($evento);
+        $this->assertStringContainsString(
+            'foi atualizado para:',
+            (string) data_get(json_decode((string) $evento->dados, true), 'mensagem')
+        );
+    }
+
     public function test_patch_status_allows_any_active_non_closure_destination_regardless_of_catalog(): void
     {
         [$user, $assignedOrder] = $this->seedTechnicianOrders();

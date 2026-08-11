@@ -579,6 +579,13 @@ class OrcamentoController extends DesktopController
             )],
             'observacoes' => ['nullable', 'string'],
             'condicoes' => ['nullable', 'string'],
+            // Condições comerciais estruturadas. O marcador vazio enviado pelo
+            // formulário (formas_pagamento[] = '') é filtrado abaixo, para
+            // desmarcar tudo chegar ao backend como lista vazia de verdade.
+            'formas_pagamento' => ['nullable', 'array'],
+            'formas_pagamento.*' => ['nullable', 'string', 'max:40'],
+            'garantia_dias' => ['nullable', 'integer', Rule::in([90, 180, 365, 730])],
+            'parcelas_sem_juros' => ['nullable', 'integer', 'min:2', 'max:24'],
             'subtotal' => ['nullable', 'numeric'],
             'desconto' => ['nullable', 'numeric'],
             'desconto_tipo' => ['nullable', 'string', Rule::in(['valor', 'percentual'])],
@@ -638,6 +645,9 @@ class OrcamentoController extends DesktopController
             'prazo_execucao' => 'prazo de execução',
             'observacoes' => 'observações',
             'condicoes' => 'condições',
+            'formas_pagamento' => 'formas de pagamento aceitas',
+            'garantia_dias' => 'garantia',
+            'parcelas_sem_juros' => 'parcelamento sem juros',
             'subtotal' => 'subtotal',
             'desconto' => 'desconto',
             'desconto_tipo' => 'tipo do desconto',
@@ -650,6 +660,13 @@ class OrcamentoController extends DesktopController
 
         $validated['itens'] = collect($validated['itens'] ?? [])
             ->filter(fn (array $item): bool => $this->itemHasMeaningfulContent($item))
+            ->values()
+            ->all();
+
+        $validated['formas_pagamento'] = collect($validated['formas_pagamento'] ?? [])
+            ->map(static fn ($code): string => trim((string) $code))
+            ->filter(static fn (string $code): bool => $code !== '')
+            ->unique()
             ->values()
             ->all();
 

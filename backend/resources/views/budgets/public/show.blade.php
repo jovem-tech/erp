@@ -193,6 +193,106 @@
             padding-top: 16px;
             border-top: 1px solid rgba(148, 163, 184, 0.18);
         }
+        /* Condicoes comerciais: o cliente precisa achar em 2 segundos como
+           paga e por quanto tempo tem garantia. Cartoes curtos em vez de
+           paragrafo corrido. */
+        .terms-heading {
+            margin-top: 26px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(148, 163, 184, 0.18);
+        }
+        .terms-grid {
+            display: grid;
+            gap: 12px;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        }
+        .term-card {
+            padding: 14px 16px;
+            border: 1px solid rgba(148, 163, 184, 0.16);
+            border-radius: 18px;
+            background: rgba(248, 250, 252, 0.9);
+        }
+        .term-card-wide { margin-top: 12px; }
+        .term-highlight {
+            font-size: 20px;
+            font-weight: 800;
+            line-height: 1.3;
+            color: var(--primary);
+        }
+        .term-note {
+            margin: 8px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+        .chip {
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: var(--primary-soft);
+            color: var(--primary);
+            font-size: 13px;
+            font-weight: 700;
+        }
+        /* A chave e' o dado que o cliente copia: fica grande, monoespacada e
+           quebra sem estourar o cartao no celular. */
+        .pix-box {
+            margin-top: 12px;
+            padding: 16px;
+            border: 1px solid rgba(21, 128, 61, 0.22);
+            border-radius: 18px;
+            background: var(--success-soft);
+        }
+        .pix-key {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            gap: 10px;
+            margin-top: 4px;
+        }
+        .pix-tipo {
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.75);
+            color: var(--success);
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+        }
+        .pix-valor {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text);
+            word-break: break-all;
+            -webkit-user-select: all;
+            user-select: all;
+        }
+        .pix-titular {
+            margin: 6px 0 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+        .btn-copy {
+            flex-shrink: 0;
+            padding: 7px 14px;
+            border: 1px solid rgba(21, 128, 61, 0.32);
+            border-radius: 999px;
+            background: #fff;
+            color: var(--success);
+            font-family: inherit;
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.2;
+            cursor: pointer;
+        }
+        .btn-copy:hover { background: rgba(21, 128, 61, 0.08); }
+        .btn-copy.is-done {
+            border-color: var(--success);
+            background: var(--success);
+            color: #fff;
+        }
         textarea {
             width: 100%;
             min-height: 110px;
@@ -235,6 +335,9 @@
         @media (max-width: 960px) {
             .grid { grid-template-columns: 1fr; }
             .meta-grid { grid-template-columns: 1fr; }
+            .terms-grid { grid-template-columns: 1fr; }
+            /* No celular a chave inteira precisa caber sem cortar. */
+            .pix-valor { font-size: 16px; }
         }
     </style>
 </head>
@@ -309,6 +412,78 @@
                         <div class="empty">Nenhum item disponível nesta proposta.</div>
                     @endforelse
                 </div>
+
+                @php
+                    $terms = is_array($budget['condicoes_comerciais'] ?? null) ? $budget['condicoes_comerciais'] : [];
+                    $termPixKeys = is_array($terms['chaves_pix'] ?? null) ? $terms['chaves_pix'] : [];
+                    $termPaymentMethods = is_array($terms['formas_pagamento'] ?? null) ? $terms['formas_pagamento'] : [];
+                @endphp
+
+                @if ($terms['tem_conteudo'] ?? false)
+                    <h2 class="section-title terms-heading">Condições comerciais</h2>
+
+                    <div class="terms-grid">
+                        @if (($terms['formas_pagamento_texto'] ?? '') !== '')
+                            <div class="term-card">
+                                <span class="meta-label">Formas de pagamento aceitas</span>
+                                <div class="chips">
+                                    @foreach ($termPaymentMethods as $forma)
+                                        <span class="chip">{{ $forma['nome'] }}</span>
+                                    @endforeach
+                                </div>
+                                @if (($terms['parcelamento_texto'] ?? '') !== '')
+                                    <p class="term-note">{{ $terms['parcelamento_texto'] }}</p>
+                                @endif
+                            </div>
+                        @endif
+
+                        @if (($terms['garantia_label'] ?? '') !== '')
+                            <div class="term-card">
+                                <span class="meta-label">Garantia</span>
+                                <div class="term-highlight">{{ $terms['garantia_label'] }}</div>
+                                <p class="term-note">
+                                    Sobre os serviços executados e as peças substituídas, contada a partir da entrega do equipamento.
+                                </p>
+                            </div>
+                        @endif
+                    </div>
+
+                    @if ($termPixKeys !== [])
+                        <div class="pix-box">
+                            <span class="meta-label">{{ count($termPixKeys) > 1 ? 'Chaves Pix para pagamento' : 'Chave Pix para pagamento' }}</span>
+
+                            @foreach ($termPixKeys as $chave)
+                                <div class="pix-key">
+                                    <span class="pix-tipo">{{ $chave['tipo_label'] ?? 'Chave' }}</span>
+                                    <span class="pix-valor" id="pix-chave-{{ $loop->index }}">{{ $chave['chave'] }}</span>
+                                    <button
+                                        type="button"
+                                        class="btn-copy"
+                                        data-copy="{{ $chave['chave'] }}"
+                                        data-copy-target="pix-chave-{{ $loop->index }}"
+                                        aria-label="Copiar chave Pix {{ $chave['chave'] }}"
+                                    >Copiar</button>
+                                </div>
+                                @php
+                                    $pixTitular = trim(implode(' · ', array_filter([
+                                        $chave['titular'] ?? '',
+                                        $chave['instituicao'] ?? '',
+                                    ])));
+                                @endphp
+                                @if ($pixTitular !== '')
+                                    <p class="pix-titular">{{ $pixTitular }}</p>
+                                @endif
+                            @endforeach
+                        </div>
+                    @endif
+
+                    @if (($terms['complemento'] ?? '') !== '')
+                        <div class="term-card term-card-wide">
+                            <span class="meta-label">Observações</span>
+                            <p class="term-note">{{ $terms['complemento'] }}</p>
+                        </div>
+                    @endif
+                @endif
             </article>
 
             <aside class="card">
@@ -373,5 +548,95 @@
             </aside>
         </section>
     </main>
+    <script>
+        (function () {
+            var botoes = document.querySelectorAll('[data-copy]');
+
+            if (botoes.length === 0) {
+                return;
+            }
+
+            // Dois caminhos, nesta ordem:
+            //  1) navigator.clipboard — so existe em contexto seguro, e mesmo
+            //     ali o navegador pode negar a permissao;
+            //  2) selecao + execCommand — funciona no link aberto por IP com
+            //     certificado proprio (origem "nao segura"), onde o caminho 1
+            //     nem existe.
+            // O 2 tambem cobre a NEGACAO do 1: sem esse encadeamento, o cliente
+            // via "erro" com a chave nem selecionada.
+            function copiar(texto, alvo) {
+                if (navigator.clipboard && window.isSecureContext) {
+                    return navigator.clipboard.writeText(texto).catch(function () {
+                        return copiarPorSelecao(texto, alvo);
+                    });
+                }
+
+                return copiarPorSelecao(texto, alvo);
+            }
+
+            function copiarPorSelecao(texto, alvo) {
+                return new Promise(function (resolve, reject) {
+                    var selecao = window.getSelection();
+                    var range = document.createRange();
+                    var provisorio = null;
+
+                    if (alvo) {
+                        range.selectNodeContents(alvo);
+                    } else {
+                        provisorio = document.createElement('span');
+                        provisorio.textContent = texto;
+                        document.body.appendChild(provisorio);
+                        range.selectNodeContents(provisorio);
+                    }
+
+                    selecao.removeAllRanges();
+                    selecao.addRange(range);
+
+                    var ok = false;
+                    try {
+                        ok = document.execCommand('copy');
+                    } catch (erro) {
+                        ok = false;
+                    }
+
+                    if (provisorio) {
+                        document.body.removeChild(provisorio);
+                    }
+
+                    // Mantem a chave selecionada quando a copia automatica
+                    // falhou: o cliente ainda consegue copiar manualmente.
+                    if (ok) {
+                        selecao.removeAllRanges();
+                        resolve();
+                    } else {
+                        reject(new Error('copy-failed'));
+                    }
+                });
+            }
+
+
+            botoes.forEach(function (botao) {
+                var rotuloOriginal = botao.textContent;
+                var timer = null;
+
+                botao.addEventListener('click', function () {
+                    var alvo = document.getElementById(botao.getAttribute('data-copy-target'));
+
+                    copiar(botao.getAttribute('data-copy'), alvo).then(function () {
+                        botao.textContent = 'Copiado!';
+                        botao.classList.add('is-done');
+                    }).catch(function () {
+                        botao.textContent = 'Selecione e copie';
+                    }).then(function () {
+                        window.clearTimeout(timer);
+                        timer = window.setTimeout(function () {
+                            botao.textContent = rotuloOriginal;
+                            botao.classList.remove('is-done');
+                        }, 2500);
+                    });
+                });
+            });
+        })();
+    </script>
 </body>
 </html>

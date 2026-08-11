@@ -964,6 +964,7 @@
         const reviewItemsCount = document.querySelector('[data-budget-review-items-count]');
         const reviewTotalsContainer = document.querySelector('[data-budget-review-totals]');
         const reviewNotesContainer = document.querySelector('[data-budget-review-notes]');
+        const reviewTermsContainer = document.querySelector('[data-budget-review-terms]');
         const reviewSubmitButtons = Array.from(document.querySelectorAll('[data-budget-review-submit]'));
 
         if (!(form instanceof HTMLFormElement) || !(itemsBody instanceof HTMLElement) || !(template instanceof HTMLTemplateElement)) {
@@ -1793,6 +1794,7 @@
                 executionDeadline: normalizeText(executionDeadlineInput?.value),
                 observations: normalizeText(observationsInput?.value),
                 conditions: normalizeText(conditionsInput?.value),
+                terms: collectCommercialTerms(),
                 subtotal: toNumber(subtotalInput?.value),
                 total: toNumber(totalInput?.value),
                 globalDiscount,
@@ -1836,6 +1838,89 @@
             }
 
             return pendencies;
+        };
+
+        /**
+         * Le as condicoes comerciais marcadas no formulario (formas de
+         * pagamento, parcelamento, chave Pix e garantia) para a revisao final
+         * mostrar exatamente o que o cliente vai receber.
+         */
+        const collectCommercialTerms = () => {
+            const termsSection = document.querySelector('[data-budget-terms]');
+
+            if (!(termsSection instanceof HTMLElement)) {
+                return { methods: [], installments: '', warranty: '', pixKeys: [], acceptsPix: false };
+            }
+
+            const checked = Array.from(termsSection.querySelectorAll('[data-budget-payment-method]'))
+                .filter((input) => input.checked);
+
+            const methods = checked.map((input) => {
+                const label = termsSection.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+
+                return normalizeText(label?.textContent) || input.value;
+            });
+
+            const acceptsPix = checked.some((input) => input.getAttribute('data-pix') === '1');
+            const installmentsSelect = termsSection.querySelector('[data-budget-installments]');
+            const warrantySelect = document.getElementById('orcamentoGarantia');
+
+            // Só os rótulos das chaves: o marcador exclui tanto o badge
+            // "Principal" quanto o texto de estado vazio do bloco.
+            const pixKeys = acceptsPix
+                ? Array.from(termsSection.querySelectorAll('[data-budget-pix-key]'))
+                    .map((node) => normalizeText(node.textContent))
+                    .filter((text) => text !== '')
+                : [];
+
+            return {
+                methods,
+                acceptsPix,
+                installments: installmentsSelect instanceof HTMLSelectElement && !installmentsSelect.closest('.d-none')
+                    ? normalizeText(installmentsSelect.value)
+                    : '',
+                warranty: warrantySelect instanceof HTMLSelectElement
+                    ? getSelectedOptionLabel(warrantySelect)
+                    : '',
+                pixKeys,
+            };
+        };
+
+        const renderReviewTerms = (snapshot) => {
+            const terms = snapshot.terms || { methods: [], pixKeys: [] };
+            const entries = [
+                {
+                    label: 'Formas de pagamento',
+                    value: terms.methods.length > 0
+                        ? terms.methods.join(', ')
+                        : 'Nenhuma forma selecionada',
+                },
+            ];
+
+            if (terms.installments !== '') {
+                entries.push({
+                    label: 'Parcelamento sem juros',
+                    value: `Em ate ${terms.installments}x sem juros`,
+                });
+            }
+
+            if (terms.acceptsPix) {
+                entries.push({
+                    label: terms.pixKeys.length > 1 ? 'Chaves Pix' : 'Chave Pix',
+                    value: terms.pixKeys.length > 0
+                        ? terms.pixKeys.join(' | ')
+                        : 'Nenhuma chave cadastrada nas configuracoes financeiras',
+                });
+            }
+
+            entries.push({
+                label: 'Garantia',
+                value: terms.warranty !== '' && terms.warranty !== 'Sem garantia definida'
+                    ? terms.warranty
+                    : 'Sem garantia definida',
+            });
+
+            return renderReviewEntries(entries);
         };
 
         const renderReviewEntries = (entries) => entries
@@ -1894,7 +1979,7 @@
                     value: snapshot.observations,
                 },
                 {
-                    label: 'Condicoes comerciais',
+                    label: 'Observacoes complementares',
                     value: snapshot.conditions,
                 },
             ];
@@ -1953,6 +2038,10 @@
 
             if (reviewTotalsContainer instanceof HTMLElement) {
                 reviewTotalsContainer.innerHTML = renderReviewTotals(snapshot);
+            }
+
+            if (reviewTermsContainer instanceof HTMLElement) {
+                reviewTermsContainer.innerHTML = renderReviewTerms(snapshot);
             }
 
             if (reviewNotesContainer instanceof HTMLElement) {
@@ -2196,6 +2285,26 @@
                     return;
                 }
 
+                // Grupo de múltipla escolha (ex.: formas_pagamento[]): guarda a
+                // lista de marcados. Sem isso todos colapsariam na mesma chave e
+                // o rascunho perderia a seleção — justamente o dado que esta
+                // tela existe para parar de perder.
+                if (element.name.endsWith('[]')) {
+                    if (element.type !== 'checkbox') {
+                        return;
+                    }
+
+                    if (!Array.isArray(fields[element.name])) {
+                        fields[element.name] = [];
+                    }
+
+                    if (element.checked) {
+                        fields[element.name].push(element.value);
+                    }
+
+                    return;
+                }
+
                 if (element.type === 'checkbox') {
                     fields[element.name] = element.checked ? '1' : '0';
                     return;
@@ -2286,6 +2395,27 @@
             }
 
             Object.entries(fields).forEach(([name, value]) => {
+                if (Array.isArray(value)) {
+                    form.querySelectorAll(`[name="${CSS.escape(name)}"]`).forEach((element) => {
+                        if (!(element instanceof HTMLInputElement) || element.type !== 'checkbox') {
+                            return;
+                        }
+
+                        const restored = value.includes(element.value);
+                        if (element.checked === restored) {
+                            return;
+                        }
+
+                        element.checked = restored;
+                        // Avisa quem depende do grupo (ex.: exibição do
+                        // parcelamento e da chave Pix) — restaurar o rascunho
+                        // pelo banner acontece depois da sincronização inicial.
+                        element.dispatchEvent(new Event('change', { bubbles: true }));
+                    });
+
+                    return;
+                }
+
                 const field = form.querySelector(`[name="${CSS.escape(name)}"]`);
 
                 if (!(field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement)) {
@@ -3021,5 +3151,46 @@
                 return;
             }
         }, 0);
+    });
+
+    // Condições comerciais: parcelamento só existe acompanhando um cartão
+    // parcelável, e as chaves Pix só aparecem quando o Pix é aceito. Bloco
+    // independente do resto do formulário — não depende do estado dos itens.
+    document.addEventListener('DOMContentLoaded', () => {
+        const terms = document.querySelector('[data-budget-terms]');
+
+        if (!(terms instanceof HTMLElement)) {
+            return;
+        }
+
+        const checkboxes = Array.from(terms.querySelectorAll('[data-budget-payment-method]'));
+        const installmentsWrapper = terms.querySelector('[data-budget-installments-wrapper]');
+        const installmentsSelect = terms.querySelector('[data-budget-installments]');
+        const pixPreview = terms.querySelector('[data-budget-pix-preview]');
+
+        const isChecked = (attribute) => checkboxes.some(
+            (input) => input.checked && input.getAttribute(attribute) === '1'
+        );
+
+        const syncTerms = () => {
+            const allowsInstallments = isChecked('data-installments');
+
+            if (installmentsWrapper instanceof HTMLElement) {
+                installmentsWrapper.classList.toggle('d-none', !allowsInstallments);
+            }
+
+            // Sem cartão parcelável não faz sentido mandar parcelas: zera para o
+            // backend não receber um número órfão.
+            if (!allowsInstallments && installmentsSelect instanceof HTMLSelectElement) {
+                installmentsSelect.value = '';
+            }
+
+            if (pixPreview instanceof HTMLElement) {
+                pixPreview.classList.toggle('d-none', !isChecked('data-pix'));
+            }
+        };
+
+        checkboxes.forEach((input) => input.addEventListener('change', syncTerms));
+        syncTerms();
     });
 })();

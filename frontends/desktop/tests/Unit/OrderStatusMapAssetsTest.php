@@ -52,6 +52,39 @@ class OrderStatusMapAssetsTest extends TestCase
     }
 
     /**
+     * Diálogos do SweetAlert2 abertos com o modal do Bootstrap aberto PRECISAM
+     * de `target` apontando para o modal. Sem isso o Swal é anexado ao <body>,
+     * fora do modal, e o focus trap do Bootstrap devolve o foco para dentro do
+     * modal a cada focusin — o operador não consegue digitar no campo do
+     * diálogo (bug real: a mensagem ao cliente não podia ser editada).
+     */
+    public function test_client_message_dialog_is_anchored_inside_the_modal(): void
+    {
+        $script = (string) file_get_contents($this->desktopPath('public/assets/js/orders-status-modal.js'));
+
+        $start = strpos($script, 'const openClientMessageDialog =');
+        $end = strpos($script, 'notifyEl?.addEventListener', $start === false ? 0 : $start);
+
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+
+        $this->assertStringContainsString(
+            'target: modalEl',
+            substr($script, $start, $end - $start),
+            'Sem target: modalEl o focus trap do Bootstrap impede digitar na mensagem ao cliente.'
+        );
+    }
+
+    public function test_map_dialogs_are_anchored_to_the_modal_when_embedded(): void
+    {
+        $script = (string) file_get_contents($this->desktopPath('public/assets/js/orders-map.js'));
+
+        // confirmMove() do mapa tem textarea (observação) e input de data; na
+        // aba "Mapa de status" ele roda dentro do modal.
+        $this->assertStringContainsString("root.closest('.modal')", $script);
+    }
+
+    /**
      * A ordem das macrofases no fluxograma da aba "Status" é declarada em
      * MACRO_PHASES, não derivada de os_status.ordem_fluxo — no banco
      * 'interrupcao' (Em espera) viria depois de Execução/Qualidade, mas o

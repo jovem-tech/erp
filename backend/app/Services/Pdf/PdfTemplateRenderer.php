@@ -22,6 +22,20 @@ class PdfTemplateRenderer
      */
     private const MAX_RENDER_DEPTH = 12;
 
+    /**
+     * Blocos que anunciam o que vem depois e, sozinhos no pé da página,
+     * quebram a leitura ("GARANTIA" na página 1 e o texto na 2).
+     *
+     * @var array<int, string>
+     */
+    private const HEADING_TYPES = ['cabecalho_secao', 'titulo', 'subtitulo'];
+
+    /**
+     * Até quantas linhas uma tabela é considerada "curta" e viaja inteira.
+     * Acima disso ela cabe em mais de meia página e dividi-la é o certo.
+     */
+    private const SHORT_TABLE_ROWS = 12;
+
     public function __construct(
         private readonly PdfVariableResolver $resolver
     ) {
@@ -61,17 +75,134 @@ class PdfTemplateRenderer
      */
     private function renderBlocks(array $blocks, array $context, array $descriptor, string $formato, int $depth): string
     {
+        $blocks = array_values(array_filter($blocks, 'is_array'));
         $html = '';
 
-        foreach ($blocks as $block) {
-            if (! is_array($block)) {
+        for ($index = 0; $index < count($blocks); $index++) {
+            $block = $blocks[$index];
+            $rendered = $this->renderBlock($block, $context, $descriptor, $formato, $depth);
+
+            if ($rendered === '') {
                 continue;
             }
 
-            $html .= $this->renderBlock($block, $context, $descriptor, $formato, $depth);
+            // Cabeçalho de seção nunca fica órfão no fim da página: ele é
+            // amarrado ao primeiro bloco visível que vier depois. Vale para
+            // TODOS os documentos, inclusive modelos criados no editor — é
+            // regra do motor, não de um template específico.
+            if ($this->isHeading($block)) {
+                [$companionHtml, $nextIndex] = $this->renderKeepCompanion(
+                    $blocks,
+                    $index + 1,
+                    $context,
+                    $descriptor,
+                    $formato,
+                    $depth
+                );
+
+                $html .= '<div class="pdfe-keep">'.$rendered.$companionHtml.'</div>';
+                $index = $nextIndex - 1;
+
+                continue;
+            }
+
+            $html .= $rendered;
         }
 
         return $html;
+    }
+
+    /**
+     * @param  array<string, mixed>  $block
+     */
+    private function isHeading(array $block): bool
+    {
+        return in_array(strtolower(trim((string) ($block['tipo'] ?? ''))), self::HEADING_TYPES, true);
+    }
+
+    /**
+     * O bloco carrega um cabeçalho em qualquer profundidade? Se carrega, ele
+     * abre a própria seção e não pode ser absorvido pela anterior.
+     *
+     * @param  array<mixed>  $node
+     */
+    private function containsHeading(array $node): bool
+    {
+        foreach ($node as $value) {
+            if (! is_array($value)) {
+                continue;
+            }
+
+            if ($this->isHeading($value) || $this->containsHeading($value)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Renderiza a seção inteira que pertence ao cabeçalho: tudo até o próximo
+     * cabeçalho (ou o fim da lista).
+     *
+     * Prender só o primeiro bloco seguinte não bastava — "Condições de
+     * pagamento" saía com uma linha na página 1 e o resto (parcelamento e a
+     * tabela de chave Pix) na página 2. A unidade de leitura é a seção inteira.
+     *
+     * Seção maior que uma página continua quebrando: o dompdf trata
+     * `page-break-inside: avoid` como preferência, então o cabeçalho desce
+     * junto do começo do conteúdo e o excedente segue nas páginas seguintes.
+     *
+     * @param  array<int, array<string, mixed>>  $blocks
+     * @param  array<string, mixed>  $context
+     * @param  array<string, mixed>  $descriptor
+     * @return array{0: string, 1: int} HTML da seção e índice do próximo bloco a processar
+     */
+    private function renderKeepCompanion(
+        array $blocks,
+        int $index,
+        array $context,
+        array $descriptor,
+        string $formato,
+        int $depth
+    ): array {
+        $html = '';
+        $total = count($blocks);
+        $temConteudo = false;
+
+        while ($index < $total) {
+            $block = $blocks[$index];
+
+            // Uma seção termina onde a próxima começa. "Próxima seção" é todo
+            // bloco que traz um cabeçalho — direto (cabecalho_secao) ou dentro
+            // de si (um `condicional` que abre a própria seção). Já um
+            // condicional SEM cabeçalho é conteúdo desta seção mesmo (ex.: a
+            // linha de parcelamento e a tabela de chave Pix dentro de
+            // "Condições de pagamento") e entra no grupo.
+            //
+            // Sem essa distinção, "Itens do orçamento" engolia todas as seções
+            // seguintes num grupo só e jogava o documento inteiro para a
+            // página seguinte.
+            if ($temConteudo && ($this->isHeading($block) || $this->containsHeading($block))) {
+                break;
+            }
+
+            $rendered = $this->renderBlock($block, $context, $descriptor, $formato, $depth);
+            $index++;
+
+            // Bloco invisível neste formato (ex.: só a4) não entra no grupo.
+            if ($rendered === '') {
+                continue;
+            }
+
+            $html .= $rendered;
+
+            if (! $this->isHeading($block)) {
+                $temConteudo = true;
+            }
+        }
+
+        return [$html, $index];
     }
 
     /**
@@ -137,9 +268,68 @@ class PdfTemplateRenderer
                         : [],
                 ],
             ]),
+            'botao_link' => $this->renderLinkButton($block, $context, $variableTypes, $formato),
             'quebra_pagina' => $formato === '80mm' ? '' : '<div style="page-break-before: always;"></div>',
             default => '',
         };
+    }
+
+    /**
+     * @param array<string, mixed> $block
+     * @param array<string, mixed> $context
+     * @param array<string, mixed> $descriptor
+     */
+    /**
+     * Botão de ação (ex.: aprovar orçamento). O destino sai de uma variável do
+     * contexto e só vira link clicável se for http(s) — assim um template não
+     * consegue transformar o botão em `javascript:` ou `file:` apontando uma
+     * variável qualquer da allowlist.
+     *
+     * No cupom 80mm não existe clique: o endereço é impresso por extenso, que é
+     * o que o cliente consegue usar num papel térmico.
+     *
+     * @param  array<string, mixed>  $block
+     * @param  array<string, mixed>  $context
+     * @param  array<string, string>  $variableTypes
+     */
+    private function renderLinkButton(array $block, array $context, array $variableTypes, string $formato): string
+    {
+        $url = trim((string) $this->resolver->lookup(
+            strtolower(trim((string) ($block['variavel'] ?? ''))),
+            $context
+        ));
+
+        if (! $this->isSafeUrl($url)) {
+            $url = '';
+        }
+
+        $texto = $this->resolver->resolveText((string) ($block['texto'] ?? ''), $context, $variableTypes);
+        $legenda = $this->resolver->resolveText((string) ($block['legenda'] ?? ''), $context, $variableTypes);
+
+        if (trim(strip_tags($texto)) === '' && $url === '') {
+            return '';
+        }
+
+        return $this->partial('botao-link', [
+            'url' => $this->resolver->escape($url),
+            'texto' => $texto,
+            'legenda' => $legenda,
+            'alinhamento' => $this->alignment($block),
+            // Papel térmico não clica: imprime o endereço.
+            'mostrarUrl' => $formato === '80mm',
+        ]);
+    }
+
+    private function isSafeUrl(string $url): bool
+    {
+        if ($url === '' || preg_match('/[\x00-\x1f\s]/', $url) === 1) {
+            return false;
+        }
+
+        $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
+
+        return in_array($scheme, ['http', 'https'], true)
+            && trim((string) parse_url($url, PHP_URL_HOST)) !== '';
     }
 
     /**
@@ -334,6 +524,11 @@ class PdfTemplateRenderer
             'rows' => $rows,
             'totais' => $totais,
             'repetirCabecalho' => (bool) ($block['repetir_cabecalho'] ?? true),
+            // Tabela curta cabe inteira numa página: mantém-se indivisível para
+            // o cabeçalho nunca ficar sozinho no pé, com as linhas na página
+            // seguinte. Tabela longa continua quebrando (e repetindo o thead),
+            // porque forçá-la inteira só empurraria o problema adiante.
+            'manterJunta' => (count($rows) + count($totais)) <= self::SHORT_TABLE_ROWS,
         ]);
     }
 

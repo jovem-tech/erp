@@ -59,6 +59,9 @@
                 <i class="bi bi-eye me-2"></i>Visualizar prévia
             </button>
             @if ($canEdit)
+                <button type="button" class="btn btn-soft" data-bs-toggle="modal" data-bs-target="#pdfeRenameModal">
+                    <i class="bi bi-pencil-square me-2"></i>Renomear
+                </button>
                 <button type="button" class="btn btn-primary" id="pdfeBtnSave">
                     <i class="bi bi-save me-2"></i>Salvar rascunho
                 </button>
@@ -193,6 +196,49 @@
             </section>
         </div>
     </div>
+
+    @if ($canEdit)
+        <div class="modal fade" id="pdfeRenameModal" tabindex="-1" aria-labelledby="pdfeRenameModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <form method="post" action="{{ route('knowledge.pdf-engine.rename', ['template' => (int) ($template['id'] ?? 0)]) }}" class="modal-content modal-shell">
+                    @csrf
+                    <div class="modal-header border-0 pb-0">
+                        <div>
+                            <p class="desktop-eyebrow mb-2">Identificação</p>
+                            <h4 id="pdfeRenameModalLabel" class="surface-title fs-5 mb-1">Renomear documento</h4>
+                            <p class="surface-subtitle mb-0">
+                                O nome aparece nas listagens e é o que sai impresso onde o modelo usa <code>@{{ documento.nome }}</code>.
+                            </p>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label" for="pdfeRenameNome">Nome do documento</label>
+                            <input type="text" id="pdfeRenameNome" name="nome" class="form-control" maxlength="120" minlength="3" required
+                                value="{{ old('nome', $template['nome'] ?? '') }}">
+                        </div>
+
+                        <div>
+                            <label class="form-label" for="pdfeRenameDescricao">Descrição</label>
+                            <textarea id="pdfeRenameDescricao" name="descricao" class="form-control" rows="3" maxlength="1000"
+                                placeholder="Para que serve este documento">{{ old('descricao', $template['descricao'] ?? '') }}</textarea>
+                        </div>
+
+                        <p class="form-text mb-0 mt-3">
+                            O código <code>{{ $template['tipo_codigo'] ?? '' }}</code> não muda: documentos já emitidos continuam apontando para ele.
+                        </p>
+                    </div>
+
+                    <div class="modal-footer border-0 pt-0">
+                        <button type="button" class="btn btn-soft" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-check2 me-2"></i>Salvar nome</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
 
     <script>
         window.__PDF_TEMPLATE_EDITOR = {!! \Illuminate\Support\Js::from([

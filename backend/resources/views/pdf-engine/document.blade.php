@@ -34,6 +34,40 @@
         .pdfe-header { margin-bottom: {{ $isThermal ? '6px' : '4px' }}; }
         .pdfe-body { margin-top: {{ $isThermal ? '0' : '4px' }}; }
         .pdfe-footer { page-break-inside: avoid; }
+        /* Cabecalho de secao viaja colado ao conteudo que ele anuncia: o motor
+           agrupa os dois em .pdfe-keep (PdfTemplateRenderer::renderBlocks), para
+           nenhum documento imprimir "GARANTIA" no pe de uma pagina e o texto na
+           seguinte. Conteudo maior que uma pagina ainda quebra normalmente — o
+           dompdf trata avoid como preferencia, nao como imposicao. */
+        .pdfe-keep { page-break-inside: avoid; }
+        /* Botao de acao (ex.: aprovar orcamento). O <a> mantem a area clicavel
+           no PDF; o visual e' de botao solido para o cliente reconhecer a acao
+           sem precisar ler a URL. */
+        .pdfe-botao-wrap { margin: 10px 0 12px; page-break-inside: avoid; }
+        .pdfe-botao {
+            display: inline-block;
+            padding: {{ $isThermal ? '6px 10px' : '11px 26px' }};
+            border: 1px solid #157347;
+            border-radius: 6px;
+            background: #198754;
+            color: #ffffff;
+            font-weight: 700;
+            font-size: {{ $isThermal ? '10px' : '13px' }};
+            text-decoration: none;
+            line-height: 1.2;
+        }
+        .pdfe-botao-inativo { border-color: #b8c4d2; background: #eef2f7; color: #55637a; }
+        .pdfe-botao-legenda {
+            margin-top: 6px;
+            color: #55637a;
+            font-size: {{ $isThermal ? '8.5px' : '10.5px' }};
+        }
+        .pdfe-botao-url {
+            margin-top: 4px;
+            color: #55637a;
+            font-size: {{ $isThermal ? '8px' : '9.5px' }};
+            word-break: break-all;
+        }
         .pdfe-paragrafo { margin: 0 0 6px; }
         .pdfe-campo { margin: 0 0 4px; }
         .pdfe-campo .rotulo { font-weight: 700; color: #3f4d5e; }

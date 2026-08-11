@@ -65,6 +65,12 @@ class OrderEvent extends Model
     public const TIPO_FECHAMENTO_PDF_GERADO = 'fechamento_pdf_gerado';
     public const TIPO_WHATSAPP_ENVIADO = 'whatsapp_enviado';
 
+    // Mensagem ao cliente que NAO chegou (falha de integracao ou cliente sem
+    // telefone). Registrada no historico do mesmo jeito que o envio bem
+    // sucedido: sem isso a OS ficava sem vestigio nenhum da tentativa e o
+    // operador acreditava ter avisado o cliente.
+    public const TIPO_WHATSAPP_FALHOU = 'whatsapp_falhou';
+
     protected $table = 'os_eventos';
 
     protected $primaryKey = 'id';

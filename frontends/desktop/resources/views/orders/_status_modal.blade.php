@@ -107,6 +107,8 @@
     /* align-items: stretch deixa todos os cards da mesma linha com a mesma
        altura, mesmo quando um deles quebra em duas linhas (igual ao
        fluxograma de referência). */
+    /* padding vertical dá espaço para a etiqueta e para o scale(1.06) do card
+       destacado não serem cortados pelo overflow-x do scroll horizontal. */
     .os-flow-steps {
         flex: 1 1 auto;
         min-width: 0;
@@ -114,7 +116,8 @@
         align-items: stretch;
         gap: 0;
         overflow-x: auto;
-        padding-bottom: 0.15rem;
+        overflow-y: visible;
+        padding: 0.6rem 0.4rem 0.5rem;
     }
 
     .os-flow-arrow {
@@ -137,6 +140,7 @@
     }
 
     .os-flow-step {
+        position: relative; /* ancora a etiqueta "ATUAL"/"SELECIONADO" */
         flex: 0 0 auto;
         width: 150px;
         display: inline-flex;
@@ -183,29 +187,59 @@
         overflow-wrap: anywhere;
     }
 
-    /* Etapa atual da OS: opaca e com anel escuro. */
+    /* Etapa ATUAL da OS: anel escuro + leve aumento + etiqueta "ATUAL".
+       Precisa saltar mesmo sem cor extra, já que o card só tem a cor da fase. */
     .os-flow-step.is-current {
         opacity: 1;
-        border-color: rgba(15, 23, 42, 0.55);
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.2);
+        border-color: #0f172a;
+        box-shadow: 0 0 0 2px #fff, 0 0 0 4px rgba(15, 23, 42, 0.75), 0 6px 14px rgba(15, 23, 42, 0.28);
+        transform: scale(1.03);
+        z-index: 1;
     }
 
     .os-flow-step-dot {
         font-size: 0.5rem !important;
     }
 
+    .os-flow-step-tag {
+        position: absolute;
+        top: -0.5rem;
+        right: -0.3rem;
+        padding: 0.05rem 0.3rem;
+        border-radius: 999px;
+        font-size: 0.55rem;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        background: #0f172a;
+        color: #fff;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+        pointer-events: none;
+    }
+
     /* Próxima etapa sugerida pelo catálogo de transições — realce sutil, não
        restringe a escolha (qualquer etapa não-baixa é clicável). */
     .os-flow-step.is-suggested {
         opacity: 1;
-        border-color: rgba(255, 255, 255, 0.85);
+        border-color: rgba(255, 255, 255, 0.9);
+        border-style: dashed;
     }
 
-    /* Etapa escolhida (ainda não salva): anel roxo do sistema. */
-    .os-flow-step.is-selected {
+    /* Etapa ESCOLHIDA (ainda não salva): o destaque mais forte da tela — anel
+       roxo grosso, sombra e escala maior. É a confirmação visual de "é este
+       que vai ser salvo", precisa vencer o destaque da etapa atual. */
+    .os-flow-step.is-selected,
+    .os-flow-step.is-selected.is-current {
         opacity: 1;
         border-color: var(--desktop-primary);
-        box-shadow: 0 0 0 3px var(--desktop-primary-soft);
+        border-style: solid;
+        box-shadow: 0 0 0 3px #fff, 0 0 0 6px var(--desktop-primary), 0 8px 18px rgba(111, 90, 252, 0.4);
+        transform: scale(1.06);
+        z-index: 2;
+    }
+
+    .os-flow-step.is-selected .os-flow-step-tag {
+        background: var(--desktop-primary);
     }
 
     /* Cores por macrofase — paleta definida pelo usuário no fluxograma. */
@@ -308,6 +342,30 @@
 
     .os-status-modal-footer-notify {
         margin-right: auto;
+        min-width: 0;
+        max-width: 60%;
+    }
+
+    .os-status-notify-preview {
+        display: flex;
+        align-items: baseline;
+        gap: 0.35rem;
+        margin-top: 0.25rem;
+        font-size: 0.75rem;
+        color: var(--desktop-text-muted);
+        min-width: 0;
+    }
+
+    .os-status-notify-preview > span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-style: italic;
+    }
+
+    .os-status-notify-preview .btn-link {
+        font-size: 0.75rem;
+        flex-shrink: 0;
     }
 
     /* ---- Aba "Mapa de status" -------------------------------------------
@@ -764,12 +822,23 @@
                 </div>
 
                 <div class="modal-footer">
-                    <div class="form-check form-switch os-status-modal-footer-notify">
-                        <input class="form-check-input" type="checkbox" role="switch"
-                            id="orderStatusModalNotify" name="comunicar_cliente" value="1">
-                        <label class="form-check-label" for="orderStatusModalNotify">
-                            Notificar o cliente sobre esta mudança
-                        </label>
+                    <div class="os-status-modal-footer-notify">
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" role="switch"
+                                id="orderStatusModalNotify" name="comunicar_cliente" value="1">
+                            <label class="form-check-label" for="orderStatusModalNotify">
+                                Notificar o cliente sobre esta mudança
+                            </label>
+                        </div>
+                        {{-- Prévia da mensagem que será enviada; só aparece com o
+                             switch ligado. O texto real vai no input escondido
+                             abaixo (name="mensagem_cliente"). --}}
+                        <div class="os-status-notify-preview d-none" id="orderStatusModalNotifyPreview">
+                            <i class="bi bi-whatsapp"></i>
+                            <span id="orderStatusModalNotifyPreviewText"></span>
+                            <button type="button" class="btn btn-link btn-sm p-0 ms-1" id="orderStatusModalNotifyEdit">editar</button>
+                        </div>
+                        <input type="hidden" name="mensagem_cliente" id="orderStatusModalNotifyMessage">
                     </div>
                     <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancelar</button>
                     <button type="submit" class="btn btn-primary" id="orderStatusModalSubmit" disabled>

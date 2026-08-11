@@ -342,6 +342,13 @@
                                 @endif
                             </td>
                             <td class="text-end">
+                                @if (($forma['codigo'] ?? '') === 'pix')
+                                    <button type="button" class="btn btn-sm btn-outline-light" data-pix-keys-toggle title="Cadastrar as chaves Pix informadas ao cliente nas condições do orçamento.">
+                                        <i class="bi bi-key me-1"></i>Chaves
+                                        <span class="badge text-bg-light border ms-1">{{ count($chavesPix ?? []) }}</span>
+                                    </button>
+                                @endif
+
                                 <form method="post" action="{{ route('financeiro.configuracoes.formas.save') }}" class="d-inline">
                                     @csrf
                                     <input type="hidden" name="id" value="{{ $forma['id'] }}">
@@ -369,6 +376,123 @@
                     </tbody>
                 </table>
             </div>
+
+            <section class="mt-4 {{ ($chavesPix ?? []) === [] ? 'd-none' : '' }}" data-pix-keys-panel aria-label="Chaves Pix">
+                <h4 class="surface-title mb-1"><i class="bi bi-key me-2"></i>Chaves Pix</h4>
+                <p class="surface-subtitle mb-3">
+                    Cadastre aqui as chaves de recebimento. Elas aparecem automaticamente nas condições comerciais
+                    do orçamento sempre que o Pix estiver entre as formas de pagamento aceitas — e no PDF enviado ao cliente.
+                </p>
+
+                <form method="post" action="{{ route('financeiro.configuracoes.pix.save') }}" class="desktop-grid desktop-grid-three mb-4">
+                    @csrf
+                    <div>
+                        <label for="pixTipo">Tipo</label>
+                        <select id="pixTipo" name="tipo" class="form-select" required>
+                            @foreach (($chavesPixTipos ?? []) as $tipo)
+                                <option value="{{ $tipo['value'] }}">{{ $tipo['label'] }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div>
+                        <label for="pixChave">Chave</label>
+                        <input type="text" id="pixChave" name="chave" class="form-control" maxlength="200" required placeholder="Ex.: 12.345.678/0001-90">
+                    </div>
+                    <div>
+                        <label for="pixTitular">Titular</label>
+                        <input type="text" id="pixTitular" name="titular" class="form-control" maxlength="160" placeholder="Nome que aparece para o cliente">
+                    </div>
+                    <div>
+                        <label for="pixInstituicao">Instituição</label>
+                        <input type="text" id="pixInstituicao" name="instituicao" class="form-control" maxlength="80" placeholder="Ex.: Banco Inter">
+                    </div>
+                    <div class="d-flex align-items-end">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="principal" id="pixPrincipal" value="1">
+                            <label class="form-check-label" for="pixPrincipal">Chave principal</label>
+                        </div>
+                    </div>
+                    <div class="field-actions">
+                        <button type="submit" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Cadastrar chave</button>
+                    </div>
+                </form>
+
+                <div class="table-responsive">
+                    <table class="table table-stack align-middle">
+                        <thead>
+                            <tr>
+                                <th>Tipo</th>
+                                <th>Chave</th>
+                                <th>Titular</th>
+                                <th>Instituição</th>
+                                <th>Situação</th>
+                                <th class="text-end">Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        @forelse (($chavesPix ?? []) as $chave)
+                            <tr>
+                                <td data-label="Tipo">{{ $chave['tipo_label'] ?? ucfirst((string) ($chave['tipo'] ?? '')) }}</td>
+                                <td data-label="Chave"><code>{{ $chave['chave'] }}</code></td>
+                                <td data-label="Titular">{{ ($chave['titular'] ?? '') !== '' ? $chave['titular'] : '—' }}</td>
+                                <td data-label="Instituição">{{ ($chave['instituicao'] ?? '') !== '' ? $chave['instituicao'] : '—' }}</td>
+                                <td data-label="Situação">
+                                    @if ($chave['ativo'] ?? true)
+                                        <span class="badge text-bg-success">Ativa</span>
+                                    @else
+                                        <span class="badge text-bg-secondary">Inativa</span>
+                                    @endif
+                                    @if ($chave['principal'] ?? false)
+                                        <span class="badge text-bg-light border ms-1">Principal</span>
+                                    @endif
+                                </td>
+                                <td class="text-end">
+                                    <form method="post" action="{{ route('financeiro.configuracoes.pix.save') }}" class="d-inline">
+                                        @csrf
+                                        <input type="hidden" name="id" value="{{ $chave['id'] }}">
+                                        <input type="hidden" name="tipo" value="{{ $chave['tipo'] }}">
+                                        <input type="hidden" name="chave" value="{{ $chave['chave'] }}">
+                                        <input type="hidden" name="titular" value="{{ $chave['titular'] ?? '' }}">
+                                        <input type="hidden" name="instituicao" value="{{ $chave['instituicao'] ?? '' }}">
+                                        <input type="hidden" name="principal" value="{{ ($chave['principal'] ?? false) ? 1 : 0 }}">
+                                        <input type="hidden" name="ativo" value="{{ ($chave['ativo'] ?? true) ? 0 : 1 }}">
+                                        <button type="submit" class="btn btn-sm btn-outline-light" title="{{ ($chave['ativo'] ?? true) ? 'Desativar' : 'Ativar' }}">
+                                            <i class="bi {{ ($chave['ativo'] ?? true) ? 'bi-toggle-on' : 'bi-toggle-off' }}"></i>
+                                        </button>
+                                    </form>
+
+                                    @unless ($chave['principal'] ?? false)
+                                        <form method="post" action="{{ route('financeiro.configuracoes.pix.save') }}" class="d-inline">
+                                            @csrf
+                                            <input type="hidden" name="id" value="{{ $chave['id'] }}">
+                                            <input type="hidden" name="tipo" value="{{ $chave['tipo'] }}">
+                                            <input type="hidden" name="chave" value="{{ $chave['chave'] }}">
+                                            <input type="hidden" name="titular" value="{{ $chave['titular'] ?? '' }}">
+                                            <input type="hidden" name="instituicao" value="{{ $chave['instituicao'] ?? '' }}">
+                                            <input type="hidden" name="principal" value="1">
+                                            <input type="hidden" name="ativo" value="{{ ($chave['ativo'] ?? true) ? 1 : 0 }}">
+                                            <button type="submit" class="btn btn-sm btn-outline-light" title="Tornar chave principal">
+                                                <i class="bi bi-star"></i>
+                                            </button>
+                                        </form>
+                                    @endunless
+
+                                    <form method="post" action="{{ route('financeiro.configuracoes.pix.delete', $chave['id']) }}" data-confirm="Excluir esta chave Pix?" data-confirm-title="Excluir chave Pix" data-confirm-button="Sim, excluir" class="d-inline">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="submit" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                                    </form>
+                                </td>
+                            </tr>
+                        @empty
+                            <tr>
+                                <td colspan="6" class="text-secondary">Nenhuma chave Pix cadastrada.</td>
+                            </tr>
+                        @endforelse
+                        </tbody>
+                    </table>
+                </div>
+            </section>
         </div>
     </div>
 @endsection
@@ -387,6 +511,21 @@
                     subpanels.forEach((panel) => panel.classList.toggle('is-active', panel.getAttribute('data-config-subpanel') === name));
                 });
             });
+
+            // O cadastro de chaves Pix mora dentro da forma "Pix": abre pelo
+            // botão da própria linha, e já vem aberto quando há chaves.
+            const pixToggle = document.querySelector('[data-pix-keys-toggle]');
+            const pixPanel = document.querySelector('[data-pix-keys-panel]');
+
+            if (pixToggle && pixPanel) {
+                pixToggle.addEventListener('click', () => {
+                    pixPanel.classList.toggle('d-none');
+
+                    if (!pixPanel.classList.contains('d-none')) {
+                        pixPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                });
+            }
         })();
     </script>
 @endsection

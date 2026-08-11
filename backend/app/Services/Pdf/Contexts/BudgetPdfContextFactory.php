@@ -5,6 +5,7 @@ namespace App\Services\Pdf\Contexts;
 use App\Models\Budget;
 use App\Models\BudgetItem;
 use App\Models\Order;
+use App\Services\Budgets\BudgetCommercialTermsService;
 
 /**
  * Contexto do documento de orçamento: tudo do OrderPdfContextFactory
@@ -28,6 +29,7 @@ class BudgetPdfContextFactory extends OrderPdfContextFactory
             'equipment.model',
             'order',
             'items',
+            'paymentMethods',
         ]);
 
         $context = [];
@@ -61,18 +63,59 @@ class BudgetPdfContextFactory extends OrderPdfContextFactory
             ];
         }
 
+        // Condições comerciais (formas aceitas, chave Pix, parcelamento e
+        // garantia) vêm do mesmo serviço que alimenta a tela e o link público:
+        // o cliente lê exatamente o mesmo texto nos três lugares.
+        $terms = app(BudgetCommercialTermsService::class)->forBudget($budget);
+
         $context['orcamento'] = [
             'numero' => trim((string) ($budget->numero ?? ('ORC-' . (int) $budget->id))),
             'titulo' => (string) ($budget->titulo ?? ''),
             'validade_dias' => (int) ($budget->validade_dias ?? 0),
+            // Data limite para o cliente responder: vai na legenda do botao de
+            // aprovacao, para ele saber ate quando o link vale.
+            'validade_data' => $budget->validade_data,
+            // Prazo que o backend realmente honra no link publico. Em geral
+            // coincide com validade_data (o token expira no fim daquele dia),
+            // mas quando o envio renovou o prazo é este que vale — a legenda do
+            // botao nao pode prometer uma data que o 410 vai desmentir.
+            'validade_link' => $budget->token_expira_em ?? $budget->validade_data,
             'prazo_execucao' => (string) ($budget->prazo_execucao ?? ''),
             'condicoes' => (string) ($budget->condicoes ?? ''),
             'observacoes' => (string) ($budget->observacoes ?? ''),
             'subtotal' => (float) ($budget->subtotal ?? 0),
             'desconto' => (float) ($budget->desconto ?? 0),
             'total' => (float) ($budget->total ?? 0),
-            'link_aprovacao' => trim((string) ($options['approval_link'] ?? '')),
+            // Orçamento vencido: o link já devolve 410, então o botão some do
+            // documento em vez de convidar o cliente a clicar em algo morto.
+            // O condicional do modelo (`orcamento.link_aprovacao` preenchido)
+            // cuida do resto — vale para qualquer modelo, não só o padrão.
+            'link_aprovacao' => $budget->publicLinkExpired()
+                ? ''
+                : trim((string) ($options['approval_link'] ?? '')),
+            'formas_pagamento' => (string) $terms['formas_pagamento_texto'],
+            'chaves_pix' => (string) $terms['chaves_pix_texto'],
+            'parcelamento' => (string) $terms['parcelamento_texto'],
+            'garantia_dias' => $terms['garantia_dias'],
+            'garantia_prazo' => (string) $terms['garantia_label'],
+            'garantia_texto' => (string) $terms['garantia_texto'],
+            'condicoes_comerciais' => (string) $terms['resumo'],
         ];
+
+        $context['formas_pagamento'] = array_map(
+            static fn (array $forma): array => ['nome' => $forma['nome']],
+            $terms['formas_pagamento']
+        );
+
+        $context['chaves_pix'] = array_map(
+            static fn (array $chave): array => [
+                'tipo' => $chave['tipo_label'],
+                'chave' => $chave['chave'],
+                'titular' => $chave['titular'],
+                'instituicao' => $chave['instituicao'],
+            ],
+            $terms['chaves_pix']
+        );
 
         // A coleção `itens` do documento de orçamento são os itens comerciais
         // do orçamento, não os itens operacionais da OS.
