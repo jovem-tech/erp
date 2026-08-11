@@ -542,6 +542,12 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::delete('/financeiro/configuracoes/formas-pagamento/{formaPagamento}', [FinanceiroCatalogController::class, 'deleteFormaPagamento'])
         ->middleware('desktop.permission:financeiro,excluir')
         ->name('financeiro.configuracoes.formas.delete');
+    Route::post('/financeiro/configuracoes/chaves-pix', [FinanceiroCatalogController::class, 'saveChavePix'])
+        ->middleware('desktop.permission:financeiro,editar')
+        ->name('financeiro.configuracoes.pix.save');
+    Route::delete('/financeiro/configuracoes/chaves-pix/{chavePix}', [FinanceiroCatalogController::class, 'deleteChavePix'])
+        ->middleware('desktop.permission:financeiro,excluir')
+        ->name('financeiro.configuracoes.pix.delete');
     Route::post('/financeiro/configuracoes/dre/grupos', [FinanceiroCatalogController::class, 'saveGrupo'])
         ->middleware('desktop.permission:financeiro,editar')
         ->name('financeiro.configuracoes.grupos.save');
@@ -656,6 +662,10 @@ Route::middleware('desktop.auth')->group(function (): void {
         ->whereNumber('template')
         ->middleware('desktop.permission:conhecimento,visualizar')
         ->name('knowledge.pdf-engine.edit');
+    Route::post('/conhecimento/modelos-pdf/motor/{template}/renomear', [PdfTemplateEngineController::class, 'rename'])
+        ->whereNumber('template')
+        ->middleware('desktop.permission:conhecimento,editar')
+        ->name('knowledge.pdf-engine.rename');
     Route::post('/conhecimento/modelos-pdf/motor/{template}/clonar', [PdfTemplateEngineController::class, 'cloneTemplate'])
         ->whereNumber('template')
         ->middleware('desktop.permission:conhecimento,editar')

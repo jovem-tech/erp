@@ -1,5 +1,41 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.24.3.0 — 2026-08-11 03:32
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Botao Copiar ao lado de cada chave Pix na pagina publica de aprovacao, com fallback de selecao para origem sem contexto seguro
+- **Arquivos:** backend/resources/views/budgets/public/show.blade.php,backend/tests/Feature/Api/V1/BudgetCommercialTermsTest.php
+
+## v5.24.2.0 — 2026-08-11 03:18
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Condicoes comerciais na pagina publica de aprovacao passam a ser blocos estruturados (chips de forma de pagamento, garantia em destaque e chave Pix isolada) em vez de linhas corridas
+- **Arquivos:** backend/resources/views/budgets/public/show.blade.php,backend/tests/Feature/Api/V1/BudgetCommercialTermsTest.php
+
+## v5.24.1.0 — 2026-08-11 03:01
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Botao de aprovacao verde que some quando o orcamento vence, e agrupamento de quebra de pagina passa a valer para a secao inteira (nao so o primeiro bloco)
+- **Arquivos:** backend/app/Services/Pdf/PdfTemplateRenderer.php,backend/app/Services/Pdf/Contexts/BudgetPdfContextFactory.php,backend/app/Models/Budget.php,backend/app/Services/Budgets/BudgetApprovalService.php,backend/resources/views/pdf-engine/document.blade.php,backend/tests/Unit/Services/Pdf/PdfDocumentLayoutTest.php,backend/tests/Feature/Api/V1/BudgetCommercialTermsTest.php
+
+## v5.24.0.0 — 2026-08-11 02:22
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Integridade de leitura no motor de PDF (cabecalho de secao nunca separa do conteudo, tabela curta indivisivel), link de aprovacao vira botao clicavel com validade e nome do documento editavel no editor
+- **Arquivos:** backend/app/Services/Pdf/PdfTemplateRenderer.php,backend/app/Services/Pdf/PdfSchemaValidator.php,backend/app/Services/Pdf/PdfDefaultTemplates.php,backend/app/Services/Pdf/PdfTemplateRegistry.php,backend/app/Services/Pdf/PdfTemplateAdminService.php,backend/resources/views/pdf-engine/document.blade.php,backend/resources/views/pdf-engine/blocks/botao-link.blade.php,backend/resources/views/pdf-engine/blocks/tabela.blade.php,backend/database/migrations/2026_08_11_000001_replace_budget_approval_link_with_button.php,backend/tests/Unit/Services/Pdf/PdfDocumentLayoutTest.php,frontends/desktop/resources/views/knowledge/pdf-templates/engine-edit.blade.php,frontends/desktop/public/assets/js/pdf-template-editor.js
+
+## v5.23.1.0 — 2026-08-11 00:15
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Revisao final do orcamento passa a exibir as condicoes comerciais e a garantia de forma organizada, em vez de so o campo livre
+- **Arquivos:** frontends/desktop/resources/views/orcamentos/form.blade.php,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/tests/Unit/BudgetCommercialTermsAssetsTest.php
+
+## v5.23.0.0 — 2026-08-10 23:28
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Condicoes comerciais estruturadas no orcamento (formas de pagamento, chaves Pix, parcelamento sem juros) e garantia registrada na OS com data de termino, refletidas nos modelos PDF
+- **Arquivos:** backend/database/migrations/2026_08_10_000001_create_financeiro_chaves_pix_table.php,backend/database/migrations/2026_08_10_000002_add_commercial_conditions_to_orcamentos.php,backend/database/migrations/2026_08_10_000003_add_commercial_terms_to_pdf_templates.php,backend/app/Services/Budgets/BudgetCommercialTermsService.php,backend/app/Models/FinanceiroChavePix.php,backend/app/Models/BudgetPaymentMethod.php,backend/app/Services/Orders/OrderClosureService.php,backend/app/Services/Pdf/PdfTemplateRegistry.php,backend/app/Services/Pdf/PdfDefaultTemplates.php,frontends/desktop/resources/views/orcamentos/form.blade.php,frontends/desktop/resources/views/financeiro/configuracoes.blade.php,frontends/desktop/resources/views/orders/closure.blade.php
+
 ## v5.22.0.0 — 2026-08-10 07:51
 - **Tier:** minor
 - **Autor/Agente:** Codex

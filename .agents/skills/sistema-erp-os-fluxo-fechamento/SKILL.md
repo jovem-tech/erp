@@ -440,6 +440,47 @@ pelo usuario. Implementado em `orders-status-modal.js`
 - Continua valendo tudo da secao anterior: status de `grupo_macro='encerrado'`
   nunca aparecem (so pela baixa), e qualquer etapa nao-baixa e clicavel.
 
+## Mensagem ao cliente na mudanca de status (2026-08-10)
+
+Ao ligar "Notificar o cliente sobre esta mudanca" o modal abre um dialogo
+com a mensagem que sera enviada, **editavel** antes de salvar.
+
+- **Template com fonte unica no backend:**
+  `OrderWorkflowService::CLIENT_STATUS_MESSAGE_TEMPLATE` +
+  `buildClientStatusMessage()`. E exposto em `mapDetail()` como
+  `mensagem_cliente_template` e repassado pelo desktop em
+  `OrderController::statusContext()`. O JS so interpola `{numero_os}` e
+  `{status}` e acrescenta a observacao — **nao** duplique a frase no
+  frontend; mudar o texto no backend basta.
+- **Texto editado volta em `mensagem_cliente`** (novo campo de
+  `UpdateOrderStatusRequest`, max 2000). Vazio/ausente => backend monta a
+  padrao, entao clientes de API antigos seguem funcionando igual.
+- **Fica registrado no historico da OS:** `recordClientMessageEvent()` passou
+  a receber o texto e grava na descricao do evento
+  (`os_eventos`, categoria MENSAGEM / tipo WHATSAPP_ENVIADO) — "Mensagem
+  enviada ao cliente: ..." — alem do campo `mensagem` no payload. Sem isso
+  nao havia como auditar depois o que foi combinado com o cliente, ja que o
+  texto agora pode ser editado caso a caso.
+- **Pegadinha:** o envio so acontece quando o status realmente muda (guarda
+  `$statusChanged` em `updateStatus()`). O modal avisa explicitamente quando
+  o switch esta ligado sem troca de status, em vez de salvar e nao enviar
+  nada silenciosamente.
+- **O evento e gravado SEMPRE, inclusive quando o envio falha** (corrigido em
+  2026-08-10). Antes `recordClientMessageEvent()` so era chamado nos caminhos
+  de sucesso (inbox ok / envio direto ok): com a integracao de WhatsApp fora
+  do ar a OS ficava sem nenhum vestigio da mensagem e o operador acreditava
+  ter avisado o cliente. Agora existem tres desfechos, todos registrados na
+  categoria `mensagem` com o texto completo:
+  - `canal=inbox|direto` -> `TIPO_WHATSAPP_ENVIADO`, titulo "WhatsApp enviado
+    ao cliente";
+  - `canal=falha` -> `TIPO_WHATSAPP_FALHOU`, titulo "Falha ao enviar mensagem
+    ao cliente", descricao com o motivo;
+  - `canal=sem_telefone` -> `TIPO_WHATSAPP_FALHOU`, "Mensagem ao cliente nao
+    enviada (sem telefone)".
+  O payload traz `enviado` (bool), `canal`, `mensagem` e `motivo_falha`.
+  Ao mexer neste fluxo, **nao volte a condicionar o registro ao sucesso** —
+  o historico precisa refletir a tentativa, nao so a entrega.
+
 ## Mapa de status dentro do modal "Alterar status" (2026-08-09)
 
 O modal virou `modal-fullscreen` e ganhou a aba **"Mapa de status"**, que

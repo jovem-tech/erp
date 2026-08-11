@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1;
 
+use App\Models\Budget;
 use App\Models\Financeiro;
 use App\Models\FinanceiroCartaoTaxa;
 use App\Models\FinanceiroFormaPagamento;
@@ -56,6 +57,14 @@ class CloseOrderRequest extends BaseApiFormRequest
                 'nullable',
                 'string',
                 'max:2000',
+            ],
+            // Prazo de garantia entregue ao cliente. Mesma lista fechada do
+            // orçamento: a baixa é o momento em que ela vira compromisso, com
+            // validade contada a partir da data de entrega.
+            'garantia_dias' => [
+                'nullable',
+                'integer',
+                Rule::in(array_keys(Budget::WARRANTY_TERMS)),
             ],
             'notificar_cliente' => [
                 'nullable',

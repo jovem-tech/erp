@@ -906,7 +906,8 @@ class OrderWorkflowService
         ?string $solucaoAplicada = null,
         bool $comunicarCliente = false,
         bool $viaClosureFlow = false,
-        ?string $novoPrazo = null
+        ?string $novoPrazo = null,
+        ?string $mensagemCliente = null
     ): array {
         $order = Order::query()->find($orderId);
 
@@ -1116,7 +1117,7 @@ class OrderWorkflowService
         }
 
         if ($statusChanged && $comunicarCliente && $updatedOrder instanceof Order) {
-            $this->sendStatusChangeClientNotification($updatedOrder, $newStatus, $observacao);
+            $this->sendStatusChangeClientNotification($updatedOrder, $newStatus, $observacao, $mensagemCliente);
         }
 
         logger()->info('[API V1][ORDERS] Status alterado', [
@@ -1264,6 +1265,14 @@ class OrderWorkflowService
         }
 
         $budget->forceFill($attributes)->save();
+
+        // A garantia prometida no orçamento acompanha a OS desde o vínculo, e
+        // a baixa só precisa confirmá-la. A validade fica para o encerramento,
+        // quando existe data de entrega para contar a partir dela.
+        $garantiaOrcamento = (int) ($budget->garantia_dias ?? 0);
+        if ($garantiaOrcamento > 0 && (int) ($order->garantia_dias ?? 0) <= 0) {
+            $order->forceFill(['garantia_dias' => $garantiaOrcamento])->save();
+        }
 
         if ($approvedBeforeLink) {
             BudgetStatusHistory::query()->create([
@@ -2508,6 +2517,10 @@ class OrderWorkflowService
             'eventos' => $this->mapEventCollection($order->events, $order->documents),
             'status_disponiveis' => $this->mapStatusOptions(),
             'proximas_etapas' => $this->mapNextStatusOptions((string) ($order->status ?? '')),
+            // Template da mensagem ao cliente — exposto para a UI pré-preencher
+            // o texto editável de "Notificar o cliente" sem duplicar a frase no
+            // frontend (fonte única: CLIENT_STATUS_MESSAGE_TEMPLATE).
+            'mensagem_cliente_template' => self::CLIENT_STATUS_MESSAGE_TEMPLATE,
             'fotos' => $this->mapPhotoCollection($order->photos, (int) ($order->id ?? 0)),
             'equipamento_foto' => $this->mapEquipmentPrincipalPhoto($order->equipment),
             'documentos' => $this->mapDocumentCollection($order->documents, (int) ($order->id ?? 0)),
@@ -4187,31 +4200,79 @@ class OrderWorkflowService
         }
     }
 
-    private function sendStatusChangeClientNotification(Order $order, string $newStatus, ?string $observacao): void
-    {
+    /**
+     * Template da mensagem enviada ao cliente quando o status da OS muda.
+     * Fonte única da verdade: o desktop lê este template pelo contexto do
+     * modal (OrderController::statusContext -> mensagem_cliente_template)
+     * para pré-preencher o campo editável, e o que o operador salvar volta
+     * em `mensagem_cliente`. Se mudar o texto aqui, o desktop acompanha
+     * sozinho — não duplicar a frase no frontend.
+     */
+    public const CLIENT_STATUS_MESSAGE_TEMPLATE = 'Olá! O status da sua OS {numero_os} foi atualizado para: "{status}".';
+
+    public static function buildClientStatusMessage(
+        string $numeroOs,
+        string $statusNome,
+        ?string $observacao = null
+    ): string {
+        $texto = strtr(self::CLIENT_STATUS_MESSAGE_TEMPLATE, [
+            '{numero_os}' => $numeroOs,
+            '{status}' => $statusNome,
+        ]);
+
+        if (trim((string) $observacao) !== '') {
+            $texto .= ' '.trim((string) $observacao);
+        }
+
+        return $texto;
+    }
+
+    private function sendStatusChangeClientNotification(
+        Order $order,
+        string $newStatus,
+        ?string $observacao,
+        ?string $mensagemCliente = null
+    ): void {
         $order->loadMissing('client');
         $telefone = trim((string) ($order->client?->telefone1 ?? ''));
-
-        if ($telefone === '') {
-            logger()->warning('[API V1][ORDERS] Cliente sem telefone cadastrado, notificação de status não enviada', [
-                'order_id' => $order->id,
-            ]);
-
-            return;
-        }
 
         $statusNome = (string) (
             OrderStatus::query()->where('codigo', $newStatus)->value('nome') ?? $newStatus
         );
 
-        $texto = 'Olá! O status da sua OS '.$order->numero_os.' foi atualizado para: "'.$statusNome.'".';
-        if (trim((string) $observacao) !== '') {
-            $texto .= ' '.trim((string) $observacao);
+        // Mensagem editada pelo operador (modal "Mensagem ao cliente" do
+        // desktop) tem precedência; sem ela, monta a padrão. Clientes de API
+        // que não mandam nada continuam recebendo exatamente o texto de antes.
+        $texto = trim((string) $mensagemCliente);
+        if ($texto === '') {
+            $texto = self::buildClientStatusMessage(
+                (string) $order->numero_os,
+                $statusNome,
+                $observacao
+            );
+        }
+
+        // O evento no histórico da OS é registrado SEMPRE que o operador pediu
+        // para notificar — inclusive quando o envio falha ou o cliente não tem
+        // telefone. Antes só havia registro no caminho de sucesso, então uma
+        // falha de integração (ex.: banco do chat inacessível) deixava a OS sem
+        // nenhum vestígio da mensagem, e o operador acreditava ter avisado o
+        // cliente. O texto é o mesmo em qualquer desfecho; o que muda é o canal.
+        if ($telefone === '') {
+            logger()->warning('[API V1][ORDERS] Cliente sem telefone cadastrado, notificação de status não enviada', [
+                'order_id' => $order->id,
+            ]);
+
+            $this->recordClientMessageEvent($order, $newStatus, '', 'sem_telefone', $texto);
+
+            return;
         }
 
         // Caminho preferencial: registra a mensagem na Central de Atendimento
         // (inbox) e dispara o envio pelo provedor configurado. Depende do banco
         // 'chat' estar provisionado/acessível.
+        $falha = '';
+
         try {
             $resultado = $this->whatsappMessagingService->sendSystemMessage(
                 $telefone,
@@ -4227,19 +4288,21 @@ class OrderWorkflowService
             );
 
             if ((bool) ($resultado['ok'] ?? false)) {
-                $this->recordClientMessageEvent($order, $newStatus, $telefone, 'inbox');
+                $this->recordClientMessageEvent($order, $newStatus, $telefone, 'inbox', $texto);
 
                 return;
             }
 
+            $falha = (string) ($resultado['message'] ?? '');
             logger()->warning('[API V1][ORDERS] Envio via inbox retornou falha; tentando envio direto', [
                 'order_id' => $order->id,
-                'message' => (string) ($resultado['message'] ?? ''),
+                'message' => $falha,
             ]);
         } catch (Throwable $exception) {
+            $falha = $exception->getMessage();
             logger()->warning('[API V1][ORDERS] Inbox indisponível para notificar cliente; tentando envio direto', [
                 'order_id' => $order->id,
-                'message' => $exception->getMessage(),
+                'message' => $falha,
             ]);
         }
 
@@ -4250,19 +4313,25 @@ class OrderWorkflowService
             $direto = $this->integrationSettingsService->sendDirectMessage($telefone, $texto);
 
             if ((bool) ($direto['ok'] ?? false)) {
-                $this->recordClientMessageEvent($order, $newStatus, $telefone, 'direto');
-            } else {
-                logger()->warning('[API V1][ORDERS] Falha ao notificar cliente sobre mudança de status (envio direto)', [
-                    'order_id' => $order->id,
-                    'message' => (string) ($direto['message'] ?? ''),
-                ]);
+                $this->recordClientMessageEvent($order, $newStatus, $telefone, 'direto', $texto);
+
+                return;
             }
-        } catch (Throwable $exception) {
+
+            $falha = (string) ($direto['message'] ?? '') ?: $falha;
             logger()->warning('[API V1][ORDERS] Falha ao notificar cliente sobre mudança de status (envio direto)', [
                 'order_id' => $order->id,
-                'message' => $exception->getMessage(),
+                'message' => $falha,
+            ]);
+        } catch (Throwable $exception) {
+            $falha = $exception->getMessage();
+            logger()->warning('[API V1][ORDERS] Falha ao notificar cliente sobre mudança de status (envio direto)', [
+                'order_id' => $order->id,
+                'message' => $falha,
             ]);
         }
+
+        $this->recordClientMessageEvent($order, $newStatus, $telefone, 'falha', $texto, $falha);
     }
 
     /**
@@ -4522,19 +4591,53 @@ class OrderWorkflowService
         );
     }
 
-    private function recordClientMessageEvent(Order $order, string $newStatus, string $telefone, string $canal): void
-    {
+    private function recordClientMessageEvent(
+        Order $order,
+        string $newStatus,
+        string $telefone,
+        string $canal,
+        string $mensagem = '',
+        string $motivoFalha = ''
+    ): void {
+        $mensagem = trim($mensagem);
+        $enviado = in_array($canal, ['inbox', 'direto'], true);
+
+        // O TEXTO enviado entra na descricao do evento (e no payload), nao so
+        // "cliente notificado": o operador pode editar a mensagem antes de
+        // salvar o status, entao o historico da OS precisa registrar o que de
+        // fato foi enviado — sem isso nao ha como auditar o combinado com o
+        // cliente depois. Falhas tambem sao registradas, com o motivo, para o
+        // operador saber que o cliente NAO recebeu (e poder reenviar).
+        $titulo = match ($canal) {
+            'sem_telefone' => 'Mensagem ao cliente não enviada (sem telefone)',
+            'falha' => 'Falha ao enviar mensagem ao cliente',
+            default => 'WhatsApp enviado ao cliente',
+        };
+
+        $descricao = $mensagem !== ''
+            ? 'Mensagem: "'.$mensagem.'"'
+            : 'Cliente notificado sobre a mudança de status da OS.';
+
+        if ($canal === 'sem_telefone') {
+            $descricao = 'Não enviada: cliente sem telefone cadastrado. '.$descricao;
+        } elseif ($canal === 'falha') {
+            $descricao = 'Não entregue'.($motivoFalha !== '' ? ' ('.$motivoFalha.')' : '').'. '.$descricao;
+        }
+
         $this->orderEventService->record(
             (int) $order->id,
             OrderEvent::CATEGORIA_MENSAGEM,
-            OrderEvent::TIPO_WHATSAPP_ENVIADO,
-            'WhatsApp enviado ao cliente',
-            'Cliente notificado sobre a mudança de status da OS.',
+            $enviado ? OrderEvent::TIPO_WHATSAPP_ENVIADO : OrderEvent::TIPO_WHATSAPP_FALHOU,
+            $titulo,
+            $descricao,
             [
                 'origin' => 'order_status_update',
                 'status_novo' => $newStatus,
                 'destino' => $telefone,
                 'canal' => $canal,
+                'enviado' => $enviado,
+                'mensagem' => $mensagem,
+                'motivo_falha' => $motivoFalha,
             ],
             null,
             OrderEvent::ORIGEM_SISTEMA

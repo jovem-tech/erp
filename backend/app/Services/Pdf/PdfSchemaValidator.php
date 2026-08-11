@@ -17,7 +17,7 @@ class PdfSchemaValidator
         'titulo', 'subtitulo', 'cabecalho_secao', 'paragrafo', 'texto_rico',
         'campo', 'grade_campos', 'colunas', 'tabela', 'tabela_totais', 'lista',
         'imagem', 'fotos_entrada', 'divisor', 'espacador', 'assinatura', 'observacoes',
-        'quebra_pagina', 'condicional',
+        'quebra_pagina', 'condicional', 'botao_link',
     ];
 
     public const PAPERS = ['a4', '80mm'];
@@ -125,6 +125,7 @@ class PdfSchemaValidator
                 'imagem' => $this->validateImage($block, $label, $errors),
                 'grade_campos' => $this->validateFieldGrid($block, $descriptor, $label, $errors),
                 'assinatura' => $this->validateSignature($block, $descriptor, $label, $errors),
+                'botao_link' => $this->validateLinkButton($block, $descriptor, $label, $errors),
                 default => $this->validateTextualBlock($block, $descriptor, $label, $errors),
             };
         }
@@ -452,6 +453,41 @@ class PdfSchemaValidator
      * texto_rico, campo, assinatura, observacoes, divisor, espacador,
      * quebra_pagina.
      *
+     * @param array<string, mixed> $block
+     * @param array<string, mixed> $descriptor
+     * @param array<int, string> $errors
+     */
+    /**
+     * Botão de link: o destino vem sempre de uma variável do próprio tipo
+     * documental (nunca de URL digitada à mão), então o documento não pode
+     * apontar para fora do que o sistema gerou.
+     *
+     * @param  array<string, mixed>  $block
+     * @param  array<string, mixed>  $descriptor
+     * @param  array<int, string>  $errors
+     */
+    private function validateLinkButton(array $block, array $descriptor, string $label, array &$errors): void
+    {
+        $variavel = strtolower(trim((string) ($block['variavel'] ?? '')));
+
+        if ($variavel === '') {
+            $errors[] = sprintf('Botão sem variável de destino em %s.', $label);
+        } elseif (! $this->isKnownVariable($variavel, $descriptor)) {
+            $errors[] = sprintf('Variável desconhecida no destino do botão em %s: "%s".', $label, $variavel);
+        }
+
+        if (trim((string) ($block['texto'] ?? '')) === '') {
+            $errors[] = sprintf('Botão sem texto em %s.', $label);
+        }
+
+        foreach (['texto', 'legenda'] as $field) {
+            if (isset($block[$field])) {
+                $this->validateTokensInText((string) $block[$field], $descriptor, $label, $errors);
+            }
+        }
+    }
+
+    /**
      * @param array<string, mixed> $block
      * @param array<string, mixed> $descriptor
      * @param array<int, string> $errors

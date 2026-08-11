@@ -4,12 +4,14 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\Api\V1\UpsertComissaoTecnicoRequest;
 use App\Http\Requests\Api\V1\UpsertFinanceiroCategoriaRequest;
+use App\Http\Requests\Api\V1\UpsertFinanceiroChavePixRequest;
 use App\Http\Requests\Api\V1\UpsertFinanceiroDreGrupoRequest;
 use App\Http\Requests\Api\V1\UpsertFinanceiroDreSubgrupoRequest;
 use App\Http\Requests\Api\V1\UpsertFinanceiroFormaPagamentoRequest;
 use App\Models\ComissaoTecnico;
 use App\Models\Configuration;
 use App\Models\FinanceiroCategoria;
+use App\Models\FinanceiroChavePix;
 use App\Models\FinanceiroDreGrupo;
 use App\Models\FinanceiroDreSubgrupo;
 use App\Models\FinanceiroFormaPagamento;
@@ -56,6 +58,8 @@ class FinanceiroCatalogController extends BaseApiController
                     ->where('chave', 'comissao_tecnico_percentual_padrao')
                     ->value('valor') ?? 0),
                 'formas_pagamento' => FinanceiroFormaPagamento::query()->ordenado()->get(),
+                'chaves_pix' => FinanceiroChavePix::query()->ordenado()->get(),
+                'chaves_pix_tipos' => FinanceiroChavePix::tipoOptions(),
                 'cartao' => $this->financeiroCartaoService->buildActiveDataset(),
                 'contas_financeiras' => $this->financeiroContaService->options(),
             ],
@@ -210,6 +214,97 @@ class FinanceiroCatalogController extends BaseApiController
         $formaPagamento->delete();
 
         return $this->success(null, request: $request);
+    }
+
+    public function storeChavePix(UpsertFinanceiroChavePixRequest $request): JsonResponse
+    {
+        $this->authorize('financeiro:editar');
+
+        $validated = $request->validated();
+
+        $chave = FinanceiroChavePix::create([
+            'tipo' => (string) $validated['tipo'],
+            'chave' => trim((string) $validated['chave']),
+            'titular' => $this->nullableString($validated['titular'] ?? null),
+            'instituicao' => $this->nullableString($validated['instituicao'] ?? null),
+            'principal' => (bool) ($validated['principal'] ?? false),
+            'ativo' => (bool) ($validated['ativo'] ?? true),
+            'ordem_exibicao' => (int) ($validated['ordem_exibicao'] ?? 0),
+        ]);
+
+        $this->enforceSinglePrincipalPix($chave);
+
+        return $this->success(['chave_pix' => $chave->refresh()], 201, request: $request);
+    }
+
+    public function updateChavePix(
+        UpsertFinanceiroChavePixRequest $request,
+        FinanceiroChavePix $chavePix
+    ): JsonResponse {
+        $this->authorize('financeiro:editar');
+
+        $validated = $request->validated();
+        $payload = [];
+
+        foreach (['tipo', 'chave'] as $field) {
+            if (array_key_exists($field, $validated)) {
+                $payload[$field] = trim((string) $validated[$field]);
+            }
+        }
+
+        foreach (['titular', 'instituicao'] as $field) {
+            if (array_key_exists($field, $validated)) {
+                $payload[$field] = $this->nullableString($validated[$field]);
+            }
+        }
+
+        foreach (['principal', 'ativo'] as $field) {
+            if (array_key_exists($field, $validated)) {
+                $payload[$field] = (bool) $validated[$field];
+            }
+        }
+
+        if (array_key_exists('ordem_exibicao', $validated)) {
+            $payload['ordem_exibicao'] = (int) $validated['ordem_exibicao'];
+        }
+
+        $chavePix->update($payload);
+        $this->enforceSinglePrincipalPix($chavePix);
+
+        return $this->success(['chave_pix' => $chavePix->refresh()], request: $request);
+    }
+
+    public function destroyChavePix(Request $request, FinanceiroChavePix $chavePix): JsonResponse
+    {
+        $this->authorize('financeiro:excluir');
+
+        // Chave Pix não é referenciada por lançamento nenhum: ela só compõe o
+        // texto das condições comerciais, que já foi congelado no PDF emitido.
+        $chavePix->delete();
+
+        return $this->success(null, request: $request);
+    }
+
+    /**
+     * Só uma chave pode ser a principal — a última marcada vence.
+     */
+    private function enforceSinglePrincipalPix(FinanceiroChavePix $chave): void
+    {
+        if (! $chave->principal) {
+            return;
+        }
+
+        FinanceiroChavePix::query()
+            ->whereKeyNot($chave->id)
+            ->where('principal', true)
+            ->update(['principal' => false]);
+    }
+
+    private function nullableString(mixed $value): ?string
+    {
+        $value = trim((string) ($value ?? ''));
+
+        return $value !== '' ? $value : null;
     }
 
     /**

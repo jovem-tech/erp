@@ -31,7 +31,8 @@ class BudgetApprovalService
         private readonly BudgetOrderSyncService $budgetOrderSyncService,
         private readonly OrderEventService $orderEventService,
         private readonly OrderDocumentCenterService $orderDocumentCenterService,
-        private readonly NotificationDispatchService $notificationDispatchService
+        private readonly NotificationDispatchService $notificationDispatchService,
+        private readonly BudgetCommercialTermsService $budgetCommercialTermsService
     ) {
     }
 
@@ -1007,15 +1008,10 @@ class BudgetApprovalService
      */
     private function expiryDeadline(Budget $budget): ?Carbon
     {
-        if ($budget->token_expira_em instanceof Carbon) {
-            return $budget->token_expira_em;
-        }
-
-        if ($budget->validade_data instanceof Carbon) {
-            return $budget->validade_data->copy()->endOfDay();
-        }
-
-        return null;
+        // Regra única em Budget::publicLinkDeadline(): o PDF decide exibir o
+        // botão de aprovação pelo mesmo critério que este serviço usa para
+        // devolver 410.
+        return $budget->publicLinkDeadline();
     }
 
     /**
@@ -1228,6 +1224,9 @@ class BudgetApprovalService
             'acrescimo' => round((float) ($budget->acrescimo ?? 0), 2),
             'total' => round((float) ($budget->total ?? 0), 2),
             'motivo_rejeicao' => trim((string) ($budget->motivo_rejeicao ?? '')),
+            // O cliente aprova sabendo como paga e por quanto tempo tem
+            // garantia: mesmas condições que saem no PDF.
+            'condicoes_comerciais' => $this->budgetCommercialTermsService->forBudget($budget),
             'items' => $budget->items
                 ->sortBy('ordem')
                 ->values()

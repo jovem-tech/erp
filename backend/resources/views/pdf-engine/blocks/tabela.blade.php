@@ -1,5 +1,5 @@
 {{-- Tabela de dados: headers/rows/totais pré-resolvidos e escapados --}}
-<table class="pdfe-tabela">
+<table class="{{ ($manterJunta ?? false) ? 'pdfe-tabela pdfe-keep' : 'pdfe-tabela' }}">
     @if ($repetirCabecalho)
     <thead>
     @else

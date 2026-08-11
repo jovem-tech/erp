@@ -110,6 +110,8 @@ class FinanceiroService
                 'tipos' => [],
             ],
             'formas_pagamento' => $response['data']['formas_pagamento'] ?? [],
+            'chaves_pix' => $response['data']['chaves_pix'] ?? [],
+            'chaves_pix_tipos' => $response['data']['chaves_pix_tipos'] ?? [],
         ];
     }
 
@@ -132,6 +134,27 @@ class FinanceiroService
     public function destroyFormaPagamento(int $id): void
     {
         $this->apiClient->delete('/financeiro/formas-pagamento/' . $id);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    public function createChavePix(array $payload): void
+    {
+        $this->apiClient->post('/financeiro/chaves-pix', $payload);
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     */
+    public function updateChavePix(int $id, array $payload): void
+    {
+        $this->apiClient->patch('/financeiro/chaves-pix/' . $id, $payload);
+    }
+
+    public function destroyChavePix(int $id): void
+    {
+        $this->apiClient->delete('/financeiro/chaves-pix/' . $id);
     }
 
     /**

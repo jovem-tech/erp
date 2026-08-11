@@ -34,7 +34,8 @@ class BudgetWorkflowService
         private readonly OrderEventService $orderEventService,
         private readonly NotificationDispatchService $notificationDispatchService,
         private readonly FinanceiroService $financeiroService,
-        private readonly OsMargemService $osMargemService
+        private readonly OsMargemService $osMargemService,
+        private readonly BudgetCommercialTermsService $budgetCommercialTermsService
     ) {}
 
     /**
@@ -392,6 +393,7 @@ class BudgetWorkflowService
             'status_options' => Budget::statusOptions(),
             'type_options' => Budget::typeOptions(),
             'origin_options' => Budget::originOptions(),
+            'condicoes_comerciais_catalogo' => $this->budgetCommercialTermsService->catalog(),
             'default_validity_days' => 10,
         ];
     }
@@ -565,7 +567,7 @@ class BudgetWorkflowService
         return DB::transaction(function () use ($user, $payload, $verifiedAdmin): array {
             $attributes = $this->normalizePayload($payload, true);
             $budgetAttributes = $attributes;
-            unset($budgetAttributes['itens']);
+            unset($budgetAttributes['itens'], $budgetAttributes['formas_pagamento']);
 
             $osId = (int) ($budgetAttributes['os_id'] ?? 0);
             if ($osId > 0) {
@@ -602,8 +604,17 @@ class BudgetWorkflowService
             $budget->acrescimo_percentual = $budget->acrescimo_tipo === Budget::ADJUSTMENT_MODE_PERCENT
                 ? $this->resolveDecimal($budgetAttributes['acrescimo_percentual'] ?? null, 4)
                 : null;
+            $paymentCodes = $this->budgetCommercialTermsService->normalizeCodes(
+                is_array($attributes['formas_pagamento'] ?? null) ? $attributes['formas_pagamento'] : []
+            );
+            $budget->garantia_dias = $this->budgetCommercialTermsService
+                ->normalizeWarrantyDays($budgetAttributes['garantia_dias'] ?? null);
+            $budget->parcelas_sem_juros = $this->budgetCommercialTermsService
+                ->normalizeInstallments($budgetAttributes['parcelas_sem_juros'] ?? null, $paymentCodes);
             $budget->total = 0;
             $budget->save();
+
+            $this->budgetCommercialTermsService->syncPaymentMethods($budget, $paymentCodes);
 
             $itemsSubtotal = array_key_exists('itens', $attributes)
                 ? $this->syncItems($budget, is_array($attributes['itens'] ?? null) ? $attributes['itens'] : [])
@@ -685,7 +696,7 @@ class BudgetWorkflowService
 
             $attributes = $this->normalizePayload($payload, false);
             $budgetAttributes = $attributes;
-            unset($budgetAttributes['itens']);
+            unset($budgetAttributes['itens'], $budgetAttributes['formas_pagamento']);
             $previousStatus = (string) ($budget->status ?? Budget::STATUS_DRAFT);
             $previousTotal = (float) ($budget->total ?? 0);
 
@@ -727,8 +738,33 @@ class BudgetWorkflowService
             $budget->acrescimo_percentual = $budget->acrescimo_tipo === Budget::ADJUSTMENT_MODE_PERCENT
                 ? $this->resolveDecimal($budgetAttributes['acrescimo_percentual'] ?? $budget->acrescimo_percentual, 4)
                 : null;
+            // Payload parcial (ex.: mudança só de status) não pode apagar as
+            // condições comerciais já acordadas: cada campo só é tocado quando
+            // vem explicitamente na requisição.
+            $paymentCodes = array_key_exists('formas_pagamento', $attributes)
+                ? $this->budgetCommercialTermsService->normalizeCodes(
+                    is_array($attributes['formas_pagamento']) ? $attributes['formas_pagamento'] : []
+                )
+                : $budget->paymentMethods->sortBy('ordem')->pluck('forma_codigo')->map(strval(...))->all();
+
+            if (array_key_exists('garantia_dias', $budgetAttributes)) {
+                $budget->garantia_dias = $this->budgetCommercialTermsService
+                    ->normalizeWarrantyDays($budgetAttributes['garantia_dias']);
+            }
+
+            if (array_key_exists('parcelas_sem_juros', $budgetAttributes) || array_key_exists('formas_pagamento', $attributes)) {
+                $budget->parcelas_sem_juros = $this->budgetCommercialTermsService->normalizeInstallments(
+                    $budgetAttributes['parcelas_sem_juros'] ?? $budget->parcelas_sem_juros,
+                    $paymentCodes
+                );
+            }
+
             $budget->total = $previousTotal;
             $budget->save();
+
+            if (array_key_exists('formas_pagamento', $attributes)) {
+                $this->budgetCommercialTermsService->syncPaymentMethods($budget, $paymentCodes);
+            }
 
             $itemsSubtotal = null;
             if (array_key_exists('itens', $attributes)) {
@@ -1148,6 +1184,10 @@ class BudgetWorkflowService
             'prazo_execucao' => (string) ($budget->prazo_execucao ?? ''),
             'observacoes' => (string) ($budget->observacoes ?? ''),
             'condicoes' => (string) ($budget->condicoes ?? ''),
+            'garantia_dias' => $budget->garantia_dias !== null ? (int) $budget->garantia_dias : null,
+            'garantia_label' => Budget::warrantyLabel($budget->garantia_dias),
+            'parcelas_sem_juros' => $budget->parcelas_sem_juros !== null ? (int) $budget->parcelas_sem_juros : null,
+            'condicoes_comerciais' => $this->budgetCommercialTermsService->forBudget($budget),
             'numero_os' => (string) ($order?->numero_os ?? ''),
             'cliente' => $client ? [
                 'id' => (int) $client->id,
@@ -1879,14 +1919,14 @@ class BudgetWorkflowService
     private function loadBudget(int $budgetId): ?Budget
     {
         return Budget::query()
-            ->with(['client', 'equipment.brand', 'equipment.model', 'equipment.type', 'order', 'responsible', 'creator', 'updater', 'items', 'histories.user', 'sends.sender', 'approvals.user'])
+            ->with(['client', 'equipment.brand', 'equipment.model', 'equipment.type', 'order', 'responsible', 'creator', 'updater', 'items', 'paymentMethods', 'histories.user', 'sends.sender', 'approvals.user'])
             ->find($budgetId);
     }
 
     private function loadBudgetForUpdate(int $budgetId): ?Budget
     {
         return Budget::query()
-            ->with(['client', 'equipment.brand', 'equipment.model', 'equipment.type', 'order', 'responsible', 'creator', 'updater', 'items', 'histories.user', 'sends.sender', 'approvals.user'])
+            ->with(['client', 'equipment.brand', 'equipment.model', 'equipment.type', 'order', 'responsible', 'creator', 'updater', 'items', 'paymentMethods', 'histories.user', 'sends.sender', 'approvals.user'])
             ->lockForUpdate()
             ->find($budgetId);
     }

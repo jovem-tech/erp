@@ -2,6 +2,7 @@
 
 namespace App\Services\Pdf\Contexts;
 
+use App\Models\Budget;
 use App\Models\Equipment;
 use App\Models\EquipmentPhoto;
 use App\Models\Order;
@@ -72,6 +73,9 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
                 'forma_pagamento' => (string) ($order->forma_pagamento ?? ''),
                 'garantia_dias' => $order->garantia_dias !== null ? (int) $order->garantia_dias : null,
                 'garantia_validade' => $order->garantia_validade,
+                // Prazo por extenso ("1 ano" em vez de "365"), para o documento
+                // falar a mesma língua do orçamento que prometeu a garantia.
+                'garantia_prazo' => Budget::warrantyLabel($order->garantia_dias),
                 'tecnico_nome' => (string) ($order->technician?->nome ?? ''),
                 'acessorios_html' => $this->accessoriesHtml($acessorios),
                 'estado_fisico_html' => $this->stateHtml($checklist),

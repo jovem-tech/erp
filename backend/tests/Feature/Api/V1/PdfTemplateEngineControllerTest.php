@@ -23,9 +23,12 @@ class PdfTemplateEngineControllerTest extends TestCase
         $this->seedOrderCatalog();
 
         // Novos slugs do motor (em produção: migration 2026_07_18_000012).
+        // Os ids saem do fim da tabela em vez de fixos: o catálogo RBAC
+        // compartilhado cresce, e ids chumbados colidiam com ele.
+        $proximoId = ((int) DB::table('permissoes')->max('id')) + 1;
         DB::table('permissoes')->insert([
-            ['id' => 8, 'nome' => 'Publicar', 'slug' => 'publicar'],
-            ['id' => 9, 'nome' => 'Restaurar', 'slug' => 'restaurar'],
+            ['id' => $proximoId, 'nome' => 'Publicar', 'slug' => 'publicar'],
+            ['id' => $proximoId + 1, 'nome' => 'Restaurar', 'slug' => 'restaurar'],
         ]);
 
         $this->seedPdfEngineTemplates();
@@ -343,6 +346,57 @@ class PdfTemplateEngineControllerTest extends TestCase
         ])->assertOk();
 
         $this->postJson("/api/v1/knowledge/pdf-engine/templates/{$templateId}/publish")->assertForbidden();
+    }
+
+    public function test_editor_can_rename_a_system_document_and_the_new_name_is_printed(): void
+    {
+        $this->actingWithPermissions(['visualizar', 'editar']);
+        $templateId = $this->templateIdFor('os_orcamento');
+
+        $this->patchJson('/api/v1/knowledge/pdf-engine/templates/'.$templateId, [
+            'nome' => 'Proposta Comercial',
+            'descricao' => 'Nome definido pelo usuário.',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.template.nome', 'Proposta Comercial')
+            // O código nunca muda: documentos já emitidos apontam para ele.
+            ->assertJsonPath('data.template.tipo_codigo', 'os_orcamento');
+
+        $this->assertDatabaseHas('pdf_templates', [
+            'id' => $templateId,
+            'tipo_codigo' => 'os_orcamento',
+            'nome' => 'Proposta Comercial',
+        ]);
+
+        // É este nome que sai em {{ documento.nome }} e nas listagens.
+        $descriptor = app(\App\Services\Pdf\PdfTemplateRegistry::class)->get('os_orcamento');
+        $this->assertSame('Proposta Comercial', $descriptor['nome']);
+
+        $this->getJson('/api/v1/knowledge/pdf-engine/types')
+            ->assertOk()
+            ->assertJsonFragment(['nome' => 'Proposta Comercial']);
+    }
+
+    public function test_rename_rejects_an_empty_name_and_unknown_template(): void
+    {
+        $this->actingWithPermissions(['visualizar', 'editar']);
+
+        $this->patchJson('/api/v1/knowledge/pdf-engine/templates/'.$this->templateIdFor('os_orcamento'), [
+            'nome' => '  ',
+        ])->assertStatus(422);
+
+        $this->patchJson('/api/v1/knowledge/pdf-engine/templates/999999', [
+            'nome' => 'Qualquer',
+        ])->assertStatus(404);
+    }
+
+    public function test_rename_requires_edit_permission(): void
+    {
+        $this->actingWithPermissions(['visualizar']);
+
+        $this->patchJson('/api/v1/knowledge/pdf-engine/templates/'.$this->templateIdFor('os_orcamento'), [
+            'nome' => 'Proposta Comercial',
+        ])->assertStatus(403);
     }
 
     private function actingWithPermissions(array $actions): void

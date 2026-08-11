@@ -67,6 +67,13 @@ class UpsertBudgetRequest extends BaseApiFormRequest
             'prazo_execucao' => ['nullable', 'string', 'max:120'],
             'observacoes' => ['nullable', 'string'],
             'condicoes' => ['nullable', 'string'],
+            // Condições comerciais estruturadas. Códigos fora do catálogo ativo
+            // e prazos fora da lista são descartados em
+            // BudgetCommercialTermsService, não rejeitam a requisição inteira.
+            'formas_pagamento' => ['nullable', 'array'],
+            'formas_pagamento.*' => ['string', 'max:40'],
+            'garantia_dias' => ['nullable', 'integer', Rule::in(array_keys(Budget::WARRANTY_TERMS))],
+            'parcelas_sem_juros' => ['nullable', 'integer', 'min:2', 'max:'.Budget::MAX_INTEREST_FREE_INSTALLMENTS],
             'token_publico' => ['prohibited'],
             'token_expira_em' => ['prohibited'],
             'enviado_em' => ['prohibited'],

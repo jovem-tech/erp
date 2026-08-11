@@ -31,6 +31,8 @@ class FinanceiroCatalogController extends DesktopController
             'comissoesTecnicos' => $catalogo['comissoes_tecnicos'],
             'comissaoPercentualPadrao' => $catalogo['comissao_percentual_padrao'],
             'formasPagamento' => $catalogo['formas_pagamento'],
+            'chavesPix' => $catalogo['chaves_pix'],
+            'chavesPixTipos' => $catalogo['chaves_pix_tipos'],
         ]);
     }
 
@@ -64,6 +66,45 @@ class FinanceiroCatalogController extends DesktopController
         return $this->deleteCatalogItem(
             fn () => $this->financeiroService->destroyFormaPagamento($formaPagamento),
             'Forma de pagamento excluída com sucesso.'
+        );
+    }
+
+    public function saveChavePix(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'id' => ['nullable', 'integer', 'min:1'],
+            'tipo' => ['required', 'string', 'in:cpf,cnpj,email,telefone,aleatoria'],
+            'chave' => ['required', 'string', 'max:200'],
+            'titular' => ['nullable', 'string', 'max:160'],
+            'instituicao' => ['nullable', 'string', 'max:80'],
+            'principal' => ['nullable', 'boolean'],
+            'ativo' => ['nullable', 'boolean'],
+            'ordem_exibicao' => ['nullable', 'integer', 'min:0', 'max:9999'],
+        ], [], [
+            'tipo' => 'tipo da chave',
+            'chave' => 'chave Pix',
+            'titular' => 'titular da chave',
+            'instituicao' => 'instituição',
+        ]);
+
+        $id = (int) ($validated['id'] ?? 0);
+        unset($validated['id']);
+        $validated['principal'] = $request->boolean('principal');
+        $validated['ativo'] = $request->boolean('ativo', true);
+
+        return $this->saveCatalogItem(
+            fn () => $id > 0
+                ? $this->financeiroService->updateChavePix($id, $validated)
+                : $this->financeiroService->createChavePix($validated),
+            'Chave Pix salva com sucesso.'
+        );
+    }
+
+    public function deleteChavePix(int $chavePix): RedirectResponse
+    {
+        return $this->deleteCatalogItem(
+            fn () => $this->financeiroService->destroyChavePix($chavePix),
+            'Chave Pix excluída com sucesso.'
         );
     }
 

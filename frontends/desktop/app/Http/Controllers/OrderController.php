@@ -1219,6 +1219,7 @@ class OrderController extends DesktopController
                 'date',
             ],
             'observacao' => ['nullable', 'string'],
+            'garantia_dias' => ['nullable', 'integer', 'in:90,180,365,730'],
             'notificar_cliente' => ['nullable', 'boolean'],
             'agendar_retorno' => ['nullable', 'boolean'],
             'retorno_data' => ['nullable', 'date'],
@@ -1236,6 +1237,7 @@ class OrderController extends DesktopController
             'encerrar_como' => 'forma de encerramento',
             'data_entrega' => 'data de entrega',
             'observacao' => 'observação',
+            'garantia_dias' => 'garantia',
             'retorno_data' => 'data de retorno',
             'recebimentos' => 'recebimentos',
             'recebimentos.*.valor' => 'valor do recebimento',
@@ -1249,6 +1251,7 @@ class OrderController extends DesktopController
             'data_entrega' => $validated['data_entrega'] ?? null,
             'equipamento_entregue' => $request->boolean('equipamento_entregue'),
             'observacao' => $validated['observacao'] ?? null,
+            'garantia_dias' => $validated['garantia_dias'] ?? null,
             'notificar_cliente' => $request->boolean('notificar_cliente'),
             'agendar_retorno' => $isBaixa && $request->boolean('agendar_retorno'),
             'retorno_data' => $validated['retorno_data'] ?? null,
@@ -1359,6 +1362,10 @@ class OrderController extends DesktopController
             'solucao_aplicada' => (string) ($data['solucao_aplicada'] ?? ''),
             'proximas_etapas' => is_array($data['proximas_etapas'] ?? null) ? $data['proximas_etapas'] : [],
             'status_disponiveis' => is_array($data['status_disponiveis'] ?? null) ? $data['status_disponiveis'] : [],
+            // Vem do backend (OrderWorkflowService::CLIENT_STATUS_MESSAGE_TEMPLATE);
+            // o modal usa para pré-preencher o texto editável de "Notificar o
+            // cliente". Só repassa — o desktop não define a frase.
+            'mensagem_cliente_template' => (string) ($data['mensagem_cliente_template'] ?? ''),
             'historico' => array_slice(
                 is_array($data['historico'] ?? null) ? $data['historico'] : [],
                 0,
@@ -1405,6 +1412,7 @@ class OrderController extends DesktopController
             'solucao_aplicada' => ['nullable', 'string'],
             'comunicar_cliente' => ['nullable', 'boolean'],
             'novo_prazo' => ['nullable', 'date_format:Y-m-d'],
+            'mensagem_cliente' => ['nullable', 'string', 'max:2000'],
         ], [], [
             'status' => 'status',
             'observacao' => 'observação',
@@ -1412,6 +1420,7 @@ class OrderController extends DesktopController
             'solucao_aplicada' => 'solução aplicada',
             'comunicar_cliente' => 'notificar cliente',
             'novo_prazo' => 'novo prazo de entrega',
+            'mensagem_cliente' => 'mensagem ao cliente',
         ]);
 
         try {
@@ -1422,7 +1431,8 @@ class OrderController extends DesktopController
                 $validated['diagnostico_tecnico'] ?? null,
                 $validated['solucao_aplicada'] ?? null,
                 filter_var($validated['comunicar_cliente'] ?? false, FILTER_VALIDATE_BOOL),
-                $validated['novo_prazo'] ?? null
+                $validated['novo_prazo'] ?? null,
+                $validated['mensagem_cliente'] ?? null
             );
         } catch (ApiAuthenticationException $exception) {
             if ($request->wantsJson()) {

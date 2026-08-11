@@ -66,7 +66,11 @@
         // quando ele existir; fora de tela cheia (ou no fallback de overlay
         // fixo, que não usa a Fullscreen API de verdade) o padrão (body) já
         // funciona normalmente.
-        const swalTarget = () => document.fullscreenElement || document.body;
+        // Fora de tela cheia, se o mapa estiver dentro de um modal do Bootstrap
+        // (aba "Mapa de status"), o diálogo precisa ser anexado ao modal: o
+        // focus trap do Bootstrap devolve o foco para o modal a cada focusin,
+        // o que impediria digitar na observação/no prazo do confirmMove().
+        const swalTarget = () => document.fullscreenElement || root.closest('.modal') || document.body;
 
         const showToast = (message, type = 'success') => {
             if (typeof Swal === 'undefined') return;

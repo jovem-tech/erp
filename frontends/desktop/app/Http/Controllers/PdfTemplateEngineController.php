@@ -128,6 +128,32 @@ class PdfTemplateEngineController extends DesktopController
             ->with('success', 'Documento clonado. O original permanece inalterado.');
     }
 
+    public function rename(Request $request, int $template): RedirectResponse
+    {
+        $validated = $request->validate([
+            'nome' => ['required', 'string', 'min:3', 'max:120'],
+            'descricao' => ['nullable', 'string', 'max:1000'],
+        ], [], [
+            'nome' => 'nome do documento',
+        ]);
+
+        try {
+            $this->engineService->rename(
+                $template,
+                trim((string) $validated['nome']),
+                array_key_exists('descricao', $validated) ? trim((string) $validated['descricao']) : null
+            );
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return back()->withInput()->with('error', $exception->getMessage());
+        }
+
+        return redirect()
+            ->route('knowledge.pdf-engine.edit', ['template' => $template])
+            ->with('success', 'Nome do documento atualizado. Ele passa a valer nas listagens e no {{ documento.nome }} impresso.');
+    }
+
     public function saveDraft(Request $request, int $template): JsonResponse
     {
         $validated = $request->validate([

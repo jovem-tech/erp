@@ -250,22 +250,82 @@ class PdfDefaultTemplates
                     ['rotulo' => 'Desconto', 'variavel' => 'orcamento.desconto', 'formato' => 'moeda'],
                     ['rotulo' => 'TOTAL', 'variavel' => 'orcamento.total', 'formato' => 'moeda', 'destaque' => true],
                 ]],
+                ...self::blocosCondicoesComerciais(),
                 ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.condicoes', 'operador' => 'preenchido'], 'blocos' => [
-                    ['tipo' => 'cabecalho_secao', 'texto' => 'Condições comerciais'],
+                    ['tipo' => 'cabecalho_secao', 'texto' => 'Outras condições'],
                     ['tipo' => 'paragrafo', 'texto' => '{{ orcamento.condicoes }}'],
                 ]],
                 ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.observacoes', 'operador' => 'preenchido'], 'blocos' => [
                     ['tipo' => 'cabecalho_secao', 'texto' => 'Observações'],
                     ['tipo' => 'paragrafo', 'texto' => '{{ orcamento.observacoes }}'],
                 ]],
-                ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.link_aprovacao', 'operador' => 'preenchido'], 'blocos' => [
-                    ['tipo' => 'observacoes', 'texto' => "Aprovação online: acesse o link abaixo para aprovar ou recusar este orçamento.\n{{ orcamento.link_aprovacao }}"],
-                ]],
-                ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.validade_dias', 'operador' => 'preenchido'], 'blocos' => [
-                    ['tipo' => 'paragrafo', 'texto' => 'Este orçamento é válido por {{ orcamento.validade_dias }} dia(s) a partir da data de emissão.'],
-                ]],
+                ...self::blocosAprovacaoOnline(),
             ],
             'rodape' => self::rodape(),
+        ];
+    }
+
+    /**
+     * Aprovação online: botão clicável em vez de URL crua.
+     *
+     * O clique vale enquanto o link viver, e a validade fica logo abaixo do
+     * botão — o cliente vê a ação e o prazo no mesmo lugar, sem precisar
+     * decifrar um endereço de 80 caracteres. Público porque a migration que
+     * leva o botão aos modelos já publicados reusa esta mesma definição.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function blocosAprovacaoOnline(): array
+    {
+        return [
+            ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.link_aprovacao', 'operador' => 'preenchido'], 'blocos' => [
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Aprovação online'],
+                ['tipo' => 'paragrafo', 'texto' => 'Clique no botão abaixo para aprovar ou recusar este orçamento.', 'alinhamento' => 'centro'],
+                [
+                    'tipo' => 'botao_link',
+                    'texto' => 'Aprovar ou recusar orçamento',
+                    'variavel' => 'orcamento.link_aprovacao',
+                    'legenda' => 'Link válido até {{ orcamento.validade_link | data }}.',
+                    'alinhamento' => 'centro',
+                ],
+            ]],
+            ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.validade_dias', 'operador' => 'preenchido'], 'blocos' => [
+                ['tipo' => 'paragrafo', 'texto' => 'Este orçamento é válido por {{ orcamento.validade_dias }} dia(s) a partir da data de emissão.'],
+            ]],
+        ];
+    }
+
+    /**
+     * Condições comerciais do orçamento: formas de pagamento aceitas, chave
+     * Pix, parcelamento sem juros e garantia.
+     *
+     * Público porque a migration que leva estes blocos aos modelos já
+     * publicados usa exatamente a mesma definição — modelo novo e modelo
+     * antigo nunca divergem.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function blocosCondicoesComerciais(): array
+    {
+        return [
+            ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.formas_pagamento', 'operador' => 'preenchido'], 'blocos' => [
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Condições de pagamento'],
+                ['tipo' => 'campo', 'rotulo' => 'Formas aceitas', 'valor' => '{{ orcamento.formas_pagamento }}'],
+                ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.parcelamento', 'operador' => 'preenchido'], 'blocos' => [
+                    ['tipo' => 'paragrafo', 'texto' => '{{ orcamento.parcelamento }}'],
+                ]],
+                ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.chaves_pix', 'operador' => 'preenchido'], 'blocos' => [
+                    ['tipo' => 'tabela', 'fonte' => 'chaves_pix', 'vazio_texto' => 'Nenhuma chave Pix cadastrada.', 'colunas' => [
+                        ['campo' => 'tipo', 'rotulo' => 'Tipo', 'largura' => 20],
+                        ['campo' => 'chave', 'rotulo' => 'Chave Pix'],
+                        ['campo' => 'titular', 'rotulo' => 'Titular', 'largura' => 28],
+                    ]],
+                ]],
+            ]],
+            ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.garantia_texto', 'operador' => 'preenchido'], 'blocos' => [
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Garantia'],
+                ['tipo' => 'paragrafo', 'texto' => '{{ orcamento.garantia_texto }}'],
+            ]],
         ];
     }
 
@@ -333,7 +393,7 @@ class PdfDefaultTemplates
                 ['tipo' => 'cabecalho_secao', 'texto' => 'Observações do atendimento'],
                 ['tipo' => 'paragrafo', 'texto' => '{{ os.solucao_aplicada }}'],
                 ['tipo' => 'condicional', 'se' => ['variavel' => 'os.garantia_dias', 'operador' => 'preenchido'], 'blocos' => [
-                    ['tipo' => 'observacoes', 'texto' => 'Garantia: {{ os.garantia_dias }} dia(s), válida até {{ os.garantia_validade | data }}.'],
+                    ['tipo' => 'observacoes', 'texto' => 'Garantia: {{ os.garantia_prazo }}, válida até {{ os.garantia_validade | data }}.'],
                 ]],
                 ['tipo' => 'assinatura', 'visivel_em' => ['a4'], 'rotulos' => ['{{ cliente.nome }} - Cliente'], 'linha_data' => true],
             ],
@@ -416,7 +476,7 @@ class PdfDefaultTemplates
                     ['tipo' => 'paragrafo', 'texto' => '{{ encerramento.observacao }}'],
                 ]],
                 ['tipo' => 'condicional', 'se' => ['variavel' => 'os.garantia_dias', 'operador' => 'preenchido'], 'blocos' => [
-                    ['tipo' => 'observacoes', 'texto' => 'Garantia: {{ os.garantia_dias }} dia(s), válida até {{ os.garantia_validade | data }}.'],
+                    ['tipo' => 'observacoes', 'texto' => 'Garantia: {{ os.garantia_prazo }}, válida até {{ os.garantia_validade | data }}.'],
                 ]],
                 ['tipo' => 'assinatura', 'visivel_em' => ['a4'], 'rotulos' => ['{{ cliente.nome }} - Cliente'], 'linha_data' => true],
             ],

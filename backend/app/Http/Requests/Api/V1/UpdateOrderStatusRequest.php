@@ -41,6 +41,15 @@ class UpdateOrderStatusRequest extends BaseApiFormRequest
                 'nullable',
                 'boolean',
             ],
+            // Texto que o operador revisou/editou no modal "Mensagem ao
+            // cliente" antes de salvar. Só é usado quando comunicar_cliente
+            // é verdadeiro; vazio/ausente cai na mensagem padrão montada por
+            // OrderWorkflowService::buildClientStatusMessage().
+            'mensagem_cliente' => [
+                'nullable',
+                'string',
+                'max:2000',
+            ],
             'novo_prazo' => [
                 'nullable',
                 'date_format:Y-m-d',

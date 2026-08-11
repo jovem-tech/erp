@@ -98,6 +98,12 @@
         observacoes: { label: 'Caixa de observações', fields: [
             { key: 'texto', label: 'Texto', kind: 'textarea' },
         ] },
+        botao_link: { label: 'Botão de link (ex.: aprovar orçamento)', fields: [
+            { key: 'texto', label: 'Texto do botão', kind: 'text' },
+            { key: 'variavel', label: 'Variável com o endereço (só http/https vira clique)', kind: 'text' },
+            { key: 'legenda', label: 'Legenda abaixo do botão (ex.: validade)', kind: 'text' },
+            { key: 'alinhamento', label: 'Alinhamento', kind: 'select', options: ['esquerda', 'centro', 'direita'] },
+        ] },
         quebra_pagina: { label: 'Quebra de página', fields: [] },
         condicional: { label: 'Bloco condicional', fields: [
             { key: 'se', label: 'Condição (JSON: {"variavel","operador","valor"})', kind: 'json', rows: 3 },

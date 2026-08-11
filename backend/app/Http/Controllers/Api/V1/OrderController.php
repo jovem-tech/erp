@@ -902,7 +902,10 @@ class OrderController extends BaseApiController
             isset($validated['solucao_aplicada']) ? (string) $validated['solucao_aplicada'] : null,
             filter_var($validated['comunicar_cliente'] ?? false, FILTER_VALIDATE_BOOL),
             viaClosureFlow: false,
-            novoPrazo: isset($validated['novo_prazo']) && $validated['novo_prazo'] !== '' ? (string) $validated['novo_prazo'] : null
+            novoPrazo: isset($validated['novo_prazo']) && $validated['novo_prazo'] !== '' ? (string) $validated['novo_prazo'] : null,
+            mensagemCliente: isset($validated['mensagem_cliente']) && trim((string) $validated['mensagem_cliente']) !== ''
+                ? (string) $validated['mensagem_cliente']
+                : null
         );
 
         if (($result['result'] ?? 'error') === 'ok') {
@@ -1057,6 +1060,9 @@ class OrderController extends BaseApiController
                     'status_pagamento_pendente' => $result['status_pagamento_pendente'] ?? null,
                     'status_sem_reparo' => $result['status_sem_reparo'] ?? [],
                     'status_entregue' => $result['status_entregue'] ?? null,
+                    // Prazos de garantia oferecidos + o já prometido pelo
+                    // orçamento aprovado, para a baixa abrir preenchida.
+                    'garantia' => $result['garantia'] ?? null,
                 ],
                 request: $request
             ),

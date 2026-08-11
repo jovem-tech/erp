@@ -407,12 +407,22 @@
                     $custoAuditoria = is_array($order['custo_auditoria'] ?? null) ? $order['custo_auditoria'] : [];
                     $formatMoney = static fn ($value): string => 'R$ ' . number_format((float) ($value ?? 0), 2, ',', '.');
 
+                    // Prazo por extenso: a OS fala a mesma língua do orçamento
+                    // que prometeu a garantia ("1 ano", não "365 dias").
+                    $garantiaDias = (int) ($order['garantia_dias'] ?? 0);
+                    $garantiaLabels = [90 => '90 dias', 180 => '180 dias', 365 => '1 ano', 730 => '2 anos'];
+                    $garantiaTexto = $garantiaDias > 0
+                        ? ($garantiaLabels[$garantiaDias] ?? $garantiaDias . ' dias')
+                        : '';
+
                     $datasRows = array_filter([
                         'Abertura' => $order['data_abertura'] ?? '',
                         'Entrada' => $order['data_entrada'] ?? '',
                         'Previsão' => $order['data_previsao'] ?? '',
                         'Conclusão' => $order['data_conclusao'] ?? '',
-                        'Garantia' => ($order['garantia_dias'] ?? 0) > 0 ? $order['garantia_dias'] . ' dias' : '',
+                        'Entrega' => $order['data_entrega'] ?? '',
+                        'Garantia' => $garantiaTexto,
+                        'Garantia até' => $order['garantia_validade'] ?? '',
                         'Forma de pagamento' => $formaPagamentoExibicao,
                     ], fn ($v) => trim((string) $v) !== '');
 

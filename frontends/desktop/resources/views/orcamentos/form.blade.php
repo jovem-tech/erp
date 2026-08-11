@@ -25,6 +25,27 @@
         ['value' => 'cliente', 'label' => 'Cliente'],
     ];
 
+    // Condições comerciais: catálogo vindo das configurações financeiras
+    // (formas de pagamento ativas e chaves Pix) + prazos de garantia.
+    $termsCatalog = is_array($form['condicoes_comerciais_catalogo'] ?? null)
+        ? $form['condicoes_comerciais_catalogo']
+        : [];
+    $paymentMethodOptions = is_array($termsCatalog['formas_pagamento'] ?? null) ? $termsCatalog['formas_pagamento'] : [];
+    $pixKeyOptions = is_array($termsCatalog['chaves_pix'] ?? null) ? $termsCatalog['chaves_pix'] : [];
+    $warrantyOptions = is_array($termsCatalog['garantia_options'] ?? null) ? $termsCatalog['garantia_options'] : [];
+    $maxInstallments = (int) ($termsCatalog['max_parcelas_sem_juros'] ?? 24);
+
+    $savedPaymentCodes = collect(data_get($budget, 'condicoes_comerciais.formas_pagamento', []))
+        ->pluck('codigo')
+        ->map(static fn ($code): string => (string) $code)
+        ->all();
+    $selectedPaymentCodes = old('formas_pagamento', $savedPaymentCodes);
+    $selectedPaymentCodes = is_array($selectedPaymentCodes)
+        ? array_map(static fn ($code): string => (string) $code, $selectedPaymentCodes)
+        : [];
+    $selectedWarrantyDays = (string) old('garantia_dias', $budget['garantia_dias'] ?? '');
+    $selectedInstallments = (string) old('parcelas_sem_juros', $budget['parcelas_sem_juros'] ?? '');
+
     $parseMoney = static function (mixed $value): float {
         if ($value === null || $value === '') {
             return 0.0;
@@ -584,10 +605,98 @@
                 @include('orcamentos.partials.item-row', ['index' => '__INDEX__', 'item' => [], 'quickCatalogs' => $quickCatalogs])
             </template>
 
-            <div class="mb-4">
-                <label for="orcamentoCondicoes">Condições comerciais</label>
-                <textarea id="orcamentoCondicoes" name="condicoes" class="form-control" rows="4" placeholder="Condições, garantias e observações de pagamento">{{ old('condicoes', $budget['condicoes'] ?? '') }}</textarea>
-            </div>
+            <section class="budget-terms-card mb-4" data-budget-terms aria-labelledby="orcamentoCondicoesTitulo">
+                <div class="surface-card-header align-items-start mb-3">
+                    <div>
+                        <p class="desktop-eyebrow mb-2">Transparência</p>
+                        <h3 id="orcamentoCondicoesTitulo" class="surface-title fs-5 mb-1">Condições comerciais</h3>
+                        <p class="surface-subtitle mb-0">
+                            Marque o que será oferecido ao cliente. Formas de pagamento e chaves Pix vêm das
+                            <a href="{{ route('financeiro.configuracoes') }}" target="_blank" rel="noopener">configurações financeiras</a>
+                            e são impressas automaticamente no PDF do orçamento.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Formas de pagamento aceitas</label>
+
+                    {{-- Marcador vazio: garante que desmarcar tudo chegue ao backend
+                         como "nenhuma forma aceita" em vez de campo ausente (que
+                         preservaria a seleção anterior). --}}
+                    <input type="hidden" name="formas_pagamento[]" value="">
+
+                    @forelse ($paymentMethodOptions as $option)
+                        <div class="form-check form-check-inline">
+                            <input
+                                class="form-check-input"
+                                type="checkbox"
+                                name="formas_pagamento[]"
+                                value="{{ $option['codigo'] }}"
+                                id="orcamentoForma{{ $option['id'] }}"
+                                data-budget-payment-method
+                                data-installments="{{ ($option['aceita_parcelamento'] ?? false) ? '1' : '0' }}"
+                                data-pix="{{ ($option['is_pix'] ?? false) ? '1' : '0' }}"
+                                {{ in_array((string) $option['codigo'], $selectedPaymentCodes, true) ? 'checked' : '' }}
+                            >
+                            <label class="form-check-label" for="orcamentoForma{{ $option['id'] }}">{{ $option['nome'] }}</label>
+                        </div>
+                    @empty
+                        <p class="text-secondary mb-0">
+                            Nenhuma forma de pagamento ativa cadastrada. Cadastre em Financeiro &gt; Configurações &gt; Formas de Pagamento.
+                        </p>
+                    @endforelse
+                </div>
+
+                <div class="desktop-grid desktop-grid-two">
+                    <div data-budget-installments-wrapper class="{{ $selectedInstallments !== '' ? '' : 'd-none' }}">
+                        <label for="orcamentoParcelas">Parcelamento sem juros no cartão</label>
+                        <select id="orcamentoParcelas" name="parcelas_sem_juros" class="form-select" data-budget-installments>
+                            <option value="">Somente à vista</option>
+                            @for ($parcela = 2; $parcela <= $maxInstallments; $parcela++)
+                                <option value="{{ $parcela }}" {{ $selectedInstallments === (string) $parcela ? 'selected' : '' }}>
+                                    Em até {{ $parcela }}x sem juros
+                                </option>
+                            @endfor
+                        </select>
+                    </div>
+
+                    <div>
+                        <label for="orcamentoGarantia">Garantia</label>
+                        <select id="orcamentoGarantia" name="garantia_dias" class="form-select">
+                            <option value="">Sem garantia definida</option>
+                            @foreach ($warrantyOptions as $option)
+                                <option value="{{ $option['value'] }}" {{ $selectedWarrantyDays === (string) $option['value'] ? 'selected' : '' }}>
+                                    {{ $option['label'] }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <small class="text-muted d-block mt-1">Contada a partir da entrega do equipamento. Acompanha a OS na baixa.</small>
+                    </div>
+                </div>
+
+                <div class="budget-terms-pix mt-3 {{ in_array('pix', $selectedPaymentCodes, true) ? '' : 'd-none' }}" data-budget-pix-preview>
+                    <p class="fw-semibold mb-2"><i class="bi bi-key me-2"></i>Chaves Pix informadas ao cliente</p>
+                    @forelse ($pixKeyOptions as $chave)
+                        <div class="small">
+                            <span data-budget-pix-key>{{ $chave['rotulo'] }}</span>
+                            @if ($chave['principal'] ?? false)
+                                <span class="badge text-bg-light border ms-1">Principal</span>
+                            @endif
+                        </div>
+                    @empty
+                        <p class="small text-secondary mb-0">
+                            Nenhuma chave Pix cadastrada — o orçamento sairá sem chave. Cadastre em
+                            Financeiro &gt; Configurações &gt; Formas de Pagamento &gt; Pix &gt; Chaves.
+                        </p>
+                    @endforelse
+                </div>
+
+                <div class="mt-3">
+                    <label for="orcamentoCondicoes">Observações complementares</label>
+                    <textarea id="orcamentoCondicoes" name="condicoes" class="form-control" rows="3" placeholder="Só o que fugir do padrão acima (ex.: entrada de 50%, retirada em loja)">{{ old('condicoes', $budget['condicoes'] ?? '') }}</textarea>
+                </div>
+            </section>
 
             <section class="budget-summary-card" aria-labelledby="orcamentoResumoFinanceiro">
                 <div class="surface-card-header align-items-start budget-summary-card-header">
@@ -805,6 +914,14 @@
                             <div class="budget-review-list" data-budget-review-context></div>
                         </section>
                     </div>
+
+                    <section class="budget-review-card">
+                        <div class="budget-review-card-head">
+                            <h5>Condicoes comerciais</h5>
+                            <span class="desktop-chip">Transparencia ao cliente</span>
+                        </div>
+                        <div class="budget-review-list" data-budget-review-terms></div>
+                    </section>
 
                     <section class="budget-review-card">
                         <div class="budget-review-card-head">

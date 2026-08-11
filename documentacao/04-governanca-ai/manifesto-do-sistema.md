@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-08-10T07:51:17-03:00`
-- Versao do sistema: `5.22.0`
+- Gerado em: `2026-08-11T03:33:28-03:00`
+- Versao do sistema: `5.24.3`
 - Versao da API: `1.6.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -188,6 +188,8 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-07-26-tema-claro-identidade-jovem-tech-mobile.md` - Tema claro e identidade Jovem Tech no PWA mobile
 - `documentacao/07-novas-implementacoes/2026-07-27-csp-estilos-inline-mobile.md` - CSP mobile sem estilos inline
 - `documentacao/07-novas-implementacoes/2026-07-28-relato-cliente-orcamento-os.md` - Auto-preenchimento do relato do cliente a partir da OS vinculada no orçamento
+- `documentacao/07-novas-implementacoes/2026-08-10-condicoes-comerciais-orcamento-garantia-os.md` - Condições comerciais estruturadas no orçamento e garantia registrada na OS
+- `documentacao/07-novas-implementacoes/2026-08-11-integridade-leitura-pdf-botao-aprovacao-nome-documento.md` - Integridade de leitura no motor de PDF, botão de aprovação e nome do documento editável
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 - `documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md` - Revisão de segurança — Fluxo de orçamento na assistência (com OS)
 
@@ -228,4 +230,5 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/023-hardening-vinculo-orcamento-os` - Especificação — Hardening do vínculo orçamento avulso → OS | artefatos: spec, plan, tasks
 - `specs/024-player-criacao-os-mobile` - Especificação: player de criação da OS mobile | artefatos: spec, plan, tasks
 - `specs/025-revisao-atomica-nova-os-mobile` - Especificação: revisão e salvamento atômico da Nova OS mobile | artefatos: spec, plan, tasks
+- `specs/026-condicoes-comerciais-orcamento-garantia` - Condições comerciais do orçamento e garantia da OS | artefatos: spec
 

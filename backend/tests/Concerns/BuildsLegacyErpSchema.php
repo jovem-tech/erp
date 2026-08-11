@@ -51,6 +51,7 @@ trait BuildsLegacyErpSchema
             'orcamento_aprovacoes',
             'orcamento_envios',
             'orcamento_status_historico',
+            'orcamento_formas_pagamento',
             'orcamento_itens',
             'orcamentos',
             'movimentacoes',
@@ -73,6 +74,8 @@ trait BuildsLegacyErpSchema
             'financeiro_cartao_taxas',
             'financeiro_cartao_bandeiras',
             'financeiro_cartao_operadoras',
+            'financeiro_chaves_pix',
+            'financeiro_formas_pagamento',
         ] as $table) {
             Schema::dropIfExists($table);
         }
@@ -692,6 +695,51 @@ trait BuildsLegacyErpSchema
 
     private function createFinanceiroCartaoTables(): void
     {
+        // Catálogo de formas de pagamento e chaves Pix: alimentam as condições
+        // comerciais do orçamento (BudgetCommercialTermsService).
+        Schema::create('financeiro_formas_pagamento', function (Blueprint $table): void {
+            $table->id();
+            $table->string('codigo', 40)->unique();
+            $table->string('nome', 60);
+            $table->boolean('is_cartao')->default(false);
+            $table->boolean('sistema')->default(false);
+            $table->boolean('resumo_enum')->default(false);
+            $table->integer('ordem_exibicao')->default(0);
+            $table->boolean('ativo')->default(true);
+            $table->timestamps();
+        });
+
+        $now = now();
+        DB::table('financeiro_formas_pagamento')->insert(array_map(
+            static fn (array $forma): array => array_merge($forma, [
+                'sistema' => true,
+                'resumo_enum' => true,
+                'ativo' => true,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]),
+            [
+                ['codigo' => 'dinheiro', 'nome' => 'Dinheiro', 'is_cartao' => false, 'ordem_exibicao' => 10],
+                ['codigo' => 'pix', 'nome' => 'Pix', 'is_cartao' => false, 'ordem_exibicao' => 20],
+                ['codigo' => 'cartao_credito', 'nome' => 'Cartão de crédito', 'is_cartao' => true, 'ordem_exibicao' => 30],
+                ['codigo' => 'cartao_debito', 'nome' => 'Cartão de débito', 'is_cartao' => true, 'ordem_exibicao' => 40],
+                ['codigo' => 'boleto', 'nome' => 'Boleto', 'is_cartao' => false, 'ordem_exibicao' => 50],
+                ['codigo' => 'transferencia', 'nome' => 'Transferência', 'is_cartao' => false, 'ordem_exibicao' => 60],
+            ]
+        ));
+
+        Schema::create('financeiro_chaves_pix', function (Blueprint $table): void {
+            $table->id();
+            $table->string('tipo', 20)->default('aleatoria');
+            $table->string('chave', 200)->unique();
+            $table->string('titular', 160)->nullable();
+            $table->string('instituicao', 80)->nullable();
+            $table->boolean('principal')->default(false);
+            $table->boolean('ativo')->default(true);
+            $table->integer('ordem_exibicao')->default(0);
+            $table->timestamps();
+        });
+
         Schema::create('financeiro_cartao_operadoras', function (Blueprint $table): void {
             $table->id();
             $table->string('nome', 120);
@@ -1713,6 +1761,8 @@ trait BuildsLegacyErpSchema
             $table->decimal('acrescimo_percentual', 8, 4)->nullable();
             $table->decimal('total', 12, 2)->default(0);
             $table->string('prazo_execucao', 120)->nullable();
+            $table->unsignedSmallInteger('garantia_dias')->nullable();
+            $table->unsignedTinyInteger('parcelas_sem_juros')->nullable();
             $table->text('observacoes')->nullable();
             $table->text('condicoes')->nullable();
             $table->string('token_publico', 80)->nullable()->unique();
@@ -1754,6 +1804,20 @@ trait BuildsLegacyErpSchema
             $table->decimal('valor_recomendado', 12, 2)->default(0);
             $table->string('modo_precificacao', 30)->nullable();
             $table->timestamps();
+            $table->foreign('orcamento_id')->references('id')->on('orcamentos')->cascadeOnDelete();
+        });
+
+        Schema::create('orcamento_formas_pagamento', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('orcamento_id');
+            $table->unsignedBigInteger('forma_pagamento_id')->nullable();
+            $table->string('forma_codigo', 40);
+            $table->string('forma_nome', 60);
+            $table->boolean('is_cartao')->default(false);
+            $table->integer('ordem')->default(0);
+            $table->timestamps();
+
+            $table->unique(['orcamento_id', 'forma_codigo']);
             $table->foreign('orcamento_id')->references('id')->on('orcamentos')->cascadeOnDelete();
         });
 
