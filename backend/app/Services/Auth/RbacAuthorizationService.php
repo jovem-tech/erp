@@ -35,6 +35,7 @@ class RbacAuthorizationService
         'defeitos',
         'servicos',
         'vendas',
+        'caixa',
         'orcamentos',
         'crm',
         'atendimento_whatsapp',

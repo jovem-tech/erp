@@ -152,6 +152,11 @@ trait BuildsLegacyErpSchema
             ['id' => 13, 'nome' => 'Precificação', 'slug' => 'precificacao', 'icone' => 'bi-calculator', 'ordem_menu' => 46, 'ativo' => 1],
             ['id' => 14, 'nome' => 'Conhecimento', 'slug' => 'conhecimento', 'icone' => 'bi-journal-bookmark-fill', 'ordem_menu' => 75, 'ativo' => 1],
             ['id' => 15, 'nome' => 'Contas e Saldos', 'slug' => 'contas_saldos', 'icone' => 'bi-wallet2', 'ordem_menu' => 47, 'ativo' => 1],
+            // Atenção: em produção o id 15 é `vendas` e `contas_saldos` tem outro id.
+            // Os ids daqui são fixos e independentes — resolva sempre por slug
+            // (é o que grantGroupPermissions faz).
+            ['id' => 16, 'nome' => 'Vendas', 'slug' => 'vendas', 'icone' => 'bi-cart-check', 'ordem_menu' => 15, 'ativo' => 1],
+            ['id' => 17, 'nome' => 'Caixa', 'slug' => 'caixa', 'icone' => 'bi-cash-stack', 'ordem_menu' => 16, 'ativo' => 1],
         ]);
 
         DB::table('permissoes')->insert([
@@ -500,6 +505,70 @@ trait BuildsLegacyErpSchema
             'observacoes' => 'Peça criada para testes',
             'ativo' => 1,
             'status' => 'ativo',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ], $overrides));
+    }
+
+    /**
+     * Venda de balcão já concluída — specs/027-vendas-balcao-pdv.
+     *
+     * A tabela `vendas` vem da migration (não é recriada por este trait), então
+     * aqui só há a fábrica de registro.
+     *
+     * @param  array<string, mixed>  $overrides
+     */
+    protected function createSaleRecord(array $overrides = []): int
+    {
+        return (int) DB::table('vendas')->insertGetId(array_merge([
+            'numero' => 'VD-2608-000001',
+            'status' => 'concluida',
+            'canal' => 'balcao',
+            'cliente_id' => null,
+            'cliente_nome_avulso' => 'Consumidor final',
+            'vendedor_id' => 1,
+            'criado_por' => 1,
+            'data_venda' => now()->toDateString(),
+            'concluida_em' => now(),
+            'subtotal' => 100.00,
+            'desconto' => 0,
+            'desconto_tipo' => 'valor',
+            'acrescimo' => 0,
+            'acrescimo_tipo' => 'valor',
+            'total' => 100.00,
+            'custo_total' => 40.00,
+            'margem_valor' => 60.00,
+            'margem_percentual' => 60.00,
+            'valor_pago' => 100.00,
+            'status_pagamento' => 'pago',
+            'estoque_divergente' => 0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ], $overrides));
+    }
+
+    /**
+     * Turno de caixa aberto — specs/028-caixa-sessoes.
+     *
+     * `caixa_sessoes` vem da migration (não é recriada por este trait), então
+     * aqui só há a fábrica de registro.
+     *
+     * @param  array<string, mixed>  $overrides
+     */
+    protected function createCaixaSessaoRecord(array $overrides = []): int
+    {
+        return (int) DB::table('caixa_sessoes')->insertGetId(array_merge([
+            'conta_financeira_id' => 1,
+            'operador_id' => 1,
+            'status' => 'aberta',
+            'aberto_em' => now(),
+            'aberto_por' => 1,
+            'valor_abertura' => 100.00,
+            'abertura_automatica' => 0,
+            'total_vendas_dinheiro' => 0,
+            'total_suprimentos' => 0,
+            'total_sangrias' => 0,
+            'quantidade_vendas' => 0,
             'created_at' => now(),
             'updated_at' => now(),
         ], $overrides));
@@ -878,6 +947,18 @@ trait BuildsLegacyErpSchema
             $table->string('status', 30)->default('ativo');
             $table->dateTime('encerrado_em')->nullable();
             $table->string('tipo_equipamento', 120)->nullable();
+            // Espelham 2026_08_12_000002_add_sales_support_to_legacy_tables.php.
+            // Este trait roda DEPOIS das migrations e recria a tabela do zero,
+            // então toda coluna nova precisa ser repetida aqui ou some nos testes.
+            $table->string('codigo_barras', 20)->nullable();
+            $table->string('unidade', 6)->default('UN');
+            $table->string('ncm', 8)->nullable();
+            $table->string('cest', 7)->nullable();
+            $table->string('cfop_venda', 4)->nullable();
+            $table->string('origem_mercadoria', 1)->nullable();
+            $table->string('cst_icms', 3)->nullable();
+            $table->string('csosn', 4)->nullable();
+            $table->string('unidade_tributavel', 6)->nullable();
         });
     }
 
@@ -887,6 +968,9 @@ trait BuildsLegacyErpSchema
             $table->id();
             $table->unsignedBigInteger('peca_id');
             $table->unsignedBigInteger('os_id')->nullable();
+            // Idem: espelham a migration 2026_08_12_000002.
+            $table->unsignedBigInteger('venda_id')->nullable();
+            $table->unsignedBigInteger('venda_item_id')->nullable();
             $table->string('tipo', 30);
             $table->integer('quantidade');
             $table->string('motivo', 255)->nullable();

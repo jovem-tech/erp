@@ -88,6 +88,31 @@ class DesktopNavigation
                         'module' => 'orcamentos',
                         'icon' => 'bi-receipt',
                     ],
+                    // Vendas de balcão — specs/027-vendas-balcao-pdv. O PDV
+                    // ganha entrada própria porque é tela de uso constante:
+                    // obrigar a passar pela listagem custaria um clique em
+                    // toda venda.
+                    [
+                        'label' => 'Vendas',
+                        'route' => 'vendas.index',
+                        'module' => 'vendas',
+                        'icon' => 'bi-cart-check',
+                    ],
+                    [
+                        'label' => 'Nova venda (PDV)',
+                        'route' => 'vendas.create',
+                        'module' => 'vendas',
+                        'action' => 'criar',
+                        'icon' => 'bi-upc-scan',
+                    ],
+                    // Turno de caixa — specs/028-caixa-sessoes. Fica junto do
+                    // PDV porque é a mesma pessoa que abre, vende e fecha.
+                    [
+                        'label' => 'Caixa',
+                        'route' => 'caixa.index',
+                        'module' => 'caixa',
+                        'icon' => 'bi-cash-stack',
+                    ],
                 ],
             ],
             [

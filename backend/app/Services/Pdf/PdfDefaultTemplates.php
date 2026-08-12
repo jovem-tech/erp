@@ -26,6 +26,123 @@ class PdfDefaultTemplates
             'os_comprovante_entrega' => ['nome' => 'Comprovante de entrega', 'schema' => self::entrega()],
             'os_devolucao_sem_reparo' => ['nome' => 'Devolução sem reparo', 'schema' => self::devolucao()],
             'os_encerramento' => ['nome' => 'Comprovante de encerramento', 'schema' => self::encerramento()],
+            'venda_comprovante' => ['nome' => 'Comprovante de venda', 'schema' => self::vendaComprovante()],
+            'caixa_fechamento' => ['nome' => 'Fechamento de caixa', 'schema' => self::caixaFechamento()],
+        ];
+    }
+
+    /**
+     * Relatório de fechamento do turno — specs/028-caixa-sessoes.
+     *
+     * Nasce em 80 mm: sai na mesma impressora do cupom, e o operador anexa à
+     * conferência do dia. Sem assinatura — é documento operacional.
+     *
+     * @return array<string, mixed>
+     */
+    private static function caixaFechamento(): array
+    {
+        return [
+            'versao_schema' => 1,
+            'pagina' => array_merge(self::pagina(), ['papel' => '80mm']),
+            'cabecalho' => self::cabecalhoSemOs(),
+            'corpo' => [
+                ['tipo' => 'grade_campos', 'colunas' => 2, 'campos' => [
+                    ['rotulo' => 'Caixa', 'valor' => '{{ caixa.numero }}'],
+                    ['rotulo' => 'Situação', 'valor' => '{{ caixa.status }}'],
+                    ['rotulo' => 'Conta', 'valor' => '{{ caixa.conta }}'],
+                    ['rotulo' => 'Operador', 'valor' => '{{ caixa.operador }}'],
+                    ['rotulo' => 'Abertura', 'valor' => '{{ caixa.aberto_em | data_hora }}'],
+                    ['rotulo' => 'Fechamento', 'valor' => '{{ caixa.fechado_em | data_hora }}'],
+                ]],
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Movimento do turno'],
+                ['tipo' => 'tabela_totais', 'linhas' => [
+                    ['rotulo' => 'Abertura (troco)', 'variavel' => 'caixa.valor_abertura', 'formato' => 'moeda'],
+                    ['rotulo' => 'Vendas em dinheiro', 'variavel' => 'caixa.total_vendas', 'formato' => 'moeda'],
+                    ['rotulo' => 'Suprimentos', 'variavel' => 'caixa.total_suprimentos', 'formato' => 'moeda'],
+                    ['rotulo' => 'Sangrias', 'variavel' => 'caixa.total_sangrias', 'formato' => 'moeda'],
+                ]],
+                ['tipo' => 'condicional', 'se' => ['variavel' => 'caixa.total_sangrias', 'operador' => 'preenchido'], 'blocos' => [
+                    ['tipo' => 'cabecalho_secao', 'texto' => 'Sangrias e suprimentos'],
+                    ['tipo' => 'tabela', 'fonte' => 'movimentos', 'vazio_texto' => 'Nenhum movimento no turno.', 'colunas' => [
+                        ['campo' => 'tipo', 'rotulo' => 'Tipo', 'largura' => 22],
+                        ['campo' => 'motivo', 'rotulo' => 'Motivo'],
+                        ['campo' => 'valor', 'rotulo' => 'Valor', 'formato' => 'moeda', 'alinhamento' => 'direita', 'largura' => 20],
+                    ]],
+                ]],
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Conferência'],
+                ['tipo' => 'tabela_totais', 'linhas' => [
+                    ['rotulo' => 'Esperado em caixa', 'variavel' => 'caixa.valor_esperado', 'formato' => 'moeda'],
+                    ['rotulo' => 'Contado na gaveta', 'variavel' => 'caixa.valor_informado', 'formato' => 'moeda'],
+                    ['rotulo' => 'Diferença', 'variavel' => 'caixa.diferenca', 'formato' => 'moeda', 'destaque' => true],
+                ]],
+                ['tipo' => 'condicional', 'se' => ['variavel' => 'caixa.observacoes', 'operador' => 'preenchido'], 'blocos' => [
+                    ['tipo' => 'cabecalho_secao', 'texto' => 'Observações'],
+                    ['tipo' => 'paragrafo', 'texto' => '{{ caixa.observacoes }}'],
+                ]],
+                ['tipo' => 'assinatura', 'visivel_em' => ['a4'], 'rotulos' => ['{{ caixa.operador }} - Operador'], 'linha_data' => true],
+            ],
+            'rodape' => self::rodape(),
+        ];
+    }
+
+    /**
+     * Cupom não fiscal da venda de balcão — specs/027-vendas-balcao-pdv.
+     *
+     * Nasce em 80 mm porque o uso normal é a impressora térmica do balcão; o
+     * operador pode reimprimir em A4 pela querystring do endpoint. Sem bloco de
+     * assinatura: venda de balcão não é documento assinado.
+     *
+     * @return array<string, mixed>
+     */
+    private static function vendaComprovante(): array
+    {
+        return [
+            'versao_schema' => 1,
+            'pagina' => array_merge(self::pagina(), ['papel' => '80mm']),
+            'cabecalho' => self::cabecalhoSemOs(),
+            'corpo' => [
+                ['tipo' => 'grade_campos', 'colunas' => 2, 'campos' => [
+                    ['rotulo' => 'Venda', 'valor' => '{{ venda.numero }}'],
+                    ['rotulo' => 'Data', 'valor' => '{{ venda.data | data }}'],
+                    ['rotulo' => 'Cliente', 'valor' => '{{ cliente.nome }}'],
+                    ['rotulo' => 'CPF/CNPJ', 'valor' => '{{ cliente.documento | documento }}'],
+                    ['rotulo' => 'Vendedor', 'valor' => '{{ venda.vendedor }}'],
+                    ['rotulo' => 'Pagamento', 'valor' => '{{ venda.status_pagamento }}'],
+                ]],
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Itens'],
+                ['tipo' => 'tabela', 'fonte' => 'itens', 'vazio_texto' => 'Nenhum item nesta venda.', 'colunas' => [
+                    ['campo' => 'descricao', 'rotulo' => 'Descrição'],
+                    ['campo' => 'quantidade', 'rotulo' => 'Qtd', 'formato' => 'inteiro', 'alinhamento' => 'centro', 'largura' => 8],
+                    ['campo' => 'valor_unitario', 'rotulo' => 'Unitário', 'formato' => 'moeda', 'alinhamento' => 'direita', 'largura' => 16],
+                    ['campo' => 'valor_total', 'rotulo' => 'Total', 'formato' => 'moeda', 'alinhamento' => 'direita', 'largura' => 16],
+                ]],
+                ['tipo' => 'tabela_totais', 'linhas' => [
+                    ['rotulo' => 'Subtotal', 'variavel' => 'venda.subtotal', 'formato' => 'moeda'],
+                    ['rotulo' => 'Desconto', 'variavel' => 'venda.desconto', 'formato' => 'moeda'],
+                    ['rotulo' => 'Acréscimo', 'variavel' => 'venda.acrescimo', 'formato' => 'moeda'],
+                    ['rotulo' => 'Total', 'variavel' => 'venda.total', 'formato' => 'moeda', 'destaque' => true],
+                ]],
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Pagamento'],
+                ['tipo' => 'tabela', 'fonte' => 'pagamentos', 'vazio_texto' => 'Venda em aberto — nenhum pagamento registrado.', 'colunas' => [
+                    ['campo' => 'forma_pagamento', 'rotulo' => 'Forma'],
+                    ['campo' => 'parcelas', 'rotulo' => 'Parc.', 'formato' => 'inteiro', 'alinhamento' => 'centro', 'largura' => 10],
+                    ['campo' => 'valor', 'rotulo' => 'Valor', 'formato' => 'moeda', 'alinhamento' => 'direita', 'largura' => 18],
+                ]],
+                ['tipo' => 'condicional', 'se' => ['variavel' => 'venda.troco', 'operador' => 'preenchido'], 'blocos' => [
+                    ['tipo' => 'tabela_totais', 'linhas' => [
+                        ['rotulo' => 'Troco', 'variavel' => 'venda.troco', 'formato' => 'moeda', 'destaque' => true],
+                    ]],
+                ]],
+                ['tipo' => 'condicional', 'se' => ['variavel' => 'venda.valor_aberto', 'operador' => 'preenchido'], 'blocos' => [
+                    ['tipo' => 'observacoes', 'texto' => 'Saldo em aberto: {{ venda.valor_aberto | moeda }}.'],
+                ]],
+                ['tipo' => 'condicional', 'se' => ['variavel' => 'venda.observacoes', 'operador' => 'preenchido'], 'blocos' => [
+                    ['tipo' => 'cabecalho_secao', 'texto' => 'Observações'],
+                    ['tipo' => 'paragrafo', 'texto' => '{{ venda.observacoes }}'],
+                ]],
+                ['tipo' => 'observacoes', 'texto' => 'Documento não fiscal.'],
+            ],
+            'rodape' => self::rodape(),
         ];
     }
 
@@ -100,6 +217,40 @@ class PdfDefaultTemplates
             ['tipo' => 'paragrafo', 'visivel_em' => ['80mm'], 'alinhamento' => 'centro', 'texto' => "{{ empresa.nome_fantasia }}\n{{ empresa.telefone | telefone }}"],
             ['tipo' => 'titulo', 'texto' => '{{ documento.nome }}'],
             ['tipo' => 'paragrafo', 'texto' => 'OS {{ os.numero }} - Emitido em {{ documento.gerado_em | data_hora }}'],
+            ['tipo' => 'divisor'],
+        ];
+    }
+
+    /**
+     * Cabeçalho para documentos que NÃO pertencem a uma ordem de serviço.
+     *
+     * Duas diferenças em relação a cabecalho(): sem a coluna da foto do
+     * equipamento (não existe equipamento) e sem a linha "OS {{ os.numero }}",
+     * que referencia variável fora da allowlist desses tipos — o
+     * PdfSchemaValidator rejeitaria o schema.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function cabecalhoSemOs(): array
+    {
+        return [
+            [
+                'tipo' => 'colunas',
+                'visivel_em' => ['a4'],
+                'larguras' => [30, 70],
+                'colunas' => [
+                    [
+                        ['tipo' => 'imagem', 'token' => '((logo_empresa))', 'largura_max' => 150, 'alinhamento' => 'esquerda'],
+                    ],
+                    [
+                        ['tipo' => 'subtitulo', 'alinhamento' => 'centro', 'texto' => '{{ empresa.nome_fantasia | maiusculas }}'],
+                        ['tipo' => 'paragrafo', 'alinhamento' => 'centro', 'texto' => "CNPJ: {{ empresa.cnpj | documento }}\n{{ empresa.telefone | telefone }} - {{ empresa.email }}\n{{ empresa.endereco }}"],
+                    ],
+                ],
+            ],
+            ['tipo' => 'paragrafo', 'visivel_em' => ['80mm'], 'alinhamento' => 'centro', 'texto' => "{{ empresa.nome_fantasia }}\n{{ empresa.telefone | telefone }}"],
+            ['tipo' => 'titulo', 'texto' => '{{ documento.nome }}'],
+            ['tipo' => 'paragrafo', 'texto' => 'Emitido em {{ documento.gerado_em | data_hora }}'],
             ['tipo' => 'divisor'],
         ];
     }

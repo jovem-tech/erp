@@ -104,6 +104,19 @@ class Financeiro extends Model
         return $this->belongsTo(Client::class, 'cliente_id', 'id');
     }
 
+    /**
+     * Venda de balcão que originou o título.
+     *
+     * Coluna própria (`venda_id`), espelhando `os_id`: `origem_id` NÃO serve
+     * para isso porque, apesar do nome genérico, é um
+     * belongsTo(FinanceiroMovimento) — gravar o id da venda ali carregaria um
+     * movimento alheio de mesmo id. Ver specs/027-vendas-balcao-pdv/spec.md.
+     */
+    public function sale(): BelongsTo
+    {
+        return $this->belongsTo(Sale::class, 'venda_id', 'id');
+    }
+
     public function supplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class, 'fornecedor_id', 'id');

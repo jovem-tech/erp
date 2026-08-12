@@ -34,6 +34,8 @@ use App\Http\Controllers\Api\V1\OrderStatusFlowController;
 use App\Http\Controllers\Api\V1\OsPdfTemplateController;
 use App\Http\Controllers\Api\V1\PdfTemplateEngineController;
 use App\Http\Controllers\Api\V1\PublicDocumentSignatureController;
+use App\Http\Controllers\Api\V1\CaixaController;
+use App\Http\Controllers\Api\V1\SaleController;
 use App\Http\Controllers\Api\V1\ServicoController;
 use App\Http\Controllers\Api\V1\SupplierController;
 use App\Http\Controllers\Api\V1\TeamMemberController;
@@ -146,6 +148,50 @@ Route::prefix('v1')->group(function (): void {
         Route::post('orcamentos/{budget}/rejeitar', [BudgetController::class, 'reject'])->name('api.v1.orcamentos.reject');
         Route::post('orcamentos/{budget}/cancelar', [BudgetController::class, 'cancel'])->name('api.v1.orcamentos.cancel');
         Route::delete('orcamentos/{budget}', [BudgetController::class, 'destroy'])->name('api.v1.orcamentos.destroy');
+
+        // Vendas de balcão (PDV) — specs/027-vendas-balcao-pdv.
+        // As rotas estáticas vêm antes de vendas/{venda} pelo mesmo motivo do
+        // bloco de orçamentos: "form-data" casaria com o parâmetro.
+        // Sem PUT/PATCH/DELETE: venda concluída é imutável, corrige-se cancelando.
+        Route::get('vendas/form-data', [SaleController::class, 'formData'])->name('api.v1.vendas.form_data');
+        Route::get('vendas/itens/buscar', [SaleController::class, 'searchItems'])->name('api.v1.vendas.items.search');
+        Route::get('vendas/clientes', [SaleController::class, 'clientOptions'])->name('api.v1.vendas.clients.index');
+        Route::get('vendas/resumo', [SaleController::class, 'summary'])->name('api.v1.vendas.summary');
+        Route::get('vendas', [SaleController::class, 'index'])->name('api.v1.vendas.index');
+        Route::post('vendas', [SaleController::class, 'store'])->name('api.v1.vendas.store');
+        Route::get('vendas/{venda}', [SaleController::class, 'show'])
+            ->whereNumber('venda')
+            ->name('api.v1.vendas.show');
+        Route::post('vendas/{venda}/cancelar', [SaleController::class, 'cancel'])
+            ->whereNumber('venda')
+            ->name('api.v1.vendas.cancel');
+        Route::get('vendas/{venda}/comprovante', [SaleController::class, 'receipt'])
+            ->whereNumber('venda')
+            ->name('api.v1.vendas.receipt');
+
+        // Turnos de caixa — specs/028-caixa-sessoes.
+        // "atual" antes de {sessao} pelo mesmo motivo de sempre.
+        Route::get('caixa/atual', [CaixaController::class, 'current'])->name('api.v1.caixa.current');
+        Route::get('caixa', [CaixaController::class, 'index'])->name('api.v1.caixa.index');
+        Route::post('caixa/abrir', [CaixaController::class, 'open'])->name('api.v1.caixa.open');
+        Route::get('caixa/{sessao}', [CaixaController::class, 'show'])
+            ->whereNumber('sessao')
+            ->name('api.v1.caixa.show');
+        Route::post('caixa/{sessao}/movimentos', [CaixaController::class, 'storeMovement'])
+            ->whereNumber('sessao')
+            ->name('api.v1.caixa.movements.store');
+        Route::patch('caixa/{sessao}/abertura', [CaixaController::class, 'updateOpening'])
+            ->whereNumber('sessao')
+            ->name('api.v1.caixa.opening.update');
+        Route::post('caixa/{sessao}/fechar', [CaixaController::class, 'close'])
+            ->whereNumber('sessao')
+            ->name('api.v1.caixa.close');
+        Route::post('caixa/{sessao}/reabrir', [CaixaController::class, 'reopen'])
+            ->whereNumber('sessao')
+            ->name('api.v1.caixa.reopen');
+        Route::get('caixa/{sessao}/relatorio', [CaixaController::class, 'report'])
+            ->whereNumber('sessao')
+            ->name('api.v1.caixa.report');
 
         Route::prefix('financeiro/cartoes')
             ->name('api.v1.financeiro.cartoes.')

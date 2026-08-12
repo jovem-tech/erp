@@ -19,6 +19,11 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <!-- Cache de views proprio da suite. Sem isto, testes (usuario do dev)
+             e site (www-data) compilam Blade no MESMO diretorio e quem chegar
+             depois quebra: o teste morre com "touch(): Utime failed" ao tocar
+             arquivo do outro dono, e o site responde 500 pelo mesmo motivo. -->
+        <env name="VIEW_COMPILED_PATH" value="./storage/framework/testing/views"/>
         <!-- APP_URL fixo: sem isto os testes herdam a URL real do .env e o
              self-check de integracoes faz chamada HTTP REAL ao servidor dev
              (fora do Http::fake, que so cobre 127.0.0.1:8000). -->

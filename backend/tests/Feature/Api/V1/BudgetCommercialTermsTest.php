@@ -381,6 +381,48 @@ class BudgetCommercialTermsTest extends TestCase
         $this->assertStringContainsString('data-copy-target="pix-chave-1"', $html);
     }
 
+    public function test_reject_button_stays_bound_to_the_form_that_holds_the_reason_field(): void
+    {
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Público']);
+        $budgetId = $this->createBudgetRecord([
+            'numero' => 'ORC-2608-000202',
+            'cliente_id' => $clientId,
+            'status' => 'aguardando_resposta',
+            'token_publico' => 'token-ordem-botoes',
+            'token_expira_em' => now()->addDays(5),
+            'validade_data' => now()->addDays(5)->toDateString(),
+            'subtotal' => 100.00,
+            'total' => 100.00,
+        ]);
+        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Serviço', 'valor_unitario' => 100.00, 'total' => 100.00]);
+
+        $html = $this->get('/orcamento/token-ordem-botoes')->assertOk()->getContent();
+
+        // Os botões ficam ACIMA do campo de motivo, fora dos formulários. Sem o
+        // atributo `form` eles não enviariam nada — o cliente escreveria o
+        // motivo e ele se perderia no envio.
+        $this->assertStringContainsString('<button type="submit" form="formAprovarProposta"', $html);
+        $this->assertStringContainsString('<button type="submit" form="formRejeitarProposta"', $html);
+        $this->assertStringContainsString('id="formAprovarProposta"', $html);
+        $this->assertStringContainsString('id="formRejeitarProposta"', $html);
+
+        // Ordem exigida: os dois botões, depois o campo de motivo, e o PDF por último.
+        $posBotoes = strpos($html, 'class="decision-actions"');
+        $posMotivo = strpos($html, 'id="motivoRejeicao"');
+        $posPdf = strpos($html, 'class="pdf-row"');
+
+        $this->assertNotFalse($posBotoes);
+        $this->assertNotFalse($posMotivo);
+        $this->assertNotFalse($posPdf);
+        $this->assertLessThan($posMotivo, $posBotoes, 'Os botões devem vir antes do campo de motivo.');
+        $this->assertLessThan($posPdf, $posMotivo, 'O download do PDF deve fechar o bloco, depois do campo de motivo.');
+
+        // O campo continua dentro do formulário de rejeição.
+        $formRejeicao = substr($html, (int) strpos($html, 'id="formRejeitarProposta"'));
+        $formRejeicao = substr($formRejeicao, 0, (int) strpos($formRejeicao, '</form>'));
+        $this->assertStringContainsString('name="motivo_rejeicao"', $formRejeicao);
+    }
+
     public function test_warranty_label_falls_back_to_days_for_legacy_terms(): void
     {
         $this->assertSame('2 anos', Budget::warrantyLabel(730));

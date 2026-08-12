@@ -151,6 +151,15 @@ Rotas novas nos dois apps; reconstruir só um deixa a tela em 500 (ver nota de
     escrita em `storage/app/private`, comparações float/int em
     `FinanceiroMargemTest`).
 
+## Correcao de infraestrutura de teste (v5.24.4.0)
+
+`backend/phpunit.xml` passou a definir `VIEW_COMPILED_PATH` apontando para
+`storage/framework/testing/views`. Antes, suíte e site compilavam Blade no mesmo
+diretório: quem compilasse primeiro virava dono do arquivo e o outro quebrava com
+`touch(): Utime failed: Operation not permitted` — o site com 500 e a suíte com
+41 falhas em massa (todos os testes que renderizam view), sintoma que parece bug
+de feature e não é. Com o diretório próprio, a colisão deixa de existir.
+
 ## Nota de metodo
 
 A comparação de suítes das entregas anteriores (`5.23.x`) usava

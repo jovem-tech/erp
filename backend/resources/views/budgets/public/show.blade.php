@@ -193,6 +193,18 @@
             padding-top: 16px;
             border-top: 1px solid rgba(148, 163, 184, 0.18);
         }
+        /* Decidir vem primeiro: aprovar e rejeitar na mesma linha, com o campo
+           de motivo logo abaixo. Baixar o PDF e' acao secundaria e fecha o
+           bloco, separada por um respiro. */
+        .decision-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 18px;
+        }
+        .decision-actions .btn { flex: 1 1 auto; }
+        .pdf-row { margin-top: 22px; }
+        .danger-text { color: var(--danger); margin-bottom: 0; }
         /* Condicoes comerciais: o cliente precisa achar em 2 segundos como
            paga e por quanto tempo tem garantia. Cartoes curtos em vez de
            paragrafo corrido. */
@@ -521,29 +533,44 @@
                         @endif
                     </p>
 
-                    <div class="buttons">
-                        <a href="{{ route('budgets.public.pdf', ['token' => request()->route('token')]) }}" class="btn btn-secondary">Baixar PDF</a>
-                    </div>
-
                     @if (!empty($budget['can_respond']))
-                        <form method="post" action="{{ route('budgets.public.approve', ['token' => request()->route('token')]) }}" class="action-row" style="margin-top: 16px;">
+                        {{-- Os dois botoes ficam na MESMA linha, acima do campo
+                             de motivo. Como aninhar <form> e' invalido, cada
+                             form fica sem botao dentro e os botoes se ligam a
+                             eles pelo atributo HTML `form` — sem isso, mover o
+                             "Rejeitar" para cima do textarea faria o motivo
+                             digitado deixar de ser enviado. --}}
+                        <form
+                            id="formAprovarProposta"
+                            method="post"
+                            action="{{ route('budgets.public.approve', ['token' => request()->route('token')]) }}"
+                        >
                             @csrf
                             <input type="hidden" name="resposta_cliente" value="Aprovado pelo cliente.">
-                            <button type="submit" class="btn btn-primary">Aprovar proposta</button>
                         </form>
 
-                        <form method="post" action="{{ route('budgets.public.reject', ['token' => request()->route('token')]) }}" style="margin-top: 16px;">
+                        <div class="decision-actions">
+                            <button type="submit" form="formAprovarProposta" class="btn btn-primary">Aprovar proposta</button>
+                            <button type="submit" form="formRejeitarProposta" class="btn btn-danger">Rejeitar proposta</button>
+                        </div>
+
+                        <form
+                            id="formRejeitarProposta"
+                            method="post"
+                            action="{{ route('budgets.public.reject', ['token' => request()->route('token')]) }}"
+                        >
                             @csrf
                             <label class="meta-label" for="motivoRejeicao">Se desejar, informe o motivo da rejeição</label>
                             <textarea id="motivoRejeicao" name="motivo_rejeicao" placeholder="Ex.: vou avaliar outra alternativa, preciso rever o valor, não autorizo neste momento..."></textarea>
                             @error('motivo_rejeicao')
-                                <p class="helper" style="color: var(--danger); margin-bottom: 0;">{{ $message }}</p>
+                                <p class="helper danger-text">{{ $message }}</p>
                             @enderror
-                            <div class="buttons">
-                                <button type="submit" class="btn btn-danger">Rejeitar proposta</button>
-                            </div>
                         </form>
                     @endif
+
+                    <div class="pdf-row">
+                        <a href="{{ route('budgets.public.pdf', ['token' => request()->route('token')]) }}" class="btn btn-secondary">Baixar PDF</a>
+                    </div>
                 </div>
             </aside>
         </section>

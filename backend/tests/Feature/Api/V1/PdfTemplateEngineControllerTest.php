@@ -40,7 +40,9 @@ class PdfTemplateEngineControllerTest extends TestCase
 
         $response = $this->getJson('/api/v1/knowledge/pdf-engine/types');
 
-        $response->assertOk()->assertJsonCount(7, 'data.tipos');
+        // 7 documentos de OS + comprovante de venda (specs/027) + fechamento de
+        // caixa (specs/028), ambos também editáveis nesta tela.
+        $response->assertOk()->assertJsonCount(9, 'data.tipos');
 
         $abertura = collect($response->json('data.tipos'))->firstWhere('tipo_codigo', 'os_abertura');
         $this->assertNotNull($abertura);
