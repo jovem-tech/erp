@@ -43,6 +43,88 @@ class VendaTest extends TestCase
             ->assertSee('vendas-pdv.js', false);
     }
 
+    public function test_pdv_ocupa_a_tela_inteira_com_a_sidebar_recolhida(): void
+    {
+        Http::fake($this->fixtures());
+
+        $this->withSession($this->desktopSession(['vendas' => ['visualizar', 'criar']]))
+            ->get('/vendas/nova')
+            ->assertOk()
+            // Sidebar em modo sanduíche, como na listagem de OS: o PDV precisa
+            // da largura inteira e não pode exigir rolagem.
+            ->assertSee('desktop-main is-full', false)
+            ->assertSee('is-hidden', false)
+            // Três colunas: cliente/busca, carrinho ao centro, fechamento.
+            ->assertSee('pdv-grid', false)
+            ->assertSee('pdv-col-esquerda', false)
+            ->assertSee('pdv-col-centro', false)
+            ->assertSee('pdv-col-lateral', false)
+            // Só o carrinho rola por dentro.
+            ->assertSee('pdv-itens-scroll', false);
+    }
+
+    public function test_pdv_oferece_modo_terminal_em_tela_cheia(): void
+    {
+        Http::fake($this->fixtures());
+
+        $this->withSession($this->desktopSession(['vendas' => ['visualizar', 'criar']]))
+            ->get('/vendas/nova')
+            ->assertOk()
+            // F3 é o atalho; o botão existe porque em tablet não há tecla e a
+            // Fullscreen API exige um gesto do usuário.
+            ->assertSee('id="pdvTelaCheia"', false)
+            ->assertSee('Tela cheia (F3)', false)
+            ->assertSee('F3 tela cheia')
+            // O CSS do modo terminal precisa esconder topbar e rodapé.
+            ->assertSee('.pdv-modo-terminal .desktop-topbar', false)
+            ->assertSee('.pdv-modo-terminal .desktop-system-footer', false);
+    }
+
+    public function test_carrinho_fica_na_coluna_central(): void
+    {
+        Http::fake($this->fixtures());
+
+        $html = $this->withSession($this->desktopSession(['vendas' => ['visualizar', 'criar']]))
+            ->get('/vendas/nova')
+            ->assertOk()
+            ->getContent();
+
+        // Busca pelo atributo, não pelo nome da classe: o nome também aparece
+        // no bloco <style> no topo da página e daria posição errada.
+        $centro = strpos($html, 'class="pdv-col-centro"');
+        $lateral = strpos($html, 'class="pdv-col-lateral"');
+        $tabela = strpos($html, 'id="pdvTabelaItens"');
+
+        $this->assertNotFalse($centro, 'Coluna central ausente.');
+        $this->assertNotFalse($lateral, 'Coluna de fechamento ausente.');
+
+        // A tabela de itens precisa nascer dentro da coluna central — é ela que
+        // cresce conforme a venda acontece.
+        $this->assertGreaterThan($centro, $tabela, 'A tabela de itens deve vir depois da abertura da coluna central.');
+        $this->assertLessThan($lateral, $tabela, 'A tabela de itens não pode cair na coluna de fechamento.');
+    }
+
+    public function test_pdv_agrupa_cliente_e_vendedor_acima_da_busca(): void
+    {
+        Http::fake($this->fixtures());
+
+        $html = $this->withSession($this->desktopSession(['vendas' => ['visualizar', 'criar']]))
+            ->get('/vendas/nova')
+            ->assertOk()
+            ->getContent();
+
+        // A ordem importa: quem compra e quem vende ficam no topo, a busca
+        // logo abaixo e o carrinho por último.
+        $posCliente = strpos($html, 'id="pdvCliente"');
+        $posVendedor = strpos($html, 'id="pdvVendedor"');
+        $posBusca = strpos($html, 'id="pdvBusca"');
+        $posItens = strpos($html, 'id="pdvTabelaItens"');
+
+        $this->assertLessThan($posVendedor, $posCliente);
+        $this->assertLessThan($posBusca, $posVendedor);
+        $this->assertLessThan($posItens, $posBusca);
+    }
+
     public function test_finalizar_venda_envia_payload_normalizado_para_a_api(): void
     {
         Http::fake($this->fixtures());

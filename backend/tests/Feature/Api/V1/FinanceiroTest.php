@@ -39,9 +39,9 @@ class FinanceiroTest extends TestCase
         $response->assertOk()
             ->assertJsonPath('data.dre_grupos.0.nome', 'Receita Operacional')
             ->assertJsonCount(5, 'data.dre_grupos')
-            // 12 categorias do seed original + "Venda de balcão", criada pela
-            // migration do módulo de vendas (specs/027-vendas-balcao-pdv).
-            ->assertJsonCount(13, 'data.categorias');
+            // 12 do seed original + "Venda de balcão" (specs/027) +
+            // "Devolução de venda" (specs/029).
+            ->assertJsonCount(14, 'data.categorias');
     }
 
     public function test_receivable_without_client_or_order_is_rejected(): void

@@ -28,6 +28,51 @@ class PdfDefaultTemplates
             'os_encerramento' => ['nome' => 'Comprovante de encerramento', 'schema' => self::encerramento()],
             'venda_comprovante' => ['nome' => 'Comprovante de venda', 'schema' => self::vendaComprovante()],
             'caixa_fechamento' => ['nome' => 'Fechamento de caixa', 'schema' => self::caixaFechamento()],
+            'venda_devolucao' => ['nome' => 'Comprovante de devolucao', 'schema' => self::vendaDevolucao()],
+        ];
+    }
+
+    /**
+     * Cupom da devolucao - specs/029-devolucao-troca.
+     *
+     * @return array<string, mixed>
+     */
+    private static function vendaDevolucao(): array
+    {
+        return [
+            'versao_schema' => 1,
+            'pagina' => array_merge(self::pagina(), ['papel' => '80mm']),
+            'cabecalho' => self::cabecalhoSemOs(),
+            'corpo' => [
+                ['tipo' => 'grade_campos', 'colunas' => 2, 'campos' => [
+                    ['rotulo' => 'Devolucao', 'valor' => '{{ devolucao.numero }}'],
+                    ['rotulo' => 'Data', 'valor' => '{{ devolucao.data | data }}'],
+                    ['rotulo' => 'Venda de origem', 'valor' => '{{ devolucao.venda_numero }}'],
+                    ['rotulo' => 'Cliente', 'valor' => '{{ cliente.nome }}'],
+                    ['rotulo' => 'Operador', 'valor' => '{{ devolucao.operador }}'],
+                ]],
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Itens devolvidos'],
+                ['tipo' => 'tabela', 'fonte' => 'itens', 'vazio_texto' => 'Nenhum item devolvido.', 'colunas' => [
+                    ['campo' => 'descricao', 'rotulo' => 'Descricao'],
+                    ['campo' => 'quantidade', 'rotulo' => 'Qtd', 'formato' => 'inteiro', 'alinhamento' => 'centro', 'largura' => 8],
+                    ['campo' => 'valor_total', 'rotulo' => 'Valor', 'formato' => 'moeda', 'alinhamento' => 'direita', 'largura' => 18],
+                ]],
+                ['tipo' => 'tabela_totais', 'linhas' => [
+                    ['rotulo' => 'Total devolvido', 'variavel' => 'devolucao.valor_devolvido', 'formato' => 'moeda', 'destaque' => true],
+                ]],
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Reembolso'],
+                ['tipo' => 'tabela', 'fonte' => 'reembolsos', 'vazio_texto' => 'Sem reembolso em dinheiro.', 'colunas' => [
+                    ['campo' => 'forma_pagamento', 'rotulo' => 'Forma'],
+                    ['campo' => 'valor', 'rotulo' => 'Valor', 'formato' => 'moeda', 'alinhamento' => 'direita', 'largura' => 20],
+                ]],
+                ['tipo' => 'condicional', 'se' => ['variavel' => 'devolucao.valor_abatido', 'operador' => 'preenchido'], 'blocos' => [
+                    ['tipo' => 'observacoes', 'texto' => 'Abatido da divida em aberto: {{ devolucao.valor_abatido | moeda }}.'],
+                ]],
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Motivo'],
+                ['tipo' => 'paragrafo', 'texto' => '{{ devolucao.motivo }}'],
+                ['tipo' => 'observacoes', 'texto' => 'Documento nao fiscal.'],
+            ],
+            'rodape' => self::rodape(),
         ];
     }
 

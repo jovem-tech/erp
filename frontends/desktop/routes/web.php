@@ -29,6 +29,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicDocumentSignatureController;
 use App\Http\Controllers\ReportedDefectController;
 use App\Http\Controllers\CaixaController;
+use App\Http\Controllers\DevolucaoController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\ServicoController;
 use App\Http\Controllers\StockController;
@@ -284,6 +285,31 @@ Route::middleware('desktop.auth')->group(function (): void {
         ->whereNumber('venda')
         ->middleware('desktop.permission:vendas,excluir')
         ->name('vendas.cancel');
+
+    // Devolução e troca — specs/029-devolucao-troca. Devolver é ação do módulo
+    // `vendas`, então não há permissão própria.
+    Route::get('/devolucoes/ajuda', [DevolucaoController::class, 'help'])
+        ->middleware('desktop.permission:vendas,visualizar')
+        ->name('devolucoes.help');
+    Route::get('/devolucoes', [DevolucaoController::class, 'index'])
+        ->middleware('desktop.permission:vendas,visualizar')
+        ->name('devolucoes.index');
+    Route::get('/devolucoes/{devolucao}', [DevolucaoController::class, 'show'])
+        ->whereNumber('devolucao')
+        ->middleware('desktop.permission:vendas,visualizar')
+        ->name('devolucoes.show');
+    Route::get('/devolucoes/{devolucao}/comprovante', [DevolucaoController::class, 'receipt'])
+        ->whereNumber('devolucao')
+        ->middleware('desktop.permission:vendas,visualizar')
+        ->name('devolucoes.receipt');
+    Route::get('/vendas/{venda}/devolver', [DevolucaoController::class, 'create'])
+        ->whereNumber('venda')
+        ->middleware('desktop.permission:vendas,criar')
+        ->name('devolucoes.create');
+    Route::post('/vendas/{venda}/devolucoes', [DevolucaoController::class, 'store'])
+        ->whereNumber('venda')
+        ->middleware('desktop.permission:vendas,criar')
+        ->name('devolucoes.store');
 
     // Turnos de caixa — specs/028-caixa-sessoes.
     // Estáticas antes de /caixa/{sessao}, como sempre.

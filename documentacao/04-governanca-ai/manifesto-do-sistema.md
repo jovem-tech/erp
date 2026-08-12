@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-08-11T23:38:25-03:00`
-- Versao do sistema: `5.26.0`
+- Gerado em: `2026-08-12T11:23:05-03:00`
+- Versao do sistema: `5.28.0`
 - Versao da API: `1.6.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -192,6 +192,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-08-11-integridade-leitura-pdf-botao-aprovacao-nome-documento.md` - Integridade de leitura no motor de PDF, botão de aprovação e nome do documento editável
 - `documentacao/07-novas-implementacoes/2026-08-12-modulo-vendas-balcao-pdv.md` - Módulo de Vendas (balcão/PDV)
 - `documentacao/07-novas-implementacoes/2026-08-13-modulo-caixa-sessoes.md` - Módulo de Caixa (turnos, sangria e conferência)
+- `documentacao/07-novas-implementacoes/2026-08-14-devolucao-troca-venda.md` - Devolução e troca de venda
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 - `documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md` - Revisão de segurança — Fluxo de orçamento na assistência (com OS)
 
@@ -235,4 +236,5 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/026-condicoes-comerciais-orcamento-garantia` - Condições comerciais do orçamento e garantia da OS | artefatos: spec
 - `specs/027-vendas-balcao-pdv` - Módulo de Vendas (balcão/PDV) | artefatos: spec
 - `specs/028-caixa-sessoes` - Sessões de caixa (abertura, sangria e fechamento) | artefatos: spec
+- `specs/029-devolucao-troca` - Devolução e troca de venda | artefatos: spec
 

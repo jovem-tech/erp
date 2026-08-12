@@ -8,6 +8,7 @@ use App\Services\Pdf\Contexts\CaixaPdfContextFactory;
 use App\Services\Pdf\Contexts\OrderClosurePdfContextFactory;
 use App\Services\Pdf\Contexts\OrderPdfContextFactory;
 use App\Services\Pdf\Contexts\SalePdfContextFactory;
+use App\Services\Pdf\Contexts\SaleReturnPdfContextFactory;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -349,6 +350,44 @@ class PdfTemplateRegistry
                         'tipo' => 'string',
                         'motivo' => 'string',
                         'responsavel' => 'string',
+                        'valor' => 'moeda',
+                    ],
+                ],
+                'message_template_code' => null,
+                'automatic_triggers' => [],
+            ],
+            // Devolucao de venda - specs/029-devolucao-troca.
+            'venda_devolucao' => [
+                'codigo' => 'venda_devolucao',
+                'nome' => 'Comprovante de devolucao',
+                'descricao' => 'Cupom nao fiscal da devolucao, com itens devolvidos e o reembolso por forma de pagamento.',
+                'legacy_tipo' => null,
+                'context_factory' => SaleReturnPdfContextFactory::class,
+                'variables' => array_merge(self::COMMON_VARIABLES, [
+                    'devolucao.numero' => 'string',
+                    'devolucao.data' => 'data',
+                    'devolucao.motivo' => 'string',
+                    'devolucao.operador' => 'string',
+                    'devolucao.venda_numero' => 'string',
+                    'devolucao.venda_data' => 'data',
+                    'devolucao.subtotal_itens' => 'moeda',
+                    'devolucao.valor_devolvido' => 'moeda',
+                    'devolucao.valor_reembolsado' => 'moeda',
+                    'devolucao.valor_abatido' => 'moeda',
+                    'cliente.nome' => 'string',
+                    'cliente.telefone' => 'telefone',
+                    'cliente.documento' => 'documento',
+                ]),
+                'collections' => [
+                    'itens' => [
+                        'codigo' => 'string',
+                        'descricao' => 'string',
+                        'quantidade' => 'inteiro',
+                        'valor_unitario' => 'moeda',
+                        'valor_total' => 'moeda',
+                    ],
+                    'reembolsos' => [
+                        'forma_pagamento' => 'string',
                         'valor' => 'moeda',
                     ],
                 ],

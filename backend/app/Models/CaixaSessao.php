@@ -40,6 +40,7 @@ class CaixaSessao extends Model
         'total_vendas_dinheiro' => 'float',
         'total_suprimentos' => 'float',
         'total_sangrias' => 'float',
+        'total_devolucoes_dinheiro' => 'float',
         'quantidade_vendas' => 'integer',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',

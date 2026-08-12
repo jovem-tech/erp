@@ -364,7 +364,8 @@ class CaixaSessionService
                 (float) $locked->valor_abertura
                 + $totals['vendas_dinheiro']
                 + $totals['suprimentos']
-                - $totals['sangrias'],
+                - $totals['sangrias']
+                - $totals['devolucoes_dinheiro'],
                 2
             );
 
@@ -380,6 +381,7 @@ class CaixaSessionService
                 'total_vendas_dinheiro' => $totals['vendas_dinheiro'],
                 'total_suprimentos' => $totals['suprimentos'],
                 'total_sangrias' => $totals['sangrias'],
+                'total_devolucoes_dinheiro' => $totals['devolucoes_dinheiro'],
                 'quantidade_vendas' => $totals['quantidade_vendas'],
                 'observacoes_fechamento' => trim((string) ($attributes['observacoes'] ?? '')) ?: null,
             ])->save();
@@ -446,13 +448,14 @@ class CaixaSessionService
             (float) $session->valor_abertura
             + $totals['vendas_dinheiro']
             + $totals['suprimentos']
-            - $totals['sangrias'],
+            - $totals['sangrias']
+            - $totals['devolucoes_dinheiro'],
             2
         );
     }
 
     /**
-     * @return array{vendas_dinheiro: float, suprimentos: float, sangrias: float, quantidade_vendas: int}
+     * @return array{vendas_dinheiro: float, suprimentos: float, sangrias: float, devolucoes_dinheiro: float, quantidade_vendas: int}
      */
     public function sessionTotals(CaixaSessao $session): array
     {
@@ -472,11 +475,20 @@ class CaixaSessionService
             ->selectRaw("COALESCE(SUM(CASE WHEN tipo = 'sangria' THEN valor ELSE 0 END), 0) as sangrias")
             ->first();
 
+        // Devolução em dinheiro tira nota da gaveta do turno em que ela
+        // acontece, não do turno da venda original (specs/029-devolucao-troca).
+        $devolucoes = DB::table('venda_devolucao_pagamentos')
+            ->join('venda_devolucoes', 'venda_devolucoes.id', '=', 'venda_devolucao_pagamentos.venda_devolucao_id')
+            ->where('venda_devolucoes.caixa_sessao_id', (int) $session->id)
+            ->where('venda_devolucao_pagamentos.forma_pagamento', 'dinheiro')
+            ->sum('venda_devolucao_pagamentos.valor');
+
         return [
             'vendas_dinheiro' => round((float) ($sales->total ?? 0), 2),
             'quantidade_vendas' => (int) ($sales->quantidade ?? 0),
             'suprimentos' => round((float) ($movements->suprimentos ?? 0), 2),
             'sangrias' => round((float) ($movements->sangrias ?? 0), 2),
+            'devolucoes_dinheiro' => round((float) $devolucoes, 2),
         ];
     }
 
@@ -543,6 +555,7 @@ class CaixaSessionService
                 'vendas_dinheiro' => (float) $session->total_vendas_dinheiro,
                 'suprimentos' => (float) $session->total_suprimentos,
                 'sangrias' => (float) $session->total_sangrias,
+                'devolucoes_dinheiro' => (float) $session->total_devolucoes_dinheiro,
                 'quantidade_vendas' => (int) $session->quantidade_vendas,
             ];
 
@@ -552,6 +565,7 @@ class CaixaSessionService
             'total_vendas_dinheiro' => $totals['vendas_dinheiro'],
             'total_suprimentos' => $totals['suprimentos'],
             'total_sangrias' => $totals['sangrias'],
+            'total_devolucoes_dinheiro' => $totals['devolucoes_dinheiro'],
             'quantidade_vendas' => $totals['quantidade_vendas'],
             'movimentos' => $session->movements->map(static fn (CaixaMovimento $m): array => [
                 'id' => (int) $m->id,
