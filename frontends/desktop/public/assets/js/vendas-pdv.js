@@ -472,10 +472,45 @@
         /* Atalhos                                                             */
         /* ------------------------------------------------------------------ */
 
+        // Modo terminal: tela cheia de verdade (sem barra do navegador), como
+        // num caixa de supermercado. A classe no <body> é o que faz o CSS
+        // esconder topbar e rodapé e esticar a grade.
+        const alternarTelaCheia = () => {
+            if (document.fullscreenElement) {
+                document.exitFullscreen?.();
+                return;
+            }
+
+            // Só funciona a partir de um gesto do usuário — a tecla conta.
+            const alvo = document.documentElement;
+            (alvo.requestFullscreen?.() || Promise.reject()).catch(() => {
+                // Navegador recusou (permissão/iframe): ao menos entra no modo
+                // enxuto, escondendo topbar e rodapé.
+                document.body.classList.toggle('pdv-modo-terminal');
+                window.dispatchEvent(new Event('resize'));
+            });
+        };
+
+        document.addEventListener('fullscreenchange', () => {
+            document.body.classList.toggle('pdv-modo-terminal', Boolean(document.fullscreenElement));
+            buscaInput.focus();
+        });
+
+        const botaoTelaCheia = document.getElementById('pdvTelaCheia');
+        if (botaoTelaCheia) botaoTelaCheia.addEventListener('click', alternarTelaCheia);
+
         document.addEventListener('keydown', (evento) => {
             if (evento.key === 'F2') {
                 evento.preventDefault();
                 if (!finalizarBtn.disabled) finalizarBtn.click();
+                return;
+            }
+
+            if (evento.key === 'F3') {
+                // O navegador usa F3 para "localizar próximo"; sem isto a busca
+                // nativa abre por cima do PDV.
+                evento.preventDefault();
+                alternarTelaCheia();
                 return;
             }
 
@@ -485,12 +520,18 @@
                 return;
             }
 
-            if (evento.key === 'Escape' && itensBody.querySelectorAll('.pdv-item').length > 0) {
-                evento.preventDefault();
-                itensBody.innerHTML = '';
-                pagamentosBox.innerHTML = '';
-                recalcular();
-                buscaInput.focus();
+            if (evento.key === 'Escape') {
+                // Em tela cheia o Esc pertence ao navegador (é como se sai
+                // dela). Limpar o carrinho junto seria uma perda silenciosa.
+                if (document.fullscreenElement) return;
+
+                if (itensBody.querySelectorAll('.pdv-item').length > 0) {
+                    evento.preventDefault();
+                    itensBody.innerHTML = '';
+                    pagamentosBox.innerHTML = '';
+                    recalcular();
+                    buscaInput.focus();
+                }
             }
         });
 

@@ -39,6 +39,8 @@ tags:
     description: Ordens de serviço, status e anexos autenticados.
   - name: Orçamentos
     description: Fluxo comercial de orçamentos com catalogo, itens e histórico.
+  - name: Devolucoes
+    description: Devolucao e troca de venda, com reembolso pela forma original e retorno de estoque.
   - name: Caixa
     description: Turnos de caixa com abertura, sangria, suprimento e conferencia de fechamento.
   - name: Vendas
@@ -330,6 +332,181 @@ components:
           type: string
           nullable: true
           example: Item com garantia de 90 dias.
+
+    SaleReturnSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        numero:
+          type: string
+          example: DV-2608-000001
+        status:
+          type: string
+        venda_id:
+          type: integer
+        venda_numero:
+          type: string
+        cliente_nome:
+          type: string
+        data_devolucao:
+          type: string
+          format: date
+        motivo:
+          type: string
+        valor_devolvido:
+          type: number
+          format: float
+          description: Credito total do cliente pelos itens devolvidos.
+        valor_reembolsado:
+          type: number
+          format: float
+          description: >
+            Dinheiro que efetivamente voltou. Numa venda fiada e menor que o
+            credito: nao se devolve o que nunca foi pago.
+        valor_abatido:
+          type: number
+          format: float
+          description: Parte do credito que abateu a divida em aberto.
+        valor_taxa_nao_estornada:
+          type: number
+          format: float
+          description: >
+            Taxa de cartao que a operadora nao devolve. Informativa: a despesa ja
+            foi lancada na venda e nao e revertida, para nao contar duas vezes.
+        criado_por_nome:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    SaleReturnDetail:
+      allOf:
+        - $ref: "#/components/schemas/SaleReturnSummary"
+        - type: object
+          properties:
+            subtotal_itens:
+              type: number
+              format: float
+            custo_devolvido:
+              type: number
+              format: float
+            caixa_sessao_id:
+              type: integer
+              nullable: true
+              description: Turno de onde o dinheiro saiu (o aberto na devolucao).
+            financeiro_id:
+              type: integer
+              nullable: true
+            venda_troca_id:
+              type: integer
+              nullable: true
+            venda_troca_numero:
+              type: string
+            itens:
+              type: array
+              items:
+                $ref: "#/components/schemas/SaleReturnItem"
+            pagamentos:
+              type: array
+              items:
+                $ref: "#/components/schemas/SaleReturnPayment"
+
+    SaleReturnItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        venda_item_id:
+          type: integer
+        descricao:
+          type: string
+        codigo:
+          type: string
+        quantidade:
+          type: number
+          format: float
+        valor_unitario:
+          type: number
+          format: float
+        valor_total:
+          type: number
+          format: float
+        valor_reembolsado:
+          type: number
+          format: float
+          description: Ja com o rateio do desconto geral da venda aplicado.
+        retorna_estoque:
+          type: boolean
+        observacoes:
+          type: string
+          nullable: true
+
+    SaleReturnPayment:
+      type: object
+      properties:
+        id:
+          type: integer
+        forma_pagamento:
+          type: string
+        valor:
+          type: number
+          format: float
+        valor_taxa_nao_estornada:
+          type: number
+          format: float
+        conta_financeira_id:
+          type: integer
+          nullable: true
+        movimento_id:
+          type: integer
+          nullable: true
+
+    SaleReturnStoreInput:
+      type: object
+      additionalProperties: false
+      required:
+        - motivo
+        - itens
+      properties:
+        creation_request_id:
+          type: string
+          format: uuid
+        motivo:
+          type: string
+          minLength: 3
+          maxLength: 2000
+        itens:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - venda_item_id
+              - quantidade
+            properties:
+              venda_item_id:
+                type: integer
+              quantidade:
+                type: number
+                minimum: 0.001
+                description: >
+                  Limitada ao saldo devolvivel do item. Precisa ser inteira
+                  quando o item volta ao estoque.
+              observacoes:
+                type: string
+                maxLength: 1000
+        venda_troca_id:
+          type: integer
+          description: Troca - a venda nova que o cliente levou no lugar.
+        admin_email:
+          type: string
+          format: email
+          description: Exigido quando a venda esta fora do prazo livre.
+        admin_password:
+          type: string
+          format: password
 
     CaixaSessaoSummary:
       type: object
@@ -6721,6 +6898,239 @@ paths:
           $ref: "#/components/responses/ValidationError"
         "500":
           $ref: "#/components/responses/ServerError"
+
+  /devolucoes:
+    get:
+      tags:
+        - Devolucoes
+      summary: Listar devolucoes.
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+        - $ref: "#/components/parameters/SearchParam"
+        - name: venda_id
+          in: query
+          schema:
+            type: integer
+        - name: data_inicio
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: data_fim
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Lista paginada de devolucoes.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          devolucoes:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/SaleReturnSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /devolucoes/{devolucao}:
+    parameters:
+      - name: devolucao
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags:
+        - Devolucoes
+      summary: Detalhar devolucao.
+      responses:
+        "200":
+          description: Devolucao com itens e reembolsos.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          devolucao:
+                            $ref: "#/components/schemas/SaleReturnDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /devolucoes/{devolucao}/comprovante:
+    parameters:
+      - name: devolucao
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: formato
+        in: query
+        schema:
+          type: string
+          enum:
+            - 80mm
+            - a4
+    get:
+      tags:
+        - Devolucoes
+      summary: Comprovante da devolucao (documento nao fiscal).
+      responses:
+        "200":
+          description: PDF do comprovante.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: DEVOLUCAO_COMPROVANTE_INDISPONIVEL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /vendas/{venda}/devolvivel:
+    parameters:
+      - name: venda
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags:
+        - Devolucoes
+      summary: Saldo devolvivel da venda.
+      description: >
+        Quanto ainda pode voltar, por item, com o reembolso unitario ja
+        proporcional ao desconto geral que a venda teve. Tambem informa se a
+        venda esta fora do prazo livre e exige autorizacao.
+      responses:
+        "200":
+          description: Itens com saldo devolvivel.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          venda:
+                            type: object
+                            additionalProperties: true
+                          itens:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+                          exige_autorizacao:
+                            type: boolean
+                          prazo_livre_dias:
+                            type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /vendas/{venda}/devolucoes:
+    parameters:
+      - name: venda
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      tags:
+        - Devolucoes
+      summary: Registrar devolucao (total ou parcial).
+      description: >
+        Devolve o estoque das pecas que baixaram na venda, cria o titulo a pagar
+        "Devolucao de venda" e reembolsa pela mesma forma em que o dinheiro
+        entrou, rateado entre os pagamentos originais. Devolucao em especie sai
+        da gaveta do turno de caixa aberto no momento. A receita original NAO e
+        estornada, e a despesa da taxa de cartao NAO e revertida.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaleReturnStoreInput"
+      responses:
+        "201":
+          description: Devolucao registrada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          devolucao:
+                            $ref: "#/components/schemas/SaleReturnDetail"
+                          idempotent_replay:
+                            type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: DEVOLUCAO_IDEMPOTENCY_CONFLICT.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          description: >
+            DEVOLUCAO_INVALIDA (venda cancelada, saldo devolvivel excedido,
+            quantidade fracionada em item de estoque),
+            DEVOLUCAO_ADMIN_AUTH_REQUIRED / DEVOLUCAO_ADMIN_AUTH_INVALID quando
+            a venda esta fora do prazo livre, ou DEVOLUCAO_TROCA_INVALIDA.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: DEVOLUCAO_ADMIN_AUTH_RATE_LIMITED.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 
   /caixa/atual:
     get:

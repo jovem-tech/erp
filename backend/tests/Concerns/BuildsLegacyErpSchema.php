@@ -548,6 +548,33 @@ trait BuildsLegacyErpSchema
     }
 
     /**
+     * Devolução de venda — specs/029-devolucao-troca.
+     *
+     * `venda_devolucoes` vem da migration (não é recriada por este trait).
+     *
+     * @param  array<string, mixed>  $overrides
+     */
+    protected function createSaleReturnRecord(array $overrides = []): int
+    {
+        return (int) DB::table('venda_devolucoes')->insertGetId(array_merge([
+            'numero' => 'DV-2608-000001',
+            'venda_id' => 1,
+            'status' => 'concluida',
+            'data_devolucao' => now()->toDateString(),
+            'motivo' => 'Devolução criada para testes',
+            'subtotal_itens' => 50.00,
+            'valor_devolvido' => 50.00,
+            'valor_reembolsado' => 50.00,
+            'valor_abatido' => 0,
+            'custo_devolvido' => 20.00,
+            'valor_taxa_nao_estornada' => 0,
+            'criado_por' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ], $overrides));
+    }
+
+    /**
      * Turno de caixa aberto — specs/028-caixa-sessoes.
      *
      * `caixa_sessoes` vem da migration (não é recriada por este trait), então

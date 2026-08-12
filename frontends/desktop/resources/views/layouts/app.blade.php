@@ -5,7 +5,10 @@
         'warning' => session('warning'),
         'info' => session('info'),
     ];
-    $desktopSidebarHidden = $desktopSidebarHidden ?? request()->routeIs('orders.index', 'orders.create');
+    // Telas operacionais de tela cheia: a sidebar vira menu sanduíche para
+    // liberar largura. O PDV entra aqui porque precisa caber na tela sem
+    // rolagem (specs/027-vendas-balcao-pdv).
+    $desktopSidebarHidden = $desktopSidebarHidden ?? request()->routeIs('orders.index', 'orders.create', 'vendas.create');
     $desktopSidebarCollapsed = $desktopSidebarCollapsed ?? false;
     $desktopEmbedded = (bool) ($desktopEmbedded ?? $embedded ?? request()->boolean('embedded'));
     $desktopAuthenticatedUser = \App\Support\DesktopSession::user();

@@ -57,6 +57,13 @@ class PdfGenerationServiceTest extends TestCase
                     ['session' => \App\Models\CaixaSessao::query()->findOrFail($this->createCaixaSessaoRecord())],
                     ['unsigned_review' => true],
                 ],
+                // Devolução de venda (specs/029-devolucao-troca).
+                'venda_devolucao' => [
+                    ['return' => \App\Models\SaleReturn::query()->findOrFail(
+                        $this->createSaleReturnRecord(['venda_id' => $sale->id])
+                    )],
+                    ['unsigned_review' => true],
+                ],
                 'os_encerramento' => [['order' => $order], [
                     'status_final_nome' => 'Entregue - Reparado e Pago',
                     'data_entrega' => '18/07/2026',

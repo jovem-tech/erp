@@ -58,6 +58,11 @@
                 <a href="{{ route('vendas.receipt', ['venda' => $vendaId, 'formato' => 'a4']) }}" class="btn btn-outline-secondary" target="_blank" rel="noopener">
                     <i class="bi bi-file-earmark-pdf me-2"></i>A4
                 </a>
+                @if (! $cancelada && \App\Support\DesktopSession::can('vendas', 'criar'))
+                    <a href="{{ route('devolucoes.create', $vendaId) }}" class="btn btn-outline-warning">
+                        <i class="bi bi-arrow-return-left me-2"></i>Devolver
+                    </a>
+                @endif
                 @if (! $cancelada && \App\Support\DesktopSession::can('vendas', 'excluir'))
                     <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#vendaCancelModal">
                         <i class="bi bi-x-circle me-2"></i>Cancelar venda

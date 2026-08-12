@@ -62,6 +62,7 @@ class Sale extends Model
         'acrescimo' => 'float',
         'acrescimo_percentual' => 'float',
         'total' => 'float',
+        'total_devolvido' => 'float',
         'custo_total' => 'float',
         'margem_valor' => 'float',
         'margem_percentual' => 'float',
@@ -78,6 +79,11 @@ class Sale extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(SalePayment::class, 'venda_id', 'id')->orderBy('ordem')->orderBy('id');
+    }
+
+    public function returns(): HasMany
+    {
+        return $this->hasMany(SaleReturn::class, 'venda_id', 'id')->orderBy('id');
     }
 
     public function movements(): HasMany

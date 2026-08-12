@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\V1\PdfTemplateEngineController;
 use App\Http\Controllers\Api\V1\PublicDocumentSignatureController;
 use App\Http\Controllers\Api\V1\CaixaController;
 use App\Http\Controllers\Api\V1\SaleController;
+use App\Http\Controllers\Api\V1\SaleReturnController;
 use App\Http\Controllers\Api\V1\ServicoController;
 use App\Http\Controllers\Api\V1\SupplierController;
 use App\Http\Controllers\Api\V1\TeamMemberController;
@@ -168,6 +169,22 @@ Route::prefix('v1')->group(function (): void {
         Route::get('vendas/{venda}/comprovante', [SaleController::class, 'receipt'])
             ->whereNumber('venda')
             ->name('api.v1.vendas.receipt');
+
+        // Devolução e troca — specs/029-devolucao-troca. Devolver é ação do
+        // módulo `vendas`, então não há permissão própria.
+        Route::get('devolucoes', [SaleReturnController::class, 'index'])->name('api.v1.devolucoes.index');
+        Route::get('devolucoes/{devolucao}', [SaleReturnController::class, 'show'])
+            ->whereNumber('devolucao')
+            ->name('api.v1.devolucoes.show');
+        Route::get('devolucoes/{devolucao}/comprovante', [SaleReturnController::class, 'receipt'])
+            ->whereNumber('devolucao')
+            ->name('api.v1.devolucoes.receipt');
+        Route::get('vendas/{venda}/devolvivel', [SaleReturnController::class, 'returnableItems'])
+            ->whereNumber('venda')
+            ->name('api.v1.vendas.returnable');
+        Route::post('vendas/{venda}/devolucoes', [SaleReturnController::class, 'store'])
+            ->whereNumber('venda')
+            ->name('api.v1.vendas.returns.store');
 
         // Turnos de caixa — specs/028-caixa-sessoes.
         // "atual" antes de {sessao} pelo mesmo motivo de sempre.

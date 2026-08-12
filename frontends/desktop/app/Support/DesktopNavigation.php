@@ -113,6 +113,15 @@ class DesktopNavigation
                         'module' => 'caixa',
                         'icon' => 'bi-cash-stack',
                     ],
+                    // Devoluções — specs/029-devolucao-troca. Entrada própria
+                    // porque a consulta ("o que voltou este mês?") é frequente;
+                    // registrar uma devolução continua sendo pela venda.
+                    [
+                        'label' => 'Devoluções',
+                        'route' => 'devolucoes.index',
+                        'module' => 'vendas',
+                        'icon' => 'bi-arrow-return-left',
+                    ],
                 ],
             ],
             [

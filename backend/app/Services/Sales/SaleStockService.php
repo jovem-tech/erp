@@ -194,6 +194,78 @@ class SaleStockService
     }
 
     /**
+     * Devolve ao estoque as quantidades de uma devolução parcial.
+     *
+     * Diferente de creditForSaleCancellation(), que devolve tudo: aqui só volta
+     * o que o cliente trouxe de fato (specs/029-devolucao-troca).
+     *
+     * @param  array<int, array{peca_id: int, venda_item_id: int, quantidade: int}>  $lines
+     */
+    public function creditForReturn(Sale $sale, string $returnNumber, array $lines, ?int $actorId): void
+    {
+        $totals = [];
+
+        foreach ($lines as $line) {
+            $partId = (int) ($line['peca_id'] ?? 0);
+            $quantity = (int) round((float) ($line['quantidade'] ?? 0));
+
+            if ($partId <= 0 || $quantity <= 0) {
+                continue;
+            }
+
+            $totals[$partId] = ($totals[$partId] ?? 0) + $quantity;
+        }
+
+        if ($totals === []) {
+            return;
+        }
+
+        ksort($totals);
+
+        // Mesma ordem determinística de lock usada na baixa, para não cruzar
+        // com uma venda simultânea da mesma peça.
+        Peca::query()
+            ->whereIn('id', array_keys($totals))
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+
+        $now = now();
+
+        foreach ($lines as $line) {
+            $partId = (int) ($line['peca_id'] ?? 0);
+            $quantity = (int) round((float) ($line['quantidade'] ?? 0));
+
+            if ($partId <= 0 || $quantity <= 0) {
+                continue;
+            }
+
+            Movimentacao::query()->create([
+                'peca_id' => $partId,
+                'os_id' => null,
+                // Aponta para a venda original: a ficha da peça precisa mostrar
+                // a saída e o retorno lado a lado.
+                'venda_id' => (int) $sale->id,
+                'venda_item_id' => (int) ($line['venda_item_id'] ?? 0) ?: null,
+                'tipo' => 'entrada',
+                'quantidade' => $quantity,
+                'motivo' => 'Devolução '.$returnNumber,
+                'responsavel_id' => $actorId,
+                'created_at' => $now,
+            ]);
+        }
+
+        foreach ($totals as $partId => $quantity) {
+            Peca::query()
+                ->whereKey($partId)
+                ->update([
+                    'quantidade_atual' => DB::raw('quantidade_atual + '.(int) $quantity),
+                    'updated_at' => $now,
+                ]);
+        }
+    }
+
+    /**
      * Confere saldo sem gravar nada — usado antes de abrir a transação.
      *
      * @param  array<int, array<string, mixed>>  $items  itens já normalizados
