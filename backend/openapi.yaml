@@ -39,6 +39,10 @@ tags:
     description: Ordens de serviço, status e anexos autenticados.
   - name: Orçamentos
     description: Fluxo comercial de orçamentos com catalogo, itens e histórico.
+  - name: Caixa
+    description: Turnos de caixa com abertura, sangria, suprimento e conferencia de fechamento.
+  - name: Vendas
+    description: Vendas de balcao (PDV) com itens, baixa de estoque, pagamento misto e cupom.
   - name: Clientes
     description: Cadastro operacional de clientes.
   - name: Fornecedores
@@ -326,6 +330,576 @@ components:
           type: string
           nullable: true
           example: Item com garantia de 90 dias.
+
+    CaixaSessaoSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum:
+            - aberta
+            - fechada
+        status_label:
+          type: string
+        conta_financeira_id:
+          type: integer
+        conta_nome:
+          type: string
+        operador_id:
+          type: integer
+          nullable: true
+        operador_nome:
+          type: string
+        fechado_por_nome:
+          type: string
+        aberto_em:
+          type: string
+          format: date-time
+        fechado_em:
+          type: string
+          format: date-time
+          nullable: true
+        valor_abertura:
+          type: number
+          format: float
+        abertura_automatica:
+          type: boolean
+          description: Turno aberto pela primeira venda em dinheiro, não por declaração.
+        valor_informado:
+          type: number
+          format: float
+          nullable: true
+          description: Contagem da gaveta; nulo enquanto o turno está aberto.
+        diferenca:
+          type: number
+          format: float
+          nullable: true
+          description: Contado menos esperado. Negativo é falta, positivo é sobra.
+        total_vendas_dinheiro:
+          type: number
+          format: float
+        quantidade_vendas:
+          type: integer
+
+    CaixaSessaoDetail:
+      allOf:
+        - $ref: "#/components/schemas/CaixaSessaoSummary"
+        - type: object
+          properties:
+            valor_esperado:
+              type: number
+              format: float
+              description: >
+                Presente somente com o turno FECHADO. Enquanto aberto, o campo é
+                omitido de propósito: a conferência é cega e ver o esperado antes
+                da contagem esvaziaria o controle.
+            observacoes_abertura:
+              type: string
+              nullable: true
+            observacoes_fechamento:
+              type: string
+              nullable: true
+            total_suprimentos:
+              type: number
+              format: float
+            total_sangrias:
+              type: number
+              format: float
+            movimentos:
+              type: array
+              items:
+                $ref: "#/components/schemas/CaixaMovimento"
+
+    CaixaMovimento:
+      type: object
+      properties:
+        id:
+          type: integer
+        tipo:
+          type: string
+          enum:
+            - sangria
+            - suprimento
+        tipo_label:
+          type: string
+        valor:
+          type: number
+          format: float
+        motivo:
+          type: string
+        responsavel_nome:
+          type: string
+        conta_destino_id:
+          type: integer
+          nullable: true
+        transferencia_id:
+          type: integer
+          nullable: true
+          description: Transferência gerada quando a sangria tem conta de destino.
+        created_at:
+          type: string
+          format: date-time
+
+    SaleAggregate:
+      type: object
+      description: Totais do período filtrado, considerando só vendas concluídas.
+      properties:
+        total_vendas:
+          type: integer
+        total_vendido:
+          type: number
+          format: float
+        total_custo:
+          type: number
+          format: float
+        total_margem:
+          type: number
+          format: float
+        total_recebido:
+          type: number
+          format: float
+        ticket_medio:
+          type: number
+          format: float
+        margem_percentual:
+          type: number
+          format: float
+
+    SaleSummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        numero:
+          type: string
+          example: VD-2608-000001
+        status:
+          type: string
+          enum:
+            - concluida
+            - cancelada
+        status_label:
+          type: string
+        status_color:
+          type: string
+        status_pagamento:
+          type: string
+          enum:
+            - pendente
+            - parcial
+            - pago
+        status_pagamento_label:
+          type: string
+        cliente_id:
+          type: integer
+          nullable: true
+          description: Nulo em venda a consumidor final.
+        cliente_nome:
+          type: string
+        vendedor_id:
+          type: integer
+          nullable: true
+        vendedor_nome:
+          type: string
+        data_venda:
+          type: string
+          format: date
+        subtotal:
+          type: number
+          format: float
+        desconto:
+          type: number
+          format: float
+        acrescimo:
+          type: number
+          format: float
+        total:
+          type: number
+          format: float
+        custo_total:
+          type: number
+          format: float
+        margem_valor:
+          type: number
+          format: float
+        margem_percentual:
+          type: number
+          format: float
+        valor_pago:
+          type: number
+          format: float
+        valor_aberto:
+          type: number
+          format: float
+        financeiro_id:
+          type: integer
+          nullable: true
+        estoque_divergente:
+          type: boolean
+          description: Venda concluída com saldo insuficiente, pendente de acerto de inventário.
+        created_at:
+          type: string
+          format: date-time
+
+    SaleDetail:
+      allOf:
+        - $ref: "#/components/schemas/SaleSummary"
+        - type: object
+          properties:
+            cliente_documento_avulso:
+              type: string
+              nullable: true
+            telefone_contato:
+              type: string
+              nullable: true
+            email_contato:
+              type: string
+              nullable: true
+            observacoes:
+              type: string
+              nullable: true
+            motivo_cancelamento:
+              type: string
+              nullable: true
+            cancelado_em:
+              type: string
+              format: date-time
+              nullable: true
+            os_id:
+              type: integer
+              nullable: true
+              description: Vínculo opcional com OS (acessório levado junto ao aparelho).
+            numero_os:
+              type: string
+              nullable: true
+            desconto_tipo:
+              type: string
+              enum:
+                - valor
+                - percentual
+            desconto_percentual:
+              type: number
+              format: float
+              nullable: true
+            acrescimo_tipo:
+              type: string
+              enum:
+                - valor
+                - percentual
+            acrescimo_percentual:
+              type: number
+              format: float
+              nullable: true
+            itens:
+              type: array
+              items:
+                $ref: "#/components/schemas/SaleItem"
+            pagamentos:
+              type: array
+              items:
+                $ref: "#/components/schemas/SalePayment"
+
+    SaleItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        tipo_item:
+          type: string
+          enum:
+            - peca
+            - servico
+            - avulso
+        tipo_item_label:
+          type: string
+        referencia_id:
+          type: integer
+          nullable: true
+          description: pecas.id, servicos.id ou nulo em item avulso.
+        codigo:
+          type: string
+          description: Código congelado no momento da venda.
+        descricao:
+          type: string
+        quantidade:
+          type: number
+          format: float
+        valor_unitario:
+          type: number
+          format: float
+        desconto:
+          type: number
+          format: float
+        desconto_tipo:
+          type: string
+        desconto_percentual:
+          type: number
+          format: float
+          nullable: true
+        acrescimo:
+          type: number
+          format: float
+        acrescimo_tipo:
+          type: string
+        acrescimo_percentual:
+          type: number
+          format: float
+          nullable: true
+        total:
+          type: number
+          format: float
+        custo_unitario:
+          type: number
+          format: float
+        custo_total:
+          type: number
+          format: float
+        baixa_estoque:
+          type: boolean
+        observacoes:
+          type: string
+          nullable: true
+        ordem:
+          type: integer
+
+    SalePayment:
+      type: object
+      properties:
+        id:
+          type: integer
+        forma_pagamento:
+          type: string
+          description: Código do catálogo financeiro_formas_pagamento.
+        conta_financeira_id:
+          type: integer
+          nullable: true
+        valor:
+          type: number
+          format: float
+        valor_recebido:
+          type: number
+          format: float
+          nullable: true
+          description: Só em dinheiro; base do cálculo do troco.
+        troco:
+          type: number
+          format: float
+        parcelas:
+          type: integer
+        modalidade:
+          type: string
+          nullable: true
+          enum:
+            - credito
+            - debito
+        operadora_id:
+          type: integer
+          nullable: true
+        bandeira_id:
+          type: integer
+          nullable: true
+        valor_taxa:
+          type: number
+          format: float
+        valor_liquido:
+          type: number
+          format: float
+          nullable: true
+        movimento_id:
+          type: integer
+          nullable: true
+          description: financeiro_movimentos.id correspondente.
+        data_pagamento:
+          type: string
+          format: date
+
+    SaleStoreInput:
+      type: object
+      additionalProperties: false
+      required:
+        - itens
+      properties:
+        creation_request_id:
+          type: string
+          format: uuid
+          description: >
+            Chave de idempotência. Reenvio com a mesma chave e mesmo payload
+            devolve a venda já criada em vez de duplicar.
+        cliente_id:
+          type: integer
+          nullable: true
+          description: Ausente = consumidor final.
+        cliente_nome_avulso:
+          type: string
+          maxLength: 160
+          nullable: true
+        cliente_documento_avulso:
+          type: string
+          maxLength: 20
+          nullable: true
+        telefone_contato:
+          type: string
+          maxLength: 30
+          nullable: true
+        email_contato:
+          type: string
+          format: email
+          nullable: true
+        vendedor_id:
+          type: integer
+          nullable: true
+          description: Padrão é o usuário autenticado.
+        os_id:
+          type: integer
+          nullable: true
+        data_venda:
+          type: string
+          format: date
+        observacoes:
+          type: string
+          maxLength: 2000
+          nullable: true
+        confirmar_estoque_insuficiente:
+          type: boolean
+          description: >
+            Confirmação explícita de venda com saldo insuficiente. Sem ela a API
+            devolve 422 VENDA_ESTOQUE_INSUFICIENTE com a lista de ofensores.
+        desconto:
+          type: number
+          minimum: 0
+        desconto_tipo:
+          type: string
+          enum:
+            - valor
+            - percentual
+        desconto_percentual:
+          type: number
+          minimum: 0
+          maximum: 100
+        acrescimo:
+          type: number
+          minimum: 0
+        acrescimo_tipo:
+          type: string
+          enum:
+            - valor
+            - percentual
+        acrescimo_percentual:
+          type: number
+          minimum: 0
+          maximum: 100
+        itens:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - tipo_item
+              - quantidade
+            properties:
+              tipo_item:
+                type: string
+                enum:
+                  - peca
+                  - servico
+                  - avulso
+              referencia_id:
+                type: integer
+                nullable: true
+              descricao:
+                type: string
+                maxLength: 255
+                description: Opcional para peça/serviço; resolvido pelo catálogo.
+              quantidade:
+                type: number
+                minimum: 0.001
+                description: Precisa ser inteira quando baixa_estoque é true.
+              valor_unitario:
+                type: number
+                minimum: 0
+              custo_unitario:
+                type: number
+                minimum: 0
+              baixa_estoque:
+                type: boolean
+                description: >
+                  Só tem efeito em peça cadastrada. Permite vender sem mexer no
+                  saldo (brinde, consignado, saldo divergente).
+              desconto:
+                type: number
+                minimum: 0
+              desconto_tipo:
+                type: string
+                enum:
+                  - valor
+                  - percentual
+              desconto_percentual:
+                type: number
+                minimum: 0
+                maximum: 100
+              acrescimo:
+                type: number
+                minimum: 0
+              acrescimo_tipo:
+                type: string
+                enum:
+                  - valor
+                  - percentual
+              acrescimo_percentual:
+                type: number
+                minimum: 0
+                maximum: 100
+              observacoes:
+                type: string
+                maxLength: 1000
+        pagamentos:
+          type: array
+          description: >
+            Opcional: soma menor que o total é venda fiada e deixa o título
+            pendente/parcial. Soma maior que o total é recusada.
+          items:
+            type: object
+            additionalProperties: false
+            required:
+              - forma_pagamento
+              - valor
+            properties:
+              forma_pagamento:
+                type: string
+                description: Código do catálogo financeiro_formas_pagamento.
+              valor:
+                type: number
+                minimum: 0.01
+              valor_recebido:
+                type: number
+                minimum: 0
+                description: Só em dinheiro; a diferença vira troco.
+              conta_financeira_id:
+                type: integer
+                description: >
+                  Exigido quando não há conta padrão configurada para a forma.
+              data_pagamento:
+                type: string
+                format: date
+              observacoes:
+                type: string
+                maxLength: 2000
+              operadora_id:
+                type: integer
+              bandeira_id:
+                type: integer
+              modalidade:
+                type: string
+                enum:
+                  - credito
+                  - debito
+              parcelas:
+                type: integer
+                minimum: 1
+                maximum: 99
 
     BudgetUpsertInput:
       type: object
@@ -6147,6 +6721,893 @@ paths:
           $ref: "#/components/responses/ValidationError"
         "500":
           $ref: "#/components/responses/ServerError"
+
+  /caixa/atual:
+    get:
+      tags:
+        - Caixa
+      summary: Estado atual do caixa.
+      description: >
+        Devolve a sessão aberta, se houver, com os totais correntes do turno.
+        O `valor_esperado` NÃO é devolvido enquanto o caixa está aberto — a
+        conferência é cega. Antes da primeira abertura, `conta` e `sessao` vêm
+        nulos: não é erro, é o estado inicial.
+      responses:
+        "200":
+          description: Conta de caixa, sessão aberta e contas de destino para sangria.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          conta:
+                            type: object
+                            nullable: true
+                            additionalProperties: true
+                          sessao:
+                            allOf:
+                              - $ref: "#/components/schemas/CaixaSessaoDetail"
+                            nullable: true
+                          contas_destino:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /caixa:
+    get:
+      tags:
+        - Caixa
+      summary: Histórico de turnos.
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - aberta
+              - fechada
+        - name: operador_id
+          in: query
+          schema:
+            type: integer
+        - name: data_inicio
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: data_fim
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: com_diferenca
+          in: query
+          description: Só turnos fechados com diferença apurada diferente de zero.
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Lista paginada de turnos.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          sessoes:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/CaixaSessaoSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /caixa/abrir:
+    post:
+      tags:
+        - Caixa
+      summary: Abrir caixa.
+      description: >
+        Abre o turno com o troco declarado e alinha o saldo da conta de caixa a
+        esse valor. A primeira abertura de todas cria a conta "Caixa da loja" e
+        a define como padrão para dinheiro — ponto de adoção do módulo, e a
+        partir dele o motor financeiro passa a exigir conta em toda baixa.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - valor_abertura
+              properties:
+                valor_abertura:
+                  type: number
+                  minimum: 0
+                observacoes:
+                  type: string
+                  maxLength: 2000
+      responses:
+        "201":
+          description: Turno aberto.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          sessao:
+                            $ref: "#/components/schemas/CaixaSessaoDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: CAIXA_ABERTURA_INVALIDA — já existe um turno aberto.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /caixa/{sessao}:
+    parameters:
+      - name: sessao
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags:
+        - Caixa
+      summary: Detalhar turno.
+      responses:
+        "200":
+          description: Turno com movimentos e totais.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          sessao:
+                            $ref: "#/components/schemas/CaixaSessaoDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CAIXA_SESSAO_NAO_ENCONTRADA.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /caixa/{sessao}/movimentos:
+    parameters:
+      - name: sessao
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      tags:
+        - Caixa
+      summary: Registrar sangria ou suprimento.
+      description: >
+        Sangria com `conta_destino_id` gera transferência real entre a conta de
+        caixa e a conta informada; sem destino, é apenas uma saída ajustada no
+        saldo da gaveta. Suprimento sempre entra como ajuste.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tipo
+                - valor
+                - motivo
+              properties:
+                tipo:
+                  type: string
+                  enum:
+                    - sangria
+                    - suprimento
+                valor:
+                  type: number
+                  minimum: 0.01
+                motivo:
+                  type: string
+                  minLength: 3
+                  maxLength: 255
+                conta_destino_id:
+                  type: integer
+                  description: Só em sangria — para onde o dinheiro foi.
+      responses:
+        "201":
+          description: Movimento registrado; devolve o turno atualizado.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          sessao:
+                            $ref: "#/components/schemas/CaixaSessaoDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CAIXA_SESSAO_NAO_ENCONTRADA.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          description: >
+            CAIXA_MOVIMENTO_INVALIDO — turno fechado, valor inválido ou sangria
+            maior que o dinheiro em caixa.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /caixa/{sessao}/abertura:
+    parameters:
+      - name: sessao
+        in: path
+        required: true
+        schema:
+          type: integer
+    patch:
+      tags:
+        - Caixa
+      summary: Corrigir o valor de abertura.
+      description: >
+        Existe por causa da abertura automática, que herda o fechamento anterior
+        e pode não bater com a gaveta. Ajusta o saldo da conta na mesma medida e
+        limpa a marca de abertura automática.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - valor_abertura
+              properties:
+                valor_abertura:
+                  type: number
+                  minimum: 0
+      responses:
+        "200":
+          description: Turno atualizado.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          sessao:
+                            $ref: "#/components/schemas/CaixaSessaoDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: CAIXA_ABERTURA_INVALIDA — turno já fechado.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /caixa/{sessao}/fechar:
+    parameters:
+      - name: sessao
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      tags:
+        - Caixa
+      summary: Fechar caixa (conferência cega).
+      description: >
+        O cliente envia apenas o valor contado na gaveta. O esperado e a
+        diferença são calculados pelo servidor e só então devolvidos — enviá-los
+        na requisição é proibido, senão daria para "fechar sem diferença". A
+        diferença apurada vira ajuste na conta, para o turno seguinte começar do
+        dinheiro real.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - valor_informado
+              properties:
+                valor_informado:
+                  type: number
+                  minimum: 0
+                observacoes:
+                  type: string
+                  maxLength: 2000
+      responses:
+        "200":
+          description: Turno fechado, já com esperado e diferença revelados.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          sessao:
+                            $ref: "#/components/schemas/CaixaSessaoDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CAIXA_SESSAO_NAO_ENCONTRADA.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          description: CAIXA_FECHAMENTO_INVALIDO — turno já fechado ou valor ausente.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /caixa/{sessao}/reabrir:
+    parameters:
+      - name: sessao
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      tags:
+        - Caixa
+      summary: Reabrir turno fechado.
+      description: >
+        Descarta a conferência registrada — um fechamento reaberto não vale mais
+        como conferência. Exige credencial de administrador.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - admin_email
+                - admin_password
+              properties:
+                admin_email:
+                  type: string
+                  format: email
+                admin_password:
+                  type: string
+                  format: password
+      responses:
+        "200":
+          description: Turno reaberto.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          sessao:
+                            $ref: "#/components/schemas/CaixaSessaoDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: >
+            CAIXA_ADMIN_AUTH_REQUIRED, CAIXA_ADMIN_AUTH_INVALID ou
+            CAIXA_REABERTURA_INVALIDA (já existe turno aberto).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: CAIXA_ADMIN_AUTH_RATE_LIMITED.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /caixa/{sessao}/relatorio:
+    parameters:
+      - name: sessao
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: formato
+        in: query
+        schema:
+          type: string
+          enum:
+            - 80mm
+            - a4
+    get:
+      tags:
+        - Caixa
+      summary: Relatório de fechamento do turno.
+      responses:
+        "200":
+          description: PDF do relatório.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          description: CAIXA_SESSAO_NAO_ENCONTRADA.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          description: CAIXA_RELATORIO_INDISPONIVEL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /vendas:
+    get:
+      tags:
+        - Vendas
+      summary: Listar vendas de balcão.
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+        - $ref: "#/components/parameters/SearchParam"
+        - name: status
+          in: query
+          description: Situação da venda (concluida|cancelada).
+          schema:
+            type: string
+        - name: status_pagamento
+          in: query
+          description: Situação do pagamento (pendente|parcial|pago).
+          schema:
+            type: string
+        - name: vendedor_id
+          in: query
+          schema:
+            type: integer
+        - name: cliente_id
+          in: query
+          schema:
+            type: integer
+        - name: forma_pagamento
+          in: query
+          description: Código do catálogo de formas de pagamento.
+          schema:
+            type: string
+        - name: data_inicio
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: data_fim
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        "200":
+          description: Lista paginada de vendas com totais do período.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          vendas:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/SaleSummary"
+                          summary:
+                            $ref: "#/components/schemas/SaleAggregate"
+                          status_options:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+                          status_pagamento_options:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Vendas
+      summary: Registrar venda de balcão.
+      description: >
+        Cria a venda, dá baixa no estoque das peças marcadas e lança o título a
+        receber com as baixas. Operação atômica: falha em qualquer etapa desfaz
+        todas. Venda concluída é imutável — não há update, a correção é o
+        cancelamento.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SaleStoreInput"
+      responses:
+        "201":
+          description: Venda registrada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          venda:
+                            $ref: "#/components/schemas/SaleDetail"
+                          idempotent_replay:
+                            type: boolean
+                            description: >
+                              true quando a chave creation_request_id já havia
+                              sido usada e a venda existente foi devolvida sem
+                              nova gravação.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: >
+            VENDA_IDEMPOTENCY_CONFLICT — a chave creation_request_id já foi usada
+            para outra venda (payload diferente ou outro usuário).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "422":
+          description: >
+            VENDA_ESTOQUE_INSUFICIENTE quando falta saldo e
+            confirmar_estoque_insuficiente não veio; error.details.itens traz
+            peca_id, codigo, nome, disponivel e solicitado de cada ofensor.
+            VENDA_INVALIDA para as demais violações de regra de negócio.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /vendas/form-data:
+    get:
+      tags:
+        - Vendas
+      summary: Catálogos do PDV.
+      description: >
+        Formas de pagamento, contas financeiras, contas padrão por forma,
+        dataset de cartões (operadoras, bandeiras e taxas) e vendedores, numa
+        chamada só.
+      responses:
+        "200":
+          description: Catálogos para montar a tela de venda.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          form:
+                            type: object
+                            additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /vendas/itens/buscar:
+    get:
+      tags:
+        - Vendas
+      summary: Buscar itens vendáveis.
+      description: >
+        Pesquisa peças e serviços por nome ou código interno; código de barras
+        casa de forma exata, porque o leitor não digita parcial.
+      parameters:
+        - $ref: "#/components/parameters/SearchParam"
+      responses:
+        "200":
+          description: Itens encontrados, com saldo e preço de venda.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          itens:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /vendas/clientes:
+    get:
+      tags:
+        - Vendas
+      summary: Seletor de clientes do PDV.
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PerPageParam"
+        - name: q
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Clientes paginados para o autocomplete.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          clients:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /vendas/resumo:
+    get:
+      tags:
+        - Vendas
+      summary: Totais do período.
+      description: Aceita os mesmos filtros da listagem.
+      responses:
+        "200":
+          description: Total vendido, número de vendas, ticket médio e margem.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          summary:
+                            $ref: "#/components/schemas/SaleAggregate"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /vendas/{venda}:
+    parameters:
+      - name: venda
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags:
+        - Vendas
+      summary: Detalhar venda.
+      responses:
+        "200":
+          description: Venda com itens e pagamentos.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          venda:
+                            $ref: "#/components/schemas/SaleDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /vendas/{venda}/cancelar:
+    parameters:
+      - name: venda
+        in: path
+        required: true
+        schema:
+          type: integer
+    post:
+      tags:
+        - Vendas
+      summary: Cancelar venda.
+      description: >
+        Devolve os produtos ao estoque (com movimentação de entrada, sem apagar
+        a saída original) e cancela o título financeiro, estornando movimentos e
+        despesas de taxa de cartão derivadas. Venda de data anterior à de hoje
+        exige credencial de administrador.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - motivo
+              properties:
+                motivo:
+                  type: string
+                  minLength: 5
+                  maxLength: 2000
+                admin_email:
+                  type: string
+                  format: email
+                  description: Obrigatório quando a venda não é do dia corrente.
+                admin_password:
+                  type: string
+                  format: password
+      responses:
+        "200":
+          description: Venda cancelada.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          venda:
+                            $ref: "#/components/schemas/SaleDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: >
+            VENDA_ADMIN_AUTH_REQUIRED, VENDA_ADMIN_AUTH_INVALID ou
+            VENDA_CANCELAMENTO_INVALIDO.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+        "429":
+          description: VENDA_ADMIN_AUTH_RATE_LIMITED.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /vendas/{venda}/comprovante:
+    parameters:
+      - name: venda
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: formato
+        in: query
+        description: 80mm (padrão, cupom térmico) ou a4.
+        schema:
+          type: string
+          enum:
+            - 80mm
+            - a4
+    get:
+      tags:
+        - Vendas
+      summary: Comprovante da venda (documento não fiscal).
+      responses:
+        "200":
+          description: PDF do cupom.
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          description: VENDA_COMPROVANTE_INDISPONIVEL.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
 
   /clients:
     get:

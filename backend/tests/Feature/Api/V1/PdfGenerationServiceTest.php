@@ -43,10 +43,20 @@ class PdfGenerationServiceTest extends TestCase
 
         $order = \App\Models\Order::query()->findOrFail($orderId);
         $budget = Budget::query()->findOrFail($budgetId);
+        $sale = \App\Models\Sale::query()->findOrFail($this->createSaleRecord());
 
         foreach ($registry->codes() as $tipoCodigo) {
             [$subject, $options] = match ($tipoCodigo) {
                 'os_orcamento' => [['budget' => $budget], ['approval_link' => 'https://exemplo.test/aprovar/abc123']],
+                // Venda de balcão não tem OS: o assunto é a própria venda, e o
+                // cupom sai sem assinatura (specs/027-vendas-balcao-pdv).
+                'venda_comprovante' => [['sale' => $sale], ['unsigned_review' => true]],
+                // Turno de caixa: relatório operacional, também sem assinatura
+                // (specs/028-caixa-sessoes).
+                'caixa_fechamento' => [
+                    ['session' => \App\Models\CaixaSessao::query()->findOrFail($this->createCaixaSessaoRecord())],
+                    ['unsigned_review' => true],
+                ],
                 'os_encerramento' => [['order' => $order], [
                     'status_final_nome' => 'Entregue - Reparado e Pago',
                     'data_entrega' => '18/07/2026',

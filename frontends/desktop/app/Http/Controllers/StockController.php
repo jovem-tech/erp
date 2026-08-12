@@ -402,6 +402,16 @@ class StockController extends DesktopController
             'status' => 'ativo',
             'observacoes' => '',
             'ativo' => true,
+            // Operacionais do PDV + preparação fiscal (specs/027-vendas-balcao-pdv).
+            'codigo_barras' => '',
+            'unidade' => 'UN',
+            'ncm' => '',
+            'cest' => '',
+            'cfop_venda' => '',
+            'origem_mercadoria' => '',
+            'cst_icms' => '',
+            'csosn' => '',
+            'unidade_tributavel' => '',
         ];
     }
 
@@ -432,6 +442,15 @@ class StockController extends DesktopController
             'status' => ['nullable', 'string', 'in:ativo,encerrado,inativo'],
             'observacoes' => ['nullable', 'string'],
             'ativo' => ['nullable', 'boolean'],
+            'codigo_barras' => ['nullable', 'string', 'max:20'],
+            'unidade' => ['nullable', 'string', 'max:6'],
+            'ncm' => ['nullable', 'string', 'max:8'],
+            'cest' => ['nullable', 'string', 'max:7'],
+            'cfop_venda' => ['nullable', 'string', 'max:4'],
+            'origem_mercadoria' => ['nullable', 'string', 'max:1'],
+            'cst_icms' => ['nullable', 'string', 'max:3'],
+            'csosn' => ['nullable', 'string', 'max:4'],
+            'unidade_tributavel' => ['nullable', 'string', 'max:6'],
         ]);
 
         return [
@@ -451,6 +470,15 @@ class StockController extends DesktopController
             'status' => trim((string) ($validated['status'] ?? 'ativo')),
             'observacoes' => trim((string) ($validated['observacoes'] ?? '')),
             'ativo' => $request->boolean('ativo', true),
+            'codigo_barras' => trim((string) ($validated['codigo_barras'] ?? '')),
+            'unidade' => trim((string) ($validated['unidade'] ?? 'UN')) ?: 'UN',
+            'ncm' => trim((string) ($validated['ncm'] ?? '')),
+            'cest' => trim((string) ($validated['cest'] ?? '')),
+            'cfop_venda' => trim((string) ($validated['cfop_venda'] ?? '')),
+            'origem_mercadoria' => trim((string) ($validated['origem_mercadoria'] ?? '')),
+            'cst_icms' => trim((string) ($validated['cst_icms'] ?? '')),
+            'csosn' => trim((string) ($validated['csosn'] ?? '')),
+            'unidade_tributavel' => trim((string) ($validated['unidade_tributavel'] ?? '')),
         ];
     }
 

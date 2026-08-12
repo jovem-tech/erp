@@ -28,11 +28,13 @@ use App\Http\Controllers\PeopleController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicDocumentSignatureController;
 use App\Http\Controllers\ReportedDefectController;
+use App\Http\Controllers\CaixaController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\ServicoController;
 use App\Http\Controllers\StockController;
 use App\Http\Controllers\SupplierController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\VendaController;
 use App\Http\Controllers\WhatsappTemplateController;
 use App\Support\DesktopNavigation;
 use App\Support\DesktopSession;
@@ -248,6 +250,79 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::delete('/orcamentos/{orcamento}', [OrcamentoController::class, 'destroy'])
         ->middleware('desktop.permission:orcamentos,excluir')
         ->name('orcamentos.destroy');
+
+    // Vendas de balcão (PDV) — specs/027-vendas-balcao-pdv.
+    // Rotas estáticas antes de /vendas/{venda}, senão "ajuda" e "nova" casariam
+    // com o parâmetro. Sem edit/update: venda concluída é imutável.
+    Route::get('/vendas/ajuda', [VendaController::class, 'help'])
+        ->middleware('desktop.permission:vendas,visualizar')
+        ->name('vendas.help');
+    Route::get('/vendas', [VendaController::class, 'index'])
+        ->middleware('desktop.permission:vendas,visualizar')
+        ->name('vendas.index');
+    Route::get('/vendas/nova', [VendaController::class, 'create'])
+        ->middleware('desktop.permission:vendas,criar')
+        ->name('vendas.create');
+    Route::post('/vendas', [VendaController::class, 'store'])
+        ->middleware('desktop.permission:vendas,criar')
+        ->name('vendas.store');
+    Route::get('/vendas/itens/buscar', [VendaController::class, 'searchItems'])
+        ->middleware('desktop.permission:vendas,criar')
+        ->name('vendas.items.search');
+    Route::get('/vendas/clientes/buscar', [VendaController::class, 'searchClients'])
+        ->middleware('desktop.permission:vendas,criar')
+        ->name('vendas.clients.search');
+    Route::get('/vendas/{venda}', [VendaController::class, 'show'])
+        ->whereNumber('venda')
+        ->middleware('desktop.permission:vendas,visualizar')
+        ->name('vendas.show');
+    Route::get('/vendas/{venda}/comprovante', [VendaController::class, 'receipt'])
+        ->whereNumber('venda')
+        ->middleware('desktop.permission:vendas,visualizar')
+        ->name('vendas.receipt');
+    Route::post('/vendas/{venda}/cancelar', [VendaController::class, 'cancel'])
+        ->whereNumber('venda')
+        ->middleware('desktop.permission:vendas,excluir')
+        ->name('vendas.cancel');
+
+    // Turnos de caixa — specs/028-caixa-sessoes.
+    // Estáticas antes de /caixa/{sessao}, como sempre.
+    Route::get('/caixa/ajuda', [CaixaController::class, 'help'])
+        ->middleware('desktop.permission:caixa,visualizar')
+        ->name('caixa.help');
+    Route::get('/caixa/historico', [CaixaController::class, 'history'])
+        ->middleware('desktop.permission:caixa,visualizar')
+        ->name('caixa.historico');
+    Route::get('/caixa', [CaixaController::class, 'index'])
+        ->middleware('desktop.permission:caixa,visualizar')
+        ->name('caixa.index');
+    Route::post('/caixa/abrir', [CaixaController::class, 'open'])
+        ->middleware('desktop.permission:caixa,criar')
+        ->name('caixa.open');
+    Route::get('/caixa/{sessao}', [CaixaController::class, 'show'])
+        ->whereNumber('sessao')
+        ->middleware('desktop.permission:caixa,visualizar')
+        ->name('caixa.show');
+    Route::get('/caixa/{sessao}/relatorio', [CaixaController::class, 'report'])
+        ->whereNumber('sessao')
+        ->middleware('desktop.permission:caixa,visualizar')
+        ->name('caixa.report');
+    Route::post('/caixa/{sessao}/movimentos', [CaixaController::class, 'storeMovement'])
+        ->whereNumber('sessao')
+        ->middleware('desktop.permission:caixa,editar')
+        ->name('caixa.movements.store');
+    Route::match(['put', 'patch'], '/caixa/{sessao}/abertura', [CaixaController::class, 'updateOpening'])
+        ->whereNumber('sessao')
+        ->middleware('desktop.permission:caixa,editar')
+        ->name('caixa.opening.update');
+    Route::post('/caixa/{sessao}/fechar', [CaixaController::class, 'close'])
+        ->whereNumber('sessao')
+        ->middleware('desktop.permission:caixa,editar')
+        ->name('caixa.close');
+    Route::post('/caixa/{sessao}/reabrir', [CaixaController::class, 'reopen'])
+        ->whereNumber('sessao')
+        ->middleware('desktop.permission:caixa,excluir')
+        ->name('caixa.reopen');
 
     Route::get('/os/criar', [OrderController::class, 'create'])
         ->middleware('desktop.permission:os,criar')

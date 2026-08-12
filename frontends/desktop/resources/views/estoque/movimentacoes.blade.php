@@ -117,7 +117,7 @@
                         <th>Tipo</th>
                         <th>Quantidade</th>
                         <th>Motivo</th>
-                        <th>OS</th>
+                        <th>Origem</th>
                         <th>Responsável</th>
                     </tr>
                     </thead>
@@ -129,9 +129,20 @@
                                 'quantidade' => 0,
                                 'motivo' => '',
                                 'numero_os' => '',
+                                'venda_numero' => '',
                                 'responsavel_nome' => '',
                                 'created_at' => '',
                             ], is_array($movement) ? $movement : []);
+
+                            // Uma movimentação nasce de uma OS ou de uma venda de
+                            // balcão, nunca das duas (specs/027-vendas-balcao-pdv).
+                            $numeroOs = trim((string) ($movement['numero_os'] ?? ''));
+                            $numeroVenda = trim((string) ($movement['venda_numero'] ?? ''));
+                            $origem = match (true) {
+                                $numeroOs !== '' => 'OS ' . $numeroOs,
+                                $numeroVenda !== '' => 'Venda ' . $numeroVenda,
+                                default => '-',
+                            };
                         @endphp
                         <tr>
                             <td data-label="Data">{{ $movement['created_at'] ?? '-' }}</td>
@@ -146,7 +157,13 @@
                             </td>
                             <td data-label="Quantidade">{{ (int) ($movement['quantidade'] ?? 0) }}</td>
                             <td data-label="Motivo">{{ trim((string) ($movement['motivo'] ?? '')) !== '' ? $movement['motivo'] : '-' }}</td>
-                            <td data-label="OS">{{ trim((string) ($movement['numero_os'] ?? '')) !== '' ? $movement['numero_os'] : '-' }}</td>
+                            <td data-label="Origem">
+                                @if ($numeroVenda !== '' && \App\Support\DesktopSession::can('vendas', 'visualizar') && ! empty($movement['venda_id']))
+                                    <a href="{{ route('vendas.show', (int) $movement['venda_id']) }}">{{ $origem }}</a>
+                                @else
+                                    {{ $origem }}
+                                @endif
+                            </td>
                             <td data-label="Responsável">{{ trim((string) ($movement['responsavel_nome'] ?? '')) !== '' ? $movement['responsavel_nome'] : '-' }}</td>
                         </tr>
                     @endforeach

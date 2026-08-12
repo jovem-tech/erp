@@ -11,6 +11,7 @@ use App\Models\FinanceiroMovimento;
 use App\Models\FinanceiroMovimentoCartao;
 use App\Models\Order;
 use App\Models\OrderEvent;
+use App\Models\Sale;
 use App\Models\Supplier;
 use App\Services\Orders\OrderEventService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -48,6 +49,9 @@ class FinanceiroService
                 'supplier',
                 'origemMovimento.financeiro.client',
                 'origemMovimento.financeiro.order',
+                // Venda de balcão (specs/027): sem isto, todo título de venda
+                // cairia no ramo genérico e exibiria "sem OS vinculada".
+                'sale',
             ])
             // Ordem de pagamento/recebimento efetivo, não de vencimento. Sem
             // data_pagamento (título ainda pendente) vai para o fim da lista —
@@ -96,6 +100,20 @@ class FinanceiroService
             // identifica a taxa mesmo quando o título pai também é avulso
             // (sem cliente/OS vinculado).
             $segments[] = 'Título #'.(int) $tituloOrigem->id;
+
+            return $segments;
+        }
+
+        // Venda de balcão. Vem antes do ramo de OS de propósito: mesmo quando a
+        // venda está vinculada a uma OS (acessório levado junto ao aparelho em
+        // conserto), quem originou o título foi a venda, e é o número dela que
+        // identifica o recebimento no caixa.
+        if ($financeiro->sale instanceof Sale) {
+            $client = $financeiro->client ?? $financeiro->sale->client;
+            $segments[] = $client instanceof Client
+                ? (string) $client->nome_razao
+                : 'Consumidor final';
+            $segments[] = 'Venda '.(string) $financeiro->sale->numero;
 
             return $segments;
         }

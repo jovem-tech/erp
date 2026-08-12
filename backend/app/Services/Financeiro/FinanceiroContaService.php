@@ -775,6 +775,18 @@ class FinanceiroContaService
         ];
     }
 
+    /**
+     * Saldo atual da conta.
+     *
+     * Público desde specs/028-caixa-sessoes: o módulo de caixa precisa comparar
+     * o saldo financeiro da gaveta com o que foi declarado na abertura e
+     * contado no fechamento, para reconciliar a conta com o dinheiro real.
+     */
+    public function balanceOf(int $accountId): float
+    {
+        return $this->accountBalance($accountId);
+    }
+
     private function accountBalance(int $accountId): float
     {
         return $this->net($this->flowTotals(null, CarbonImmutable::today())[$accountId] ?? []);

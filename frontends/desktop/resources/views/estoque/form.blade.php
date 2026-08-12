@@ -20,6 +20,16 @@
             'status' => 'ativo',
             'observacoes' => '',
             'ativo' => true,
+            // Operacionais do PDV + preparação fiscal (specs/027-vendas-balcao-pdv).
+            'codigo_barras' => '',
+            'unidade' => 'UN',
+            'ncm' => '',
+            'cest' => '',
+            'cfop_venda' => '',
+            'origem_mercadoria' => '',
+            'cst_icms' => '',
+            'csosn' => '',
+            'unidade_tributavel' => '',
         ], is_array($part ?? null) ? $part : []);
         $isEdit = (string) ($mode ?? 'create') === 'edit';
         $categorias = data_get($formData, 'categorias', []);
@@ -152,6 +162,64 @@
                 <label for="observacoes">Observações</label>
                 <textarea id="observacoes" name="observacoes" class="form-control @error('observacoes') is-invalid @enderror" rows="4" placeholder="Observações, compatibilidades e detalhes operacionais">{{ old('observacoes', $part['observacoes']) }}</textarea>
                 @error('observacoes')<div class="invalid-feedback">{{ $message }}</div>@enderror
+            </div>
+
+            <div class="col-span-full">
+                <label for="codigo_barras">Código de barras (EAN/GTIN)</label>
+                <input type="text" id="codigo_barras" name="codigo_barras" class="form-control @error('codigo_barras') is-invalid @enderror" value="{{ old('codigo_barras', $part['codigo_barras'] ?? '') }}" maxlength="20" inputmode="numeric">
+                <small class="text-secondary">Preenchido, o leitor do PDV encontra o produto direto pelo código.</small>
+                @error('codigo_barras')<div class="invalid-feedback">{{ $message }}</div>@enderror
+            </div>
+
+            {{-- Bloco fiscal recolhido: os campos existem para a emissão futura
+                 (specs/027-vendas-balcao-pdv) e ainda não são usados por nada.
+                 Aberto por padrão, só pesaria o cadastro do dia a dia. --}}
+            <div class="col-span-full">
+                <details class="border rounded p-3">
+                    <summary class="fw-semibold" style="cursor: pointer;">
+                        Dados fiscais (opcional)
+                    </summary>
+
+                    <p class="text-secondary small mt-2 mb-3">
+                        O sistema ainda não emite nota fiscal. Estes campos ficam guardados
+                        para quando a emissão for implementada.
+                    </p>
+
+                    <div class="row g-3">
+                        <div class="col-6 col-md-3">
+                            <label for="unidade">Unidade</label>
+                            <input type="text" id="unidade" name="unidade" class="form-control" value="{{ old('unidade', $part['unidade'] ?? 'UN') }}" maxlength="6" placeholder="UN">
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label for="ncm">NCM</label>
+                            <input type="text" id="ncm" name="ncm" class="form-control" value="{{ old('ncm', $part['ncm'] ?? '') }}" maxlength="8" inputmode="numeric">
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label for="cest">CEST</label>
+                            <input type="text" id="cest" name="cest" class="form-control" value="{{ old('cest', $part['cest'] ?? '') }}" maxlength="7" inputmode="numeric">
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label for="cfop_venda">CFOP de venda</label>
+                            <input type="text" id="cfop_venda" name="cfop_venda" class="form-control" value="{{ old('cfop_venda', $part['cfop_venda'] ?? '') }}" maxlength="4" inputmode="numeric">
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label for="origem_mercadoria">Origem</label>
+                            <input type="text" id="origem_mercadoria" name="origem_mercadoria" class="form-control" value="{{ old('origem_mercadoria', $part['origem_mercadoria'] ?? '') }}" maxlength="1" inputmode="numeric">
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label for="cst_icms">CST ICMS</label>
+                            <input type="text" id="cst_icms" name="cst_icms" class="form-control" value="{{ old('cst_icms', $part['cst_icms'] ?? '') }}" maxlength="3">
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label for="csosn">CSOSN</label>
+                            <input type="text" id="csosn" name="csosn" class="form-control" value="{{ old('csosn', $part['csosn'] ?? '') }}" maxlength="4">
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label for="unidade_tributavel">Unidade tributável</label>
+                            <input type="text" id="unidade_tributavel" name="unidade_tributavel" class="form-control" value="{{ old('unidade_tributavel', $part['unidade_tributavel'] ?? '') }}" maxlength="6">
+                        </div>
+                    </div>
+                </details>
             </div>
 
             <div class="field-actions col-span-full">

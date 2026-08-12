@@ -146,9 +146,14 @@ class EstoqueController extends BaseApiController
                 'movimentacoes.created_at',
                 'usuarios.nome as responsavel_nome',
                 'os.numero_os',
+                // Sem isto toda saída de venda de balcão apareceria na ficha da
+                // peça sem origem (specs/027-vendas-balcao-pdv).
+                'movimentacoes.venda_id',
+                'vendas.numero as venda_numero',
             ])
             ->leftJoin('usuarios', 'usuarios.id', '=', 'movimentacoes.responsavel_id')
             ->leftJoin('os', 'os.id', '=', 'movimentacoes.os_id')
+            ->leftJoin('vendas', 'vendas.id', '=', 'movimentacoes.venda_id')
             ->where('movimentacoes.peca_id', $peca)
             ->orderByDesc('movimentacoes.created_at')
             ->limit(500)
@@ -409,6 +414,18 @@ class EstoqueController extends BaseApiController
             'observacoes' => ['nullable', 'string'],
             'status' => ['nullable', 'string', 'max:30'],
             'ativo' => ['nullable', 'boolean'],
+            // Operacionais do PDV: a busca da venda reconhece código de barras.
+            'codigo_barras' => ['nullable', 'string', 'max:20'],
+            'unidade' => ['nullable', 'string', 'max:6'],
+            // Fiscais: sem uso no sistema hoje, preparam a emissão futura
+            // (specs/027-vendas-balcao-pdv, fase fiscal).
+            'ncm' => ['nullable', 'string', 'max:8'],
+            'cest' => ['nullable', 'string', 'max:7'],
+            'cfop_venda' => ['nullable', 'string', 'max:4'],
+            'origem_mercadoria' => ['nullable', 'string', 'max:1'],
+            'cst_icms' => ['nullable', 'string', 'max:3'],
+            'csosn' => ['nullable', 'string', 'max:4'],
+            'unidade_tributavel' => ['nullable', 'string', 'max:6'],
         ];
 
         if ($includeCode) {
@@ -532,6 +549,15 @@ class EstoqueController extends BaseApiController
             'ativo' => (bool) ($peca->ativo ?? false),
             'status' => (string) ($peca->status ?? 'ativo'),
             'encerrado_em' => $this->formatDateTime($peca->encerrado_em),
+            'codigo_barras' => (string) ($peca->codigo_barras ?? ''),
+            'unidade' => (string) ($peca->unidade ?? 'UN'),
+            'ncm' => (string) ($peca->ncm ?? ''),
+            'cest' => (string) ($peca->cest ?? ''),
+            'cfop_venda' => (string) ($peca->cfop_venda ?? ''),
+            'origem_mercadoria' => (string) ($peca->origem_mercadoria ?? ''),
+            'cst_icms' => (string) ($peca->cst_icms ?? ''),
+            'csosn' => (string) ($peca->csosn ?? ''),
+            'unidade_tributavel' => (string) ($peca->unidade_tributavel ?? ''),
         ];
     }
 
@@ -567,6 +593,8 @@ class EstoqueController extends BaseApiController
             'peca_id' => (int) data_get($movement, 'peca_id', 0),
             'os_id' => data_get($movement, 'os_id') !== null ? (int) data_get($movement, 'os_id') : null,
             'numero_os' => (string) data_get($movement, 'numero_os', ''),
+            'venda_id' => data_get($movement, 'venda_id') !== null ? (int) data_get($movement, 'venda_id') : null,
+            'venda_numero' => (string) data_get($movement, 'venda_numero', ''),
             'tipo' => $tipo,
             'tipo_label' => match ($tipo) {
                 'entrada' => 'Entrada',

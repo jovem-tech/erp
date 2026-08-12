@@ -106,6 +106,23 @@ própria página:
   Cada botão aponta para o id da sua própria chave, então com várias chaves
   cadastradas nenhuma copia a do vizinho.
 
+### Ordem dos botoes na pagina publica (v5.24.4.0)
+
+A decisão passou a vir primeiro e o download por último:
+
+```
+[ Aprovar proposta ]  [ Rejeitar proposta ]
+Se desejar, informe o motivo da rejeição
+[ ................................... ]
+
+[ Baixar PDF ]
+```
+
+Detalhe que a mudança exigiu: o "Rejeitar" agora fica **acima** do campo de
+motivo, e aninhar `<form>` dentro de `<form>` é inválido. Os dois formulários
+ficam sem botão dentro e os botões se ligam a eles pelo atributo HTML `form`.
+Sem isso, o cliente digitaria o motivo e ele não seria enviado.
+
 ## Impactos
 
 - **Migrations aditivas**: `CREATE TABLE financeiro_chaves_pix`,
@@ -169,6 +186,9 @@ Se o cache de views compilado ficar com arquivos de outro dono que não
   - `BudgetCommercialTermsTest` cobre ainda um botão "Copiar" por chave, cada um
     com `data-copy`/`data-copy-target` apontando para a sua — o erro que faria
     todos copiarem a mesma chave.
+  - Envio do motivo verificado em Chrome real: com o botão acima do campo, o
+    submit interceptado carrega `motivo_rejeicao` preenchido e aponta para a
+    rota `rejeitar` — a regressão silenciosa que a reordenação poderia causar.
   - Verificação do botão em Chrome real (headless), clicando via script: o alvo
     correto é selecionado (clicar no 2º botão seleciona a 2ª chave). A escrita
     efetiva na área de transferência **não** pôde ser verificada aqui — o

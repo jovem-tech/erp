@@ -4,8 +4,10 @@ namespace App\Services\Pdf;
 
 use App\Models\PdfTemplate;
 use App\Services\Pdf\Contexts\BudgetPdfContextFactory;
+use App\Services\Pdf\Contexts\CaixaPdfContextFactory;
 use App\Services\Pdf\Contexts\OrderClosurePdfContextFactory;
 use App\Services\Pdf\Contexts\OrderPdfContextFactory;
+use App\Services\Pdf\Contexts\SalePdfContextFactory;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -262,6 +264,96 @@ class PdfTemplateRegistry
                 ]),
                 'message_template_code' => 'entrega_concluida',
                 'automatic_triggers' => ['baixa_os'],
+            ],
+            // Venda de balcão — specs/027-vendas-balcao-pdv.
+            // `legacy_tipo` nulo e sem gatilho automático de propósito: o
+            // comprovante não pertence à Central Documental da OS (que lê a
+            // constante própria OrderDocumentCenterService::DOCUMENT_TYPES) e
+            // não existe OS para disparar nada. Ainda assim aparece na tela
+            // Modelos PDF, que percorre este registro.
+            'venda_comprovante' => [
+                'codigo' => 'venda_comprovante',
+                'nome' => 'Comprovante de venda',
+                'descricao' => 'Cupom não fiscal da venda de balcão, com itens, totais e pagamentos.',
+                'legacy_tipo' => null,
+                'context_factory' => SalePdfContextFactory::class,
+                'variables' => array_merge(self::COMMON_VARIABLES, [
+                    'venda.numero' => 'string',
+                    'venda.status' => 'string',
+                    'venda.data' => 'data',
+                    'venda.vendedor' => 'string',
+                    'venda.subtotal' => 'moeda',
+                    'venda.desconto' => 'moeda',
+                    'venda.acrescimo' => 'moeda',
+                    'venda.total' => 'moeda',
+                    'venda.valor_pago' => 'moeda',
+                    'venda.valor_aberto' => 'moeda',
+                    'venda.troco' => 'moeda',
+                    'venda.status_pagamento' => 'string',
+                    'venda.observacoes' => 'string',
+                    'cliente.nome' => 'string',
+                    'cliente.telefone' => 'telefone',
+                    'cliente.email' => 'string',
+                    'cliente.documento' => 'documento',
+                ]),
+                'collections' => [
+                    'itens' => [
+                        'tipo' => 'string',
+                        'codigo' => 'string',
+                        'descricao' => 'string',
+                        'quantidade' => 'inteiro',
+                        'valor_unitario' => 'moeda',
+                        'desconto' => 'moeda',
+                        'acrescimo' => 'moeda',
+                        'valor_total' => 'moeda',
+                        'observacoes' => 'string',
+                    ],
+                    'pagamentos' => [
+                        'forma_pagamento' => 'string',
+                        'parcelas' => 'inteiro',
+                        'valor' => 'moeda',
+                        'troco' => 'moeda',
+                    ],
+                ],
+                'message_template_code' => null,
+                'automatic_triggers' => [],
+            ],
+            // Fechamento de caixa — specs/028-caixa-sessoes. Como o comprovante
+            // de venda, não pertence à Central Documental da OS.
+            'caixa_fechamento' => [
+                'codigo' => 'caixa_fechamento',
+                'nome' => 'Fechamento de caixa',
+                'descricao' => 'Relatório do turno com abertura, vendas em dinheiro, sangrias, contagem e diferença.',
+                'legacy_tipo' => null,
+                'context_factory' => CaixaPdfContextFactory::class,
+                'variables' => array_merge(self::COMMON_VARIABLES, [
+                    'caixa.numero' => 'string',
+                    'caixa.status' => 'string',
+                    'caixa.conta' => 'string',
+                    'caixa.operador' => 'string',
+                    'caixa.fechado_por' => 'string',
+                    'caixa.aberto_em' => 'data_hora',
+                    'caixa.fechado_em' => 'data_hora',
+                    'caixa.valor_abertura' => 'moeda',
+                    'caixa.total_vendas' => 'moeda',
+                    'caixa.quantidade_vendas' => 'inteiro',
+                    'caixa.total_suprimentos' => 'moeda',
+                    'caixa.total_sangrias' => 'moeda',
+                    'caixa.valor_esperado' => 'moeda',
+                    'caixa.valor_informado' => 'moeda',
+                    'caixa.diferenca' => 'moeda',
+                    'caixa.observacoes' => 'string',
+                ]),
+                'collections' => [
+                    'movimentos' => [
+                        'tipo' => 'string',
+                        'motivo' => 'string',
+                        'responsavel' => 'string',
+                        'valor' => 'moeda',
+                    ],
+                ],
+                'message_template_code' => null,
+                'automatic_triggers' => [],
             ],
         ];
     }
