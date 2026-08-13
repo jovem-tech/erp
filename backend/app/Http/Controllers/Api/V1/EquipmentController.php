@@ -409,7 +409,7 @@ class EquipmentController extends BaseApiController
         if (
             ! $admin instanceof User
             || ! (bool) $admin->ativo
-            || mb_strtolower(trim((string) ($admin->perfil ?? ''))) !== 'admin'
+            || ! $this->isAuthorizedForPasswordReveal($admin)
             || ! Hash::check($adminPassword, (string) $admin->senha)
         ) {
             RateLimiter::hit($throttleKey, 60);
@@ -676,5 +676,22 @@ class EquipmentController extends BaseApiController
         }
 
         $this->authorize('equipamentos:visualizar');
+    }
+
+    /**
+     * O campo legado `perfil=admin` não reflete usuários criados via grupo de
+     * RBAC (ex.: grupo "super administrador", que tem permissões completas mas
+     * nunca teve o `perfil` legado preenchido). Aceita também o grupo, para não
+     * bloquear quem já tem privilégio administrativo pleno via RBAC.
+     */
+    private function isAuthorizedForPasswordReveal(User $admin): bool
+    {
+        if (mb_strtolower(trim((string) ($admin->perfil ?? ''))) === 'admin') {
+            return true;
+        }
+
+        $groupName = mb_strtolower(trim((string) ($admin->group?->nome ?? '')));
+
+        return $groupName !== '' && str_contains($groupName, 'admin');
     }
 }

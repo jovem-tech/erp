@@ -226,11 +226,51 @@
     </form>
 
     <div class="desktop-topbar-actions">
-        @if (\App\Support\DesktopSession::can('os', 'criar'))
-            <a href="{{ route('orders.create') }}" class="btn btn-primary desktop-action-button">
-                <i class="bi bi-plus-lg me-1"></i>
-                OS
-            </a>
+        @php
+            $canCreateOrder = \App\Support\DesktopSession::can('os', 'criar');
+            $canCreateOrcamento = \App\Support\DesktopSession::can('orcamentos', 'criar');
+            $canCreateVenda = \App\Support\DesktopSession::can('vendas', 'criar');
+        @endphp
+
+        @if ($canCreateOrder || $canCreateOrcamento || $canCreateVenda)
+            <div class="dropdown desktop-quick-create-dropdown">
+                <button
+                    type="button"
+                    class="btn btn-primary desktop-action-button dropdown-toggle"
+                    data-bs-toggle="dropdown"
+                    aria-expanded="false"
+                >
+                    <i class="bi bi-plus-lg me-1"></i>
+                    Novo
+                    <i class="bi bi-chevron-down ms-1"></i>
+                </button>
+
+                <ul class="dropdown-menu dropdown-menu-end list-actions-menu desktop-quick-create-menu">
+                    @if ($canCreateOrder)
+                        <li>
+                            <a href="{{ route('orders.create') }}" class="dropdown-item">
+                                <i class="bi bi-clipboard-check-fill me-2"></i>Nova OS
+                            </a>
+                        </li>
+                    @endif
+
+                    @if ($canCreateOrcamento)
+                        <li>
+                            <a href="{{ route('orcamentos.create') }}" class="dropdown-item">
+                                <i class="bi bi-receipt me-2"></i>Novo orçamento
+                            </a>
+                        </li>
+                    @endif
+
+                    @if ($canCreateVenda)
+                        <li>
+                            <a href="{{ route('vendas.create') }}" class="dropdown-item">
+                                <i class="bi bi-upc-scan me-2"></i>Nova venda
+                            </a>
+                        </li>
+                    @endif
+                </ul>
+            </div>
         @endif
 
         <div class="dropdown desktop-profile-dropdown">

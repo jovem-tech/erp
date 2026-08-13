@@ -42,7 +42,12 @@
         const itensBody = document.getElementById('pdvItens');
         const semItens = document.getElementById('pdvSemItens');
         const pagamentosBox = document.getElementById('pdvPagamentos');
-        const finalizarBtn = document.getElementById('pdvFinalizar');
+        // "Abrir pagamento" só decide SE dá pra prosseguir (carrinho não vazio)
+        // e dispara o modal via data-bs-toggle; quem manda a venda de verdade
+        // é o botão dentro do modal.
+        const abrirPagamentoBtn = document.getElementById('pdvAbrirPagamento');
+        const confirmarBtn = document.getElementById('pdvConfirmarFinalizar');
+        const pagamentoModalEl = document.getElementById('pdvPagamentoModal');
         const modeloItem = document.getElementById('pdvModeloItem');
         const modeloPagamento = document.getElementById('pdvModeloPagamento');
 
@@ -253,6 +258,17 @@
             recalcular();
         };
 
+        // Sugere o que falta para fechar o total — usado tanto pelo botão
+        // "+ Forma" quanto pela primeira linha que o modal insere sozinho.
+        const adicionarPagamentoSugerido = () => {
+            const total = parseNumber(document.getElementById('pdvTotal').textContent);
+            let recebido = 0;
+            pagamentosBox.querySelectorAll('[data-campo="valor"]').forEach((campo) => {
+                recebido += parseNumber(campo.value);
+            });
+            adicionarPagamento(Math.max(0, total - recebido));
+        };
+
         /* ------------------------------------------------------------------ */
         /* Totais                                                              */
         /* ------------------------------------------------------------------ */
@@ -276,6 +292,9 @@
             setText(document.getElementById('pdvSubtotal'), money(subtotal));
             setText(document.getElementById('pdvDesconto'), money(desconto));
             setText(document.getElementById('pdvTotal'), money(total));
+            // Espelha no modal: é lá que o operador confere o total antes de
+            // escolher a forma de pagamento.
+            setText(document.getElementById('pdvPagamentoTotal'), money(total));
 
             let recebido = 0;
             let troco = 0;
@@ -307,12 +326,43 @@
 
             const temItens = itensBody.querySelectorAll('.pdv-item').length > 0;
             semItens.classList.toggle('d-none', temItens);
-            finalizarBtn.disabled = !temItens;
+            abrirPagamentoBtn.disabled = !temItens;
         };
 
         /* ------------------------------------------------------------------ */
         /* Busca                                                               */
         /* ------------------------------------------------------------------ */
+
+        // position: fixed é imune ao overflow das colunas laterais (ver CSS),
+        // mas por isso mesmo precisa da posição calculada em JS: sem ancestral
+        // relativo relevante, não há como o CSS sozinho grudar o dropdown no
+        // campo de busca. Também decide para que lado abrir: se o campo está
+        // perto do rodapé da janela (coluna esquerda comprida, tela baixa), o
+        // espaço abaixo não chega a caber nem 3 linhas — a caixa nascia
+        // espremida contra o rodapé, com scroll interno de poucos pixels.
+        // Nesse caso ela abre para CIMA, cobrindo o cartão de cliente (que já
+        // é um overlay transitório) em vez de se espremer embaixo.
+        const posicionarResultados = () => {
+            const rect = buscaInput.getBoundingClientRect();
+            const margem = 8;
+            const espacoAbaixo = window.innerHeight - rect.bottom - margem;
+            const espacoAcima = rect.top - margem;
+            const abrirParaCima = espacoAbaixo < 220 && espacoAcima > espacoAbaixo;
+
+            resultadosBox.style.left = `${rect.left}px`;
+
+            if (abrirParaCima) {
+                resultadosBox.style.top = 'auto';
+                resultadosBox.style.bottom = `${window.innerHeight - rect.top + 4}px`;
+                resultadosBox.style.maxHeight = `${Math.max(160, espacoAcima)}px`;
+            } else {
+                resultadosBox.style.bottom = 'auto';
+                resultadosBox.style.top = `${rect.bottom + 4}px`;
+                resultadosBox.style.maxHeight = `${Math.max(160, espacoAbaixo)}px`;
+            }
+            // Largura fica por conta do CSS (min(34rem, 52vw) — mais larga que
+            // o campo, de propósito, para caber nome/código/saldo/preço).
+        };
 
         const renderResultados = (itens) => {
             ultimosResultados = itens;
@@ -323,10 +373,15 @@
                 return;
             }
 
+            posicionarResultados();
+
             itens.forEach((item, indice) => {
                 const botao = document.createElement('button');
                 botao.type = 'button';
-                botao.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
+                // align-items-start (não center): nome longo que quebra em
+                // duas linhas empurrava o preço para o meio vertical da linha,
+                // como se estivesse flutuando solto.
+                botao.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-start gap-2';
                 botao.dataset.indice = String(indice);
 
                 const esquerda = document.createElement('span');
@@ -335,7 +390,9 @@
                     + (item.controla_estoque ? `<small class="text-secondary ms-2">Saldo: ${item.saldo}</small>` : '');
 
                 const direita = document.createElement('span');
-                direita.className = 'fw-semibold';
+                // flex-shrink-0: o preço nunca é espremido pelo nome longo, e
+                // text-nowrap mantém "R$ 1.167,12" numa linha só.
+                direita.className = 'fw-semibold text-nowrap flex-shrink-0';
                 direita.textContent = money(item.valor_unitario);
 
                 botao.appendChild(esquerda);
@@ -345,6 +402,29 @@
 
             resultadosBox.classList.remove('d-none');
         };
+
+        // O dropdown é position: fixed (não acompanha o layout sozinho), então
+        // se a coluna esquerda rolar (válvula de segurança em janela baixa) ou
+        // a janela mudar de tamanho, ele precisa ser realinhado ou fechado.
+        // Captura em fase de captura para pegar o scroll de QUALQUER
+        // contêiner aninhado, não só o da janela.
+        window.addEventListener('scroll', () => {
+            if (resultadosBox.classList.contains('d-none')) return;
+            posicionarResultados();
+        }, true);
+
+        window.addEventListener('resize', () => {
+            if (resultadosBox.classList.contains('d-none')) return;
+            posicionarResultados();
+        });
+
+        // Clicar fora fecha a lista — esperado num dropdown flutuante, e mais
+        // importante ainda agora que ele paira sobre o carrinho inteiro.
+        document.addEventListener('click', (evento) => {
+            if (resultadosBox.classList.contains('d-none')) return;
+            if (evento.target === buscaInput || resultadosBox.contains(evento.target)) return;
+            renderResultados([]);
+        });
 
         const buscar = (termo) => {
             if (termo.trim().length < 2) {
@@ -415,14 +495,24 @@
             recalcular();
         });
 
-        document.getElementById('pdvAdicionarPagamento').addEventListener('click', () => {
-            const total = parseNumber(document.getElementById('pdvTotal').textContent);
-            let recebido = 0;
-            pagamentosBox.querySelectorAll('[data-campo="valor"]').forEach((campo) => {
-                recebido += parseNumber(campo.value);
+        document.getElementById('pdvAdicionarPagamento').addEventListener('click', adicionarPagamentoSugerido);
+
+        // O modal nasce vazio; ao abrir, se ainda não há nenhuma forma
+        // lançada, insere a primeira sozinho — é o que a frase "clicar em
+        // Finalizar insere as formas de pagamento" pede. O operador troca a
+        // forma e ajusta o valor a partir daí, em vez de partir do zero.
+        if (pagamentoModalEl) {
+            pagamentoModalEl.addEventListener('show.bs.modal', () => {
+                if (pagamentosBox.querySelectorAll('.pdv-pagamento').length === 0) {
+                    adicionarPagamentoSugerido();
+                }
             });
-            adicionarPagamento(Math.max(0, total - recebido));
-        });
+
+            pagamentoModalEl.addEventListener('shown.bs.modal', () => {
+                const primeiroValor = pagamentosBox.querySelector('.pdv-pagamento [data-campo="valor"]');
+                if (primeiroValor) primeiroValor.focus();
+            });
+        }
 
         document.getElementById('pdvAdicionarAvulso').addEventListener('click', () => {
             adicionarItem({ tipo_item: 'avulso', descricao: '', valor_unitario: 0, controla_estoque: false });
@@ -474,21 +564,52 @@
 
         // Modo terminal: tela cheia de verdade (sem barra do navegador), como
         // num caixa de supermercado. A classe no <body> é o que faz o CSS
-        // esconder topbar e rodapé e esticar a grade.
-        const alternarTelaCheia = () => {
-            if (document.fullscreenElement) {
-                document.exitFullscreen?.();
-                return;
+        // esconder topbar e rodapé e esticar a grade — ela é a fonte da
+        // verdade sobre "estamos em tela cheia?", não document.fullscreenElement,
+        // porque a Fullscreen API real só entra com um gesto do usuário e o
+        // PDV precisa abrir (e reabrir após F5) em tela cheia sozinho.
+        const emTelaCheia = () => document.body.classList.contains('pdv-modo-terminal');
+
+        // comGesto diferencia a chamada automática (recarregar a página) da
+        // chamada por tecla/clique: a Fullscreen API real SÓ pode ser pedida
+        // dentro de um gesto do usuário — fora disso o navegador rejeita, e
+        // em alguns navegadores essa rejeição é um throw síncrono (não uma
+        // Promise), que escaparia do .catch() e apareceria como erro no
+        // console. Por isso ela nem é tentada fora de um gesto: o modo
+        // terminal (classe CSS) sozinho já garante a aparência de tela cheia
+        // depois de um F5.
+        const entrarTelaCheia = (comGesto) => {
+            if (!emTelaCheia()) {
+                document.body.classList.add('pdv-modo-terminal');
+                window.dispatchEvent(new Event('resize'));
             }
 
-            // Só funciona a partir de um gesto do usuário — a tecla conta.
-            const alvo = document.documentElement;
-            (alvo.requestFullscreen?.() || Promise.reject()).catch(() => {
-                // Navegador recusou (permissão/iframe): ao menos entra no modo
-                // enxuto, escondendo topbar e rodapé.
-                document.body.classList.toggle('pdv-modo-terminal');
-                window.dispatchEvent(new Event('resize'));
-            });
+            if (comGesto && !document.fullscreenElement) {
+                try {
+                    const alvo = document.documentElement;
+                    (alvo.requestFullscreen?.() || Promise.reject()).catch(() => {});
+                } catch (erro) {
+                    // Navegador recusou de forma síncrona: sem problema, o
+                    // modo terminal via CSS já cobre a aparência.
+                }
+            }
+        };
+
+        const sairTelaCheia = () => {
+            document.body.classList.remove('pdv-modo-terminal');
+            window.dispatchEvent(new Event('resize'));
+
+            if (document.fullscreenElement) {
+                document.exitFullscreen?.();
+            }
+        };
+
+        const alternarTelaCheia = () => {
+            if (emTelaCheia()) {
+                sairTelaCheia();
+            } else {
+                entrarTelaCheia(true);
+            }
         };
 
         document.addEventListener('fullscreenchange', () => {
@@ -499,10 +620,92 @@
         const botaoTelaCheia = document.getElementById('pdvTelaCheia');
         if (botaoTelaCheia) botaoTelaCheia.addEventListener('click', alternarTelaCheia);
 
+        // O PDV sempre abre em tela cheia — inclusive ao recarregar a página
+        // (F5), quando a Fullscreen API real é sempre perdida pelo navegador.
+        // Sem gesto aqui: é carregamento de página, não clique/tecla.
+        entrarTelaCheia(false);
+
+        // Calendário do mês + relógio digital, visíveis só em modo terminal
+        // (abaixo do botão Finalizar). Gerados em JS, não no Blade: um
+        // terminal deixado aberto virando a meia-noite não pode ficar com o
+        // dia errado destacado.
+        const calendarioTabela = document.getElementById('pdvTerminalCalendario');
+        const relogioEl = document.getElementById('pdvTerminalRelogio');
+        let diaRenderizado = null;
+
+        const doisDigitos = (numero) => String(numero).padStart(2, '0');
+
+        const renderizarCalendario = (agora) => {
+            if (!calendarioTabela) return;
+
+            const ano = agora.getFullYear();
+            const mes = agora.getMonth();
+            const hoje = agora.getDate();
+
+            const legenda = calendarioTabela.querySelector('caption');
+            if (legenda) {
+                legenda.textContent = agora.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+            }
+
+            const corpo = calendarioTabela.querySelector('tbody');
+            if (!corpo) return;
+            corpo.innerHTML = '';
+
+            const primeiroDiaSemana = new Date(ano, mes, 1).getDay();
+            const totalDias = new Date(ano, mes + 1, 0).getDate();
+
+            let linha = document.createElement('tr');
+            for (let vazio = 0; vazio < primeiroDiaSemana; vazio += 1) {
+                linha.appendChild(document.createElement('td'));
+            }
+
+            for (let dia = 1; dia <= totalDias; dia += 1) {
+                const celula = document.createElement('td');
+                if (dia === hoje) celula.classList.add('pdv-dia-atual');
+
+                const marcador = document.createElement('span');
+                marcador.textContent = String(dia);
+                celula.appendChild(marcador);
+
+                linha.appendChild(celula);
+
+                if ((primeiroDiaSemana + dia) % 7 === 0 || dia === totalDias) {
+                    corpo.appendChild(linha);
+                    linha = document.createElement('tr');
+                }
+            }
+
+            diaRenderizado = hoje;
+        };
+
+        const atualizarAgendaTerminal = () => {
+            const agora = new Date();
+
+            if (relogioEl) {
+                relogioEl.textContent = `${doisDigitos(agora.getHours())}:${doisDigitos(agora.getMinutes())}:${doisDigitos(agora.getSeconds())}`;
+            }
+
+            if (agora.getDate() !== diaRenderizado) {
+                renderizarCalendario(agora);
+            }
+        };
+
+        if (calendarioTabela || relogioEl) {
+            atualizarAgendaTerminal();
+            setInterval(atualizarAgendaTerminal, 1000);
+        }
+
         document.addEventListener('keydown', (evento) => {
             if (evento.key === 'F2') {
                 evento.preventDefault();
-                if (!finalizarBtn.disabled) finalizarBtn.click();
+
+                // Modal já aberto: F2 confirma a venda. Fechado: F2 abre o
+                // passo de pagamento (só se houver item no carrinho).
+                if (pagamentoModalEl && pagamentoModalEl.classList.contains('show')) {
+                    if (!confirmarBtn.disabled) confirmarBtn.click();
+                } else if (!abrirPagamentoBtn.disabled) {
+                    abrirPagamentoBtn.click();
+                }
                 return;
             }
 
@@ -521,9 +724,11 @@
             }
 
             if (evento.key === 'Escape') {
-                // Em tela cheia o Esc pertence ao navegador (é como se sai
-                // dela). Limpar o carrinho junto seria uma perda silenciosa.
+                // Esc já tem dono nesta ordem de prioridade: sair da tela cheia
+                // (navegador) e fechar o modal de pagamento (Bootstrap) — nos
+                // dois casos o carrinho não pode ser apagado junto.
                 if (document.fullscreenElement) return;
+                if (pagamentoModalEl && pagamentoModalEl.classList.contains('show')) return;
 
                 if (itensBody.querySelectorAll('.pdv-item').length > 0) {
                     evento.preventDefault();
@@ -571,7 +776,7 @@
             const faltantes = itensSemSaldo();
             if (faltantes.length === 0) {
                 submitLiberado = true;
-                finalizarBtn.disabled = true;
+                confirmarBtn.disabled = true;
                 return;
             }
 
@@ -584,7 +789,7 @@
             const confirmar = () => {
                 document.getElementById('pdvConfirmarEstoque').value = '1';
                 submitLiberado = true;
-                finalizarBtn.disabled = true;
+                confirmarBtn.disabled = true;
                 form.submit();
             };
 

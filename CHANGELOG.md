@@ -1,5 +1,59 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.31.1.0 — 2026-08-12 22:34
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** PDV: campo de busca de produto/servico move para a coluna central, acima da lista de itens, no lugar da coluna de cliente/vendedor
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/EquipmentController.php,backend/routes/api.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/app/Support/DesktopNavigation.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/public/assets/js/vendas-pdv.js,frontends/desktop/resources/views/financeiro/contas/index.blade.php,frontends/desktop/resources/views/layouts/partials/navbar.blade.php,frontends/desktop/resources/views/vendas/index.blade.php,frontends/desktop/resources/views/vendas/pdv.blade.php,frontends/desktop/tests/Feature/Desktop/VendaTest.php
+
+## v5.31.0.1 — 2026-08-12 22:24
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** PDV: erro no console (Failed to execute requestFullscreen, API can only be initiated by a user gesture) ao recarregar a pagina em modo terminal; Fullscreen API real so e tentada dentro de um gesto (tecla F3 ou clique), o recarregamento usa so a classe CSS
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/EquipmentController.php,backend/routes/api.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/app/Support/DesktopNavigation.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/public/assets/js/vendas-pdv.js,frontends/desktop/resources/views/financeiro/contas/index.blade.php,frontends/desktop/resources/views/layouts/partials/navbar.blade.php,frontends/desktop/resources/views/vendas/index.blade.php,frontends/desktop/resources/views/vendas/pdv.blade.php,frontends/desktop/tests/Feature/Desktop/VendaTest.php
+
+## v5.31.0.0 — 2026-08-12 21:57
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Sidebar: remove entradas de Nova venda, Caixa e Devolucoes; Nova venda passa a ser so pelo botao da listagem de Vendas, Devolucoes entra em Mais acoes, e Caixa passa a ser acessado por Financeiro > Contas e Saldos
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/EquipmentController.php,backend/routes/api.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/app/Support/DesktopNavigation.php,frontends/desktop/public/assets/js/vendas-pdv.js,frontends/desktop/resources/views/financeiro/contas/index.blade.php,frontends/desktop/resources/views/vendas/index.blade.php,frontends/desktop/resources/views/vendas/pdv.blade.php,frontends/desktop/tests/Feature/Desktop/VendaTest.php
+
+## v5.30.0.0 — 2026-08-12 20:14
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** PDV: modo terminal em tela cheia ganha cabecalho com logo e nome da empresa, e calendario do mes com relogio digital ao vivo abaixo do botao Finalizar
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/EquipmentController.php,backend/routes/api.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/public/assets/js/vendas-pdv.js,frontends/desktop/resources/views/vendas/pdv.blade.php,frontends/desktop/tests/Feature/Desktop/VendaTest.php
+
+## v5.29.2.0 — 2026-08-12 18:55
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Revelar senha do equipamento reconhece grupo RBAC (ex.: super administrador), nao so o campo legado perfil=admin
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/EquipmentController.php
+
+## v5.29.1.0 — 2026-08-12 18:52
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** PDV: dropdown de busca abre para cima quando nao ha espaco suficiente embaixo (campo perto do rodape em janela baixa), com altura maxima calculada dinamicamente; alinhamento do resultado corrigido para nomes longos
+- **Arquivos:** backend/routes/api.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/public/assets/js/vendas-pdv.js,frontends/desktop/resources/views/vendas/pdv.blade.php,frontends/desktop/tests/Feature/Desktop/VendaTest.php
+
+## v5.29.0.1 — 2026-08-12 18:24
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige rota ausente de revelar senha do equipamento (POST equipments/{equipment}/reveal-password retornava 405)
+- **Arquivos:** backend/routes/api.php
+
+## v5.29.0.0 — 2026-08-12 18:20
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** PDV: pagamento passa a ser um passo dentro de modal aberto por 'Finalizar venda' (F2), em vez de coluna sempre visivel; e corrigido o dropdown de busca que ficava escondido pelo overflow da coluna esquerda, agora posicionado via position:fixed
+- **Arquivos:** documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md,frontends/desktop/public/assets/js/vendas-pdv.js,frontends/desktop/resources/views/vendas/pdv.blade.php,frontends/desktop/tests/Feature/Desktop/VendaTest.php
+
+## v5.28.1.0 — 2026-08-12 17:48
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** PDV: campos de pagamento (operadora, bandeira, modalidade, parcelas, conta) empilhados com um rotulo cada, no lugar do grid do Bootstrap que os espremia dentro da coluna estreita
+- **Arquivos:** frontends/desktop/resources/views/vendas/pdv.blade.php
+
 ## v5.28.0.0 — 2026-08-12 11:23
 - **Tier:** minor
 - **Autor/Agente:** Codex

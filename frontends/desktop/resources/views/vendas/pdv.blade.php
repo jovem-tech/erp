@@ -15,7 +15,7 @@
             grid-template-columns:
                 clamp(17rem, 24vw, 22rem)
                 minmax(0, 1fr)
-                clamp(16rem, 22vw, 20rem);
+                clamp(18rem, 25vw, 23rem);
             gap: .75rem;
             height: calc(100vh - var(--desktop-topbar-height) - 6rem);
             min-height: 26rem;
@@ -32,7 +32,11 @@
 
         /* Válvula de segurança: em janela baixa as colunas laterais rolam por
            dentro em vez de estourar a tela. O centro nunca rola inteiro — quem
-           rola lá é só a lista de itens. */
+           rola lá é só a lista de itens.
+           IMPORTANTE: overflow aqui não pode voltar a existir sem cuidado — foi
+           isso que escondia os resultados da busca (ver comentário em
+           .pdv-resultados). Por isso o dropdown usa position: fixed, imune a
+           este overflow. */
         .pdv-col-esquerda,
         .pdv-col-lateral {
             overflow-y: auto;
@@ -40,7 +44,6 @@
 
         .pdv-bloco-cliente,
         .pdv-bloco-busca,
-        .pdv-bloco-pagamento,
         .pdv-bloco-desconto,
         .pdv-bloco-fechar {
             flex: 0 0 auto;
@@ -49,6 +52,11 @@
 
         .pdv-bloco-busca .form-label {
             margin-bottom: .25rem;
+        }
+
+        .pdv-bloco-busca small {
+            font-size: .75rem;
+            line-height: 1.3;
         }
 
         /* Um campo por linha, com respiro entre eles. */
@@ -116,30 +124,50 @@
             position: relative;
         }
 
-        /* Resultados flutuam sobre o carrinho: empurrar a página criaria a
-           rolagem que esta tela justamente evita. */
-        /* Transborda a coluna esquerda de propósito: o resultado traz nome,
-           código, saldo e preço, e não caberia legível em 15rem. */
+        /* position: fixed de propósito, não absolute. A coluna esquerda tem
+           overflow-y: auto (válvula de segurança acima), e um "position:
+           absolute" dentro de um ancestral com overflow fica CORTADO por ele
+           — foi exatamente isso que escondia a lista de resultados. Fixed usa
+           o viewport como referência e ignora o overflow dos pais; a posição é
+           calculada em JS (posicionarResultados) porque, sem ancestral
+           posicionado relevante, não dá para usar apenas CSS aqui. Também
+           transborda a largura da coluna de propósito: o resultado traz nome,
+           código, saldo e preço, e não caberia legível em ~18rem. */
         .pdv-resultados {
-            position: absolute;
-            left: .9rem;
+            position: fixed;
             width: min(34rem, 52vw);
-            top: calc(100% - 1.6rem);
-            z-index: 20;
+            z-index: 1080;
+            /* Fallback antes do JS calcular: top/bottom/max-height reais vêm
+               inline de posicionarResultados(), que escolhe abrir para cima
+               ou para baixo conforme o espaço livre na janela (campo perto do
+               rodapé numa tela baixa não pode empurrar a caixa para fora da
+               viewport). */
             max-height: 20rem;
             overflow-y: auto;
             box-shadow: 0 .75rem 1.5rem rgba(15, 55, 100, .18);
         }
 
-        .pdv-pagamentos-scroll {
-            max-height: 13rem;
-            overflow-y: auto;
+        .pdv-pagamento-topo {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+        }
+
+        .pdv-pagamento-topo .form-select {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .pdv-pagamento .pdv-campo {
+            margin-bottom: .45rem;
         }
 
         /* ------------------------------------------------------------------
-           Modo terminal (F3): tela cheia de verdade, como num caixa de
-           supermercado. A classe entra no <body> via Fullscreen API; se o
-           navegador recusar a tela cheia, ela ainda esconde topbar e rodapé.
+           Modo terminal (F3, botão "Tela cheia" ou entrada automática ao
+           abrir/recarregar o PDV): esconde topbar, sidebar e rodapé. A classe
+           no <body> é a fonte da verdade — a Fullscreen API real do
+           navegador (sem barra alguma) é só um complemento de melhor
+           esforço, aplicado por cima quando há gesto do usuário.
            ------------------------------------------------------------------ */
         .pdv-modo-terminal .desktop-topbar,
         .pdv-modo-terminal .desktop-system-footer,
@@ -156,9 +184,121 @@
             padding: .6rem;
         }
 
+        /* Cabeçalho de marca: só existe em modo terminal — fora dele a topbar
+           do sistema já mostra a marca, duplicar seria redundante. */
+        .pdv-terminal-header {
+            display: none;
+            align-items: center;
+            gap: .75rem;
+            padding: .35rem .5rem .75rem;
+            flex: 0 0 auto;
+        }
+
+        .pdv-modo-terminal .pdv-terminal-header {
+            display: flex;
+        }
+
+        .pdv-terminal-logo {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.75rem;
+            height: 2.75rem;
+            border-radius: .6rem;
+            background: var(--desktop-surface, #fff);
+            box-shadow: 0 .2rem .5rem rgba(15, 55, 100, .12);
+            flex: 0 0 auto;
+            font-size: 1.4rem;
+            color: var(--bs-primary, #0d6efd);
+        }
+
+        .pdv-terminal-logo.has-logo {
+            background: #fff;
+            padding: .3rem;
+        }
+
+        .pdv-terminal-logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .pdv-terminal-empresa {
+            font-size: 1.25rem;
+            font-weight: 600;
+            letter-spacing: .01em;
+        }
+
         .pdv-modo-terminal .pdv-grid {
-            /* Sem topbar nem rodapé: sobra a janela inteira menos o padding. */
-            height: calc(100vh - 1.2rem);
+            /* Sem topbar nem rodapé: sobra a janela inteira menos o padding e
+               a faixa do cabeçalho de marca. */
+            height: calc(100vh - 1.2rem - 3.9rem);
+        }
+
+        /* Calendário + relógio: fixados no rodapé da coluna de fechamento,
+           abaixo do botão Finalizar venda, só em modo terminal. margin-top:
+           auto empurra o bloco para o fim mesmo com espaço sobrando. */
+        .pdv-terminal-agenda {
+            display: none;
+            margin-top: auto;
+            flex: 0 0 auto;
+            text-align: center;
+        }
+
+        .pdv-modo-terminal .pdv-terminal-agenda {
+            display: block;
+        }
+
+        .pdv-terminal-calendario {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: .78rem;
+        }
+
+        .pdv-terminal-calendario caption {
+            caption-side: top;
+            font-weight: 600;
+            font-size: .85rem;
+            padding-bottom: .35rem;
+            text-transform: capitalize;
+        }
+
+        .pdv-terminal-calendario th,
+        .pdv-terminal-calendario td {
+            width: 14.28%;
+            text-align: center;
+            padding: .15rem 0;
+            color: var(--bs-secondary-color, #6c757d);
+        }
+
+        .pdv-terminal-calendario th {
+            font-weight: 500;
+            font-size: .68rem;
+        }
+
+        /* Círculo de verdade: aplicado num span de tamanho fixo dentro da
+           célula, não na célula em si (que é retangular e viraria elipse). */
+        .pdv-terminal-calendario td span {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.4rem;
+            height: 1.4rem;
+        }
+
+        .pdv-terminal-calendario td.pdv-dia-atual span {
+            color: #fff;
+            background: var(--bs-primary, #0d6efd);
+            border-radius: 50%;
+            font-weight: 600;
+        }
+
+        .pdv-terminal-relogio {
+            margin-top: .5rem;
+            font-size: 1.6rem;
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: .04em;
         }
 
         /* Em terminal o operador está de longe: fontes e alvos maiores. */
@@ -175,7 +315,7 @@
             font-size: 1.6rem;
         }
 
-        .pdv-modo-terminal #pdvFinalizar {
+        .pdv-modo-terminal #pdvAbrirPagamento {
             padding: .85rem 1rem;
             font-size: 1.15rem;
         }
@@ -203,14 +343,16 @@
 
             .pdv-col-esquerda,
             .pdv-col-lateral,
-            .pdv-itens-scroll,
-            .pdv-pagamentos-scroll {
+            .pdv-itens-scroll {
                 max-height: none;
                 overflow-y: visible;
             }
+        }
 
+        /* A largura fixa do dropdown só cabe com folga a partir daqui; abaixo
+           disso ele ocupa a largura livre calculada em JS. */
+        @media (max-width: 767.98px) {
             .pdv-resultados {
-                right: .9rem;
                 width: auto;
             }
         }
@@ -246,8 +388,25 @@
         <input type="hidden" name="confirmar_estoque_insuficiente" id="pdvConfirmarEstoque" value="0">
         <input type="hidden" name="data_venda" value="{{ $hoje }}">
 
+        {{-- Só aparece em tela cheia (F3): fora dela a topbar do sistema já
+             mostra a marca, então duplicar aqui seria redundante. Em tela
+             cheia a topbar some, e "a tela é o PDV da loja" pede uma
+             identidade visual própria. Mesma fonte da sidebar
+             ($desktopCompanyBranding, injetado globalmente em
+             DesktopAppServiceProvider). --}}
+        <header class="pdv-terminal-header" aria-hidden="true">
+            <span class="pdv-terminal-logo {{ ($desktopCompanyBranding['has_logo'] ?? false) ? 'has-logo' : '' }}">
+                @if ($desktopCompanyBranding['has_logo'] ?? false)
+                    <img src="{{ route('configurations.company.logo') }}" alt="Logo da empresa">
+                @else
+                    <i class="bi bi-houses-fill"></i>
+                @endif
+            </span>
+            <span class="pdv-terminal-empresa">{{ $desktopCompanyBranding['name'] ?? 'Sistema ERP' }}</span>
+        </header>
+
         <div class="pdv-grid">
-            {{-- Coluna 1: quem está comprando e o que está entrando --}}
+            {{-- Coluna 1: quem está comprando. --}}
             <div class="pdv-col-esquerda">
                 {{-- Empilhado de propósito: as classes col-lg-* do Bootstrap
                      respondem à largura da JANELA, não da coluna, e espremiam
@@ -293,6 +452,12 @@
                     </div>
                 </section>
 
+            </div>
+
+            {{-- Coluna 2: busca + carrinho. Fica no centro porque é onde o
+                 operador olha o tempo todo — busca o item, vê ele cair na
+                 lista logo abaixo, sem trocar de coluna. --}}
+            <div class="pdv-col-centro">
                 <section class="surface-card pdv-bloco-busca">
                     <label for="pdvBusca" class="form-label fw-semibold">
                         <i class="bi bi-upc-scan me-1"></i>
@@ -306,19 +471,15 @@
                         autocomplete="off"
                         autofocus
                     >
-                    {{-- Absoluto: a lista flutua sobre o carrinho em vez de
-                         empurrar a página e criar rolagem. --}}
+                    {{-- position: fixed calculado em JS: a lista flutua sobre
+                         o carrinho em vez de empurrar a página e criar
+                         rolagem. --}}
                     <div id="pdvResultados" class="list-group pdv-resultados d-none"></div>
                     <small class="text-secondary d-block mt-2">
-                        Enter adiciona o primeiro resultado. F2 finaliza, F3 tela cheia, Esc limpa o carrinho.
+                        Enter adiciona · F2 finaliza · F3 tela cheia · Esc limpa
                     </small>
                 </section>
 
-            </div>
-
-            {{-- Coluna 2: o carrinho. Fica no centro porque é o que cresce
-                 enquanto a venda acontece — é aqui que o operador olha. --}}
-            <div class="pdv-col-centro">
                 <section class="surface-table pdv-bloco-itens">
                     <div class="surface-table-header">
                         <div>
@@ -370,37 +531,10 @@
                 </section>
             </div>
 
-            {{-- Coluna 3: fechamento — pagamento, ajustes e a ação final --}}
+            {{-- Coluna 3: ajustes da venda e o gatilho de finalização. O
+                 pagamento em si só aparece dentro do modal — não faz sentido
+                 pedir forma de pagamento antes de saber o total fechado. --}}
             <div class="pdv-col-lateral">
-                <section class="surface-card pdv-bloco-pagamento">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <h3 class="surface-title fs-6 mb-0">Pagamento</h3>
-                        <button type="button" class="btn btn-outline-secondary btn-sm" id="pdvAdicionarPagamento">
-                            <i class="bi bi-plus-lg me-1"></i>Forma
-                        </button>
-                    </div>
-
-                    <div id="pdvPagamentos" class="pdv-pagamentos-scroll"></div>
-
-                    <dl class="row mb-0 mt-2">
-                        <dt class="col-6 text-secondary fw-normal">Recebido</dt>
-                        <dd class="col-6 text-end mb-1" id="pdvRecebido">R$ 0,00</dd>
-                        <dt class="col-6 text-secondary fw-normal" id="pdvSaldoRotulo">Falta</dt>
-                        <dd class="col-6 text-end mb-1 fw-semibold" id="pdvSaldo">R$ 0,00</dd>
-                    </dl>
-
-                    <div class="alert alert-success d-none mt-2 mb-0 py-2" id="pdvTrocoBox">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span>Troco</span>
-                            <strong class="fs-4" id="pdvTroco">R$ 0,00</strong>
-                        </div>
-                    </div>
-
-                    <p class="text-secondary small mt-2 mb-0" id="pdvAvisoFiado">
-                        Recebimento menor que o total deixa a venda com saldo em aberto no financeiro.
-                    </p>
-                </section>
-
                 <section class="surface-card pdv-bloco-desconto">
                     <h3 class="surface-title fs-6 mb-2">Desconto geral</h3>
                     <div class="input-group">
@@ -424,11 +558,88 @@
                     <label for="pdvObservacoes" class="form-label mb-1">Observações</label>
                     <textarea id="pdvObservacoes" name="observacoes" class="form-control" rows="2" maxlength="2000"></textarea>
 
-                    <button type="submit" class="btn btn-primary btn-lg w-100 mt-2" id="pdvFinalizar" disabled>
+                    {{-- Não é o submit: abre o modal de pagamento. O envio real
+                         acontece no botão dentro do modal. --}}
+                    <button type="button" class="btn btn-primary btn-lg w-100 mt-2" id="pdvAbrirPagamento"
+                            data-bs-toggle="modal" data-bs-target="#pdvPagamentoModal" disabled>
                         <i class="bi bi-check2-circle me-2"></i>
                         Finalizar venda (F2)
                     </button>
                 </section>
+
+                {{-- Só em modo terminal (F3), abaixo do botão Finalizar.
+                     Gerado e atualizado via JS (não no Blade) para não ficar
+                     desatualizado se o terminal ficar aberto virando o dia. --}}
+                <div class="pdv-terminal-agenda" aria-hidden="true">
+                    <table class="pdv-terminal-calendario" id="pdvTerminalCalendario">
+                        <caption></caption>
+                        <thead>
+                        <tr>
+                            <th>D</th><th>S</th><th>T</th><th>Q</th><th>Q</th><th>S</th><th>S</th>
+                        </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                    <div class="pdv-terminal-relogio" id="pdvTerminalRelogio">--:--:--</div>
+                </div>
+            </div>
+        </div>
+
+        {{-- Pagamento só entra em cena aqui: o operador já viu o total fechado
+             (desconto incluso) antes de escolher como vai receber. --}}
+        <div class="modal fade" id="pdvPagamentoModal" tabindex="-1" aria-labelledby="pdvPagamentoModalLabel"
+             aria-hidden="true" data-bs-backdrop="static">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="pdvPagamentoModalLabel">Pagamento</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                    </div>
+
+                    <div class="modal-body">
+                        <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                            <span class="text-secondary">Total da venda</span>
+                            <strong class="fs-4" id="pdvPagamentoTotal">R$ 0,00</strong>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <h3 class="surface-title fs-6 mb-0">Formas de pagamento</h3>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" id="pdvAdicionarPagamento">
+                                <i class="bi bi-plus-lg me-1"></i>Forma
+                            </button>
+                        </div>
+
+                        <div id="pdvPagamentos"></div>
+
+                        <dl class="row mb-0 mt-2">
+                            <dt class="col-6 text-secondary fw-normal">Recebido</dt>
+                            <dd class="col-6 text-end mb-1" id="pdvRecebido">R$ 0,00</dd>
+                            <dt class="col-6 text-secondary fw-normal" id="pdvSaldoRotulo">Falta</dt>
+                            <dd class="col-6 text-end mb-1 fw-semibold" id="pdvSaldo">R$ 0,00</dd>
+                        </dl>
+
+                        <div class="alert alert-success d-none mt-2 mb-0 py-2" id="pdvTrocoBox">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span>Troco</span>
+                                <strong class="fs-4" id="pdvTroco">R$ 0,00</strong>
+                            </div>
+                        </div>
+
+                        <p class="text-secondary small mt-2 mb-0" id="pdvAvisoFiado">
+                            Recebimento menor que o total deixa a venda com saldo em aberto no financeiro.
+                        </p>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Voltar</button>
+                        {{-- Este é o submit de verdade: o form inteiro (cliente,
+                             itens, desconto, observações) já está pronto; só
+                             faltava a forma de pagamento. --}}
+                        <button type="submit" class="btn btn-primary" id="pdvConfirmarFinalizar">
+                            <i class="bi bi-check2-circle me-2"></i>Finalizar venda
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -463,44 +674,54 @@
         </template>
 
         <template id="pdvModeloPagamento">
+            {{-- Um campo por linha, com rótulo. As classes col-* do Bootstrap
+                 respondem à largura da JANELA, não da coluna, e espremiam
+                 operadora/bandeira/modalidade/parcelas em ~130px cada. --}}
             <div class="pdv-pagamento border rounded p-2 mb-2">
-                <div class="d-flex gap-2 align-items-start">
-                    <select class="form-select form-select-sm" data-campo="forma_pagamento"></select>
-                    <input type="text" class="form-control form-control-sm text-end" data-campo="valor" value="0,00" inputmode="decimal" style="max-width: 120px;">
+                <div class="pdv-pagamento-topo">
+                    <select class="form-select form-select-sm" data-campo="forma_pagamento" aria-label="Forma de pagamento"></select>
                     <button type="button" class="btn btn-sm btn-outline-danger pdv-remover-pagamento" aria-label="Remover pagamento">
                         <i class="bi bi-x-lg"></i>
                     </button>
                 </div>
 
-                <div class="mt-2 d-none pdv-bloco-dinheiro">
-                    <label class="form-label form-label-sm mb-1">Valor recebido</label>
+                <div class="pdv-campo mt-2">
+                    <label class="form-label">Valor</label>
+                    <input type="text" class="form-control form-control-sm text-end" data-campo="valor" value="0,00" inputmode="decimal">
+                </div>
+
+                <div class="pdv-campo mt-2 d-none pdv-bloco-dinheiro">
+                    <label class="form-label">Valor recebido</label>
                     <input type="text" class="form-control form-control-sm text-end" data-campo="valor_recebido" inputmode="decimal">
                 </div>
 
                 <div class="mt-2 d-none pdv-bloco-cartao">
-                    <div class="row g-2">
-                        <div class="col-6">
-                            <select class="form-select form-select-sm" data-campo="operadora_id"></select>
-                        </div>
-                        <div class="col-6">
-                            <select class="form-select form-select-sm" data-campo="bandeira_id"></select>
-                        </div>
-                        <div class="col-6">
-                            <select class="form-select form-select-sm" data-campo="modalidade">
-                                <option value="credito">Crédito</option>
-                                <option value="debito">Débito</option>
-                            </select>
-                        </div>
-                        <div class="col-6">
-                            <select class="form-select form-select-sm" data-campo="parcelas"></select>
-                        </div>
+                    <div class="pdv-campo">
+                        <label class="form-label">Operadora</label>
+                        <select class="form-select form-select-sm" data-campo="operadora_id"></select>
+                    </div>
+                    <div class="pdv-campo">
+                        <label class="form-label">Bandeira</label>
+                        <select class="form-select form-select-sm" data-campo="bandeira_id"></select>
+                    </div>
+                    <div class="pdv-campo">
+                        <label class="form-label">Modalidade</label>
+                        <select class="form-select form-select-sm" data-campo="modalidade">
+                            <option value="credito">Crédito</option>
+                            <option value="debito">Débito</option>
+                        </select>
+                    </div>
+                    <div class="pdv-campo pdv-campo-ultimo">
+                        <label class="form-label">Parcelas</label>
+                        <select class="form-select form-select-sm" data-campo="parcelas"></select>
                     </div>
                     <small class="text-secondary d-block mt-1 pdv-taxa-estimada"></small>
                 </div>
 
-                <div class="mt-2">
+                <div class="pdv-campo pdv-campo-ultimo mt-2">
+                    <label class="form-label">Conta que recebe</label>
                     <select class="form-select form-select-sm" data-campo="conta_financeira_id" required>
-                        <option value="">Selecione a conta que recebe</option>
+                        <option value="">Selecione a conta</option>
                         @foreach ($contas as $conta)
                             <option value="{{ $conta['id'] ?? '' }}">{{ $conta['nome'] ?? '' }}</option>
                         @endforeach
