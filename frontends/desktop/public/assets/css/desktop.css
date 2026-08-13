@@ -1874,6 +1874,14 @@ a {
     line-height: 1;
 }
 
+.desktop-quick-create-dropdown .dropdown-toggle::after {
+    display: none;
+}
+
+.desktop-quick-create-menu {
+    min-width: 14rem;
+}
+
 .desktop-profile-chip {
     display: flex;
     align-items: center;

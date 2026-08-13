@@ -17,7 +17,10 @@ class DesktopNavigation
             $items = array_values(array_filter(
                 array_map(
                     static fn (array $item): ?array => self::filterItem($item),
-                    $section['items']
+                    array_filter(
+                        $section['items'],
+                        static fn (array $item): bool => empty($item['hidden'])
+                    )
                 )
             ));
 
@@ -88,10 +91,15 @@ class DesktopNavigation
                         'module' => 'orcamentos',
                         'icon' => 'bi-receipt',
                     ],
-                    // Vendas de balcão — specs/027-vendas-balcao-pdv. O PDV
-                    // ganha entrada própria porque é tela de uso constante:
-                    // obrigar a passar pela listagem custaria um clique em
-                    // toda venda.
+                    // Vendas de balcão — specs/027-vendas-balcao-pdv. "Nova
+                    // venda (PDV)" e "Devoluções" não têm entrada visível no
+                    // menu: o PDV é acessado pelo botão "Nova venda" desta
+                    // listagem, e devoluções pelo "Mais ações" dela.
+                    // `hidden` mantém as duas fora da sidebar sem tirá-las do
+                    // cálculo de firstAllowedRouteName() — sem isso, um
+                    // usuário só com permissão de uma delas (ex.: só
+                    // "vendas:criar") ficaria sem destino de fallback ao
+                    // esbarrar num redirecionamento de permissão.
                     [
                         'label' => 'Vendas',
                         'route' => 'vendas.index',
@@ -104,23 +112,23 @@ class DesktopNavigation
                         'module' => 'vendas',
                         'action' => 'criar',
                         'icon' => 'bi-upc-scan',
+                        'hidden' => true,
                     ],
-                    // Turno de caixa — specs/028-caixa-sessoes. Fica junto do
-                    // PDV porque é a mesma pessoa que abre, vende e fecha.
-                    [
-                        'label' => 'Caixa',
-                        'route' => 'caixa.index',
-                        'module' => 'caixa',
-                        'icon' => 'bi-cash-stack',
-                    ],
-                    // Devoluções — specs/029-devolucao-troca. Entrada própria
-                    // porque a consulta ("o que voltou este mês?") é frequente;
-                    // registrar uma devolução continua sendo pela venda.
                     [
                         'label' => 'Devoluções',
                         'route' => 'devolucoes.index',
                         'module' => 'vendas',
                         'icon' => 'bi-arrow-return-left',
+                        'hidden' => true,
+                    ],
+                    // Turno de caixa — specs/028-caixa-sessoes. Acessado pelo
+                    // botão "Caixa" em Financeiro > Contas e Saldos.
+                    [
+                        'label' => 'Caixa',
+                        'route' => 'caixa.index',
+                        'module' => 'caixa',
+                        'icon' => 'bi-cash-stack',
+                        'hidden' => true,
                     ],
                 ],
             ],

@@ -15,6 +15,7 @@
     $canViewFinanceiro = DesktopSession::can('financeiro', 'visualizar');
     $canCreate = DesktopSession::can('contas_saldos', 'criar');
     $canEdit = DesktopSession::can('contas_saldos', 'editar');
+    $canViewCaixa = DesktopSession::can('caixa', 'visualizar');
     $money = static fn ($value): string => 'R$ ' . number_format((float) $value, 2, ',', '.');
     $date = static fn ($value): string => $value ? date('d/m/Y', strtotime((string) $value)) : '—';
     $paymentLabels = [
@@ -56,6 +57,14 @@
             <a href="{{ route('financeiro.contas.consolidado', ['mes' => $month]) }}" class="btn btn-outline-info">
                 <i class="bi bi-table me-2"></i>Consolidado geral
             </a>
+            @if ($canViewCaixa)
+                {{-- Turno de caixa — specs/028-caixa-sessoes. Caixa é uma das
+                     contas geridas aqui, então a tela de turno vive dentro de
+                     Contas e Saldos, não num menu próprio. --}}
+                <a href="{{ route('caixa.index') }}" class="btn btn-outline-info">
+                    <i class="bi bi-cash-stack me-2"></i>Caixa
+                </a>
+            @endif
             @if ($canViewFinanceiro)
                 <a href="{{ route('financeiro.index') }}" class="btn btn-outline-light">
                     <i class="bi bi-arrow-left me-2"></i>Lançamentos

@@ -80,6 +80,21 @@ class VendaTest extends TestCase
             ->assertSee('.pdv-modo-terminal .desktop-system-footer', false);
     }
 
+    public function test_modo_terminal_traz_marca_calendario_e_relogio(): void
+    {
+        Http::fake($this->fixtures());
+
+        // Os três elementos só existem para o CSS do modo terminal mostrar
+        // (.pdv-modo-terminal ...); fora dele ficam ocultos por padrão.
+        $this->withSession($this->desktopSession(['vendas' => ['visualizar', 'criar']]))
+            ->get('/vendas/nova')
+            ->assertOk()
+            ->assertSee('pdv-terminal-header', false)
+            ->assertSee('pdv-terminal-empresa', false)
+            ->assertSee('id="pdvTerminalCalendario"', false)
+            ->assertSee('id="pdvTerminalRelogio"', false);
+    }
+
     public function test_carrinho_fica_na_coluna_central(): void
     {
         Http::fake($this->fixtures());
@@ -104,6 +119,27 @@ class VendaTest extends TestCase
         $this->assertLessThan($lateral, $tabela, 'A tabela de itens não pode cair na coluna de fechamento.');
     }
 
+    public function test_busca_fica_na_coluna_central_acima_dos_itens(): void
+    {
+        Http::fake($this->fixtures());
+
+        $html = $this->withSession($this->desktopSession(['vendas' => ['visualizar', 'criar']]))
+            ->get('/vendas/nova')
+            ->assertOk()
+            ->getContent();
+
+        $centro = strpos($html, 'class="pdv-col-centro"');
+        $busca = strpos($html, 'id="pdvBusca"');
+        $tabela = strpos($html, 'id="pdvTabelaItens"');
+
+        $this->assertNotFalse($centro, 'Coluna central ausente.');
+
+        // A busca nasce dentro da coluna central, não mais na esquerda: é lá
+        // que o operador olha o item cair na lista assim que o adiciona.
+        $this->assertGreaterThan($centro, $busca, 'A busca deve estar dentro da coluna central.');
+        $this->assertLessThan($tabela, $busca, 'A busca deve vir antes da lista de itens.');
+    }
+
     public function test_pdv_agrupa_cliente_e_vendedor_acima_da_busca(): void
     {
         Http::fake($this->fixtures());
@@ -123,6 +159,49 @@ class VendaTest extends TestCase
         $this->assertLessThan($posVendedor, $posCliente);
         $this->assertLessThan($posBusca, $posVendedor);
         $this->assertLessThan($posItens, $posBusca);
+    }
+
+    public function test_pagamento_so_aparece_dentro_do_modal_de_finalizacao(): void
+    {
+        Http::fake($this->fixtures());
+
+        $html = $this->withSession($this->desktopSession(['vendas' => ['visualizar', 'criar']]))
+            ->get('/vendas/nova')
+            ->assertOk()
+            // O botão da coluna lateral só abre o modal — não é mais o submit.
+            ->assertSee('id="pdvAbrirPagamento"', false)
+            ->assertSee('data-bs-toggle="modal"', false)
+            ->assertSee('data-bs-target="#pdvPagamentoModal"', false)
+            // O submit de verdade mora dentro do modal.
+            ->assertSee('id="pdvConfirmarFinalizar"', false)
+            ->getContent();
+
+        // A antiga seção "Pagamento" fora do modal não existe mais.
+        $this->assertStringNotContainsString('pdv-bloco-pagamento', $html);
+
+        // A lista de pagamentos precisa nascer DENTRO do modal, não solta na
+        // coluna lateral — é isso que a mantém escondida até o clique.
+        $posModal = strpos($html, 'id="pdvPagamentoModal"');
+        $posPagamentos = strpos($html, 'id="pdvPagamentos"');
+        $posFimModal = strpos($html, 'id="pdvConfirmarFinalizar"');
+
+        $this->assertNotFalse($posModal);
+        $this->assertGreaterThan($posModal, $posPagamentos, 'A lista de pagamentos precisa estar dentro do modal.');
+        $this->assertLessThan($posFimModal, $posPagamentos, 'A lista de pagamentos precisa vir antes do botão de confirmar, dentro do modal.');
+    }
+
+    public function test_dropdown_de_busca_usa_posicionamento_fixo(): void
+    {
+        Http::fake($this->fixtures());
+
+        // position: fixed é o que impede a lista de resultados de ficar
+        // cortada pelo overflow:auto da coluna esquerda (válvula de segurança
+        // de janela baixa) — position: absolute era clipado por ela.
+        $this->withSession($this->desktopSession(['vendas' => ['visualizar', 'criar']]))
+            ->get('/vendas/nova')
+            ->assertOk()
+            ->assertSee('.pdv-resultados {', false)
+            ->assertSee('position: fixed', false);
     }
 
     public function test_finalizar_venda_envia_payload_normalizado_para_a_api(): void

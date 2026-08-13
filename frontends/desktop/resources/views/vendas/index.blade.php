@@ -37,6 +37,11 @@
 
             <x-list-actions label="Mais ações" size="">
                 <li>
+                    <a href="{{ route('devolucoes.index') }}" class="dropdown-item">
+                        <i class="bi bi-arrow-return-left me-2"></i>Devoluções
+                    </a>
+                </li>
+                <li>
                     <a href="{{ route('vendas.help') }}" class="dropdown-item">
                         <i class="bi bi-question-circle me-2"></i>Ajuda
                     </a>
