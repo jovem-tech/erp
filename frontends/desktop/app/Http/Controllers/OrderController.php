@@ -1270,6 +1270,71 @@ class OrderController extends DesktopController
             ->with('success', $message);
     }
 
+    /**
+     * Baixa em lote (Mais ações > Dar baixa em lote, na listagem de OS):
+     * encerra várias OS de uma vez com o mesmo status e a mesma data. Não
+     * aceita "Entregue - Reparado e Pago" — esse encerramento exige valor de
+     * pagamento por OS, incompatível com um status único aplicado ao lote.
+     */
+    public function closureBatchStore(Request $request): JsonResponse|RedirectResponse
+    {
+        $validated = $request->validate([
+            'order_ids' => ['required', 'array', 'min:1', 'max:20'],
+            'order_ids.*' => ['required', 'integer', 'min:1', 'distinct'],
+            'encerrar_como' => ['required', 'string', 'in:entregue_reparado_sem_custo,entregue_reparado_garantia,devolvido_sem_reparo,descartado'],
+            'data_entrega' => ['required', 'date'],
+            'observacao' => ['nullable', 'string', 'max:2000'],
+        ], [], [
+            'order_ids' => 'ordens selecionadas',
+            'encerrar_como' => 'forma de encerramento',
+            'data_entrega' => 'data de entrega',
+            'observacao' => 'observação',
+        ]);
+
+        try {
+            $result = $this->orderService->closeBatch(
+                array_map('intval', $validated['order_ids']),
+                [
+                    'encerrar_como' => $validated['encerrar_como'],
+                    'data_entrega' => $validated['data_entrega'],
+                    'observacao' => $validated['observacao'] ?? null,
+                ]
+            );
+        } catch (ApiAuthenticationException $exception) {
+            if ($request->wantsJson()) {
+                return response()->json(['error' => $exception->getMessage()], 401);
+            }
+
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            if ($request->wantsJson()) {
+                return response()->json(['error' => $exception->getMessage()], 422);
+            }
+
+            return redirect()->route('orders.index')->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            if ($request->wantsJson()) {
+                return response()->json(['error' => 'Não foi possível concluir a baixa em lote agora. Tente novamente.'], 500);
+            }
+
+            return redirect()->route('orders.index')->with('error', 'Não foi possível concluir a baixa em lote agora. Tente novamente.');
+        }
+
+        $succeededCount = (int) ($result['succeeded_count'] ?? 0);
+        $failedCount = (int) ($result['failed_count'] ?? 0);
+        $message = $failedCount > 0
+            ? sprintf('%d de %d OS encerradas. %d não puderam ser encerradas.', $succeededCount, $succeededCount + $failedCount, $failedCount)
+            : sprintf('%d OS encerrada(s) com sucesso.', $succeededCount);
+
+        if ($request->wantsJson()) {
+            return response()->json(['success' => true, 'message' => $message, 'result' => $result]);
+        }
+
+        return redirect()->route('orders.index')->with($failedCount > 0 ? 'error' : 'success', $message);
+    }
+
     public function closureCancel(Request $request, int $order): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([

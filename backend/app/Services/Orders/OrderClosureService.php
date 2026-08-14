@@ -382,6 +382,94 @@ class OrderClosureService
     }
 
     /**
+     * Códigos elegíveis para a baixa em lote (Mais ações > Dar baixa em
+     * lote, na listagem de OS): os mesmos NON_BILLED_CLOSURE_STATUSES, sem
+     * duplicar a lista. Exposto publicamente para BatchCloseOrdersRequest
+     * validar sem repetir os 4 códigos. NÃO inclui DELIVERED_STATUS
+     * ('entregue_reparado_pago') de propósito — esse encerramento exige
+     * valor/forma de pagamento por OS, incompatível com um lote onde todas
+     * as OS recebem o mesmo status de uma vez.
+     *
+     * @return array<int, string>
+     */
+    public static function batchClosureCodes(): array
+    {
+        return self::NON_BILLED_CLOSURE_STATUSES;
+    }
+
+    /**
+     * Fecha várias OS de uma vez com o mesmo status e a mesma data (Mais
+     * ações > Dar baixa em lote). Reaproveita close() por OS — cada chamada
+     * roda na sua própria DB::transaction() e refaz canAccessOrder() antes
+     * de qualquer validação, então uma OS sem permissão ou inválida não
+     * bloqueia as demais do lote.
+     *
+     * close() não tem guarda de "já encerrada" (diferente de
+     * registerAdvance(), que checa isso) porque ele É o fluxo de
+     * encerramento. Isso é seguro na baixa individual (a linha já vem
+     * escondida quando a OS está fechada), mas no lote a janela entre
+     * carregar a listagem e enviar a seleção é maior — sem a pré-checagem
+     * abaixo, uma OS fechada por outra pessoa nesse intervalo seria
+     * reaberta e refechada silenciosamente com o status/data deste lote.
+     *
+     * @param array<int, int> $orderIds
+     * @param array{encerrar_como: string, data_entrega: string, observacao?: ?string} $payload
+     * @return array{result: string, succeeded: array<int, array<string, mixed>>, failed: array<int, array<string, mixed>>, succeeded_count: int, failed_count: int}
+     */
+    public function closeBatch(array $orderIds, User $actor, array $payload): array
+    {
+        $orderIds = array_values(array_unique(array_map('intval', $orderIds)));
+        $closureCodes = OrderStatus::closureCodes();
+
+        $orders = Order::query()
+            ->whereIn('id', $orderIds)
+            ->get(['id', 'numero_os', 'status'])
+            ->keyBy('id');
+
+        $succeeded = [];
+        $failed = [];
+
+        foreach ($orderIds as $orderId) {
+            $row = $orders->get($orderId);
+
+            if ($row === null) {
+                $failed[] = ['order_id' => $orderId, 'numero_os' => null, 'reason' => 'not_found'];
+                continue;
+            }
+
+            if (in_array(trim((string) $row->status), $closureCodes, true)) {
+                $failed[] = ['order_id' => $orderId, 'numero_os' => $row->numero_os, 'reason' => 'already_closed'];
+                continue;
+            }
+
+            $result = $this->close($orderId, $actor, $payload);
+
+            if (($result['result'] ?? 'error') === 'ok') {
+                $succeeded[] = [
+                    'order_id' => $orderId,
+                    'numero_os' => $result['order']['numero_os'] ?? $row->numero_os,
+                    'status_aplicado' => $result['order']['status'] ?? null,
+                ];
+                continue;
+            }
+
+            $failed[] = [
+                'order_id' => $orderId,
+                'numero_os' => $row->numero_os,
+                'reason' => (string) ($result['result'] ?? 'error'),
+            ];
+        }
+
+        return [
+            'result' => 'ok',
+            'succeeded' => $succeeded,
+            'failed' => $failed,
+            'succeeded_count' => count($succeeded),
+            'failed_count' => count($failed),
+        ];
+    }
+
+    /**
      * Registra um Adiantamento/Sinal contra a OS SEM fechar o atendimento —
      * ao contrário de close(), nunca aplica um dos 3 OrderStatus::closureCodes().
      * Caminho paralelo a close(), usado quando a classificação da baixa (tela

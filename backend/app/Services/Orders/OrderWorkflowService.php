@@ -1097,6 +1097,27 @@ class OrderWorkflowService
             }
         }
 
+        // Regra de negocio (2026-08-13): a OS saiu do fluxo sem reparo
+        // (OrderStatus::flowExitCodes()) — nao faz sentido manter um orcamento
+        // vinculado ainda aberto quando o reparo nao vai mais acontecer. Ver
+        // BudgetOrderSyncService::cancelBudgetsForOrderFlowExit() para o
+        // porque esse caminho nao ressincroniza o status da OS de volta.
+        if ($statusChanged && in_array($newStatus, OrderStatus::flowExitCodes(), true)) {
+            try {
+                $this->budgetOrderSyncService->cancelBudgetsForOrderFlowExit(
+                    $orderId,
+                    (int) $actor->id,
+                    (string) ($statusRow->nome ?? $newStatus)
+                );
+            } catch (Throwable $exception) {
+                logger()->warning('[API V1][ORDERS] Falha ao cancelar orcamento por saida de fluxo da OS', [
+                    'order_id' => $orderId,
+                    'status_novo' => $newStatus,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
+        }
+
         $updatedOrder = $this->detailQuery()->find($orderId);
 
         if ($statusChanged && $updatedOrder instanceof Order) {
@@ -2122,6 +2143,26 @@ class OrderWorkflowService
                     $this->applyEntryChecklistSyncPlan($orderId, $entryChecklistPlan, $now);
                 }
             });
+        }
+
+        // Mesma regra de negocio de updateStatus() (ver comentario la): a
+        // edicao generica tambem pode setar um status de saida de fluxo (nao e
+        // um dos closureCodes(), bloqueados acima), entao precisa do mesmo
+        // gatilho de cancelamento automatico do orcamento vinculado.
+        if ($statusChanged && in_array((string) $payload['status'], OrderStatus::flowExitCodes(), true)) {
+            try {
+                $this->budgetOrderSyncService->cancelBudgetsForOrderFlowExit(
+                    $orderId,
+                    (int) $actor->id,
+                    (string) ($statusRow->nome ?? $payload['status'])
+                );
+            } catch (Throwable $exception) {
+                logger()->warning('[API V1][ORDERS] Falha ao cancelar orcamento por saida de fluxo da OS', [
+                    'order_id' => $orderId,
+                    'status_novo' => (string) $payload['status'],
+                    'message' => $exception->getMessage(),
+                ]);
+            }
         }
 
         if ($uploadedPhotos !== []) {

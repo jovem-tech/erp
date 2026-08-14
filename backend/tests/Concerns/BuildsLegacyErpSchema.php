@@ -366,7 +366,17 @@ trait BuildsLegacyErpSchema
             [
                 'codigo' => 'cancelado',
                 'nome' => 'Cancelado',
-                'grupo_macro' => 'encerrado',
+                // grupo_macro real (producao/homolog) e' 'cancelado' (grupo
+                // proprio), NAO 'encerrado' — 'cancelado' nao e' um dos
+                // OrderStatus::closureCodes() (ver skill
+                // sistema-erp-os-fluxo-fechamento, secao "Regra central":
+                // "existem 5 status (fora cancelado)..."). Fixture estava
+                // divergente do banco real, o que faria
+                // OrderStatus::flowExitCodes() (grupo_macro IN
+                // ['finalizado_sem_reparo', 'cancelado']) nao reconhecer este
+                // status em teste, alem de bloquear indevidamente a mudanca
+                // via updateStatus() com closure_status_requires_baixa_flow.
+                'grupo_macro' => 'cancelado',
                 'icone' => null,
                 'cor' => 'danger',
                 'ordem_fluxo' => 90,
@@ -374,6 +384,51 @@ trait BuildsLegacyErpSchema
                 'status_pausa' => 0,
                 'gera_evento_crm' => 1,
                 'estado_fluxo_padrao' => 'cancelado',
+                'ativo' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'codigo' => 'irreparavel',
+                'nome' => 'Irreparável',
+                'grupo_macro' => 'finalizado_sem_reparo',
+                'icone' => null,
+                'cor' => 'danger',
+                'ordem_fluxo' => 91,
+                'status_final' => 1,
+                'status_pausa' => 0,
+                'gera_evento_crm' => 1,
+                'estado_fluxo_padrao' => 'encerrado',
+                'ativo' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'codigo' => 'irreparavel_disponivel_loja',
+                'nome' => 'Irreparável, Disponível para Retirada',
+                'grupo_macro' => 'finalizado_sem_reparo',
+                'icone' => null,
+                'cor' => 'danger',
+                'ordem_fluxo' => 92,
+                'status_final' => 1,
+                'status_pausa' => 0,
+                'gera_evento_crm' => 1,
+                'estado_fluxo_padrao' => 'pronto',
+                'ativo' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'codigo' => 'reparo_recusado',
+                'nome' => 'Reparo Recusado',
+                'grupo_macro' => 'finalizado_sem_reparo',
+                'icone' => null,
+                'cor' => 'danger',
+                'ordem_fluxo' => 93,
+                'status_final' => 1,
+                'status_pausa' => 0,
+                'gera_evento_crm' => 1,
+                'estado_fluxo_padrao' => 'encerrado',
                 'ativo' => 1,
                 'created_at' => now(),
                 'updated_at' => now(),

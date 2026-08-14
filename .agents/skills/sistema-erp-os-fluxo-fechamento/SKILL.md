@@ -530,6 +530,60 @@ uma segunda implementacao do diagrama:
   decoracao nem zoom/pan/clique (bug real que apareceu na primeira versao).
   Ambos os scripts usam cache-buster `?v=filemtime(...)`.
 
+## Saída de fluxo cancela automaticamente o orçamento vinculado (2026-08-13)
+
+Decisão do usuário: quando a OS entra em um dos códigos de "saída do fluxo"
+(`OrderStatus::flowExitCodes()` — mesmo agrupamento `finalizado_sem_reparo` +
+`cancelado` da seção "Aba Status" acima: `irreparavel`,
+`irreparavel_disponivel_loja`, `reparo_recusado`, `cancelado`), qualquer
+orçamento ainda vinculado e aberto (status fora de
+`convertido`/`cancelado`/`rejeitado`) é cancelado automaticamente — não faz
+sentido manter um orçamento pendente de aprovação para um reparo que não vai
+mais acontecer.
+
+- `OrderStatus::flowExitCodes()` — fonte única dos códigos (query por
+  `grupo_macro IN FLOW_EXIT_MACRO_GROUPS`). Não hardcode essas strings.
+- `BudgetOrderSyncService::cancelBudgetsForOrderFlowExit()` — cancela todos os
+  orçamentos abertos de `Budget::where('os_id', $orderId)`, gravando
+  `orcamento_status_historico`/`orcamento_aprovacoes` (origem `'sistema'`) e
+  emitindo evento `os_eventos` (`CATEGORIA_ORCAMENTO`/`TIPO_ORCAMENTO_CANCELADO`,
+  `ORIGEM_AUTOMACAO`), igual ao cancelamento manual do técnico
+  (`BudgetApprovalService::cancelByStaff()`), mas **sem** notificar o cliente
+  por não ser uma decisão dele.
+- Chamado por `OrderWorkflowService::updateStatus()` e `updateOrder()`, sempre
+  **depois** da transação que grava o novo status da OS, dentro de
+  `try/catch` (falha aqui nunca desfaz nem bloqueia a troca de status — só
+  loga warning, mesmo padrão do recálculo de margem logo acima no código).
+- **Vive em `BudgetOrderSyncService`, não em `BudgetApprovalService`**: essa
+  segunda classe depende de `OrderDocumentCenterService`, que por sua vez
+  depende de `OrderWorkflowService` — injetar `BudgetApprovalService` em
+  `OrderWorkflowService` fecha um ciclo de resolução de dependências (o
+  container do Laravel entra em recursão infinita ao montar o serviço, sem
+  lançar `CircularDependencyException`; sintoma real observado: processo
+  `tinker` preso consumindo CPU/memória crescente até ser morto). `Order
+  WorkflowService` já dependia de `BudgetOrderSyncService`, então o novo
+  método foi colocado lá.
+- **Propositalmente NÃO chama `BudgetOrderSyncService::syncFromBudget()` de
+  volta.** `syncFromBudget()` mapeia orçamento cancelado/rejeitado para
+  `os.status = 'cancelado'` — se o cancelamento automático do orçamento
+  disparasse essa ressincronização, uma OS movida para `irreparavel` seria
+  silenciosamente sobrescrita para `cancelado` só porque o orçamento também
+  virou cancelado. O status da OS já foi escolhido deliberadamente pelo
+  técnico neste mesmo request; a sincronização automática só faz sentido no
+  sentido orçamento → OS quando é o **cliente/link público** decidindo
+  (`BudgetApprovalService::finalizeCancellation()`/`finalizeRejection()`,
+  esses sim continuam chamando `syncFromBudget()`).
+- Testes: `OrderFlowTest::test_patch_status_to_flow_exit_cancels_linked_open_budget`,
+  `..._ignores_budget_already_in_terminal_status`,
+  `..._to_cancelado_cancels_linked_open_budget`.
+- **Achado durante a implementação**: `tests/Concerns/BuildsLegacyErpSchema.php::seedOrderCatalog()`
+  tinha `cancelado` com `grupo_macro='encerrado'` (divergente do banco real,
+  onde é `'cancelado'`, grupo próprio — mesma classe de bug já documentada na
+  seção "Bug corrigido" acima para `entregue_pagamento_pendente`) e não tinha
+  `irreparavel`/`irreparavel_disponivel_loja`/`reparo_recusado` no catálogo de
+  teste. Corrigido o `grupo_macro` de `cancelado` e adicionados os 3 códigos
+  faltantes com `grupo_macro='finalizado_sem_reparo'`, batendo com produção.
+
 ## Checklist ao tocar em status de OS ou relatorios financeiros
 
 - [ ] Se adicionar um novo caminho que possa alterar `os.status` (novo

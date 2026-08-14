@@ -75,6 +75,20 @@ class OrderStatus extends Model
         'descartado', 'cancelado',
     ];
 
+    /**
+     * Valores de `os_status.grupo_macro` que representam "saída do fluxo":
+     * a OS deixa de seguir o atendimento normal sem ter sido entregue/baixada
+     * (irreparável, irreparável disponível para retirada, reparo recusado ou
+     * cancelado). Distinto de CLOSURE_MACRO_GROUP — estes status são
+     * aplicáveis por OrderWorkflowService::updateStatus() normalmente (não
+     * exigem o fluxo de baixa), mas ainda assim encerram o atendimento e por
+     * isso disparam o cancelamento automático do orçamento vinculado (ver
+     * BudgetOrderSyncService::cancelBudgetsForOrderFlowExit()). Mesmo
+     * agrupamento usado pela aba "Mapa de status" do modal "Alterar status"
+     * (`orders-status-modal.js::EXIT_PHASES`).
+     */
+    public const FLOW_EXIT_MACRO_GROUPS = ['finalizado_sem_reparo', 'cancelado'];
+
     protected $table = 'os_status';
 
     protected $primaryKey = 'id';
@@ -118,6 +132,25 @@ class OrderStatus extends Model
         return static::query()
             ->where('ativo', 1)
             ->where('grupo_macro', self::CLOSURE_MACRO_GROUP)
+            ->orderBy('ordem_fluxo')
+            ->pluck('codigo')
+            ->map(static fn ($code): string => trim((string) $code))
+            ->filter(static fn (string $code): bool => $code !== '')
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Códigos de "saída do fluxo" (FLOW_EXIT_MACRO_GROUPS) — usar sempre esta
+     * fonte única em vez de repetir os códigos soltos em outro lugar.
+     *
+     * @return array<int, string>
+     */
+    public static function flowExitCodes(): array
+    {
+        return static::query()
+            ->where('ativo', 1)
+            ->whereIn('grupo_macro', self::FLOW_EXIT_MACRO_GROUPS)
             ->orderBy('ordem_fluxo')
             ->pluck('codigo')
             ->map(static fn ($code): string => trim((string) $code))

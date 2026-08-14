@@ -58,7 +58,13 @@ class ApiClient
      */
     public function refreshToken(): array
     {
-        $response = $this->authenticatedRequest('post', '/auth/refresh');
+        // allowRefresh: false quebra a recursão: se o token já está
+        // realmente inválido/revogado, /auth/refresh também responde 401
+        // (exige um Bearer Sanctum válido) — sem essa guarda,
+        // authenticatedRequest() chamaria refreshToken() de novo, que
+        // chamaria authenticatedRequest('/auth/refresh') de novo, ad
+        // infinitum, até o throttle:60,1 da rota cortar o loop.
+        $response = $this->authenticatedRequest('post', '/auth/refresh', allowRefresh: false);
 
         $payload = $response->json();
 
@@ -250,8 +256,14 @@ class ApiClient
     /**
      * @param array<string, mixed> $payload
      * @param array<string, mixed> $query
+     * @param bool $allowRefresh Falso apenas na chamada interna de
+     *     refreshToken() para POST /auth/refresh — impede que um 401 NESSA
+     *     chamada (token já invalido/revogado, ja que /auth/refresh tambem
+     *     exige um Bearer Sanctum valido) dispare outra tentativa de
+     *     refresh, que chamaria authenticatedRequest('/auth/refresh') de
+     *     novo, recursivamente, sem caso base.
      */
-    private function authenticatedRequest(string $method, string $uri, array $payload = [], array $query = []): Response
+    private function authenticatedRequest(string $method, string $uri, array $payload = [], array $query = [], bool $allowRefresh = true): Response
     {
         $token = DesktopSession::token();
 
@@ -268,10 +280,10 @@ class ApiClient
                 ]);
 
             // Se receber 401 (Unauthorized), tentar fazer refresh do token
-            if ($response->status() === 401) {
+            if ($response->status() === 401 && $allowRefresh) {
                 try {
                     $this->refreshToken();
-                    
+
                     // Retry com novo token
                     $newToken = DesktopSession::token();
                     if ($newToken !== null) {

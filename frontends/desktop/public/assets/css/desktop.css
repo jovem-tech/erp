@@ -2945,6 +2945,27 @@ a {
     border-top: 1px solid rgba(148, 163, 184, 0.18);
 }
 
+.os-select-column {
+    width: 2.5rem;
+}
+
+.batch-closure-order-list {
+    max-height: 18rem;
+    overflow-y: auto;
+}
+
+.batch-closure-order-list .list-group-item {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.batch-closure-order-list .list-group-item-empty {
+    color: var(--bs-secondary-color, #64748b);
+    text-align: center;
+}
+
 .os-photo-cell {
     display: flex;
     align-items: center;
