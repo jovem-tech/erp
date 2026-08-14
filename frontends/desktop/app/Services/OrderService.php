@@ -133,6 +133,23 @@ class OrderService
     }
 
     /**
+     * @param  array<int, int>  $orderIds
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function closeBatch(array $orderIds, array $payload): array
+    {
+        // postOnce (sem retry automático): repetir o lote inteiro por causa de
+        // um erro transitório de rede seria pior que uma falha visível — mesmo
+        // motivo de FileManagerService::trashBatch()/restoreBatch()/purgeBatch().
+        $response = $this->apiClient->postOnce('/orders/close-batch', array_merge($payload, [
+            'order_ids' => array_values($orderIds),
+        ]));
+
+        return $response['data'] ?? [];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function cancelClosure(int $id, string $adminEmail, string $adminPassword): array

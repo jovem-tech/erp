@@ -1,0 +1,232 @@
+(function () {
+    const config = window.__DESKTOP_BATCH_CLOSURE_MODAL || {};
+    const batchClosureUrl = String(config.batchClosureUrl || '');
+    const csrfToken = String(config.csrfToken || '');
+
+    const trigger = document.getElementById('osBulkClosureTrigger');
+    const modalEl = document.getElementById('batchClosureModal');
+    if (!trigger || !modalEl) return;
+
+    const countChip = document.getElementById('osBulkSelectionCount');
+    const selectAll = document.getElementById('osSelectAll');
+    const form = document.getElementById('batchClosureForm');
+    const errorBox = document.getElementById('batchClosureError');
+    const submitBtn = document.getElementById('batchClosureSubmit');
+    const idsContainer = document.getElementById('batchClosureOrderIds');
+    const countLabel = document.getElementById('batchClosureCount');
+    const orderListEl = document.getElementById('batchClosureOrderList');
+    const modal = window.bootstrap ? new bootstrap.Modal(modalEl) : null;
+
+    const escapeHtml = (value) => String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;');
+
+    // Reconsulta ao vivo (nao guarda um array estatico): orders-list.js pode
+    // inserir linhas novas via Pusher depois do carregamento da pagina.
+    const checkboxes = () => [...document.querySelectorAll('.order-select')];
+    const selected = () => checkboxes().filter((item) => item.checked);
+
+    // Estado do lote dentro do modal: cópia mutável da seleção da listagem no
+    // instante em que o modal abriu (id -> detalhes). Permite remover uma OS
+    // do lote sem fechar o modal — a listagem por trás só é tocada (checkbox
+    // desmarcado) no momento da remoção, pra manter as duas telas coerentes
+    // se o usuário fechar o modal sem confirmar a baixa.
+    let batchItems = new Map();
+
+    const buildItemFromCheckbox = (checkbox) => ({
+        id: checkbox.value,
+        numero: checkbox.dataset.orderNumero || ('#' + checkbox.value),
+        cliente: checkbox.dataset.orderCliente || 'Cliente não informado',
+        equipamento: checkbox.dataset.orderEquipamento || 'Sem resumo técnico',
+        status: checkbox.dataset.orderStatus || 'Sem status',
+        valor: checkbox.dataset.orderValor || 'Valor não informado',
+    });
+
+    const showError = (message) => {
+        if (errorBox instanceof HTMLElement) {
+            errorBox.textContent = message;
+            errorBox.classList.remove('d-none');
+        }
+    };
+
+    const clearError = () => {
+        if (errorBox instanceof HTMLElement) {
+            errorBox.classList.add('d-none');
+            errorBox.textContent = '';
+        }
+    };
+
+    const updateSelection = () => {
+        const items = selected();
+        const total = items.length;
+        const all = checkboxes();
+
+        if (countChip instanceof HTMLElement) {
+            countChip.textContent = `${total} selecionada${total === 1 ? '' : 's'}`;
+        }
+        if (trigger instanceof HTMLButtonElement) {
+            trigger.disabled = total === 0;
+        }
+        if (selectAll instanceof HTMLInputElement) {
+            selectAll.checked = all.length > 0 && total === all.length;
+            selectAll.indeterminate = total > 0 && total < all.length;
+        }
+    };
+
+    document.addEventListener('change', (event) => {
+        if (event.target instanceof HTMLElement && event.target.matches('.order-select')) {
+            updateSelection();
+        }
+    });
+
+    selectAll?.addEventListener('change', () => {
+        checkboxes().forEach((item) => { item.checked = selectAll.checked; });
+        updateSelection();
+    });
+
+    const renderBatchList = () => {
+        idsContainer?.replaceChildren(...[...batchItems.keys()].map((id) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'order_ids[]';
+            input.value = id;
+            return input;
+        }));
+
+        if (countLabel instanceof HTMLElement) {
+            countLabel.textContent = String(batchItems.size);
+        }
+
+        if (submitBtn instanceof HTMLButtonElement) {
+            submitBtn.disabled = batchItems.size === 0;
+        }
+
+        if (batchItems.size === 0) {
+            orderListEl?.replaceChildren(Object.assign(document.createElement('div'), {
+                className: 'list-group-item list-group-item-empty',
+                textContent: 'Nenhuma OS selecionada. Feche o modal e marque ao menos uma OS na listagem.',
+            }));
+            return;
+        }
+
+        orderListEl?.replaceChildren(...[...batchItems.values()].map((item) => {
+            const row = document.createElement('div');
+            row.className = 'list-group-item';
+            row.innerHTML = `
+                <div class="flex-grow-1">
+                    <div class="fw-semibold">${escapeHtml(item.numero)} <span class="badge text-bg-secondary fw-normal">${escapeHtml(item.status)}</span></div>
+                    <div class="small text-secondary">${escapeHtml(item.cliente)} · ${escapeHtml(item.equipamento)}</div>
+                    <div class="small text-secondary">${escapeHtml(item.valor)}</div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-danger batch-closure-remove" data-order-id="${escapeHtml(item.id)}" aria-label="Remover OS ${escapeHtml(item.numero)} da baixa em lote">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            `;
+            return row;
+        }));
+    };
+
+    orderListEl?.addEventListener('click', (event) => {
+        const button = event.target instanceof HTMLElement ? event.target.closest('.batch-closure-remove') : null;
+        if (!(button instanceof HTMLElement)) return;
+
+        const orderId = button.dataset.orderId || '';
+        batchItems.delete(orderId);
+
+        // Mantém a listagem por trás coerente: se o modal for fechado sem
+        // confirmar, a OS removida aqui não deve continuar marcada lá.
+        const checkbox = document.querySelector(`.order-select[value="${CSS.escape(orderId)}"]`);
+        if (checkbox instanceof HTMLInputElement) {
+            checkbox.checked = false;
+        }
+        updateSelection();
+
+        renderBatchList();
+    });
+
+    trigger.addEventListener('click', () => {
+        const items = selected();
+        if (!items.length || !modal) return;
+
+        batchItems = new Map(items.map((item) => [item.value, buildItemFromCheckbox(item)]));
+        renderBatchList();
+
+        clearError();
+        modal.show();
+    });
+
+    modalEl.addEventListener('hidden.bs.modal', () => {
+        form?.reset();
+        clearError();
+    });
+
+    form?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!form.reportValidity()) return;
+
+        const orderIds = idsContainer instanceof HTMLElement
+            ? [...idsContainer.querySelectorAll('input')].map((input) => Number(input.value))
+            : [];
+        if (!orderIds.length) return;
+
+        if (submitBtn instanceof HTMLButtonElement) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Processando...';
+        }
+        clearError();
+
+        try {
+            const response = await fetch(batchClosureUrl, {
+                method: 'POST',
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRF-TOKEN': csrfToken,
+                },
+                body: JSON.stringify({
+                    order_ids: orderIds,
+                    encerrar_como: document.getElementById('batchClosureStatus')?.value || '',
+                    data_entrega: document.getElementById('batchClosureDate')?.value || '',
+                    observacao: document.getElementById('batchClosureObservacao')?.value || null,
+                }),
+            });
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload.error) {
+                throw new Error(payload.error || 'Não foi possível concluir a baixa em lote.');
+            }
+
+            modal?.hide();
+
+            const result = payload.result || {};
+            const succeeded = Array.isArray(result.succeeded) ? result.succeeded : [];
+            const failed = Array.isArray(result.failed) ? result.failed : [];
+            const rows = [
+                ...succeeded.map((item) => `<li class="text-success">✔ ${escapeHtml(item.numero_os || ('#' + item.order_id))} — encerrada</li>`),
+                ...failed.map((item) => `<li class="text-danger">✘ ${escapeHtml(item.numero_os || ('#' + item.order_id))} — ${escapeHtml(item.message || item.reason)}</li>`),
+            ].join('');
+
+            if (typeof Swal !== 'undefined') {
+                await Swal.fire({
+                    icon: failed.length ? 'warning' : 'success',
+                    title: payload.message || 'Baixa em lote concluída',
+                    html: `<ul class="text-start small mb-0">${rows}</ul>`,
+                });
+            }
+
+            window.location.reload();
+        } catch (exception) {
+            showError(exception.message || 'Não foi possível concluir a baixa em lote.');
+        } finally {
+            if (submitBtn instanceof HTMLButtonElement) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<i class="bi bi-box-seam me-1"></i>Confirmar baixa em lote';
+            }
+        }
+    });
+
+    updateSelection();
+})();

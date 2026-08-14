@@ -1124,6 +1124,101 @@ class OrderFlowTest extends TestCase
             ->assertJsonPath('data.status_novo', 'aguardando_reparo');
     }
 
+    public function test_patch_status_to_flow_exit_cancels_linked_open_budget(): void
+    {
+        // Regra de negocio: OS que sai do fluxo sem reparo (grupo_macro
+        // finalizado_sem_reparo/cancelado, ver OrderStatus::flowExitCodes())
+        // cancela automaticamente qualquer orcamento vinculado ainda aberto —
+        // nao faz sentido manter um orcamento pendente de aprovacao para um
+        // reparo que nao vai mais acontecer.
+        [$user, $assignedOrder] = $this->seedTechnicianOrders();
+        $budgetId = $this->createBudgetRecord([
+            'os_id' => $assignedOrder,
+            'status' => 'aguardando_resposta',
+        ]);
+        $token = $this->loginAndGetToken($user->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
+                'status' => 'irreparavel',
+            ]);
+
+        $response->assertOk()->assertJsonPath('data.status_novo', 'irreparavel');
+
+        // O status da OS definido pelo tecnico precisa ser preservado — o
+        // cancelamento do orcamento NAO pode ressincronizar e sobrescrever
+        // para 'cancelado' (ver BudgetOrderSyncService::cancelBudgetsForOrderFlowExit()).
+        $this->assertDatabaseHas('os', [
+            'id' => $assignedOrder,
+            'status' => 'irreparavel',
+        ]);
+
+        $this->assertDatabaseHas('orcamentos', [
+            'id' => $budgetId,
+            'status' => 'cancelado',
+        ]);
+
+        $this->assertDatabaseHas('orcamento_status_historico', [
+            'orcamento_id' => $budgetId,
+            'status_anterior' => 'aguardando_resposta',
+            'status_novo' => 'cancelado',
+            'origem' => 'sistema',
+        ]);
+
+        $this->assertDatabaseHas('os_eventos', [
+            'os_id' => $assignedOrder,
+            'categoria' => 'orcamento',
+            'tipo' => 'orcamento_cancelado',
+            'origem' => 'automacao',
+        ]);
+    }
+
+    public function test_patch_status_to_flow_exit_ignores_budget_already_in_terminal_status(): void
+    {
+        // Orcamento ja convertido (usado para abrir a propria OS) e' uma
+        // decisao ja tomada — nao deve ser tocado pelo cancelamento automatico.
+        [$user, $assignedOrder] = $this->seedTechnicianOrders();
+        $budgetId = $this->createBudgetRecord([
+            'os_id' => $assignedOrder,
+            'status' => 'convertido',
+        ]);
+        $token = $this->loginAndGetToken($user->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
+                'status' => 'reparo_recusado',
+            ]);
+
+        $response->assertOk();
+
+        $this->assertDatabaseHas('orcamentos', [
+            'id' => $budgetId,
+            'status' => 'convertido',
+        ]);
+    }
+
+    public function test_patch_status_to_cancelado_cancels_linked_open_budget(): void
+    {
+        [$user, $assignedOrder] = $this->seedTechnicianOrders();
+        $budgetId = $this->createBudgetRecord([
+            'os_id' => $assignedOrder,
+            'status' => 'enviado',
+        ]);
+        $token = $this->loginAndGetToken($user->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
+                'status' => 'cancelado',
+            ]);
+
+        $response->assertOk()->assertJsonPath('data.status_novo', 'cancelado');
+
+        $this->assertDatabaseHas('orcamentos', [
+            'id' => $budgetId,
+            'status' => 'cancelado',
+        ]);
+    }
+
     public function test_migration_adds_missing_transitions_and_runtime_honors_them(): void
     {
         [$user, $assignedOrder] = $this->seedTechnicianOrders();
@@ -2186,6 +2281,167 @@ class OrderFlowTest extends TestCase
             ->assertJsonPath('error.code', 'ORDER_FORBIDDEN');
     }
 
+    public function test_close_batch_closes_multiple_orders_with_the_same_status_and_date(): void
+    {
+        [$manager, $orderIds] = $this->seedManagerOrdersForBatch(3);
+        $token = $this->loginAndGetToken($manager->email);
+        $dataEntrega = now()->toDateString();
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/close-batch', [
+                'order_ids' => $orderIds,
+                'encerrar_como' => 'devolvido_sem_reparo',
+                'data_entrega' => $dataEntrega,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.succeeded_count', 3)
+            ->assertJsonPath('data.failed_count', 0);
+
+        foreach ($orderIds as $orderId) {
+            $this->assertDatabaseHas('os', [
+                'id' => $orderId,
+                'status' => 'devolvido_sem_reparo',
+            ]);
+        }
+    }
+
+    public function test_close_batch_rejects_entregue_reparado_pago_as_encerrar_como(): void
+    {
+        // "Entregue - Reparado e Pago" exige valor/forma de pagamento por OS —
+        // incompatível com um único status aplicado a várias OS de uma vez.
+        // Fora do escopo do lote de propósito (ver OrderClosureService::batchClosureCodes()).
+        [$manager, $orderIds] = $this->seedManagerOrdersForBatch(2);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/close-batch', [
+                'order_ids' => $orderIds,
+                'encerrar_como' => 'entregue_reparado_pago',
+                'data_entrega' => now()->toDateString(),
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+
+        foreach ($orderIds as $orderId) {
+            $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'triagem']);
+        }
+    }
+
+    public function test_close_batch_reports_forbidden_for_order_not_assigned_to_technician_without_blocking_others(): void
+    {
+        $clientId = $this->createClientRecord();
+        $equipmentId = $this->createEquipmentRecord($clientId, ['resumo_tecnico' => 'Notebook Lote']);
+
+        $technician = $this->createUserRecord([
+            'nome' => 'Técnico Lote',
+            'email' => 'tecnico.lote@example.com',
+            'perfil' => 'tecnico',
+            'grupo_id' => 2,
+        ]);
+
+        $assignedOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060201',
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'tecnico_id' => $technician->id,
+            'status' => 'triagem',
+        ]);
+        $unassignedOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060202',
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'tecnico_id' => null,
+            'status' => 'triagem',
+        ]);
+
+        $token = $this->loginAndGetToken($technician->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/close-batch', [
+                'order_ids' => [$assignedOrder, $unassignedOrder],
+                'encerrar_como' => 'devolvido_sem_reparo',
+                'data_entrega' => now()->toDateString(),
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.succeeded_count', 1)
+            ->assertJsonPath('data.failed_count', 1)
+            ->assertJsonPath('data.succeeded.0.order_id', $assignedOrder)
+            ->assertJsonPath('data.failed.0.order_id', $unassignedOrder)
+            ->assertJsonPath('data.failed.0.reason', 'forbidden');
+
+        $this->assertDatabaseHas('os', ['id' => $assignedOrder, 'status' => 'devolvido_sem_reparo']);
+        $this->assertDatabaseHas('os', ['id' => $unassignedOrder, 'status' => 'triagem']);
+    }
+
+    public function test_close_batch_reports_already_closed_without_overwriting_previous_closure(): void
+    {
+        [$manager, $orderIds] = $this->seedManagerOrdersForBatch(2);
+        [$openOrder, $closedOrder] = $orderIds;
+
+        DB::table('os')->where('id', $closedOrder)->update([
+            'status' => 'entregue_reparado_garantia',
+            'data_entrega' => now()->subDay()->toDateString(),
+        ]);
+
+        $token = $this->loginAndGetToken($manager->email);
+        $dataEntrega = now()->toDateString();
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/close-batch', [
+                'order_ids' => $orderIds,
+                'encerrar_como' => 'devolvido_sem_reparo',
+                'data_entrega' => $dataEntrega,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.succeeded_count', 1)
+            ->assertJsonPath('data.failed_count', 1)
+            ->assertJsonPath('data.succeeded.0.order_id', $openOrder)
+            ->assertJsonPath('data.failed.0.order_id', $closedOrder)
+            ->assertJsonPath('data.failed.0.reason', 'already_closed');
+
+        $this->assertDatabaseHas('os', ['id' => $openOrder, 'status' => 'devolvido_sem_reparo']);
+        // O status anterior da OS já encerrada não foi tocado pelo lote.
+        $this->assertDatabaseHas('os', ['id' => $closedOrder, 'status' => 'entregue_reparado_garantia']);
+    }
+
+    public function test_close_batch_validates_order_ids_array_bounds_and_distinct(): void
+    {
+        [$manager, $orderIds] = $this->seedManagerOrdersForBatch(2);
+        $token = $this->loginAndGetToken($manager->email);
+        $payload = [
+            'encerrar_como' => 'devolvido_sem_reparo',
+            'data_entrega' => now()->toDateString(),
+        ];
+
+        // min:1
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/close-batch', $payload + ['order_ids' => []])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+
+        // distinct
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/close-batch', $payload + ['order_ids' => [$orderIds[0], $orderIds[0]]])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+
+        // exists
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/close-batch', $payload + ['order_ids' => [999999]])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+
+        // max:20
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/close-batch', $payload + ['order_ids' => range(1, 21)])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+    }
+
     public function test_close_notification_failure_does_not_revert_the_closure(): void
     {
         [$manager, $orderId] = $this->seedManagerOrderForUpdate();
@@ -2854,6 +3110,29 @@ class OrderFlowTest extends TestCase
         ]);
 
         return [$manager, $orderId];
+    }
+
+    /**
+     * @return array{0: User, 1: array<int, int>}
+     */
+    private function seedManagerOrdersForBatch(int $count): array
+    {
+        [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
+
+        $orderIds = [];
+        for ($i = 1; $i <= $count; $i++) {
+            $orderIds[] = $this->createOrderRecord([
+                'numero_os' => 'OS26060'.str_pad((string) (100 + $i), 3, '0', STR_PAD_LEFT),
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'tecnico_id' => $technician->id,
+                'status' => 'triagem',
+                'estado_fluxo' => 'em_atendimento',
+                'relato_cliente' => 'Relato inicial lote '.$i,
+            ]);
+        }
+
+        return [$manager, $orderIds];
     }
 
     private function loginAndGetToken(string $email): string

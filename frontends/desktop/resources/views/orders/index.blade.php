@@ -53,6 +53,8 @@
                 return null;
             }
         };
+
+        $canEditOrder = \App\Support\DesktopSession::can('os', 'editar');
     @endphp
 
     <section class="desktop-form-card mb-4">
@@ -71,6 +73,16 @@
             </div>
             <div class="os-filter-summary-actions">
                 <span class="desktop-chip">{{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} resultados</span>
+                @if ($canEditOrder)
+                    <span class="desktop-chip" id="osBulkSelectionCount">0 selecionadas</span>
+                    <x-list-actions label="Mais ações" size="">
+                        <li>
+                            <button type="button" class="dropdown-item" id="osBulkClosureTrigger" disabled>
+                                <i class="bi bi-box-seam me-2"></i>Dar baixa em lote
+                            </button>
+                        </li>
+                    </x-list-actions>
+                @endif
                 <button
                     type="button"
                     class="btn btn-outline-light os-filter-toggle {{ $hasAnyFilters ? 'is-active' : '' }}"
@@ -231,6 +243,11 @@
                 <table class="table table-stack align-middle">
                     <thead>
                     <tr>
+                        @if ($canEditOrder)
+                            <th class="os-select-column">
+                                <input type="checkbox" class="form-check-input" id="osSelectAll" aria-label="Selecionar todas as OS elegíveis">
+                            </th>
+                        @endif
                         <th>Foto / OS</th>
                         <th>Cliente</th>
                         <th>Equipamento</th>
@@ -299,6 +316,23 @@
                             }
                         @endphp
                         <tr data-order-id="{{ $orderId }}">
+                            @if ($canEditOrder)
+                                <td data-label="Selecionar">
+                                    @if ($canCloseOrder)
+                                        <input
+                                            type="checkbox"
+                                            class="form-check-input order-select"
+                                            value="{{ $orderId }}"
+                                            data-order-numero="{{ $numeroOs !== '' ? $numeroOs : ('#' . $orderId) }}"
+                                            data-order-cliente="{{ $clientName !== '' ? $clientName : 'Cliente não informado' }}"
+                                            data-order-equipamento="{{ $equipmentSummary !== '' ? $equipmentSummary : 'Sem resumo técnico' }}"
+                                            data-order-status="{{ $order['status_nome'] !== '' ? $order['status_nome'] : 'Sem status' }}"
+                                            data-order-valor="{{ $valorFinal !== null ? 'R$ ' . number_format((float) $valorFinal, 2, ',', '.') : 'Valor não informado' }}"
+                                            aria-label="Selecionar OS {{ $numeroOs !== '' ? $numeroOs : $orderId }} para baixa em lote"
+                                        >
+                                    @endif
+                                </td>
+                            @endif
                             <td data-label="Foto / OS">
                                 <div class="os-photo-cell">
                                     @if ($fotoUrl !== '')
@@ -539,6 +573,10 @@
             cancelUrlTemplate: '{{ route('orders.closure.cancel', ['order' => '__ORDER__']) }}',
             csrfToken: '{{ csrf_token() }}',
         };
+        window.__DESKTOP_BATCH_CLOSURE_MODAL = {
+            batchClosureUrl: '{{ route('orders.closure.batch') }}',
+            csrfToken: '{{ csrf_token() }}',
+        };
 
         document.addEventListener('DOMContentLoaded', () => {
             const form = document.getElementById('osFilterPanel');
@@ -727,9 +765,11 @@
     <script src="{{ asset('assets/js/orders-map.js') }}?v={{ filemtime(public_path('assets/js/orders-map.js')) }}"></script>
     <script src="{{ asset('assets/js/orders-status-modal.js') }}?v={{ filemtime(public_path('assets/js/orders-status-modal.js')) }}"></script>
     <script src="{{ asset('assets/js/orders-cancel-closure-modal.js') }}"></script>
+    <script src="{{ asset('assets/js/orders-batch-closure.js') }}?v={{ filemtime(public_path('assets/js/orders-batch-closure.js')) }}"></script>
 @endsection
 
 @push('modals')
     @include('orders._status_modal')
     @include('orders._cancel_closure_modal')
+    @include('orders._batch_closure_modal')
 @endpush

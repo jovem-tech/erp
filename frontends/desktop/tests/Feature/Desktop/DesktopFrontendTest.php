@@ -356,6 +356,48 @@ class DesktopFrontendTest extends TestCase
             ->assertSessionMissing('warning');
     }
 
+    public function test_expired_token_refresh_failure_does_not_recurse_and_redirects_to_login(): void
+    {
+        // Regressao: quando o token ja esta invalido/revogado, o backend real
+        // (AuthController::refresh()) responde 401 em POST /auth/refresh, nao
+        // 403 (diferente do fake usado nos outros testes de sessao acima).
+        // Sem o guard allowRefresh=false em ApiClient::refreshToken(),
+        // authenticatedRequest() reagia a esse 401 chamando refreshToken() de
+        // novo, que chamava authenticatedRequest('/auth/refresh') de novo,
+        // recursivamente e sem caso base — em producao, o throttle:60,1 da
+        // rota eventualmente cortava o loop; aqui, sem throttle real,
+        // recorreria infinitamente e este teste travaria/estouraria memoria.
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/auth/me' => Http::response([
+                'status' => 'error',
+                'data' => null,
+                'error' => ['message' => 'Token expirado.'],
+                'meta' => [],
+            ], 401),
+            'http://127.0.0.1:8000/api/v1/auth/refresh' => Http::response([
+                'status' => 'error',
+                'data' => null,
+                'error' => ['message' => 'Usuário não autenticado.'],
+                'meta' => [],
+            ], 401),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'dashboard' => ['visualizar'],
+            ], syncedAt: 0))
+            ->get('/dashboard');
+
+        $response
+            ->assertRedirect(route('login'))
+            ->assertSessionMissing('desktop_auth');
+
+        // Exatamente 2 chamadas: /auth/me (401) + UMA tentativa de
+        // /auth/refresh (401, sem retry). Qualquer numero maior indica que a
+        // recursao voltou.
+        Http::assertSentCount(2);
+    }
+
     public function test_profile_sync_server_error_uses_existing_authorization_snapshot_without_login_loop(): void
     {
         Log::spy();
@@ -664,6 +706,95 @@ class DesktopFrontendTest extends TestCase
         $response
             ->assertOk()
             ->assertDontSee('Ver lançamento financeiro');
+    }
+
+    public function test_orders_index_renders_bulk_closure_checkboxes_and_mais_acoes_trigger_when_permitted(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), $this->ordersIndexFixture(financeiroTituloId: null)));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'os' => ['visualizar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os');
+
+        $response
+            ->assertOk()
+            ->assertSee('id="osSelectAll"', false)
+            ->assertSee('order-select', false)
+            ->assertSee('id="osBulkClosureTrigger"', false)
+            ->assertSee('Dar baixa em lote')
+            ->assertSee('Mais ações');
+    }
+
+    public function test_orders_index_hides_bulk_closure_controls_without_os_editar_permission(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), $this->ordersIndexFixture(financeiroTituloId: null)));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'os' => ['visualizar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os');
+
+        $response
+            ->assertOk()
+            ->assertDontSee('id="osSelectAll"', false)
+            ->assertDontSee('order-select', false)
+            ->assertDontSee('id="osBulkClosureTrigger"', false);
+    }
+
+    public function test_orders_closure_batch_store_forwards_selected_ids_and_reports_partial_results(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orders/close-batch' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'succeeded' => [
+                        ['order_id' => 3614, 'numero_os' => 'OS26070002', 'status_aplicado' => 'devolvido_sem_reparo'],
+                    ],
+                    'failed' => [
+                        ['order_id' => 3615, 'numero_os' => 'OS26070003', 'reason' => 'already_closed', 'message' => 'Esta OS já está encerrada.'],
+                    ],
+                    'succeeded_count' => 1,
+                    'failed_count' => 1,
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'dashboard' => ['visualizar'],
+                'os' => ['visualizar', 'editar'],
+            ]))
+            ->withHeader('Accept', 'application/json')
+            ->post('/os/baixa-lote', [
+                'order_ids' => [3614, 3615],
+                'encerrar_como' => 'devolvido_sem_reparo',
+                'data_entrega' => '2026-08-13',
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('result.succeeded_count', 1)
+            ->assertJsonPath('result.failed_count', 1)
+            ->assertJsonPath('result.failed.0.reason', 'already_closed');
+
+        Http::assertSent(static fn ($request): bool => str_ends_with($request->url(), '/api/v1/orders/close-batch')
+            && $request['order_ids'] === [3614, 3615]
+            && $request['encerrar_como'] === 'devolvido_sem_reparo'
+            && $request['data_entrega'] === '2026-08-13');
     }
 
     /**

@@ -3,18 +3,23 @@
 namespace App\Services\Budgets;
 
 use App\Models\Budget;
+use App\Models\BudgetApproval;
 use App\Models\BudgetItem;
+use App\Models\BudgetStatusHistory;
 use App\Models\Order;
 use App\Models\OrderEvent;
 use App\Models\OrderStatus;
 use App\Models\OrderStatusHistory;
+use App\Services\Notifications\NotificationDispatchService;
 use App\Services\Orders\OrderEventService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class BudgetOrderSyncService
 {
     public function __construct(
-        private readonly OrderEventService $orderEventService
+        private readonly OrderEventService $orderEventService,
+        private readonly NotificationDispatchService $notificationDispatchService
     ) {
     }
 
@@ -154,6 +159,134 @@ class BudgetOrderSyncService
     public function syncFinancialsFromBudget(Budget $budget, int $orderId): void
     {
         $this->syncOrderFinancials($budget, $orderId);
+    }
+
+    /**
+     * Cancela automaticamente o(s) orçamento(s) ainda abertos vinculados a uma
+     * OS que acabou de sair do fluxo sem reparo (ver
+     * `OrderStatus::flowExitCodes()`: Irreparável, Irreparável Disponível para
+     * Retirada, Reparo Recusado ou Cancelado) — não faz sentido manter um
+     * orçamento pendente de aprovação para um reparo que não vai mais
+     * acontecer. Chamado por `OrderWorkflowService::updateStatus()` e
+     * `updateOrder()` logo após a troca de status da OS já ter sido
+     * persistida.
+     *
+     * Direção oposta a `syncFromBudget()` (orçamento → OS) — por isso vive
+     * aqui, e não em `BudgetApprovalService`: manter os dois sentidos de
+     * sincronização no mesmo serviço evita depender de
+     * `OrderWorkflowService` (que `BudgetApprovalService` alcança
+     * indiretamente via `OrderDocumentCenterService`, fechando um ciclo de
+     * injeção de dependência).
+     *
+     * Propositalmente NÃO chama `syncFromBudget()` de volta: o status da OS
+     * já foi definido deliberadamente pelo técnico neste mesmo request, então
+     * ressincronizar sobrescreveria (ex.: Irreparável virando Cancelado só
+     * porque o orçamento também virou cancelado).
+     *
+     * Orçamentos já em status terminal (convertido/cancelado/rejeitado) são
+     * ignorados silenciosamente — decisão já tomada, nada a fazer.
+     */
+    public function cancelBudgetsForOrderFlowExit(int $orderId, ?int $userId, string $orderStatusLabel): void
+    {
+        $budgets = Budget::query()
+            ->where('os_id', $orderId)
+            ->whereNotIn('status', [Budget::STATUS_CONVERTED, Budget::STATUS_CANCELLED, Budget::STATUS_REJECTED])
+            ->get();
+
+        foreach ($budgets as $budget) {
+            $this->cancelOneBudgetForOrderFlowExit($budget, $userId, $orderStatusLabel);
+        }
+    }
+
+    private function cancelOneBudgetForOrderFlowExit(Budget $budget, ?int $userId, string $orderStatusLabel): void
+    {
+        DB::transaction(function () use ($budget, $userId, $orderStatusLabel): void {
+            $budget->refresh();
+
+            $status = trim((string) ($budget->status ?? ''));
+            if (in_array($status, [Budget::STATUS_CONVERTED, Budget::STATUS_CANCELLED, Budget::STATUS_REJECTED], true)) {
+                return;
+            }
+
+            $previousStatus = $status !== '' ? $status : Budget::STATUS_DRAFT;
+            $cancelledAt = now();
+            $decisionMessage = sprintf(
+                'Orçamento cancelado automaticamente: a OS foi movida para "%s" (saída de fluxo sem reparo).',
+                $orderStatusLabel
+            );
+
+            $budget->forceFill([
+                'status' => Budget::STATUS_CANCELLED,
+                'cancelado_em' => $cancelledAt,
+            ])->save();
+
+            BudgetApproval::query()->create([
+                'orcamento_id' => (int) $budget->id,
+                'token_publico' => (string) ($budget->token_publico ?? ''),
+                'acao' => 'cancelado',
+                'origem' => 'sistema',
+                'usuario_id' => $userId,
+                'usuario_nome' => 'Sistema',
+                'resposta_cliente' => null,
+                'observacao' => $decisionMessage,
+                'ip_origem' => null,
+                'user_agent' => null,
+                'created_at' => $cancelledAt,
+            ]);
+
+            BudgetStatusHistory::query()->create([
+                'orcamento_id' => (int) $budget->id,
+                'status_anterior' => $previousStatus,
+                'status_novo' => Budget::STATUS_CANCELLED,
+                'observacao' => $decisionMessage,
+                'origem' => 'sistema',
+                'alterado_por' => $userId,
+                'created_at' => $cancelledAt,
+            ]);
+
+            $osId = (int) ($budget->os_id ?? 0);
+            if ($osId > 0) {
+                $this->orderEventService->record(
+                    $osId,
+                    OrderEvent::CATEGORIA_ORCAMENTO,
+                    OrderEvent::TIPO_ORCAMENTO_CANCELADO,
+                    'Orçamento cancelado automaticamente',
+                    $decisionMessage,
+                    [
+                        'orcamento_id' => (int) $budget->id,
+                        'numero' => (string) $budget->numero,
+                        'motivo' => 'os_saida_fluxo',
+                        'os_status_novo' => $orderStatusLabel,
+                    ],
+                    $userId,
+                    OrderEvent::ORIGEM_AUTOMACAO,
+                    $cancelledAt
+                );
+            }
+
+            $order = $osId > 0 ? Order::query()->find($osId) : null;
+
+            $this->notificationDispatchService->toUsers(
+                [
+                    (int) ($budget->responsavel_id ?? 0),
+                    (int) ($budget->criado_por ?? 0),
+                    (int) ($order->tecnico_id ?? 0),
+                ],
+                [
+                    'kind' => 'orcamento.cancelled',
+                    'title' => 'Orçamento cancelado automaticamente',
+                    'body' => sprintf(
+                        'O orçamento %s foi cancelado automaticamente: a OS foi movida para "%s".',
+                        $budget->numero,
+                        $orderStatusLabel
+                    ),
+                    'route' => '/orcamentos/' . (int) $budget->id,
+                    'icon' => 'receipt',
+                    'orcamento_id' => (int) $budget->id,
+                    'os_id' => $osId,
+                ]
+            );
+        });
     }
 
     /**

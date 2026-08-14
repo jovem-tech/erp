@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Http\Requests\Api\V1\BatchCloseOrdersRequest;
 use App\Http\Requests\Api\V1\CancelOrderClosureRequest;
 use App\Http\Requests\Api\V1\CloseOrderRequest;
 use App\Http\Requests\Api\V1\OrderEventIndexRequest;
@@ -1192,6 +1193,71 @@ class OrderController extends BaseApiController
                 null,
                 request: $request
             ),
+        };
+    }
+
+    /**
+     * Baixa em lote (Mais ações > Dar baixa em lote, na listagem de OS):
+     * fecha várias OS de uma vez com o mesmo status/data. Processa cada OS
+     * independentemente via OrderClosureService::closeBatch() — uma OS com
+     * problema (sem permissão, já encerrada, etc.) não bloqueia as demais.
+     */
+    public function closeBatch(BatchCloseOrdersRequest $request): JsonResponse
+    {
+        $this->authorize('os:editar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $validated = $request->validated();
+
+        $result = $this->orderClosureService->closeBatch(
+            (array) $validated['order_ids'],
+            $user,
+            [
+                'encerrar_como' => $validated['encerrar_como'],
+                'data_entrega' => $validated['data_entrega'],
+                'observacao' => $validated['observacao'] ?? null,
+            ]
+        );
+
+        // Mesmo pós-efeito do close() individual (linha ~1113): gera o
+        // laudo/comprovante para cada OS que fechou com sucesso no lote.
+        foreach ($result['succeeded'] as $item) {
+            $this->orderDocumentCenterService->syncAfterClosure((int) $item['order_id'], $user);
+        }
+
+        return $this->success([
+            'succeeded' => $result['succeeded'],
+            'failed' => array_map(
+                fn (array $item): array => $item + ['message' => $this->batchClosureFailureMessage((string) $item['reason'])],
+                $result['failed']
+            ),
+            'succeeded_count' => $result['succeeded_count'],
+            'failed_count' => $result['failed_count'],
+        ], request: $request);
+    }
+
+    /**
+     * Traduz os `reason` de closeBatch() (subset dos `result` de close()
+     * alcançáveis pelos 4 códigos sem cobrança, mais 'already_closed', que só
+     * existe no lote) para mensagens PT-BR — não reaproveita o match() de
+     * close() acima porque aquele cobre casos (delivery_requires_payment,
+     * delivery_requires_approved_budget) que só se aplicam ao encerramento
+     * "Reparado e Pago", fora do escopo do lote.
+     */
+    private function batchClosureFailureMessage(string $reason): string
+    {
+        return match ($reason) {
+            'not_found' => 'OS não encontrada.',
+            'forbidden' => 'Você não tem permissão para alterar esta OS.',
+            'already_closed' => 'Esta OS já está encerrada.',
+            'invalid_status' => 'O status de encerramento informado não é válido.',
+            'invalid_date' => 'A data de entrega informada é inválida.',
+            'closure_failed' => 'Falha ao concluir a baixa desta OS.',
+            default => 'Não foi possível encerrar esta OS.',
         };
     }
 

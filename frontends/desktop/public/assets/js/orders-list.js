@@ -103,6 +103,11 @@
         const tr = document.createElement('tr');
         tr.dataset.orderId = String(orderId);
         tr.innerHTML = `
+            ${canEditOrder ? `
+            <td data-label="Selecionar">
+                ${canCloseOrder ? `<input type="checkbox" class="form-check-input order-select" value="${orderId}" data-order-numero="${numeroOs}" aria-label="Selecionar OS ${numeroOs} para baixa em lote">` : ''}
+            </td>
+            ` : ''}
             <td data-label="Foto / OS">
                 <div class="os-photo-cell">
                     <span class="equipment-list-photo-placeholder" aria-hidden="true">
