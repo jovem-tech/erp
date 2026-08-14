@@ -2325,7 +2325,7 @@ class OrderFlowTest extends TestCase
             ->assertJsonPath('error.code', 'VALIDATION_ERROR');
 
         foreach ($orderIds as $orderId) {
-            $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'triagem']);
+            $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'irreparavel']);
         }
     }
 
@@ -2346,14 +2346,14 @@ class OrderFlowTest extends TestCase
             'cliente_id' => $clientId,
             'equipamento_id' => $equipmentId,
             'tecnico_id' => $technician->id,
-            'status' => 'triagem',
+            'status' => 'irreparavel',
         ]);
         $unassignedOrder = $this->createOrderRecord([
             'numero_os' => 'OS26060202',
             'cliente_id' => $clientId,
             'equipamento_id' => $equipmentId,
             'tecnico_id' => null,
-            'status' => 'triagem',
+            'status' => 'irreparavel',
         ]);
 
         $token = $this->loginAndGetToken($technician->email);
@@ -2373,7 +2373,7 @@ class OrderFlowTest extends TestCase
             ->assertJsonPath('data.failed.0.reason', 'forbidden');
 
         $this->assertDatabaseHas('os', ['id' => $assignedOrder, 'status' => 'devolvido_sem_reparo']);
-        $this->assertDatabaseHas('os', ['id' => $unassignedOrder, 'status' => 'triagem']);
+        $this->assertDatabaseHas('os', ['id' => $unassignedOrder, 'status' => 'irreparavel']);
     }
 
     public function test_close_batch_reports_already_closed_without_overwriting_previous_closure(): void
@@ -2408,6 +2408,57 @@ class OrderFlowTest extends TestCase
         $this->assertDatabaseHas('os', ['id' => $closedOrder, 'status' => 'entregue_reparado_garantia']);
     }
 
+    public function test_close_batch_rejects_orders_not_in_flow_exit_status(): void
+    {
+        // Regra de negócio: baixa em lote só vale para OS já marcadas
+        // individualmente como saída de fluxo (irreparável, irreparável
+        // disponível para retirada, reparo recusado, cancelado) — OS ainda
+        // em andamento ou já concluídas exigem avaliação individual antes
+        // da baixa, mesmo que não estejam encerradas ainda.
+        [$manager, $orderIds] = $this->seedManagerOrdersForBatch(1);
+        $flowExitOrder = $orderIds[0];
+
+        $inProgressOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060301',
+            'cliente_id' => (int) DB::table('os')->where('id', $flowExitOrder)->value('cliente_id'),
+            'equipamento_id' => (int) DB::table('os')->where('id', $flowExitOrder)->value('equipamento_id'),
+            'tecnico_id' => (int) DB::table('os')->where('id', $flowExitOrder)->value('tecnico_id'),
+            'status' => 'triagem',
+        ]);
+        $completedOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060302',
+            'cliente_id' => (int) DB::table('os')->where('id', $flowExitOrder)->value('cliente_id'),
+            'equipamento_id' => (int) DB::table('os')->where('id', $flowExitOrder)->value('equipamento_id'),
+            'tecnico_id' => (int) DB::table('os')->where('id', $flowExitOrder)->value('tecnico_id'),
+            'status' => 'reparo_concluido',
+        ]);
+
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/close-batch', [
+                'order_ids' => [$flowExitOrder, $inProgressOrder, $completedOrder],
+                'encerrar_como' => 'devolvido_sem_reparo',
+                'data_entrega' => now()->toDateString(),
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.succeeded_count', 1)
+            ->assertJsonPath('data.failed_count', 2)
+            ->assertJsonPath('data.succeeded.0.order_id', $flowExitOrder);
+
+        $failedIds = collect($response->json('data.failed'))->pluck('order_id')->all();
+        $this->assertEqualsCanonicalizing([$inProgressOrder, $completedOrder], $failedIds);
+
+        foreach ($response->json('data.failed') as $failure) {
+            $this->assertSame('not_flow_exit_status', $failure['reason']);
+        }
+
+        $this->assertDatabaseHas('os', ['id' => $flowExitOrder, 'status' => 'devolvido_sem_reparo']);
+        $this->assertDatabaseHas('os', ['id' => $inProgressOrder, 'status' => 'triagem']);
+        $this->assertDatabaseHas('os', ['id' => $completedOrder, 'status' => 'reparo_concluido']);
+    }
+
     public function test_close_batch_validates_order_ids_array_bounds_and_distinct(): void
     {
         [$manager, $orderIds] = $this->seedManagerOrdersForBatch(2);
@@ -2438,6 +2489,217 @@ class OrderFlowTest extends TestCase
         // max:20
         $this->withHeader('Authorization', 'Bearer '.$token)
             ->postJson('/api/v1/orders/close-batch', $payload + ['order_ids' => range(1, 21)])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+    }
+
+    public function test_status_batch_updates_multiple_orders_to_the_same_target_status(): void
+    {
+        [$manager, $orderIds] = $this->seedManagerOrdersForStatusBatch(3);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/status-batch', [
+                'order_ids' => $orderIds,
+                'status' => 'aguardando_reparo',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.succeeded_count', 3)
+            ->assertJsonPath('data.failed_count', 0)
+            ->assertJsonPath('data.notificacoes_solicitadas', 0)
+            ->assertJsonPath('data.notificacoes_enviadas', 0);
+
+        foreach ($orderIds as $orderId) {
+            $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'aguardando_reparo']);
+        }
+    }
+
+    public function test_status_batch_caps_client_notifications_at_five_per_batch(): void
+    {
+        // Regra de negócio: no máximo 5 notificações via WhatsApp por
+        // execução do lote, para evitar bloqueio da conta pela Meta numa
+        // rajada de mensagens — as OS excedentes ainda têm o status alterado
+        // normalmente, só não notificam o cliente.
+        [$manager, $orderIds] = $this->seedManagerOrdersForStatusBatch(8);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $this->mock(WhatsappMessagingService::class, function ($mock): void {
+            $mock->shouldReceive('sendSystemMessage')->times(5)->andReturn(['ok' => true]);
+        });
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/status-batch', [
+                'order_ids' => $orderIds,
+                'status' => 'aguardando_reparo',
+                'comunicar_cliente' => true,
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.succeeded_count', 8)
+            ->assertJsonPath('data.failed_count', 0)
+            ->assertJsonPath('data.notificacoes_solicitadas', 8)
+            ->assertJsonPath('data.notificacoes_enviadas', 5);
+
+        $notifiedCount = collect($response->json('data.succeeded'))->where('notificado', true)->count();
+        $this->assertSame(5, $notifiedCount);
+    }
+
+    public function test_status_batch_rejects_closure_code_as_target_status(): void
+    {
+        [$manager, $orderIds] = $this->seedManagerOrdersForStatusBatch(2);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/status-batch', [
+                'order_ids' => $orderIds,
+                'status' => 'entregue_reparado_pago',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+
+        foreach ($orderIds as $orderId) {
+            $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'triagem']);
+        }
+    }
+
+    public function test_status_batch_reports_order_is_closed_without_blocking_others(): void
+    {
+        [$manager, $orderIds] = $this->seedManagerOrdersForStatusBatch(2);
+        [$openOrder, $closedOrder] = $orderIds;
+
+        DB::table('os')->where('id', $closedOrder)->update(['status' => 'entregue_reparado_garantia']);
+
+        $token = $this->loginAndGetToken($manager->email);
+
+        // Destino 'cancelado' de propósito: também está em
+        // OrderStatus::DEADLINE_FREEZE_CODES, então a OS já encerrada (também
+        // congelada) não está "saindo" de um prazo congelado ao ir para lá —
+        // isolando o teste do motivo prazo_redefinition_required, que tem
+        // prioridade na validação de updateStatus() quando os dois se
+        // sobrepõem (ver test_status_batch_reports_prazo_redefinition_required_without_blocking_others).
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/status-batch', [
+                'order_ids' => $orderIds,
+                'status' => 'cancelado',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.succeeded_count', 1)
+            ->assertJsonPath('data.failed_count', 1)
+            ->assertJsonPath('data.succeeded.0.order_id', $openOrder)
+            ->assertJsonPath('data.failed.0.order_id', $closedOrder)
+            ->assertJsonPath('data.failed.0.reason', 'order_is_closed');
+
+        $this->assertDatabaseHas('os', ['id' => $openOrder, 'status' => 'cancelado']);
+        $this->assertDatabaseHas('os', ['id' => $closedOrder, 'status' => 'entregue_reparado_garantia']);
+    }
+
+    public function test_status_batch_reports_forbidden_for_order_not_assigned_to_technician_without_blocking_others(): void
+    {
+        $clientId = $this->createClientRecord();
+        $equipmentId = $this->createEquipmentRecord($clientId, ['resumo_tecnico' => 'Notebook Lote Status']);
+
+        $technician = $this->createUserRecord([
+            'nome' => 'Técnico Lote Status',
+            'email' => 'tecnico.lote.status@example.com',
+            'perfil' => 'tecnico',
+            'grupo_id' => 2,
+        ]);
+
+        $assignedOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26080401',
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'tecnico_id' => $technician->id,
+            'status' => 'triagem',
+        ]);
+        $unassignedOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26080402',
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'tecnico_id' => null,
+            'status' => 'triagem',
+        ]);
+
+        $token = $this->loginAndGetToken($technician->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/status-batch', [
+                'order_ids' => [$assignedOrder, $unassignedOrder],
+                'status' => 'aguardando_reparo',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.succeeded_count', 1)
+            ->assertJsonPath('data.failed_count', 1)
+            ->assertJsonPath('data.succeeded.0.order_id', $assignedOrder)
+            ->assertJsonPath('data.failed.0.order_id', $unassignedOrder)
+            ->assertJsonPath('data.failed.0.reason', 'forbidden');
+
+        $this->assertDatabaseHas('os', ['id' => $assignedOrder, 'status' => 'aguardando_reparo']);
+        $this->assertDatabaseHas('os', ['id' => $unassignedOrder, 'status' => 'triagem']);
+    }
+
+    public function test_status_batch_reports_prazo_redefinition_required_without_blocking_others(): void
+    {
+        // OS em status de prazo congelado (DEADLINE_FREEZE_CODES) precisa de
+        // um novo prazo pra sair dele — o lote não expõe esse campo (v1),
+        // então essa OS falha e precisa ser feita individualmente.
+        [$manager, $orderIds] = $this->seedManagerOrdersForStatusBatch(2, 'irreparavel');
+        [$frozenOrder, $secondFrozenOrder] = $orderIds;
+
+        // A segunda OS fica num status comum pra confirmar que ela segue
+        // funcionando normalmente junto da que precisa de prazo.
+        DB::table('os')->where('id', $secondFrozenOrder)->update(['status' => 'triagem']);
+
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/status-batch', [
+                'order_ids' => [$frozenOrder, $secondFrozenOrder],
+                'status' => 'aguardando_reparo',
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.succeeded_count', 1)
+            ->assertJsonPath('data.failed_count', 1)
+            ->assertJsonPath('data.succeeded.0.order_id', $secondFrozenOrder)
+            ->assertJsonPath('data.failed.0.order_id', $frozenOrder)
+            ->assertJsonPath('data.failed.0.reason', 'prazo_redefinition_required');
+
+        $this->assertDatabaseHas('os', ['id' => $frozenOrder, 'status' => 'irreparavel']);
+        $this->assertDatabaseHas('os', ['id' => $secondFrozenOrder, 'status' => 'aguardando_reparo']);
+    }
+
+    public function test_status_batch_validates_order_ids_array_bounds_and_distinct(): void
+    {
+        [$manager, $orderIds] = $this->seedManagerOrdersForStatusBatch(2);
+        $token = $this->loginAndGetToken($manager->email);
+        $payload = ['status' => 'aguardando_reparo'];
+
+        // min:1
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/status-batch', $payload + ['order_ids' => []])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+
+        // distinct
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/status-batch', $payload + ['order_ids' => [$orderIds[0], $orderIds[0]]])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+
+        // exists
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/status-batch', $payload + ['order_ids' => [999999]])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR');
+
+        // max:20
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders/status-batch', $payload + ['order_ids' => range(1, 21)])
             ->assertUnprocessable()
             ->assertJsonPath('error.code', 'VALIDATION_ERROR');
     }
@@ -3126,9 +3388,35 @@ class OrderFlowTest extends TestCase
                 'cliente_id' => $clientId,
                 'equipamento_id' => $equipmentId,
                 'tecnico_id' => $technician->id,
-                'status' => 'triagem',
-                'estado_fluxo' => 'em_atendimento',
+                // Elegibilidade do lote exige status de saída de fluxo
+                // (OrderStatus::flowExitCodes()) — ver
+                // test_close_batch_rejects_orders_not_in_flow_exit_status.
+                'status' => 'irreparavel',
+                'estado_fluxo' => 'encerrado',
                 'relato_cliente' => 'Relato inicial lote '.$i,
+            ]);
+        }
+
+        return [$manager, $orderIds];
+    }
+
+    /**
+     * @return array{0: User, 1: array<int, int>}
+     */
+    private function seedManagerOrdersForStatusBatch(int $count, string $status = 'triagem'): array
+    {
+        [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
+
+        $orderIds = [];
+        for ($i = 1; $i <= $count; $i++) {
+            $orderIds[] = $this->createOrderRecord([
+                'numero_os' => 'OS26080'.str_pad((string) (300 + $i), 3, '0', STR_PAD_LEFT),
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'tecnico_id' => $technician->id,
+                'status' => $status,
+                'estado_fluxo' => 'em_atendimento',
+                'relato_cliente' => 'Relato inicial lote status '.$i,
             ]);
         }
 

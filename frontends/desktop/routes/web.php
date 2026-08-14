@@ -378,6 +378,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/os/baixa-lote', [OrderController::class, 'closureBatchStore'])
         ->middleware('desktop.permission:os,editar')
         ->name('orders.closure.batch');
+    Route::post('/os/status-lote', [OrderController::class, 'statusBatchStore'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('orders.status.batch');
     Route::get('/os/{order}/preview', [OrderController::class, 'preview'])
         ->middleware('desktop.permission:os,visualizar')
         ->name('orders.preview');

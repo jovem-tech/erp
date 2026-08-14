@@ -81,6 +81,11 @@
                                 <i class="bi bi-box-seam me-2"></i>Dar baixa em lote
                             </button>
                         </li>
+                        <li>
+                            <button type="button" class="dropdown-item" id="osBulkStatusTrigger" disabled>
+                                <i class="bi bi-arrow-left-right me-2"></i>Alterar status em lote
+                            </button>
+                        </li>
                     </x-list-actions>
                 @endif
                 <button
@@ -328,7 +333,7 @@
                                             data-order-equipamento="{{ $equipmentSummary !== '' ? $equipmentSummary : 'Sem resumo técnico' }}"
                                             data-order-status="{{ $order['status_nome'] !== '' ? $order['status_nome'] : 'Sem status' }}"
                                             data-order-valor="{{ $valorFinal !== null ? 'R$ ' . number_format((float) $valorFinal, 2, ',', '.') : 'Valor não informado' }}"
-                                            aria-label="Selecionar OS {{ $numeroOs !== '' ? $numeroOs : $orderId }} para baixa em lote"
+                                            aria-label="Selecionar OS {{ $numeroOs !== '' ? $numeroOs : $orderId }} para ações em lote"
                                         >
                                     @endif
                                 </td>
@@ -577,6 +582,10 @@
             batchClosureUrl: '{{ route('orders.closure.batch') }}',
             csrfToken: '{{ csrf_token() }}',
         };
+        window.__DESKTOP_BATCH_STATUS_MODAL = {
+            batchStatusUrl: '{{ route('orders.status.batch') }}',
+            csrfToken: '{{ csrf_token() }}',
+        };
 
         document.addEventListener('DOMContentLoaded', () => {
             const form = document.getElementById('osFilterPanel');
@@ -731,6 +740,12 @@
             };
 
             const resetBasicFilters = () => {
+                // Navegação programática: precisa avisar o guard de sessão
+                // (layouts/app.blade.php) de que isso é navegação interna,
+                // senão o pagehide seguinte marca a saída como "navegador
+                // fechado" e a próxima página desloga o usuário sozinha.
+                window.erpMarkInternalNavigation?.();
+
                 const resetUrl = clearButton instanceof HTMLElement ? (clearButton.dataset.resetUrl || '') : '';
                 if (resetUrl !== '') {
                     window.location.assign(resetUrl);
@@ -766,10 +781,12 @@
     <script src="{{ asset('assets/js/orders-status-modal.js') }}?v={{ filemtime(public_path('assets/js/orders-status-modal.js')) }}"></script>
     <script src="{{ asset('assets/js/orders-cancel-closure-modal.js') }}"></script>
     <script src="{{ asset('assets/js/orders-batch-closure.js') }}?v={{ filemtime(public_path('assets/js/orders-batch-closure.js')) }}"></script>
+    <script src="{{ asset('assets/js/orders-status-batch.js') }}?v={{ filemtime(public_path('assets/js/orders-status-batch.js')) }}"></script>
 @endsection
 
 @push('modals')
     @include('orders._status_modal')
     @include('orders._cancel_closure_modal')
     @include('orders._batch_closure_modal')
+    @include('orders._batch_status_modal')
 @endpush

@@ -1158,6 +1158,112 @@ class OrderWorkflowService
         ];
     }
 
+    /**
+     * Teto de notificações via WhatsApp disparadas por uma única execução do
+     * lote de alteração de status (Mais ações > Alterar status em lote, na
+     * listagem de OS) — pedido explícito para evitar bloqueio da conta pela
+     * Meta em rajadas de mensagens. sendStatusChangeClientNotification() é
+     * síncrona e sem fila (roda no mesmo request), então o único jeito de
+     * conter a rajada aqui é simplesmente não pedir notificação às OS que
+     * excederem esse teto — elas ainda têm o status alterado normalmente.
+     */
+    private const MAX_CLIENT_NOTIFICATIONS_PER_BATCH = 5;
+
+    /**
+     * Altera o status de várias OS de uma vez para o MESMO status de destino
+     * (Mais ações > Alterar status em lote, na listagem de OS). Diferente da
+     * baixa em lote (OrderClosureService::closeBatch()), não existe um
+     * método dedicado por trás — reaproveita updateStatus() diretamente por
+     * OS, com viaClosureFlow sempre false (o lote nunca aplica um dos 3
+     * OrderStatus::closureCodes(); BatchUpdateStatusRequest já barra isso na
+     * validação) e diagnostico_tecnico/solucao_aplicada sempre null (não
+     * fazem sentido compartilhados entre várias OS de uma vez).
+     *
+     * @param array<int, int> $orderIds
+     * @param array{status: string, observacao?: ?string, comunicar_cliente?: bool} $payload
+     * @return array{result: string, succeeded: array<int, array<string, mixed>>, failed: array<int, array<string, mixed>>, succeeded_count: int, failed_count: int, notificacoes_enviadas: int, notificacoes_solicitadas: int}
+     */
+    public function updateStatusBatch(array $orderIds, User $actor, array $payload): array
+    {
+        $orderIds = array_values(array_unique(array_map('intval', $orderIds)));
+        $newStatus = trim((string) ($payload['status'] ?? ''));
+        $observacao = $payload['observacao'] ?? null;
+        $wantsNotification = (bool) ($payload['comunicar_cliente'] ?? false);
+
+        $orders = Order::query()->whereIn('id', $orderIds)->get(['id', 'numero_os'])->keyBy('id');
+
+        $succeeded = [];
+        $failed = [];
+        $notificationsSent = 0;
+        $notificationsRequested = 0;
+
+        foreach ($orderIds as $orderId) {
+            $numeroOs = $orders->get($orderId)->numero_os ?? null;
+
+            if ($wantsNotification) {
+                $notificationsRequested++;
+            }
+
+            // Só oferece notificação enquanto o teto não foi atingido — OS
+            // que falham (forbidden, order_is_closed etc.) nunca consomem
+            // cota, já que o contador só avança depois de confirmar
+            // result === 'ok' e uma mudança de status real abaixo.
+            $notifyThisOrder = $wantsNotification && $notificationsSent < self::MAX_CLIENT_NOTIFICATIONS_PER_BATCH;
+
+            $result = $this->updateStatus(
+                $orderId,
+                $actor,
+                $newStatus,
+                $observacao,
+                null,
+                null,
+                $notifyThisOrder,
+                viaClosureFlow: false,
+                novoPrazo: null,
+                mensagemCliente: null
+            );
+
+            if (($result['result'] ?? 'error') !== 'ok') {
+                $failed[] = [
+                    'order_id' => $orderId,
+                    'numero_os' => $numeroOs,
+                    'reason' => (string) ($result['result'] ?? 'error'),
+                ];
+                continue;
+            }
+
+            // Só conta como "notificado de verdade" quando o status
+            // realmente mudou — se a OS já estava no status de destino,
+            // updateStatus() retorna 'ok' mas nunca chama
+            // sendStatusChangeClientNotification() (condicionada a
+            // $statusChanged), então não deve consumir a cota nem aparecer
+            // como notificada no resumo do lote.
+            $statusRealmenteMudou = ($result['status_anterior'] ?? null) !== ($result['status_novo'] ?? null);
+            $notificado = $notifyThisOrder && $statusRealmenteMudou;
+
+            if ($notificado) {
+                $notificationsSent++;
+            }
+
+            $succeeded[] = [
+                'order_id' => $orderId,
+                'numero_os' => $result['order']['numero_os'] ?? $numeroOs,
+                'status_aplicado' => $result['status_novo'] ?? $newStatus,
+                'notificado' => $notificado,
+            ];
+        }
+
+        return [
+            'result' => 'ok',
+            'succeeded' => $succeeded,
+            'failed' => $failed,
+            'succeeded_count' => count($succeeded),
+            'failed_count' => count($failed),
+            'notificacoes_enviadas' => $notificationsSent,
+            'notificacoes_solicitadas' => $notificationsRequested,
+        ];
+    }
+
     public function addProcedureEntry(int $orderId, User $actor, string $descricao): array
     {
         $order = Order::query()->find($orderId);
