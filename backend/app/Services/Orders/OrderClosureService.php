@@ -412,6 +412,14 @@ class OrderClosureService
      * abaixo, uma OS fechada por outra pessoa nesse intervalo seria
      * reaberta e refechada silenciosamente com o status/data deste lote.
      *
+     * Elegibilidade de origem: só entram no lote OS cujo status ATUAL já
+     * está em OrderStatus::flowExitCodes() (irreparável, irreparável
+     * disponível para retirada, reparo recusado, cancelado) — regra de
+     * negócio explícita: o lote serve para fechar administrativamente OS
+     * que um técnico já triou individualmente como "não vai ser reparada",
+     * não para encerrar em massa OS ainda ativas (triagem, em execução,
+     * concluída etc.), que exigem avaliação individual antes da baixa.
+     *
      * @param array<int, int> $orderIds
      * @param array{encerrar_como: string, data_entrega: string, observacao?: ?string} $payload
      * @return array{result: string, succeeded: array<int, array<string, mixed>>, failed: array<int, array<string, mixed>>, succeeded_count: int, failed_count: int}
@@ -420,6 +428,7 @@ class OrderClosureService
     {
         $orderIds = array_values(array_unique(array_map('intval', $orderIds)));
         $closureCodes = OrderStatus::closureCodes();
+        $flowExitCodes = OrderStatus::flowExitCodes();
 
         $orders = Order::query()
             ->whereIn('id', $orderIds)
@@ -437,8 +446,15 @@ class OrderClosureService
                 continue;
             }
 
-            if (in_array(trim((string) $row->status), $closureCodes, true)) {
+            $currentStatus = trim((string) $row->status);
+
+            if (in_array($currentStatus, $closureCodes, true)) {
                 $failed[] = ['order_id' => $orderId, 'numero_os' => $row->numero_os, 'reason' => 'already_closed'];
+                continue;
+            }
+
+            if (! in_array($currentStatus, $flowExitCodes, true)) {
+                $failed[] = ['order_id' => $orderId, 'numero_os' => $row->numero_os, 'reason' => 'not_flow_exit_status'];
                 continue;
             }
 

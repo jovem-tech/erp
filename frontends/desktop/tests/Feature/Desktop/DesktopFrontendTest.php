@@ -728,6 +728,8 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('order-select', false)
             ->assertSee('id="osBulkClosureTrigger"', false)
             ->assertSee('Dar baixa em lote')
+            ->assertSee('id="osBulkStatusTrigger"', false)
+            ->assertSee('Alterar status em lote')
             ->assertSee('Mais ações');
     }
 
@@ -749,7 +751,38 @@ class DesktopFrontendTest extends TestCase
             ->assertOk()
             ->assertDontSee('id="osSelectAll"', false)
             ->assertDontSee('order-select', false)
-            ->assertDontSee('id="osBulkClosureTrigger"', false);
+            ->assertDontSee('id="osBulkClosureTrigger"', false)
+            ->assertDontSee('id="osBulkStatusTrigger"', false);
+    }
+
+    public function test_orders_index_shows_checkbox_for_order_not_in_flow_exit_status(): void
+    {
+        // Antes, o checkbox de seleção só aparecia em OS de saída de fluxo
+        // (irreparável, irreparável disponível para retirada, reparo
+        // recusado, cancelado) — restrição específica da baixa em lote. Com
+        // a chegada da alteração de status em lote, o checkbox passou a ser
+        // compartilhado pelas duas ações e voltou a valer para qualquer OS
+        // não encerrada; cada ação valida por conta própria (no backend)
+        // quais das OS selecionadas são elegíveis para ela — ver
+        // test_status_batch_* e test_close_batch_rejects_orders_not_in_flow_exit_status
+        // em OrderFlowTest.php.
+        Http::fake(array_merge($this->notificationsFixture(), $this->ordersIndexFixture(financeiroTituloId: null, orderStatus: 'aguardando_reparo')));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'os' => ['visualizar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os');
+
+        $response
+            ->assertOk()
+            ->assertSee('id="osBulkClosureTrigger"', false)
+            ->assertSee('id="osBulkStatusTrigger"', false)
+            ->assertSee('order-select', false);
     }
 
     public function test_orders_closure_batch_store_forwards_selected_ids_and_reports_partial_results(): void
@@ -797,11 +830,68 @@ class DesktopFrontendTest extends TestCase
             && $request['data_entrega'] === '2026-08-13');
     }
 
+    public function test_orders_status_batch_store_forwards_selected_ids_and_reports_partial_results(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orders/status-batch' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'succeeded' => [
+                        ['order_id' => 3614, 'numero_os' => 'OS26070002', 'status_aplicado' => 'aguardando_reparo', 'notificado' => true],
+                    ],
+                    'failed' => [
+                        ['order_id' => 3615, 'numero_os' => 'OS26070003', 'reason' => 'order_is_closed', 'message' => 'Esta OS está encerrada. Cancele a baixa antes de alterar o status.'],
+                    ],
+                    'succeeded_count' => 1,
+                    'failed_count' => 1,
+                    'notificacoes_enviadas' => 1,
+                    'notificacoes_solicitadas' => 1,
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'dashboard' => ['visualizar'],
+                'os' => ['visualizar', 'editar'],
+            ]))
+            ->withHeader('Accept', 'application/json')
+            ->post('/os/status-lote', [
+                'order_ids' => [3614, 3615],
+                'status' => 'aguardando_reparo',
+                'comunicar_cliente' => true,
+            ]);
+
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('result.succeeded_count', 1)
+            ->assertJsonPath('result.failed_count', 1)
+            ->assertJsonPath('result.failed.0.reason', 'order_is_closed')
+            ->assertJsonPath('result.notificacoes_enviadas', 1)
+            ->assertJsonPath('result.notificacoes_solicitadas', 1);
+
+        Http::assertSent(static fn ($request): bool => str_ends_with($request->url(), '/api/v1/orders/status-batch')
+            && $request['order_ids'] === [3614, 3615]
+            && $request['status'] === 'aguardando_reparo'
+            && $request['comunicar_cliente'] === true);
+    }
+
     /**
      * @return array<string, mixed>
      */
-    private function ordersIndexFixture(?int $financeiroTituloId): array
+    private function ordersIndexFixture(?int $financeiroTituloId, string $orderStatus = 'irreparavel'): array
     {
+        $orderStatusNome = match ($orderStatus) {
+            'irreparavel' => 'Irreparável',
+            'irreparavel_disponivel_loja' => 'Irreparável, Disponível para Retirada',
+            'reparo_recusado' => 'Reparo Recusado',
+            'cancelado' => 'Cancelado',
+            default => 'Aguardando Reparo',
+        };
+
         return [
             'http://127.0.0.1:8000/api/v1/orders/status-catalog' => Http::response([
                 'status' => 'success',
@@ -825,8 +915,8 @@ class DesktopFrontendTest extends TestCase
                             'equipamento_numero_serie' => '',
                             'equipamento_foto_id' => 0,
                             'equipamento_foto_url' => null,
-                            'status' => 'aguardando_reparo',
-                            'status_nome' => 'Aguardando Reparo',
+                            'status' => $orderStatus,
+                            'status_nome' => $orderStatusNome,
                             'status_cor' => '#16a34a',
                             'prioridade' => 'normal',
                             'data_abertura' => '2026-07-03T08:00:00-03:00',

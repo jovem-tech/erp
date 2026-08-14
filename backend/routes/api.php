@@ -318,6 +318,7 @@ Route::prefix('v1')->group(function (): void {
             ->whereNumber('tipoEquipamento')
             ->name('api.v1.orders.entry_checklist_model');
         Route::post('orders/close-batch', [OrderController::class, 'closeBatch'])->name('api.v1.orders.close_batch');
+        Route::post('orders/status-batch', [OrderController::class, 'updateStatusBatch'])->name('api.v1.orders.status_batch');
         Route::get('orders/{order}', [OrderController::class, 'show'])->name('api.v1.orders.show');
         Route::get('orders/{order}/events', [OrderController::class, 'events'])->name('api.v1.orders.events.index');
         Route::post('orders', [OrderController::class, 'store'])->name('api.v1.orders.store');

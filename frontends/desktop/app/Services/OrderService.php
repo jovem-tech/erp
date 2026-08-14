@@ -150,6 +150,22 @@ class OrderService
     }
 
     /**
+     * @param  array<int, int>  $orderIds
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    public function updateStatusBatch(array $orderIds, array $payload): array
+    {
+        // postOnce, mesmo motivo de closeBatch(): não repetir o lote inteiro
+        // num retry transitório.
+        $response = $this->apiClient->postOnce('/orders/status-batch', array_merge($payload, [
+            'order_ids' => array_values($orderIds),
+        ]));
+
+        return $response['data'] ?? [];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function cancelClosure(int $id, string $adminEmail, string $adminPassword): array

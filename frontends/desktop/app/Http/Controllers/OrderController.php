@@ -1335,6 +1335,73 @@ class OrderController extends DesktopController
         return redirect()->route('orders.index')->with($failedCount > 0 ? 'error' : 'success', $message);
     }
 
+    /**
+     * Alteração de status em lote (Mais ações > Alterar status em lote, na
+     * listagem de OS): move várias OS para o mesmo status de destino. Sem
+     * Rule::in para `status` de propósito — o catálogo vem do banco e
+     * BatchUpdateStatusRequest no backend é a fonte única da verdade, mesmo
+     * precedente da mudança de status individual (updateStatus() acima, que
+     * também não duplica essa checagem no lado do desktop).
+     */
+    public function statusBatchStore(Request $request): JsonResponse|RedirectResponse
+    {
+        $validated = $request->validate([
+            'order_ids' => ['required', 'array', 'min:1', 'max:20'],
+            'order_ids.*' => ['required', 'integer', 'min:1', 'distinct'],
+            'status' => ['required', 'string', 'max:80'],
+            'observacao' => ['nullable', 'string', 'max:2000'],
+            'comunicar_cliente' => ['nullable', 'boolean'],
+        ], [], [
+            'order_ids' => 'ordens selecionadas',
+            'status' => 'status de destino',
+            'observacao' => 'observação',
+            'comunicar_cliente' => 'notificar cliente',
+        ]);
+
+        try {
+            $result = $this->orderService->updateStatusBatch(
+                array_map('intval', $validated['order_ids']),
+                [
+                    'status' => $validated['status'],
+                    'observacao' => $validated['observacao'] ?? null,
+                    'comunicar_cliente' => filter_var($validated['comunicar_cliente'] ?? false, FILTER_VALIDATE_BOOL),
+                ]
+            );
+        } catch (ApiAuthenticationException $exception) {
+            if ($request->wantsJson()) {
+                return response()->json(['error' => $exception->getMessage()], 401);
+            }
+
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            if ($request->wantsJson()) {
+                return response()->json(['error' => $exception->getMessage()], 422);
+            }
+
+            return redirect()->route('orders.index')->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            if ($request->wantsJson()) {
+                return response()->json(['error' => 'Não foi possível concluir a alteração de status em lote agora. Tente novamente.'], 500);
+            }
+
+            return redirect()->route('orders.index')->with('error', 'Não foi possível concluir a alteração de status em lote agora. Tente novamente.');
+        }
+
+        $succeededCount = (int) ($result['succeeded_count'] ?? 0);
+        $failedCount = (int) ($result['failed_count'] ?? 0);
+        $message = $failedCount > 0
+            ? sprintf('%d de %d OS tiveram o status alterado. %d não puderam ser alteradas.', $succeededCount, $succeededCount + $failedCount, $failedCount)
+            : sprintf('%d OS tiveram o status alterado com sucesso.', $succeededCount);
+
+        if ($request->wantsJson()) {
+            return response()->json(['success' => true, 'message' => $message, 'result' => $result]);
+        }
+
+        return redirect()->route('orders.index')->with($failedCount > 0 ? 'error' : 'success', $message);
+    }
+
     public function closureCancel(Request $request, int $order): RedirectResponse|JsonResponse
     {
         $validated = $request->validate([

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\Api\V1\BatchCloseOrdersRequest;
+use App\Http\Requests\Api\V1\BatchUpdateStatusRequest;
 use App\Http\Requests\Api\V1\CancelOrderClosureRequest;
 use App\Http\Requests\Api\V1\CloseOrderRequest;
 use App\Http\Requests\Api\V1\OrderEventIndexRequest;
@@ -1254,10 +1255,79 @@ class OrderController extends BaseApiController
             'not_found' => 'OS não encontrada.',
             'forbidden' => 'Você não tem permissão para alterar esta OS.',
             'already_closed' => 'Esta OS já está encerrada.',
+            'not_flow_exit_status' => 'A baixa em lote só é permitida para OS em Irreparável, Irreparável Disponível para Retirada, Reparo Recusado ou Cancelado. Feche esta OS individualmente.',
             'invalid_status' => 'O status de encerramento informado não é válido.',
             'invalid_date' => 'A data de entrega informada é inválida.',
             'closure_failed' => 'Falha ao concluir a baixa desta OS.',
             default => 'Não foi possível encerrar esta OS.',
+        };
+    }
+
+    /**
+     * Alteração de status em lote (Mais ações > Alterar status em lote, na
+     * listagem de OS): move várias OS para o MESMO status de destino.
+     * Reaproveita OrderWorkflowService::updateStatus() por OS via
+     * updateStatusBatch() — uma OS com problema não bloqueia as demais.
+     */
+    public function updateStatusBatch(BatchUpdateStatusRequest $request): JsonResponse
+    {
+        $this->authorize('os:editar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $validated = $request->validated();
+
+        $result = $this->orderWorkflowService->updateStatusBatch(
+            (array) $validated['order_ids'],
+            $user,
+            [
+                'status' => (string) $validated['status'],
+                'observacao' => $validated['observacao'] ?? null,
+                'comunicar_cliente' => filter_var($validated['comunicar_cliente'] ?? false, FILTER_VALIDATE_BOOL),
+            ]
+        );
+
+        // Mesmo pós-efeito da mudança de status individual (linha ~913):
+        // gera o laudo técnico para cada OS que teve o status alterado.
+        foreach ($result['succeeded'] as $item) {
+            $this->orderDocumentCenterService->syncAfterStatusChange(
+                (int) $item['order_id'],
+                $user,
+                (string) $validated['status']
+            );
+        }
+
+        return $this->success([
+            'succeeded' => $result['succeeded'],
+            'failed' => array_map(
+                fn (array $item): array => $item + ['message' => $this->batchStatusFailureMessage((string) $item['reason'])],
+                $result['failed']
+            ),
+            'succeeded_count' => $result['succeeded_count'],
+            'failed_count' => $result['failed_count'],
+            'notificacoes_enviadas' => $result['notificacoes_enviadas'],
+            'notificacoes_solicitadas' => $result['notificacoes_solicitadas'],
+        ], request: $request);
+    }
+
+    /**
+     * Traduz os `reason` de updateStatusBatch() (subset dos `result` de
+     * updateStatus() alcançáveis pelo lote) para mensagens PT-BR.
+     */
+    private function batchStatusFailureMessage(string $reason): string
+    {
+        return match ($reason) {
+            'not_found' => 'OS não encontrada.',
+            'forbidden' => 'Você não tem permissão para alterar esta OS.',
+            'invalid_status' => 'O status informado não é válido para o catálogo atual.',
+            'order_is_closed' => 'Esta OS está encerrada. Cancele a baixa antes de alterar o status.',
+            'prazo_redefinition_required' => 'Esta OS está com o prazo congelado; informe o novo prazo alterando-a individualmente.',
+            // Defensivo/inalcançável: BatchUpdateStatusRequest já exclui closureCodes() da validação.
+            'closure_status_requires_baixa_flow' => 'Este status só pode ser aplicado pela tela de baixa da OS, não pelo lote.',
+            default => 'Não foi possível alterar o status desta OS.',
         };
     }
 
