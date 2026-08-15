@@ -15,6 +15,12 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $pageTitle ?? 'Acesso' }} | {{ $guestBrandingName !== '' ? $guestBrandingName : 'Sistema ERP' }}</title>
     <meta name="description" content="Acesso ao {{ $guestBrandingName !== '' ? $guestBrandingName : 'Sistema ERP' }}, o sistema de gestão de ordens de serviço, financeiro e estoque para assistências técnicas.">
+    @if ($branding['has_logo'] ?? false)
+        <link rel="icon" href="{{ route('branding.company.logo') }}">
+    @else
+        <link rel="icon" type="image/svg+xml" href="{{ asset('assets/img/favicon-default.svg') }}">
+    @endif
+    <link rel="alternate icon" href="{{ asset('favicon.ico') }}">
     <link href="{{ asset('assets/fonts/plus-jakarta-sans/plus-jakarta-sans.css') }}" rel="stylesheet">
     <link href="{{ asset('assets/libs/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ asset('assets/libs/bootstrap-icons/bootstrap-icons.css') }}" rel="stylesheet">

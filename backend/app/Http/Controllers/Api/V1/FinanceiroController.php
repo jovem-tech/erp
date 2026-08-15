@@ -44,6 +44,7 @@ class FinanceiroController extends BaseApiController
             [
                 'lancamentos' => $lancamentos,
                 'status_options' => Financeiro::statusOptions(),
+                'totais_despesas' => $this->financeiroService->totaisFixoVariavel($request->query()),
             ],
             meta: $this->paginationMeta($paginator),
             request: $request

@@ -171,16 +171,28 @@ class DesktopNavigation
                 'label' => 'Financeiro',
                 'items' => [
                     [
-                        'label' => 'Lançamentos',
-                        'route' => 'financeiro.index',
-                        'module' => 'financeiro',
-                        'icon' => 'bi-cash-coin',
-                    ],
-                    [
-                        'label' => 'Contas e Saldos',
-                        'route' => 'financeiro.contas.index',
-                        'module' => 'contas_saldos',
-                        'icon' => 'bi-wallet2',
+                        'label' => 'Finanças',
+                        'icon' => 'bi-cash-stack',
+                        'children' => [
+                            [
+                                'label' => 'Lançamentos',
+                                'route' => 'financeiro.index',
+                                'module' => 'financeiro',
+                                'icon' => 'bi-cash-coin',
+                            ],
+                            [
+                                'label' => 'Despesas',
+                                'route' => 'financeiro.despesas-fixas.index',
+                                'module' => 'financeiro',
+                                'icon' => 'bi-pin-angle',
+                            ],
+                            [
+                                'label' => 'Contas e Saldos',
+                                'route' => 'financeiro.contas.index',
+                                'module' => 'contas_saldos',
+                                'icon' => 'bi-wallet2',
+                            ],
+                        ],
                     ],
                     [
                         'label' => 'Relatórios',

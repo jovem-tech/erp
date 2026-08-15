@@ -247,6 +247,404 @@ class FinanceiroTest extends TestCase
             ->assertJsonPath('data.lancamentos.2.id', $pending->id);
     }
 
+    public function test_categoria_can_be_created_with_dre_fixo_mensal_padrao(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $fixa = $this->postJson('/api/v1/financeiro/categorias', [
+            'nome' => 'Assinatura de software',
+            'tipo' => 'pagar',
+            'dre_fixo_mensal_padrao' => true,
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('financeiro_categorias', [
+            'id' => $fixa->json('data.categoria.id'),
+            'nome' => 'Assinatura de software',
+            'dre_fixo_mensal_padrao' => true,
+        ]);
+
+        $variavel = $this->postJson('/api/v1/financeiro/categorias', [
+            'nome' => 'Compra de embalagens',
+            'tipo' => 'pagar',
+        ])->assertCreated();
+
+        $this->assertDatabaseHas('financeiro_categorias', [
+            'id' => $variavel->json('data.categoria.id'),
+            'nome' => 'Compra de embalagens',
+            'dre_fixo_mensal_padrao' => false,
+        ]);
+    }
+
+    public function test_lancamento_a_pagar_inherits_dre_fixo_mensal_from_categoria_padrao(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        // "Aluguel" já vem do seed da migration com dre_fixo_mensal_padrao=true
+        // (ver 2026_06_27_000001_create_financeiro_module_tables.php) — não
+        // precisa criar a categoria, só confirmar que o lançamento herda o
+        // padrão dela. Evitar nomes acentuados aqui: o SQLite dos testes não
+        // lowercase corretamente caracteres acentuados no LOWER() usado pelo
+        // match de categoria em resolveClassification(), então "Água"
+        // (funciona no MySQL de produção) não bate no ambiente de teste.
+        $herdado = $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'pagar',
+            'categoria' => 'Aluguel',
+            'descricao' => 'Aluguel do mês de teste',
+            'valor' => 100.00,
+            'data_vencimento' => now()->toDateString(),
+        ])->assertCreated();
+
+        $herdado->assertJsonPath('data.lancamento.dre_fixo_mensal', true);
+
+        $sobrescrito = $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'pagar',
+            'categoria' => 'Aluguel',
+            'descricao' => 'Aluguel avulso, não é o mensal de sempre',
+            'valor' => 15.00,
+            'data_vencimento' => now()->toDateString(),
+            'dre_fixo_mensal' => false,
+        ])->assertCreated();
+
+        $sobrescrito->assertJsonPath('data.lancamento.dre_fixo_mensal', false);
+    }
+
+    public function test_repetir_proximos_meses_gera_onze_titulos_futuros_para_despesa_fixa(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $vencimentoInicial = now()->startOfMonth()->addDays(9)->toDateString();
+
+        $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'pagar',
+            'categoria' => 'Internet',
+            'descricao' => 'Internet mensal',
+            'valor' => 120.00,
+            'data_vencimento' => $vencimentoInicial,
+            'dre_fixo_mensal' => true,
+            'repetir_proximos_meses' => true,
+        ])->assertCreated();
+
+        $titulos = Financeiro::query()
+            ->where('categoria', 'Internet')
+            ->where('descricao', 'Internet mensal')
+            ->orderBy('data_vencimento')
+            ->get();
+
+        $this->assertCount(12, $titulos, 'Deve gerar o título criado + 11 futuros = 12 no total.');
+        $this->assertTrue($titulos->every(fn (Financeiro $t): bool => $t->status === Financeiro::STATUS_PENDENTE));
+        $this->assertTrue($titulos->every(fn (Financeiro $t): bool => (bool) $t->dre_fixo_mensal === true));
+        $this->assertTrue($titulos->every(fn (Financeiro $t): bool => (float) $t->valor === 120.00));
+
+        $vencimentos = $titulos->pluck('data_vencimento')->map(fn ($d) => $d->toDateString())->values()->all();
+        $esperado = collect(range(0, 11))
+            ->map(fn (int $i) => \Carbon\Carbon::parse($vencimentoInicial)->addMonthsNoOverflow($i)->toDateString())
+            ->all();
+
+        $this->assertSame($esperado, $vencimentos);
+    }
+
+    public function test_repetir_proximos_meses_nao_gera_titulos_no_passado_ou_hoje(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        // Conta atrasada sendo colocada em dia: vencimento original de 6
+        // meses atrás. A repetição não deve "preencher" os meses que já
+        // passaram (nem hoje) — só a partir do próximo mês futuro.
+        $vencimentoAtrasado = now()->subMonthsNoOverflow(6)->toDateString();
+
+        $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'pagar',
+            'categoria' => 'Internet',
+            'descricao' => 'Internet atrasada, colocando em dia',
+            'valor' => 120.00,
+            'data_vencimento' => $vencimentoAtrasado,
+            'dre_fixo_mensal' => true,
+            'repetir_proximos_meses' => true,
+        ])->assertCreated();
+
+        $titulos = Financeiro::query()
+            ->where('categoria', 'Internet')
+            ->where('descricao', 'Internet atrasada, colocando em dia')
+            ->get();
+
+        $hoje = now()->startOfDay();
+
+        $this->assertTrue(
+            $titulos->every(function (Financeiro $t) use ($vencimentoAtrasado, $hoje): bool {
+                return $t->data_vencimento->toDateString() === $vencimentoAtrasado || $t->data_vencimento->gt($hoje);
+            }),
+            'Nenhum título gerado pela repetição deve cair no passado ou em hoje — só o original (atrasado, digitado pelo usuário) pode.'
+        );
+
+        $this->assertLessThan(12, $titulos->count(), 'Meses no passado/hoje devem ter sido pulados, gerando menos que os 12 totais.');
+        $this->assertGreaterThan(1, $titulos->count(), 'Ainda deve gerar ao menos alguns meses futuros.');
+    }
+
+    public function test_repetir_proximos_meses_ignorado_quando_nao_e_despesa_fixa(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'pagar',
+            'categoria' => 'Compra de peças',
+            'descricao' => 'Peça avulsa não deve repetir',
+            'valor' => 50.00,
+            'data_vencimento' => now()->toDateString(),
+            'dre_fixo_mensal' => false,
+            'repetir_proximos_meses' => true,
+        ])->assertCreated();
+
+        $this->assertSame(1, Financeiro::query()->where('descricao', 'Peça avulsa não deve repetir')->count());
+    }
+
+    public function test_repetir_proximos_meses_ignorado_para_tipo_receber(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        $clienteId = $this->createClientRecord();
+        Sanctum::actingAs($admin, ['*']);
+
+        $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'receber',
+            'categoria' => 'Serviço',
+            'descricao' => 'Recebimento não deve repetir',
+            'cliente_id' => $clienteId,
+            'avulso' => true,
+            'valor' => 50.00,
+            'data_vencimento' => now()->toDateString(),
+            'repetir_proximos_meses' => true,
+        ])->assertCreated();
+
+        $this->assertSame(1, Financeiro::query()->where('descricao', 'Recebimento não deve repetir')->count());
+    }
+
+    public function test_lancamento_a_receber_never_has_dre_fixo_mensal_true(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        $clienteId = $this->createClientRecord();
+        Sanctum::actingAs($admin, ['*']);
+
+        $response = $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'receber',
+            'categoria' => 'Serviço',
+            'descricao' => 'Recebimento de teste',
+            'cliente_id' => $clienteId,
+            'avulso' => true,
+            'valor' => 200.00,
+            'data_vencimento' => now()->toDateString(),
+            'dre_fixo_mensal' => true,
+        ])->assertCreated();
+
+        $response->assertJsonPath('data.lancamento.dre_fixo_mensal', false);
+    }
+
+    public function test_index_can_be_filtered_by_dre_fixo_mensal(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $fixa = Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Internet',
+            'descricao' => 'Internet do mês',
+            'valor' => 120.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->toDateString(),
+            'dre_fixo_mensal' => true,
+        ]);
+
+        $variavel = Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Compra de peças',
+            'descricao' => 'Peça avulsa',
+            'valor' => 80.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->toDateString(),
+            'dre_fixo_mensal' => false,
+        ]);
+
+        $this->getJson('/api/v1/financeiro?tipo=pagar&dre_fixo_mensal=1')
+            ->assertOk()
+            ->assertJsonCount(1, 'data.lancamentos')
+            ->assertJsonPath('data.lancamentos.0.id', $fixa->id);
+
+        $this->getJson('/api/v1/financeiro?tipo=pagar&dre_fixo_mensal=0')
+            ->assertOk()
+            ->assertJsonCount(1, 'data.lancamentos')
+            ->assertJsonPath('data.lancamentos.0.id', $variavel->id);
+
+        $this->getJson('/api/v1/financeiro?tipo=pagar')
+            ->assertOk()
+            ->assertJsonCount(2, 'data.lancamentos');
+    }
+
+    public function test_index_can_be_filtered_by_mes(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $mesAtual = Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Internet',
+            'descricao' => 'Internet deste mês',
+            'valor' => 120.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->startOfMonth()->addDays(5)->toDateString(),
+        ]);
+
+        Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Internet',
+            'descricao' => 'Internet do mês passado',
+            'valor' => 120.00,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->subMonthNoOverflow()->startOfMonth()->addDays(5)->toDateString(),
+        ]);
+
+        $mes = now()->format('Y-m');
+
+        $this->getJson("/api/v1/financeiro?tipo=pagar&mes={$mes}")
+            ->assertOk()
+            ->assertJsonCount(1, 'data.lancamentos')
+            ->assertJsonPath('data.lancamentos.0.id', $mesAtual->id);
+    }
+
+    public function test_index_periodo_atual_e_atrasadas_shows_current_month_and_overdue_pending_only(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        // Mês atual, pago: deve aparecer (mês atual entra com qualquer status).
+        $mesAtualPago = Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Internet',
+            'descricao' => 'Internet deste mês, já paga',
+            'valor' => 120.00,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->startOfMonth()->addDays(2)->toDateString(),
+        ]);
+
+        // Mês atual, pendente: deve aparecer.
+        $mesAtualPendente = Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Água',
+            'descricao' => 'Água deste mês',
+            'valor' => 100.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->startOfMonth()->addDays(10)->toDateString(),
+        ]);
+
+        // Mês passado, ainda pendente (atrasada): deve aparecer.
+        $mesPassadoPendente = Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Aluguel',
+            'descricao' => 'Aluguel atrasado',
+            'valor' => 900.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->subMonthsNoOverflow(2)->toDateString(),
+        ]);
+
+        // Mês passado, já paga: NÃO deve aparecer (resolvida, é só histórico).
+        Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Energia',
+            'descricao' => 'Energia do mês passado, já paga',
+            'valor' => 200.00,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->subMonthNoOverflow()->toDateString(),
+        ]);
+
+        // Mês futuro (ex.: gerado pela repetição): NÃO deve aparecer, mesmo pendente.
+        Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Internet',
+            'descricao' => 'Internet de mês futuro (repetição)',
+            'valor' => 120.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->addMonthsNoOverflow(3)->toDateString(),
+        ]);
+
+        $response = $this->getJson('/api/v1/financeiro?tipo=pagar&periodo_atual_e_atrasadas=1');
+
+        $response->assertOk()->assertJsonCount(3, 'data.lancamentos');
+
+        $ids = collect($response->json('data.lancamentos'))->pluck('id')->all();
+        $this->assertEqualsCanonicalizing(
+            [$mesAtualPago->id, $mesAtualPendente->id, $mesPassadoPendente->id],
+            $ids
+        );
+    }
+
+    public function test_index_totais_despesas_sums_fixed_and_variable_and_ignores_cancelled(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        $clienteId = $this->createClientRecord();
+        Sanctum::actingAs($admin, ['*']);
+
+        Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Internet',
+            'descricao' => 'Internet',
+            'valor' => 100.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->toDateString(),
+            'dre_fixo_mensal' => true,
+        ]);
+
+        Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Água',
+            'descricao' => 'Água',
+            'valor' => 50.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->toDateString(),
+            'dre_fixo_mensal' => true,
+        ]);
+
+        Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Compra de peças',
+            'descricao' => 'Peças',
+            'valor' => 30.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->toDateString(),
+            'dre_fixo_mensal' => false,
+        ]);
+
+        // Cancelada: não deve entrar em nenhum dos dois totais.
+        Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Internet',
+            'descricao' => 'Internet cancelada',
+            'valor' => 999.00,
+            'status' => Financeiro::STATUS_CANCELADO,
+            'data_vencimento' => now()->toDateString(),
+            'dre_fixo_mensal' => true,
+        ]);
+
+        // Recebível: não deve afetar os totais de despesas (só tipo=pagar conta).
+        Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'cliente_id' => $clienteId,
+            'categoria' => 'Serviço',
+            'descricao' => 'Recebimento',
+            'valor' => 500.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->toDateString(),
+            'avulso' => true,
+        ]);
+
+        $response = $this->getJson('/api/v1/financeiro');
+
+        $response->assertOk()
+            ->assertJsonPath('data.totais_despesas.fixas', 150.0)
+            ->assertJsonPath('data.totais_despesas.variaveis', 30.0);
+    }
+
     public function test_creating_with_status_pago_registers_full_settlement_automatically(): void
     {
         $admin = $this->createUserRecord(['grupo_id' => 1]);

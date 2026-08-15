@@ -188,6 +188,8 @@ class FinanceiroController extends DesktopController
             'tipo' => trim((string) $request->query('tipo', '')),
             'status' => trim((string) $request->query('status', '')),
             'cliente_id' => (int) $request->query('cliente_id', 0),
+            'dre_fixo_mensal' => trim((string) $request->query('dre_fixo_mensal', '')),
+            'mes' => trim((string) $request->query('mes', '')),
             'page' => (int) $request->query('page', 1),
             'per_page' => (int) $request->query('per_page', 15),
         ];
@@ -204,19 +206,80 @@ class FinanceiroController extends DesktopController
             'lancamentos' => $result['items'],
             'pagination' => $result['pagination'],
             'statusOptions' => $result['status_options'],
+            'totaisDespesas' => $result['totais_despesas'],
             'filters' => $filters,
             'cartaoDataset' => $catalog['cartao'],
             'accountDataset' => $catalog['contas_financeiras'],
         ]);
     }
 
-    public function create(): View
+    /**
+     * Tela dedicada de Despesas: mesma tabela/serviço de Lançamentos, mas
+     * com tipo=pagar sempre forçado — cobre TODAS as contas a pagar (fixas
+     * e variáveis), com "Tipo de despesa" (fixa/variável) como filtro
+     * opcional, para ter um lugar próprio de acompanhar as despesas da
+     * assistência sem precisar lembrar de filtrar toda vez na listagem
+     * geral de Lançamentos (que continua cobrindo a pagar + a receber).
+     */
+    public function despesasFixas(Request $request): View
     {
+        $mesFiltro = trim((string) $request->query('mes', ''));
+        $statusFiltro = trim((string) $request->query('status', ''));
+        $dreFixoMensalFiltro = trim((string) $request->query('dre_fixo_mensal', ''));
+        // Sem mês, status ou tipo de despesa escolhidos pelo usuário = visão
+        // padrão da tela: mês corrente (qualquer status) + pendências
+        // atrasadas de meses anteriores. Assim que o usuário filtra
+        // explicitamente, essa visão inteligente some e o filtro passa a
+        // valer literalmente (como em Lançamentos).
+        $isDefaultView = $mesFiltro === '' && $statusFiltro === '' && $dreFixoMensalFiltro === '';
+
+        $filters = [
+            'tipo' => 'pagar',
+            'status' => $statusFiltro,
+            'dre_fixo_mensal' => $dreFixoMensalFiltro,
+            'mes' => $mesFiltro,
+            'periodo_atual_e_atrasadas' => $isDefaultView ? '1' : '',
+            'page' => (int) $request->query('page', 1),
+            'per_page' => (int) $request->query('per_page', 15),
+        ];
+
+        $result = $this->financeiroService->paginate(array_filter(
+            $filters,
+            static fn ($value): bool => $value !== '' && $value !== 0
+        ));
+
         $catalog = $this->financeiroService->catalogo();
 
+        return view('financeiro.despesas-fixas', [
+            'pageTitle' => 'Despesas',
+            'lancamentos' => $result['items'],
+            'pagination' => $result['pagination'],
+            'statusOptions' => $result['status_options'],
+            'totaisDespesas' => $result['totais_despesas'],
+            'filters' => $filters,
+            'cartaoDataset' => $catalog['cartao'],
+            'accountDataset' => $catalog['contas_financeiras'],
+        ]);
+    }
+
+    public function create(Request $request): View
+    {
+        $catalog = $this->financeiroService->catalogo();
+        // Vindo do botão "Nova despesa" da tela de Despesas: trava o
+        // lançamento em "a pagar" — essa entrada só serve para despesas. A
+        // listagem geral de Lançamentos continua sendo o único lugar para
+        // criar tanto a pagar quanto a receber.
+        $tipoLocked = trim((string) $request->query('tipo', '')) === 'pagar';
+
+        $lancamento = $this->formDefaults();
+        if ($tipoLocked) {
+            $lancamento['tipo'] = 'pagar';
+        }
+
         return view('financeiro.create', [
-            'pageTitle' => 'Novo lançamento',
-            'lancamento' => $this->formDefaults(),
+            'pageTitle' => $tipoLocked ? 'Nova despesa' : 'Novo lançamento',
+            'lancamento' => $lancamento,
+            'tipoLocked' => $tipoLocked,
             'categorias' => $catalog['categorias'],
             'accountDataset' => $catalog['contas_financeiras'],
             'formasPagamento' => $catalog['formas_pagamento'],
@@ -298,9 +361,13 @@ class FinanceiroController extends DesktopController
                 ->with('error', 'Não foi possível criar o lançamento agora. Tente novamente.');
         }
 
+        $mensagem = $payload['repetir_proximos_meses'] ?? false
+            ? 'Lançamento criado com sucesso, com mais 11 lançamentos futuros gerados (um por mês, pendentes).'
+            : 'Lançamento criado com sucesso.';
+
         return redirect()
             ->route('financeiro.index')
-            ->with('success', 'Lançamento criado com sucesso.');
+            ->with('success', $mensagem);
     }
 
     public function edit(int $financeiro): View|RedirectResponse
@@ -495,6 +562,11 @@ class FinanceiroController extends DesktopController
             'cliente_id' => '',
             'fornecedor_id' => '',
             'avulso' => false,
+            // null (não false): o form novo usa um select "Todas as
+            // categorias" / "Despesa fixa" / "Despesa variável" — null faz
+            // isset() cair em '' (sem escolha), diferente de um valor
+            // explícito false vindo de um lançamento real em edição.
+            'dre_fixo_mensal' => null,
         ];
     }
 
@@ -518,6 +590,8 @@ class FinanceiroController extends DesktopController
             'cliente_id' => ['nullable', 'integer', 'min:1'],
             'fornecedor_id' => ['nullable', 'integer', 'min:1'],
             'avulso' => ['nullable', 'boolean'],
+            'dre_fixo_mensal' => ['nullable', 'boolean'],
+            'repetir_proximos_meses' => ['nullable', 'boolean'],
         ], [], [
             'tipo' => 'tipo',
             'categoria' => 'categoria',
@@ -536,6 +610,28 @@ class FinanceiroController extends DesktopController
         }
 
         $validated['avulso'] = $request->boolean('avulso');
+
+        // O select "Despesa fixa?" tem uma opção vazia ("Todas as
+        // categorias") que significa "sem escolha explícita" — nesse caso
+        // omitimos a chave para o backend aplicar o padrão da categoria
+        // (resolveClassification()), em vez de forçar false só porque o
+        // campo veio vazio no POST.
+        $dreFixoMensalRaw = trim((string) $request->input('dre_fixo_mensal', ''));
+        if ($validated['tipo'] === 'pagar' && $dreFixoMensalRaw !== '') {
+            $validated['dre_fixo_mensal'] = $request->boolean('dre_fixo_mensal');
+        } else {
+            unset($validated['dre_fixo_mensal']);
+        }
+
+        // "Repetir" só existe no formulário de criação (form.blade.php só
+        // renderiza o checkbox quando $lancamento['id'] está vazio) — em
+        // edição, mesmo que o campo chegasse marcado, não faria sentido
+        // regenerar títulos futuros a cada alteração salva.
+        if ($validated['tipo'] === 'pagar' && $request->isMethod('post')) {
+            $validated['repetir_proximos_meses'] = $request->boolean('repetir_proximos_meses');
+        } else {
+            unset($validated['repetir_proximos_meses']);
+        }
 
         return $validated;
     }

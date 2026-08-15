@@ -245,7 +245,7 @@
                         <div class="surface-card-header">
                             <div>
                                 <h3 class="surface-title mb-1">Logo da Empresa</h3>
-                                <p class="surface-subtitle mb-0">Usada no login, no menu lateral do sistema e como identidade institucional.</p>
+                                <p class="surface-subtitle mb-0">Usada no login, no menu lateral, na aba do navegador e como identidade institucional.</p>
                             </div>
                         </div>
 

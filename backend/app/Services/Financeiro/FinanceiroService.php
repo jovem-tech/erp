@@ -21,6 +21,15 @@ use RuntimeException;
 
 class FinanceiroService
 {
+    /**
+     * Quantos meses (incluindo o próprio lançamento criado) são gerados de
+     * uma vez quando o usuário marca "repetir esta despesa fixa" no
+     * cadastro. Criação em lote no momento do save — não é um motor de
+     * recorrência com scheduler: quando os meses acabarem, o usuário lança
+     * de novo marcando repetir.
+     */
+    private const FIXED_EXPENSE_REPEAT_MONTHS = 12;
+
     public function __construct(
         private readonly FinanceiroCartaoService $financeiroCartaoService,
         private readonly FinanceiroContaService $financeiroContaService,
@@ -59,6 +68,35 @@ class FinanceiroService
             ->orderByDesc('data_pagamento')
             ->orderByDesc('id')
             ->paginate($perPage);
+    }
+
+    /**
+     * Totais de despesas fixas x variáveis para o resumo da listagem de
+     * Lançamentos. Sempre sobre tipo=pagar (dre_fixo_mensal só é relevante
+     * para despesas — ver resolveClassification()) e ignora cancelados, mas
+     * respeita os demais filtros ativos (status, cliente, mês). Agregação
+     * feita no banco (SUM/GROUP BY), independente da paginação da listagem.
+     *
+     * @param  array<string, mixed>  $filters
+     * @return array{fixas: float, variaveis: float}
+     */
+    public function totaisFixoVariavel(array $filters): array
+    {
+        $rows = Financeiro::query()
+            ->withFilters(array_merge($filters, ['tipo' => Financeiro::TIPO_PAGAR]))
+            ->where('status', '!=', Financeiro::STATUS_CANCELADO)
+            ->selectRaw('dre_fixo_mensal, SUM(valor) as total')
+            ->groupBy('dre_fixo_mensal')
+            ->get();
+
+        $totais = ['fixas' => 0.0, 'variaveis' => 0.0];
+
+        foreach ($rows as $row) {
+            $chave = ((bool) $row->dre_fixo_mensal) ? 'fixas' : 'variaveis';
+            $totais[$chave] = round((float) $row->total, 2);
+        }
+
+        return $totais;
     }
 
     /**
@@ -196,8 +234,68 @@ class FinanceiroService
                 );
             }
 
+            if ($this->shouldRepeatFixedExpense($payload, $financeiro)) {
+                $this->generateFutureRepeatedTitles($financeiro);
+            }
+
             return $financeiro;
         });
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function shouldRepeatFixedExpense(array $payload, Financeiro $financeiro): bool
+    {
+        return $financeiro->tipo === Financeiro::TIPO_PAGAR
+            && (bool) $financeiro->dre_fixo_mensal
+            && filter_var($payload['repetir_proximos_meses'] ?? false, FILTER_VALIDATE_BOOL);
+    }
+
+    /**
+     * Gera cópias independentes do título recém-criado para os próximos
+     * meses (mesmo dia de vencimento, valor inicial repetido mas editável
+     * depois — contas como água/luz variam de valor mês a mês). Cada cópia
+     * é um título comum, sem vínculo persistente com o original: não passa
+     * pela orquestração completa de create() (sem OrderEvent, sem
+     * finalizeAfterSave) porque nasce sempre pendente e sem movimentos —
+     * nenhum dos ramos dessas rotinas se aplicaria.
+     */
+    private function generateFutureRepeatedTitles(Financeiro $original): void
+    {
+        $vencimento = $original->data_vencimento;
+        $hoje = now()->startOfDay();
+
+        for ($i = 1; $i < self::FIXED_EXPENSE_REPEAT_MONTHS; $i++) {
+            $proximoVencimento = $vencimento->copy()->addMonthsNoOverflow($i);
+
+            // Só gera pra frente da data de criação: se o título original foi
+            // lançado com vencimento atrasado (conta antiga sendo colocada em
+            // dia), os meses da repetição que ainda cairiam no passado ou em
+            // hoje são pulados — não faz sentido a repetição "preencher"
+            // meses que já passaram.
+            if ($proximoVencimento->lte($hoje)) {
+                continue;
+            }
+
+            Financeiro::create([
+                'tipo' => Financeiro::TIPO_PAGAR,
+                'categoria' => $original->categoria,
+                'descricao' => $original->descricao,
+                'valor' => $original->valor,
+                'status' => Financeiro::STATUS_PENDENTE,
+                'data_vencimento' => $proximoVencimento->toDateString(),
+                'data_competencia' => $proximoVencimento->toDateString(),
+                'avulso' => $original->avulso,
+                'fornecedor_id' => $original->fornecedor_id,
+                'grupo_dre' => $original->grupo_dre,
+                'subgrupo_dre' => $original->subgrupo_dre,
+                'impacta_dre' => $original->impacta_dre,
+                'impacta_fluxo_caixa' => $original->impacta_fluxo_caixa,
+                'dre_fixo_mensal' => true,
+                'observacoes' => $original->observacoes,
+            ]);
+        }
     }
 
     /**
@@ -1169,6 +1267,9 @@ class FinanceiroService
         // financeiro_movimentos. Mantê-la no payload do título tentaria gravar
         // uma coluna inexistente em financeiro e duplicaria a fonte de verdade.
         unset($resolved['conta_financeira_id']);
+        // Flag de ação (gera os próximos títulos no create()), não é coluna
+        // de financeiro — mantê-la no payload quebraria o Financeiro::create().
+        unset($resolved['repetir_proximos_meses']);
 
         $resolved['tipo'] = $tipo;
         $resolved['status'] = trim((string) ($payload['status'] ?? $existing?->status ?? '')) !== ''

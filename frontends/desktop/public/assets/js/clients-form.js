@@ -265,6 +265,20 @@
         telefone1: document.getElementById('quickClientTelefone1'),
     });
 
+    // Modal de edicao rapida (Nova venda / PDV)
+    wireClientAutofill({
+        cep: document.getElementById('quickEditClientCep'),
+        endereco: document.getElementById('quickEditClientEndereco'),
+        numero: document.getElementById('quickEditClientNumero'),
+        bairro: document.getElementById('quickEditClientBairro'),
+        cidade: document.getElementById('quickEditClientCidade'),
+        uf: document.getElementById('quickEditClientUf'),
+        tipoPessoa: null,
+        cpfCnpj: document.getElementById('quickEditClientCpfCnpj'),
+        nomeRazao: document.getElementById('quickEditClientNomeRazao'),
+        telefone1: document.getElementById('quickEditClientTelefone1'),
+    });
+
     // Formulario completo de cliente
     wireClientFormatting({
         nomeRazao: document.getElementById('nomeRazao'),
@@ -285,6 +299,17 @@
         phones: [
             document.getElementById('quickClientTelefone1'),
             document.getElementById('quickClientTelefoneContato'),
+        ],
+    });
+
+    // Modal de edicao rapida (Nova venda / PDV)
+    wireClientFormatting({
+        nomeRazao: document.getElementById('quickEditClientNomeRazao'),
+        nomeContato: document.getElementById('quickEditClientNomeContato'),
+        tipoPessoa: null,
+        phones: [
+            document.getElementById('quickEditClientTelefone1'),
+            document.getElementById('quickEditClientTelefoneContato'),
         ],
     });
 })();

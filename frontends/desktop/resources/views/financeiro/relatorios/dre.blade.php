@@ -110,6 +110,15 @@
                     <td>(-) Despesas operacionais</td>
                     <td class="text-end">{{ $fmt($despesas['total'] ?? 0) }}</td>
                 </tr>
+                @php $despesasPorFixoVariavel = $despesas['por_fixo_variavel'] ?? ['fixas' => 0, 'variaveis' => 0]; @endphp
+                <tr class="text-secondary small">
+                    <td class="ps-4">Despesas fixas</td>
+                    <td class="text-end">{{ $fmt($despesasPorFixoVariavel['fixas'] ?? 0) }}</td>
+                </tr>
+                <tr class="text-secondary small">
+                    <td class="ps-4">Despesas variáveis</td>
+                    <td class="text-end">{{ $fmt($despesasPorFixoVariavel['variaveis'] ?? 0) }}</td>
+                </tr>
                 @foreach (($despesas['por_subgrupo'] ?? []) as $subgrupo => $valor)
                     <tr class="text-secondary small">
                         <td class="ps-4">{{ $subgrupo }}</td>

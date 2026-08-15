@@ -1262,7 +1262,16 @@ const DesktopUi = (() => {
     const getSelect2DropdownParent = (select, $) => {
         const modal = select.closest('.modal');
         if (modal) {
-            return $(modal);
+            // `.modal` é o overlay de tela cheia; com `.modal-dialog-centered`
+            // (flexbox), `.modal-content` — a caixa realmente visível — fica
+            // deslocada do topo/origem de `.modal`. Usar `.modal` como
+            // dropdownParent faz o Select2 calcular a posição do dropdown a
+            // partir da origem de `.modal` (topo da tela) em vez de onde o
+            // campo realmente está na tela — o dropdown "flutua" longe do
+            // campo, principalmente em modais mais altos/centralizados.
+            // `.modal-content` é o container real do conteúdo do modal.
+            const modalContent = modal.querySelector('.modal-content');
+            return $(modalContent || modal);
         }
 
         const offcanvas = select.closest('.offcanvas');

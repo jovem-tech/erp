@@ -25,6 +25,12 @@
         tipoSelect: document.getElementById('financeiroTipo'),
         fornecedorWrapper: document.getElementById('financeiroFornecedorWrapper'),
         fornecedorSelect: document.getElementById('financeiroFornecedorId'),
+        classificacaoWrapper: document.getElementById('financeiroClassificacaoWrapper'),
+        classificacaoSelect: document.getElementById('financeiroClassificacaoFixa'),
+        repetirWrapper: document.getElementById('financeiroRepetirWrapper'),
+        osWrapper: document.getElementById('financeiroOsWrapper'),
+        clienteWrapper: document.getElementById('financeiroClienteWrapper'),
+        vinculosSection: document.getElementById('financeiroVinculosSection'),
     };
 
     const escapeHtml = (unsafe) => String(unsafe ?? '')
@@ -566,22 +572,136 @@
             }
         };
 
-        const syncFornecedorState = () => {
-            if (!els.fornecedorWrapper || !els.tipoSelect) { return; }
+        // Fornecedor e "Despesa fixa?" só existem para "a pagar".
+        const syncClassificacaoVisibility = () => {
+            if (!els.tipoSelect) { return; }
 
-            const isReceber = els.tipoSelect.value === 'receber';
-            els.fornecedorWrapper.classList.toggle('d-none', isReceber);
+            const isPagar = els.tipoSelect.value === 'pagar';
+            els.fornecedorWrapper?.classList.toggle('d-none', !isPagar);
+            els.classificacaoWrapper?.classList.toggle('d-none', !isPagar);
 
             if (els.fornecedorSelect instanceof HTMLSelectElement) {
-                els.fornecedorSelect.required = !isReceber;
-                if (isReceber) { clearSelect2Value(els.fornecedorSelect); }
+                els.fornecedorSelect.required = isPagar;
+                if (!isPagar) { clearSelect2Value(els.fornecedorSelect); }
+            }
+
+            if (!isPagar && els.classificacaoSelect instanceof HTMLSelectElement) {
+                els.classificacaoSelect.value = '';
             }
         };
 
-        if (els.tipoSelect) {
-            els.tipoSelect.addEventListener('change', syncFornecedorState);
-            syncFornecedorState();
+        // OS vinculada e Cliente só fazem sentido, em "a pagar", quando a
+        // despesa é compra de peça ligada a uma OS (categoria do grupo DRE
+        // "Custo Direto (OS)") — para despesas operacionais genéricas
+        // (Energia, Água, Internet, Aluguel...) não há relação com OS/cliente.
+        const syncOsClienteState = () => {
+            if (!els.tipoSelect || (!els.osWrapper && !els.clienteWrapper)) { return; }
+
+            const isPagar = els.tipoSelect.value === 'pagar';
+            const categoriaNome = els.categoriaSelect instanceof HTMLSelectElement ? els.categoriaSelect.value : '';
+            const categorias = Array.isArray(config.categorias) ? config.categorias : [];
+            const categoria = categorias.find((c) => normalizeText(c?.nome) === normalizeText(categoriaNome));
+            const isPecaCategoria = categoria?.dre_grupo?.nome === 'Custo Direto (OS)';
+            const hide = isPagar && !isPecaCategoria;
+
+            els.osWrapper?.classList.toggle('d-none', hide);
+            els.clienteWrapper?.classList.toggle('d-none', hide);
+
+            if (hide) {
+                clearSelect2Value(els.osSelect);
+                clearSelect2Value(els.clientSelect);
+            }
+        };
+
+        // "Despesa fixa?" filtra as opções de Categoria (via atributo
+        // data-fixo, já presente em cada <option>), em vez de a categoria
+        // definir um padrão que o usuário só ajustaria depois — o fluxo é
+        // "escolho fixa/variável" → "só então vejo as categorias certas".
+        const filterCategoriaOptions = () => {
+            if (!(els.categoriaSelect instanceof HTMLSelectElement)) { return; }
+
+            const filterValue = els.classificacaoSelect instanceof HTMLSelectElement ? els.classificacaoSelect.value : '';
+            let selectedStillValid = filterValue === '' || els.categoriaSelect.value === '';
+
+            Array.from(els.categoriaSelect.options).forEach((option) => {
+                if (option.value === '') { return; }
+                const matches = filterValue === '' || option.dataset.fixo === filterValue;
+                option.hidden = !matches;
+                option.disabled = !matches;
+                if (matches && option.value === els.categoriaSelect.value) { selectedStillValid = true; }
+            });
+
+            if (!selectedStillValid) { clearSelect2Value(els.categoriaSelect); }
+        };
+
+        const syncRepetirVisibility = () => {
+            const isFixa = els.classificacaoSelect instanceof HTMLSelectElement && els.classificacaoSelect.value === '1';
+            els.repetirWrapper?.classList.toggle('d-none', !isFixa);
+        };
+
+        // Despesa fixa mensal (água, luz, aluguel...) nunca tem OS, cliente
+        // ou fornecedor — a seção inteira de Vínculos some para não
+        // confundir o operador com campos que não fazem sentido pra esse
+        // tipo de lançamento. "Lançamento avulso" fica marcado (é sempre o
+        // caso) e qualquer OS/cliente/fornecedor já selecionado é limpo.
+        const syncVinculosVisibility = () => {
+            if (!els.vinculosSection) { return; }
+
+            const isFixa = els.classificacaoSelect instanceof HTMLSelectElement && els.classificacaoSelect.value === '1';
+            els.vinculosSection.classList.toggle('d-none', isFixa);
+
+            if (isFixa) {
+                if (els.avulsoInput instanceof HTMLInputElement) { els.avulsoInput.checked = true; }
+                clearSelect2Value(els.osSelect);
+                clearSelect2Value(els.clientSelect);
+                clearSelect2Value(els.fornecedorSelect);
+            }
+        };
+
+        syncClassificacaoVisibility();
+        syncOsClienteState();
+        filterCategoriaOptions();
+        syncRepetirVisibility();
+        syncVinculosVisibility();
+
+        // Tipo e "Despesa fixa?" são <select class="form-select"> comuns
+        // (sem data-native-select="true"), então o auto-init global de
+        // desktop.js os transforma em Select2 — e escolher uma opção pela
+        // UI do Select2 dispara 'change' só via jQuery, nunca o evento
+        // nativo do DOM (ver comentário em desktop.js, initSelect2()). Um
+        // addEventListener('change', ...) puro aqui NUNCA dispararia quando
+        // o usuário realmente usasse o dropdown — só funcionaria se o valor
+        // fosse setado programaticamente. Por isso o bind duplo: nativo
+        // (cobre o caso raro de não virar Select2, ex. JS falhar) + jQuery
+        // (cobre o Select2, que é o caso real em produção).
+        const bindChange = (select, handler) => {
+            if (!(select instanceof HTMLSelectElement)) { return; }
+            select.addEventListener('change', handler);
+            select.addEventListener('input', handler);
+            if (hasSelect2) { $(select).on('change', handler); }
+        };
+
+        bindChange(els.tipoSelect, () => { syncClassificacaoVisibility(); syncOsClienteState(); filterCategoriaOptions(); syncVinculosVisibility(); });
+        bindChange(els.classificacaoSelect, () => { filterCategoriaOptions(); syncRepetirVisibility(); syncVinculosVisibility(); });
+
+        if (els.categoriaSelect instanceof HTMLSelectElement) {
+            els.categoriaSelect.addEventListener('change', syncOsClienteState);
+            if (hasSelect2) {
+                $(els.categoriaSelect).on('change select2:select select2:unselect', syncOsClienteState);
+            }
         }
+
+        // Alguns navegadores restauram o valor de <select> ao recarregar a
+        // página (form state restoration) SEM disparar 'change' — 'pageshow'
+        // dispara depois de qualquer restauração desse tipo (recarregar,
+        // voltar/avançar), então reconferir o estado ali cobre esse caso.
+        window.addEventListener('pageshow', () => {
+            syncClassificacaoVisibility();
+            syncOsClienteState();
+            filterCategoriaOptions();
+            syncRepetirVisibility();
+            syncVinculosVisibility();
+        });
 
         if (!(els.avulsoInput instanceof HTMLInputElement) || !(els.osSelect instanceof HTMLSelectElement)) {
             return;
@@ -737,12 +857,25 @@
         });
     };
 
-    initValorMask();
-    initCategoriaSelect();
-    initFinancialAccount();
-    initClientSelect();
-    initOrderSelect();
-    initSupplierSelect();
-    initVinculos();
-    initQuickClient();
+    // Cada init roda isolado: um erro em qualquer um deles não pode impedir
+    // os seguintes de rodar (ex.: se initClientSelect() falhar, initVinculos()
+    // — que mostra/esconde Fornecedor e Despesa fixa mensal — ainda precisa
+    // rodar). Sem isso, uma chamada síncrona simples deixaria tudo depois do
+    // ponto de falha completamente sem inicializar, silenciosamente.
+    const runInit = (name, fn) => {
+        try {
+            fn();
+        } catch (error) {
+            console.error(`[financeiro-form] Falha ao inicializar ${name}:`, error);
+        }
+    };
+
+    runInit('initValorMask', initValorMask);
+    runInit('initCategoriaSelect', initCategoriaSelect);
+    runInit('initFinancialAccount', initFinancialAccount);
+    runInit('initClientSelect', initClientSelect);
+    runInit('initOrderSelect', initOrderSelect);
+    runInit('initSupplierSelect', initSupplierSelect);
+    runInit('initVinculos', initVinculos);
+    runInit('initQuickClient', initQuickClient);
 })();

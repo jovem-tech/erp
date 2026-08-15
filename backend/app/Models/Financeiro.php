@@ -91,6 +91,35 @@ class Financeiro extends Model
             $query->where('dre_fixo_mensal', (bool) $filters['dre_fixo_mensal']);
         }
 
+        // Filtro de período simples por data_vencimento — deliberadamente
+        // diferente do mecanismo de "fixo mensal reaparece em meses
+        // futuros" usado só pelo DRE por Competência (ver
+        // FinanceiroReportService::groupByCompetencia()), que é específico
+        // daquele relatório.
+        $mes = trim((string) ($filters['mes'] ?? ''));
+        if (preg_match('/^\d{4}-\d{2}$/', $mes) === 1) {
+            [$ano, $mesNumero] = explode('-', $mes);
+            $query->whereYear('data_vencimento', (int) $ano)->whereMonth('data_vencimento', (int) $mesNumero);
+        }
+
+        // Visão padrão da tela de Despesas (fixas e variáveis, sem
+        // mês/status/tipo de despesa escolhidos pelo usuário): mês corrente
+        // (qualquer status) + pendências de meses anteriores ainda em
+        // aberto. Nunca inclui meses futuros — esses só aparecem se o
+        // usuário pedir explicitamente pelo filtro de mês.
+        if (filter_var($filters['periodo_atual_e_atrasadas'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+            $inicioMesAtual = now()->startOfMonth()->toDateString();
+            $fimMesAtual = now()->endOfMonth()->toDateString();
+
+            $query->where(function (Builder $q) use ($inicioMesAtual, $fimMesAtual): void {
+                $q->whereBetween('data_vencimento', [$inicioMesAtual, $fimMesAtual])
+                    ->orWhere(function (Builder $qq) use ($inicioMesAtual): void {
+                        $qq->where('data_vencimento', '<', $inicioMesAtual)
+                            ->whereIn('status', [self::STATUS_PENDENTE, self::STATUS_PARCIAL]);
+                    });
+            });
+        }
+
         return $query;
     }
 

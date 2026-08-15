@@ -375,6 +375,10 @@
         id="pdvForm"
         data-search-url="{{ route('vendas.items.search') }}"
         data-clients-url="{{ route('vendas.clients.search') }}"
+        data-quick-client-store-url="{{ route('clients.quick.store') }}"
+        data-quick-client-show-url-template="{{ route('clients.quick.show', ['client' => '__CLIENT_ID__']) }}"
+        data-quick-client-update-url-template="{{ route('clients.quick.update', ['client' => '__CLIENT_ID__']) }}"
+        data-client-full-edit-url-template="{{ route('clients.edit', ['client' => '__CLIENT_ID__']) }}"
         data-cartoes="{{ json_encode($cartoes, JSON_UNESCAPED_UNICODE) }}"
         data-formas="{{ json_encode($formasPagamento, JSON_UNESCAPED_UNICODE) }}"
         data-contas="{{ json_encode($contas, JSON_UNESCAPED_UNICODE) }}"
@@ -419,9 +423,23 @@
                                 Consumidor final
                             </button>
                         </div>
-                        <select id="pdvCliente" name="cliente_id" class="form-select" data-select2-placeholder="Consumidor final">
-                            <option value=""></option>
-                        </select>
+                        <div class="d-flex gap-2 align-items-start">
+                            <select id="pdvCliente" name="cliente_id" class="form-select" data-select2-placeholder="Consumidor final">
+                                <option value=""></option>
+                            </select>
+                            @if ($canQuickClient)
+                                <button type="button" class="btn btn-soft flex-shrink-0" id="pdvNovoCliente"
+                                        title="Cadastrar novo cliente" aria-label="Cadastrar novo cliente">
+                                    <i class="bi bi-person-plus"></i>
+                                </button>
+                            @endif
+                            @if ($canEditClient)
+                                <button type="button" class="btn btn-soft flex-shrink-0 d-none" id="pdvEditarCliente"
+                                        title="Editar cliente" aria-label="Editar cliente">
+                                    <i class="bi bi-pencil-square"></i>
+                                </button>
+                            @endif
+                        </div>
                     </div>
 
                     {{-- Nome e CPF só fazem sentido em consumidor final; o JS
@@ -730,9 +748,23 @@
             </div>
         </template>
     </form>
+
+    @if ($canQuickClient)
+        @push('modals')
+            @include('clients.quick-modal')
+        @endpush
+    @endif
+    @if ($canEditClient)
+        @push('modals')
+            @include('clients.quick-edit-modal')
+        @endpush
+    @endif
 @endsection
 
 @section('scripts')
     <script src="{{ asset('assets/js/pagamentos-cartao.js') }}?v={{ filemtime(public_path('assets/js/pagamentos-cartao.js')) }}-{{ filesize(public_path('assets/js/pagamentos-cartao.js')) }}"></script>
     <script src="{{ asset('assets/js/vendas-pdv.js') }}?v={{ filemtime(public_path('assets/js/vendas-pdv.js')) }}-{{ filesize(public_path('assets/js/vendas-pdv.js')) }}"></script>
+    @if ($canQuickClient || $canEditClient)
+        <script src="{{ asset('assets/js/clients-form.js') }}?v={{ filemtime(public_path('assets/js/clients-form.js')) }}"></script>
+    @endif
 @endsection

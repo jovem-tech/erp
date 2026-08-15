@@ -1,7 +1,8 @@
 @php
     $lancamento = $lancamento ?? [];
     $formMethod = strtoupper((string) ($formMethod ?? 'POST'));
-    $tipo = old('tipo', $lancamento['tipo'] ?? 'receber');
+    $tipoLocked = $tipoLocked ?? false;
+    $tipo = $tipoLocked ? 'pagar' : old('tipo', $lancamento['tipo'] ?? 'receber');
     $status = old('status', $lancamento['status'] ?? 'pendente');
     $hasMovements = (int) ($resumo['total_movimentos'] ?? 0) > 0;
     $avulso = filter_var(old('avulso', $lancamento['avulso'] ?? false), FILTER_VALIDATE_BOOL);
@@ -27,6 +28,20 @@
         : ($selectedFornecedorId > 0 ? 'Fornecedor #' . $selectedFornecedorId : '');
     $currentCategoria = old('categoria', (string) ($lancamento['categoria'] ?? ''));
     $catalogNomes = array_filter(array_map(fn($c) => (string) ($c['nome'] ?? ''), $categorias ?? []));
+    // OS/Cliente só fazem sentido para "a pagar" quando a despesa é compra
+    // de peça vinculada a uma OS (grupo "Custo Direto (OS)") — para
+    // despesas operacionais genéricas (Energia, Água, Internet, Aluguel...)
+    // não há relação nenhuma com OS/cliente.
+    $categoriaAtualGrupoNome = collect($categorias ?? [])->firstWhere('nome', $currentCategoria)['dre_grupo']['nome'] ?? null;
+    $isPecaCategoria = $categoriaAtualGrupoNome === 'Custo Direto (OS)';
+    $hideOsCliente = $tipo === 'pagar' && ! $isPecaCategoria;
+    // "Despesa fixa?" vem ANTES da categoria no fluxo (não depois): a
+    // escolha aqui filtra quais categorias aparecem na Categoria logo
+    // abaixo, em vez de a categoria definir um padrão que o usuário só
+    // ajustaria depois.
+    $dreFixoMensalValue = old('dre_fixo_mensal', isset($lancamento['dre_fixo_mensal'])
+        ? ((bool) $lancamento['dre_fixo_mensal'] ? '1' : '0')
+        : '');
     $valorRaw = old('valor', (string) ($lancamento['valor'] ?? ''));
     $defaultDataVencimento = old('data_vencimento') ?: ($lancamento['data_vencimento'] ?: date('Y-m-d'));
     $accountDataset = is_array($accountDataset ?? null) ? $accountDataset : [];
@@ -58,38 +73,29 @@
             @method($formMethod)
         @endif
 
-        <div class="desktop-grid desktop-grid-three">
+        <div class="desktop-grid desktop-grid-four">
             <div>
                 <label for="financeiroTipo">Tipo *</label>
-                <select id="financeiroTipo" name="tipo" class="form-select" required @disabled($hasMovements)>
-                    <option value="receber" @selected($tipo === 'receber')>A receber</option>
+                <select id="financeiroTipo" name="tipo" class="form-select" required @disabled($hasMovements || $tipoLocked)>
+                    @unless ($tipoLocked)
+                        <option value="receber" @selected($tipo === 'receber')>A receber</option>
+                    @endunless
                     <option value="pagar" @selected($tipo === 'pagar')>A pagar</option>
                 </select>
+                @if ($tipoLocked)
+                    <input type="hidden" name="tipo" value="pagar">
+                    <small class="text-muted d-block mt-1">Esta tela é só para despesas. Para lançar um recebimento, use Lançamentos.</small>
+                @endif
             </div>
 
-            <div>
-                <label for="financeiroCategoria">Categoria *</label>
-                <select
-                    id="financeiroCategoria"
-                    name="categoria"
-                    class="form-select @error('categoria') is-invalid @enderror"
-                    data-native-select="true"
-                    data-select2-placeholder="Ex.: Serviço, Aluguel, Energia..."
-                    required
-                >
-                    <option value=""></option>
-                    @if ($currentCategoria !== '' && !in_array($currentCategoria, $catalogNomes, true))
-                        <option value="{{ $currentCategoria }}" selected>{{ $currentCategoria }}</option>
-                    @endif
-                    @foreach (($categorias ?? []) as $catOpt)
-                        @php $catNome = (string) ($catOpt['nome'] ?? ''); @endphp
-                        @if ($catNome !== '')
-                            <option value="{{ $catNome }}" @selected($currentCategoria === $catNome)>{{ $catNome }}</option>
-                        @endif
-                    @endforeach
+            <div id="financeiroClassificacaoWrapper" @class(['d-none' => $tipo !== 'pagar'])>
+                <label for="financeiroClassificacaoFixa">Despesa fixa?</label>
+                <select id="financeiroClassificacaoFixa" name="dre_fixo_mensal" class="form-select">
+                    <option value="" @selected($dreFixoMensalValue === '')>Todas as categorias</option>
+                    <option value="1" @selected($dreFixoMensalValue === '1')>Despesa fixa</option>
+                    <option value="0" @selected($dreFixoMensalValue === '0')>Despesa variável</option>
                 </select>
-                @error('categoria')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
-                <small class="text-muted d-block mt-1">A categoria define automaticamente o grupo e subgrupo do DRE (máx. 50 caracteres).</small>
+                <small class="text-muted d-block mt-1">Filtra a Categoria abaixo para mostrar só as fixas ou só as variáveis.</small>
             </div>
 
             <div>
@@ -108,6 +114,62 @@
                 @error('valor')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
             </div>
         </div>
+
+        <div class="desktop-grid">
+            <div>
+                <label for="financeiroCategoria">Categoria *</label>
+                <select
+                    id="financeiroCategoria"
+                    name="categoria"
+                    class="form-select @error('categoria') is-invalid @enderror"
+                    data-native-select="true"
+                    data-select2-placeholder="Ex.: Serviço, Aluguel, Energia..."
+                    required
+                >
+                    <option value=""></option>
+                    @if ($currentCategoria !== '' && !in_array($currentCategoria, $catalogNomes, true))
+                        <option value="{{ $currentCategoria }}" selected>{{ $currentCategoria }}</option>
+                    @endif
+                    @foreach (($categorias ?? []) as $catOpt)
+                        @php
+                            $catNome = (string) ($catOpt['nome'] ?? '');
+                            $catFixo = (bool) ($catOpt['dre_fixo_mensal_padrao'] ?? false);
+                            $matchesClassificacao = $dreFixoMensalValue === ''
+                                || $catNome === $currentCategoria
+                                || ($dreFixoMensalValue === '1' && $catFixo)
+                                || ($dreFixoMensalValue === '0' && ! $catFixo);
+                        @endphp
+                        @if ($catNome !== '' && $matchesClassificacao)
+                            <option
+                                value="{{ $catNome }}"
+                                data-fixo="{{ $catFixo ? '1' : '0' }}"
+                                @selected($currentCategoria === $catNome)
+                            >{{ $catNome }}</option>
+                        @endif
+                    @endforeach
+                </select>
+                @error('categoria')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                <small class="text-muted d-block mt-1">A categoria define automaticamente o grupo e subgrupo do DRE (máx. 50 caracteres).</small>
+            </div>
+        </div>
+
+        @if (empty($lancamento['id']))
+            <div id="financeiroRepetirWrapper" class="form-check" @class(['d-none' => $dreFixoMensalValue !== '1'])>
+                <input
+                    type="checkbox"
+                    id="financeiroRepetirMeses"
+                    name="repetir_proximos_meses"
+                    class="form-check-input"
+                    value="1"
+                    @checked(filter_var(old('repetir_proximos_meses', false), FILTER_VALIDATE_BOOL))
+                >
+                <label class="form-check-label" for="financeiroRepetirMeses">Repetir esta despesa nos próximos 12 meses</label>
+                <small class="text-muted d-block">
+                    Cria automaticamente mais 11 lançamentos (um por mês, mesmo dia de vencimento, status pendente).
+                    O valor inicial é repetido, mas cada mês pode ser editado depois — útil para contas como água/luz, que variam de valor.
+                </small>
+            </div>
+        @endif
 
         <div class="desktop-grid">
             <div>
@@ -173,7 +235,7 @@
             </div>
         </div>
 
-        <div class="desktop-form-section">
+        <div class="desktop-form-section" id="financeiroVinculosSection" @class(['d-none' => $dreFixoMensalValue === '1'])>
             <div class="desktop-form-section-title">
                 <i class="bi bi-link-45deg"></i>
                 <span>VÍNCULOS</span>
@@ -197,7 +259,7 @@
             </div>
 
             <div class="desktop-grid desktop-grid-three">
-                <div>
+                <div id="financeiroOsWrapper" @class(['d-none' => $hideOsCliente])>
                     <label for="financeiroOsId">OS vinculada</label>
                     <select
                         id="financeiroOsId"
@@ -215,7 +277,7 @@
                     <small id="financeiroOsHelp" class="text-muted d-block mt-1">Busque pelo número da OS (só aparecem OS em aberto). Selecionar uma OS preenche o cliente automaticamente e desmarca o lançamento avulso.</small>
                 </div>
 
-                <div>
+                <div id="financeiroClienteWrapper" @class(['d-none' => $hideOsCliente])>
                     <label for="financeiroClienteId">Cliente</label>
                     <div class="d-flex gap-2 align-items-start">
                         <select

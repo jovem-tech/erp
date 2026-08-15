@@ -100,6 +100,88 @@ class FinanceiroReportTest extends TestCase
             ->assertJsonPath('data.dre.resultado_liquido', 0.0);
     }
 
+    public function test_dre_competencia_separa_despesas_operacionais_em_fixas_e_variaveis(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        Financeiro::create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'avulso' => true,
+            'categoria' => 'Internet',
+            'descricao' => 'Internet do mês',
+            'valor' => 120,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->startOfMonth()->addDays(5),
+            'data_competencia' => now()->startOfMonth()->addDays(5),
+            'grupo_dre' => 'Despesas Operacionais',
+            'subgrupo_dre' => 'Internet',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+            'dre_fixo_mensal' => true,
+        ]);
+
+        Financeiro::create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'avulso' => true,
+            'categoria' => 'Compra de peças',
+            'descricao' => 'Peça avulsa',
+            'valor' => 45,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->startOfMonth()->addDays(8),
+            'data_competencia' => now()->startOfMonth()->addDays(8),
+            'grupo_dre' => 'Despesas Operacionais',
+            'subgrupo_dre' => 'Peças',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+            'dre_fixo_mensal' => false,
+        ]);
+
+        $response = $this->getJson('/api/v1/financeiro/relatorios/dre?mes=' . now()->format('Y-m'));
+
+        $response->assertOk()
+            ->assertJsonPath('data.dre.despesas_operacionais.total', 165.0)
+            ->assertJsonPath('data.dre.despesas_operacionais.por_fixo_variavel.fixas', 120.0)
+            ->assertJsonPath('data.dre.despesas_operacionais.por_fixo_variavel.variaveis', 45.0);
+
+        $this->assertArrayNotHasKey('por_fixo_variavel', $response->json('data.dre.custos_diretos'));
+    }
+
+    public function test_dre_competencia_fixa_mensal_reaparecendo_em_mes_futuro_conta_como_fixa(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        // Título antigo, de competência de dois meses atrás, mas marcado como
+        // fixo mensal — o mecanismo já existente de groupByCompetencia() faz
+        // ele "reaparecer" no resultado do mês corrente (ver
+        // FinanceiroReportService::groupByCompetencia(), linhas do bloco
+        // $fixosMensais). A nova linha "Despesas fixas" deve refletir esse
+        // mesmo comportamento, não silenciosamente ignorá-lo.
+        Financeiro::create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'avulso' => true,
+            'categoria' => 'Aluguel',
+            'descricao' => 'Aluguel antigo, fixo mensal',
+            'valor' => 300,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->subMonthsNoOverflow(2)->startOfMonth()->addDays(5),
+            'data_competencia' => now()->subMonthsNoOverflow(2)->startOfMonth()->addDays(5),
+            'grupo_dre' => 'Despesas Operacionais',
+            'subgrupo_dre' => 'Aluguel',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+            'dre_fixo_mensal' => true,
+        ]);
+
+        $response = $this->getJson('/api/v1/financeiro/relatorios/dre?mes=' . now()->format('Y-m'));
+
+        $response->assertOk()
+            ->assertJsonPath('data.dre.despesas_operacionais.total', 300.0)
+            ->assertJsonPath('data.dre.despesas_operacionais.por_fixo_variavel.fixas', 300.0)
+            ->assertJsonPath('data.dre.despesas_operacionais.por_fixo_variavel.variaveis', 0.0);
+    }
+
     public function test_dre_caixa_reconhece_apenas_o_que_foi_baixado_no_periodo(): void
     {
         $admin = $this->createUserRecord(['grupo_id' => 1]);
@@ -152,6 +234,65 @@ class FinanceiroReportTest extends TestCase
             ->assertJsonPath('data.dre.despesas_operacionais.total', 0.0);
 
         $this->assertDatabaseHas('financeiro', ['id' => $despesaPendente->id, 'status' => 'pendente']);
+    }
+
+    public function test_dre_caixa_separa_despesas_operacionais_em_fixas_e_variaveis(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $fixa = Financeiro::create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'avulso' => true,
+            'categoria' => 'Energia',
+            'descricao' => 'Conta de energia',
+            'valor' => 80,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now(),
+            'data_competencia' => now(),
+            'grupo_dre' => 'Despesas Operacionais',
+            'subgrupo_dre' => 'Energia',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+            'dre_fixo_mensal' => true,
+        ]);
+
+        FinanceiroMovimento::create([
+            'financeiro_id' => $fixa->id,
+            'tipo_movimento' => FinanceiroMovimento::TIPO_SAIDA,
+            'data_movimento' => now(),
+            'valor_movimento' => 80,
+        ]);
+
+        $variavel = Financeiro::create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'avulso' => true,
+            'categoria' => 'Compra de peças',
+            'descricao' => 'Peça avulsa',
+            'valor' => 45,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now(),
+            'data_competencia' => now(),
+            'grupo_dre' => 'Despesas Operacionais',
+            'subgrupo_dre' => 'Peças',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+            'dre_fixo_mensal' => false,
+        ]);
+
+        FinanceiroMovimento::create([
+            'financeiro_id' => $variavel->id,
+            'tipo_movimento' => FinanceiroMovimento::TIPO_SAIDA,
+            'data_movimento' => now(),
+            'valor_movimento' => 45,
+        ]);
+
+        $response = $this->getJson('/api/v1/financeiro/relatorios/dre-caixa?mes=' . now()->format('Y-m'));
+
+        $response->assertOk()
+            ->assertJsonPath('data.dre.despesas_operacionais.total', 125.0)
+            ->assertJsonPath('data.dre.despesas_operacionais.por_fixo_variavel.fixas', 80.0)
+            ->assertJsonPath('data.dre.despesas_operacionais.por_fixo_variavel.variaveis', 45.0);
     }
 
     public function test_fluxo_de_caixa_separa_realizados_de_previstos(): void

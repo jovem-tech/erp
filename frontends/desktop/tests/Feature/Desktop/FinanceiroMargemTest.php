@@ -2,11 +2,14 @@
 
 namespace Tests\Feature\Desktop;
 
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class FinanceiroMargemTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_margem_page_renders_relatorio(): void
     {
         Http::fake([
@@ -74,6 +77,64 @@ class FinanceiroMargemTest extends TestCase
         $response->assertOk()
             ->assertSee('Comissionamento')
             ->assertSee('Técnico Teste');
+    }
+
+    public function test_configuracoes_page_renders_dre_fixo_mensal_checkbox_and_badge(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'categorias' => [
+                        ['id' => 1, 'nome' => 'Internet', 'tipo' => 'pagar', 'impacta_dre_padrao' => true, 'impacta_fluxo_caixa_padrao' => true, 'dre_fixo_mensal_padrao' => true],
+                        ['id' => 2, 'nome' => 'Compra de peças', 'tipo' => 'pagar', 'impacta_dre_padrao' => true, 'impacta_fluxo_caixa_padrao' => true, 'dre_fixo_mensal_padrao' => false],
+                    ],
+                    'dre_grupos' => [],
+                    'dre_subgrupos' => [],
+                    'comissoes_tecnicos' => [],
+                    'comissao_percentual_padrao' => 0,
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar']]))
+            ->get('/financeiro/configuracoes');
+
+        $response->assertOk()
+            ->assertSee('dre_fixo_mensal_padrao', false)
+            ->assertSee('Despesa fixa mensal')
+            ->assertSee('Fixo mensal');
+    }
+
+    public function test_save_categoria_posts_dre_fixo_mensal_padrao_to_api(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/financeiro/categorias' => Http::response([
+                'status' => 'success',
+                'data' => ['categoria' => ['id' => 3, 'nome' => 'Água', 'tipo' => 'pagar', 'dre_fixo_mensal_padrao' => true]],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['editar']]))
+            ->post('/financeiro/configuracoes/categorias', [
+                'nome' => 'Água',
+                'tipo' => 'pagar',
+                'dre_fixo_mensal_padrao' => '1',
+            ]);
+
+        $response->assertRedirect(route('financeiro.configuracoes'));
+        Http::assertSent(static function ($request) {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/financeiro/categorias'
+                && $request->method() === 'POST'
+                && $request['dre_fixo_mensal_padrao'] === true;
+        });
     }
 
     public function test_save_comissao_posts_to_api_and_redirects(): void

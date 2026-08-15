@@ -34,16 +34,17 @@
         </div>
 
         <div class="config-subpanel is-active" data-config-subpanel="categorias">
-            <h4 class="surface-title mt-3 mb-3">Nova categoria</h4>
-            <form method="post" action="{{ route('financeiro.configuracoes.categorias.save') }}" class="desktop-grid desktop-grid-three mb-4">
+            <h4 class="surface-title mt-3 mb-3" id="categoriaFormTitle">Nova categoria</h4>
+            <form method="post" action="{{ route('financeiro.configuracoes.categorias.save') }}" class="desktop-grid desktop-grid-three mb-4" id="categoriaForm">
                 @csrf
+                <input type="hidden" name="id" id="categoriaFormId" value="">
                 <div>
                     <label>Nome</label>
-                    <input type="text" name="nome" class="form-control" required>
+                    <input type="text" name="nome" class="form-control" id="categoriaFormNome" required>
                 </div>
                 <div>
                     <label>Tipo</label>
-                    <select name="tipo" class="form-select" required>
+                    <select name="tipo" class="form-select" id="categoriaFormTipo" required>
                         <option value="receber">A receber</option>
                         <option value="pagar">A pagar</option>
                         <option value="ambos">Ambos</option>
@@ -51,11 +52,11 @@
                 </div>
                 <div>
                     <label>Ordem de exibição</label>
-                    <input type="number" name="ordem_exibicao" class="form-control" value="0">
+                    <input type="number" name="ordem_exibicao" class="form-control" id="categoriaFormOrdem" value="0">
                 </div>
                 <div>
                     <label>Grupo DRE</label>
-                    <select name="dre_grupo_id" class="form-select">
+                    <select name="dre_grupo_id" class="form-select" id="categoriaFormGrupo">
                         <option value="">Sem grupo</option>
                         @foreach ($dreGrupos as $grupo)
                             <option value="{{ $grupo['id'] }}">{{ $grupo['nome'] }}</option>
@@ -64,7 +65,7 @@
                 </div>
                 <div>
                     <label>Subgrupo DRE</label>
-                    <select name="dre_subgrupo_id" class="form-select">
+                    <select name="dre_subgrupo_id" class="form-select" id="categoriaFormSubgrupo">
                         <option value="">Sem subgrupo</option>
                         @foreach ($dreSubgrupos as $subgrupo)
                             <option value="{{ $subgrupo['id'] }}">{{ $subgrupo['grupo']['nome'] ?? '' }} / {{ $subgrupo['nome'] }}</option>
@@ -80,9 +81,14 @@
                         <input class="form-check-input" type="checkbox" name="impacta_fluxo_caixa_padrao" value="1" id="catImpactaFluxo" checked>
                         <label class="form-check-label" for="catImpactaFluxo">Impacta caixa</label>
                     </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="dre_fixo_mensal_padrao" value="1" id="catFixoMensal">
+                        <label class="form-check-label" for="catFixoMensal">Despesa fixa mensal</label>
+                    </div>
                 </div>
                 <div class="field-actions">
-                    <button type="submit" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Criar categoria</button>
+                    <button type="submit" class="btn btn-primary" id="categoriaFormSubmit"><i class="bi bi-plus-lg me-1"></i>Criar categoria</button>
+                    <button type="button" class="btn btn-outline-light d-none" id="categoriaFormCancel">Cancelar edição</button>
                 </div>
             </form>
 
@@ -106,9 +112,29 @@
                             </td>
                             <td>
                                 @if ($categoria['impacta_dre_padrao'] ?? false) <span class="badge text-bg-light border me-1">DRE</span> @endif
-                                @if ($categoria['impacta_fluxo_caixa_padrao'] ?? false) <span class="badge text-bg-light border">Caixa</span> @endif
+                                @if ($categoria['impacta_fluxo_caixa_padrao'] ?? false) <span class="badge text-bg-light border me-1">Caixa</span> @endif
+                                @if ($categoria['dre_fixo_mensal_padrao'] ?? false) <span class="badge text-bg-light border">Fixo mensal</span> @endif
                             </td>
                             <td class="text-end">
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-light"
+                                    title="Editar categoria"
+                                    data-categoria-edit
+                                    data-categoria="{{ json_encode([
+                                        'id' => $categoria['id'],
+                                        'nome' => $categoria['nome'],
+                                        'tipo' => $categoria['tipo'],
+                                        'ordem_exibicao' => $categoria['ordem_exibicao'] ?? 0,
+                                        'dre_grupo_id' => $categoria['dre_grupo']['id'] ?? '',
+                                        'dre_subgrupo_id' => $categoria['dre_subgrupo']['id'] ?? '',
+                                        'impacta_dre_padrao' => (bool) ($categoria['impacta_dre_padrao'] ?? false),
+                                        'impacta_fluxo_caixa_padrao' => (bool) ($categoria['impacta_fluxo_caixa_padrao'] ?? false),
+                                        'dre_fixo_mensal_padrao' => (bool) ($categoria['dre_fixo_mensal_padrao'] ?? false),
+                                    ]) }}"
+                                >
+                                    <i class="bi bi-pencil"></i>
+                                </button>
                                 <form method="post" action="{{ route('financeiro.configuracoes.categorias.delete', $categoria['id']) }}" data-confirm="Excluir esta categoria?" data-confirm-title="Excluir categoria" data-confirm-button="Sim, excluir" class="d-inline">
                                     @csrf
                                     @method('DELETE')
@@ -123,23 +149,25 @@
         </div>
 
         <div class="config-subpanel" data-config-subpanel="grupos">
-            <h4 class="surface-title mt-3 mb-3">Novo grupo DRE</h4>
-            <form method="post" action="{{ route('financeiro.configuracoes.grupos.save') }}" class="desktop-grid desktop-grid-three mb-4">
+            <h4 class="surface-title mt-3 mb-3" id="grupoFormTitle">Novo grupo DRE</h4>
+            <form method="post" action="{{ route('financeiro.configuracoes.grupos.save') }}" class="desktop-grid desktop-grid-three mb-4" id="grupoForm">
                 @csrf
+                <input type="hidden" name="id" id="grupoFormId" value="">
                 <div>
                     <label>Nome</label>
-                    <input type="text" name="nome" class="form-control" required>
+                    <input type="text" name="nome" class="form-control" id="grupoFormNome" required>
                 </div>
                 <div>
                     <label>Descrição</label>
-                    <input type="text" name="descricao" class="form-control">
+                    <input type="text" name="descricao" class="form-control" id="grupoFormDescricao">
                 </div>
                 <div>
                     <label>Ordem de exibição</label>
-                    <input type="number" name="ordem_exibicao" class="form-control" value="0">
+                    <input type="number" name="ordem_exibicao" class="form-control" id="grupoFormOrdem" value="0">
                 </div>
                 <div class="field-actions">
-                    <button type="submit" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Criar grupo</button>
+                    <button type="submit" class="btn btn-primary" id="grupoFormSubmit"><i class="bi bi-plus-lg me-1"></i>Criar grupo</button>
+                    <button type="button" class="btn btn-outline-light d-none" id="grupoFormCancel">Cancelar edição</button>
                 </div>
             </form>
 
@@ -153,6 +181,20 @@
                             <td>{{ $grupo['descricao'] ?? '-' }}</td>
                             <td>{{ $grupo['ordem_exibicao'] }}</td>
                             <td class="text-end">
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-light"
+                                    title="Editar grupo"
+                                    data-grupo-edit
+                                    data-grupo="{{ json_encode([
+                                        'id' => $grupo['id'],
+                                        'nome' => $grupo['nome'],
+                                        'descricao' => $grupo['descricao'] ?? '',
+                                        'ordem_exibicao' => $grupo['ordem_exibicao'] ?? 0,
+                                    ]) }}"
+                                >
+                                    <i class="bi bi-pencil"></i>
+                                </button>
                                 <form method="post" action="{{ route('financeiro.configuracoes.grupos.delete', $grupo['id']) }}" data-confirm="Excluir este grupo DRE?" data-confirm-title="Excluir grupo" data-confirm-button="Sim, excluir" class="d-inline">
                                     @csrf
                                     @method('DELETE')
@@ -167,12 +209,13 @@
         </div>
 
         <div class="config-subpanel" data-config-subpanel="subgrupos">
-            <h4 class="surface-title mt-3 mb-3">Novo subgrupo DRE</h4>
-            <form method="post" action="{{ route('financeiro.configuracoes.subgrupos.save') }}" class="desktop-grid desktop-grid-three mb-4">
+            <h4 class="surface-title mt-3 mb-3" id="subgrupoFormTitle">Novo subgrupo DRE</h4>
+            <form method="post" action="{{ route('financeiro.configuracoes.subgrupos.save') }}" class="desktop-grid desktop-grid-three mb-4" id="subgrupoForm">
                 @csrf
+                <input type="hidden" name="id" id="subgrupoFormId" value="">
                 <div>
                     <label>Grupo DRE</label>
-                    <select name="grupo_id" class="form-select" required>
+                    <select name="grupo_id" class="form-select" id="subgrupoFormGrupo" required>
                         @foreach ($dreGrupos as $grupo)
                             <option value="{{ $grupo['id'] }}">{{ $grupo['nome'] }}</option>
                         @endforeach
@@ -180,14 +223,15 @@
                 </div>
                 <div>
                     <label>Nome</label>
-                    <input type="text" name="nome" class="form-control" required>
+                    <input type="text" name="nome" class="form-control" id="subgrupoFormNome" required>
                 </div>
                 <div>
                     <label>Ordem de exibição</label>
-                    <input type="number" name="ordem_exibicao" class="form-control" value="0">
+                    <input type="number" name="ordem_exibicao" class="form-control" id="subgrupoFormOrdem" value="0">
                 </div>
                 <div class="field-actions">
-                    <button type="submit" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>Criar subgrupo</button>
+                    <button type="submit" class="btn btn-primary" id="subgrupoFormSubmit"><i class="bi bi-plus-lg me-1"></i>Criar subgrupo</button>
+                    <button type="button" class="btn btn-outline-light d-none" id="subgrupoFormCancel">Cancelar edição</button>
                 </div>
             </form>
 
@@ -201,6 +245,20 @@
                             <td>{{ $subgrupo['nome'] }}</td>
                             <td>{{ $subgrupo['ordem_exibicao'] }}</td>
                             <td class="text-end">
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-light"
+                                    title="Editar subgrupo"
+                                    data-subgrupo-edit
+                                    data-subgrupo="{{ json_encode([
+                                        'id' => $subgrupo['id'],
+                                        'nome' => $subgrupo['nome'],
+                                        'grupo_id' => $subgrupo['grupo']['id'] ?? '',
+                                        'ordem_exibicao' => $subgrupo['ordem_exibicao'] ?? 0,
+                                    ]) }}"
+                                >
+                                    <i class="bi bi-pencil"></i>
+                                </button>
                                 <form method="post" action="{{ route('financeiro.configuracoes.subgrupos.delete', $subgrupo['id']) }}" data-confirm="Excluir este subgrupo DRE?" data-confirm-title="Excluir subgrupo" data-confirm-button="Sim, excluir" class="d-inline">
                                     @csrf
                                     @method('DELETE')
@@ -526,6 +584,118 @@
                     }
                 });
             }
+
+            // Edição de Categorias, Grupos DRE e Subgrupos DRE: os três só têm
+            // cadastro "Novo X" + excluir na origem. Em vez de duplicar o form
+            // por linha, o botão de editar preenche o form já existente (que
+            // serve tanto para criar quanto atualizar — o controller decide
+            // pelo campo "id" oculto) e o "Cancelar edição" devolve ao modo
+            // de criação.
+            const setupCatalogEdit = ({ editSelector, dataAttr, form, idField, submitButton, submitCreateHtml, submitEditHtml, cancelButton, title, titleCreateText, titleEditText, fields }) => {
+                if (!form || !idField || !submitButton || !cancelButton) { return; }
+
+                const enterEditMode = (data) => {
+                    idField.value = data.id ?? '';
+
+                    Object.entries(fields).forEach(([key, el]) => {
+                        if (!el) { return; }
+                        const value = data[key] ?? '';
+                        if (el.type === 'checkbox') {
+                            el.checked = Boolean(value);
+                        } else {
+                            el.value = String(value);
+                        }
+                    });
+
+                    submitButton.innerHTML = submitEditHtml;
+                    cancelButton.classList.remove('d-none');
+                    if (title) { title.textContent = titleEditText; }
+                    form.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                };
+
+                const exitEditMode = () => {
+                    form.reset();
+                    idField.value = '';
+                    submitButton.innerHTML = submitCreateHtml;
+                    cancelButton.classList.add('d-none');
+                    if (title) { title.textContent = titleCreateText; }
+                };
+
+                document.querySelectorAll(editSelector).forEach((button) => {
+                    button.addEventListener('click', () => {
+                        try {
+                            enterEditMode(JSON.parse(button.getAttribute(dataAttr) || '{}'));
+                        } catch (e) {
+                            // Dado malformado no atributo: ignora silenciosamente,
+                            // usuário continua podendo criar normalmente.
+                        }
+                    });
+                });
+
+                cancelButton.addEventListener('click', exitEditMode);
+            };
+
+            setupCatalogEdit({
+                editSelector: '[data-categoria-edit]',
+                dataAttr: 'data-categoria',
+                form: document.getElementById('categoriaForm'),
+                idField: document.getElementById('categoriaFormId'),
+                submitButton: document.getElementById('categoriaFormSubmit'),
+                submitCreateHtml: '<i class="bi bi-plus-lg me-1"></i>Criar categoria',
+                submitEditHtml: '<i class="bi bi-save2 me-1"></i>Salvar categoria',
+                cancelButton: document.getElementById('categoriaFormCancel'),
+                title: document.getElementById('categoriaFormTitle'),
+                titleCreateText: 'Nova categoria',
+                titleEditText: 'Editar categoria',
+                fields: {
+                    nome: document.getElementById('categoriaFormNome'),
+                    tipo: document.getElementById('categoriaFormTipo'),
+                    ordem_exibicao: document.getElementById('categoriaFormOrdem'),
+                    dre_grupo_id: document.getElementById('categoriaFormGrupo'),
+                    dre_subgrupo_id: document.getElementById('categoriaFormSubgrupo'),
+                    impacta_dre_padrao: document.getElementById('catImpactaDre'),
+                    impacta_fluxo_caixa_padrao: document.getElementById('catImpactaFluxo'),
+                    dre_fixo_mensal_padrao: document.getElementById('catFixoMensal'),
+                },
+            });
+
+            setupCatalogEdit({
+                editSelector: '[data-grupo-edit]',
+                dataAttr: 'data-grupo',
+                form: document.getElementById('grupoForm'),
+                idField: document.getElementById('grupoFormId'),
+                submitButton: document.getElementById('grupoFormSubmit'),
+                submitCreateHtml: '<i class="bi bi-plus-lg me-1"></i>Criar grupo',
+                submitEditHtml: '<i class="bi bi-save2 me-1"></i>Salvar grupo',
+                cancelButton: document.getElementById('grupoFormCancel'),
+                title: document.getElementById('grupoFormTitle'),
+                titleCreateText: 'Novo grupo DRE',
+                titleEditText: 'Editar grupo DRE',
+                fields: {
+                    nome: document.getElementById('grupoFormNome'),
+                    descricao: document.getElementById('grupoFormDescricao'),
+                    ordem_exibicao: document.getElementById('grupoFormOrdem'),
+                },
+            });
+
+            setupCatalogEdit({
+                editSelector: '[data-subgrupo-edit]',
+                dataAttr: 'data-subgrupo',
+                form: document.getElementById('subgrupoForm'),
+                idField: document.getElementById('subgrupoFormId'),
+                submitButton: document.getElementById('subgrupoFormSubmit'),
+                submitCreateHtml: '<i class="bi bi-plus-lg me-1"></i>Criar subgrupo',
+                submitEditHtml: '<i class="bi bi-save2 me-1"></i>Salvar subgrupo',
+                cancelButton: document.getElementById('subgrupoFormCancel'),
+                title: document.getElementById('subgrupoFormTitle'),
+                titleCreateText: 'Novo subgrupo DRE',
+                titleEditText: 'Editar subgrupo DRE',
+                fields: {
+                    grupo_id: document.getElementById('subgrupoFormGrupo'),
+                    nome: document.getElementById('subgrupoFormNome'),
+                    ordem_exibicao: document.getElementById('subgrupoFormOrdem'),
+                },
+            });
         })();
     </script>
 @endsection

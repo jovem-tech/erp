@@ -491,6 +491,12 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/clientes/rapido', [ClientController::class, 'quickStore'])
         ->middleware('desktop.permission:clientes,criar')
         ->name('clients.quick.store');
+    Route::get('/clientes/{client}/rapido', [ClientController::class, 'quickShow'])
+        ->middleware('desktop.permission:clientes,editar')
+        ->name('clients.quick.show');
+    Route::match(['put', 'patch'], '/clientes/{client}/rapido', [ClientController::class, 'quickUpdate'])
+        ->middleware('desktop.permission:clientes,editar')
+        ->name('clients.quick.update');
     Route::get('/clientes/orcamentos-avulsos/buscar', [ClientController::class, 'searchAvulsoBudgets'])
         ->middleware([
             'desktop.permission:clientes,criar',
@@ -580,6 +586,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/financeiro/contas-cartoes/{cartao}/confirmar', [FinanceiroContaController::class, 'confirmCard'])
         ->middleware('desktop.permission:contas_saldos,editar')
         ->name('financeiro.contas.cartoes.confirmar');
+    Route::get('/financeiro/despesas-fixas', [FinanceiroController::class, 'despesasFixas'])
+        ->middleware('desktop.permission:financeiro,visualizar')
+        ->name('financeiro.despesas-fixas.index');
     Route::get('/financeiro/configuracoes', [FinanceiroCatalogController::class, 'index'])
         ->middleware('desktop.permission:financeiro,visualizar')
         ->name('financeiro.configuracoes');
