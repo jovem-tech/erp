@@ -36,6 +36,7 @@ class UpsertFinanceiroRequest extends BaseApiFormRequest
             'impacta_dre' => ['nullable', 'boolean'],
             'impacta_fluxo_caixa' => ['nullable', 'boolean'],
             'dre_fixo_mensal' => ['nullable', 'boolean'],
+            'repetir_proximos_meses' => ['nullable', 'boolean'],
         ];
     }
 }

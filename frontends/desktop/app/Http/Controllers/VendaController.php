@@ -6,6 +6,7 @@ use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
 use App\Services\VendaService;
+use App\Support\DesktopSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -91,6 +92,8 @@ class VendaController extends DesktopController
         return view('vendas.pdv', [
             'pageTitle' => 'Nova venda',
             'form' => $form,
+            'canQuickClient' => DesktopSession::can('clientes', 'criar'),
+            'canEditClient' => DesktopSession::can('clientes', 'editar'),
         ]);
     }
 

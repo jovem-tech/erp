@@ -23,6 +23,12 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $pageTitle ?? 'Desktop ERP' }} | Sistema ERP</title>
     <meta name="description" content="Painel administrativo do Sistema ERP: ordens de serviço, financeiro, estoque e clientes.">
+    @if ($desktopCompanyBranding['has_logo'] ?? false)
+        <link rel="icon" href="{{ route('branding.company.logo') }}">
+    @else
+        <link rel="icon" type="image/svg+xml" href="{{ asset('assets/img/favicon-default.svg') }}">
+    @endif
+    <link rel="alternate icon" href="{{ asset('favicon.ico') }}">
     <link href="{{ asset('assets/fonts/plus-jakarta-sans/plus-jakarta-sans.css') }}" rel="stylesheet">
     <link href="{{ asset('assets/libs/bootstrap/bootstrap.min.css') }}" rel="stylesheet">
     <link href="{{ asset('assets/libs/bootstrap-icons/bootstrap-icons.css') }}" rel="stylesheet">

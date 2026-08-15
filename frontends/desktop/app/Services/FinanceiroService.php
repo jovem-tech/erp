@@ -11,7 +11,7 @@ class FinanceiroService
 
     /**
      * @param array<string, mixed> $filters
-     * @return array{items: array<int, array<string, mixed>>, pagination: array<string, mixed>, status_options: array<int, array<string, mixed>>}
+     * @return array{items: array<int, array<string, mixed>>, pagination: array<string, mixed>, status_options: array<int, array<string, mixed>>, totais_despesas: array{fixas: float, variaveis: float}}
      */
     public function paginate(array $filters = []): array
     {
@@ -21,6 +21,7 @@ class FinanceiroService
             'items' => $response['data']['lancamentos'] ?? [],
             'pagination' => $response['meta']['pagination'] ?? [],
             'status_options' => $response['data']['status_options'] ?? [],
+            'totais_despesas' => $response['data']['totais_despesas'] ?? ['fixas' => 0.0, 'variaveis' => 0.0],
         ];
     }
 

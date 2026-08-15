@@ -38,6 +38,7 @@
             'supplierSearchUrl' => route('financeiro.suppliers.search'),
             'quickClientStoreUrl' => route('clients.quick.store'),
             'contasFinanceiras' => $accountDataset ?? ['contas' => [], 'contas_padrao' => []],
+            'categorias' => $categorias ?? [],
         ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
     </script>
     <script src="{{ asset('assets/js/financeiro-form.js') }}?v={{ filemtime(public_path('assets/js/financeiro-form.js')) }}"></script>

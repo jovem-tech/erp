@@ -74,8 +74,11 @@ class FinanceiroTest extends TestCase
             ->assertSee(route('financeiro.relatorios.dre-caixa'), false)
             ->assertSee(route('financeiro.relatorios.margem'), false)
             ->assertSee('Mais ações')
+            ->assertSee(route('financeiro.despesas-fixas.index'), false)
             ->assertSee(route('financeiro.cartoes.index'), false)
             ->assertSee(route('financeiro.configuracoes'), false)
+            ->assertSee('Despesas fixas')
+            ->assertSee('Mês (vencimento)')
             // Sessão sem permissão de "precificacao" — item some do dropdown.
             ->assertDontSee(route('financeiro.precificacao.index'), false);
     }
@@ -104,6 +107,231 @@ class FinanceiroTest extends TestCase
 
         $response->assertOk()
             ->assertSee(route('financeiro.precificacao.index'), false);
+    }
+
+    public function test_despesas_page_forces_pagar_but_shows_both_fixed_and_variable(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'categorias' => [],
+                    'cartao' => ['operadoras' => [], 'bandeiras' => [], 'taxas' => []],
+                    'contas_financeiras' => ['contas' => [], 'contas_padrao' => [], 'tipos' => []],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/financeiro*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'lancamentos' => [
+                        [
+                            'id' => 10,
+                            'tipo' => 'pagar',
+                            'categoria' => 'Internet',
+                            'valor' => 120.0,
+                            'status' => 'pendente',
+                            'data_vencimento' => now()->toDateString(),
+                            'dre_fixo_mensal' => true,
+                        ],
+                        [
+                            'id' => 11,
+                            'tipo' => 'pagar',
+                            'categoria' => 'Compra de embalagens',
+                            'valor' => 45.0,
+                            'status' => 'pendente',
+                            'data_vencimento' => now()->toDateString(),
+                            'dre_fixo_mensal' => false,
+                        ],
+                    ],
+                    'status_options' => [
+                        ['value' => 'pendente', 'label' => 'Pendente'],
+                    ],
+                    'totais_despesas' => ['fixas' => 120.0, 'variaveis' => 45.0],
+                ],
+                'error' => null,
+                'meta' => ['pagination' => ['current_page' => 1, 'per_page' => 15, 'total' => 2, 'last_page' => 1, 'from' => 1, 'to' => 2]],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar', 'editar', 'excluir']]))
+            ->get('/financeiro/despesas-fixas');
+
+        $response->assertOk()
+            ->assertSee('Despesas')
+            ->assertSee('Internet')
+            ->assertSee('Compra de embalagens')
+            ->assertSee('Total despesas fixas')
+            ->assertSee('Total despesas variáveis')
+            // A tela agora expõe o filtro "Tipo de despesa" (fixa/variável) —
+            // não é mais forçado no servidor como antes.
+            ->assertSee('Só variáveis')
+            ->assertSee('Nova despesa')
+            ->assertSee(route('financeiro.create', ['tipo' => 'pagar']), false);
+
+        Http::assertSent(static function ($request): bool {
+            if (! str_starts_with($request->url(), 'http://127.0.0.1:8000/api/v1/financeiro?')) {
+                return false;
+            }
+
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            return ($query['tipo'] ?? null) === 'pagar'
+                && ! array_key_exists('dre_fixo_mensal', $query);
+        });
+    }
+
+    public function test_despesas_page_dre_fixo_mensal_filter_disables_default_view(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => ['categorias' => [], 'cartao' => ['operadoras' => [], 'bandeiras' => [], 'taxas' => []], 'contas_financeiras' => ['contas' => [], 'contas_padrao' => [], 'tipos' => []]],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/financeiro*' => Http::response([
+                'status' => 'success',
+                'data' => ['lancamentos' => [], 'status_options' => [], 'totais_despesas' => ['fixas' => 0.0, 'variaveis' => 0.0]],
+                'error' => null,
+                'meta' => ['pagination' => ['current_page' => 1, 'per_page' => 15, 'total' => 0, 'last_page' => 1, 'from' => 0, 'to' => 0]],
+            ], 200),
+        ]);
+
+        $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar', 'editar', 'excluir']]))
+            ->get('/financeiro/despesas-fixas?dre_fixo_mensal=1');
+
+        Http::assertSent(static function ($request): bool {
+            if (! str_starts_with($request->url(), 'http://127.0.0.1:8000/api/v1/financeiro?')) {
+                return false;
+            }
+
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            return ($query['dre_fixo_mensal'] ?? null) === '1'
+                && ! array_key_exists('periodo_atual_e_atrasadas', $query);
+        });
+    }
+
+    public function test_create_with_tipo_pagar_query_locks_tipo_to_pagar(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => ['categorias' => []],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar']]))
+            ->get('/financeiro/novo?tipo=pagar');
+
+        $response->assertOk()
+            ->assertSee('Nova despesa')
+            // "A receber" não deve nem existir como opção quando travado.
+            ->assertDontSee('A receber')
+            ->assertSee('name="tipo" value="pagar"', false);
+    }
+
+    public function test_create_without_tipo_query_still_allows_receber(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => ['categorias' => []],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar']]))
+            ->get('/financeiro/novo');
+
+        $response->assertOk()
+            ->assertSee('Novo lançamento')
+            ->assertSee('A receber')
+            ->assertSee('A pagar');
+    }
+
+    public function test_despesas_fixas_page_applies_periodo_atual_e_atrasadas_by_default(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => ['categorias' => [], 'cartao' => ['operadoras' => [], 'bandeiras' => [], 'taxas' => []]],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/financeiro*' => Http::response([
+                'status' => 'success',
+                'data' => ['lancamentos' => [], 'status_options' => [], 'totais_despesas' => ['fixas' => 0.0, 'variaveis' => 0.0]],
+                'error' => null,
+                'meta' => ['pagination' => ['current_page' => 1, 'per_page' => 15, 'total' => 0, 'last_page' => 1, 'from' => 0, 'to' => 0]],
+            ], 200),
+        ]);
+
+        // Sem mês/status na URL: deve ativar a visão padrão (mês atual +
+        // atrasadas), sem esperar o usuário escolher nada.
+        $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar', 'editar', 'excluir']]))
+            ->get('/financeiro/despesas-fixas');
+
+        Http::assertSent(static function ($request): bool {
+            if (! str_starts_with($request->url(), 'http://127.0.0.1:8000/api/v1/financeiro?')) {
+                return false;
+            }
+
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            return ($query['periodo_atual_e_atrasadas'] ?? null) === '1';
+        });
+    }
+
+    public function test_despesas_fixas_page_disables_default_view_once_mes_is_chosen(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => ['categorias' => [], 'cartao' => ['operadoras' => [], 'bandeiras' => [], 'taxas' => []]],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/financeiro*' => Http::response([
+                'status' => 'success',
+                'data' => ['lancamentos' => [], 'status_options' => [], 'totais_despesas' => ['fixas' => 0.0, 'variaveis' => 0.0]],
+                'error' => null,
+                'meta' => ['pagination' => ['current_page' => 1, 'per_page' => 15, 'total' => 0, 'last_page' => 1, 'from' => 0, 'to' => 0]],
+            ], 200),
+        ]);
+
+        // Usuário escolheu um mês explicitamente: a visão "inteligente"
+        // padrão sai de cena, filtro passa a valer literalmente.
+        $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar', 'editar', 'excluir']]))
+            ->get('/financeiro/despesas-fixas?mes=2026-12');
+
+        Http::assertSent(static function ($request): bool {
+            if (! str_starts_with($request->url(), 'http://127.0.0.1:8000/api/v1/financeiro?')) {
+                return false;
+            }
+
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            return ! array_key_exists('periodo_atual_e_atrasadas', $query)
+                && ($query['mes'] ?? null) === '2026-12';
+        });
     }
 
     public function test_show_page_groups_actions_in_mais_acoes_dropdown(): void
@@ -264,6 +492,367 @@ class FinanceiroTest extends TestCase
                 && $request->method() === 'POST'
                 && $request['avulso'] === true;
         });
+    }
+
+    public function test_store_sends_dre_fixo_mensal_when_tipo_is_pagar(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/financeiro' => Http::response([
+                'status' => 'success',
+                'data' => ['lancamento' => ['id' => 6, 'tipo' => 'pagar', 'status' => 'pendente']],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar', 'editar', 'excluir']]))
+            ->post('/financeiro', [
+                'tipo' => 'pagar',
+                'categoria' => 'Internet',
+                'descricao' => 'Internet do mês',
+                'valor' => 120.0,
+                'data_vencimento' => now()->toDateString(),
+                'dre_fixo_mensal' => '1',
+            ]);
+
+        $response->assertRedirect(route('financeiro.index'));
+        Http::assertSent(static function ($request) {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/financeiro'
+                && $request->method() === 'POST'
+                && $request['dre_fixo_mensal'] === true;
+        });
+    }
+
+    public function test_store_sends_repetir_proximos_meses_and_adjusts_success_message(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/financeiro' => Http::response([
+                'status' => 'success',
+                'data' => ['lancamento' => ['id' => 8, 'tipo' => 'pagar', 'status' => 'pendente']],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar', 'editar', 'excluir']]))
+            ->post('/financeiro', [
+                'tipo' => 'pagar',
+                'categoria' => 'Internet',
+                'descricao' => 'Internet do mês',
+                'valor' => 120.0,
+                'data_vencimento' => now()->toDateString(),
+                'dre_fixo_mensal' => '1',
+                'repetir_proximos_meses' => '1',
+            ]);
+
+        $response->assertRedirect(route('financeiro.index'));
+        $response->assertSessionHas('success', 'Lançamento criado com sucesso, com mais 11 lançamentos futuros gerados (um por mês, pendentes).');
+        Http::assertSent(static function ($request) {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/financeiro'
+                && $request->method() === 'POST'
+                && $request['repetir_proximos_meses'] === true;
+        });
+    }
+
+    public function test_update_omits_repetir_proximos_meses_even_when_sent(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/financeiro/9' => Http::response([
+                'status' => 'success',
+                'data' => ['lancamento' => ['id' => 9, 'tipo' => 'pagar', 'status' => 'pendente']],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar', 'editar', 'excluir']]))
+            ->put('/financeiro/9', [
+                'tipo' => 'pagar',
+                'categoria' => 'Internet',
+                'descricao' => 'Internet do mês',
+                'valor' => 120.0,
+                'data_vencimento' => now()->toDateString(),
+                'dre_fixo_mensal' => '1',
+                'repetir_proximos_meses' => '1',
+            ]);
+
+        $response->assertRedirect(route('financeiro.index'));
+        Http::assertSent(static function ($request) {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/financeiro/9'
+                && ! array_key_exists('repetir_proximos_meses', $request->data());
+        });
+    }
+
+    public function test_create_page_renders_repetir_checkbox_but_edit_page_does_not(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => ['categorias' => [], 'contas_financeiras' => ['contas' => [], 'contas_padrao' => [], 'tipos' => []], 'formas_pagamento' => []],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/11' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'lancamento' => [
+                        'id' => 11,
+                        'tipo' => 'pagar',
+                        'categoria' => 'Internet',
+                        'descricao' => 'Internet do mês',
+                        'valor' => 120.0,
+                        'status' => 'pendente',
+                        'data_vencimento' => now()->toDateString(),
+                        'dre_fixo_mensal' => true,
+                    ],
+                    'resumo' => ['total_movimentos' => 0],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $createResponse = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar', 'editar']]))
+            ->get('/financeiro/novo');
+
+        $createResponse->assertOk()->assertSee('financeiroRepetirMeses', false);
+
+        $editResponse = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar', 'editar']]))
+            ->get('/financeiro/11/editar');
+
+        $editResponse->assertOk()->assertDontSee('financeiroRepetirMeses', false);
+    }
+
+    public function test_create_page_hides_os_and_cliente_for_generic_pagar_category(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'categorias' => [
+                        ['id' => 1, 'nome' => 'Energia', 'tipo' => 'pagar', 'dre_grupo' => ['id' => 3, 'nome' => 'Despesas Operacionais']],
+                        ['id' => 2, 'nome' => 'Compra de peças', 'tipo' => 'pagar', 'dre_grupo' => ['id' => 4, 'nome' => 'Custo Direto (OS)']],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
+                ['_old_input' => ['tipo' => 'pagar', 'categoria' => 'Energia']]
+            ))
+            ->get('/financeiro/novo');
+
+        $response->assertOk();
+        $this->assertMatchesRegularExpression('/id="financeiroOsWrapper"\s+class="d-none"/', $response->getContent());
+        $this->assertMatchesRegularExpression('/id="financeiroClienteWrapper"\s+class="d-none"/', $response->getContent());
+    }
+
+    public function test_create_page_shows_os_and_cliente_for_peca_pagar_category(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'categorias' => [
+                        ['id' => 1, 'nome' => 'Energia', 'tipo' => 'pagar', 'dre_grupo' => ['id' => 3, 'nome' => 'Despesas Operacionais']],
+                        ['id' => 2, 'nome' => 'Compra de peças', 'tipo' => 'pagar', 'dre_grupo' => ['id' => 4, 'nome' => 'Custo Direto (OS)']],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
+                ['_old_input' => ['tipo' => 'pagar', 'categoria' => 'Compra de peças']]
+            ))
+            ->get('/financeiro/novo');
+
+        $response->assertOk();
+        $this->assertDoesNotMatchRegularExpression('/id="financeiroOsWrapper"\s+class="d-none"/', $response->getContent());
+        $this->assertDoesNotMatchRegularExpression('/id="financeiroClienteWrapper"\s+class="d-none"/', $response->getContent());
+    }
+
+    public function test_create_page_hides_vinculos_section_when_despesa_fixa_chosen(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => ['categorias' => []],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
+                ['_old_input' => ['tipo' => 'pagar', 'dre_fixo_mensal' => '1']]
+            ))
+            ->get('/financeiro/novo');
+
+        $response->assertOk();
+        $this->assertMatchesRegularExpression('/id="financeiroVinculosSection"\s+class="d-none"/', $response->getContent());
+    }
+
+    public function test_create_page_shows_vinculos_section_when_despesa_variavel_chosen(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => ['categorias' => []],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
+                ['_old_input' => ['tipo' => 'pagar', 'dre_fixo_mensal' => '0']]
+            ))
+            ->get('/financeiro/novo');
+
+        $response->assertOk();
+        $this->assertDoesNotMatchRegularExpression('/id="financeiroVinculosSection"\s+class="d-none"/', $response->getContent());
+    }
+
+    public function test_store_omits_dre_fixo_mensal_when_tipo_is_receber(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/financeiro' => Http::response([
+                'status' => 'success',
+                'data' => ['lancamento' => ['id' => 7, 'tipo' => 'receber', 'status' => 'pendente']],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar', 'editar', 'excluir']]))
+            ->post('/financeiro', [
+                'tipo' => 'receber',
+                'categoria' => 'Serviço',
+                'descricao' => 'Serviço de teste',
+                'cliente_id' => 1,
+                'avulso' => '1',
+                'valor' => 150.0,
+                'data_vencimento' => now()->addDays(5)->toDateString(),
+                'dre_fixo_mensal' => '1',
+            ]);
+
+        $response->assertRedirect(route('financeiro.index'));
+        Http::assertSent(static function ($request) {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/financeiro'
+                && $request->method() === 'POST'
+                && ! array_key_exists('dre_fixo_mensal', $request->data());
+        });
+    }
+
+    public function test_store_omits_dre_fixo_mensal_when_classificacao_left_empty(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/financeiro' => Http::response([
+                'status' => 'success',
+                'data' => ['lancamento' => ['id' => 12, 'tipo' => 'pagar', 'status' => 'pendente']],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+        ]);
+
+        // "Todas as categorias" no select "Despesa fixa?" envia
+        // dre_fixo_mensal='' — nesse caso a chave deve ser omitida do
+        // payload para a API, para o backend aplicar o padrão da categoria
+        // (resolveClassification()) em vez de forçar false.
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar', 'editar', 'excluir']]))
+            ->post('/financeiro', [
+                'tipo' => 'pagar',
+                'categoria' => 'Aluguel',
+                'descricao' => 'Aluguel do mês',
+                'valor' => 1200.0,
+                'data_vencimento' => now()->toDateString(),
+                'dre_fixo_mensal' => '',
+            ]);
+
+        $response->assertRedirect(route('financeiro.index'));
+        Http::assertSent(static function ($request) {
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/financeiro'
+                && ! array_key_exists('dre_fixo_mensal', $request->data());
+        });
+    }
+
+    public function test_create_page_renders_classificacao_select_beside_tipo(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => ['categorias' => [], 'contas_financeiras' => ['contas' => [], 'contas_padrao' => [], 'tipos' => []], 'formas_pagamento' => []],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar']]))
+            ->get('/financeiro/novo');
+
+        $response->assertOk()
+            ->assertSee('financeiroClassificacaoFixa', false)
+            ->assertSee('Despesa fixa?')
+            ->assertSee('Todas as categorias')
+            ->assertSee('Despesa variável');
+    }
+
+    public function test_create_page_filters_categoria_options_by_classificacao(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'categorias' => [
+                        ['id' => 1, 'nome' => 'Aluguel', 'tipo' => 'pagar', 'dre_fixo_mensal_padrao' => true],
+                        ['id' => 2, 'nome' => 'Compra de embalagens', 'tipo' => 'pagar', 'dre_fixo_mensal_padrao' => false],
+                    ],
+                    'contas_financeiras' => ['contas' => [], 'contas_padrao' => [], 'tipos' => []],
+                    'formas_pagamento' => [],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
+                ['_old_input' => ['tipo' => 'pagar', 'dre_fixo_mensal' => '1']]
+            ))
+            ->get('/financeiro/novo');
+
+        $response->assertOk()
+            // Servidor já filtra as opções que não batem com a
+            // classificação escolhida (degrada bem mesmo sem JS) — só a
+            // categoria fixa aparece como <option> no HTML.
+            ->assertSee('value="Aluguel"', false)
+            ->assertDontSee('value="Compra de embalagens"', false);
     }
 
     public function test_client_detail_shows_financeiro_history_with_permission(): void

@@ -555,8 +555,258 @@
             $('#pdvCliente').on('change', () => {
                 const selecionado = $('#pdvCliente').val();
                 document.getElementById('pdvBlocoAvulso').classList.toggle('d-none', Boolean(selecionado));
+                document.getElementById('pdvEditarCliente')?.classList.toggle('d-none', !selecionado);
             });
         }
+
+        /* ------------------------------------------------------------------ */
+        /* Cadastro rápido de cliente (novo / editar) — mesmo padrão AJAX do   */
+        /* modal reaproveitado de clients/quick-modal.blade.php no financeiro. */
+        /* ------------------------------------------------------------------ */
+        (() => {
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+
+            const requestJson = async (url, { method = 'GET', body = null } = {}) => {
+                const options = {
+                    method,
+                    headers: {
+                        Accept: 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest',
+                    },
+                    credentials: 'same-origin',
+                };
+
+                if (method !== 'GET' && body !== null) {
+                    options.headers['Content-Type'] = 'application/json';
+                    options.headers['X-CSRF-TOKEN'] = csrfToken;
+                    options.body = JSON.stringify(body);
+                }
+
+                const response = await fetch(url, options);
+                const payload = await response.json().catch(() => ({}));
+
+                if (!response.ok || payload.success === false) {
+                    const error = new Error(payload.message || 'Falha ao processar a solicitação.');
+                    error.status = response.status;
+                    error.details = payload.errors || null;
+                    throw error;
+                }
+
+                return payload;
+            };
+
+            const getModal = (element) => {
+                if (!(element instanceof HTMLElement) || typeof window.bootstrap === 'undefined') return null;
+                return window.bootstrap.Modal.getOrCreateInstance(element);
+            };
+
+            const flattenErrors = (error) => (Array.isArray(error?.details)
+                ? error.details
+                : error?.details && typeof error.details === 'object'
+                    ? Object.values(error.details).flat().filter(Boolean)
+                    : []);
+
+            const renderFormErrors = (boxId, messages, fallback = '') => {
+                const box = document.getElementById(boxId);
+                if (!box) return;
+                const items = (Array.isArray(messages) ? messages : []).filter(Boolean);
+                if (items.length === 0 && fallback) items.push(fallback);
+                if (items.length === 0) {
+                    box.classList.add('d-none');
+                    box.innerHTML = '';
+                    return;
+                }
+                box.innerHTML = items.map((mensagem) => `<div>${mensagem}</div>`).join('');
+                box.classList.remove('d-none');
+            };
+
+            const clearFormErrors = (boxId) => {
+                const box = document.getElementById(boxId);
+                if (!box) return;
+                box.classList.add('d-none');
+                box.innerHTML = '';
+            };
+
+            // Injeta (se novo) e seleciona o cliente no select2 do PDV.
+            const selecionarCliente = (clienteId, nome) => {
+                const select = document.getElementById('pdvCliente');
+                const value = String(clienteId || '');
+                if (!(select instanceof HTMLSelectElement) || value === '') return;
+
+                let option = Array.from(select.options).find((o) => o.value === value) || null;
+                if (!(option instanceof HTMLOptionElement)) {
+                    option = document.createElement('option');
+                    option.value = value;
+                    select.appendChild(option);
+                }
+                option.textContent = nome || `Cliente #${value}`;
+
+                if ($ && $.fn.select2) {
+                    $('#pdvCliente').val(value).trigger('change');
+                } else {
+                    select.value = value;
+                }
+            };
+
+            // --- Novo cliente ---------------------------------------------
+            const novoClienteBtn = document.getElementById('pdvNovoCliente');
+            const quickClientModalEl = document.getElementById('quickClientModal');
+            const quickClientForm = document.getElementById('quickClientForm');
+            const quickClientSubmitBtn = document.getElementById('quickClientSubmit');
+
+            if (novoClienteBtn && quickClientModalEl && quickClientForm) {
+                novoClienteBtn.addEventListener('click', () => {
+                    quickClientForm.reset();
+                    clearFormErrors('quickClientErrors');
+                    getModal(quickClientModalEl)?.show();
+                });
+
+                const submeterNovoCliente = async (evento) => {
+                    evento.preventDefault();
+                    clearFormErrors('quickClientErrors');
+
+                    if (!quickClientForm.reportValidity()) {
+                        renderFormErrors('quickClientErrors', [], 'Informe nome/razão social e telefone principal antes de salvar.');
+                        return;
+                    }
+
+                    if (quickClientSubmitBtn) {
+                        quickClientSubmitBtn.disabled = true;
+                        quickClientSubmitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Salvando...';
+                    }
+
+                    try {
+                        const payload = Object.fromEntries(new FormData(quickClientForm).entries());
+                        const response = await requestJson(form.dataset.quickClientStoreUrl, { method: 'POST', body: payload });
+                        const cliente = response.client || {};
+                        selecionarCliente(cliente.id, cliente.nome_razao || cliente.name || '');
+                        getModal(quickClientModalEl)?.hide();
+                    } catch (error) {
+                        renderFormErrors('quickClientErrors', flattenErrors(error), error.message);
+                    } finally {
+                        if (quickClientSubmitBtn) {
+                            quickClientSubmitBtn.disabled = false;
+                            quickClientSubmitBtn.innerHTML = '<i class="bi bi-person-plus me-2"></i>Cadastrar cliente';
+                        }
+                    }
+                };
+
+                quickClientSubmitBtn?.addEventListener('click', () => {
+                    if (typeof quickClientForm.requestSubmit === 'function') {
+                        quickClientForm.requestSubmit();
+                        return;
+                    }
+                    quickClientForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+                });
+
+                quickClientForm.addEventListener('submit', submeterNovoCliente);
+
+                quickClientModalEl.addEventListener('hidden.bs.modal', () => {
+                    quickClientForm.reset();
+                    clearFormErrors('quickClientErrors');
+                });
+            }
+
+            // --- Editar cliente ---------------------------------------------
+            const editarClienteBtn = document.getElementById('pdvEditarCliente');
+            const quickEditModalEl = document.getElementById('quickEditClientModal');
+            const quickEditForm = document.getElementById('quickEditClientForm');
+            const quickEditSubmitBtn = document.getElementById('quickEditClientSubmit');
+            const quickEditFullLink = document.getElementById('quickEditClientFullLink');
+
+            if (editarClienteBtn && quickEditModalEl && quickEditForm) {
+                editarClienteBtn.addEventListener('click', async () => {
+                    const clienteId = $ ? $('#pdvCliente').val() : document.getElementById('pdvCliente').value;
+                    if (!clienteId) return;
+
+                    clearFormErrors('quickEditClientErrors');
+
+                    const showUrl = (form.dataset.quickClientShowUrlTemplate || '').replace('__CLIENT_ID__', clienteId);
+                    const updateUrl = (form.dataset.quickClientUpdateUrlTemplate || '').replace('__CLIENT_ID__', clienteId);
+                    const fullEditUrl = (form.dataset.clientFullEditUrlTemplate || '').replace('__CLIENT_ID__', clienteId);
+
+                    quickEditForm.dataset.updateUrl = updateUrl;
+                    quickEditForm.dataset.clientId = String(clienteId);
+                    if (quickEditFullLink) quickEditFullLink.href = fullEditUrl || '#';
+
+                    try {
+                        const response = await requestJson(showUrl);
+                        const cliente = response.client || {};
+                        const campos = {
+                            quickEditClientNomeRazao: 'nome_razao',
+                            quickEditClientTelefone1: 'telefone1',
+                            quickEditClientEmail: 'email',
+                            quickEditClientCpfCnpj: 'cpf_cnpj',
+                            quickEditClientTelefoneContato: 'telefone_contato',
+                            quickEditClientNomeContato: 'nome_contato',
+                            quickEditClientCep: 'cep',
+                            quickEditClientNumero: 'numero',
+                            quickEditClientEndereco: 'endereco',
+                            quickEditClientBairro: 'bairro',
+                            quickEditClientCidade: 'cidade',
+                            quickEditClientUf: 'uf',
+                        };
+                        Object.entries(campos).forEach(([id, campo]) => {
+                            const input = document.getElementById(id);
+                            if (input) input.value = cliente[campo] || '';
+                        });
+
+                        getModal(quickEditModalEl)?.show();
+                    } catch (error) {
+                        if (typeof window.Swal !== 'undefined') {
+                            window.Swal.fire({ icon: 'error', title: 'Não foi possível carregar o cliente', text: error.message });
+                        }
+                    }
+                });
+
+                const submeterEditarCliente = async (evento) => {
+                    evento.preventDefault();
+                    clearFormErrors('quickEditClientErrors');
+
+                    if (!quickEditForm.reportValidity()) {
+                        renderFormErrors('quickEditClientErrors', [], 'Informe nome/razão social e telefone principal antes de salvar.');
+                        return;
+                    }
+
+                    const updateUrl = quickEditForm.dataset.updateUrl;
+                    if (!updateUrl) return;
+
+                    if (quickEditSubmitBtn) {
+                        quickEditSubmitBtn.disabled = true;
+                        quickEditSubmitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Salvando...';
+                    }
+
+                    try {
+                        const payload = Object.fromEntries(new FormData(quickEditForm).entries());
+                        const response = await requestJson(updateUrl, { method: 'PUT', body: payload });
+                        const cliente = response.client || {};
+                        selecionarCliente(quickEditForm.dataset.clientId, cliente.nome_razao || '');
+                        getModal(quickEditModalEl)?.hide();
+                    } catch (error) {
+                        renderFormErrors('quickEditClientErrors', flattenErrors(error), error.message);
+                    } finally {
+                        if (quickEditSubmitBtn) {
+                            quickEditSubmitBtn.disabled = false;
+                            quickEditSubmitBtn.innerHTML = '<i class="bi bi-check2-circle me-2"></i>Salvar cliente';
+                        }
+                    }
+                };
+
+                quickEditSubmitBtn?.addEventListener('click', () => {
+                    if (typeof quickEditForm.requestSubmit === 'function') {
+                        quickEditForm.requestSubmit();
+                        return;
+                    }
+                    quickEditForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+                });
+
+                quickEditForm.addEventListener('submit', submeterEditarCliente);
+
+                quickEditModalEl.addEventListener('hidden.bs.modal', () => {
+                    clearFormErrors('quickEditClientErrors');
+                });
+            }
+        })();
 
         /* ------------------------------------------------------------------ */
         /* Atalhos                                                             */

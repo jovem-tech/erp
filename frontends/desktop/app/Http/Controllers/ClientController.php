@@ -108,6 +108,74 @@ class ClientController extends DesktopController
         ], 201);
     }
 
+    public function quickShow(int $client): JsonResponse
+    {
+        $clientData = $this->clientService->find($client);
+
+        if ($clientData === []) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Cliente não encontrado.',
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'client' => $clientData,
+        ]);
+    }
+
+    public function quickUpdate(Request $request, int $client): JsonResponse
+    {
+        try {
+            $existing = $this->clientService->find($client);
+
+            if ($existing === []) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cliente não encontrado.',
+                ], 404);
+            }
+
+            $updated = $this->clientService->update($client, $this->validatedQuickClientEditPayload($request, $existing));
+        } catch (ApiAuthenticationException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage() ?: 'Sua sessão expirou. Faça login novamente.',
+            ], 401);
+        } catch (ApiAuthorizationException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage() ?: 'Você não tem permissão para executar esta ação.',
+            ], 403);
+        } catch (ApiRequestException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage() ?: 'Não foi possível atualizar o cliente.',
+                'errors' => $exception->details() ?? [],
+            ], $exception->statusCode() > 0 ? $exception->statusCode() : 422);
+        } catch (ValidationException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Verifique os campos do cliente.',
+                'errors' => $exception->errors(),
+            ], 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Não foi possível atualizar o cliente agora. Tente novamente.',
+            ], 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Cliente atualizado com sucesso.',
+            'client' => $updated,
+        ]);
+    }
+
     /**
      * Sugestões de orçamento avulso (sem cliente cadastrado) para os campos
      * de nome/telefone do cadastro rápido de cliente na Nova OS.
@@ -388,6 +456,75 @@ class ClientController extends DesktopController
 
         $payload['tipo_pessoa'] = 'fisica';
         $payload['status_cadastro'] = 'completo';
+
+        return $payload;
+    }
+
+    /**
+     * Cadastro rápido de edição: mesmo subconjunto de campos do cadastro
+     * rápido de criação, mas preserva tipo_pessoa/status_cadastro e os
+     * demais campos do cadastro completo (RG/IE, telefone2, complemento,
+     * referência, observações, preferência de contato), que não aparecem
+     * neste formulário. Sem isso, editar um cliente jurídico pelo PDV o
+     * rebaixaria para "pessoa física" e apagaria esses campos, já que a API
+     * de atualização exige o payload inteiro (não faz merge parcial).
+     *
+     * @param array<string, mixed> $existing
+     * @return array<string, mixed>
+     */
+    private function validatedQuickClientEditPayload(Request $request, array $existing): array
+    {
+        $validated = $request->validate([
+            'nome_razao' => ['required', 'string', 'max:100'],
+            'telefone1' => ['required', 'string', 'max:20'],
+            'email' => ['nullable', 'email', 'max:100'],
+            'cpf_cnpj' => ['nullable', 'string', 'max:20'],
+            'nome_contato' => ['nullable', 'string', 'max:100'],
+            'telefone_contato' => ['nullable', 'string', 'max:20'],
+            'cep' => ['nullable', 'string', 'max:10'],
+            'endereco' => ['nullable', 'string', 'max:100'],
+            'numero' => ['nullable', 'string', 'max:10'],
+            'bairro' => ['nullable', 'string', 'max:50'],
+            'cidade' => ['nullable', 'string', 'max:50'],
+            'uf' => ['nullable', 'string', 'max:2'],
+        ], [], [
+            'nome_razao' => 'nome / razão social',
+            'telefone1' => 'telefone principal',
+            'email' => 'e-mail',
+            'cpf_cnpj' => 'CPF/CNPJ',
+            'nome_contato' => 'nome do contato',
+            'telefone_contato' => 'telefone do contato',
+            'cep' => 'CEP',
+            'endereco' => 'endereço',
+            'numero' => 'número',
+            'bairro' => 'bairro',
+            'cidade' => 'cidade',
+            'uf' => 'UF',
+        ]);
+
+        $payload = [];
+
+        foreach ($validated as $field => $value) {
+            $payload[$field] = $this->normalizeValue($value);
+        }
+
+        $tipoPessoa = (string) ($existing['tipo_pessoa'] ?? '') ?: 'fisica';
+
+        if ($tipoPessoa === 'fisica') {
+            $payload['nome_razao'] = $this->formatPersonName($payload['nome_razao'] ?? null);
+        }
+        $payload['nome_contato'] = $this->formatPersonName($payload['nome_contato'] ?? null);
+        $payload['telefone1'] = $this->formatBrazilPhone($payload['telefone1'] ?? null);
+        $payload['telefone_contato'] = $this->formatBrazilPhone($payload['telefone_contato'] ?? null);
+
+        $payload['tipo_pessoa'] = $tipoPessoa;
+        $payload['status_cadastro'] = (string) ($existing['status_cadastro'] ?? '') ?: 'completo';
+        $payload['rg_ie'] = $this->normalizeValue($existing['rg_ie'] ?? null);
+        $payload['telefone2'] = $this->normalizeValue($existing['telefone2'] ?? null);
+        $payload['complemento'] = $this->normalizeValue($existing['complemento'] ?? null);
+        $payload['referencia'] = $this->normalizeValue($existing['referencia'] ?? null);
+        $payload['observacoes'] = $this->normalizeValue($existing['observacoes'] ?? null);
+        $payload['preferencia_contato'] = $this->normalizeValue($existing['preferencia_contato'] ?? null);
 
         return $payload;
     }

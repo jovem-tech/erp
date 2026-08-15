@@ -44,7 +44,7 @@ class FinanceiroReportService
 
         $custosDiretos = $this->groupByCompetencia(Financeiro::TIPO_PAGAR, 'Custo Direto (OS)', $inicio, $fim);
         $outrasReceitas = $this->groupByCompetencia(Financeiro::TIPO_RECEBER, null, $inicio, $fim, excludeOs: true);
-        $despesasOperacionais = $this->groupByCompetencia(Financeiro::TIPO_PAGAR, 'Despesas Operacionais', $inicio, $fim);
+        $despesasOperacionais = $this->groupByCompetencia(Financeiro::TIPO_PAGAR, 'Despesas Operacionais', $inicio, $fim, incluirFixoVariavel: true);
 
         return $this->buildSummary($label, 'competencia', $receitaOs, $custosDiretos, $outrasReceitas, $despesasOperacionais);
     }
@@ -64,7 +64,7 @@ class FinanceiroReportService
         $receitaOs = $this->sumMovimentosResumo(Financeiro::TIPO_RECEBER, $inicio, $fim, onlyOs: true);
         $custosDiretos = $this->groupByMovimento(Financeiro::TIPO_PAGAR, 'Custo Direto (OS)', $inicio, $fim);
         $outrasReceitas = $this->groupByMovimento(Financeiro::TIPO_RECEBER, null, $inicio, $fim, excludeOs: true);
-        $despesasOperacionais = $this->groupByMovimento(Financeiro::TIPO_PAGAR, 'Despesas Operacionais', $inicio, $fim);
+        $despesasOperacionais = $this->groupByMovimento(Financeiro::TIPO_PAGAR, 'Despesas Operacionais', $inicio, $fim, incluirFixoVariavel: true);
 
         return $this->buildSummary($label, 'caixa', $receitaOs, $custosDiretos, $outrasReceitas, $despesasOperacionais);
     }
@@ -170,7 +170,7 @@ class FinanceiroReportService
     /**
      * @return array<string, mixed>
      */
-    private function groupByCompetencia(string $tipo, ?string $grupoDre, CarbonImmutable $inicio, CarbonImmutable $fim, bool $excludeOs = false): array
+    private function groupByCompetencia(string $tipo, ?string $grupoDre, CarbonImmutable $inicio, CarbonImmutable $fim, bool $excludeOs = false, bool $incluirFixoVariavel = false): array
     {
         $query = Financeiro::query()
             ->where('tipo', $tipo)
@@ -201,13 +201,13 @@ class FinanceiroReportService
             ->merge($fixosMensais->get())
             ->unique('id');
 
-        return $this->summarizeRows($rows);
+        return $this->summarizeRows($rows, 'valor', $incluirFixoVariavel);
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function groupByMovimento(string $tipo, ?string $grupoDre, CarbonImmutable $inicio, CarbonImmutable $fim, bool $excludeOs = false): array
+    private function groupByMovimento(string $tipo, ?string $grupoDre, CarbonImmutable $inicio, CarbonImmutable $fim, bool $excludeOs = false, bool $incluirFixoVariavel = false): array
     {
         $query = FinanceiroMovimento::query()
             ->join('financeiro', 'financeiro.id', '=', 'financeiro_movimentos.financeiro_id')
@@ -223,12 +223,18 @@ class FinanceiroReportService
             $query->whereNull('financeiro.os_id');
         }
 
-        $rows = $query->get([
+        $columns = [
             'financeiro_movimentos.valor_movimento as valor',
             'financeiro.subgrupo_dre as subgrupo_dre',
-        ]);
+        ];
 
-        return $this->summarizeRows($rows, 'valor');
+        if ($incluirFixoVariavel) {
+            $columns[] = 'financeiro.dre_fixo_mensal as dre_fixo_mensal';
+        }
+
+        $rows = $query->get($columns);
+
+        return $this->summarizeRows($rows, 'valor', $incluirFixoVariavel);
     }
 
     /**
@@ -260,9 +266,10 @@ class FinanceiroReportService
      * @param Collection<int, mixed> $rows
      * @return array<string, mixed>
      */
-    private function summarizeRows(Collection $rows, string $valueField = 'valor'): array
+    private function summarizeRows(Collection $rows, string $valueField = 'valor', bool $incluirFixoVariavel = false): array
     {
         $porSubgrupo = [];
+        $porFixoVariavel = ['fixas' => 0.0, 'variaveis' => 0.0];
         $total = 0.0;
 
         foreach ($rows as $row) {
@@ -270,12 +277,23 @@ class FinanceiroReportService
             $total += $valor;
             $chave = $row->subgrupo_dre ?? 'Sem subgrupo';
             $porSubgrupo[$chave] = round(($porSubgrupo[$chave] ?? 0) + $valor, 2);
+
+            if ($incluirFixoVariavel) {
+                $chaveFixo = ((bool) $row->dre_fixo_mensal) ? 'fixas' : 'variaveis';
+                $porFixoVariavel[$chaveFixo] = round($porFixoVariavel[$chaveFixo] + $valor, 2);
+            }
         }
 
-        return [
+        $resultado = [
             'total' => round($total, 2),
             'por_subgrupo' => $porSubgrupo,
         ];
+
+        if ($incluirFixoVariavel) {
+            $resultado['por_fixo_variavel'] = $porFixoVariavel;
+        }
+
+        return $resultado;
     }
 
     /**
