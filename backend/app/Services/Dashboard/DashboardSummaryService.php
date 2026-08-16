@@ -4,6 +4,7 @@ namespace App\Services\Dashboard;
 
 use App\Models\Client;
 use App\Models\Equipment;
+use App\Models\Financeiro;
 use App\Models\OrderStatus;
 use App\Models\User;
 use App\Services\Auth\RbacAuthorizationService;
@@ -930,8 +931,15 @@ class DashboardSummaryService
             ->whereRaw(self::OPEN_DATE_SQL . ' >= ? AND ' . self::OPEN_DATE_SQL . ' < ?', [$currentPeriodStart, $currentPeriodEnd])
             ->first();
 
-        $pendentesRow = $this->openOperationalOrdersQuery($user)
-            ->selectRaw('COALESCE(SUM(os.valor_final), 0) as total')
+        // Pendentes = despesas (contas a pagar) ainda pendentes/parciais com
+        // vencimento até o fim do mês atual — mês corrente + atrasadas de
+        // meses anteriores. Nunca inclui vencimento em mês futuro (ex.:
+        // parcelas geradas por repetição), mesmo que já estejam pendentes.
+        $pendentesRow = Financeiro::query()
+            ->where('tipo', Financeiro::TIPO_PAGAR)
+            ->whereIn('status', [Financeiro::STATUS_PENDENTE, Financeiro::STATUS_PARCIAL])
+            ->where('data_vencimento', '<', $currentPeriodEnd)
+            ->selectRaw('COALESCE(SUM(valor), 0) as total')
             ->first();
 
         $receitas = (float) ($currentMonthRow->total ?? 0);

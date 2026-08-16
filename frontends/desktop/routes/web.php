@@ -51,6 +51,8 @@ Route::get('/', function () {
 
 Route::get('/branding/empresa/logo', [ConfigurationController::class, 'publicCompanyLogo'])
     ->name('branding.company.logo');
+Route::get('/branding/empresa/favicon.ico', [ConfigurationController::class, 'publicCompanyFavicon'])
+    ->name('branding.company.favicon');
 Route::get('/branding/login/background', [ConfigurationController::class, 'publicLoginBackground'])
     ->name('branding.login.background');
 Route::get('/assinar-documento/{token}', [PublicDocumentSignatureController::class, 'show'])

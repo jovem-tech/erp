@@ -1991,6 +1991,14 @@ a {
     width: min(100vw - 2rem, 420px);
 }
 
+/* Enquanto portado para o final do <body> (ver initDropdowns em desktop.js), o menu
+   sai do stacking context do .desktop-topbar (z-index:1030) e precisa de um z-index
+   próprio maior que o da sidebar (1040) e do overlay (1035) para não renderizar por
+   baixo desses elementos fixos/sticky. */
+.dropdown-menu.is-dropdown-portaled {
+    z-index: 1071;
+}
+
 .desktop-profile-menu {
     width: 320px;
 }

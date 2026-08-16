@@ -650,6 +650,15 @@
             const isFixa = els.classificacaoSelect instanceof HTMLSelectElement && els.classificacaoSelect.value === '1';
             els.vinculosSection.classList.toggle('d-none', isFixa);
 
+            // Fornecedor fica dentro dessa seção: escondê-la sem também tirar o
+            // `required` deixa um campo obrigatório invisível, e o navegador
+            // recusa o submit nativo (HTML5) sem nenhuma mensagem visível pro
+            // operador — daí checar `isFixa` aqui, não só `isPagar`.
+            if (els.fornecedorSelect instanceof HTMLSelectElement) {
+                const isPagar = !els.tipoSelect || els.tipoSelect.value === 'pagar';
+                els.fornecedorSelect.required = isPagar && !isFixa;
+            }
+
             if (isFixa) {
                 if (els.avulsoInput instanceof HTMLInputElement) { els.avulsoInput.checked = true; }
                 clearSelect2Value(els.osSelect);

@@ -1980,9 +1980,16 @@ const DesktopUi = (() => {
                 placeholder = document.createComment('dropdown-menu-placeholder');
                 menu.before(placeholder);
                 document.body.appendChild(menu);
+                // Fora do container original, o menu perde o stacking context dele (ex.: o
+                // z-index:1030 do .desktop-topbar) e passa a competir direto com a sidebar
+                // (1040) e o topbar no nível do <body> — como o z-index padrão do Bootstrap
+                // é só 1000, esses elementos fixos/sticky ficavam por cima. Essa classe
+                // garante que o menu portado sempre vença esse layer fixo.
+                menu.classList.add('is-dropdown-portaled');
             });
 
             toggle.addEventListener('hidden.bs.dropdown', () => {
+                menu.classList.remove('is-dropdown-portaled');
                 if (placeholder instanceof Comment) {
                     placeholder.replaceWith(menu);
                 }

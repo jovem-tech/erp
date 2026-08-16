@@ -109,6 +109,39 @@ class ConfigurationController extends BaseApiController
         return $this->brandingFileResponse($file, public: true);
     }
 
+    public function publicCompanyFavicon(Request $request): Response|JsonResponse
+    {
+        $file = $this->companyProfileService->resolveLogoFile();
+        if ($file === null) {
+            return $this->error(
+                'Logo da empresa nao configurada.',
+                404,
+                'COMPANY_LOGO_NOT_FOUND',
+                null,
+                request: $request
+            );
+        }
+
+        $ico = $this->companyProfileService->resolveFaviconIco();
+        if ($ico === null) {
+            return $this->error(
+                'Nao foi possivel gerar o icone da empresa.',
+                404,
+                'COMPANY_FAVICON_UNAVAILABLE',
+                null,
+                request: $request
+            );
+        }
+
+        return response($ico, 200, array_merge([
+            'Content-Type' => 'image/x-icon',
+            'X-Content-Type-Options' => 'nosniff',
+            'Content-Security-Policy' => "default-src 'none'; base-uri 'none'; sandbox",
+            'X-Frame-Options' => 'DENY',
+            'Content-Disposition' => 'inline; filename=favicon.ico',
+        ], $this->brandingCacheHeaders($file['absolute_path'], public: true)));
+    }
+
     public function publicLoginBackground(Request $request): Response|JsonResponse
     {
         $file = $this->companyProfileService->resolveLoginBackgroundFile();

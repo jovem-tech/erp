@@ -185,6 +185,74 @@ class CompanyProfileService
     }
 
     /**
+     * Recorta a logo da empresa em quadrado e reencoda como .ico (16/32/48px)
+     * para a aba do navegador. Alguns navegadores nao tratam bem um <link
+     * rel="icon"> apontando para um JPEG/PNG retangular servido dinamicamente;
+     * um .ico de verdade, no formato que o favicon historicamente espera,
+     * evita essa ambiguidade.
+     */
+    public function resolveFaviconIco(): ?string
+    {
+        $file = $this->resolveLogoFile();
+        if ($file === null) {
+            return null;
+        }
+
+        $extension = strtolower(pathinfo($file['filename'], PATHINFO_EXTENSION));
+        if (! extension_loaded('gd') || ! in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+            return null;
+        }
+
+        $source = $this->loadGdImage($file['absolute_path'], $extension);
+        if ($source === null) {
+            return null;
+        }
+
+        $ico = $this->buildIcoFromSquareCrop($source);
+        imagedestroy($source);
+
+        return $ico;
+    }
+
+    /**
+     * @param  \GdImage  $source
+     */
+    private function buildIcoFromSquareCrop($source): string
+    {
+        $width = imagesx($source);
+        $height = imagesy($source);
+        $side = min($width, $height);
+        $srcX = (int) round(($width - $side) / 2);
+        $srcY = (int) round(($height - $side) / 2);
+
+        $sizes = [16, 32, 48];
+        $entries = '';
+        $payload = '';
+        $offset = 6 + 16 * count($sizes);
+
+        foreach ($sizes as $size) {
+            $frame = imagecreatetruecolor($size, $size);
+            imagealphablending($frame, false);
+            imagesavealpha($frame, true);
+            $transparent = imagecolorallocatealpha($frame, 0, 0, 0, 127);
+            imagefill($frame, 0, 0, $transparent);
+            imagealphablending($frame, true);
+            imagecopyresampled($frame, $source, 0, 0, $srcX, $srcY, $size, $size, $side, $side);
+
+            ob_start();
+            imagepng($frame);
+            $png = ob_get_clean();
+            imagedestroy($frame);
+
+            $entries .= pack('CCCCvvVV', $size, $size, 0, 0, 1, 32, strlen($png), $offset);
+            $payload .= $png;
+            $offset += strlen($png);
+        }
+
+        return pack('vvv', 0, 1, count($sizes)).$entries.$payload;
+    }
+
+    /**
      * @return array{absolute_path: string, mime_type: string, filename: string}|null
      */
     public function resolveLoginBackgroundFile(): ?array

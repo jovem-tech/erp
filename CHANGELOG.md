@@ -1,5 +1,17 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.31.3.0 — 2026-08-15 14:24
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Dashboard: metrica Pendentes do Resumo financeiro agora soma despesas (financeiro) pendentes/parciais com vencimento ate o mes atual, nunca meses futuros; fonte trocada de OS em aberto para o modulo financeiro
+- **Arquivos:** backend/app/Services/Dashboard/DashboardSummaryService.php,backend/tests/Feature/Api/V1/DashboardSummaryTest.php,documentacao/04-governanca-ai/contexto-sistema.json,documentacao/04-governanca-ai/manifesto-do-sistema.md
+
+## v5.31.2.0 — 2026-08-15 13:40
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Dashboard: metrica Pendentes do Resumo financeiro agora considera apenas mes atual e meses anteriores, nunca meses futuros
+- **Arquivos:** backend/app/Services/Dashboard/DashboardSummaryService.php,backend/tests/Feature/Api/V1/DashboardSummaryTest.php
+
 ## v5.31.1.0 — 2026-08-12 22:34
 - **Tier:** patch
 - **Autor/Agente:** Codex
