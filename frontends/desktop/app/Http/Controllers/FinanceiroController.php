@@ -366,7 +366,7 @@ class FinanceiroController extends DesktopController
             : 'Lançamento criado com sucesso.';
 
         return redirect()
-            ->route('financeiro.index')
+            ->to($this->successTarget($request, null))
             ->with('success', $mensagem);
     }
 
@@ -530,13 +530,20 @@ class FinanceiroController extends DesktopController
     }
 
     /**
-     * Baixa e cancelamento podem ser disparados tanto da listagem quanto da
-     * página de detalhes — o campo oculto "voltar_para=show" preserva a origem.
+     * Baixa, cancelamento e criação podem ser disparados a partir de mais de
+     * uma tela — o campo oculto "voltar_para" preserva a origem ("show" na
+     * página de detalhes, "despesas_fixas" no fluxo de Nova despesa vindo de
+     * Despesas). $financeiro é null em store(), onde o lançamento ainda não
+     * tem id no momento do redirect.
      */
-    private function successTarget(Request $request, int $financeiro): string
+    private function successTarget(Request $request, ?int $financeiro): string
     {
-        if ($request->input('voltar_para') === 'show') {
+        if ($financeiro !== null && $request->input('voltar_para') === 'show') {
             return route('financeiro.show', $financeiro);
+        }
+
+        if ($request->input('voltar_para') === 'despesas_fixas') {
+            return route('financeiro.despesas-fixas.index');
         }
 
         return route('financeiro.index');
