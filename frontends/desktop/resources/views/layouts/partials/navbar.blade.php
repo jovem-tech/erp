@@ -230,9 +230,10 @@
             $canCreateOrder = \App\Support\DesktopSession::can('os', 'criar');
             $canCreateOrcamento = \App\Support\DesktopSession::can('orcamentos', 'criar');
             $canCreateVenda = \App\Support\DesktopSession::can('vendas', 'criar');
+            $canCreateLancamento = \App\Support\DesktopSession::can('financeiro', 'criar');
         @endphp
 
-        @if ($canCreateOrder || $canCreateOrcamento || $canCreateVenda)
+        @if ($canCreateOrder || $canCreateOrcamento || $canCreateVenda || $canCreateLancamento)
             <div class="dropdown desktop-quick-create-dropdown">
                 <button
                     type="button"
@@ -266,6 +267,14 @@
                         <li>
                             <a href="{{ route('vendas.create') }}" class="dropdown-item">
                                 <i class="bi bi-upc-scan me-2"></i>Nova venda
+                            </a>
+                        </li>
+                    @endif
+
+                    @if ($canCreateLancamento)
+                        <li>
+                            <a href="{{ route('financeiro.create') }}" class="dropdown-item">
+                                <i class="bi bi-cash-coin me-2"></i>Novo lançamento
                             </a>
                         </li>
                     @endif
