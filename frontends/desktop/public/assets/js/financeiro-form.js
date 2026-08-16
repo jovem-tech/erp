@@ -19,6 +19,7 @@
         paymentMethodSelect: document.getElementById('financeiroFormaPagamento'),
         accountWrapper: document.getElementById('financeiroContaWrapper'),
         accountSelect: document.getElementById('financeiroConta'),
+        dataPagamentoWrapper: document.getElementById('financeiroDataPagamentoWrapper'),
         osSelect: document.getElementById('financeiroOsId'),
         osHelp: document.getElementById('financeiroOsHelp'),
         avulsoInput: document.getElementById('financeiroAvulso'),
@@ -67,6 +68,21 @@
         }
         syncVisibility();
         syncDefault();
+    };
+
+    // Data do pagamento só faz sentido quando status = pago (fica em branco
+    // e o backend assume hoje). É independente de initFinancialAccount, que
+    // só roda quando existem contas financeiras cadastradas.
+    const initDataPagamento = () => {
+        if (!(els.statusSelect instanceof HTMLSelectElement) || !els.dataPagamentoWrapper) { return; }
+
+        const syncVisibility = () => {
+            els.dataPagamentoWrapper.classList.toggle('d-none', els.statusSelect.value !== 'pago');
+        };
+
+        els.statusSelect.addEventListener('change', syncVisibility);
+        if (window.jQuery) { window.jQuery(els.statusSelect).on('change', syncVisibility); }
+        syncVisibility();
     };
 
     const select2Language = {
@@ -882,6 +898,7 @@
     runInit('initValorMask', initValorMask);
     runInit('initCategoriaSelect', initCategoriaSelect);
     runInit('initFinancialAccount', initFinancialAccount);
+    runInit('initDataPagamento', initDataPagamento);
     runInit('initClientSelect', initClientSelect);
     runInit('initOrderSelect', initOrderSelect);
     runInit('initSupplierSelect', initSupplierSelect);

@@ -44,6 +44,7 @@
         : '');
     $valorRaw = old('valor', (string) ($lancamento['valor'] ?? ''));
     $defaultDataVencimento = old('data_vencimento') ?: ($lancamento['data_vencimento'] ?: date('Y-m-d'));
+    $defaultDataPagamento = old('data_pagamento') ?: (string) ($lancamento['data_pagamento'] ?? '');
     $accountDataset = is_array($accountDataset ?? null) ? $accountDataset : [];
     $financialAccounts = array_values(array_filter(
         is_array($accountDataset['contas'] ?? null) ? $accountDataset['contas'] : [],
@@ -218,6 +219,13 @@
                         @endforeach
                     </select>
                     <p class="small text-secondary mt-1 mb-0">Formas personalizadas ficam disponíveis na hora da baixa.</p>
+                </div>
+
+                <div id="financeiroDataPagamentoWrapper" @class(['d-none' => $status !== 'pago'])>
+                    <label for="financeiroDataPagamento">Data do pagamento</label>
+                    <input type="date" id="financeiroDataPagamento" name="data_pagamento" class="form-control @error('data_pagamento') is-invalid @enderror" value="{{ $defaultDataPagamento }}">
+                    @error('data_pagamento')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                    <small class="text-muted d-block mt-1">Se não informada, a data de hoje é usada.</small>
                 </div>
 
                 @if ($financialAccounts !== [] && ! $hasMovements)
