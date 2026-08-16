@@ -83,8 +83,15 @@
                     @endunless
                     <option value="pagar" @selected($tipo === 'pagar')>A pagar</option>
                 </select>
+                @if ($hasMovements || $tipoLocked)
+                    {{-- <select> desabilitado não é enviado no submit — precisa
+                         desse espelho para o "tipo" continuar chegando no
+                         backend, senão a validação acusa campo obrigatório
+                         ausente mesmo com um valor visível na tela. --}}
+                    <input type="hidden" name="tipo" value="{{ $tipo }}">
+                @endif
                 @if ($tipoLocked)
-                    <input type="hidden" name="tipo" value="pagar">
+                    <input type="hidden" name="voltar_para" value="despesas_fixas">
                     <small class="text-muted d-block mt-1">Esta tela é só para despesas. Para lançar um recebimento, use Lançamentos.</small>
                 @endif
             </div>
