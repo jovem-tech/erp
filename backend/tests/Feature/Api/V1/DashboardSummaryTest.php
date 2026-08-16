@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Api\V1;
 
+use App\Models\Financeiro;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -216,6 +217,79 @@ class DashboardSummaryTest extends TestCase
                 ->assertJsonPath('data.recent_clients.0.nome_razao', 'Ana Comércio LTDA')
                 ->assertJsonPath('data.recent_equipments.0.resumo_tecnico', 'Notebook Acer Nitro')
                 ->assertJsonPath('data.low_stock', []);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_pendentes_sums_pending_expenses_due_up_to_current_month_but_excludes_future_and_paid(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-01-20 10:00:00'));
+
+        try {
+            // Despesa pendente com vencimento em mês anterior (atrasada) — deve contar.
+            Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_PAGAR,
+                'categoria' => 'Aluguel',
+                'descricao' => 'Aluguel atrasado',
+                'valor' => 200,
+                'status' => Financeiro::STATUS_PENDENTE,
+                'data_vencimento' => Carbon::parse('2025-12-15'),
+            ]);
+
+            // Despesa parcial com vencimento no mês atual — deve contar.
+            Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_PAGAR,
+                'categoria' => 'Água',
+                'descricao' => 'Água deste mês, paga parcialmente',
+                'valor' => 300,
+                'status' => Financeiro::STATUS_PARCIAL,
+                'data_vencimento' => Carbon::parse('2026-01-05'),
+            ]);
+
+            // Despesa pendente com vencimento em mês futuro — NUNCA deve contar.
+            Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_PAGAR,
+                'categoria' => 'Internet',
+                'descricao' => 'Internet de mês futuro (repetição)',
+                'valor' => 500,
+                'status' => Financeiro::STATUS_PENDENTE,
+                'data_vencimento' => Carbon::parse('2026-02-10'),
+            ]);
+
+            // Despesa já paga no mês atual — não é mais "pendente", não deve contar.
+            Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_PAGAR,
+                'categoria' => 'Energia',
+                'descricao' => 'Energia deste mês, já paga',
+                'valor' => 150,
+                'status' => Financeiro::STATUS_PAGO,
+                'data_vencimento' => Carbon::parse('2026-01-10'),
+            ]);
+
+            // Conta a RECEBER pendente — é receita, não despesa; não deve contar.
+            Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_RECEBER,
+                'categoria' => 'Serviço',
+                'descricao' => 'A receber deste mês',
+                'valor' => 400,
+                'status' => Financeiro::STATUS_PENDENTE,
+                'data_vencimento' => Carbon::parse('2026-01-12'),
+            ]);
+
+            $user = $this->createUserRecord([
+                'nome' => 'Gerente Pendentes',
+                'email' => 'gerente.pendentes@example.com',
+                'perfil' => 'gerente',
+                'grupo_id' => 3,
+            ]);
+
+            Sanctum::actingAs($user, ['*']);
+
+            $response = $this->getJson('/api/v1/dashboard/summary?ano=2026&equip_mes=1&equip_ano=2026');
+
+            $response->assertOk()
+                ->assertJsonPath('data.charts.financial.pendentes', 500.0);
         } finally {
             Carbon::setTestNow();
         }

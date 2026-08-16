@@ -24,7 +24,7 @@
     <title>{{ $pageTitle ?? 'Desktop ERP' }} | Sistema ERP</title>
     <meta name="description" content="Painel administrativo do Sistema ERP: ordens de serviço, financeiro, estoque e clientes.">
     @if ($desktopCompanyBranding['has_logo'] ?? false)
-        <link rel="icon" href="{{ route('branding.company.logo') }}">
+        <link rel="icon" type="image/x-icon" href="{{ route('branding.company.favicon') }}">
     @else
         <link rel="icon" type="image/svg+xml" href="{{ asset('assets/img/favicon-default.svg') }}">
     @endif

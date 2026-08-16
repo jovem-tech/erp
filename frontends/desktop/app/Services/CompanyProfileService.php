@@ -69,6 +69,14 @@ class CompanyProfileService
     /**
      * @return array{body: string, headers: array<string, string>, status: int}
      */
+    public function downloadPublicFavicon(): array
+    {
+        return $this->apiClient->guestDownload('/configuracoes/empresa/favicon-publico');
+    }
+
+    /**
+     * @return array{body: string, headers: array<string, string>, status: int}
+     */
     public function downloadPublicLoginBackground(): array
     {
         return $this->apiClient->guestDownload('/configuracoes/empresa/login-background-publico');

@@ -62,6 +62,9 @@ Route::prefix('v1')->group(function (): void {
     Route::get('configuracoes/empresa/logo-publica', [ConfigurationController::class, 'publicCompanyLogo'])
         ->middleware('throttle:60,1')
         ->name('api.v1.configuracoes.empresa.logo_publica');
+    Route::get('configuracoes/empresa/favicon-publico', [ConfigurationController::class, 'publicCompanyFavicon'])
+        ->middleware('throttle:60,1')
+        ->name('api.v1.configuracoes.empresa.favicon_publico');
     Route::get('configuracoes/empresa/login-background-publico', [ConfigurationController::class, 'publicLoginBackground'])
         ->middleware('throttle:60,1')
         ->name('api.v1.configuracoes.empresa.login_background_publico');

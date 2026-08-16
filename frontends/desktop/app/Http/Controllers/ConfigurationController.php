@@ -200,6 +200,17 @@ class ConfigurationController extends DesktopController
         return response($download['body'], $download['status'], $download['headers']);
     }
 
+    public function publicCompanyFavicon(): \Illuminate\Http\Response
+    {
+        try {
+            $download = $this->companyProfileService->downloadPublicFavicon();
+        } catch (ApiRequestException $exception) {
+            abort($exception->statusCode() > 0 ? $exception->statusCode() : 404, $exception->getMessage());
+        }
+
+        return response($download['body'], $download['status'], $download['headers']);
+    }
+
     public function publicLoginBackground(): \Illuminate\Http\Response
     {
         try {

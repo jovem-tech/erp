@@ -16,7 +16,7 @@
     <title>{{ $pageTitle ?? 'Acesso' }} | {{ $guestBrandingName !== '' ? $guestBrandingName : 'Sistema ERP' }}</title>
     <meta name="description" content="Acesso ao {{ $guestBrandingName !== '' ? $guestBrandingName : 'Sistema ERP' }}, o sistema de gestão de ordens de serviço, financeiro e estoque para assistências técnicas.">
     @if ($branding['has_logo'] ?? false)
-        <link rel="icon" href="{{ route('branding.company.logo') }}">
+        <link rel="icon" type="image/x-icon" href="{{ route('branding.company.favicon') }}">
     @else
         <link rel="icon" type="image/svg+xml" href="{{ asset('assets/img/favicon-default.svg') }}">
     @endif
