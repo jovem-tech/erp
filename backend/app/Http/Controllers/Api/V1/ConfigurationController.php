@@ -133,13 +133,19 @@ class ConfigurationController extends BaseApiController
             );
         }
 
+        // A URL do favicon permanece estavel quando a logo e substituida.
+        // Permite cache, mas exige revalidacao para que a nova marca seja
+        // exibida imediatamente na proxima navegacao.
+        $cacheHeaders = $this->brandingCacheHeaders($file['absolute_path'], public: true);
+        $cacheHeaders['Cache-Control'] = 'public, no-cache, must-revalidate';
+
         return response($ico, 200, array_merge([
             'Content-Type' => 'image/x-icon',
             'X-Content-Type-Options' => 'nosniff',
             'Content-Security-Policy' => "default-src 'none'; base-uri 'none'; sandbox",
             'X-Frame-Options' => 'DENY',
             'Content-Disposition' => 'inline; filename=favicon.ico',
-        ], $this->brandingCacheHeaders($file['absolute_path'], public: true)));
+        ], $cacheHeaders));
     }
 
     public function publicLoginBackground(Request $request): Response|JsonResponse
