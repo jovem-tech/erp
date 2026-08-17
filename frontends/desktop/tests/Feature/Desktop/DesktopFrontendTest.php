@@ -728,6 +728,54 @@ class DesktopFrontendTest extends TestCase
         });
     }
 
+    public function test_orders_index_only_defaults_to_open_scope_on_a_bare_visit_not_after_filter_form_submission(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), $this->ordersIndexFixture(financeiroTituloId: null), [
+            'http://127.0.0.1:8000/api/v1/users*' => Http::response(['status' => 'success', 'data' => ['users' => []], 'error' => null, 'meta' => []]),
+            'http://127.0.0.1:8000/api/v1/knowledge/os-flow*' => Http::response(['status' => 'success', 'data' => ['statuses' => [], 'transitions' => []], 'error' => null, 'meta' => []]),
+        ]));
+
+        $session = $this->desktopSession([
+            'dashboard' => ['visualizar'],
+            'os' => ['visualizar'],
+        ]);
+
+        // Visita crua (ex.: clique no menu lateral) continua caindo no escopo
+        // operacional padrao "em posse da assistencia".
+        $this->withSession($session)->get('/os')->assertOk();
+
+        Http::assertSent(static function ($request): bool {
+            return str_contains($request->url(), '/api/v1/orders')
+                && ! str_contains($request->url(), 'status-catalog')
+                && str_contains($request->url(), 'status_scope=open');
+        });
+
+        // Submeter o form de filtros com tudo em branco (ex.: escolher "Todas
+        // as macrofases" e clicar Filtrar) e' um pedido explicito de ver TODAS
+        // as OS, incluindo as ja encerradas — nao deve reaplicar o escopo
+        // "aberto" so porque os campos ficaram vazios.
+        $this->withSession($session)
+            ->get('/os?'.http_build_query([
+                'search' => '',
+                'status' => '',
+                'grupo_macro' => '',
+                'per_page' => 15,
+                'technician_id' => '',
+                'data_abertura_de' => '',
+                'data_abertura_ate' => '',
+                'valor_min' => '',
+                'valor_max' => '',
+            ]))
+            ->assertOk();
+
+        Http::assertSent(static function ($request): bool {
+            return str_contains($request->url(), '/api/v1/orders')
+                && ! str_contains($request->url(), 'status-catalog')
+                && str_contains($request->url(), 'per_page=15')
+                && ! str_contains($request->url(), 'status_scope=open');
+        });
+    }
+
     public function test_orders_index_shows_financeiro_link_in_row_actions_when_linked_and_permitted(): void
     {
         Http::fake(array_merge($this->notificationsFixture(), $this->ordersIndexFixture(financeiroTituloId: 63), [
@@ -752,6 +800,106 @@ class DesktopFrontendTest extends TestCase
             ->assertSee(route('orders.audit', 501), false)
             ->assertSee('Ver lançamento financeiro')
             ->assertSee(route('financeiro.show', 63), false);
+    }
+
+    public function test_orders_index_ajax_request_returns_table_html_fragment_instead_of_full_page(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), $this->ordersIndexFixture(financeiroTituloId: null), [
+            'http://127.0.0.1:8000/api/v1/users*' => Http::response(['status' => 'success', 'data' => ['users' => []], 'error' => null, 'meta' => []]),
+            'http://127.0.0.1:8000/api/v1/knowledge/os-flow*' => Http::response(['status' => 'success', 'data' => ['statuses' => [], 'transitions' => []], 'error' => null, 'meta' => []]),
+        ]));
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'dashboard' => ['visualizar'],
+                'os' => ['visualizar'],
+            ]))
+            ->get('/os?search=notebook', [
+                'X-Requested-With' => 'XMLHttpRequest',
+            ]);
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'application/json');
+
+        $payload = $response->json();
+        $this->assertIsString($payload['html'] ?? null);
+        $this->assertSame(1, $payload['total'] ?? null);
+
+        // A resposta AJAX e so o fragmento da tabela — nao deve trazer o shell
+        // da pagina (layout/menu) nem duplicar o formulario de filtros.
+        $this->assertStringNotContainsString('<html', $payload['html']);
+        $this->assertStringNotContainsString('id="osFilterPanel"', $payload['html']);
+        $this->assertStringContainsString('OS26070002', $payload['html']);
+    }
+
+    public function test_orders_index_shows_pagination_above_and_below_the_table_with_new_per_page_sizes(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/status-catalog' => Http::response([
+                'status' => 'success',
+                'data' => ['statuses' => []],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orders*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'orders' => [
+                        [
+                            'id' => 3614,
+                            'numero_os' => 'OS26070002',
+                            'numero_os_legado' => '',
+                            'cliente_nome' => 'Cliente Exemplo',
+                            'cliente_telefone' => '11999998888',
+                            'equipamento_id' => 204,
+                            'equipamento_resumo_tecnico' => 'Notebook Dell Inspiron 15',
+                            'equipamento_resumo_curto' => 'Notebook Dell Inspiron 15',
+                            'equipamento_numero_serie' => 'ABC123',
+                            'equipamento_foto_id' => 0,
+                            'equipamento_foto_url' => null,
+                            'status' => 'triagem',
+                            'status_nome' => 'Triagem',
+                            'status_cor' => '#64748b',
+                            'prioridade' => 'normal',
+                            'data_abertura' => '2026-07-03T08:00:00-03:00',
+                            'data_entrada' => '2026-07-03T08:00:00-03:00',
+                            'data_previsao' => '2026-07-10',
+                            'data_conclusao' => null,
+                            'data_entrega' => null,
+                            'prazo' => [],
+                            'orcamento' => null,
+                            'proximas_etapas' => [],
+                            'valor_final' => null,
+                            'valor_recebido' => null,
+                            'saldo' => null,
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => ['pagination' => ['current_page' => 2, 'last_page' => 5, 'from' => 16, 'to' => 30, 'total' => 71]],
+            ]),
+            'http://127.0.0.1:8000/api/v1/users*' => Http::response(['status' => 'success', 'data' => ['users' => []], 'error' => null, 'meta' => []]),
+            'http://127.0.0.1:8000/api/v1/knowledge/os-flow*' => Http::response(['status' => 'success', 'data' => ['statuses' => [], 'transitions' => []], 'error' => null, 'meta' => []]),
+        ]));
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'dashboard' => ['visualizar'],
+                'os' => ['visualizar'],
+            ]))
+            ->get('/os?page=2');
+
+        $response->assertOk();
+
+        $content = $response->getContent();
+        $this->assertSame(2, substr_count($content, 'aria-label="Paginação"'));
+
+        $response
+            ->assertSee('<option value="15"', false)
+            ->assertSee('<option value="30"', false)
+            ->assertSee('<option value="60"', false)
+            ->assertSee('<option value="100"', false)
+            ->assertSee('<option value="500"', false);
     }
 
     public function test_orders_index_hides_financeiro_link_in_row_actions_without_permission(): void

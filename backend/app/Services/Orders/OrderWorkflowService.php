@@ -358,6 +358,14 @@ class OrderWorkflowService
                 'equipamentos.desktop_modalidade',
                 'equipamentos.status_operacional',
                 'equipamentos.status',
+                // resumo_tecnico costuma vir vazio (so e' preenchido pelo fluxo
+                // novo de cadastro — ver EquipmentWorkflowService::buildTechnicalSummary());
+                // no acervo existente quem carrega tipo/marca/modelo sao estas
+                // 3 tabelas de catalogo, ja unidas em baseSummaryQuery(). Sem elas
+                // a busca por "notebook", "dell", "e6420" etc. nao encontrava nada.
+                'equipamentos_tipos.nome',
+                'equipamentos_marcas.nome',
+                'equipamentos_modelos.nome',
             ], $searchTerm);
 
             $this->orWhereLikeColumns($subQuery, [
@@ -4846,7 +4854,10 @@ class OrderWorkflowService
             return 15;
         }
 
-        return min($perPage, 50);
+        // Teto alinhado as opcoes de "Itens por pagina" da listagem de OS
+        // (15/30/60/100/500 — ver orders/index.blade.php). Evita que alguem
+        // force um per_page arbitrariamente grande via querystring.
+        return min($perPage, 500);
     }
 
     private function normalizeNullableInteger(mixed $value): ?int

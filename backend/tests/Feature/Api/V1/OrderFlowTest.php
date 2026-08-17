@@ -451,6 +451,63 @@ class OrderFlowTest extends TestCase
         $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $discardedOrder));
     }
 
+    public function test_index_search_matches_equipment_type_brand_and_model_even_without_resumo_tecnico(): void
+    {
+        [$manager, $techA, , $clientA] = $this->seedAdminOrderActors();
+
+        // Acervo real: resumo_tecnico so e' preenchido pelo fluxo novo de
+        // cadastro (EquipmentWorkflowService::buildTechnicalSummary()) — a
+        // maioria dos equipamentos existentes tem essa coluna vazia e depende
+        // do catalogo (tipo/marca/modelo) pra exibicao E busca.
+        $matchingEquipment = $this->createEquipmentRecord($clientA, [
+            'tipo_id' => 3,
+            'marca_id' => 3,
+            'modelo_id' => 3,
+            'resumo_tecnico' => '',
+            'numero_serie' => 'SER-APPLE-1',
+        ]);
+
+        $otherEquipment = $this->createEquipmentRecord($clientA, [
+            'tipo_id' => 1,
+            'marca_id' => 1,
+            'modelo_id' => 1,
+            'resumo_tecnico' => '',
+            'numero_serie' => 'SER-DELL-1',
+        ]);
+
+        $matchingOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060025',
+            'cliente_id' => $clientA,
+            'equipamento_id' => $matchingEquipment,
+            'tecnico_id' => $techA->id,
+            'status' => 'triagem',
+        ]);
+
+        $otherOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060026',
+            'cliente_id' => $clientA,
+            'equipamento_id' => $otherEquipment,
+            'tecnico_id' => $techA->id,
+            'status' => 'triagem',
+        ]);
+
+        $token = $this->loginAndGetToken($manager->email);
+
+        foreach (['apple', 'iphone', 'smartphone'] as $term) {
+            $response = $this->withHeader('Authorization', 'Bearer '.$token)
+                ->getJson('/api/v1/orders?'.http_build_query(['search' => $term]));
+
+            $response->assertOk();
+            $orders = collect($response->json('data.orders', []));
+
+            $this->assertTrue(
+                $orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $matchingOrder),
+                "search term '{$term}' should match the Apple/iPhone/Smartphone equipment via the catalog join"
+            );
+            $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $otherOrder));
+        }
+    }
+
     public function test_index_grupo_macro_multi_filters_by_any_of_the_selected_macro_groups(): void
     {
         [$manager, $techA, , $clientA, , $equipmentA] = $this->seedAdminOrderActors();
