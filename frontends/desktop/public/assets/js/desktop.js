@@ -1931,8 +1931,10 @@ const DesktopUi = (() => {
         });
     };
 
-    const initPhotoFallbacks = () => {
-        document.querySelectorAll('[data-photo-fallback]').forEach((img) => {
+    const initPhotoFallbacks = (container = document) => {
+        const scope = container instanceof Document || container instanceof Element ? container : document;
+
+        scope.querySelectorAll('[data-photo-fallback]').forEach((img) => {
             img.addEventListener('error', () => {
                 const frame = img.closest('a') ?? img;
                 frame.classList.add('d-none');
@@ -2035,6 +2037,7 @@ const DesktopUi = (() => {
         refreshSelect2,
         refreshDropdowns: initDropdowns,
         refreshPhotoViewers: initPhotoViewers,
+        refreshPhotoFallbacks: initPhotoFallbacks,
         logError,
         sanitizeForLog,
     };

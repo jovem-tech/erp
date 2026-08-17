@@ -36,7 +36,7 @@ class OrderController extends DesktopController
         private readonly OrcamentoService $orcamentoService
     ) {}
 
-    public function index(Request $request): View
+    public function index(Request $request): View|JsonResponse
     {
         $filters = [
             'search' => trim((string) $request->query('search', '')),
@@ -59,7 +59,7 @@ class OrderController extends DesktopController
             'per_page' => (int) $request->query('per_page', 15),
         ];
 
-        if ($this->shouldDefaultToOpenScope($filters)) {
+        if ($this->shouldDefaultToOpenScope($request, $filters)) {
             $filters['status_scope'] = 'open';
         }
 
@@ -69,6 +69,22 @@ class OrderController extends DesktopController
             $filters,
             static fn ($value) => $value !== '' && $value !== 0 && $value !== []
         ));
+
+        // Busca dinamica, paginacao e troca de itens por pagina disparam este
+        // mesmo endpoint via fetch (ver assets/js/orders-dynamic-list.js), com o
+        // header padrao que $request->ajax() reconhece. Devolve so o HTML da
+        // tabela/paginacao pronto pra substituir #osTableContainer, sem recarregar
+        // o resto da pagina (filtros avancados, sidebar etc.).
+        if ($request->ajax()) {
+            return response()->json([
+                'html' => view('orders._table', [
+                    'orders' => $result['items'],
+                    'pagination' => $result['pagination'],
+                    'filters' => $filters,
+                ])->render(),
+                'total' => (int) ($result['pagination']['total'] ?? 0),
+            ]);
+        }
 
         return view('orders.index', [
             'pageTitle' => 'Ordens de Serviço',
@@ -82,21 +98,30 @@ class OrderController extends DesktopController
     }
 
     /**
+     * O escopo "em posse da assistencia" (status_scope=open) so deve ser o
+     * padrao na primeira visita a tela — URL de fato sem nenhum parametro do
+     * form de filtros (ex.: clicou no menu lateral). Antes, este metodo
+     * decidia isso so pelo VALOR dos filtros (tudo vazio = aplica o padrao),
+     * o que reaplicava o escopo "aberto" mesmo depois do usuario submeter o
+     * form de proposito com tudo limpo (ex.: escolher "Todas as macrofases" e
+     * clicar Filtrar) — o pedido explicito de ver todas as OS (incluindo as
+     * encerradas) era silenciosamente ignorado porque os campos ficavam
+     * vazios do mesmo jeito. Agora verifica PRESENCA na querystring: um
+     * campo do form presente (mesmo que vazio) prova que houve submissao.
+     *
      * @param  array<string, mixed>  $filters
      */
-    private function shouldDefaultToOpenScope(array $filters): bool
+    private function shouldDefaultToOpenScope(Request $request, array $filters): bool
     {
-        return trim((string) ($filters['status_scope'] ?? '')) === ''
-            && trim((string) ($filters['search'] ?? '')) === ''
-            && trim((string) ($filters['status'] ?? '')) === ''
+        $formWasSubmitted = $request->hasAny([
+            'search', 'status', 'grupo_macro', 'per_page', 'technician_id',
+            'data_abertura_de', 'data_abertura_ate', 'valor_min', 'valor_max',
+        ]);
+
+        return ! $formWasSubmitted
+            && trim((string) ($filters['status_scope'] ?? '')) === ''
             && (int) ($filters['client_id'] ?? 0) <= 0
             && (int) ($filters['equipment_id'] ?? 0) <= 0
-            && (int) ($filters['technician_id'] ?? 0) <= 0
-            && trim((string) ($filters['grupo_macro'] ?? '')) === ''
-            && trim((string) ($filters['data_abertura_de'] ?? '')) === ''
-            && trim((string) ($filters['data_abertura_ate'] ?? '')) === ''
-            && trim((string) ($filters['valor_min'] ?? '')) === ''
-            && trim((string) ($filters['valor_max'] ?? '')) === ''
             && ($filters['status_multi'] ?? []) === []
             && ($filters['grupo_macro_multi'] ?? []) === [];
     }

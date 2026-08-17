@@ -8,7 +8,6 @@
     if (!trigger || !modalEl) return;
 
     const countChip = document.getElementById('osBulkSelectionCount');
-    const selectAll = document.getElementById('osSelectAll');
     const form = document.getElementById('batchStatusForm');
     const errorBox = document.getElementById('batchStatusError');
     const submitBtn = document.getElementById('batchStatusSubmit');
@@ -58,10 +57,17 @@
         }
     };
 
+    // #osSelectAll fica dentro da tabela e e recriado a cada refresh dinamico
+    // (ver orders-dynamic-list.js) — busca-lo ao vivo em vez de guardar a
+    // referencia do node original, que passa a apontar pra um elemento morto
+    // assim que a busca/paginacao substitui o HTML do #osTableContainer.
+    const selectAllCheckbox = () => document.getElementById('osSelectAll');
+
     const updateSelection = () => {
         const items = selected();
         const total = items.length;
         const all = checkboxes();
+        const selectAll = selectAllCheckbox();
 
         if (countChip instanceof HTMLElement) {
             countChip.textContent = `${total} selecionada${total === 1 ? '' : 's'}`;
@@ -76,15 +82,24 @@
     };
 
     document.addEventListener('change', (event) => {
-        if (event.target instanceof HTMLElement && event.target.matches('.order-select')) {
+        if (!(event.target instanceof HTMLElement)) {
+            return;
+        }
+
+        if (event.target.matches('.order-select')) {
+            updateSelection();
+        }
+
+        if (event.target.id === 'osSelectAll' && event.target instanceof HTMLInputElement) {
+            const shouldCheck = event.target.checked;
+            checkboxes().forEach((item) => { item.checked = shouldCheck; });
             updateSelection();
         }
     });
 
-    selectAll?.addEventListener('change', () => {
-        checkboxes().forEach((item) => { item.checked = selectAll.checked; });
-        updateSelection();
-    });
+    // Depois de uma busca/paginacao dinamica as linhas (e os checkboxes) sao
+    // trocadas por completo — recalcula contagem/estado dos botoes em lote.
+    document.addEventListener('os-table:refreshed', updateSelection);
 
     const renderBatchList = () => {
         idsContainer?.replaceChildren(...[...batchItems.keys()].map((id) => {

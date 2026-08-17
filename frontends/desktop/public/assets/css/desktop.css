@@ -3028,6 +3028,12 @@ a {
     overflow-y: auto;
 }
 
+#osTableContainer.is-os-table-loading {
+    opacity: 0.5;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+}
+
 .os-select-column {
     width: 2.5rem;
 }
