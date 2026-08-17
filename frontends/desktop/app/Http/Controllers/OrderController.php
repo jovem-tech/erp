@@ -50,6 +50,11 @@ class OrderController extends DesktopController
             'data_abertura_ate' => trim((string) $request->query('data_abertura_ate', '')),
             'valor_min' => trim((string) $request->query('valor_min', '')),
             'valor_max' => trim((string) $request->query('valor_max', '')),
+            // Selecao multipla via checkboxes (filtros avancados): independente dos
+            // campos 'status'/'grupo_macro' acima (selects de valor unico), somam-se
+            // a eles (AND) quando os dois mecanismos forem preenchidos juntos.
+            'status_multi' => $this->normalizeQueryList($request->query('status_multi')),
+            'grupo_macro_multi' => $this->normalizeQueryList($request->query('grupo_macro_multi')),
             'page' => (int) $request->query('page', 1),
             'per_page' => (int) $request->query('per_page', 15),
         ];
@@ -60,7 +65,10 @@ class OrderController extends DesktopController
 
         $statuses = $this->resolveStatusCatalog();
         $filters = $this->syncStatusMacroFilters($filters, $statuses);
-        $result = $this->orderService->paginate(array_filter($filters, static fn ($value) => $value !== '' && $value !== 0));
+        $result = $this->orderService->paginate(array_filter(
+            $filters,
+            static fn ($value) => $value !== '' && $value !== 0 && $value !== []
+        ));
 
         return view('orders.index', [
             'pageTitle' => 'Ordens de Serviço',
@@ -88,7 +96,27 @@ class OrderController extends DesktopController
             && trim((string) ($filters['data_abertura_de'] ?? '')) === ''
             && trim((string) ($filters['data_abertura_ate'] ?? '')) === ''
             && trim((string) ($filters['valor_min'] ?? '')) === ''
-            && trim((string) ($filters['valor_max'] ?? '')) === '';
+            && trim((string) ($filters['valor_max'] ?? '')) === ''
+            && ($filters['status_multi'] ?? []) === []
+            && ($filters['grupo_macro_multi'] ?? []) === [];
+    }
+
+    /**
+     * Normaliza o valor de um filtro de selecao multipla (checkboxes) vindo da
+     * querystring (ex.: `grupo_macro_multi[]=execucao&grupo_macro_multi[]=qualidade`).
+     *
+     * @return array<int, string>
+     */
+    private function normalizeQueryList(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return array_values(array_unique(array_filter(
+            array_map(static fn ($item): string => trim((string) $item), $value),
+            static fn (string $item): bool => $item !== ''
+        )));
     }
 
     /**

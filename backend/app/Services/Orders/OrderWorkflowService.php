@@ -83,8 +83,13 @@ class OrderWorkflowService
 
         $status = trim((string) ($filters['status'] ?? ''));
         $macroGroup = trim((string) ($filters['grupo_macro'] ?? ''));
+        // Contraparte de selecao multipla dos filtros acima (checkboxes da tela de OS,
+        // ver desktop OrderController::index()). Independentes de $status/$macroGroup:
+        // aplicados juntos (AND) quando o chamador preencher os dois mecanismos.
+        $statusMulti = $this->normalizeListFilter($filters['status_multi'] ?? null);
+        $macroGroupMulti = $this->normalizeListFilter($filters['grupo_macro_multi'] ?? null);
 
-        $this->applyOperationalStatusScope($query, $filters, $status, $macroGroup);
+        $this->applyOperationalStatusScope($query, $filters, $status, $macroGroup, $statusMulti, $macroGroupMulti);
 
         $search = trim((string) ($filters['search'] ?? $filters['q'] ?? ''));
         if ($search !== '') {
@@ -93,6 +98,10 @@ class OrderWorkflowService
 
         if ($status !== '') {
             $query->where('os.status', $status);
+        }
+
+        if ($statusMulti !== []) {
+            $query->whereIn('os.status', $statusMulti);
         }
 
         $technicianId = (int) ($filters['technician_id'] ?? 0);
@@ -112,6 +121,10 @@ class OrderWorkflowService
 
         if ($macroGroup !== '') {
             $query->where('os_status.grupo_macro', $macroGroup);
+        }
+
+        if ($macroGroupMulti !== []) {
+            $query->whereIn('os_status.grupo_macro', $macroGroupMulti);
         }
 
         $openingFrom = $this->normalizeDateValue($filters['data_abertura_de'] ?? null);
@@ -170,11 +183,19 @@ class OrderWorkflowService
 
     /**
      * @param  array<string, mixed>  $filters
+     * @param  array<int, string>  $statusMulti
+     * @param  array<int, string>  $macroGroupMulti
      */
-    private function applyOperationalStatusScope(Builder $query, array $filters, string $status, string $macroGroup): void
-    {
+    private function applyOperationalStatusScope(
+        Builder $query,
+        array $filters,
+        string $status,
+        string $macroGroup,
+        array $statusMulti = [],
+        array $macroGroupMulti = []
+    ): void {
         $statusScope = strtolower(trim((string) ($filters['status_scope'] ?? '')));
-        if ($statusScope === '' || $status !== '' || $macroGroup !== '') {
+        if ($statusScope === '' || $status !== '' || $macroGroup !== '' || $statusMulti !== [] || $macroGroupMulti !== []) {
             return;
         }
 
@@ -4860,6 +4881,23 @@ class OrderWorkflowService
         }
 
         return Carbon::parse((string) $value)->toDateString();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function normalizeListFilter(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        return collect($value)
+            ->map(static fn (mixed $item): string => trim((string) $item))
+            ->filter(static fn (string $item): bool => $item !== '')
+            ->unique()
+            ->values()
+            ->all();
     }
 
     private function normalizeDecimalValue(mixed $value): ?string

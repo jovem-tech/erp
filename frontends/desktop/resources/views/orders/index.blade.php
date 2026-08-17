@@ -3,11 +3,15 @@
 @section('content')
     @php
         $usesOpenQueueScope = trim((string) ($filters['status_scope'] ?? '')) === 'open';
+        $selectedGrupoMacroMulti = is_array($filters['grupo_macro_multi'] ?? null) ? $filters['grupo_macro_multi'] : [];
+        $selectedStatusMulti = is_array($filters['status_multi'] ?? null) ? $filters['status_multi'] : [];
         $hasAdvancedFilters = (int) ($filters['technician_id'] ?? 0) > 0
             || trim((string) ($filters['data_abertura_de'] ?? '')) !== ''
             || trim((string) ($filters['data_abertura_ate'] ?? '')) !== ''
             || trim((string) ($filters['valor_min'] ?? '')) !== ''
-            || trim((string) ($filters['valor_max'] ?? '')) !== '';
+            || trim((string) ($filters['valor_max'] ?? '')) !== ''
+            || $selectedGrupoMacroMulti !== []
+            || $selectedStatusMulti !== [];
         $hasBasicFilters = trim((string) ($filters['search'] ?? '')) !== ''
             || trim((string) ($filters['status'] ?? '')) !== ''
             || trim((string) ($filters['grupo_macro'] ?? '')) !== '';
@@ -21,6 +25,8 @@
             trim((string) ($filters['data_abertura_ate'] ?? '')) !== '',
             trim((string) ($filters['valor_min'] ?? '')) !== '',
             trim((string) ($filters['valor_max'] ?? '')) !== '',
+            $selectedGrupoMacroMulti !== [],
+            $selectedStatusMulti !== [],
         ]));
         $activeAdvancedFilterCount = count(array_filter([
             (int) ($filters['technician_id'] ?? 0) > 0,
@@ -28,7 +34,31 @@
             trim((string) ($filters['data_abertura_ate'] ?? '')) !== '',
             trim((string) ($filters['valor_min'] ?? '')) !== '',
             trim((string) ($filters['valor_max'] ?? '')) !== '',
+            $selectedGrupoMacroMulti !== [],
+            $selectedStatusMulti !== [],
         ]));
+
+        // Pares de macrofases que definem os dois atalhos de "situacao da OS" dos
+        // filtros avancados: juntos cobrem os 10 grupos macro do fluxo (ver
+        // App\Models\OrderStatus no backend). "Em andamento" e tudo que ainda nao
+        // chegou a um desfecho; "Sem reparo" agrupa os tres desfechos possiveis
+        // (encerrado, cancelado ou finalizado sem reparo).
+        $macroPresetEmAndamento = ['recepcao', 'diagnostico', 'orcamento', 'execucao', 'qualidade', 'interrupcao', 'concluido'];
+        $macroPresetSemReparo = ['finalizado_sem_reparo', 'encerrado', 'cancelado'];
+        $isMacroPresetActive = static function (array $preset) use ($selectedGrupoMacroMulti): bool {
+            return count($preset) === count($selectedGrupoMacroMulti)
+                && array_diff($preset, $selectedGrupoMacroMulti) === [];
+        };
+
+        $macroGroupLabel = static fn (string $group): string => ucfirst(str_replace('_', ' ', $group));
+
+        $statusByMacroGroup = [];
+        foreach (($macroGroupOptions ?? []) as $macroGroupCode) {
+            $statusByMacroGroup[$macroGroupCode] = array_values(array_filter(
+                $statusOptions ?? [],
+                static fn (array $statusOption): bool => ($statusOption['grupo_macro'] ?? '') === $macroGroupCode
+            ));
+        }
 
         $statusPlaceholder = $usesOpenQueueScope ? 'Padrão: em posse da assistência' : 'Todos os status';
 
@@ -232,6 +262,77 @@
                         <input type="number" step="0.01" min="0" id="valor_max" name="valor_max" class="form-control" value="{{ $filters['valor_max'] ?? '' }}" placeholder="R$ 0,00">
                     </div>
                 </div>
+
+                @if (! empty($macroGroupOptions))
+                    <div class="desktop-order-quickfilters">
+                        <div class="desktop-order-quickfilters-header">
+                            <span class="desktop-order-quickfilters-label">Situação da OS</span>
+                            <div class="desktop-order-quickfilters-actions">
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-light desktop-order-quickset-btn {{ $isMacroPresetActive($macroPresetEmAndamento) ? 'is-active' : '' }}"
+                                    data-order-macro-preset="{{ implode(',', $macroPresetEmAndamento) }}"
+                                >
+                                    <i class="bi bi-arrow-repeat me-1"></i>Abertas · Em andamento
+                                </button>
+                                <button
+                                    type="button"
+                                    class="btn btn-sm btn-outline-light desktop-order-quickset-btn {{ $isMacroPresetActive($macroPresetSemReparo) ? 'is-active' : '' }}"
+                                    data-order-macro-preset="{{ implode(',', $macroPresetSemReparo) }}"
+                                >
+                                    <i class="bi bi-x-circle me-1"></i>Abertas · Sem reparo
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="desktop-order-multiselect-grid">
+                            <div>
+                                <label>Macrofases (seleção múltipla)</label>
+                                <div class="desktop-search-scope-checklist desktop-order-macro-checklist" data-order-macro-checklist>
+                                    @foreach ($macroGroupOptions as $macroGroupCode)
+                                        <label class="desktop-search-scope-item">
+                                            <input
+                                                type="checkbox"
+                                                class="form-check-input"
+                                                name="grupo_macro_multi[]"
+                                                value="{{ $macroGroupCode }}"
+                                                data-order-macro-checkbox
+                                                @checked(in_array($macroGroupCode, $selectedGrupoMacroMulti, true))
+                                            >
+                                            <span>{{ $macroGroupLabel($macroGroupCode) }}</span>
+                                        </label>
+                                    @endforeach
+                                </div>
+                            </div>
+
+                            @if (! empty($statusOptions))
+                                <div>
+                                    <label>Status (seleção múltipla)</label>
+                                    <div class="desktop-order-status-checklist">
+                                        @foreach ($statusByMacroGroup as $macroGroupCode => $groupStatuses)
+                                            @continue(empty($groupStatuses))
+                                            <div class="desktop-order-status-group">
+                                                <span class="desktop-order-status-group-label">{{ $macroGroupLabel($macroGroupCode) }}</span>
+                                                @foreach ($groupStatuses as $statusOption)
+                                                    <label class="desktop-search-scope-item">
+                                                        <input
+                                                            type="checkbox"
+                                                            class="form-check-input"
+                                                            name="status_multi[]"
+                                                            value="{{ $statusOption['codigo'] ?? '' }}"
+                                                            @checked(in_array($statusOption['codigo'] ?? '', $selectedStatusMulti, true))
+                                                        >
+                                                        <span>{{ $statusOption['nome'] ?? ($statusOption['codigo'] ?? '') }}</span>
+                                                    </label>
+                                                @endforeach
+                                            </div>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            @endif
+                        </div>
+                    </div>
+                @endif
             </div>
         </form>
     </section>
@@ -769,6 +870,31 @@
             }
 
             syncFilters('initial');
+        });
+    </script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Atalhos de "Situação da OS": marcam de uma vez o conjunto de
+            // checkboxes de macrofase correspondente ao preset e enviam o form.
+            // Independente do bloco acima (sync status/macrofase de valor único) —
+            // aqui não há nada para sincronizar, só aplicar o preset e filtrar.
+            const form = document.getElementById('osFilterPanel');
+            const macroCheckboxes = document.querySelectorAll('[data-order-macro-checkbox]');
+            const presetButtons = document.querySelectorAll('[data-order-macro-preset]');
+
+            if (!(form instanceof HTMLFormElement) || macroCheckboxes.length === 0 || presetButtons.length === 0) {
+                return;
+            }
+
+            presetButtons.forEach((button) => {
+                button.addEventListener('click', () => {
+                    const presetGroups = (button.dataset.orderMacroPreset || '').split(',').filter(Boolean);
+                    macroCheckboxes.forEach((checkbox) => {
+                        checkbox.checked = presetGroups.includes(checkbox.value);
+                    });
+                    form.requestSubmit();
+                });
+            });
         });
     </script>
     @if (file_exists(public_path('assets/js/orders-list.js')))
