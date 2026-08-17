@@ -451,6 +451,90 @@ class OrderFlowTest extends TestCase
         $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $discardedOrder));
     }
 
+    public function test_index_grupo_macro_multi_filters_by_any_of_the_selected_macro_groups(): void
+    {
+        [$manager, $techA, , $clientA, , $equipmentA] = $this->seedAdminOrderActors();
+
+        $recepcaoOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060019',
+            'cliente_id' => $clientA,
+            'equipamento_id' => $equipmentA,
+            'tecnico_id' => $techA->id,
+            'status' => 'triagem',
+        ]);
+
+        $execucaoOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060020',
+            'cliente_id' => $clientA,
+            'equipamento_id' => $equipmentA,
+            'tecnico_id' => $techA->id,
+            'status' => 'aguardando_reparo',
+        ]);
+
+        $encerradoOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060021',
+            'cliente_id' => $clientA,
+            'equipamento_id' => $equipmentA,
+            'tecnico_id' => $techA->id,
+            'status' => 'entregue_reparado_pago',
+        ]);
+
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orders?'.http_build_query(['grupo_macro_multi' => ['recepcao', 'execucao']]));
+
+        $response->assertOk()->assertJsonPath('meta.pagination.total', 2);
+
+        $orders = collect($response->json('data.orders', []));
+
+        $this->assertTrue($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $recepcaoOrder));
+        $this->assertTrue($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $execucaoOrder));
+        $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $encerradoOrder));
+    }
+
+    public function test_index_status_multi_filters_by_any_of_the_selected_status_codes(): void
+    {
+        [$manager, $techA, , $clientA, , $equipmentA] = $this->seedAdminOrderActors();
+
+        $triagemOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060022',
+            'cliente_id' => $clientA,
+            'equipamento_id' => $equipmentA,
+            'tecnico_id' => $techA->id,
+            'status' => 'triagem',
+        ]);
+
+        $cancelledOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060023',
+            'cliente_id' => $clientA,
+            'equipamento_id' => $equipmentA,
+            'tecnico_id' => $techA->id,
+            'status' => 'cancelado',
+        ]);
+
+        $diagnosisOrder = $this->createOrderRecord([
+            'numero_os' => 'OS26060024',
+            'cliente_id' => $clientA,
+            'equipamento_id' => $equipmentA,
+            'tecnico_id' => $techA->id,
+            'status' => 'diagnostico',
+        ]);
+
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson('/api/v1/orders?'.http_build_query(['status_multi' => ['triagem', 'cancelado']]));
+
+        $response->assertOk()->assertJsonPath('meta.pagination.total', 2);
+
+        $orders = collect($response->json('data.orders', []));
+
+        $this->assertTrue($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $triagemOrder));
+        $this->assertTrue($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $cancelledOrder));
+        $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $diagnosisOrder));
+    }
+
     public function test_index_summary_exposes_photo_whatsapp_deadline_budget_and_receivable_breakdown(): void
     {
         [$manager] = $this->seedAdminOrderActors();

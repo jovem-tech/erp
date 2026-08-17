@@ -660,6 +660,74 @@ class DesktopFrontendTest extends TestCase
         });
     }
 
+    public function test_orders_index_advanced_filters_render_macro_and_status_checkboxes_with_quick_presets(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/status-catalog' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'statuses' => [
+                        ['codigo' => 'triagem', 'nome' => 'Triagem', 'grupo_macro' => 'recepcao', 'cor' => '', 'icone' => '', 'ordem_fluxo' => 10, 'status_final' => false, 'status_pausa' => false, 'estado_fluxo_padrao' => 'em_atendimento'],
+                        ['codigo' => 'aguardando_reparo', 'nome' => 'Aguardando Reparo', 'grupo_macro' => 'execucao', 'cor' => '', 'icone' => '', 'ordem_fluxo' => 40, 'status_final' => false, 'status_pausa' => false, 'estado_fluxo_padrao' => 'em_execucao'],
+                        ['codigo' => 'cancelado', 'nome' => 'Cancelado', 'grupo_macro' => 'cancelado', 'cor' => '', 'icone' => '', 'ordem_fluxo' => 90, 'status_final' => true, 'status_pausa' => false, 'estado_fluxo_padrao' => 'cancelado'],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orders*' => Http::response([
+                'status' => 'success',
+                'data' => ['orders' => []],
+                'error' => null,
+                'meta' => ['pagination' => ['current_page' => 1, 'last_page' => 1, 'from' => 0, 'to' => 0, 'total' => 0]],
+            ]),
+            'http://127.0.0.1:8000/api/v1/users*' => Http::response(['status' => 'success', 'data' => ['users' => []], 'error' => null, 'meta' => []]),
+            'http://127.0.0.1:8000/api/v1/knowledge/os-flow*' => Http::response(['status' => 'success', 'data' => ['statuses' => [], 'transitions' => []], 'error' => null, 'meta' => []]),
+        ]));
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'dashboard' => ['visualizar'],
+                'os' => ['visualizar'],
+            ]))
+            ->get('/os?'.http_build_query(['grupo_macro_multi' => ['recepcao', 'execucao']]));
+
+        $response
+            ->assertOk()
+            ->assertSee('Situação da OS')
+            ->assertSee('data-order-macro-preset="recepcao,diagnostico,orcamento,execucao,qualidade,interrupcao,concluido"', false)
+            ->assertSee('data-order-macro-preset="finalizado_sem_reparo,encerrado,cancelado"', false)
+            ->assertSee('name="grupo_macro_multi[]"', false)
+            ->assertSee('name="status_multi[]"', false)
+            ->assertSee('value="triagem"', false)
+            ->assertSee('value="aguardando_reparo"', false);
+
+        // Os dois grupos selecionados via query string devem vir marcados; o
+        // terceiro (nao selecionado) deve continuar desmarcado.
+        $content = $response->getContent();
+        $this->assertMatchesRegularExpression(
+            '/name="grupo_macro_multi\[\]"\s+value="recepcao"[^>]*checked/',
+            $content
+        );
+        $this->assertMatchesRegularExpression(
+            '/name="grupo_macro_multi\[\]"\s+value="execucao"[^>]*checked/',
+            $content
+        );
+        $this->assertDoesNotMatchRegularExpression(
+            '/name="grupo_macro_multi\[\]"\s+value="cancelado"[^>]*checked/',
+            $content
+        );
+
+        Http::assertSent(static function ($request): bool {
+            if (! str_contains($request->url(), '/api/v1/orders') || str_contains($request->url(), 'status-catalog')) {
+                return false;
+            }
+
+            return str_contains($request->url(), 'grupo_macro_multi%5B0%5D=recepcao')
+                && str_contains($request->url(), 'grupo_macro_multi%5B1%5D=execucao');
+        });
+    }
+
     public function test_orders_index_shows_financeiro_link_in_row_actions_when_linked_and_permitted(): void
     {
         Http::fake(array_merge($this->notificationsFixture(), $this->ordersIndexFixture(financeiroTituloId: 63), [
