@@ -11,6 +11,7 @@ use App\Http\Controllers\DefectController;
 use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\FileManagerController;
 use App\Http\Controllers\FinanceiroCartaoController;
+use App\Http\Controllers\FinanceiroCartaoCreditoController;
 use App\Http\Controllers\FinanceiroCatalogController;
 use App\Http\Controllers\FinanceiroContaController;
 use App\Http\Controllers\FinanceiroController;
@@ -53,6 +54,11 @@ Route::get('/branding/empresa/logo', [ConfigurationController::class, 'publicCom
     ->name('branding.company.logo');
 Route::get('/branding/empresa/favicon.ico', [ConfigurationController::class, 'publicCompanyFavicon'])
     ->name('branding.company.favicon');
+// Rota (e nao arquivo estatico em public/) para que o icone que o navegador
+// busca sozinho — PDF na aba, download, pagina de erro — seja a logo da
+// empresa, a mesma das telas HTML. Ver ConfigurationController::browserFavicon().
+Route::get('/favicon.ico', [ConfigurationController::class, 'browserFavicon'])
+    ->name('branding.browser.favicon');
 Route::get('/branding/login/background', [ConfigurationController::class, 'publicLoginBackground'])
     ->name('branding.login.background');
 Route::get('/assinar-documento/{token}', [PublicDocumentSignatureController::class, 'show'])
@@ -567,6 +573,40 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/financeiro/contas/relatorios/consolidado', [FinanceiroContaController::class, 'consolidated'])
         ->middleware('desktop.permission:contas_saldos,visualizar')
         ->name('financeiro.contas.consolidado');
+    // Cartões de crédito da assistência (compras). Declarados antes das rotas
+    // com {conta} para o segmento estático "cartoes-credito" não ser
+    // capturado como um id de conta.
+    Route::post('/financeiro/contas/cartoes-credito', [FinanceiroCartaoCreditoController::class, 'store'])
+        ->middleware('desktop.permission:contas_saldos,criar')
+        ->name('financeiro.cartoes-credito.store');
+    Route::patch('/financeiro/contas/cartoes-credito/{cartaoCredito}', [FinanceiroCartaoCreditoController::class, 'update'])
+        ->middleware('desktop.permission:contas_saldos,editar')
+        ->name('financeiro.cartoes-credito.update');
+    Route::get('/financeiro/contas/cartoes-credito/{cartaoCredito}/faturas', [FinanceiroCartaoCreditoController::class, 'faturas'])
+        ->middleware('desktop.permission:contas_saldos,visualizar')
+        ->name('financeiro.cartoes-credito.faturas');
+    Route::get('/financeiro/contas/cartoes-credito/{cartaoCredito}/faturas/{dataVencimento}', [FinanceiroCartaoCreditoController::class, 'faturaShow'])
+        ->where('dataVencimento', '\d{4}-\d{2}-\d{2}')
+        ->middleware('desktop.permission:contas_saldos,visualizar')
+        ->name('financeiro.cartoes-credito.faturas.show');
+    Route::post('/financeiro/contas/cartoes-credito/{cartaoCredito}/faturas/{dataVencimento}/pagar', [FinanceiroCartaoCreditoController::class, 'faturaPagar'])
+        ->where('dataVencimento', '\d{4}-\d{2}-\d{2}')
+        ->middleware('desktop.permission:contas_saldos,editar')
+        ->name('financeiro.cartoes-credito.faturas.pagar');
+    Route::post('/financeiro/contas/cartoes-credito/{cartaoCredito}/faturas/{dataVencimento}/cancelar-baixa', [FinanceiroCartaoCreditoController::class, 'faturaCancelarBaixa'])
+        ->where('dataVencimento', '\d{4}-\d{2}-\d{2}')
+        ->middleware('desktop.permission:contas_saldos,editar')
+        ->name('financeiro.cartoes-credito.faturas.cancelar-baixa');
+    // Sem a data no path: o modal traz um select das faturas pagas, então o
+    // vencimento vem no corpo do formulário.
+    Route::post('/financeiro/contas/cartoes-credito/{cartaoCredito}/faturas/despesa-esquecida', [FinanceiroCartaoCreditoController::class, 'faturaDespesaEsquecida'])
+        ->middleware('desktop.permission:contas_saldos,editar')
+        ->name('financeiro.cartoes-credito.faturas.despesa-esquecida');
+    // Consumida pelo formulário de despesa (módulo financeiro), por isso a
+    // permissão aqui é financeiro,visualizar e não contas_saldos.
+    Route::get('/financeiro/contas/cartoes-credito/{cartaoCredito}/prever-fatura', [FinanceiroCartaoCreditoController::class, 'preverFatura'])
+        ->middleware('desktop.permission:financeiro,visualizar')
+        ->name('financeiro.cartoes-credito.prever-fatura');
     Route::post('/financeiro/contas', [FinanceiroContaController::class, 'store'])
         ->middleware('desktop.permission:contas_saldos,criar')
         ->name('financeiro.contas.store');

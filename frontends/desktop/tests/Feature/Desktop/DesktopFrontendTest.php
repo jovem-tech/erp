@@ -72,6 +72,51 @@ class DesktopFrontendTest extends TestCase
             ->assertSessionHasInput('email', 'ana@empresa.com');
     }
 
+    /**
+     * PDF aberto na aba (comprovante, orcamento) e download nao tem <head>
+     * para declarar o icone: o navegador busca /favicon.ico sozinho. A rota
+     * precisa devolver a logo da empresa, e nao o icone generico que ficava
+     * gravado em public/favicon.ico.
+     */
+    public function test_browser_favicon_serves_the_company_icon(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/configuracoes/empresa/favicon-publico' => Http::response(
+                'icone-da-empresa',
+                200,
+                ['Content-Type' => 'image/x-icon']
+            ),
+        ]);
+
+        $this->get('/favicon.ico')
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/x-icon')
+            ->assertSee('icone-da-empresa', false);
+    }
+
+    /**
+     * Aba com icone quebrado e' pior que aba com icone generico: sem logo
+     * cadastrada (ou com a API fora do ar) a rota cai no padrao do ERP.
+     */
+    public function test_browser_favicon_falls_back_to_the_default_icon(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/configuracoes/empresa/favicon-publico' => Http::response(
+                ['status' => 'error', 'data' => null, 'error' => ['code' => 'COMPANY_LOGO_NOT_FOUND', 'message' => 'Logo da empresa nao configurada.'], 'meta' => []],
+                404
+            ),
+        ]);
+
+        $response = $this->get('/favicon.ico')
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/x-icon');
+
+        $this->assertSame(
+            file_get_contents(public_path('assets/img/favicon-default.ico')),
+            $response->getContent()
+        );
+    }
+
     public function test_login_page_exposes_password_reset_link(): void
     {
         $response = $this->get('/login');

@@ -668,6 +668,9 @@ class FinanceiroReportService
                 'financeiro.supplier',
                 'financeiro.origemMovimento.cartao.operadora',
                 'financeiro.origemMovimento.cartao.bandeira',
+                // Necessário para agrupar as despesas por fatura sem N+1 —
+                // ver groupInvoiceMovements().
+                'financeiro.cartaoCredito',
                 'cartao.operadora',
                 'cartao.bandeira',
             ])
@@ -703,9 +706,7 @@ class FinanceiroReportService
             $diaKey = $cursor->toDateString();
 
             $resultado[$diaKey] = [
-                'movimentos' => ($movimentosDoDia->get($diaKey) ?? collect())
-                    ->map(fn (FinanceiroMovimento $m): array => $this->presentMovimento($m))
-                    ->values()->all(),
+                'movimentos' => $this->groupInvoiceMovements($movimentosDoDia->get($diaKey) ?? collect()),
                 'previstos_para_hoje' => ($previstosParaHoje->get($diaKey) ?? collect())
                     ->map(fn (FinanceiroMovimentoCartao $c): array => $this->presentPrevisto($c))
                     ->values()->all(),
@@ -715,6 +716,72 @@ class FinanceiroReportService
         }
 
         return $resultado;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    /**
+     * No caixa, pagar uma fatura de cartão é UM evento: sai um valor único da
+     * conta para o banco. Por trás são N despesas liquidadas individualmente
+     * (ver FinanceiroCartaoCreditoService::payInvoice()), e listar cada uma
+     * como uma saída separada dava a impressão de vários pagamentos no dia.
+     *
+     * Aqui as despesas da mesma fatura viram uma linha só, com o total, e as
+     * despesas que a compõem ficam dentro dela em 'itens'. A soma do dia não
+     * muda — os totais do relatório continuam vindo de netMovimentos(), sobre
+     * os mesmos movimentos.
+     *
+     * @param  Collection<int, FinanceiroMovimento>  $movimentos
+     * @return array<int, array<string, mixed>>
+     */
+    private function groupInvoiceMovements(Collection $movimentos): array
+    {
+        $linhas = [];
+        $faturas = [];
+
+        foreach ($movimentos as $movimento) {
+            $financeiro = $movimento->financeiro;
+            $cartao = $financeiro?->cartaoCredito;
+
+            $ehDespesaDeFatura = $cartao !== null
+                && $financeiro->cartao_modalidade === FinanceiroCartaoCreditoService::MODALIDADE_CREDITO;
+
+            if (! $ehDespesaDeFatura) {
+                $linhas[] = $this->presentMovimento($movimento);
+
+                continue;
+            }
+
+            // A fatura é identificada por (cartão, vencimento) — a mesma chave
+            // que agrupa a fatura em todo o resto do sistema.
+            $chave = $cartao->id.'|'.$financeiro->data_vencimento?->toDateString();
+
+            if (! isset($faturas[$chave])) {
+                $faturas[$chave] = [
+                    'tipo' => Financeiro::TIPO_PAGAR,
+                    'origem' => 'Fatura '.$cartao->nome,
+                    'categoria' => 'Fatura de cartão de crédito',
+                    'contraparte' => $cartao->instituicao ?: $cartao->nome,
+                    'forma_pagamento' => $movimento->forma_pagamento,
+                    'valor' => 0.0,
+                    'data_movimento' => $movimento->data_movimento->toDateString(),
+                    'data_prevista_caixa' => null,
+                    'cartao' => null,
+                    'fatura' => [
+                        'cartao_id' => (int) $cartao->id,
+                        'cartao_nome' => (string) $cartao->nome,
+                        'data_vencimento' => $financeiro->data_vencimento?->toDateString(),
+                    ],
+                    'itens' => [],
+                ];
+            }
+
+            $faturas[$chave]['valor'] = round($faturas[$chave]['valor'] + (float) $movimento->valor_movimento, 2);
+            $faturas[$chave]['itens'][] = $this->presentMovimento($movimento);
+        }
+
+        return array_merge($linhas, array_values($faturas));
     }
 
     /**

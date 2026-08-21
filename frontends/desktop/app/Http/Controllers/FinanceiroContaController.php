@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
+use App\Services\FinanceiroCartaoCreditoService;
 use App\Services\FinanceiroContaService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,7 +20,8 @@ class FinanceiroContaController extends DesktopController
     private const PAYMENT_METHODS = ['dinheiro', 'cartao_credito', 'cartao_debito', 'pix', 'boleto', 'transferencia'];
 
     public function __construct(
-        private readonly FinanceiroContaService $financeiroContaService
+        private readonly FinanceiroContaService $financeiroContaService,
+        private readonly FinanceiroCartaoCreditoService $cartaoCreditoService
     ) {}
 
     public function index(Request $request): View|RedirectResponse
@@ -38,10 +40,20 @@ class FinanceiroContaController extends DesktopController
             return redirect()->route('financeiro.index')->with('error', 'Não foi possível carregar as contas financeiras agora.');
         }
 
+        // Aba "Cartões de crédito" da mesma tela. Falha aqui não derruba a
+        // visão de contas (que é a principal) — a aba só aparece vazia.
+        try {
+            $cartoesCredito = $this->cartaoCreditoService->list();
+        } catch (Throwable $exception) {
+            report($exception);
+            $cartoesCredito = [];
+        }
+
         return view('financeiro.contas.index', [
             'pageTitle' => 'Contas e Saldos',
             'dashboard' => $dashboard,
             'month' => $month,
+            'cartoesCredito' => $cartoesCredito,
         ]);
     }
 

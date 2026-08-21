@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\ApiRequestException;
 use App\Services\ApiClient;
+use App\Services\CompanyProfileService;
 use App\Support\DesktopSession;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -12,13 +13,15 @@ use Illuminate\View\View;
 class PasswordResetController extends DesktopController
 {
     public function __construct(
-        private readonly ApiClient $apiClient
+        private readonly ApiClient $apiClient,
+        private readonly CompanyProfileService $companyProfileService
     ) {
     }
 
     public function create(Request $request): View
     {
         return view('auth.forgot-password', [
+            'branding' => $this->companyProfileService->branding(),
             'pageTitle' => 'Recuperar senha',
             'email' => old('email', (string) $request->string('email')),
         ]);
@@ -65,6 +68,7 @@ class PasswordResetController extends DesktopController
         }
 
         return view('auth.reset-password', [
+            'branding' => $this->companyProfileService->branding(),
             'pageTitle' => 'Redefinir senha',
             'token' => $token,
             'email' => $email,

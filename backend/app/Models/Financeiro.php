@@ -18,6 +18,15 @@ class Financeiro extends Model
     public const STATUS_CANCELADO = 'cancelado';
 
     /**
+     * origem_tipo do lançamento sintético que
+     * FinanceiroCartaoCreditoService::payInvoice() cria para representar,
+     * numa linha só, o pagamento em lote de uma fatura de cartão da
+     * assistência. Não é despesa fixa nem variável — totaisFixoVariavel() e
+     * scopeWithFilters() excluem este origem_tipo dos totais/filtros.
+     */
+    public const ORIGEM_TIPO_FATURA_CARTAO_CREDITO = 'fatura_cartao_credito';
+
+    /**
      * Lista histórica das formas de pagamento. Desde o catálogo gerenciável
      * (`financeiro_formas_pagamento`) esta constante serve apenas como semente
      * da migration e fallback quando a tabela ainda não existe. Para validar ou
@@ -37,8 +46,10 @@ class Financeiro extends Model
         'os_id' => 'integer',
         'cliente_id' => 'integer',
         'fornecedor_id' => 'integer',
+        'cartao_credito_id' => 'integer',
         'valor' => 'float',
         'data_vencimento' => 'date',
+        'data_compra' => 'date',
         'data_pagamento' => 'date',
         'data_competencia' => 'date',
         'origem_id' => 'integer',
@@ -87,8 +98,23 @@ class Financeiro extends Model
             $query->where('cliente_id', $clienteId);
         }
 
+        $cartaoCreditoId = (int) ($filters['cartao_credito_id'] ?? 0);
+        if ($cartaoCreditoId > 0) {
+            $query->where('cartao_credito_id', $cartaoCreditoId);
+        }
+
         if (array_key_exists('dre_fixo_mensal', $filters) && $filters['dre_fixo_mensal'] !== '' && $filters['dre_fixo_mensal'] !== null) {
             $query->where('dre_fixo_mensal', (bool) $filters['dre_fixo_mensal']);
+
+            // Recibo de pagamento de fatura (ver
+            // ORIGEM_TIPO_FATURA_CARTAO_CREDITO; dre_fixo_mensal=false nele só
+            // porque a coluna é NOT NULL) não é nem fixo nem variável — fica
+            // de fora sempre que o usuário filtra explicitamente por um dos
+            // dois.
+            $query->where(function (Builder $q): void {
+                $q->whereNull('origem_tipo')
+                    ->orWhere('origem_tipo', '!=', self::ORIGEM_TIPO_FATURA_CARTAO_CREDITO);
+            });
         }
 
         // Filtro de período simples por data_vencimento — deliberadamente
@@ -149,6 +175,11 @@ class Financeiro extends Model
     public function supplier(): BelongsTo
     {
         return $this->belongsTo(Supplier::class, 'fornecedor_id', 'id');
+    }
+
+    public function cartaoCredito(): BelongsTo
+    {
+        return $this->belongsTo(FinanceiroCartaoCredito::class, 'cartao_credito_id', 'id');
     }
 
     public function movimentos(): HasMany

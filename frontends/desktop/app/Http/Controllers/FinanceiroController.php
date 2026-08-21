@@ -276,6 +276,17 @@ class FinanceiroController extends DesktopController
             $lancamento['tipo'] = 'pagar';
         }
 
+        // Entrada "Nova despesa neste cartão" (tela de faturas): já abre com o
+        // cartão escolhido e a forma de pagamento em crédito, para o usuário
+        // não ter que reencontrar o cartão que ele acabou de estar olhando.
+        $cartaoPreSelecionado = (int) $request->query('cartao_credito_id', 0);
+        if ($cartaoPreSelecionado > 0) {
+            $lancamento['tipo'] = 'pagar';
+            $lancamento['cartao_credito_id'] = $cartaoPreSelecionado;
+            $lancamento['forma_pagamento'] = 'cartao_credito';
+            $lancamento['data_compra'] = now()->toDateString();
+        }
+
         return view('financeiro.create', [
             'pageTitle' => $tipoLocked ? 'Nova despesa' : 'Novo lançamento',
             'lancamento' => $lancamento,
@@ -283,6 +294,7 @@ class FinanceiroController extends DesktopController
             'categorias' => $catalog['categorias'],
             'accountDataset' => $catalog['contas_financeiras'],
             'formasPagamento' => $catalog['formas_pagamento'],
+            'cartoesCredito' => $catalog['cartoes_credito'] ?? [],
             'canQuickClient' => \App\Support\DesktopSession::can('clientes', 'criar'),
         ]);
     }
@@ -399,6 +411,7 @@ class FinanceiroController extends DesktopController
             'categorias' => $catalog['categorias'],
             'accountDataset' => $catalog['contas_financeiras'],
             'formasPagamento' => $catalog['formas_pagamento'],
+            'cartoesCredito' => $catalog['cartoes_credito'] ?? [],
             'canQuickClient' => \App\Support\DesktopSession::can('clientes', 'criar'),
         ]);
     }
@@ -432,7 +445,7 @@ class FinanceiroController extends DesktopController
         }
 
         return redirect()
-            ->route('financeiro.index')
+            ->to($this->successTarget($request, $financeiro))
             ->with('success', 'Lançamento atualizado com sucesso.');
     }
 
@@ -533,8 +546,9 @@ class FinanceiroController extends DesktopController
      * Baixa, cancelamento e criação podem ser disparados a partir de mais de
      * uma tela — o campo oculto "voltar_para" preserva a origem ("show" na
      * página de detalhes, "despesas_fixas" no fluxo de Nova despesa vindo de
-     * Despesas). $financeiro é null em store(), onde o lançamento ainda não
-     * tem id no momento do redirect.
+     * Despesas, e o par cartão+vencimento quando a edição partiu da fatura).
+     * $financeiro é null em store(), onde o lançamento ainda não tem id no
+     * momento do redirect.
      */
     private function successTarget(Request $request, ?int $financeiro): string
     {
@@ -544,6 +558,19 @@ class FinanceiroController extends DesktopController
 
         if ($request->input('voltar_para') === 'despesas_fixas') {
             return route('financeiro.despesas-fixas.index');
+        }
+
+        // Editada a partir da fatura do cartão: volta para a fatura, onde o
+        // efeito da alteração no total aparece. Cair em Lançamentos aqui
+        // esconderia justamente o que motivou a edição.
+        $faturaCartao = (int) $request->input('voltar_cartao_id', 0);
+        $faturaVencimento = trim((string) $request->input('voltar_fatura_vencimento', ''));
+
+        if ($faturaCartao > 0 && preg_match('/^\d{4}-\d{2}-\d{2}$/', $faturaVencimento) === 1) {
+            return route('financeiro.cartoes-credito.faturas.show', [
+                'cartaoCredito' => $faturaCartao,
+                'dataVencimento' => $faturaVencimento,
+            ]);
         }
 
         return route('financeiro.index');
@@ -590,6 +617,9 @@ class FinanceiroController extends DesktopController
             'status' => ['nullable', 'string', 'in:pendente,parcial,pago,cancelado'],
             'forma_pagamento' => ['nullable', 'string', 'in:dinheiro,cartao_credito,cartao_debito,pix,boleto,transferencia'],
             'conta_financeira_id' => ['nullable', 'integer', 'min:1'],
+            'cartao_credito_id' => ['nullable', 'integer', 'min:1'],
+            'data_compra' => ['nullable', 'date', 'required_with:cartao_credito_id'],
+            'parcelas' => ['nullable', 'integer', 'min:1', 'max:36'],
             'data_vencimento' => ['required', 'date'],
             'data_pagamento' => ['nullable', 'date'],
             'observacoes' => ['nullable', 'string'],
@@ -605,15 +635,25 @@ class FinanceiroController extends DesktopController
             'descricao' => 'descrição',
             'valor' => 'valor',
             'data_vencimento' => 'data de vencimento',
+            'data_compra' => 'data da compra',
+            'cartao_credito_id' => 'cartão de crédito',
             'os_id' => 'ordem de serviço',
             'cliente_id' => 'cliente',
             'fornecedor_id' => 'fornecedor',
         ]);
 
-        foreach (['forma_pagamento', 'observacoes'] as $field) {
+        foreach (['forma_pagamento', 'observacoes', 'cartao_credito_id', 'data_compra'] as $field) {
             if (isset($validated[$field]) && trim((string) $validated[$field]) === '') {
                 $validated[$field] = null;
             }
+        }
+
+        // Sem cartão vinculado não existe "data da compra": deixá-la no
+        // payload faria o backend calcular um ciclo de fatura para uma
+        // despesa que não é de cartão.
+        if (($validated['cartao_credito_id'] ?? null) === null) {
+            $validated['data_compra'] = null;
+            unset($validated['parcelas']);
         }
 
         $validated['avulso'] = $request->boolean('avulso');

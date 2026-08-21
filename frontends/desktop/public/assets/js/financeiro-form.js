@@ -70,6 +70,354 @@
         syncDefault();
     };
 
+    // Cartão de crédito da assistência: aparece só quando a forma de
+    // pagamento é "cartão de crédito". Escolhido um cartão, a data de
+    // vencimento deixa de ser digitada e passa a refletir a fatura em que a
+    // compra cai — a data mostrada aqui vem sempre do backend (mesmo cálculo
+    // do save), nunca de uma conta feita no navegador, para a prévia não
+    // divergir do que será gravado.
+    const initCartaoCredito = () => {
+        const wrapper = document.querySelector('[data-cartao-credito-wrapper]');
+        const select = document.querySelector('[data-cartao-credito-select]');
+        const compraWrapper = document.querySelector('[data-cartao-credito-compra-wrapper]');
+        const dataCompra = document.querySelector('[data-cartao-credito-data-compra]');
+        const preview = document.querySelector('[data-cartao-credito-preview]');
+        const contaHint = document.querySelector('[data-cartao-credito-conta-hint]');
+        const parcelasWrapper = document.querySelector('[data-cartao-credito-parcelas-wrapper]');
+        const parcelasSelect = document.querySelector('[data-cartao-credito-parcelas]');
+        const parcelasHint = document.querySelector('[data-cartao-credito-parcelas-hint]');
+        const repetirWrapper = els.repetirWrapper;
+        const vencimentoInput = document.getElementById('financeiroDataVencimento');
+        const vencimentoHint = document.querySelector('[data-cartao-credito-vencimento-hint]');
+        const CREDITO = 'cartao_credito';
+        const DEBITO = 'cartao_debito';
+
+        if (!wrapper || !(select instanceof HTMLSelectElement)) { return; }
+
+        const previewTemplate = wrapper.getAttribute('data-preview-url-template') || '';
+        let previewTimer = null;
+
+        // Depende de DUAS escolhas que mudam sem recarregar a tela: Tipo
+        // (em "Novo lançamento" a tela nasce como "a receber") e Forma de
+        // pagamento. Por isso a visibilidade é recalculada aqui, e não fixada
+        // no Blade.
+        const syncPaymentVisibility = () => {
+            const isPagar = !(els.tipoSelect instanceof HTMLSelectElement)
+                || els.tipoSelect.value === 'pagar';
+            const isCard = els.paymentMethodSelect instanceof HTMLSelectElement
+                && [CREDITO, DEBITO].includes(els.paymentMethodSelect.value);
+            const visible = isPagar && isCard;
+
+            wrapper.classList.toggle('d-none', !visible);
+            syncParcelasVisibility();
+            syncStatusLock();
+
+            // Alternar crédito <-> débito muda o vencimento (fatura x dia da
+            // compra), então recalcula quando já houver cartão escolhido.
+            if (visible && select.value !== '') {
+                refreshPreview();
+            }
+
+            // Sair de "a pagar" ou trocar para uma forma que não é cartão
+            // desfaz o vínculo — senão o título continuaria preso a uma fatura
+            // sem ter sido comprado no cartão.
+            if (!visible && select.value !== '') {
+                select.value = '';
+                syncCardSelection();
+            }
+        };
+
+        const setVencimentoLocked = (locked) => {
+            if (!(vencimentoInput instanceof HTMLInputElement)) { return; }
+            vencimentoInput.readOnly = locked;
+            vencimentoInput.classList.toggle('bg-body-secondary', locked);
+            vencimentoHint?.classList.toggle('d-none', !locked);
+        };
+
+        const isCredito = () => els.paymentMethodSelect instanceof HTMLSelectElement
+            && els.paymentMethodSelect.value === CREDITO;
+
+        // Compra no crédito é liquidada pela fatura (baixa em lote), nunca pelo
+        // status do próprio título: deixar escolher "Pago" aqui geraria a baixa
+        // automática (ver FinanceiroService::finalizeAfterSave()) e a despesa
+        // sairia do saldo em aberto da fatura sem ninguém ter pago a fatura. O
+        // backend normaliza de qualquer jeito; travar aqui é para o usuário não
+        // escolher algo que seria silenciosamente desfeito.
+        const statusHintPadrao = document.querySelector('[data-status-hint-padrao]');
+        const statusHintCartao = document.querySelector('[data-status-cartao-credito-hint]');
+
+        const syncStatusLock = () => {
+            const statusSelect = els.statusSelect;
+            if (!(statusSelect instanceof HTMLSelectElement)) { return; }
+
+            // Título que já tem baixa real reflete o que os movimentos dizem —
+            // travar em "Pendente" mostraria pendente para algo já pago.
+            const hasMovements = statusSelect.getAttribute('data-has-movements') === '1';
+            const isPagar = !(els.tipoSelect instanceof HTMLSelectElement)
+                || els.tipoSelect.value === 'pagar';
+            const locked = isPagar && isCredito() && !hasMovements;
+
+            Array.from(statusSelect.options).forEach((option) => {
+                if (option.value === 'pendente') { return; }
+                // Preserva quem já estava desabilitado pelas regras do Blade
+                // (parcial sem baixa, cancelado com baixa).
+                if (locked) {
+                    option.dataset.lockedByCartao = '1';
+                    option.disabled = true;
+                } else if (option.dataset.lockedByCartao === '1') {
+                    delete option.dataset.lockedByCartao;
+                    option.disabled = false;
+                }
+            });
+
+            statusHintPadrao?.classList.toggle('d-none', locked);
+            statusHintCartao?.classList.toggle('d-none', !locked);
+
+            if (locked && statusSelect.value !== 'pendente') {
+                statusSelect.value = 'pendente';
+                // Os wrappers de data de pagamento/conta escutam 'change' — sem
+                // disparar, continuariam visíveis com o status já em pendente.
+                statusSelect.dispatchEvent(new Event('change', { bubbles: true }));
+                if (window.jQuery) { window.jQuery(statusSelect).trigger('change'); }
+            }
+        };
+
+        const refreshPreview = () => {
+            if (!preview) { return; }
+
+            const cartaoId = select.value;
+            const compra = dataCompra instanceof HTMLInputElement ? dataCompra.value : '';
+
+            if (cartaoId === '' || compra === '') { return; }
+
+            // Débito não tem fatura: o dinheiro sai da conta no dia da compra,
+            // então o vencimento é a própria data — sem ida ao servidor.
+            if (!isCredito()) {
+                if (vencimentoInput instanceof HTMLInputElement) {
+                    vencimentoInput.value = compra;
+                }
+                const [dY, dM, dD] = compra.split('-');
+                preview.textContent = `Sai da conta em ${dD}/${dM}/${dY} — compras no débito não entram em fatura.`;
+                return;
+            }
+
+            if (previewTemplate === '') { return; }
+
+            preview.textContent = 'Calculando a fatura...';
+
+            fetch(`${previewTemplate.replace('__CARTAO__', encodeURIComponent(cartaoId))}?data_compra=${encodeURIComponent(compra)}`, {
+                headers: { Accept: 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+                credentials: 'same-origin',
+            })
+                .then((response) => (response.ok ? response.json() : Promise.reject(new Error('preview'))))
+                .then((payload) => {
+                    const vencimento = payload?.fatura?.data_vencimento || '';
+                    if (vencimento === '') { throw new Error('preview'); }
+
+                    if (vencimentoInput instanceof HTMLInputElement) {
+                        vencimentoInput.value = vencimento;
+                    }
+
+                    // Compra não pode cair em fatura já paga (o save recusa —
+                    // ver FinanceiroService::resolveClassification()). O "min"
+                    // impede escolher a data; o aviso explica quando a data
+                    // atual já é inválida (ex.: cartão trocado depois de a data
+                    // já estar preenchida).
+                    aplicarCompraMinima(payload?.fatura?.compra_minima || '');
+
+                    const [ano, mes, dia] = vencimento.split('-');
+
+                    if (payload?.fatura?.fatura_paga) {
+                        preview.textContent = `A fatura que vence em ${dia}/${mes}/${ano} já foi paga — escolha uma data que caia numa fatura ainda aberta.`;
+                        preview.classList.add('text-danger');
+                        return;
+                    }
+
+                    preview.classList.remove('text-danger');
+                    preview.textContent = `Entra na fatura que vence em ${dia}/${mes}/${ano}.`;
+                })
+                .catch(() => {
+                    preview.textContent = 'Não foi possível calcular a fatura agora. O vencimento será definido ao salvar.';
+                });
+        };
+
+        // Trava o calendário na primeira data que ainda cai numa fatura aberta.
+        // Vazio = nenhuma fatura paga ainda, então não há restrição.
+        const aplicarCompraMinima = (compraMinima) => {
+            if (!(dataCompra instanceof HTMLInputElement)) { return; }
+
+            if (compraMinima === '') {
+                dataCompra.removeAttribute('min');
+                return;
+            }
+
+            dataCompra.min = compraMinima;
+        };
+
+        const scheduleRefresh = () => {
+            clearTimeout(previewTimer);
+            previewTimer = setTimeout(refreshPreview, 300);
+        };
+
+        // Mostra de qual conta (Contas e Saldos) o cartão debita e já
+        // pré-seleciona essa conta na baixa — no débito o dinheiro sai dali na
+        // hora; no crédito ela serve de sugestão ao pagar a fatura.
+        const syncContaVinculada = () => {
+            const option = select.selectedOptions[0];
+            const contaId = option?.getAttribute('data-conta-id') || '';
+            const contaNome = option?.getAttribute('data-conta-nome') || '';
+
+            if (contaHint) {
+                contaHint.textContent = select.value === ''
+                    ? ''
+                    : (contaNome !== ''
+                        ? `Vinculado à conta ${contaNome}.`
+                        : 'Este cartão ainda não tem conta financeira vinculada (edite o cartão em Contas e Saldos).');
+            }
+
+            if (contaId === '' || contaId === '0' || !(els.accountSelect instanceof HTMLSelectElement)) { return; }
+
+            const existe = Array.from(els.accountSelect.options)
+                .some((opt) => Number(opt.value) === Number(contaId));
+
+            if (existe) {
+                els.accountSelect.value = String(contaId);
+                if (window.jQuery) { window.jQuery(els.accountSelect).trigger('change'); }
+            }
+        };
+
+        // Parcelar só existe no crédito (débito é à vista) e some quando não
+        // há cartão escolhido. Parcelamento e "repetir nos próximos meses" são
+        // exclusivos: um divide um total que acaba, o outro repete um valor sem
+        // fim — deixar os dois ativos geraria 12 parcelas vezes 12 repetições.
+        function syncParcelasVisibility() {
+            if (!parcelasWrapper) { return; }
+
+            const isCredito = els.paymentMethodSelect instanceof HTMLSelectElement
+                && els.paymentMethodSelect.value === CREDITO;
+            const isPagar = !(els.tipoSelect instanceof HTMLSelectElement)
+                || els.tipoSelect.value === 'pagar';
+            const mostrar = isPagar && isCredito && select.value !== '';
+
+            parcelasWrapper.classList.toggle('d-none', !mostrar);
+
+            if (!mostrar && parcelasSelect instanceof HTMLSelectElement) {
+                parcelasSelect.value = '1';
+            }
+
+            syncParcelasHint();
+        }
+
+        const parseValor = () => {
+            const hidden = els.valorHidden;
+            const bruto = hidden instanceof HTMLInputElement ? hidden.value : '';
+            const numero = parseFloat(String(bruto).replace(',', '.'));
+
+            return Number.isFinite(numero) ? numero : 0;
+        };
+
+        function syncParcelasHint() {
+            if (!parcelasHint || !(parcelasSelect instanceof HTMLSelectElement)) { return; }
+
+            const parcelas = parseInt(parcelasSelect.value, 10) || 1;
+            const repetirVisivel = parcelas > 1;
+
+            // Esconde "repetir nos próximos meses" enquanto houver parcelamento.
+            if (repetirWrapper instanceof HTMLElement) {
+                repetirWrapper.classList.toggle('d-none', repetirVisivel);
+                if (repetirVisivel) {
+                    const checkbox = repetirWrapper.querySelector('input[type="checkbox"]');
+                    if (checkbox instanceof HTMLInputElement) { checkbox.checked = false; }
+                }
+            }
+
+            if (parcelas <= 1) {
+                parcelasHint.textContent = 'O valor informado acima é o total da compra.';
+                return;
+            }
+
+            const total = parseValor();
+
+            if (total <= 0) {
+                parcelasHint.textContent = `Serão criadas ${parcelas} despesas, uma por fatura. Informe o valor total da compra.`;
+                return;
+            }
+
+            const centavos = Math.round(total * 100);
+            const base = Math.floor(centavos / parcelas);
+            const primeira = (base + (centavos - base * parcelas)) / 100;
+            const demais = base / 100;
+            const money = (v) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+            parcelasHint.textContent = primeira === demais
+                ? `${parcelas}x de ${money(demais)} — uma em cada fatura.`
+                : `${parcelas}x: 1ª de ${money(primeira)} e as demais de ${money(demais)} — uma em cada fatura.`;
+        }
+
+        function syncCardSelection() {
+            const hasCard = select.value !== '';
+            compraWrapper?.classList.toggle('d-none', !hasCard);
+            setVencimentoLocked(hasCard);
+            syncContaVinculada();
+            syncParcelasVisibility();
+
+            if (dataCompra instanceof HTMLInputElement) {
+                dataCompra.required = hasCard;
+                if (hasCard && dataCompra.value === '') {
+                    dataCompra.value = new Date().toISOString().slice(0, 10);
+                }
+            }
+
+            if (hasCard) {
+                refreshPreview();
+            } else if (preview) {
+                preview.textContent = 'Escolha o cartão e a data para ver em qual fatura a compra cai.';
+            }
+        }
+
+        select.addEventListener('change', syncCardSelection);
+        dataCompra?.addEventListener('change', scheduleRefresh);
+        parcelasSelect?.addEventListener('change', syncParcelasHint);
+        els.valorDisplay?.addEventListener('input', syncParcelasHint);
+        if (window.jQuery) { window.jQuery(parcelasSelect).on('change', syncParcelasHint); }
+        els.paymentMethodSelect?.addEventListener('change', syncPaymentVisibility);
+        els.tipoSelect?.addEventListener('change', syncPaymentVisibility);
+
+        // Os selects viram Select2, que não dispara o evento nativo 'change'
+        // de forma confiável — daí o par de listeners.
+        if (window.jQuery) {
+            window.jQuery(select).on('change', syncCardSelection);
+            window.jQuery(els.paymentMethodSelect).on('change', syncPaymentVisibility);
+            window.jQuery(els.tipoSelect).on('change', syncPaymentVisibility);
+        }
+
+        syncPaymentVisibility();
+        syncCardSelection();
+    };
+
+    // As duas dicas sob "Forma de pagamento" explicam lógicas opostas: ao
+    // RECEBER, cartão é a maquininha (operadora/taxa); ao PAGAR, é o cartão da
+    // própria assistência (fatura/conta). Vive fora de initCartaoCredito de
+    // propósito — a explicação precisa aparecer mesmo sem nenhum cartão
+    // cadastrado, que é justamente quando o usuário mais se confunde.
+    const initFormaPagamentoHints = () => {
+        const hintReceber = document.querySelector('[data-forma-pagamento-hint-receber]');
+        const hintPagar = document.querySelector('[data-forma-pagamento-hint-pagar]');
+
+        if (!hintReceber || !hintPagar) { return; }
+
+        const sync = () => {
+            const isPagar = !(els.tipoSelect instanceof HTMLSelectElement)
+                || els.tipoSelect.value === 'pagar';
+            hintReceber.classList.toggle('d-none', isPagar);
+            hintPagar.classList.toggle('d-none', !isPagar);
+        };
+
+        els.tipoSelect?.addEventListener('change', sync);
+        if (window.jQuery) { window.jQuery(els.tipoSelect).on('change', sync); }
+        sync();
+    };
+
     // Data do pagamento só faz sentido quando status = pago (fica em branco
     // e o backend assume hoje). É independente de initFinancialAccount, que
     // só roda quando existem contas financeiras cadastradas.
@@ -898,6 +1246,8 @@
     runInit('initValorMask', initValorMask);
     runInit('initCategoriaSelect', initCategoriaSelect);
     runInit('initFinancialAccount', initFinancialAccount);
+    runInit('initFormaPagamentoHints', initFormaPagamentoHints);
+    runInit('initCartaoCredito', initCartaoCredito);
     runInit('initDataPagamento', initDataPagamento);
     runInit('initClientSelect', initClientSelect);
     runInit('initOrderSelect', initOrderSelect);

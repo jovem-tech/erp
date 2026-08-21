@@ -4,6 +4,7 @@ namespace Tests\Feature\Api\V1;
 
 use App\Models\Financeiro;
 use App\Models\FinanceiroMovimento;
+use App\Models\FinanceiroCartaoCredito;
 use App\Models\FinanceiroMovimentoCartao;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +27,106 @@ class FinanceiroReportTest extends TestCase
         $this->grantGroupPermissions(1, [
             'financeiro' => ['visualizar', 'criar', 'editar', 'excluir'],
         ]);
+    }
+
+    /**
+     * No caixa, pagar a fatura do cartão é UM evento: saiu um valor único da
+     * conta para o banco. As despesas que ela cobre não podem aparecer como
+     * saídas separadas do dia — elas ficam dentro da linha da fatura.
+     */
+    public function test_fluxo_de_caixa_agrupa_as_despesas_da_fatura_numa_linha_so(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $cartao = FinanceiroCartaoCredito::query()->create([
+            'nome' => 'Inter',
+            'instituicao' => 'Banco Inter',
+            'dia_fechamento' => 20,
+            'dia_vencimento' => 25,
+            'cor' => '#3868B0',
+            'ativo' => true,
+        ]);
+
+        $hoje = now()->startOfMonth()->addDays(19);
+        $vencimento = now()->startOfMonth()->addDays(24)->toDateString();
+
+        // Duas despesas da MESMA fatura, liquidadas no mesmo dia.
+        foreach ([['Energia', 25.00], ['Compra de peças', 50.00]] as [$categoria, $valor]) {
+            $despesa = Financeiro::create([
+                'tipo' => Financeiro::TIPO_PAGAR,
+                'avulso' => true,
+                'cartao_credito_id' => $cartao->id,
+                'cartao_modalidade' => 'credito',
+                'categoria' => $categoria,
+                'descricao' => $categoria.' no cartão',
+                'valor' => $valor,
+                'status' => Financeiro::STATUS_PAGO,
+                'data_vencimento' => $vencimento,
+                'data_competencia' => $hoje->toDateString(),
+                'impacta_dre' => true,
+                'impacta_fluxo_caixa' => true,
+            ]);
+
+            FinanceiroMovimento::create([
+                'financeiro_id' => $despesa->id,
+                'tipo_movimento' => FinanceiroMovimento::TIPO_SAIDA,
+                'data_movimento' => $hoje->toDateString(),
+                'valor_movimento' => $valor,
+                'forma_pagamento' => 'pix',
+            ]);
+        }
+
+        // Despesa comum no mesmo dia: continua como linha própria.
+        $avulsa = Financeiro::create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'avulso' => true,
+            'categoria' => 'Aluguel',
+            'descricao' => 'Aluguel do mês',
+            'valor' => 10.00,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => $hoje->toDateString(),
+            'data_competencia' => $hoje->toDateString(),
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+        ]);
+        FinanceiroMovimento::create([
+            'financeiro_id' => $avulsa->id,
+            'tipo_movimento' => FinanceiroMovimento::TIPO_SAIDA,
+            'data_movimento' => $hoje->toDateString(),
+            'valor_movimento' => 10.00,
+        ]);
+
+        $response = $this->getJson('/api/v1/financeiro/relatorios/fluxo-caixa?mes=' . now()->format('Y-m'))
+            ->assertOk();
+
+        $linhaDoDia = collect($response->json('data.fluxo.linhas_diarias'))
+            ->firstWhere('data', $hoje->toDateString());
+
+        $movimentos = collect($linhaDoDia['detalhes']['movimentos']);
+
+        // 2 linhas: a fatura (agrupando as duas despesas) e o aluguel.
+        $this->assertCount(2, $movimentos);
+
+        $fatura = $movimentos->firstWhere('categoria', 'Fatura de cartão de crédito');
+        $this->assertNotNull($fatura);
+        $this->assertSame('Fatura Inter', $fatura['origem']);
+        $this->assertSame(75.0, $fatura['valor']);
+        $this->assertSame($vencimento, $fatura['fatura']['data_vencimento']);
+
+        // As despesas cobertas ficam dentro da fatura, não soltas no dia.
+        $this->assertCount(2, $fatura['itens']);
+        $this->assertEqualsCanonicalizing(
+            ['Energia', 'Compra de peças'],
+            array_column($fatura['itens'], 'categoria')
+        );
+
+        $aluguel = $movimentos->firstWhere('categoria', 'Aluguel');
+        $this->assertNotNull($aluguel);
+        $this->assertArrayNotHasKey('itens', $aluguel);
+
+        // O total do dia não muda: agrupar é só apresentação.
+        $this->assertSame(85.0, round((float) $linhaDoDia['saidas_realizadas'], 2));
     }
 
     public function test_dre_competencia_reconhece_receita_de_os_pela_data_de_entrega(): void

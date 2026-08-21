@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Web\BrowserFaviconController;
 use App\Http\Controllers\Web\BudgetPublicController;
 use App\Http\Controllers\Web\OrderDocumentPublicController;
 use App\Http\Controllers\Webhooks\WhatsAppWebhookController;
@@ -15,6 +16,13 @@ Route::get('/', function () {
         'status' => 'ok',
     ]);
 });
+
+// Icone da aba para as respostas sem <head> servidas por esta API (PDF de
+// orcamento, arquivo de documento compartilhado). As paginas HTML declaram o
+// favicon em resources/views/partials/favicon.blade.php.
+Route::get('/favicon.ico', BrowserFaviconController::class)
+    ->middleware('throttle:120,1')
+    ->name('branding.browser.favicon');
 
 Route::post('/webhooks/whatsapp', WhatsAppWebhookController::class)
     ->middleware('throttle:120,1')

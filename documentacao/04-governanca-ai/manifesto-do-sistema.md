@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-08-15T14:24:39-03:00`
-- Versao do sistema: `5.31.3`
+- Gerado em: `2026-08-20T12:32:56-03:00`
+- Versao do sistema: `5.39.2`
 - Versao da API: `1.6.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -237,4 +237,5 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/027-vendas-balcao-pdv` - Módulo de Vendas (balcão/PDV) | artefatos: spec
 - `specs/028-caixa-sessoes` - Sessões de caixa (abertura, sangria e fechamento) | artefatos: spec
 - `specs/029-devolucao-troca` - Devolução e troca de venda | artefatos: spec
+- `specs/030-cartoes-credito-assistencia` - Cartões de crédito da assistência | artefatos: spec
 

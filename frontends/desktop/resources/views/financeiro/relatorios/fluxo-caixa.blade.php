@@ -329,13 +329,21 @@
                                                 </thead>
                                                 <tbody>
                                                 @foreach ($movimentosDia as $mov)
+                                                    @php $itensFatura = $mov['itens'] ?? []; @endphp
                                                     <tr>
                                                         <td>
                                                             <span class="badge {{ $mov['tipo'] === 'receber' ? 'text-bg-success' : 'text-bg-secondary' }}">
                                                                 {{ $mov['tipo'] === 'receber' ? 'Recebido' : 'Pago' }}
                                                             </span>
                                                         </td>
-                                                        <td>{{ $mov['origem'] }}</td>
+                                                        <td>
+                                                            {{ $mov['origem'] }}
+                                                            @if (! empty($mov['fatura']['data_vencimento']))
+                                                                <small class="text-secondary d-block">
+                                                                    vence em {{ \Illuminate\Support\Carbon::parse($mov['fatura']['data_vencimento'])->format('d/m/Y') }}
+                                                                </small>
+                                                            @endif
+                                                        </td>
                                                         <td>{{ $mov['categoria'] ?? '-' }}</td>
                                                         <td>{{ $mov['contraparte'] ?? '-' }}</td>
                                                         <td>
@@ -347,8 +355,38 @@
                                                             @endif
                                                         </td>
                                                         <td class="text-end">{{ $fmt($mov['valor']) }}</td>
-                                                        <td>{{ $mov['data_prevista_caixa'] ? \Illuminate\Support\Carbon::parse($mov['data_prevista_caixa'])->format('d/m/Y') : 'Imediato' }}</td>
+                                                        <td>{{ ($mov['data_prevista_caixa'] ?? null) ? \Illuminate\Support\Carbon::parse($mov['data_prevista_caixa'])->format('d/m/Y') : 'Imediato' }}</td>
                                                     </tr>
+
+                                                    {{-- Pagar a fatura é UM evento de caixa; as despesas que ela
+                                                         cobre ficam aqui dentro, para conferir o que compõe o
+                                                         valor sem parecer vários pagamentos no mesmo dia. --}}
+                                                    @if ($itensFatura !== [])
+                                                        <tr class="table-active">
+                                                            <td></td>
+                                                            <td colspan="6" class="pt-0 pb-3">
+                                                                <small class="text-secondary d-block mb-2">
+                                                                    Despesas cobertas por esta fatura:
+                                                                </small>
+                                                                <ul class="list-unstyled mb-0 small">
+                                                                    @foreach ($itensFatura as $item)
+                                                                        <li class="d-flex justify-content-between gap-3 border-bottom py-1">
+                                                                            <span>
+                                                                                {{ $item['categoria'] ?? '-' }}
+                                                                                @if (! empty($item['contraparte']))
+                                                                                    <span class="text-secondary">· {{ $item['contraparte'] }}</span>
+                                                                                @endif
+                                                                                @if (! empty($item['origem']))
+                                                                                    <span class="text-secondary">· {{ $item['origem'] }}</span>
+                                                                                @endif
+                                                                            </span>
+                                                                            <span class="text-nowrap">{{ $fmt($item['valor']) }}</span>
+                                                                        </li>
+                                                                    @endforeach
+                                                                </ul>
+                                                            </td>
+                                                        </tr>
+                                                    @endif
                                                 @endforeach
                                                 </tbody>
                                             </table>

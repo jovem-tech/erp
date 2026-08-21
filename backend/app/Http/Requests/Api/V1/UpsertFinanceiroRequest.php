@@ -23,6 +23,13 @@ class UpsertFinanceiroRequest extends BaseApiFormRequest
             // como compatíveis com o resumo, e não o catálogo inteiro.
             'forma_pagamento' => ['nullable', 'string', Rule::in(FinanceiroFormaPagamento::summaryCodes())],
             'conta_financeira_id' => ['nullable', 'integer', Rule::exists('financeiro_contas', 'id')],
+            // Compra feita no cartão da assistência. Com cartão vinculado,
+            // data_vencimento é ignorada e recalculada pelo ciclo da fatura
+            // (ver FinanceiroService::resolveClassification()).
+            'cartao_credito_id' => ['nullable', 'integer', Rule::exists('financeiro_cartoes_credito', 'id')],
+            'data_compra' => ['nullable', 'date', 'required_with:cartao_credito_id'],
+            // Parcelamento da compra no cartão (só crédito). 1 = à vista.
+            'parcelas' => ['nullable', 'integer', 'min:1', 'max:36'],
             'data_vencimento' => [$requiredOrSometimes, 'date'],
             'data_pagamento' => ['nullable', 'date'],
             'data_competencia' => ['nullable', 'date'],

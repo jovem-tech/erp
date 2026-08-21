@@ -79,9 +79,15 @@
             if (window.jQuery) { window.jQuery(el).on('change', handler); }
         };
 
+        // Operadora/bandeira/taxa são da maquininha: só existem quando a
+        // assistência RECEBE do cliente. Numa conta a pagar o cartão é o da
+        // própria assistência — ninguém desconta taxa de adquirente dela — e
+        // oferecer esses campos ali criaria uma despesa de taxa inexistente.
+        const isReceivable = (form.dataset.tipo || 'receber') !== 'pagar';
+
         const toggleCardFields = () => {
             const formaPagamento = formaPagamentoSelect instanceof HTMLSelectElement ? formaPagamentoSelect.value : '';
-            const isCard = formaPagamento.startsWith('cartao');
+            const isCard = formaPagamento.startsWith('cartao') && isReceivable;
 
             if (cardFields instanceof HTMLElement) { cardFields.classList.toggle('d-none', !isCard); }
 
