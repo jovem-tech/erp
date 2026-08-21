@@ -50,6 +50,25 @@
         is_array($accountDataset['contas'] ?? null) ? $accountDataset['contas'] : [],
         static fn (array $account): bool => (bool) ($account['ativo'] ?? false)
     ));
+    // Cartões de crédito da assistência: só fazem sentido em despesa (a pagar)
+    // paga no cartão. Quando um cartão é escolhido, a data de vencimento deixa
+    // de ser digitada e passa a ser a da fatura em que a compra cai — o cálculo
+    // é do servidor (ver FinanceiroService::resolveClassification()); aqui só
+    // exibimos a prévia.
+    $cartoesCredito = is_array($cartoesCredito ?? null) ? $cartoesCredito : [];
+    $selectedCartaoCreditoId = (int) old('cartao_credito_id', $lancamento['cartao_credito_id'] ?? 0);
+    $defaultDataCompra = old('data_compra') ?: (string) ($lancamento['data_compra'] ?? '');
+    // O bloco é renderizado sempre que houver cartão cadastrado — quem decide
+    // se ele aparece é o JS, olhando Tipo + Forma de pagamento ao vivo. Não dá
+    // para gatilhar por $tipo aqui: em "Novo lançamento" a tela nasce como
+    // "a receber" e o usuário troca para "a pagar" depois, sem recarregar.
+    $showCartaoCredito = $cartoesCredito !== [];
+    $formaPagamento = old('forma_pagamento', $lancamento['forma_pagamento'] ?? '');
+    // Crédito e débito: nos dois o usuário quer registrar em qual cartão a
+    // compra saiu. A diferença é o vencimento — crédito entra na fatura do
+    // ciclo, débito vence no próprio dia (o dinheiro sai da conta na hora).
+    $cartaoFormasPagamento = ['cartao_credito', 'cartao_debito'];
+    $cartaoBlocoVisivel = $tipo === 'pagar' && in_array($formaPagamento, $cartaoFormasPagamento, true);
 @endphp
 
 <section class="desktop-form-card">
@@ -70,6 +89,17 @@
 
     <form method="post" action="{{ $formAction }}" class="desktop-form-stack" id="financeiroForm">
         @csrf
+        @php
+            // Origem "fatura do cartão": vem na querystring do link de editar e
+            // é devolvida no submit para o redirect voltar à fatura, e não à
+            // listagem de Lançamentos (ver FinanceiroController::successTarget()).
+            $voltarCartaoId = (int) request()->query('voltar_cartao_id', 0);
+            $voltarFaturaVencimento = trim((string) request()->query('voltar_fatura_vencimento', ''));
+        @endphp
+        @if ($voltarCartaoId > 0 && preg_match('/^\d{4}-\d{2}-\d{2}$/', $voltarFaturaVencimento) === 1)
+            <input type="hidden" name="voltar_cartao_id" value="{{ $voltarCartaoId }}">
+            <input type="hidden" name="voltar_fatura_vencimento" value="{{ $voltarFaturaVencimento }}">
+        @endif
         @if ($formMethod !== 'POST')
             @method($formMethod)
         @endif
@@ -194,24 +224,38 @@
 
             <div class="desktop-grid desktop-grid-three">
                 <div>
-                    <label for="financeiroDataVencimento">Data de vencimento *</label>
+                    <label for="financeiroDataVencimento" data-cartao-credito-vencimento-label>Data de vencimento *</label>
                     <input type="date" id="financeiroDataVencimento" name="data_vencimento" class="form-control" value="{{ $defaultDataVencimento }}" @if(empty($lancamento['id'])) data-set-today="1" @endif required>
+                    <small class="text-muted d-none mt-1" data-cartao-credito-vencimento-hint>
+                        Definido pela fatura do cartão — veja abaixo.
+                    </small>
                 </div>
 
                 <div>
                     <label for="financeiroStatus">Status</label>
-                    <select id="financeiroStatus" name="status" class="form-select">
+                    {{-- data-has-movements diz ao JS se este título já tem baixa
+                         real: só sem baixa o status pode ser travado em
+                         "Pendente" para compra no crédito (ver
+                         data-status-cartao-credito-hint abaixo). Numa despesa já
+                         paga pela fatura, travar mostraria "Pendente" para algo
+                         que está pago. --}}
+                    <select id="financeiroStatus"
+                            name="status"
+                            class="form-select"
+                            data-has-movements="{{ $hasMovements ? '1' : '0' }}">
                         <option value="pendente" @selected($status === 'pendente')>Pendente</option>
                         <option value="parcial" @selected($status === 'parcial') @disabled(! $hasMovements)>Parcial</option>
                         <option value="pago" @selected($status === 'pago')>Pago</option>
                         <option value="cancelado" @selected($status === 'cancelado') @disabled($hasMovements)>Cancelado</option>
                     </select>
-                    <small class="text-muted d-block mt-1">Selecionar "Pago" sem baixa registrada gera a baixa total automaticamente.</small>
+                    <small class="text-muted d-block mt-1" data-status-hint-padrao>Selecionar "Pago" sem baixa registrada gera a baixa total automaticamente.</small>
+                    <small class="text-muted d-none mt-1" data-status-cartao-credito-hint>
+                        Compra no crédito fica sempre pendente — quem liquida é a fatura do cartão.
+                    </small>
                 </div>
 
                 <div>
                     <label for="financeiroFormaPagamento">Forma de pagamento</label>
-                    @php $formaPagamento = old('forma_pagamento', $lancamento['forma_pagamento'] ?? ''); @endphp
                     {{--
                         Este campo grava na coluna-resumo do título, que é um ENUM fixo
                         no banco legado — por isso lista só as formas compatíveis com ele.
@@ -222,11 +266,85 @@
                         <option value="" @selected($formaPagamento === '')>Não informado</option>
                         @foreach (($formasPagamento ?? []) as $forma)
                             @continue(! ($forma['ativo'] ?? true) || ! ($forma['resumo_enum'] ?? false))
-                            <option value="{{ $forma['codigo'] }}" @selected($formaPagamento === $forma['codigo'])>{{ $forma['nome'] }}</option>
+                            @php
+                                // O mesmo código significa coisas opostas nos dois
+                                // sentidos: recebendo, "cartão" é a maquininha (com
+                                // operadora e taxa); pagando, é o cartão da própria
+                                // assistência. O rótulo precisa deixar isso claro,
+                                // senão o usuário escolhe achando que é a outra coisa.
+                                $rotuloForma = $forma['nome'];
+                                if ($tipo === 'pagar' && in_array($forma['codigo'], $cartaoFormasPagamento, true)) {
+                                    $rotuloForma .= ' (cartão da assistência)';
+                                }
+                            @endphp
+                            <option value="{{ $forma['codigo'] }}" @selected($formaPagamento === $forma['codigo'])>{{ $rotuloForma }}</option>
                         @endforeach
                     </select>
-                    <p class="small text-secondary mt-1 mb-0">Formas personalizadas ficam disponíveis na hora da baixa.</p>
+                    <p class="small text-secondary mt-1 mb-0" data-forma-pagamento-hint-receber @class(['d-none' => $tipo === 'pagar'])>
+                        Formas personalizadas ficam disponíveis na hora da baixa. No cartão, a taxa da operadora é calculada na baixa.
+                    </p>
+                    <p class="small text-secondary mt-1 mb-0" data-forma-pagamento-hint-pagar @class(['d-none' => $tipo !== 'pagar'])>
+                        No cartão, escolha abaixo qual cartão da assistência foi usado. Não há taxa de operadora aqui — isso só existe ao receber do cliente.
+                    </p>
                 </div>
+
+                @if ($showCartaoCredito)
+                    {{-- Aparece quando Tipo = a pagar E forma de pagamento =
+                         cartão de crédito. Quem controla é o JS (as duas
+                         escolhas mudam sem recarregar a tela); aqui só
+                         definimos o estado inicial. Escolher um cartão troca o
+                         vencimento livre pelo vencimento da fatura. --}}
+                    <div id="financeiroCartaoCreditoWrapper"
+                         @class(['d-none' => ! $cartaoBlocoVisivel])
+                         data-cartao-credito-wrapper
+                         data-preview-url-template="{{ route('financeiro.cartoes-credito.prever-fatura', ['cartaoCredito' => '__CARTAO__']) }}">
+                        <label for="financeiroCartaoCredito">Cartão</label>
+                        <select id="financeiroCartaoCredito" name="cartao_credito_id" class="form-select" data-cartao-credito-select>
+                            <option value="">Não vincular a um cartão</option>
+                            @foreach ($cartoesCredito as $cartaoOption)
+                                <option value="{{ (int) $cartaoOption['id'] }}"
+                                        data-conta-id="{{ (int) ($cartaoOption['conta_financeira_id'] ?? 0) }}"
+                                        data-conta-nome="{{ $cartaoOption['conta_financeira_nome'] ?? '' }}"
+                                        @selected($selectedCartaoCreditoId === (int) $cartaoOption['id'])>
+                                    {{ $cartaoOption['nome'] }}{{ !empty($cartaoOption['final_cartao']) ? ' · final ' . $cartaoOption['final_cartao'] : '' }}
+                                </option>
+                            @endforeach
+                        </select>
+                        <small class="text-muted d-block mt-1" data-cartao-credito-conta-hint></small>
+                    </div>
+
+                    <div id="financeiroDataCompraWrapper"
+                         @class(['d-none' => ! $cartaoBlocoVisivel || $selectedCartaoCreditoId <= 0])
+                         data-cartao-credito-compra-wrapper>
+                        <label for="financeiroDataCompra">Data da compra *</label>
+                        <input type="date" id="financeiroDataCompra" name="data_compra" class="form-control"
+                               value="{{ $defaultDataCompra ?: date('Y-m-d') }}" data-cartao-credito-data-compra>
+                        <small class="text-muted d-block mt-1" data-cartao-credito-preview>
+                            Escolha o cartão e a data para ver em qual fatura a compra cai.
+                        </small>
+                    </div>
+
+                    {{-- Parcelamento: só no crédito e só na criação. Reparcelar
+                         um título já lançado mudaria valores e vencimentos de
+                         parcelas que já estão em faturas. --}}
+                    @if (empty($lancamento['id']))
+                        <div id="financeiroParcelasWrapper"
+                             @class(['d-none' => ! $cartaoBlocoVisivel || $selectedCartaoCreditoId <= 0 || $formaPagamento !== 'cartao_credito'])
+                             data-cartao-credito-parcelas-wrapper>
+                            <label for="financeiroParcelas">Parcelas</label>
+                            <select id="financeiroParcelas" name="parcelas" class="form-select" data-cartao-credito-parcelas>
+                                @for ($p = 1; $p <= 24; $p++)
+                                    <option value="{{ $p }}" @selected((int) old('parcelas', 1) === $p)>
+                                        {{ $p === 1 ? 'À vista (1x)' : $p . 'x' }}
+                                    </option>
+                                @endfor
+                            </select>
+                            <small class="text-muted d-block mt-1" data-cartao-credito-parcelas-hint>
+                                O valor informado acima é o total da compra.
+                            </small>
+                        </div>
+                    @endif
+                @endif
 
                 <div id="financeiroDataPagamentoWrapper" @class(['d-none' => $status !== 'pago'])>
                     <label for="financeiroDataPagamento">Data do pagamento</label>

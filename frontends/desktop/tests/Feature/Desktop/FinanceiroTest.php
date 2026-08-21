@@ -31,6 +31,210 @@ class FinanceiroTest extends TestCase
             ->assertSee('financeiroAvulso', false);
     }
 
+    /**
+     * A tabela precisa dizer QUANDO cada título foi liquidado — a despesa paga
+     * e a receita recebida. Enquanto pendente a coluna fica vazia:
+     * financeiro.data_pagamento é derivada dos movimentos e só existe depois da
+     * baixa.
+     */
+    public function test_index_page_shows_the_settlement_date_column(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'lancamentos' => [
+                        [
+                            'id' => 1,
+                            'tipo' => 'pagar',
+                            'categoria' => 'Energia',
+                            'valor' => 100.0,
+                            'status' => 'pago',
+                            'data_vencimento' => '2026-08-15',
+                            'data_pagamento' => '2026-08-14',
+                        ],
+                        [
+                            'id' => 2,
+                            'tipo' => 'receber',
+                            'categoria' => 'Serviço',
+                            'valor' => 80.0,
+                            'status' => 'pago',
+                            'data_vencimento' => '2026-08-15',
+                            'data_pagamento' => '2026-08-16',
+                        ],
+                        [
+                            'id' => 3,
+                            'tipo' => 'pagar',
+                            'categoria' => 'Aluguel',
+                            'valor' => 500.0,
+                            'status' => 'pendente',
+                            'data_vencimento' => '2026-09-05',
+                            'data_pagamento' => null,
+                        ],
+                    ],
+                    'status_options' => [],
+                    'totais_despesas' => ['fixas' => 600.0, 'variaveis' => 0.0],
+                ],
+                'error' => null,
+                'meta' => ['pagination' => ['current_page' => 1, 'per_page' => 15, 'total' => 3, 'last_page' => 1, 'from' => 1, 'to' => 3]],
+            ], 200),
+        ]);
+
+        $content = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar']]))
+            ->get('/financeiro')
+            ->assertOk()
+            ->assertSee('Baixa')
+            // Despesa paga e receita recebida, cada uma com sua data.
+            ->assertSee('14/08/2026')
+            ->assertSee('16/08/2026')
+            ->getContent();
+
+        // O pendente não inventa data: a célula fica com o travessão.
+        $this->assertStringContainsString('<td data-label="Baixa">', $content);
+        $this->assertStringContainsString('—', $content);
+    }
+
+    /**
+     * O modal de baixa precisa declarar o tipo do PRÓPRIO título. O loop dos
+     * modais não redeclarava $tipo, então herdava o da última linha da página:
+     * numa lista terminada em "a receber", uma conta a pagar passava a
+     * oferecer os campos de operadora/taxa da maquininha — e preencher isso
+     * cria uma despesa de taxa que não existe (ver financeiro-pay.js).
+     */
+    public function test_pay_modal_declares_the_type_of_its_own_entry(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'categorias' => [],
+                    // O select de conta só aparece com conta ativa — é ele que
+                    // carrega o texto de entrada/saída sob teste.
+                    'contas_financeiras' => [
+                        'contas' => [
+                            ['id' => 1, 'nome' => 'Inter', 'ativo' => true, 'considera_disponivel' => true],
+                        ],
+                        'contas_padrao' => [],
+                        'tipos' => [],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/financeiro*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'lancamentos' => [
+                        [
+                            'id' => 41,
+                            'tipo' => 'pagar',
+                            'categoria' => 'Energia',
+                            'valor' => 100.0,
+                            'status' => 'pendente',
+                            'data_vencimento' => '2026-09-10',
+                        ],
+                        // Última da lista é "a receber": é o valor que vazava
+                        // para o modal do título acima.
+                        [
+                            'id' => 42,
+                            'tipo' => 'receber',
+                            'categoria' => 'Serviço',
+                            'valor' => 80.0,
+                            'status' => 'pendente',
+                            'data_vencimento' => '2026-09-11',
+                        ],
+                    ],
+                    'status_options' => [],
+                    'totais_despesas' => ['fixas' => 100.0, 'variaveis' => 0.0],
+                ],
+                'error' => null,
+                'meta' => ['pagination' => ['current_page' => 1, 'per_page' => 15, 'total' => 2, 'last_page' => 1, 'from' => 1, 'to' => 2]],
+            ], 200),
+        ]);
+
+        $content = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'editar']]))
+            ->get('/financeiro')
+            ->assertOk()
+            ->getContent();
+
+        $modalPagar = $this->trechoDoModal($content, 41);
+        $modalReceber = $this->trechoDoModal($content, 42);
+
+        $this->assertStringContainsString('data-tipo="pagar"', $modalPagar);
+        $this->assertStringContainsString('data-tipo="receber"', $modalReceber);
+
+        // E o texto da conta acompanha a direção de cada um.
+        $this->assertStringContainsString('Define de qual conta o dinheiro sai.', $modalPagar);
+        $this->assertStringContainsString('Define em qual conta o dinheiro entra.', $modalReceber);
+    }
+
+    /**
+     * Sem data-tipo o financeiro-pay.js assume "receber" — a tela de detalhe
+     * de uma conta a pagar oferecia os campos de maquininha.
+     */
+    public function test_detail_pay_form_declares_the_entry_type(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'categorias' => [],
+                    // O select de conta só aparece com conta ativa — é ele que
+                    // carrega o texto de entrada/saída sob teste.
+                    'contas_financeiras' => [
+                        'contas' => [
+                            ['id' => 1, 'nome' => 'Inter', 'ativo' => true, 'considera_disponivel' => true],
+                        ],
+                        'contas_padrao' => [],
+                        'tipos' => [],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/55' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'lancamento' => [
+                        'id' => 55,
+                        'tipo' => 'pagar',
+                        'categoria' => 'Energia',
+                        'descricao' => 'Conta de luz',
+                        'valor' => 100.0,
+                        'status' => 'pendente',
+                        'data_vencimento' => '2026-09-10',
+                    ],
+                    'resumo' => ['total_movimentos' => 0, 'valor_aberto' => 100.0],
+                    'detalhes' => [],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $this->withSession($this->desktopSession(['financeiro' => ['visualizar', 'editar']]))
+            ->get('/financeiro/55')
+            ->assertOk()
+            ->assertSee('data-tipo="pagar"', false)
+            ->assertSee('Define de qual conta o dinheiro sai.', false);
+    }
+
+    /** Recorta o HTML de um modal de baixa para asserções por título. */
+    private function trechoDoModal(string $html, int $id): string
+    {
+        $inicio = strpos($html, 'id="payModal'.$id.'"');
+        $this->assertNotFalse($inicio, "Modal do lançamento {$id} não foi renderizado.");
+
+        $fim = strpos($html, 'id="payModal', $inicio + 1);
+
+        return $fim === false ? substr($html, $inicio) : substr($html, $inicio, $fim - $inicio);
+    }
+
     public function test_index_page_renders_lancamentos_from_api(): void
     {
         Http::fake([
@@ -81,6 +285,68 @@ class FinanceiroTest extends TestCase
             ->assertSee('Mês (vencimento)')
             // Sessão sem permissão de "precificacao" — item some do dropdown.
             ->assertDontSee(route('financeiro.precificacao.index'), false);
+    }
+
+    /**
+     * O recibo de pagamento de fatura (gerado pela baixa em lote — ver
+     * FinanceiroCartaoCreditoService::payInvoice() no backend) é a "conta" que
+     * agrupa despesas fixas e variáveis. Precisa aparecer como linha própria
+     * aqui, reaproveitando o mesmo template das demais, com a badge do cartão
+     * linkando de volta para a fatura de origem.
+     */
+    public function test_index_page_renders_the_invoice_payment_receipt_row(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'lancamentos' => [
+                        [
+                            'id' => 90,
+                            'tipo' => 'pagar',
+                            'categoria' => 'Fatura de cartão de crédito',
+                            'descricao' => 'Pagamento da fatura Inter — venc. 25/08/2026 (2 despesas)',
+                            'valor' => 75.0,
+                            'status' => 'pago',
+                            'data_vencimento' => '2026-08-25',
+                            'origem_tipo' => 'fatura_cartao_credito',
+                            'origem_trilha' => ['Pagamento de fatura em lote'],
+                            // Modalidade NULL: não é compra no cartão, é o
+                            // pagamento da fatura — por isso não recebe as
+                            // travas de "gerencie pela fatura".
+                            'cartao_modalidade' => null,
+                            'cartao_credito' => ['id' => 7, 'nome' => 'Inter'],
+                        ],
+                    ],
+                    'status_options' => [],
+                    'totais_despesas' => ['fixas' => 25.0, 'variaveis' => 50.0],
+                ],
+                'error' => null,
+                'meta' => ['pagination' => ['current_page' => 1, 'per_page' => 15, 'total' => 1, 'last_page' => 1, 'from' => 1, 'to' => 1]],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'financeiro' => ['visualizar', 'criar', 'editar', 'excluir'],
+                'contas_saldos' => ['visualizar'],
+            ]))
+            ->get('/financeiro');
+
+        $response->assertOk()
+            ->assertSee('Fatura de cartão de crédito')
+            ->assertSee('Pagamento de fatura em lote')
+            ->assertSee('Inter')
+            // Badge do cartão linka para a fatura que este recibo pagou.
+            ->assertSee(route('financeiro.cartoes-credito.faturas.show', [
+                'cartaoCredito' => 7,
+                'dataVencimento' => '2026-08-25',
+            ]), false)
+            // Os totais continuam vindo do backend sem o valor do recibo
+            // somado (as despesas que ele resume já entram individualmente).
+            ->assertSee('R$ 25,00')
+            ->assertSee('R$ 50,00');
     }
 
     public function test_index_page_shows_precificacao_in_mais_acoes_when_permitted(): void

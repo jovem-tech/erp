@@ -211,6 +211,41 @@ class ConfigurationController extends DesktopController
         return response($download['body'], $download['status'], $download['headers']);
     }
 
+    /**
+     * /favicon.ico — o icone que o navegador busca sozinho quando a resposta
+     * nao tem <head> para declarar <link rel="icon">: PDF aberto na aba
+     * (comprovante de devolucao, orcamento, documentos da OS), downloads e a
+     * pagina de erro padrao do framework. Sem esta rota o navegador caia no
+     * arquivo estatico public/favicon.ico, que era o icone generico do ERP —
+     * a aba do PDF ficava com marca diferente da do sistema.
+     *
+     * Nunca falha: sem logo cadastrada (ou API fora do ar) devolve o icone
+     * padrao do ERP. Aba com icone generico e' ruim; aba com icone quebrado
+     * (404) e' pior.
+     */
+    public function browserFavicon(): \Illuminate\Http\Response
+    {
+        try {
+            $download = $this->companyProfileService->downloadPublicFavicon();
+
+            if ((int) $download['status'] === 200 && ($download['body'] ?? '') !== '') {
+                return response($download['body'], 200, $download['headers']);
+            }
+        } catch (Throwable) {
+            // Segue para o icone padrao.
+        }
+
+        return response(
+            (string) file_get_contents(public_path('assets/img/favicon-default.ico')),
+            200,
+            [
+                'Content-Type' => 'image/x-icon',
+                'Content-Disposition' => 'inline; filename=favicon.ico',
+                'Cache-Control' => 'public, no-cache, must-revalidate',
+            ]
+        );
+    }
+
     public function publicLoginBackground(): \Illuminate\Http\Response
     {
         try {

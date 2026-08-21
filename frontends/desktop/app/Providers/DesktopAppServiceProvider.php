@@ -70,9 +70,11 @@ class DesktopAppServiceProvider extends ServiceProvider
                 'developed_by' => 'Jovem Tech',
             ]);
 
-            $view->with('desktopCompanyBranding', DesktopSession::hasToken()
-                ? app(CompanyProfileService::class)->branding()
-                : ['name' => 'Sistema ERP', 'has_logo' => false]);
+            // Branding resolvido tambem sem sessao: o favicon da aba
+            // (layouts.partials.favicon) precisa da logo da empresa no login,
+            // na recuperacao de senha e nas paginas publicas. A consulta e
+            // cacheada por 60s e cai em fallback se a API nao responder.
+            $view->with('desktopCompanyBranding', app(CompanyProfileService::class)->branding());
 
             // Guard de "fechar o navegador = deslogar" para sessões SEM
             // "Manter-me conectado": ativo apenas quando há sessão e ela não é

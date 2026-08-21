@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Impressão documental {{ $order['numero_os'] ?? '' }}</title>
+    @include('layouts.partials.favicon')
     <style>
         body { margin: 0; font-family: Inter, Arial, sans-serif; background: #f8fbff; color: #0f172a; }
         .page { max-width: 1120px; margin: 0 auto; padding: 24px; }

@@ -1,5 +1,145 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.39.5.0 — 2026-08-21 07:56
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Aba de PDF, download e pagina de erro passam a exibir a logo da empresa: /favicon.ico vira rota servida pela marca cadastrada (desktop e API), no lugar do arquivo estatico generico
+
+## v5.39.4.0 — 2026-08-21 07:40
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Pagamento de fatura de cartao passa a mostrar as despesas que quitou, com a OS e o fornecedor de cada uma (o recibo nao tem os_id proprio e a tela dizia 'Sem OS vinculada'); a fatura tambem exibe a OS de cada despesa
+
+## v5.39.3.0 — 2026-08-20 16:51
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Padroniza o favicon em todas as paginas: partial unico no desktop (login, recuperacao de senha, painel, impressao, pre-visualizacao e assinatura publica) e nas paginas HTML publicas da API (orcamento, documentos compartilhados e telas de erro)
+
+## v5.39.2.1 — 2026-08-20 16:38
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige favicon da tela de login: remove o link 'alternate icon' que fazia o navegador exibir o icone padrao no lugar da logo da empresa
+
+## v5.39.2.0 — 2026-08-20 12:32
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Campo Conta financeira passa a dizer se o dinheiro entra ou sai conforme o lancamento; corrige o modal de baixa que herdava o tipo da ultima linha da listagem e a tela de detalhe que nao informava o tipo, o que exibia campos de maquininha em conta a pagar e podia gerar despesa de taxa inexistente
+- **Arquivos:** frontends/desktop/resources/views/financeiro/_account_select.blade.php,frontends/desktop/resources/views/financeiro/_lancamentos_table.blade.php,frontends/desktop/resources/views/financeiro/cartoes-credito/_pagar_fatura_modal.blade.php,frontends/desktop/resources/views/financeiro/show.blade.php,frontends/desktop/tests/Feature/Desktop/FinanceiroCartaoCreditoTest.php,frontends/desktop/tests/Feature/Desktop/FinanceiroTest.php
+
+## v5.39.1.0 — 2026-08-20 11:22
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Recibo de pagamento de fatura deixa de ser editavel/cancelavel/excluivel pelas telas genericas de Lancamentos: salvar por la apagava o vinculo com o cartao e devolvia o titulo para pendente, fazendo a fatura paga parecer nao registrada
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/FinanceiroController.php,backend/tests/Feature/Api/V1/FinanceiroCartaoCreditoTest.php,frontends/desktop/resources/views/financeiro/_lancamentos_table.blade.php
+
+## v5.39.0.0 — 2026-08-20 04:38
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Fluxo de caixa: pagar fatura de cartao vira uma linha so no detalhe do dia, com as despesas cobertas listadas dentro dela, em vez de N saidas separadas. Totais do dia inalterados
+- **Arquivos:** backend/app/Services/Financeiro/FinanceiroReportService.php,backend/tests/Feature/Api/V1/FinanceiroReportTest.php,frontends/desktop/resources/views/financeiro/relatorios/fluxo-caixa.blade.php
+
+## v5.38.1.0 — 2026-08-20 04:25
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Titulos financeiros ganham a coluna Baixa com a data em que a despesa foi paga ou a receita recebida, em Lancamentos e Despesas
+- **Arquivos:** frontends/desktop/resources/views/financeiro/_lancamentos_table.blade.php,frontends/desktop/tests/Feature/Desktop/FinanceiroTest.php
+
+## v5.38.0.0 — 2026-08-20 04:16
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Step-up de administrador passa a aceitar super administrador por RBAC (grupos:editar), alem do perfil legado admin. Vale para todos os fluxos que pedem senha de admin, com playbook e teste dedicado
+- **Arquivos:** backend/app/Services/Auth/AdminCredentialVerifier.php,backend/tests/Feature/Auth/AdminCredentialVerifierTest.php,documentacao/04-governanca-ai/playbooks/step-up-de-administrador.md
+
+## v5.37.3.0 — 2026-08-20 04:02
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Despesa de cartao no credito: edicao passa a ser pela fatura (listagem de Lancamentos leva ate ela), botao Editar em cada despesa da fatura e retorno para a fatura apos salvar
+- **Arquivos:** frontends/desktop/app/Http/Controllers/FinanceiroController.php,frontends/desktop/resources/views/financeiro/_lancamentos_table.blade.php,frontends/desktop/resources/views/financeiro/cartoes-credito/fatura-show.blade.php,frontends/desktop/resources/views/financeiro/form.blade.php,frontends/desktop/tests/Feature/Desktop/FinanceiroCartaoCreditoTest.php
+
+## v5.37.2.0 — 2026-08-20 03:52
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Fatura paga passa a mostrar a data do pagamento: nova coluna Pagamento na tabela de faturas e Paga em DD/MM/AAAA no card Situacao da fatura
+- **Arquivos:** backend/app/Services/Financeiro/FinanceiroCartaoCreditoService.php,backend/tests/Feature/Api/V1/FinanceiroCartaoCreditoTest.php,frontends/desktop/resources/views/financeiro/cartoes-credito/fatura-show.blade.php,frontends/desktop/resources/views/financeiro/cartoes-credito/faturas.blade.php,frontends/desktop/tests/Feature/Desktop/FinanceiroCartaoCreditoTest.php
+
+## v5.37.1.0 — 2026-08-20 03:45
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Despesa esquecida: calendario da data da compra limitado a janela em que a fatura esteve aberta (abertura ate fechamento do ciclo), com a janela exposta em invoiceList e o hint mostrando o periodo
+- **Arquivos:** backend/app/Services/Financeiro/FinanceiroCartaoCreditoService.php,backend/tests/Feature/Api/V1/FinanceiroCartaoCreditoTest.php,frontends/desktop/public/assets/js/financeiro-despesa-esquecida.js,frontends/desktop/resources/views/financeiro/cartoes-credito/_despesa_esquecida_modal.blade.php,frontends/desktop/resources/views/financeiro/cartoes-credito/faturas.blade.php,frontends/desktop/tests/Feature/Desktop/FinanceiroCartaoCreditoTest.php,specs/030-cartoes-credito-assistencia/spec.md
+
+## v5.37.0.0 — 2026-08-20 03:35
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Mais acoes na tela de faturas do cartao: lancar despesa esquecida numa fatura ja paga. Entra ja quitada junto com a fatura (mesma data/forma/conta da baixa), corrigindo o total sem precisar cancelar a baixa e pagar de novo
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/FinanceiroCartaoCreditoController.php,backend/app/Http/Requests/Api/V1/StoreForgottenFinanceiroCartaoCreditoExpenseRequest.php,backend/app/Services/Financeiro/FinanceiroCartaoCreditoService.php,backend/routes/api.php,backend/tests/Feature/Api/V1/FinanceiroCartaoCreditoTest.php,frontends/desktop/app/Http/Controllers/FinanceiroCartaoCreditoController.php,frontends/desktop/app/Services/FinanceiroCartaoCreditoService.php,frontends/desktop/resources/views/financeiro/cartoes-credito/_despesa_esquecida_modal.blade.php,frontends/desktop/resources/views/financeiro/cartoes-credito/faturas.blade.php,frontends/desktop/routes/web.php,frontends/desktop/tests/Feature/Desktop/FinanceiroCartaoCreditoTest.php,specs/030-cartoes-credito-assistencia/spec.md
+
+## v5.36.1.0 — 2026-08-20 03:27
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Faturas do cartao: coluna Fechamento na tabela, com a data derivada do vencimento pelo ciclo do cartao
+- **Arquivos:** backend/app/Services/Financeiro/FinanceiroCartaoCreditoService.php,backend/tests/Feature/Api/V1/FinanceiroCartaoCreditoTest.php,frontends/desktop/resources/views/financeiro/cartoes-credito/faturas.blade.php,frontends/desktop/tests/Feature/Desktop/FinanceiroCartaoCreditoTest.php
+
+## v5.36.0.0 — 2026-08-20 02:58
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Data da compra no cartao so pode cair em fatura ainda aberta: save recusa lancamento em fatura ja paga e o calendario trava no dia seguinte ao fechamento da ultima fatura paga. Fatura vencida em aberto continua aceitando
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/FinanceiroCartaoCreditoController.php,backend/app/Services/Financeiro/FinanceiroCartaoCreditoService.php,backend/app/Services/Financeiro/FinanceiroService.php,backend/tests/Feature/Api/V1/FinanceiroCartaoCreditoTest.php,frontends/desktop/public/assets/js/financeiro-form.js,specs/030-cartoes-credito-assistencia/spec.md
+
+## v5.35.1.0 — 2026-08-20 01:55
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Despesa comprada no credito de cartao nao pode nascer paga: status trava em Pendente no formulario e o backend normaliza, pois quem liquida e a fatura. Nao afeta debito nem recebimento na maquininha
+- **Arquivos:** backend/app/Services/Financeiro/FinanceiroService.php,backend/tests/Feature/Api/V1/FinanceiroCartaoCreditoTest.php,frontends/desktop/public/assets/js/financeiro-form.js,frontends/desktop/resources/views/financeiro/form.blade.php,frontends/desktop/tests/Feature/Desktop/FinanceiroCartaoCreditoTest.php,specs/030-cartoes-credito-assistencia/spec.md
+
+## v5.35.0.0 — 2026-08-20 01:12
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Cancelar baixa de fatura de cartao passa a exigir confirmacao de administrador (e-mail e senha), mesma regra de excluir lancamento, com rate limit proprio e modal dedicado na tela da fatura
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/FinanceiroCartaoCreditoController.php,backend/app/Http/Requests/Api/V1/CancelFinanceiroCartaoCreditoInvoiceRequest.php,backend/tests/Feature/Api/V1/FinanceiroCartaoCreditoTest.php,frontends/desktop/app/Http/Controllers/FinanceiroCartaoCreditoController.php,frontends/desktop/app/Services/FinanceiroCartaoCreditoService.php,frontends/desktop/resources/views/financeiro/cartoes-credito/_cancelar_baixa_admin_modal.blade.php,frontends/desktop/resources/views/financeiro/cartoes-credito/fatura-show.blade.php,frontends/desktop/tests/Feature/Desktop/FinanceiroCartaoCreditoTest.php,specs/030-cartoes-credito-assistencia/spec.md
+
+## v5.34.0.0 — 2026-08-20 00:57
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Fatura de cartao: acao Cancelar baixa da fatura em Mais acoes — estorna as despesas de volta para pendente, cancela o recibo do pagamento e reabre a fatura para ser paga de novo
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/FinanceiroCartaoCreditoController.php,backend/app/Services/Financeiro/FinanceiroCartaoCreditoService.php,backend/routes/api.php,backend/tests/Feature/Api/V1/FinanceiroCartaoCreditoTest.php,frontends/desktop/app/Http/Controllers/FinanceiroCartaoCreditoController.php,frontends/desktop/app/Services/FinanceiroCartaoCreditoService.php,frontends/desktop/resources/views/financeiro/cartoes-credito/fatura-show.blade.php,frontends/desktop/routes/web.php,frontends/desktop/tests/Feature/Desktop/FinanceiroCartaoCreditoTest.php,specs/030-cartoes-credito-assistencia/spec.md
+
+## v5.33.0.0 — 2026-08-20 00:40
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Financeiro: pagamento de fatura de cartao passa a gerar um lancamento proprio (recibo da baixa em lote) visivel na listagem de lancamentos e despesas, sem somar ao total de despesas fixas/variaveis nem ao DRE/fluxo de caixa (as despesas que ele agrupa ja entram individualmente)
+- **Arquivos:** backend/app/Models/Financeiro.php,backend/app/Services/Financeiro/FinanceiroCartaoCreditoService.php,backend/app/Services/Financeiro/FinanceiroService.php,backend/tests/Feature/Api/V1/FinanceiroCartaoCreditoTest.php,frontends/desktop/tests/Feature/Desktop/FinanceiroTest.php,specs/030-cartoes-credito-assistencia/spec.md
+
+## v5.32.3.0 — 2026-08-19 21:55
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Fatura do cartao: botao Marcar fatura como paga na tela de fatura agora só aparece para a fatura corrente ou vencida (mesma regra ja aplicada na listagem de faturas), consistente com a despesa da listagem geral linkando direto para a fatura
+- **Arquivos:** backend/app/Services/Financeiro/FinanceiroCartaoCreditoService.php,backend/tests/Feature/Api/V1/FinanceiroCartaoCreditoTest.php,frontends/desktop/resources/views/financeiro/cartoes-credito/fatura-show.blade.php,frontends/desktop/tests/Feature/Desktop/FinanceiroCartaoCreditoTest.php
+
+## v5.32.2.0 — 2026-08-19 21:36
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Financeiro: despesa lancada no credito de cartao (fatura) nao pode mais ser baixada, cancelada ou excluida individualmente; baixa redireciona para a fatura de origem (guarda no backend + UI desktop)
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/FinanceiroController.php,backend/tests/Feature/Api/V1/FinanceiroCartaoCreditoTest.php,frontends/desktop/resources/views/financeiro/_lancamentos_table.blade.php,frontends/desktop/resources/views/financeiro/show.blade.php
+
+## v5.32.1.0 — 2026-08-19 21:18
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Faturas do cartao: acao renomeada para Ver fatura e botao Pagar fatura direto na listagem (so na fatura atual e nas vencidas), com saldo em aberto real descontando baixas parciais
+- **Arquivos:** backend/app/Services/Financeiro/FinanceiroCartaoCreditoService.php,backend/tests/Feature/Api/V1/FinanceiroCartaoCreditoTest.php,frontends/desktop/app/Http/Controllers/FinanceiroCartaoCreditoController.php,frontends/desktop/resources/views/financeiro/cartoes-credito/_pagar_fatura_modal.blade.php,frontends/desktop/resources/views/financeiro/cartoes-credito/faturas.blade.php,frontends/desktop/resources/views/financeiro/cartoes-credito/fatura-show.blade.php,frontends/desktop/tests/Feature/Desktop/FinanceiroCartaoCreditoTest.php
+
+## v5.32.0.1 — 2026-08-19 21:07
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Navbar desktop: acao rapida 'Novo lancamento' no menu + Novo, linkando para financeiro/novo (financeiro:criar)
+- **Arquivos:** frontends/desktop/resources/views/layouts/partials/navbar.blade.php
+
+## v5.32.0.0 — 2026-08-19 21:00
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Cartoes de credito da assistencia: cadastro em Contas e Saldos com conta vinculada, vinculo da despesa ao cartao com ciclo real de fatura (fechamento/vencimento), credito x debito, parcelamento, baixa da fatura em lote, filtros e KPI na listagem de faturas
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/FinanceiroCartaoCreditoController.php,backend/app/Http/Controllers/Api/V1/FinanceiroCatalogController.php,backend/app/Http/Requests/Api/V1/PayFinanceiroCartaoCreditoInvoiceRequest.php,backend/app/Http/Requests/Api/V1/UpsertFinanceiroCartaoCreditoRequest.php,backend/app/Http/Requests/Api/V1/UpsertFinanceiroRequest.php,backend/app/Models/FinanceiroCartaoCredito.php,backend/app/Models/Financeiro.php,backend/app/Services/Financeiro/FinanceiroCartaoCreditoService.php,backend/app/Services/Financeiro/FinanceiroService.php,backend/database/migrations/2026_08_17_000001_create_financeiro_cartoes_credito_table.php,backend/database/migrations/2026_08_17_000002_add_cartao_credito_to_financeiro_table.php,backend/database/migrations/2026_08_17_000003_add_conta_financeira_to_financeiro_cartoes_credito.php,backend/database/migrations/2026_08_17_000004_add_cartao_modalidade_to_financeiro_table.php,backend/database/migrations/2026_08_17_000005_add_cartao_parcelas_to_financeiro_table.php,backend/routes/api.php,backend/tests/Feature/Api/V1/FinanceiroCartaoCreditoTest.php,frontends/desktop/app/Http/Controllers/FinanceiroCartaoCreditoController.php,frontends/desktop/app/Http/Controllers/FinanceiroContaController.php,frontends/desktop/app/Http/Controllers/FinanceiroController.php,frontends/desktop/app/Services/FinanceiroCartaoCreditoService.php,frontends/desktop/app/Services/FinanceiroService.php,frontends/desktop/public/assets/js/financeiro-form.js,frontends/desktop/public/assets/js/financeiro-pay.js,frontends/desktop/resources/views/financeiro/_cartao_credito_form_modal.blade.php,frontends/desktop/resources/views/financeiro/cartoes-credito/faturas.blade.php,frontends/desktop/resources/views/financeiro/cartoes-credito/fatura-show.blade.php,frontends/desktop/resources/views/financeiro/contas/index.blade.php,frontends/desktop/resources/views/financeiro/form.blade.php,frontends/desktop/resources/views/financeiro/_lancamentos_table.blade.php,frontends/desktop/resources/views/financeiro/show.blade.php,frontends/desktop/routes/web.php,frontends/desktop/tests/Feature/Desktop/FinanceiroCartaoCreditoTest.php,specs/030-cartoes-credito-assistencia/spec.md
+
 ## v5.31.3.0 — 2026-08-15 14:24
 - **Tier:** patch
 - **Autor/Agente:** Codex

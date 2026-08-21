@@ -113,6 +113,9 @@ class FinanceiroService
             'formas_pagamento' => $response['data']['formas_pagamento'] ?? [],
             'chaves_pix' => $response['data']['chaves_pix'] ?? [],
             'chaves_pix_tipos' => $response['data']['chaves_pix_tipos'] ?? [],
+            // Cartões da assistência (compras) — alimentam o select "Cartão"
+            // do formulário de despesa.
+            'cartoes_credito' => $response['data']['cartoes_credito'] ?? [],
         ];
     }
 

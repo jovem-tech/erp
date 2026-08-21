@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Documentos da OS {{ $order['numero_os'] ?? '' }}</title>
+    @include('partials.favicon')
     <style>
         * { box-sizing: border-box; }
         body { margin: 0; font-family: Inter, Arial, sans-serif; background: #eff6ff; color: #0f172a; }

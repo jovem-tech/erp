@@ -42,6 +42,52 @@
         $movimentos = $detalhes['movimentos'] ?? [];
         $impactos = $detalhes['impactos'] ?? [];
         $auditoria = $detalhes['auditoria'] ?? [];
+        // Compra no cartão da assistência (null quando a despesa não é de cartão).
+        $cartaoCredito = is_array($detalhes['cartao_credito'] ?? null) ? $detalhes['cartao_credito'] : null;
+        // Só compra no crédito entra em fatura (ver
+        // FinanceiroCartaoCreditoService::MODALIDADE_CREDITO) — só essas
+        // despesas ficam com baixa/cancelamento/exclusão exclusivos da fatura.
+        $isCartaoFatura = $cartaoCredito !== null && ($lancamento['cartao_modalidade'] ?? null) === 'credito';
+        $cartaoFaturaUrl = null;
+        if ($isCartaoFatura) {
+            $cartaoFaturaVencimentoAcao = $cartaoCredito['fatura_vencimento'] ?? null;
+            $cartaoCreditoIdAcao = (int) ($cartaoCredito['id'] ?? 0);
+            if (\App\Support\DesktopSession::can('contas_saldos', 'visualizar') && $cartaoCreditoIdAcao > 0 && $cartaoFaturaVencimentoAcao) {
+                $cartaoFaturaUrl = route('financeiro.cartoes-credito.faturas.show', [
+                    'cartaoCredito' => $cartaoCreditoIdAcao,
+                    'dataVencimento' => \Illuminate\Support\Carbon::parse($cartaoFaturaVencimentoAcao)->toDateString(),
+                ]);
+            }
+        }
+        // Recibo de pagamento de fatura de cartao: um lancamento so que quita N
+        // despesas, cada uma com sua propria OS/fornecedor. Ele nao tem os_id
+        // (nao caberia uma OS so), entao a tela lista as despesas por tras —
+        // ver FinanceiroService::creditCardInvoiceReceiptDetail() no backend.
+        $faturaCartao = is_array($detalhes['fatura_cartao'] ?? null) ? $detalhes['fatura_cartao'] : null;
+        $faturaDespesas = $faturaCartao !== null && is_array($faturaCartao['despesas'] ?? null)
+            ? $faturaCartao['despesas']
+            : [];
+        // Montado em PHP (e nao quebrado em varias linhas no HTML) para a frase
+        // nao sair com quebra de linha no meio do "1 de 2".
+        $faturaResumoOs = $faturaCartao !== null
+            ? sprintf(
+                '%d de %d %s OS vinculada',
+                (int) ($faturaCartao['quantidade_com_os'] ?? 0),
+                (int) ($faturaCartao['quantidade_despesas'] ?? 0),
+                (int) ($faturaCartao['quantidade_despesas'] ?? 0) === 1 ? 'tem' : 'têm'
+            )
+            : '';
+        $faturaReciboUrl = null;
+        if ($faturaCartao !== null) {
+            $faturaReciboCartaoId = (int) ($faturaCartao['cartao']['id'] ?? 0);
+            $faturaReciboVencimento = $faturaCartao['data_vencimento'] ?? null;
+            if (\App\Support\DesktopSession::can('contas_saldos', 'visualizar') && $faturaReciboCartaoId > 0 && $faturaReciboVencimento) {
+                $faturaReciboUrl = route('financeiro.cartoes-credito.faturas.show', [
+                    'cartaoCredito' => $faturaReciboCartaoId,
+                    'dataVencimento' => \Illuminate\Support\Carbon::parse($faturaReciboVencimento)->toDateString(),
+                ]);
+            }
+        }
         $osDatas = is_array($os) ? ($os['datas'] ?? []) : [];
         $osEquipamento = is_array($os) ? ($os['equipamento'] ?? []) : [];
         $osDefeito = is_array($os) ? ($os['defeito'] ?? []) : [];
@@ -132,9 +178,21 @@
                     @endif
 
                     @if ($canPay)
-                        <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#payModal{{ $id }}">
-                            <i class="bi bi-cash-stack me-2"></i>Registrar baixa
-                        </button>
+                        @if ($isCartaoFatura)
+                            @if ($cartaoFaturaUrl)
+                                <a href="{{ $cartaoFaturaUrl }}" class="dropdown-item">
+                                    <i class="bi bi-cash-stack me-2"></i>Registrar baixa
+                                </a>
+                            @else
+                                <span class="dropdown-item disabled">
+                                    <i class="bi bi-lock me-2"></i>Registrar baixa (gerencie pela fatura do cartão)
+                                </span>
+                            @endif
+                        @else
+                            <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#payModal{{ $id }}">
+                                <i class="bi bi-cash-stack me-2"></i>Registrar baixa
+                            </button>
+                        @endif
                     @endif
 
                     @if (($canViewOs && $osId > 0) || ($canViewOrcamento && $orcamentoId > 0) || ($contraparteTipo === 'cliente' && $canViewCliente && $contraparteId > 0) || ($contraparteTipo === 'fornecedor' && $canEditFornecedor && $contraparteId > 0))
@@ -170,39 +228,49 @@
                     @endif
 
                     @if ($canCancel)
-                        <form
-                            id="financeiroCancelForm{{ $id }}"
-                            method="post"
-                            action="{{ route('financeiro.cancel', $id) }}"
-                            @unless($osIsEncerrada)
-                                data-confirm="{{ $cancelConfirmMessage }}"
-                                data-confirm-title="Cancelar lançamento"
-                                data-confirm-button="Sim, cancelar"
-                            @endunless
-                        >
-                            @csrf
-                            <input type="hidden" name="voltar_para" value="show">
-                            @if ($osIsEncerrada)
-                                <input type="hidden" name="motivo" value="" data-financeiro-cancel-motivo>
-                                <input type="hidden" name="admin_email" value="" data-financeiro-cancel-admin-email>
-                                <input type="hidden" name="admin_password" value="" data-financeiro-cancel-admin-password>
-                            @endif
-                            <button
-                                type="{{ $osIsEncerrada ? 'button' : 'submit' }}"
-                                class="dropdown-item text-warning"
-                                @if ($osIsEncerrada)
-                                    data-bs-toggle="modal"
-                                    data-bs-target="#financeiroCancelReasonModal"
-                                    data-target-form="#financeiroCancelForm{{ $id }}"
-                                @endif
+                        @if ($isCartaoFatura)
+                            <span class="dropdown-item disabled">
+                                <i class="bi bi-lock me-2"></i>Cancelar (gerencie pela fatura do cartão)
+                            </span>
+                        @else
+                            <form
+                                id="financeiroCancelForm{{ $id }}"
+                                method="post"
+                                action="{{ route('financeiro.cancel', $id) }}"
+                                @unless($osIsEncerrada)
+                                    data-confirm="{{ $cancelConfirmMessage }}"
+                                    data-confirm-title="Cancelar lançamento"
+                                    data-confirm-button="Sim, cancelar"
+                                @endunless
                             >
-                                <i class="bi bi-x-circle me-2"></i>Cancelar lançamento
-                            </button>
-                        </form>
+                                @csrf
+                                <input type="hidden" name="voltar_para" value="show">
+                                @if ($osIsEncerrada)
+                                    <input type="hidden" name="motivo" value="" data-financeiro-cancel-motivo>
+                                    <input type="hidden" name="admin_email" value="" data-financeiro-cancel-admin-email>
+                                    <input type="hidden" name="admin_password" value="" data-financeiro-cancel-admin-password>
+                                @endif
+                                <button
+                                    type="{{ $osIsEncerrada ? 'button' : 'submit' }}"
+                                    class="dropdown-item text-warning"
+                                    @if ($osIsEncerrada)
+                                        data-bs-toggle="modal"
+                                        data-bs-target="#financeiroCancelReasonModal"
+                                        data-target-form="#financeiroCancelForm{{ $id }}"
+                                    @endif
+                                >
+                                    <i class="bi bi-x-circle me-2"></i>Cancelar lançamento
+                                </button>
+                            </form>
+                        @endif
                     @endif
 
                     @if ($canDeleteFinanceiro)
-                        @if ($osIsEncerrada)
+                        @if ($isCartaoFatura)
+                            <span class="dropdown-item disabled">
+                                <i class="bi bi-lock me-2"></i>Excluir (gerencie pela fatura do cartão)
+                            </span>
+                        @elseif ($osIsEncerrada)
                             <span class="dropdown-item disabled">
                                 <i class="bi bi-lock me-2"></i>Excluir (OS encerrada — use Cancelar)
                             </span>
@@ -312,7 +380,14 @@
                     </div>
                     <div class="col-md-6">
                         <span class="summary-card-eyebrow">Forma de pagamento</span>
-                        <p class="mb-0">{{ $text($detalhes['forma_pagamento_label'] ?? null, 'Não informada') }}</p>
+                        {{-- financeiro.forma_pagamento só é preenchida na baixa;
+                             numa despesa de cartão ainda pendente ela é NULL, e
+                             mostrar "Não informada" esconderia justamente o que
+                             o usuário quer saber. A modalidade do cartão cobre
+                             esse intervalo. --}}
+                        <p class="mb-0">
+                            {{ $text($detalhes['forma_pagamento_label'] ?? ($cartaoCredito['modalidade_label'] ?? null), 'Não informada') }}
+                        </p>
                     </div>
                     <div class="col-12">
                         <span class="summary-card-eyebrow">Observações da contraparte</span>
@@ -320,6 +395,86 @@
                     </div>
                 </div>
             </article>
+
+            @if (is_array($cartaoCredito))
+                @php
+                    $cartaoNome = trim((string) ($cartaoCredito['nome'] ?? 'Cartão'));
+                    $cartaoFinal = trim((string) ($cartaoCredito['final_cartao'] ?? ''));
+                    $cartaoParcelas = (int) ($cartaoCredito['parcelas_total'] ?? 0);
+                    $cartaoFaturaVenc = $cartaoCredito['fatura_vencimento'] ?? null;
+                    $cartaoId = (int) ($cartaoCredito['id'] ?? 0);
+                    $podeVerFatura = \App\Support\DesktopSession::can('contas_saldos', 'visualizar');
+                @endphp
+                <article class="surface-card" style="border-left: 4px solid {{ $cartaoCredito['cor'] ?? '#3868B0' }}">
+                    <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+                        <div>
+                            <h3 class="surface-title fs-5 mb-1">
+                                <i class="bi bi-credit-card me-2"></i>
+                                Compra no cartão
+                            </h3>
+                            <p class="surface-subtitle mb-0">
+                                Cartão da assistência usado nesta despesa — não confundir com a maquininha de receber do cliente.
+                            </p>
+                        </div>
+
+                        @if ($podeVerFatura && $cartaoId > 0 && $cartaoFaturaVenc)
+                            <a class="btn btn-sm btn-outline-light align-self-start"
+                               href="{{ route('financeiro.cartoes-credito.faturas.show', [
+                                   'cartaoCredito' => $cartaoId,
+                                   'dataVencimento' => \Illuminate\Support\Carbon::parse($cartaoFaturaVenc)->toDateString(),
+                               ]) }}">
+                                <i class="bi bi-receipt me-1"></i>Ver fatura
+                            </a>
+                        @endif
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <span class="summary-card-eyebrow">Cartão</span>
+                            <p class="mb-0 fw-semibold">
+                                {{ $cartaoNome }}{{ $cartaoFinal !== '' ? ' · final ' . $cartaoFinal : '' }}
+                            </p>
+                            @if (!empty($cartaoCredito['instituicao']))
+                                <small class="text-body-secondary">{{ $cartaoCredito['instituicao'] }}</small>
+                            @endif
+                        </div>
+                        <div class="col-md-6">
+                            <span class="summary-card-eyebrow">Modalidade</span>
+                            <p class="mb-0 fw-semibold">{{ $text($cartaoCredito['modalidade_label'] ?? null, 'Não informada') }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <span class="summary-card-eyebrow">Data da compra</span>
+                            <p class="mb-0 fw-semibold">{{ $date($cartaoCredito['data_compra'] ?? null) }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <span class="summary-card-eyebrow">{{ $cartaoFaturaVenc ? 'Fatura que vence em' : 'Saída da conta' }}</span>
+                            <p class="mb-0 fw-semibold">
+                                {{ $cartaoFaturaVenc ? $date($cartaoFaturaVenc) : $date($cartaoCredito['data_compra'] ?? null) }}
+                            </p>
+                            <small class="text-body-secondary">
+                                {{ $cartaoFaturaVenc
+                                    ? 'Fecha dia ' . (int) ($cartaoCredito['dia_fechamento'] ?? 0) . ', vence dia ' . (int) ($cartaoCredito['dia_vencimento'] ?? 0) . '.'
+                                    : 'No débito o valor sai da conta na hora da compra — não entra em fatura.' }}
+                            </small>
+                        </div>
+                        @if ($cartaoParcelas > 1)
+                            <div class="col-md-6">
+                                <span class="summary-card-eyebrow">Parcela</span>
+                                <p class="mb-0 fw-semibold">
+                                    {{ (int) ($cartaoCredito['parcela_numero'] ?? 0) }} de {{ $cartaoParcelas }}
+                                </p>
+                                <small class="text-body-secondary">Cada parcela é um título próprio, numa fatura diferente.</small>
+                            </div>
+                        @endif
+                        <div class="col-md-6">
+                            <span class="summary-card-eyebrow">Conta vinculada ao cartão</span>
+                            <p class="mb-0 fw-semibold">
+                                {{ $text($cartaoCredito['conta_financeira_nome'] ?? null, 'Nenhuma conta vinculada') }}
+                            </p>
+                        </div>
+                    </div>
+                </article>
+            @endif
 
             @if (is_array($os))
                 <article class="surface-card">
@@ -385,6 +540,106 @@
                             <p class="mb-0 fw-semibold">{{ $money($osValores['final'] ?? $osValores['total'] ?? null) }}</p>
                         </div>
                     </div>
+                </article>
+            @elseif ($faturaCartao !== null)
+                <article class="surface-card">
+                    <div class="d-flex flex-wrap justify-content-between gap-2 mb-3">
+                        <div>
+                            <h3 class="surface-title fs-5 mb-1">
+                                <i class="bi bi-list-check me-2"></i>
+                                Despesas quitadas por este pagamento
+                            </h3>
+                            <p class="surface-subtitle mb-0">
+                                Este lançamento é o pagamento da fatura {{ $text($faturaCartao['cartao']['nome'] ?? null) }}
+                                com vencimento em {{ $date($faturaCartao['data_vencimento'] ?? null) }}: uma saída de caixa
+                                única que quita as despesas abaixo. A OS e o fornecedor ficam em cada despesa —
+                                {{ $faturaResumoOs }}.
+                            </p>
+                        </div>
+
+                        @if ($faturaReciboUrl)
+                            <a href="{{ $faturaReciboUrl }}" class="btn btn-sm btn-outline-light">
+                                <i class="bi bi-credit-card-2-front me-1"></i>
+                                Abrir fatura
+                            </a>
+                        @endif
+                    </div>
+
+                    @if ($faturaDespesas !== [])
+                        <div class="table-responsive">
+                            <table class="table table-stack align-middle mb-0">
+                                <thead>
+                                <tr>
+                                    <th>Despesa</th>
+                                    <th>Valor</th>
+                                    <th>OS vinculada</th>
+                                    <th>Fornecedor</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach ($faturaDespesas as $faturaDespesa)
+                                    @php
+                                        $despesaId = (int) ($faturaDespesa['id'] ?? 0);
+                                        $despesaOs = is_array($faturaDespesa['os'] ?? null) ? $faturaDespesa['os'] : null;
+                                        $despesaOsId = $despesaOs !== null ? (int) ($despesaOs['id'] ?? 0) : 0;
+                                        $despesaOsLabel = $despesaOs !== null
+                                            ? $text($despesaOs['numero_os'] ?? null, '#' . $despesaOsId)
+                                            : null;
+                                        $despesaFornecedor = is_array($faturaDespesa['fornecedor'] ?? null) ? $faturaDespesa['fornecedor'] : null;
+                                        $despesaFornecedorId = $despesaFornecedor !== null ? (int) ($despesaFornecedor['id'] ?? 0) : 0;
+                                    @endphp
+                                    <tr>
+                                        <td data-label="Despesa">
+                                            @if ($despesaId > 0)
+                                                <a href="{{ route('financeiro.show', $despesaId) }}" class="fw-semibold">
+                                                    {{ $text($faturaDespesa['descricao'] ?? null, 'Lançamento #' . $despesaId) }}
+                                                </a>
+                                            @else
+                                                <span class="fw-semibold">{{ $text($faturaDespesa['descricao'] ?? null) }}</span>
+                                            @endif
+                                            <small class="text-secondary d-block">
+                                                {{ $text($faturaDespesa['categoria'] ?? null, 'Sem categoria') }}
+                                                @if ((int) ($faturaDespesa['parcelas_total'] ?? 0) > 1)
+                                                    · Parcela {{ (int) ($faturaDespesa['parcela_numero'] ?? 0) }}/{{ (int) $faturaDespesa['parcelas_total'] }}
+                                                @endif
+                                                · Compra em {{ $date($faturaDespesa['data_compra'] ?? null) }}
+                                            </small>
+                                        </td>
+                                        <td data-label="Valor" class="fw-semibold">{{ $money($faturaDespesa['valor'] ?? null) }}</td>
+                                        <td data-label="OS vinculada">
+                                            @if ($despesaOs === null)
+                                                <span class="text-secondary">Sem OS</span>
+                                            @elseif ($canViewOs && $despesaOsId > 0)
+                                                <a href="{{ route('orders.show', $despesaOsId) }}">
+                                                    <i class="bi bi-clipboard-check me-1"></i>{{ $despesaOsLabel }}
+                                                </a>
+                                            @else
+                                                {{ $despesaOsLabel }}
+                                            @endif
+                                        </td>
+                                        <td data-label="Fornecedor">
+                                            @if ($despesaFornecedor === null)
+                                                <span class="text-secondary">—</span>
+                                            @elseif ($canEditFornecedor && $despesaFornecedorId > 0)
+                                                <a href="{{ route('suppliers.edit', $despesaFornecedorId) }}">
+                                                    {{ $text($despesaFornecedor['nome'] ?? null) }}
+                                                </a>
+                                            @else
+                                                {{ $text($despesaFornecedor['nome'] ?? null) }}
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @else
+                        <div class="empty-state py-4">
+                            <i class="bi bi-receipt"></i>
+                            <h4>Nenhuma despesa nesta fatura</h4>
+                            <p>As despesas desta fatura foram canceladas ou removidas depois do pagamento.</p>
+                        </div>
+                    @endif
                 </article>
             @else
                 <article class="surface-card">
@@ -499,21 +754,21 @@
     </article>
 @endsection
 
-@if (($canPay ?? false) || ($canCancel && $osIsEncerrada) || ($canDeleteFinanceiro && ! $osIsEncerrada))
+@if (($canPay && ! $isCartaoFatura) || ($canCancel && $osIsEncerrada && ! $isCartaoFatura) || ($canDeleteFinanceiro && ! $osIsEncerrada && ! $isCartaoFatura))
     @push('modals')
-        @if ($canCancel && $osIsEncerrada)
+        @if ($canCancel && $osIsEncerrada && ! $isCartaoFatura)
             @include('financeiro._cancel_reason_modal')
         @endif
 
-        @if ($canDeleteFinanceiro && ! $osIsEncerrada)
+        @if ($canDeleteFinanceiro && ! $osIsEncerrada && ! $isCartaoFatura)
             @include('financeiro._delete_admin_modal')
         @endif
 
-        @if ($canPay ?? false)
+        @if ($canPay && ! $isCartaoFatura)
         <div class="modal fade" id="payModal{{ $id }}" tabindex="-1" aria-hidden="true">
             <div class="modal-dialog modal-dialog-centered">
                 <div class="modal-content">
-                    <form method="post" action="{{ route('financeiro.pay', $id) }}" data-financeiro-pay-form data-valor-aberto="{{ number_format($valorAberto, 2, '.', '') }}">
+                    <form method="post" action="{{ route('financeiro.pay', $id) }}" data-financeiro-pay-form data-tipo="{{ $tipo }}" data-valor-aberto="{{ number_format($valorAberto, 2, '.', '') }}">
                         @csrf
                         <input type="hidden" name="voltar_para" value="show">
                         <div class="modal-header">
@@ -552,7 +807,7 @@
                                     <option value="transferencia">Transferência</option>
                                 </select>
                             </div>
-                            @include('financeiro._account_select', ['accountDataset' => $accountDataset ?? []])
+                            @include('financeiro._account_select', ['accountDataset' => $accountDataset ?? [], 'tipo' => $tipo])
                             <div class="d-none mb-3 pt-2 border-top" data-card-fields>
                                 <div class="desktop-grid desktop-grid-two">
                                     <div>
@@ -610,13 +865,13 @@
                 'contasFinanceiras' => $accountDataset ?? ['contas' => [], 'contas_padrao' => []],
             ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
         </script>
-        @if ($canPay ?? false)
+        @if ($canPay && ! $isCartaoFatura)
             <script src="{{ asset('assets/js/financeiro-pay.js') }}?v={{ filemtime(public_path('assets/js/financeiro-pay.js')) }}"></script>
         @endif
-        @if ($canCancel && $osIsEncerrada)
+        @if ($canCancel && $osIsEncerrada && ! $isCartaoFatura)
             <script src="{{ asset('assets/js/financeiro-cancel-reason-modal.js') }}?v={{ filemtime(public_path('assets/js/financeiro-cancel-reason-modal.js')) }}"></script>
         @endif
-        @if ($canDeleteFinanceiro && ! $osIsEncerrada)
+        @if ($canDeleteFinanceiro && ! $osIsEncerrada && ! $isCartaoFatura)
             <script src="{{ asset('assets/js/financeiro-delete-admin-modal.js') }}?v={{ filemtime(public_path('assets/js/financeiro-delete-admin-modal.js')) }}"></script>
         @endif
     @endsection

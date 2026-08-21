@@ -23,12 +23,14 @@ use App\Services\Files\FileManagerConfiguration;
 use App\Services\Files\LocalFileStorage;
 use App\Services\Files\NullMalwareScanner;
 use App\Services\Files\PopplerPdfThumbnailRenderer;
+use App\Services\Company\CompanyProfileService;
 use App\Services\Integrations\EmailIntegrationSettingsService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -78,6 +80,19 @@ class AppServiceProvider extends ServiceProvider
         $fileAuthorizers->register('user', app(UserProfilePhotoFileAuthorizer::class));
         $fileAuthorizers->register('chat_attachment', app(ChatAttachmentFileAuthorizer::class));
         OrderDocumentFile::observe(app(OrderDocumentFileObserver::class));
+
+        // As paginas HTML publicas da API (orcamento, documentos compartilhados
+        // e telas de erro) exibem o mesmo favicon do desktop. Resolver a logo
+        // aqui evita repetir a consulta em cada controller.
+        View::composer('partials.favicon', function ($view): void {
+            try {
+                $hasLogo = app(CompanyProfileService::class)->resolveLogoFile() !== null;
+            } catch (\Throwable) {
+                $hasLogo = false;
+            }
+
+            $view->with('erpCompanyHasLogo', $hasLogo);
+        });
 
         $this->loadMigrationsFrom(database_path('migrations/chat'));
         app(EmailIntegrationSettingsService::class)->applyRuntimeConfig();

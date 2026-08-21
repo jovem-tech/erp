@@ -15,6 +15,7 @@ use App\Models\FinanceiroChavePix;
 use App\Models\FinanceiroDreGrupo;
 use App\Models\FinanceiroDreSubgrupo;
 use App\Models\FinanceiroFormaPagamento;
+use App\Services\Financeiro\FinanceiroCartaoCreditoService;
 use App\Services\Financeiro\FinanceiroCartaoService;
 use App\Services\Financeiro\FinanceiroContaService;
 use Illuminate\Http\JsonResponse;
@@ -26,6 +27,7 @@ class FinanceiroCatalogController extends BaseApiController
 {
     public function __construct(
         private readonly FinanceiroCartaoService $financeiroCartaoService,
+        private readonly FinanceiroCartaoCreditoService $financeiroCartaoCreditoService,
         private readonly FinanceiroContaService $financeiroContaService
     ) {
     }
@@ -62,6 +64,10 @@ class FinanceiroCatalogController extends BaseApiController
                 'chaves_pix_tipos' => FinanceiroChavePix::tipoOptions(),
                 'cartao' => $this->financeiroCartaoService->buildActiveDataset(),
                 'contas_financeiras' => $this->financeiroContaService->options(),
+                // Cartões da assistência (compras) — alimentam o select
+                // "Cartão" do formulário de despesa. Só ativos: cartão
+                // desativado não deve receber lançamento novo.
+                'cartoes_credito' => $this->financeiroCartaoCreditoService->list(onlyActive: true),
             ],
             request: $request
         );

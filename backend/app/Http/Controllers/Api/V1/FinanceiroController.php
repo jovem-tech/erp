@@ -8,6 +8,7 @@ use App\Http\Requests\Api\V1\UpsertFinanceiroRequest;
 use App\Models\Financeiro;
 use App\Models\OrderStatus;
 use App\Services\Auth\AdminCredentialVerifier;
+use App\Services\Financeiro\FinanceiroCartaoCreditoService;
 use App\Services\Financeiro\FinanceiroService;
 use App\Services\Orders\OrderClosureService;
 use Illuminate\Http\JsonResponse;
@@ -94,6 +95,10 @@ class FinanceiroController extends BaseApiController
     {
         $this->authorize('financeiro:editar');
 
+        if ($this->resolveIsReciboDeFatura($financeiro)) {
+            return $this->reciboDeFaturaBlockedResponse($request, 'FINANCEIRO_UPDATE_BLOCKED_RECIBO_FATURA');
+        }
+
         try {
             $financeiro = $this->financeiroService->update($financeiro, $request->validated());
         } catch (Throwable $exception) {
@@ -106,6 +111,20 @@ class FinanceiroController extends BaseApiController
     public function destroy(CancelFinanceiroRequest $request, Financeiro $financeiro): JsonResponse
     {
         $this->authorize('financeiro:excluir');
+
+        if ($this->resolveIsReciboDeFatura($financeiro)) {
+            return $this->reciboDeFaturaBlockedResponse($request, 'FINANCEIRO_DELETE_BLOCKED_RECIBO_FATURA');
+        }
+
+        if ($this->resolveIsCartaoFatura($financeiro)) {
+            return $this->error(
+                'Esta despesa pertence a uma fatura de cartão de crédito e não pode ser excluída individualmente. Gerencie a fatura em Financeiro > Contas e Saldos > Cartões de crédito.',
+                409,
+                'FINANCEIRO_DELETE_BLOCKED_CARTAO_FATURA',
+                null,
+                request: $request
+            );
+        }
 
         if ($this->resolveOsIsEncerrada($financeiro)) {
             return $this->error(
@@ -161,6 +180,20 @@ class FinanceiroController extends BaseApiController
     {
         $this->authorize('financeiro:editar');
 
+        if ($this->resolveIsReciboDeFatura($financeiro)) {
+            return $this->reciboDeFaturaBlockedResponse($request, 'FINANCEIRO_BAIXA_BLOCKED_RECIBO_FATURA');
+        }
+
+        if ($this->resolveIsCartaoFatura($financeiro)) {
+            return $this->error(
+                'Esta despesa pertence a uma fatura de cartão de crédito e não recebe baixa individual. Registre o pagamento pela fatura do cartão.',
+                409,
+                'FINANCEIRO_BAIXA_BLOCKED_CARTAO_FATURA',
+                null,
+                request: $request
+            );
+        }
+
         try {
             $resumo = $this->financeiroService->registerMovement($financeiro, $request->validated());
         } catch (Throwable $exception) {
@@ -173,6 +206,20 @@ class FinanceiroController extends BaseApiController
     public function cancel(CancelFinanceiroRequest $request, Financeiro $financeiro): JsonResponse
     {
         $this->authorize('financeiro:editar');
+
+        if ($this->resolveIsReciboDeFatura($financeiro)) {
+            return $this->reciboDeFaturaBlockedResponse($request, 'FINANCEIRO_CANCEL_BLOCKED_RECIBO_FATURA');
+        }
+
+        if ($this->resolveIsCartaoFatura($financeiro)) {
+            return $this->error(
+                'Esta despesa pertence a uma fatura de cartão de crédito e não pode ser cancelada individualmente. Gerencie a fatura em Financeiro > Contas e Saldos > Cartões de crédito.',
+                409,
+                'FINANCEIRO_CANCEL_BLOCKED_CARTAO_FATURA',
+                null,
+                request: $request
+            );
+        }
 
         $user = $this->authenticatedUser($request);
         if ($user === null) {
@@ -291,5 +338,47 @@ class FinanceiroController extends BaseApiController
         $status = trim((string) ($financeiro->order?->status ?? ''));
 
         return $status !== '' && in_array($status, OrderStatus::FINANCIAL_IMPACT_CLOSURE_CODES, true);
+    }
+
+    /**
+     * Despesa lançada no crédito de um cartão da assistência entra no ciclo
+     * de fatura (ver FinanceiroCartaoCreditoService) — baixa, cancelamento e
+     * exclusão passam a ser exclusivos da fatura (FinanceiroCartaoCreditoController::faturaPagar
+     * chama FinanceiroService::registerMovement() diretamente, sem passar por
+     * este controller, então esse bloqueio não afeta a baixa em lote).
+     */
+    private function resolveIsCartaoFatura(Financeiro $financeiro): bool
+    {
+        return $financeiro->cartao_credito_id !== null
+            && $financeiro->cartao_modalidade === FinanceiroCartaoCreditoService::MODALIDADE_CREDITO;
+    }
+
+    /**
+     * O recibo de pagamento de fatura (ver
+     * FinanceiroCartaoCreditoService::registerInvoicePaymentReceipt()) é um
+     * registro sintético: ele existe para representar, numa linha só, uma baixa
+     * em lote que já aconteceu. Quem manda nele é a fatura — pagar e cancelar a
+     * baixa por lá criam e cancelam o recibo junto.
+     *
+     * Editar/cancelar/excluir pelas telas genéricas de Lançamentos o deixava em
+     * estado inconsistente com a fatura que ele resume: salvar pelo formulário
+     * comum apaga o vínculo com o cartão (resolveClassification() zera
+     * cartao_credito_id quando o payload não traz cartão) e devolve o título
+     * para "pendente", fazendo a fatura paga parecer não registrada.
+     */
+    private function resolveIsReciboDeFatura(Financeiro $financeiro): bool
+    {
+        return (string) $financeiro->origem_tipo === Financeiro::ORIGEM_TIPO_FATURA_CARTAO_CREDITO;
+    }
+
+    private function reciboDeFaturaBlockedResponse(Request $request, string $code): JsonResponse
+    {
+        return $this->error(
+            'Este lançamento é o registro do pagamento de uma fatura de cartão e é gerenciado pela própria fatura. Para desfazê-lo, use "Cancelar baixa da fatura" na tela da fatura.',
+            409,
+            $code,
+            null,
+            request: $request
+        );
     }
 }

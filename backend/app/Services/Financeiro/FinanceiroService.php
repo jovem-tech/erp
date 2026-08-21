@@ -5,6 +5,7 @@ namespace App\Services\Financeiro;
 use App\Models\Budget;
 use App\Models\Client;
 use App\Models\Financeiro;
+use App\Models\FinanceiroCartaoCredito;
 use App\Models\FinanceiroCategoria;
 use App\Models\FinanceiroFormaPagamento;
 use App\Models\FinanceiroMovimento;
@@ -15,6 +16,7 @@ use App\Models\Sale;
 use App\Models\Supplier;
 use App\Services\Orders\OrderEventService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
@@ -32,6 +34,7 @@ class FinanceiroService
 
     public function __construct(
         private readonly FinanceiroCartaoService $financeiroCartaoService,
+        private readonly FinanceiroCartaoCreditoService $financeiroCartaoCreditoService,
         private readonly FinanceiroContaService $financeiroContaService,
         private readonly OrderEventService $orderEventService
     ) {}
@@ -61,6 +64,9 @@ class FinanceiroService
                 // Venda de balcão (specs/027): sem isto, todo título de venda
                 // cairia no ramo genérico e exibiria "sem OS vinculada".
                 'sale',
+                // Cartão da assistência: a listagem mostra em qual cartão/fatura
+                // a despesa caiu, então precisa do nome (não só do id).
+                'cartaoCredito',
             ])
             // Ordem de pagamento/recebimento efetivo, não de vencimento. Sem
             // data_pagamento (título ainda pendente) vai para o fim da lista —
@@ -85,6 +91,16 @@ class FinanceiroService
         $rows = Financeiro::query()
             ->withFilters(array_merge($filters, ['tipo' => Financeiro::TIPO_PAGAR]))
             ->where('status', '!=', Financeiro::STATUS_CANCELADO)
+            // Recibo de pagamento de fatura de cartão (ver
+            // Financeiro::ORIGEM_TIPO_FATURA_CARTAO_CREDITO) não é despesa
+            // fixa nem variável — as despesas que ele resume já entram nesta
+            // soma individualmente. Exclusão incondicional (não depende de
+            // filtro de dre_fixo_mensal) porque estes totais aparecem com ou
+            // sem esse filtro.
+            ->where(function (Builder $q): void {
+                $q->whereNull('origem_tipo')
+                    ->orWhere('origem_tipo', '!=', Financeiro::ORIGEM_TIPO_FATURA_CARTAO_CREDITO);
+            })
             ->selectRaw('dre_fixo_mensal, SUM(valor) as total')
             ->groupBy('dre_fixo_mensal')
             ->get();
@@ -114,6 +130,13 @@ class FinanceiroService
 
         if ((bool) $financeiro->dre_fixo_mensal) {
             $segments[] = 'Fixo mensal';
+        }
+
+        // Recibo de pagamento de fatura (payInvoice(), baixa em lote) —
+        // dre_fixo_mensal é sempre false nele, então o segmento "Fixo
+        // mensal" acima nunca aparece aqui.
+        if ((string) $financeiro->origem_tipo === Financeiro::ORIGEM_TIPO_FATURA_CARTAO_CREDITO) {
+            return ['Pagamento de fatura em lote'];
         }
 
         // Taxa de cartão (os_recebimento_cartao = gerada na baixa da OS,
@@ -234,12 +257,96 @@ class FinanceiroService
                 );
             }
 
-            if ($this->shouldRepeatFixedExpense($payload, $financeiro)) {
+            // Parcelamento e repetição mensal são caminhos distintos: o
+            // primeiro divide um total que acaba (12x do ar-condicionado), o
+            // segundo repete um valor sem fim (mensalidade). Nunca os dois.
+            if ((int) ($financeiro->cartao_parcelas_total ?? 0) > 1) {
+                $cartao = FinanceiroCartaoCredito::query()->find($financeiro->cartao_credito_id);
+
+                if ($cartao instanceof FinanceiroCartaoCredito) {
+                    $this->generateRemainingInstallments(
+                        $financeiro,
+                        $cartao,
+                        round((float) ($payload['valor'] ?? 0), 2)
+                    );
+                }
+            } elseif ($this->shouldRepeatFixedExpense($payload, $financeiro)) {
                 $this->generateFutureRepeatedTitles($financeiro);
             }
 
             return $financeiro;
         });
+    }
+
+    /**
+     * Quantas parcelas a compra tem. Só o crédito parcela — no débito o valor
+     * sai integral da conta na hora. Vale apenas na criação: reparcelar um
+     * título que já existe mudaria valores/vencimentos de parcelas já lançadas.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function resolveInstallmentCount(array $payload, ?Financeiro $existing, string $modalidade): int
+    {
+        if ($existing !== null || $modalidade !== FinanceiroCartaoCreditoService::MODALIDADE_CREDITO) {
+            return 1;
+        }
+
+        return max(1, (int) ($payload['parcelas'] ?? 1));
+    }
+
+    /**
+     * Gera as parcelas 2..N de uma compra parcelada no cartão. A 1ª já é o
+     * próprio título criado (ver resolveClassification()).
+     *
+     * Cada parcela é um título independente e pendente, caindo na fatura
+     * seguinte — é assim que a fatura de cada mês mostra só a parcela daquele
+     * mês. Não passa pelo create() completo pelo mesmo motivo das repetições
+     * de despesa fixa: nasce sem movimentos e sem vínculo de OS.
+     */
+    private function generateRemainingInstallments(Financeiro $primeira, FinanceiroCartaoCredito $cartao, float $valorTotal): void
+    {
+        $total = (int) $primeira->cartao_parcelas_total;
+
+        if ($total <= 1) {
+            return;
+        }
+
+        $dataCompra = $primeira->data_compra ?? $primeira->data_vencimento;
+        $vencimentos = $this->financeiroCartaoCreditoService
+            ->installmentDueDates($cartao, $dataCompra, $total);
+
+        // Mesma divisão feita em resolveClassification() para a 1ª parcela —
+        // parte do mesmo total, então a soma das N devolve o valor da compra.
+        $valores = $this->financeiroCartaoCreditoService
+            ->splitInstallmentAmounts($valorTotal, $total);
+
+        for ($i = 1; $i < $total; $i++) {
+            Financeiro::create([
+                'tipo' => Financeiro::TIPO_PAGAR,
+                'categoria' => $primeira->categoria,
+                'descricao' => $primeira->descricao,
+                'valor' => $valores[$i],
+                'status' => Financeiro::STATUS_PENDENTE,
+                'data_vencimento' => $vencimentos[$i],
+                // Competência é a data da compra em todas as parcelas: o gasto
+                // foi assumido de uma vez, o que se espalha é só o pagamento.
+                'data_competencia' => $dataCompra->toDateString(),
+                'data_compra' => $dataCompra->toDateString(),
+                'cartao_credito_id' => $primeira->cartao_credito_id,
+                'cartao_modalidade' => $primeira->cartao_modalidade,
+                'cartao_parcela_numero' => $i + 1,
+                'cartao_parcelas_total' => $total,
+                'avulso' => $primeira->avulso,
+                'fornecedor_id' => $primeira->fornecedor_id,
+                'os_id' => $primeira->os_id,
+                'grupo_dre' => $primeira->grupo_dre,
+                'subgrupo_dre' => $primeira->subgrupo_dre,
+                'impacta_dre' => $primeira->impacta_dre,
+                'impacta_fluxo_caixa' => $primeira->impacta_fluxo_caixa,
+                'dre_fixo_mensal' => $primeira->dre_fixo_mensal,
+                'observacoes' => $primeira->observacoes,
+            ]);
+        }
     }
 
     /**
@@ -266,8 +373,29 @@ class FinanceiroService
         $vencimento = $original->data_vencimento;
         $hoje = now()->startOfDay();
 
+        // Despesa fixa lançada num cartão (ex.: plano de celular): o que se
+        // repete todo mês é a COMPRA, e o vencimento de cada cópia é o da
+        // fatura em que ela cai. Somar meses direto no vencimento erraria
+        // sempre que o ciclo do cartão não coincidir com o mês calendário.
+        // Só o crédito segue o ciclo da fatura; no débito cada cópia vence no
+        // próprio dia da compra.
+        $cartao = $original->cartao_credito_id !== null
+            && $original->cartao_modalidade === FinanceiroCartaoCreditoService::MODALIDADE_CREDITO
+            ? FinanceiroCartaoCredito::query()->find($original->cartao_credito_id)
+            : null;
+        $baseCompra = $original->data_compra ?? $vencimento;
+
         for ($i = 1; $i < self::FIXED_EXPENSE_REPEAT_MONTHS; $i++) {
-            $proximoVencimento = $vencimento->copy()->addMonthsNoOverflow($i);
+            if ($cartao instanceof FinanceiroCartaoCredito) {
+                $proximaCompra = $baseCompra->copy()->addMonthsNoOverflow($i);
+                $ciclo = $this->financeiroCartaoCreditoService->resolveInvoiceCycle($cartao, $proximaCompra);
+                $proximoVencimento = Carbon::parse($ciclo['data_vencimento']);
+                $proximaCompetencia = $proximaCompra->toDateString();
+            } else {
+                $proximaCompra = null;
+                $proximoVencimento = $vencimento->copy()->addMonthsNoOverflow($i);
+                $proximaCompetencia = $proximoVencimento->toDateString();
+            }
 
             // Só gera pra frente da data de criação: se o título original foi
             // lançado com vencimento atrasado (conta antiga sendo colocada em
@@ -285,7 +413,10 @@ class FinanceiroService
                 'valor' => $original->valor,
                 'status' => Financeiro::STATUS_PENDENTE,
                 'data_vencimento' => $proximoVencimento->toDateString(),
-                'data_competencia' => $proximoVencimento->toDateString(),
+                'data_competencia' => $proximaCompetencia,
+                'cartao_credito_id' => $original->cartao_credito_id,
+                'cartao_modalidade' => $original->cartao_modalidade,
+                'data_compra' => $proximaCompra?->toDateString(),
                 'avulso' => $original->avulso,
                 'fornecedor_id' => $original->fornecedor_id,
                 'grupo_dre' => $original->grupo_dre,
@@ -404,6 +535,7 @@ class FinanceiroService
             'origemMovimento.financeiro.order.equipment.type',
             'origemMovimento.financeiro.order.equipment.brand',
             'origemMovimento.financeiro.order.equipment.model',
+            'cartaoCredito.contaFinanceira',
         ]);
 
         return [
@@ -421,6 +553,8 @@ class FinanceiroService
                 ->values()
                 ->map(fn (FinanceiroMovimento $movimento): array => $this->movementDetail($movimento))
                 ->all(),
+            'cartao_credito' => $this->creditCardDetail($financeiro),
+            'fatura_cartao' => $this->creditCardInvoiceReceiptDetail($financeiro),
             'impactos' => [
                 'impacta_dre' => (bool) $financeiro->impacta_dre,
                 'impacta_fluxo_caixa' => (bool) $financeiro->impacta_fluxo_caixa,
@@ -837,6 +971,142 @@ class FinanceiroService
     }
 
     /**
+     * Detalhe da compra no cartão da assistência, exibido na tela do
+     * lançamento.
+     *
+     * A forma de pagamento sai daqui (de cartao_modalidade) e não de
+     * financeiro.forma_pagamento: essa coluna é derivada das baixas e fica
+     * NULL enquanto o título está pendente, então a tela mostrava "Não
+     * informada" justamente nas despesas de cartão que ainda esperam a fatura.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function creditCardDetail(Financeiro $financeiro): ?array
+    {
+        // O recibo de pagamento de fatura (ver
+        // Financeiro::ORIGEM_TIPO_FATURA_CARTAO_CREDITO) referencia o cartão
+        // só para o badge/trilha da listagem — ele não é uma compra no
+        // cartão. Sem este guard, cartao_modalidade=NULL faria este método
+        // rotulá-lo por engano como "Cartão de débito" ($isCredito abaixo
+        // dá falso).
+        if ((string) $financeiro->origem_tipo === Financeiro::ORIGEM_TIPO_FATURA_CARTAO_CREDITO) {
+            return null;
+        }
+
+        $cartao = $financeiro->cartaoCredito;
+
+        if (! $cartao instanceof FinanceiroCartaoCredito) {
+            return null;
+        }
+
+        $modalidade = (string) $financeiro->cartao_modalidade;
+        $isCredito = $modalidade === FinanceiroCartaoCreditoService::MODALIDADE_CREDITO;
+        $parcelasTotal = (int) ($financeiro->cartao_parcelas_total ?? 0);
+
+        return [
+            'id' => (int) $cartao->id,
+            'nome' => (string) $cartao->nome,
+            'instituicao' => $cartao->instituicao,
+            'final_cartao' => $cartao->final_cartao,
+            'cor' => (string) $cartao->cor,
+            'modalidade' => $modalidade,
+            'modalidade_label' => $isCredito ? 'Cartão de crédito' : 'Cartão de débito',
+            'dia_fechamento' => (int) $cartao->dia_fechamento,
+            'dia_vencimento' => (int) $cartao->dia_vencimento,
+            'data_compra' => $this->dateForDetail($financeiro->data_compra),
+            // No crédito o vencimento do título É o da fatura; no débito o
+            // valor saiu da conta no dia da compra, então não há fatura.
+            'fatura_vencimento' => $isCredito ? $this->dateForDetail($financeiro->data_vencimento) : null,
+            'parcela_numero' => $parcelasTotal > 1 ? (int) $financeiro->cartao_parcela_numero : null,
+            'parcelas_total' => $parcelasTotal > 1 ? $parcelasTotal : null,
+            'conta_financeira_nome' => $cartao->contaFinanceira?->nome,
+        ];
+    }
+
+    /**
+     * As despesas que o recibo de pagamento de fatura liquidou (ver
+     * FinanceiroCartaoCreditoService::registerInvoicePaymentReceipt()).
+     *
+     * O recibo é um agregador: uma saída de caixa única que quita N compras,
+     * cada uma com sua própria OS/fornecedor. Como não existe uma coluna
+     * os_id capaz de representar N ordens, a tela do recibo mostrava
+     * "Sem OS vinculada" mesmo quando as despesas por trás tinham OS — a
+     * ligação existia, mas ficava invisível. Este bloco devolve a lista para
+     * a tela conseguir exibi-la.
+     *
+     * O escopo é a fatura inteira (cartão + vencimento), a mesma granularidade
+     * que cancelInvoicePayment() usa para estornar: recibo e fatura nascem e
+     * morrem juntos, então listar a fatura é listar o que o recibo pagou.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function creditCardInvoiceReceiptDetail(Financeiro $financeiro): ?array
+    {
+        if ((string) $financeiro->origem_tipo !== Financeiro::ORIGEM_TIPO_FATURA_CARTAO_CREDITO) {
+            return null;
+        }
+
+        $cartao = $financeiro->cartaoCredito;
+
+        if (! $cartao instanceof FinanceiroCartaoCredito || $financeiro->data_vencimento === null) {
+            return null;
+        }
+
+        $despesas = Financeiro::query()
+            ->where('cartao_credito_id', $cartao->id)
+            ->where('cartao_modalidade', FinanceiroCartaoCreditoService::MODALIDADE_CREDITO)
+            ->whereDate('data_vencimento', $financeiro->data_vencimento->toDateString())
+            ->where('status', '!=', Financeiro::STATUS_CANCELADO)
+            ->with(['supplier', 'order'])
+            ->orderBy('data_compra')
+            ->orderBy('id')
+            ->get();
+
+        return [
+            'cartao' => [
+                'id' => (int) $cartao->id,
+                'nome' => (string) $cartao->nome,
+                'instituicao' => $cartao->instituicao,
+                'final_cartao' => $cartao->final_cartao,
+                'cor' => (string) $cartao->cor,
+            ],
+            'data_vencimento' => $this->dateForDetail($financeiro->data_vencimento),
+            'quantidade_despesas' => $despesas->count(),
+            'quantidade_com_os' => $despesas->filter(
+                static fn (Financeiro $despesa): bool => (int) $despesa->os_id > 0
+            )->count(),
+            'valor_total' => round((float) $despesas->sum('valor'), 2),
+            'despesas' => $despesas->map(function (Financeiro $despesa): array {
+                $parcelasTotal = (int) ($despesa->cartao_parcelas_total ?? 0);
+
+                return [
+                    'id' => (int) $despesa->id,
+                    'descricao' => (string) $despesa->descricao,
+                    'categoria' => (string) $despesa->categoria,
+                    'valor' => round((float) $despesa->valor, 2),
+                    'status' => (string) $despesa->status,
+                    'data_compra' => $this->dateForDetail($despesa->data_compra),
+                    'parcela_numero' => $parcelasTotal > 1 ? (int) $despesa->cartao_parcela_numero : null,
+                    'parcelas_total' => $parcelasTotal > 1 ? $parcelasTotal : null,
+                    'os' => $despesa->order !== null
+                        ? [
+                            'id' => (int) $despesa->order->id,
+                            'numero_os' => $despesa->order->numero_os,
+                        ]
+                        : null,
+                    'fornecedor' => $despesa->supplier !== null
+                        ? [
+                            'id' => (int) $despesa->supplier->id,
+                            'nome' => (string) ($despesa->supplier->nome_fantasia
+                                ?: $despesa->supplier->razao_social),
+                        ]
+                        : null,
+                ];
+            })->all(),
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function counterpartyDetail(Financeiro $financeiro): array
@@ -1186,6 +1456,28 @@ class FinanceiroService
             return;
         }
 
+        // Despesa comprada no CRÉDITO de um cartão da assistência é liquidada
+        // pela fatura (FinanceiroCartaoCreditoService::payInvoice()), nunca
+        // pela baixa automática do status: criar o movimento aqui marcaria a
+        // despesa como paga sem a fatura ter sido paga, e ela sairia do saldo
+        // em aberto da fatura sem dinheiro nenhum ter saído. Normaliza para
+        // pendente — mesmo tratamento que o "parcial sem movimento" logo
+        // abaixo. Só entra aqui quando não há movimento nenhum (o retorno
+        // acima já tratou os títulos com baixa real), então uma despesa já
+        // paga pela fatura não é afetada.
+        if ($financeiro->cartao_credito_id !== null
+            && $financeiro->cartao_modalidade === FinanceiroCartaoCreditoService::MODALIDADE_CREDITO
+            && in_array($financeiro->status, [Financeiro::STATUS_PAGO, Financeiro::STATUS_PARCIAL], true)
+        ) {
+            $financeiro->update([
+                'status' => Financeiro::STATUS_PENDENTE,
+                'data_pagamento' => null,
+                'forma_pagamento' => null,
+            ]);
+
+            return;
+        }
+
         if ($financeiro->status === Financeiro::STATUS_PAGO) {
             $this->registerMovement($financeiro, [
                 'valor_movimento' => $financeiro->valor,
@@ -1234,6 +1526,17 @@ class FinanceiroService
             throw new RuntimeException('Um título que já possui movimentos realizados deve continuar impactando o fluxo de caixa.');
         }
 
+        // Trocar o cartão depois da baixa moveria a despesa para outra fatura
+        // (a chave da fatura é cartao_credito_id + data_vencimento), fazendo o
+        // total de uma fatura já paga mudar retroativamente.
+        if (array_key_exists('cartao_credito_id', $payload)) {
+            $novoCartaoId = ! empty($payload['cartao_credito_id']) ? (int) $payload['cartao_credito_id'] : null;
+
+            if ($novoCartaoId !== $financeiro->cartao_credito_id) {
+                throw new RuntimeException('Não é possível trocar o cartão de crédito de um título que já possui movimentações registradas.');
+            }
+        }
+
         $statusDestino = (string) ($payload['status'] ?? $financeiro->status);
         if ($statusDestino === Financeiro::STATUS_CANCELADO) {
             throw new RuntimeException('Não é possível cancelar um título que já possui movimentações registradas.');
@@ -1267,9 +1570,10 @@ class FinanceiroService
         // financeiro_movimentos. Mantê-la no payload do título tentaria gravar
         // uma coluna inexistente em financeiro e duplicaria a fonte de verdade.
         unset($resolved['conta_financeira_id']);
-        // Flag de ação (gera os próximos títulos no create()), não é coluna
-        // de financeiro — mantê-la no payload quebraria o Financeiro::create().
+        // Flags de ação (geram títulos extras no create()), não são colunas de
+        // financeiro — mantê-las no payload quebraria o Financeiro::create().
         unset($resolved['repetir_proximos_meses']);
+        unset($resolved['parcelas']);
 
         $resolved['tipo'] = $tipo;
         $resolved['status'] = trim((string) ($payload['status'] ?? $existing?->status ?? '')) !== ''
@@ -1302,9 +1606,107 @@ class FinanceiroService
                 : ($existing?->dre_fixo_mensal ?? (bool) ($categoriaConfig?->dre_fixo_mensal_padrao ?? false)))
             : false;
 
-        $resolved['data_competencia'] = $this->normalizeDate($payload['data_competencia'] ?? null)
-            ?? $existing?->data_competencia?->toDateString()
-            ?? $this->normalizeDate($merged['data_vencimento'] ?? null);
+        // Cartão de crédito da assistência (compra feita NO cartão, não
+        // recebimento de cliente). Quando há cartão vinculado, o vencimento
+        // deixa de ser digitado e passa a ser o da fatura em que a compra caiu
+        // — é (cartao_credito_id, data_vencimento) que identifica a fatura na
+        // listagem e na baixa em lote, então não pode depender do que o
+        // formulário mandou.
+        $cartaoCreditoId = array_key_exists('cartao_credito_id', $payload)
+            ? (! empty($payload['cartao_credito_id']) ? (int) $payload['cartao_credito_id'] : null)
+            : $existing?->cartao_credito_id;
+
+        if ($cartaoCreditoId !== null && $tipo !== Financeiro::TIPO_PAGAR) {
+            throw new RuntimeException('Só é possível vincular um cartão de crédito a uma despesa (a pagar).');
+        }
+
+        $resolved['cartao_credito_id'] = $cartaoCreditoId;
+
+        if ($cartaoCreditoId !== null) {
+            $cartao = FinanceiroCartaoCredito::query()->find($cartaoCreditoId);
+
+            if (! $cartao instanceof FinanceiroCartaoCredito) {
+                throw new RuntimeException('Cartão não encontrado.');
+            }
+
+            // Modalidade fica numa coluna própria porque
+            // financeiro.forma_pagamento é derivada das baixas e volta a NULL
+            // enquanto o título está pendente (ver syncFromMovements()) — na
+            // edição de uma despesa pendente ela não serviria de fonte.
+            $formaPagamento = trim((string) ($payload['forma_pagamento'] ?? ''));
+            $modalidade = match ($formaPagamento) {
+                FinanceiroCartaoCreditoService::FORMA_CREDITO => FinanceiroCartaoCreditoService::MODALIDADE_CREDITO,
+                FinanceiroCartaoCreditoService::FORMA_DEBITO => FinanceiroCartaoCreditoService::MODALIDADE_DEBITO,
+                default => $existing?->cartao_modalidade,
+            };
+
+            if (! in_array($modalidade, FinanceiroCartaoCreditoService::MODALIDADES, true)) {
+                throw new RuntimeException('Só é possível vincular um cartão quando a forma de pagamento é cartão de crédito ou de débito.');
+            }
+
+            $dataCompra = $this->normalizeDate($payload['data_compra'] ?? null)
+                ?? $existing?->data_compra?->toDateString()
+                ?? now()->toDateString();
+
+            $parcelas = $this->resolveInstallmentCount($payload, $existing, $modalidade);
+
+            if ($parcelas > 1) {
+                // O usuário digita o valor TOTAL da compra; o título que está
+                // sendo criado vira a 1ª parcela e as demais são geradas em
+                // create(). Por isso o valor é substituído aqui.
+                $valorTotal = round((float) ($merged['valor'] ?? 0), 2);
+                $resolved['valor'] = $this->financeiroCartaoCreditoService
+                    ->splitInstallmentAmounts($valorTotal, $parcelas)[0];
+                $resolved['cartao_parcela_numero'] = 1;
+                $resolved['cartao_parcelas_total'] = $parcelas;
+            } else {
+                $resolved['cartao_parcela_numero'] = $existing?->cartao_parcela_numero;
+                $resolved['cartao_parcelas_total'] = $existing?->cartao_parcelas_total;
+            }
+
+            $resolved['cartao_modalidade'] = $modalidade;
+            $resolved['data_compra'] = $dataCompra;
+            // A despesa é incorrida no dia da compra, não no vencimento da
+            // fatura — sem isso o DRE por competência jogaria a compra para o
+            // mês do pagamento da fatura.
+            $resolved['data_competencia'] = $dataCompra;
+
+            // Crédito entra na fatura do ciclo; débito sai da conta na hora,
+            // então vence no próprio dia da compra e nunca compõe fatura.
+            $resolved['data_vencimento'] = $modalidade === FinanceiroCartaoCreditoService::MODALIDADE_CREDITO
+                ? $this->financeiroCartaoCreditoService->resolveInvoiceCycle($cartao, Carbon::parse($dataCompra))['data_vencimento']
+                : $dataCompra;
+
+            // Compra não pode entrar numa fatura já paga: o usuário conferiu
+            // aquele valor e quitou com o banco, e a despesa nova apareceria
+            // lá depois, mudando o total de uma fatura fechada. Só barra quando
+            // a compra está de fato ENTRANDO na fatura paga (título novo, ou
+            // edição que mudou de fatura) — editar uma despesa que já vive numa
+            // fatura paga continua liberado.
+            $mudouDeFatura = $existing === null
+                || $existing->data_vencimento?->toDateString() !== $resolved['data_vencimento'];
+
+            if ($modalidade === FinanceiroCartaoCreditoService::MODALIDADE_CREDITO
+                && $mudouDeFatura
+                && $this->financeiroCartaoCreditoService->isInvoiceSettled($cartao, $resolved['data_vencimento'])
+            ) {
+                throw new RuntimeException(sprintf(
+                    'A fatura que vence em %s já foi paga. Escolha uma data de compra a partir de %s, que cai numa fatura ainda aberta.',
+                    Carbon::parse($resolved['data_vencimento'])->format('d/m/Y'),
+                    Carbon::parse(
+                        $this->financeiroCartaoCreditoService->minimumPurchaseDate($cartao) ?? $dataCompra
+                    )->format('d/m/Y')
+                ));
+            }
+        } else {
+            $resolved['data_compra'] = null;
+            $resolved['cartao_modalidade'] = null;
+            $resolved['cartao_parcela_numero'] = null;
+            $resolved['cartao_parcelas_total'] = null;
+            $resolved['data_competencia'] = $this->normalizeDate($payload['data_competencia'] ?? null)
+                ?? $existing?->data_competencia?->toDateString()
+                ?? $this->normalizeDate($merged['data_vencimento'] ?? null);
+        }
 
         if (($resolved['status'] ?? $existing?->status) === Financeiro::STATUS_PAGO && empty($merged['data_pagamento'])) {
             $resolved['data_pagamento'] = now()->toDateString();

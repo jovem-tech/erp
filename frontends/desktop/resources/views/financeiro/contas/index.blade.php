@@ -27,6 +27,17 @@
         'transferencia' => 'Transferência',
     ];
     $typeLabels = collect($typeOptions)->pluck('label', 'value')->all();
+
+    // Cartões de crédito da assistência (compras). Ficam numa aba própria
+    // desta tela: são "onde o dinheiro está" do ponto de vista do usuário,
+    // mas o saldo deles é a fatura em aberto (soma das despesas do ciclo),
+    // não um saldo de conta — por isso nunca entram nos totais do topo.
+    $cartoesCredito = is_array($cartoesCredito ?? null) ? $cartoesCredito : [];
+    $totalFaturasAbertas = array_sum(array_map(
+        static fn (array $cartao): float => (float) ($cartao['total_em_aberto'] ?? 0),
+        $cartoesCredito
+    ));
+    $activeTab = in_array(request()->query('aba'), ['cartoes-credito'], true) ? 'cartoes-credito' : 'visao-geral';
 @endphp
 
 @section('styles')
@@ -83,6 +94,17 @@
         </div>
     </div>
 
+    <div class="config-subtabs mb-2" role="tablist" aria-label="Contas e cartões">
+        <button type="button" class="config-subtab {{ $activeTab === 'visao-geral' ? 'is-active' : '' }}" data-config-subtab="visao-geral">
+            <i class="bi bi-wallet2 me-2"></i>Visão geral
+        </button>
+        <button type="button" class="config-subtab {{ $activeTab === 'cartoes-credito' ? 'is-active' : '' }}" data-config-subtab="cartoes-credito">
+            <i class="bi bi-credit-card me-2"></i>Cartões de crédito
+            @if ($cartoesCredito !== [])<span class="badge rounded-pill text-bg-secondary ms-2">{{ count($cartoesCredito) }}</span>@endif
+        </button>
+    </div>
+
+    <div class="config-subpanel {{ $activeTab === 'visao-geral' ? 'is-active' : '' }}" data-config-subpanel="visao-geral">
     <section class="surface-card treasury-help mb-4">
         <div class="d-flex gap-3 align-items-start">
             <i class="bi bi-info-circle text-info fs-4"></i>
@@ -278,6 +300,120 @@
             </section>
         </div>
     </div>
+    </div>{{-- /painel visão geral --}}
+
+    <div class="config-subpanel {{ $activeTab === 'cartoes-credito' ? 'is-active' : '' }}" data-config-subpanel="cartoes-credito">
+        <section class="surface-card treasury-help mb-4">
+            <div class="d-flex gap-3 align-items-start">
+                <i class="bi bi-credit-card text-info fs-4"></i>
+                <div>
+                    <strong>Cartões que a assistência usa para comprar.</strong>
+                    <p class="surface-subtitle mb-0 mt-1">
+                        A fatura concentra despesas fixas e variáveis do ciclo (fechamento → vencimento). O valor em aberto abaixo <strong>não entra</strong> nos totais de "Disponível operacional" nem "Total em contas": é dívida a pagar, não dinheiro em caixa. Ao marcar a fatura como paga, todas as despesas dela são baixadas de uma vez.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-3">
+            <div>
+                <h3 class="surface-title fs-5 mb-1">Cartões cadastrados</h3>
+                <p class="surface-subtitle mb-0">
+                    @if ($totalFaturasAbertas > 0)
+                        {{ $money($totalFaturasAbertas) }} em faturas ainda em aberto.
+                    @else
+                        Nenhuma fatura em aberto no momento.
+                    @endif
+                </p>
+            </div>
+            @if ($canCreate)
+                <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#cartaoCreditoCreateModal">
+                    <i class="bi bi-plus-lg me-2"></i>Novo cartão
+                </button>
+            @endif
+        </div>
+
+        @if ($cartoesCredito === [])
+            <section class="surface-card text-center py-5">
+                <i class="bi bi-credit-card-2-front fs-1 text-info"></i>
+                <h3 class="surface-title fs-5 mt-3">Cadastre os cartões da assistência</h3>
+                <p class="surface-subtitle mx-auto" style="max-width: 680px">
+                    Informe o dia de fechamento e o de vencimento de cada cartão. A partir daí, toda despesa lançada no cartão cai automaticamente na fatura certa — e você vê quanto cada cartão já consumiu antes mesmo da fatura chegar.
+                </p>
+                @if ($canCreate)
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#cartaoCreditoCreateModal">Cadastrar primeiro cartão</button>
+                @endif
+            </section>
+        @else
+            <div class="row g-4">
+                @foreach ($cartoesCredito as $cartao)
+                    @php
+                        $cartaoId = (int) ($cartao['id'] ?? 0);
+                        $isActive = (bool) ($cartao['ativo'] ?? false);
+                        $faturaAtual = is_array($cartao['fatura_atual'] ?? null) ? $cartao['fatura_atual'] : null;
+                    @endphp
+                    <div class="col-xl-4 col-md-6">
+                        <article class="surface-card h-100 treasury-account-card {{ $isActive ? '' : 'is-inactive' }}" style="--account-color: {{ $cartao['cor'] ?? '#3868B0' }}">
+                            <div class="d-flex justify-content-between gap-3 mb-3">
+                                <div>
+                                    <div class="d-flex flex-wrap align-items-center gap-2">
+                                        <h3 class="surface-title fs-5 mb-0">{{ $cartao['nome'] ?? 'Cartão' }}</h3>
+                                        @unless($isActive)<span class="badge text-bg-secondary">Inativo</span>@endunless
+                                    </div>
+                                    <small class="text-body-secondary d-block">
+                                        {{ $cartao['instituicao'] ?: 'Cartão de crédito' }}{{ !empty($cartao['final_cartao']) ? ' · final ' . $cartao['final_cartao'] : '' }}
+                                    </small>
+                                    @if (!empty($cartao['conta_financeira_nome']))
+                                        <small class="text-body-secondary">
+                                            <i class="bi bi-wallet2 me-1"></i>Debita em {{ $cartao['conta_financeira_nome'] }}
+                                        </small>
+                                    @endif
+                                </div>
+                                <i class="bi bi-credit-card fs-4" style="color: {{ $cartao['cor'] ?? '#3868B0' }}"></i>
+                            </div>
+
+                            <div class="mb-3">
+                                <small class="text-body-secondary">Fatura em aberto</small>
+                                <div class="treasury-balance {{ (float) ($cartao['total_em_aberto'] ?? 0) > 0 ? 'treasury-pending' : '' }}">
+                                    {{ $money($cartao['total_em_aberto'] ?? 0) }}
+                                </div>
+                                @if ($faturaAtual !== null)
+                                    <div class="small text-body-secondary">
+                                        Próximo vencimento em {{ $date($faturaAtual['data_vencimento'] ?? null) }}
+                                        · {{ (int) ($faturaAtual['quantidade_despesas'] ?? 0) }} despesa(s)
+                                    </div>
+                                @endif
+                            </div>
+
+                            <div class="row g-2 mb-3">
+                                <div class="col-4"><div class="treasury-metric"><span>Fecha dia</span><strong>{{ (int) ($cartao['dia_fechamento'] ?? 0) }}</strong></div></div>
+                                <div class="col-4"><div class="treasury-metric"><span>Vence dia</span><strong>{{ (int) ($cartao['dia_vencimento'] ?? 0) }}</strong></div></div>
+                                <div class="col-4"><div class="treasury-metric"><span>Em aberto</span><strong>{{ (int) ($cartao['faturas_abertas'] ?? 0) }} fatura(s)</strong></div></div>
+                            </div>
+
+                            @if ($faturaAtual !== null)
+                                <div class="d-flex flex-wrap gap-1 mb-3">
+                                    <span class="badge rounded-pill text-bg-secondary">Fixas: {{ $money($faturaAtual['total_fixas'] ?? 0) }}</span>
+                                    <span class="badge rounded-pill text-bg-secondary">Variáveis: {{ $money($faturaAtual['total_variaveis'] ?? 0) }}</span>
+                                </div>
+                            @endif
+
+                            <div class="d-flex flex-wrap gap-2 mt-auto">
+                                <a class="btn btn-sm btn-outline-light" href="{{ route('financeiro.cartoes-credito.faturas', ['cartaoCredito' => $cartaoId]) }}">
+                                    <i class="bi bi-receipt me-1"></i>Faturas
+                                </a>
+                                @if ($canEdit)
+                                    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#cartaoCreditoEditModal{{ $cartaoId }}">
+                                        <i class="bi bi-pencil me-1"></i>Editar
+                                    </button>
+                                @endif
+                            </div>
+                        </article>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+    </div>{{-- /painel cartões --}}
 @endsection
 
 @if ($canCreate || $canEdit)
@@ -357,5 +493,12 @@
             @endif
         @endforeach
         @endif
+
+        @include('financeiro._cartao_credito_form_modal', [
+            'canCreate' => $canCreate,
+            'canEdit' => $canEdit,
+            'cartoesCredito' => $cartoesCredito,
+            'accounts' => $accounts,
+        ])
     @endpush
 @endif

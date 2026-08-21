@@ -126,7 +126,7 @@ Essa proteção evita colisões de classe no mesmo processo PHP, que podem fazer
 A navbar do desktop já transpôs as funções principais do topo do legado:
 
 - busca completa com autocomplete e filtro por escopo, incluindo texto livre em OS, clientes, equipamentos e orçamentos;
-- ação rápida `Nova OS`, visível apenas com `os:criar`;
+- menu de ação rápida `+ Novo` com `Nova OS` (`os:criar`), `Novo orçamento` (`orcamentos:criar`), `Nova venda` (`vendas:criar`) e `Novo lançamento` (`financeiro:criar`), cada item visível apenas com a permissão correspondente;
 - notificações com contador, abertura do item, marcação individual e marcação geral, carregadas sob demanda para não travar o render inicial;
 - caixa separada de `Mensagens e documentos`, posicionada a partir da borda inicial do ícone e limitada à viewport para nunca ficar oculta sob a sidebar, tanto expandida quanto recolhida;
 - loader visual de transição de página no desktop, exibido antes de navegações e submits para reduzir a sensação de travamento;

@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\V1\EquipmentController;
 use App\Http\Controllers\Api\V1\EstoqueController;
 use App\Http\Controllers\Api\V1\FileManagerController;
 use App\Http\Controllers\Api\V1\FinanceiroCartaoController;
+use App\Http\Controllers\Api\V1\FinanceiroCartaoCreditoController;
 use App\Http\Controllers\Api\V1\FinanceiroCatalogController;
 use App\Http\Controllers\Api\V1\FinanceiroContaController;
 use App\Http\Controllers\Api\V1\FinanceiroController;
@@ -289,6 +290,24 @@ Route::prefix('v1')->group(function (): void {
                 Route::post('contas-transferencias', [FinanceiroContaController::class, 'transfer'])->name('contas.transferencias.store');
                 Route::post('contas-transferencias/{transferencia}/cancelar', [FinanceiroContaController::class, 'cancelTransfer'])->name('contas.transferencias.cancelar');
                 Route::post('contas-cartoes/{cartao}/confirmar', [FinanceiroContaController::class, 'confirmCard'])->name('contas.cartoes.confirmar');
+
+                // Cartões de crédito da assistência (usados para COMPRAR).
+                // Prefixo 'cartoes-credito' de propósito: 'cartoes' já pertence
+                // ao catálogo de operadora/bandeira/taxa da maquininha (receber
+                // do cliente), que é outro domínio.
+                Route::get('cartoes-credito', [FinanceiroCartaoCreditoController::class, 'index'])->name('cartoes_credito.index');
+                Route::post('cartoes-credito', [FinanceiroCartaoCreditoController::class, 'store'])->name('cartoes_credito.store');
+                Route::match(['put', 'patch'], 'cartoes-credito/{cartaoCredito}', [FinanceiroCartaoCreditoController::class, 'update'])->name('cartoes_credito.update');
+                Route::get('cartoes-credito/{cartaoCredito}/prever-fatura', [FinanceiroCartaoCreditoController::class, 'previewFatura'])->name('cartoes_credito.faturas.preview');
+                Route::get('cartoes-credito/{cartaoCredito}/faturas', [FinanceiroCartaoCreditoController::class, 'faturas'])->name('cartoes_credito.faturas.index');
+                Route::get('cartoes-credito/{cartaoCredito}/faturas/{dataVencimento}', [FinanceiroCartaoCreditoController::class, 'faturaShow'])
+                    ->where('dataVencimento', '\d{4}-\d{2}-\d{2}')->name('cartoes_credito.faturas.show');
+                Route::post('cartoes-credito/{cartaoCredito}/faturas/{dataVencimento}/pagar', [FinanceiroCartaoCreditoController::class, 'faturaPagar'])
+                    ->where('dataVencimento', '\d{4}-\d{2}-\d{2}')->name('cartoes_credito.faturas.pagar');
+                Route::post('cartoes-credito/{cartaoCredito}/faturas/{dataVencimento}/cancelar-baixa', [FinanceiroCartaoCreditoController::class, 'faturaCancelarBaixa'])
+                    ->where('dataVencimento', '\d{4}-\d{2}-\d{2}')->name('cartoes_credito.faturas.cancelar_baixa');
+                Route::post('cartoes-credito/{cartaoCredito}/faturas/{dataVencimento}/despesa-esquecida', [FinanceiroCartaoCreditoController::class, 'faturaDespesaEsquecida'])
+                    ->where('dataVencimento', '\d{4}-\d{2}-\d{2}')->name('cartoes_credito.faturas.despesa_esquecida');
 
                 Route::get('/', [FinanceiroController::class, 'index'])->name('index');
                 Route::post('/', [FinanceiroController::class, 'store'])->name('store');
