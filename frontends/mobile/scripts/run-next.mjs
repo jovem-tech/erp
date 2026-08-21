@@ -15,6 +15,14 @@ const explicitPort = normalizePort(process.env.PORT);
 const preferredPort = explicitPort ?? 3001;
 const allowFallback = command === 'dev' && explicitPort === null;
 
+// Host de bind. O `next start` NAO le a variavel HOSTNAME: sem o argumento -H
+// ele assume 0.0.0.0 e expoe o app em http://<ip>:3001 sem TLS, contornando o
+// nginx. Em producao o processo fica atras do nginx, entao o padrao seguro e
+// loopback. No `dev` mantemos 0.0.0.0 para continuar sendo possivel abrir o app
+// no celular pela rede local. Defina HOSTNAME para sobrescrever qualquer um dos
+// dois (ex.: HOSTNAME=0.0.0.0 npm start).
+const bindHost = process.env.HOSTNAME?.trim() || (command === 'start' ? '127.0.0.1' : '0.0.0.0');
+
 function normalizePort(value) {
   if (!value) {
     return null;
@@ -91,7 +99,7 @@ function runNext(port) {
   const initialBuildId = command === 'start' ? readBuildId() : null;
   let restartingForNewBuild = false;
 
-  const child = spawn(process.execPath, [nextBin, command, '-p', String(port)], {
+  const child = spawn(process.execPath, [nextBin, command, '-p', String(port), '-H', bindHost], {
     cwd: projectRoot,
     stdio: 'inherit',
     env: {

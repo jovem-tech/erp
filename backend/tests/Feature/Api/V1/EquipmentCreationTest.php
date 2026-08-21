@@ -188,12 +188,18 @@ class EquipmentCreationTest extends TestCase
             'marca_id' => 2,
             'modelo_id' => 2,
             'numero_serie' => 'SN-DESKTOP-001',
-            'senha_acesso' => 'desenho_1-2-5-8',
             'desktop_modalidade' => 'montado',
             'gabinete_tipo' => 'Mid Tower',
             'processador' => 'Ryzen 5 5600',
         ]);
         $this->assertNull(DB::table('equipamentos')->where('id', $equipmentId)->value('acessorios'));
+
+        // A senha e' cifrada em repouso (ver App\Casts\EncryptedSecret), entao
+        // a linha crua nao pode conter o texto puro — so' a leitura pelo model
+        // devolve o valor original.
+        $senhaGravada = (string) DB::table('equipamentos')->where('id', $equipmentId)->value('senha_acesso');
+        $this->assertNotSame('desenho_1-2-5-8', $senhaGravada);
+        $this->assertSame('desenho_1-2-5-8', \App\Models\Equipment::query()->find($equipmentId)->senha_acesso);
 
         $photos = EquipmentPhoto::query()
             ->where('equipamento_id', $equipmentId)

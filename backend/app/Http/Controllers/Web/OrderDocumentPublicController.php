@@ -58,6 +58,17 @@ class OrderDocumentPublicController extends Controller
             'Cache-Control' => 'no-store, private',
             'Referrer-Policy' => 'no-referrer',
             'X-Robots-Tag' => 'noindex, noarchive',
+            // Este endpoint serve exclusivamente application/pdf (ver
+            // resolveDocumentFilePayload). Com nosniff o navegador nao pode ser
+            // induzido a tratar o arquivo como HTML, que e o vetor real aqui.
+            //
+            // De proposito SEM "Content-Security-Policy: sandbox", ao contrario
+            // dos endpoints internos: este link vai para o cliente final, aberto
+            // em navegador de celular e webview de aplicativo de mensagem, onde
+            // o sandbox pode impedir a exibicao do PDF. Como nao ha upload de
+            // arquivo arbitrario nesta rota, o sandbox agregaria pouco e custaria
+            // um risco real de o cliente ver uma pagina em branco.
+            'X-Content-Type-Options' => 'nosniff',
         ]);
     }
 }

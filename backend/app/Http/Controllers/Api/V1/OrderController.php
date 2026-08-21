@@ -457,6 +457,8 @@ class OrderController extends BaseApiController
         return response()->file($file['absolute_path'], [
             'Content-Type' => $file['mime_type'],
             'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
+            'X-Content-Type-Options' => 'nosniff',
+            'Content-Security-Policy' => "default-src 'none'; base-uri 'none'; sandbox",
         ]);
     }
 
@@ -479,6 +481,8 @@ class OrderController extends BaseApiController
         return response()->file($file['absolute_path'], [
             'Content-Type' => $file['mime_type'],
             'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
+            'X-Content-Type-Options' => 'nosniff',
+            'Content-Security-Policy' => "default-src 'none'; base-uri 'none'; sandbox",
         ]);
     }
 
@@ -781,6 +785,8 @@ class OrderController extends BaseApiController
             'Content-Type' => $file['mime_type'],
             'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
             'Cache-Control' => 'no-store, private',
+            'X-Content-Type-Options' => 'nosniff',
+            'Content-Security-Policy' => "default-src 'none'; base-uri 'none'; sandbox",
         ]);
     }
 

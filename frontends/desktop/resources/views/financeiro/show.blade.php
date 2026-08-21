@@ -860,10 +860,10 @@
 
     @section('scripts')
         <script>
-            window.__DESKTOP_FINANCEIRO_INDEX = {!! json_encode([
+            window.__DESKTOP_FINANCEIRO_INDEX = {!! \Illuminate\Support\Js::from([
                 'cartao' => $cartaoDataset ?? ['operadoras' => [], 'bandeiras' => [], 'taxas' => []],
                 'contasFinanceiras' => $accountDataset ?? ['contas' => [], 'contas_padrao' => []],
-            ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
+            ]) !!};
         </script>
         @if ($canPay && ! $isCartaoFatura)
             <script src="{{ asset('assets/js/financeiro-pay.js') }}?v={{ filemtime(public_path('assets/js/financeiro-pay.js')) }}"></script>

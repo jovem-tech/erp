@@ -5,6 +5,7 @@ use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
 use App\Http\Middleware\EnsureBackendToken;
 use App\Http\Middleware\EnsureRoutePermission;
+use App\Http\Middleware\SecurityHeaders;
 use App\Support\DesktopNavigation;
 use Dotenv\Dotenv;
 use Illuminate\Foundation\Application;
@@ -33,6 +34,10 @@ return Application::configure(basePath: $basePath)
             'desktop.auth' => EnsureBackendToken::class,
             'desktop.permission' => EnsureRoutePermission::class,
         ]);
+
+        // Global de proposito: as telas publicas (login, redefinicao de senha,
+        // assinatura de documento) precisam dos mesmos cabecalhos das internas.
+        $middleware->append(SecurityHeaders::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Evita que a senha de admin (confirmação de "Cancelar baixa") fique

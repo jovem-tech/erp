@@ -1758,10 +1758,23 @@ class DesktopFrontendTest extends TestCase
             ))
             ->get('/orcamentos/novo');
 
+        // A URL entra no bootstrap do formulario via Js::from, que escapa as
+        // barras; o valor volta identico apos o JSON.parse no navegador. Extrai
+        // o fragmento da MESMA codificacao para o teste checar que a rota esta
+        // ligada sem depender do formato interno de escape.
+        $formBootstrap = (string) \Illuminate\Support\Js::from([
+            'clientSearchUrl' => route('orcamentos.clients.search'),
+        ]);
+        $clientSearchUrlNoBootstrap = \Illuminate\Support\Str::between(
+            $formBootstrap,
+            'clientSearchUrl\u0022:\u0022',
+            '\u0022'
+        );
+
         $response
             ->assertOk()
             ->assertSee('assets/js/orcamentos-form.js', false)
-            ->assertSee(route('orcamentos.clients.search'), false)
+            ->assertSee($clientSearchUrlNoBootstrap, false)
             ->assertSee('data-budget-item-reference', false)
             ->assertSee('desktop-grid-four', false)
             ->assertSee('budget-summary-card', false)

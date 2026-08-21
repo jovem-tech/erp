@@ -330,7 +330,7 @@
 
 @section('scripts')
     <script>
-        window.__DESKTOP_ORDER_LIST = {!! json_encode([
+        window.__DESKTOP_ORDER_LIST = {!! \Illuminate\Support\Js::from([
             'channelName'        => 'orders',
             'broadcastAuthUrl'   => route('desktop.broadcasting.auth'),
             'pusherKey'          => env('REVERB_APP_KEY', ''),
@@ -346,7 +346,7 @@
             'ordersEditUrlTemplate' => route('orders.edit', ['order' => '__ORDER__']),
             'ordersClosureUrlTemplate' => route('orders.closure.show', ['order' => '__ORDER__']),
             'ordersStatusUpdateUrlTemplate' => route('orders.status.update', ['order' => '__ORDER__']),
-        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
+        ]) !!};
 
         window.__DESKTOP_STATUS_MODAL = {
             statusContextUrlTemplate: '{{ route('orders.status.context', ['order' => '__ORDER__']) }}',

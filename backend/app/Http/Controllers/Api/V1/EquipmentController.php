@@ -13,11 +13,12 @@ use App\Models\EquipmentCollectorPairing;
 use App\Models\EquipmentModel;
 use App\Models\EquipmentPhoto;
 use App\Models\User;
+use App\Support\ConstantTimeCredentialCheck;
+use App\Services\Auth\RbacAuthorizationService;
 use App\Services\EquipmentWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\RateLimiter;
 use Symfony\Component\HttpFoundation\Response;
 use Throwable;
@@ -25,7 +26,8 @@ use Throwable;
 class EquipmentController extends BaseApiController
 {
     public function __construct(
-        private readonly EquipmentWorkflowService $equipmentWorkflowService
+        private readonly EquipmentWorkflowService $equipmentWorkflowService,
+        private readonly RbacAuthorizationService $rbacAuthorizationService
     ) {
     }
 
@@ -406,11 +408,14 @@ class EquipmentController extends BaseApiController
 
         $admin = User::query()->where('email', $adminEmail)->first();
 
+        // Custo constante: ver ConstantTimeCredentialCheck.
+        $passwordMatches = ConstantTimeCredentialCheck::matches($adminPassword, $admin?->senha);
+
         if (
             ! $admin instanceof User
             || ! (bool) $admin->ativo
             || ! $this->isAuthorizedForPasswordReveal($admin)
-            || ! Hash::check($adminPassword, (string) $admin->senha)
+            || ! $passwordMatches
         ) {
             RateLimiter::hit($throttleKey, 60);
 
@@ -480,6 +485,8 @@ class EquipmentController extends BaseApiController
         return response()->file($file['absolute_path'], [
             'Content-Type' => $file['mime_type'],
             'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
+            'X-Content-Type-Options' => 'nosniff',
+            'Content-Security-Policy' => "default-src 'none'; base-uri 'none'; sandbox",
         ]);
     }
 
@@ -679,10 +686,23 @@ class EquipmentController extends BaseApiController
     }
 
     /**
-     * O campo legado `perfil=admin` não reflete usuários criados via grupo de
-     * RBAC (ex.: grupo "super administrador", que tem permissões completas mas
-     * nunca teve o `perfil` legado preenchido). Aceita também o grupo, para não
-     * bloquear quem já tem privilégio administrativo pleno via RBAC.
+     * Quem pode liberar a senha de acesso do equipamento do cliente.
+     *
+     * Duas portas, como nos demais fluxos de step-up:
+     *
+     * 1. `perfil = 'admin'`, o marcador legado, mantido para não exigir
+     *    migração de dados nos cadastros antigos.
+     * 2. A PERMISSÃO RBAC `grupos:editar` — mesmo critério de super
+     *    administrador que AdminCredentialVerifier::SUPER_ADMIN_ABILITY já usa:
+     *    quem edita grupos de permissão pode conceder qualquer permissão a si
+     *    mesmo, então já é administrador pleno de fato.
+     *
+     * Antes isto testava o NOME do grupo (`str_contains($nome, 'admin')`). O
+     * nome é um rótulo livre, editável na tela de grupos: "Administrativo",
+     * "Admin Financeiro" e "Administração" passavam no teste, e qualquer um com
+     * `grupos:criar`/`grupos:editar` fabricava o próprio acesso renomeando um
+     * grupo. A checagem por permissão fecha isso sem mudar quem está
+     * autorizado hoje.
      */
     private function isAuthorizedForPasswordReveal(User $admin): bool
     {
@@ -690,8 +710,6 @@ class EquipmentController extends BaseApiController
             return true;
         }
 
-        $groupName = mb_strtolower(trim((string) ($admin->group?->nome ?? '')));
-
-        return $groupName !== '' && str_contains($groupName, 'admin');
+        return $this->rbacAuthorizationService->allows($admin, 'grupos', 'editar');
     }
 }

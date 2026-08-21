@@ -139,6 +139,11 @@ class UserController extends BaseApiController
 
         $userModel->forceFill($payload)->save();
 
+        // Desativou? Derruba as sessoes/tokens agora, sem esperar a expiracao.
+        if (array_key_exists('ativo', $payload) && ! $payload['ativo']) {
+            $userModel->tokens()->delete();
+        }
+
         $this->rbacAuthorizationService->forgetUser((int) $userModel->id);
         if ($originalGroupId > 0 && $originalGroupId !== (int) ($userModel->grupo_id ?? 0)) {
             $this->rbacAuthorizationService->forgetUsersByGroup($originalGroupId);
@@ -167,9 +172,16 @@ class UserController extends BaseApiController
             );
         }
 
+        $isActive = (bool) $request->validated()['active'];
+
         $userModel->forceFill([
-            'ativo' => (bool) $request->validated()['active'],
+            'ativo' => $isActive,
         ])->save();
+
+        // Ver update(): desativar tem de encerrar o acesso imediatamente.
+        if (! $isActive) {
+            $userModel->tokens()->delete();
+        }
 
         $this->rbacAuthorizationService->forgetUser((int) $userModel->id);
         $userModel->refresh()->load('group');
