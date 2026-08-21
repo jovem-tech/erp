@@ -3,7 +3,7 @@
 namespace App\Services\Auth;
 
 use App\Models\User;
-use Illuminate\Support\Facades\Hash;
+use App\Support\ConstantTimeCredentialCheck;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 use Throwable;
@@ -51,7 +51,12 @@ class AdminCredentialVerifier
             && (bool) $admin->ativo
             && $this->isAuthorizedAdministrator($admin, $requiredAbility);
 
-        if (! $authorized || ! Hash::check($password, (string) $admin->senha)) {
+        // Roda o bcrypt sempre, inclusive quando o e-mail nao existe ou nao e
+        // administrador — senao o tempo de resposta vira um oraculo de "quem e
+        // admin", que e exatamente o reconhecimento para atacar este fluxo.
+        $passwordMatches = ConstantTimeCredentialCheck::matches($password, $admin?->senha);
+
+        if (! $authorized || ! $passwordMatches) {
             RateLimiter::hit($throttleKey, self::DECAY_SECONDS);
 
             // Uma falha operacional no canal de log nunca pode transformar uma

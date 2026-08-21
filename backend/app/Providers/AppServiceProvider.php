@@ -32,6 +32,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Sanctum\Sanctum;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -111,6 +112,24 @@ class AppServiceProvider extends ServiceProvider
         // 403 em producao. As definicoes de canal (Broadcast::channel) nao fazem
         // parte do cache de rotas, entao precisam ser sempre executadas.
         require base_path('routes/channels.php');
+
+        // Desativar um usuario (ativo = 0) precisa derrubar o acesso dele NA HORA.
+        // Sem isto o token Sanctum continua valido ate expirar (SANCTUM_EXPIRATION,
+        // 7 dias por padrao): um funcionario desligado seguia com acesso total a
+        // API. O UserController tambem revoga os tokens ao desativar; esta checagem
+        // e a rede de seguranca que cobre qualquer outro caminho (edicao direta no
+        // banco, importacao, script de manutencao).
+        Sanctum::authenticateAccessTokensUsing(
+            static function ($accessToken, bool $isValid): bool {
+                if (! $isValid) {
+                    return false;
+                }
+
+                $tokenable = $accessToken->tokenable;
+
+                return ! $tokenable instanceof User || (bool) $tokenable->ativo;
+            }
+        );
 
         $rbacAuthorizationService = app(RbacAuthorizationService::class);
 

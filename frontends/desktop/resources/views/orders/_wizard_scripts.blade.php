@@ -5,7 +5,7 @@
 @endphp
 <script src="{{ asset('assets/libs/cropperjs/cropper.min.js') }}"></script>
 <script>
-    window.__DESKTOP_ORDER_CREATE = {!! json_encode([
+    window.__DESKTOP_ORDER_CREATE = {!! \Illuminate\Support\Js::from([
         'quickClientStoreUrl' => route('clients.quick.store'),
         'clientSelectId' => 'clienteId',
         'clientSearchUrl' => route('orders.clients.search'),
@@ -37,7 +37,7 @@
         'maxPhotoSourcePixels' => 32000000,
         'lockStatus' => $isEditing,
         'existingPhotosCount' => $existingPhotosCount,
-    ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
+    ]) !!};
 </script>
 <script src="{{ asset('assets/js/orders-create.js') }}?v={{ filemtime(public_path('assets/js/orders-create.js')) }}"></script>
 @if ($canCreateClient)

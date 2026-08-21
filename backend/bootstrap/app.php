@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\AuthorizeModuleAction;
 use App\Http\Middleware\ForceHttps;
+use App\Http\Middleware\SecurityHeaders;
 use App\Support\ApiResponse;
 use Dotenv\Dotenv;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -51,6 +52,7 @@ return Application::configure(basePath: $basePath)
             'rbac' => AuthorizeModuleAction::class,
         ]);
         $middleware->append(ForceHttps::class);
+        $middleware->append(SecurityHeaders::class);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->dontFlash('admin_password');

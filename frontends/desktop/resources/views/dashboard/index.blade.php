@@ -409,7 +409,7 @@
     @endphp
 
     <script>
-        window.__DESKTOP_DASHBOARD = {!! json_encode($dashboardBootstrap, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
+        window.__DESKTOP_DASHBOARD = {!! \Illuminate\Support\Js::from($dashboardBootstrap) !!};
     </script>
 @endsection
 

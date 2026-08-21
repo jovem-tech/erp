@@ -32,14 +32,14 @@
 
 @section('scripts')
     <script>
-        window.__DESKTOP_FINANCEIRO_FORM = {!! json_encode([
+        window.__DESKTOP_FINANCEIRO_FORM = {!! \Illuminate\Support\Js::from([
             'clientSearchUrl' => route('financeiro.clients.search'),
             'orderSearchUrl' => route('financeiro.orders.search'),
             'supplierSearchUrl' => route('financeiro.suppliers.search'),
             'quickClientStoreUrl' => route('clients.quick.store'),
             'contasFinanceiras' => $accountDataset ?? ['contas' => [], 'contas_padrao' => []],
             'categorias' => $categorias ?? [],
-        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
+        ]) !!};
     </script>
     <script src="{{ asset('assets/js/financeiro-form.js') }}?v={{ filemtime(public_path('assets/js/financeiro-form.js')) }}"></script>
     @if ($canQuickClient ?? false)

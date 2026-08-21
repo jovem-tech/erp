@@ -8,6 +8,7 @@ use App\Http\Requests\Api\V1\ResetPasswordRequest;
 use App\Http\Requests\Api\V1\UpdatePasswordRequest;
 use App\Http\Requests\Api\V1\UpdateProfileRequest;
 use App\Models\User;
+use App\Support\ConstantTimeCredentialCheck;
 use App\Services\Auth\RbacAuthorizationService;
 use App\Services\Integrations\EmailIntegrationSettingsService;
 use Illuminate\Http\JsonResponse;
@@ -46,10 +47,14 @@ class AuthController extends BaseApiController
             ->where('email', $email)
             ->first();
 
+        // Custo de CPU constante: o bcrypt roda mesmo quando o e-mail nao
+        // existe, para o tempo de resposta nao denunciar contas validas.
+        $passwordMatches = ConstantTimeCredentialCheck::matches($password, $user?->senha);
+
         if (
             ! $user
             || ! (bool) $user->ativo
-            || ! Hash::check($password, (string) $user->senha)
+            || ! $passwordMatches
         ) {
             logger()->warning('[API V1][AUTH] Credenciais invalidas', [
                 'email' => $email,

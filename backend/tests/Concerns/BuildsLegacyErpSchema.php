@@ -1202,7 +1202,9 @@ trait BuildsLegacyErpSchema
             $table->string('cor_rgb', 30)->nullable();
             $table->string('numero_serie', 100)->nullable();
             $table->string('imei', 20)->nullable();
-            $table->string('senha_acesso', 255)->nullable();
+            // TEXT, nao varchar(255): o valor e' cifrado em repouso e nao cabe
+            // em 255 (ver migration 2026_08_21_000001).
+            $table->text('senha_acesso')->nullable();
             $table->text('estado_fisico')->nullable();
             $table->text('acessorios')->nullable();
             $table->text('observacoes')->nullable();

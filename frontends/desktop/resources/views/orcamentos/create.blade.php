@@ -104,7 +104,7 @@
 
 @section('scripts')
     <script>
-        window.__DESKTOP_ORCAMENTO_FORM = {!! json_encode([
+        window.__DESKTOP_ORCAMENTO_FORM = {!! \Illuminate\Support\Js::from([
             'draftKey' => 'orcamentos:create',
             'isEditMode' => false,
             'budgetId' => 0,
@@ -129,7 +129,7 @@
                     ];
                 })->values(),
             ],
-        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
+        ]) !!};
     </script>
     {{-- Cache-buster combina mtime + tamanho: mtime sozinho tem granularidade de
          1s e pode colidir quando o arquivo é reescrito duas vezes no mesmo

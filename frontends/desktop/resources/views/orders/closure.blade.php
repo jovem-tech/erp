@@ -1124,7 +1124,7 @@
 
 @section('scripts')
     <script>
-        window.__DESKTOP_ORDER_CLOSURE = {!! json_encode([
+        window.__DESKTOP_ORDER_CLOSURE = {!! \Illuminate\Support\Js::from([
             'orderId' => $orderId,
             'valorFinal' => $valorFinal,
             'valorAberto' => $valorAberto,
@@ -1157,7 +1157,7 @@
                 'classificacao_baixa' => old('classificacao_baixa', 'baixa'),
                 'recebimentos' => old('recebimentos', []),
             ],
-        ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) !!};
+        ]) !!};
     </script>
     <script src="{{ asset('assets/js/orders-closure.js') }}?v={{ filemtime(public_path('assets/js/orders-closure.js')) }}"></script>
 
