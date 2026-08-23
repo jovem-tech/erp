@@ -227,6 +227,68 @@ class AgendaTest extends TestCase
             ->assertSee('Setembro de 2026');
     }
 
+    public function test_conectar_ao_google_e_link_get_em_aba_nova(): void
+    {
+        // Regressão real em produção: como POST, o Chrome bloqueava o
+        // redirecionamento para accounts.google.com por `form-action 'self'`
+        // — a diretiva vale também para o 302 que um formulário segue.
+        // Além disso, sair da aba do painel dispararia o `pagehide` que o guard
+        // de sessão lê como "navegador fechado".
+        $rota = app('router')->getRoutes()->getByName('configurations.integrations.agenda-google.connect');
+
+        $this->assertNotNull($rota);
+        $this->assertContains('GET', $rota->methods());
+        $this->assertNotContains('POST', $rota->methods());
+    }
+
+    public function test_tela_de_integracoes_abre_o_consentimento_em_aba_nova(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response([
+                'status' => 'success',
+                'data' => ['items' => [], 'unread_count' => 0],
+                'error' => null,
+                'meta' => ['pagination' => [
+                    'current_page' => 1, 'per_page' => 6, 'total' => 0,
+                    'last_page' => 1, 'from' => 0, 'to' => 0,
+                ]],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/agenda/google/status*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'settings' => ['agenda_google_client_id' => '123.apps.googleusercontent.com'],
+                    'secret_status' => ['agenda_google_client_secret' => ['configured' => true]],
+                    'summary' => [
+                        'configured' => true, 'connected' => false,
+                        'status' => 'warning', 'status_label' => 'Credenciais salvas — falta autorizar',
+                    ],
+                    'redirect_uri' => 'https://api-erp.jovemtech.eco.br/api/v1/agenda/google/callback',
+                ],
+                'error' => null, 'meta' => [],
+            ], 200),
+            '*' => Http::response(['status' => 'success', 'data' => [], 'error' => null, 'meta' => []], 200),
+        ]);
+
+        $html = $this
+            ->withSession($this->desktopSession(['configuracoes' => ['visualizar', 'editar']]))
+            ->get('/configuracoes/integracoes')
+            ->assertOk()
+            ->assertSee('Conectar com o Google')
+            ->getContent();
+
+        // O link precisa carregar target="_blank"; sem isso a aba do painel sai
+        // do ar e o guard de sessão desloga o usuário na volta.
+        $this->assertMatchesRegularExpression(
+            '/<a[^>]+agenda-google\/conectar"[^>]*target="_blank"/',
+            $html
+        );
+        // E não pode existir formulário apontando para a rota de conexão.
+        $this->assertDoesNotMatchRegularExpression(
+            '/<form[^>]+agenda-google\/conectar"/',
+            $html
+        );
+    }
+
     /** @return array<string, mixed> */
     private function item(
         int $id,

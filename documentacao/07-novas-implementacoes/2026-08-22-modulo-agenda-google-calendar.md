@@ -173,6 +173,31 @@ conectado.
 > Conecte pela produção, ou obtenha o refresh token por fora e use o campo
 > "colar refresh token" da própria tela (`/agenda/google/conectar-manual`).
 
+### Por que "Conectar" é um link, e não um botão de formulário
+
+O desktop declara `form-action 'self'` (ver
+`frontends/desktop/app/Http/Middleware/SecurityHeaders.php`). O Chrome aplica
+essa diretiva **também ao redirecionamento que um envio de formulário segue** —
+e não só à URL de destino do `<form>`. Como a rota de conexão termina num 302
+para `accounts.google.com`, o POST era bloqueado antes de sair do navegador:
+
+```
+Sending form data to '.../agenda-google/conectar' violates the following
+Content Security Policy directive: "form-action 'self'". The request has been blocked.
+```
+
+A rota é `GET` e o controle na tela é um `<a>`: navegação por link não passa por
+`form-action`. As demais ações (salvar credenciais, desconectar, sincronizar)
+seguem POST, porque redirecionam de volta para a própria origem.
+
+O link abre em **aba nova** (`target="_blank"`). Levar a aba do painel para fora
+do domínio dispararia o `pagehide` que o guard de sessão lê como "navegador
+fechado", e o usuário voltaria deslogado.
+
+A aba de retorno **não se fecha sozinha**: `window.close()` só funciona em janela
+que o próprio script abriu, e esta nasce de um link. A página pede o fechamento
+em vez de prometer o que o navegador recusaria.
+
 As credenciais do Google Agenda são **separadas** das `portal_google_*` já
 existentes (Portal do Cliente): outro consentimento, outro escopo, outro ciclo de
 vida. Podem vir do mesmo projeto no Cloud Console; não são a mesma configuração.

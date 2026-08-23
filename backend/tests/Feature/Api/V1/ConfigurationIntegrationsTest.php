@@ -3,6 +3,8 @@
 namespace Tests\Feature\Api\V1;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Services\Integrations\IntegrationSettingsService;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
@@ -147,25 +149,24 @@ class ConfigurationIntegrationsTest extends TestCase
             'valor' => '{"to":"{{phone}}","message":"{{message}}"}',
         ]);
 
-        $this->assertDatabaseHas('configuracoes', [
-            'chave' => 'whatsapp_webhook_token',
-            'valor' => 'token-webhook-123',
-        ]);
-
-        $this->assertDatabaseHas('configuracoes', [
-            'chave' => 'pagamentos_mercadopago_access_token',
-            'valor' => 'APP_USR-token',
-        ]);
-
+        // Chaves nao-secretas seguem legiveis em repouso.
         $this->assertDatabaseHas('configuracoes', [
             'chave' => 'smtp_host',
             'valor' => 'smtp.example.com',
         ]);
 
-        $this->assertDatabaseHas('configuracoes', [
-            'chave' => 'portal_google_client_secret',
-            'valor' => 'GOCSPX-secret',
-        ]);
+        // Chaves secretas sao cifradas em repouso: aqui o contrato e' o
+        // round-trip, nao o valor literal na coluna.
+        foreach ([
+            'whatsapp_webhook_token' => 'token-webhook-123',
+            'pagamentos_mercadopago_access_token' => 'APP_USR-token',
+            'portal_google_client_secret' => 'GOCSPX-secret',
+        ] as $chave => $emClaro) {
+            $gravado = (string) DB::table('configuracoes')->where('chave', $chave)->value('valor');
+
+            $this->assertNotSame($emClaro, $gravado, "[$chave] gravado em texto puro.");
+            $this->assertSame($emClaro, Crypt::decryptString($gravado), "[$chave] nao decifra de volta.");
+        }
 
         $blankSecretUpdate = $this->putJson('/api/v1/configuracoes/integracoes', [
             'whatsapp_direct_provider' => 'api_whats_local',
@@ -183,25 +184,22 @@ class ConfigurationIntegrationsTest extends TestCase
             ->assertJsonPath('data.integration.email.secret_status.smtp_pass.configured', true)
             ->assertJsonPath('data.integration.google.secret_status.portal_google_client_secret.configured', true);
 
-        $this->assertDatabaseHas('configuracoes', [
-            'chave' => 'whatsapp_local_node_token',
-            'valor' => 'token-local',
-        ]);
+        // Enviar o campo em branco preserva o segredo ja gravado (e ele
+        // continua cifrado em repouso).
+        foreach ([
+            'whatsapp_local_node_token' => 'token-local',
+            'pagamentos_mercadopago_access_token' => 'APP_USR-token',
+            'smtp_pass' => 'secret',
+        ] as $chave => $emClaro) {
+            $gravado = (string) DB::table('configuracoes')->where('chave', $chave)->value('valor');
 
-        $this->assertDatabaseHas('configuracoes', [
-            'chave' => 'pagamentos_mercadopago_access_token',
-            'valor' => 'APP_USR-token',
-        ]);
+            $this->assertNotSame($emClaro, $gravado, "[$chave] gravado em texto puro.");
+            $this->assertSame($emClaro, Crypt::decryptString($gravado), "[$chave] nao decifra de volta.");
+        }
 
-        $this->assertDatabaseHas('configuracoes', [
-            'chave' => 'smtp_pass',
-            'valor' => 'secret',
-        ]);
-
-        $this->assertDatabaseHas('configuracoes', [
-            'chave' => 'portal_google_client_secret',
-            'valor' => 'GOCSPX-secret',
-        ]);
+        $this->assertSame('GOCSPX-secret', Crypt::decryptString(
+            (string) DB::table('configuracoes')->where('chave', 'portal_google_client_secret')->value('valor')
+        ));
     }
 
     public function test_payment_test_connection_endpoint_validates_mercado_pago_and_asaas(): void
@@ -449,5 +447,84 @@ class ConfigurationIntegrationsTest extends TestCase
                 'updated_at' => now(),
             ],
         ], ['chave'], ['valor', 'tipo', 'updated_at']);
+    }
+
+    public function test_integration_secrets_are_encrypted_at_rest(): void
+    {
+        $admin = $this->createUserRecord([
+            'nome' => 'Administrador Segredos',
+            'email' => 'integracoes.segredos@example.com',
+            'perfil' => 'admin',
+            'grupo_id' => 1,
+        ]);
+
+        Sanctum::actingAs($admin, ['*']);
+
+        $this->putJson('/api/v1/configuracoes/integracoes', [
+            'whatsapp_webhook_token' => 'token-webhook-em-claro',
+            'pagamentos_asaas_api_key' => 'asaas-chave-secreta',
+            'smtp_pass' => 'senha-smtp',
+            'portal_google_client_secret' => 'GOCSPX-segredo',
+        ])->assertOk();
+
+        // Em repouso: nenhum dos quatro pode aparecer legivel na tabela. Antes
+        // desta mudanca blank() so' mascarava a resposta HTTP e o valor seguia
+        // em texto puro no banco - e, portanto, no dump diario sem cifra.
+        $secretos = [
+            'whatsapp_webhook_token' => 'token-webhook-em-claro',
+            'pagamentos_asaas_api_key' => 'asaas-chave-secreta',
+            'smtp_pass' => 'senha-smtp',
+            'portal_google_client_secret' => 'GOCSPX-segredo',
+        ];
+
+        foreach ($secretos as $chave => $emClaro) {
+            $gravado = (string) DB::table('configuracoes')->where('chave', $chave)->value('valor');
+
+            $this->assertNotSame($emClaro, $gravado, "[$chave] gravado em texto puro.");
+            $this->assertStringNotContainsString($emClaro, $gravado, "[$chave] texto puro embutido no valor gravado.");
+            $this->assertSame($emClaro, Crypt::decryptString($gravado), "[$chave] nao decifra de volta.");
+        }
+
+        // Round-trip pela aplicacao: o consumidor real continua lendo o valor.
+        $this->assertSame(
+            'token-webhook-em-claro',
+            app(IntegrationSettingsService::class)->webhookToken()
+        );
+    }
+
+    public function test_legacy_plaintext_secret_is_still_readable_and_gets_reencrypted_on_save(): void
+    {
+        // Linha legada, gravada em claro antes da cifragem existir.
+        DB::table('configuracoes')->updateOrInsert(
+            ['chave' => 'whatsapp_webhook_token'],
+            ['valor' => 'legado-em-texto-puro', 'tipo' => 'texto', 'created_at' => now(), 'updated_at' => now()]
+        );
+
+        // Le sem estourar DecryptException (mesma tolerancia do EncryptedSecret).
+        $this->assertSame(
+            'legado-em-texto-puro',
+            app(IntegrationSettingsService::class)->webhookToken()
+        );
+
+        $admin = $this->createUserRecord([
+            'nome' => 'Administrador Legado',
+            'email' => 'integracoes.legado@example.com',
+            'perfil' => 'admin',
+            'grupo_id' => 1,
+        ]);
+
+        Sanctum::actingAs($admin, ['*']);
+
+        // preserveExisting() reenvia o valor atual quando o campo vem vazio da
+        // tela, entao um save qualquer ja recifra a linha legada.
+        $this->putJson('/api/v1/configuracoes/integracoes', [
+            'whatsapp_webhook_token' => '',
+            'whatsapp_test_phone' => '(22) 90000-0000',
+        ])->assertOk();
+
+        $gravado = (string) DB::table('configuracoes')->where('chave', 'whatsapp_webhook_token')->value('valor');
+
+        $this->assertNotSame('legado-em-texto-puro', $gravado);
+        $this->assertSame('legado-em-texto-puro', Crypt::decryptString($gravado));
     }
 }
