@@ -44,6 +44,8 @@ class RbacAuthorizationService
         'anotacoes_assistencia',
         'conhecimento',
         'arquivos',
+        'backups',
+        'agenda',
     ];
 
     /**
@@ -64,6 +66,7 @@ class RbacAuthorizationService
         'restaurar',
         'administrar',
         'converter_os',
+        'ver_todos',
     ];
 
     /**

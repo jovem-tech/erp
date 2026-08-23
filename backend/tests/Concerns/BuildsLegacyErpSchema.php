@@ -157,6 +157,7 @@ trait BuildsLegacyErpSchema
             // (é o que grantGroupPermissions faz).
             ['id' => 16, 'nome' => 'Vendas', 'slug' => 'vendas', 'icone' => 'bi-cart-check', 'ordem_menu' => 15, 'ativo' => 1],
             ['id' => 17, 'nome' => 'Caixa', 'slug' => 'caixa', 'icone' => 'bi-cash-stack', 'ordem_menu' => 16, 'ativo' => 1],
+            ['id' => 18, 'nome' => 'Agenda', 'slug' => 'agenda', 'icone' => 'bi-calendar-week', 'ordem_menu' => 5, 'ativo' => 1],
         ]);
 
         DB::table('permissoes')->insert([
@@ -168,6 +169,8 @@ trait BuildsLegacyErpSchema
             ['id' => 6, 'nome' => 'Exportar', 'slug' => 'exportar'],
             ['id' => 7, 'nome' => 'Importar', 'slug' => 'importar'],
             ['id' => 8, 'nome' => 'Converter orçamento em OS', 'slug' => 'converter_os'],
+            // Agenda: separa "ver a minha agenda" de "ver a de todo mundo".
+            ['id' => 9, 'nome' => 'Ver de todos os responsáveis', 'slug' => 'ver_todos'],
         ]);
     }
 

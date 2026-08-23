@@ -125,6 +125,86 @@ Grupos com `sistema = 1` são imutáveis:
 
 O backend responde `403 GROUP_SYSTEM_IMMUTABLE` nesses casos.
 
+## Grupos de administração total
+
+Existem **dois** grupos com acesso pleno neste sistema:
+
+| Grupo | Papel |
+|---|---|
+| `Administrador` | administração do dia a dia |
+| `super administrador` | usuário supremo — pode e deve fazer qualquer coisa |
+
+### Armadilha ao semear um módulo novo
+
+O padrão herdado do gerenciador de arquivos
+(`2026_07_19_000009_seed_file_manager_permissions.php`) concede o módulo novo
+apenas ao grupo cujo nome é exatamente `Administrador`:
+
+```php
+->whereRaw('TRIM(nome) = ?', ['Administrador'])   // deixa o grupo supremo de fora
+```
+
+Consequência: **`super administrador` fica sem acesso a todo módulo novo**, e
+alguém precisa entrar na tela de níveis de acesso a cada funcionalidade
+entregue. Foi o que aconteceu com `backups` na entrega 5.40.0.0.
+
+A partir daí, toda semeadura de módulo deve casar os dois:
+
+```php
+$adminGroupIds = DB::table('grupos')
+    ->whereIn(DB::raw('LOWER(TRIM(nome))'), ['administrador', 'super administrador'])
+    ->pluck('id')->map(static fn ($id): int => (int) $id)->all();
+```
+
+Referência de implementação:
+`2026_08_22_000002_seed_backup_module_permissions.php` e a correção idempotente
+em `2026_08_22_000003_grant_backup_permissions_to_super_admin.php`.
+
+### Permissão de escopo, além de permissão de ação
+
+Os slugs herdados descrevem **o que** se pode fazer (`visualizar`, `criar`,
+`editar`, `excluir`). A Agenda (5.41.0.0) introduziu o primeiro slug que descreve
+**sobre o quê**: `ver_todos`.
+
+```
+agenda:visualizar   →  vejo os meus compromissos e os que não têm responsável
+agenda:ver_todos    →  vejo e opero a agenda de qualquer responsável
+```
+
+Sem isso, o par visualizar/editar teria de escolher entre uma agenda inteiramente
+pública ou inteiramente privada. O escopo é aplicado no serviço
+(`AgendaCompromisso::scopeVisiveisPara()`) **e** repetido na checagem por id do
+controller — sem a segunda, um usuário poderia editar por id um compromisso que a
+listagem dele nunca mostraria.
+
+Note a assimetria deliberada: item **sem responsável** é visível para todos. Uma
+obrigação que ninguém assumiu não pode ficar invisível para o time inteiro.
+
+Referência: `2026_08_22_000005_seed_agenda_module.php`.
+
+### Por que não resolver com um superusuário no código
+
+Seria tentador dar a `super administrador` um atalho em
+`RbacAuthorizationService::allows()`. Não faça: o nome do grupo é editável pela
+interface, e autorização baseada em nome de grupo já é uma falha conhecida do
+sistema — ver o caso de revelação de senha em equipamentos, que autorizava por
+nome contendo "admin" como substring. A concessão explícita por migração mantém
+a autorização ancorada em `grupo_permissoes`, que é a fonte de verdade.
+
+O único atalho legítimo é `fallback_admin`
+(`shouldUseLegacyAdminFallback()`), restrito a usuários **sem grupo**
+(`grupo_id <= 0`) com `perfil = 'admin'`, e ainda condicionado a
+`services.rbac.legacy_admin_fallback`.
+
+### Cuidado com `syncGroupPermissions`
+
+`RbacAuthorizationService::syncGroupPermissions()` **apaga toda a matriz do grupo
+e reinsere** o que veio da tela. Salvar um grupo pela interface sem marcar os
+slugs específicos de um módulo (`baixar`, `restaurar`, `administrar`,
+`quarentenar`, `metadados`, `listar`) revoga silenciosamente o que uma migração
+havia concedido. Sintoma típico: a aba do módulo aparece, mas as ações dentro
+dela respondem 403.
+
 ## Política de migrations desta fase
 
 - permitido: manter a base Sanctum já existente;

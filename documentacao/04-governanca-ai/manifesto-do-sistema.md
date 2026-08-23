@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-08-20T12:32:56-03:00`
-- Versao do sistema: `5.39.2`
+- Gerado em: `2026-08-23T07:20:23-03:00`
+- Versao do sistema: `5.42.0`
 - Versao da API: `1.6.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -60,6 +60,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/03-arquitetura-tecnica/README.md` - Arquitetura Técnica - Fases 4, 5, 6 e 7
 - `documentacao/03-arquitetura-tecnica/backend-administrativo-rbac.md` - Backend Administrativo e RBAC Central
 - `documentacao/03-arquitetura-tecnica/backend-central-minimo.md` - Backend Central Minimo
+- `documentacao/03-arquitetura-tecnica/backup-e-restauracao.md` - Backup e restauração — arquitetura
 - `documentacao/03-arquitetura-tecnica/catalogo-status-os.md` - Catálogo de status das Ordens de Serviço
 - `documentacao/03-arquitetura-tecnica/contrato-api-backend-central.md` - Contrato da API do Backend Central
 - `documentacao/03-arquitetura-tecnica/eventos-os.md` - Timeline de Eventos da OS (`os_eventos`)
@@ -193,6 +194,8 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-08-12-modulo-vendas-balcao-pdv.md` - Módulo de Vendas (balcão/PDV)
 - `documentacao/07-novas-implementacoes/2026-08-13-modulo-caixa-sessoes.md` - Módulo de Caixa (turnos, sangria e conferência)
 - `documentacao/07-novas-implementacoes/2026-08-14-devolucao-troca-venda.md` - Devolução e troca de venda
+- `documentacao/07-novas-implementacoes/2026-08-22-backup-restauracao-sistema.md` - Backup completo do sistema
+- `documentacao/07-novas-implementacoes/2026-08-22-modulo-agenda-google-calendar.md` - Módulo Agenda com sincronização Google (2026-08-22)
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 - `documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md` - Revisão de segurança — Fluxo de orçamento na assistência (com OS)
 
@@ -203,6 +206,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/10-deploy/deploy-producao-lan-ubuntu.md` - Deploy de Produção — Ubuntu Server (LAN ou VPS)
 - `documentacao/10-deploy/manual-inicializacao-local-windows-xampp.md` - Manual de Inicializacao Local no Windows com XAMPP
 - `documentacao/10-deploy/manual-versionamento-e-deploy.md` - Manual de Publicação — Versionar e Deploy
+- `documentacao/10-deploy/operacao-backup-e-restauracao.md` - Operação — Backup e restauração
 - `documentacao/10-deploy/operacao-gerenciador-central-arquivos.md` - Operação do Gerenciador Central de Arquivos
 - `documentacao/10-deploy/workflow-git-multiambiente.md` - Fluxo Git Multiambiente — Sistema ERP
 
@@ -238,4 +242,6 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/028-caixa-sessoes` - Sessões de caixa (abertura, sangria e fechamento) | artefatos: spec
 - `specs/029-devolucao-troca` - Devolução e troca de venda | artefatos: spec
 - `specs/030-cartoes-credito-assistencia` - Cartões de crédito da assistência | artefatos: spec
+- `specs/031-backup-restauracao-sistema` - Backup e restauração do sistema | artefatos: spec, plan, tasks
+- `specs/032-agenda-compromissos-google-calendar` - Agenda de compromissos com sincronização Google | artefatos: spec, plan, tasks
 

@@ -3,6 +3,7 @@
 @section('content')
     @php
         $canViewUsuarios = \App\Support\DesktopSession::can('usuarios', 'visualizar');
+        $canViewBackups = \App\Support\DesktopSession::can('backups', 'visualizar');
         $canViewGrupos = \App\Support\DesktopSession::can('grupos', 'visualizar');
 
         $tabs = [
@@ -28,6 +29,14 @@
                 'label' => 'Usuários',
                 'icon' => 'bi-people-fill',
                 'description' => 'Visualização e gerenciamento das contas de acesso ao sistema.',
+            ];
+        }
+
+        if ($canViewBackups) {
+            $tabs['backups'] = [
+                'label' => 'Backup',
+                'icon' => 'bi-hdd-stack',
+                'description' => 'Cópias de segurança do banco, dos arquivos e da configuração.',
             ];
         }
 
@@ -407,6 +416,12 @@
                 </div>
             @endif
 
+            @if ($canViewBackups)
+                <div class="config-subpanel {{ $activeTab === 'backups' ? 'is-active' : '' }}" data-config-subpanel="backups">
+                    @include('configurations.backups._panel')
+                </div>
+            @endif
+
             <div class="config-subpanel {{ $activeTab === 'integracoes' ? 'is-active' : '' }}" data-config-subpanel="integracoes">
                 <div class="desktop-form-card">
                     <div class="surface-card-header">
@@ -518,8 +533,15 @@
     @push('modals')
         @include('users._index-modals', ['usersTabValue' => 'usuarios'])
     @endpush
-
-    @section('scripts')
-        @include('users._index-scripts')
-    @endsection
 @endif
+
+{{-- Um unico @section('scripts'): duas secoes homonimas se sobrescreveriam,
+     e a aba de Backup ficaria sem JS sempre que Usuarios estivesse visivel. --}}
+@section('scripts')
+    @if ($canViewUsuarios)
+        @include('users._index-scripts')
+    @endif
+    @if ($canViewBackups)
+        @include('configurations.backups._scripts')
+    @endif
+@endsection

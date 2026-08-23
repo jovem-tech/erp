@@ -47,7 +47,10 @@ O modo `hybrid` exige simultaneamente `FILE_MANAGER_ALLOW_WRITES=true`, categori
 ## Regras obrigatórias
 
 - o document root deve apontar apenas para `backend/public`;
-- nenhuma raiz do projeto, storage privado, backup ou log pode ser servida pelo Nginx;
+- nenhuma raiz do projeto, storage privado, backup ou log pode ser servida pelo
+  Nginx — inclusive `/var/backups/sistema-erp`, onde os pacotes de backup ficam
+  (`0700 www-data`, fora do document root; a entrega é por URL assinada de
+  10 minutos, nunca por caminho estático);
 - resolver caminhos com `Storage::disk()` e aceitar somente discos e roots cadastrados;
 - rejeitar caminho absoluto, `..`, byte NUL, symlink e arquivo especial nos scanners;
 - validar extensão, MIME por conteúdo, tamanho, arquivo vazio e decoder específico antes de catalogar;
@@ -57,7 +60,10 @@ O modo `hybrid` exige simultaneamente `FILE_MANAGER_ALLOW_WRITES=true`, categori
 - preservar paths e colunas legadas enquanto qualquer consumidor depender deles;
 - não excluir versões anteriores, lixo físico ou duplicados sem política de retenção aprovada;
 - manter auditoria append-only para registro, vínculo e mudança de estado;
-- tratar banco principal, banco `chat` e storage como uma unidade de backup e restauração;
+- tratar banco principal, banco `chat` e storage como uma unidade de backup e
+  restauração — **implementado** desde a versão 5.40.0.0; ver
+  [arquitetura](../03-arquitetura-tecnica/backup-e-restauracao.md) e
+  [runbook](../10-deploy/operacao-backup-e-restauracao.md);
 - nunca corrigir permissão com `0777`; alinhar usuário/grupo ou ACL pelo princípio do menor privilégio.
 
 ## Consistência entre banco e filesystem

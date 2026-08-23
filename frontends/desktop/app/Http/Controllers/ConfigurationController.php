@@ -6,6 +6,7 @@ use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
 use App\Models\UserPreference;
+use App\Services\AgendaService;
 use App\Services\CompanyProfileService;
 use App\Services\ConfigurationService;
 use App\Services\DocumentationService;
@@ -28,16 +29,134 @@ class ConfigurationController extends DesktopController
         private readonly CompanyProfileService $companyProfileService,
         private readonly DocumentationService $documentationService,
         private readonly UserService $userService,
-        private readonly GroupService $groupService
+        private readonly GroupService $groupService,
+        private readonly AgendaService $agendaService
     ) {
     }
 
     public function integrations(): View
     {
+        // Estado da conexão do Google Agenda vive noutro serviço (é outro
+        // consentimento, outro escopo). Falha aqui não pode derrubar a página
+        // inteira de integrações.
+        try {
+            $agendaGoogle = $this->agendaService->googleStatus();
+        } catch (Throwable) {
+            $agendaGoogle = [];
+        }
+
         return view('configurations.integrations', [
             'pageTitle' => 'Configurações',
             'integration' => $this->configurationService->integrations(),
+            'agendaGoogle' => $agendaGoogle,
         ]);
+    }
+
+    // -----------------------------------------------------------------
+    // Google Agenda
+    // -----------------------------------------------------------------
+
+    public function agendaGoogleSaveCredentials(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'agenda_google_client_id' => ['nullable', 'string', 'max:255'],
+            'agenda_google_client_secret' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        return $this->agendaGoogleAction(
+            fn (): array => $this->agendaService->saveGoogleCredentials($validated),
+            'Credenciais do Google Agenda salvas.'
+        );
+    }
+
+    /**
+     * Abre o consentimento do Google numa aba nova. O redirect precisa sair do
+     * navegador do usuário — não adianta o BFF seguir o Location.
+     */
+    public function agendaGoogleConnect(): RedirectResponse
+    {
+        try {
+            $payload = $this->agendaService->googleAuthorizationUrl();
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->backToIntegrations()->with('error', 'Não foi possível iniciar a conexão com o Google.');
+        }
+
+        $url = trim((string) ($payload['url'] ?? ''));
+
+        if ($url === '') {
+            return $this->backToIntegrations()->with('error', 'O Google não devolveu a URL de autorização.');
+        }
+
+        return redirect()->away($url);
+    }
+
+    public function agendaGoogleConnectManual(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'refresh_token' => ['required', 'string', 'max:512'],
+        ]);
+
+        return $this->agendaGoogleAction(
+            fn (): array => $this->agendaService->googleConnectManual($validated['refresh_token']),
+            'Google Agenda conectado.'
+        );
+    }
+
+    public function agendaGoogleDisconnect(): RedirectResponse
+    {
+        return $this->agendaGoogleAction(
+            fn (): array => $this->agendaService->googleDisconnect(),
+            'Google Agenda desconectado. O calendário e os eventos continuam na conta Google.'
+        );
+    }
+
+    public function agendaGoogleSync(): RedirectResponse
+    {
+        try {
+            $stats = $this->agendaService->googleSyncNow();
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return $this->backToIntegrations()->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->backToIntegrations()->with('error', 'Não foi possível sincronizar com o Google agora.');
+        }
+
+        return $this->backToIntegrations()->with('success', sprintf(
+            'Sincronizado — %d enviado(s), %d importado(s), %d atualizado(s).',
+            (int) ($stats['enviados'] ?? 0),
+            (int) ($stats['importados'] ?? 0),
+            (int) ($stats['atualizados'] ?? 0)
+        ));
+    }
+
+    /** @param callable(): array<string, mixed> $action */
+    private function agendaGoogleAction(callable $action, string $successMessage): RedirectResponse
+    {
+        try {
+            $action();
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return $this->backToIntegrations()->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->backToIntegrations()->with('error', 'Não foi possível concluir a ação no Google Agenda.');
+        }
+
+        return $this->backToIntegrations()->with('success', $successMessage);
+    }
+
+    private function backToIntegrations(): RedirectResponse
+    {
+        return redirect()->route('configurations.integrations.index');
     }
 
     public function system(Request $request): View

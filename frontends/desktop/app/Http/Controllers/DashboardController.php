@@ -2,22 +2,40 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\AgendaService;
 use App\Services\DashboardService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use App\Support\DesktopSession;
 use Illuminate\View\View;
+use Throwable;
 
 class DashboardController extends DesktopController
 {
     public function __construct(
-        private readonly DashboardService $dashboardService
+        private readonly DashboardService $dashboardService,
+        private readonly AgendaService $agendaService
     ) {
     }
 
     public function index(Request $request): View
     {
+        // Card "Compromissos" do topo. O dashboard é a primeira tela do dia e
+        // não pode cair porque a agenda falhou — sem permissão ou com erro, o
+        // card simplesmente não aparece.
+        $agenda = [];
+
+        if (DesktopSession::can('agenda', 'visualizar')) {
+            try {
+                $agenda = $this->agendaService->summary();
+            } catch (Throwable) {
+                $agenda = [];
+            }
+        }
+
         return view('dashboard.index', [
             'pageTitle' => 'Dashboard',
+            'agenda' => $agenda,
             'dashboard' => [
                 'dataUrl' => route('dashboard.data'),
                 'filters' => $this->dashboardService->bootstrapFilters($this->normalizeFilters($request)),

@@ -74,6 +74,15 @@ class DesktopNavigation
                         'module' => 'dashboard',
                         'icon' => 'bi-grid-1x2-fill',
                     ],
+                    // Agenda logo abaixo do Dashboard: as duas telas de "o que
+                    // preciso saber agora" ficam juntas, e a agenda e a segunda
+                    // parada da rotina do dia.
+                    [
+                        'label' => 'Agenda',
+                        'route' => 'agenda.index',
+                        'module' => 'agenda',
+                        'icon' => 'bi-calendar-week',
+                    ],
                 ],
             ],
             [

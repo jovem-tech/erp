@@ -50,4 +50,40 @@ Os dois processos `sistema-erp-queue-worker_*` devem aparecer como `RUNNING`. O 
 ## Scheduler
 
 - Windows: Task Scheduler chamando `php artisan schedule:run`
-- Linux: cron a cada minuto
+- Linux: cron a cada minuto — `/etc/cron.d/sistema-erp-scheduler`, como `www-data`
+
+### Mapa de horários
+
+Antes de agendar qualquer coisa nova, confira aqui: colisões de horário em
+tarefas pesadas (dump, varredura de arquivos) competem por I/O e por lock.
+
+| Horário | Tarefa | Onde |
+|---|---|---|
+| a cada minuto | `queue:work` (rede de segurança do Supervisor) | `routes/console.php` |
+| a cada minuto | `app:dispatch-pending-document-signature-notifications` (5 min) | `routes/console.php` |
+| a cada minuto | `file-manager:sync --pending` | `routes/console.php` |
+| a cada minuto | **`backup:executar --pendente`** | `routes/console.php` |
+| a cada 5 min | `file-manager:sync` | `routes/console.php` |
+| a cada 15 min | `app:process-pending-os-collections` | `routes/console.php` |
+| a cada 15 min | **`backup:varrer`** (catálogo unificado) | `routes/console.php` |
+| de hora em hora | `app:notify-order-deadlines`, `app:expire-budgets` | `routes/console.php` |
+| diário | `sanctum:prune-expired --hours=24` | `routes/console.php` |
+| **02:00** | `erp-backup.sh` — dump só de `sistema_hml` | `/etc/cron.d/sistema-erp-backup` (root) |
+| **02:30** | `file-manager:purge-trash` | `routes/console.php` |
+| **03:15** | **`backup:executar --tipo=completo`** | `routes/console.php` |
+| **03:50** | **`backup:expurgar`** (retenção) | `routes/console.php` |
+
+### Backup não usa fila
+
+`backup:executar` roda pelo scheduler com `runInBackground()`, e não como job.
+Dois motivos, ambos duros:
+
+- `max_execution_time = 60` nos pools PHP-FPM impede execução síncrona;
+- `retry_after = 180` na conexão `redis` (`config/queue.php`) re-reservaria um
+  backup de mais de 3 minutos, fazendo-o **rodar duas vezes em paralelo**; e o
+  Supervisor consome apenas `--queue=documents,default`, então uma fila nova
+  exigiria alterar `/etc/supervisor/conf.d/` como root.
+
+Lock compartilhado: `/var/lock/sistema-erp-backup.lock` (`flock` não bloqueante).
+Ao mexer em `scripts/bash/deploy-producao.sh`, considere tomar o mesmo lock antes
+de migrar — migração durante um dump quebra o `--single-transaction`.

@@ -42,6 +42,50 @@
         </div>
     </section>
 
+    @php
+        $agenda = is_array($agenda ?? null) ? $agenda : [];
+        $agendaAtrasados = (int) ($agenda['atrasados'] ?? 0);
+        $agendaHoje = (int) ($agenda['hoje'] ?? 0);
+        $agendaProximos = is_array($agenda['proximos'] ?? null) ? $agenda['proximos'] : [];
+        // Só aparece se houver algo a mostrar: um card zerado todo dia vira
+        // ruído e ensina o usuário a ignorar aquela região da tela.
+        $mostrarAgenda = $agenda !== [] && ($agendaAtrasados > 0 || $agendaHoje > 0 || $agendaProximos !== []);
+    @endphp
+
+    @if ($mostrarAgenda)
+        <section class="dashboard-agenda-card mb-4">
+            <div class="dashboard-agenda-head">
+                <div>
+                    <span class="dashboard-kpi-label">Agenda</span>
+                    <h3 class="surface-title fs-5 mb-0">
+                        @if ($agendaAtrasados > 0)
+                            {{ $agendaAtrasados }} {{ $agendaAtrasados === 1 ? 'compromisso atrasado' : 'compromissos atrasados' }}
+                        @elseif ($agendaHoje > 0)
+                            {{ $agendaHoje }} {{ $agendaHoje === 1 ? 'compromisso para hoje' : 'compromissos para hoje' }}
+                        @else
+                            Nada vencido — próximos compromissos
+                        @endif
+                    </h3>
+                </div>
+                <a href="{{ route('agenda.index') }}" class="btn btn-outline-light btn-sm">
+                    <i class="bi bi-calendar-week me-1"></i>Abrir agenda
+                </a>
+            </div>
+
+            <ul class="dashboard-agenda-list">
+                @foreach (array_slice($agendaProximos, 0, 4) as $item)
+                    <li class="dashboard-agenda-item agenda-tipo-{{ $item['tipo'] ?? 'manual' }} {{ ($item['atrasado'] ?? false) ? 'is-late' : '' }}">
+                        <span class="dashboard-agenda-when">
+                            {{ \Carbon\CarbonImmutable::parse($item['inicio_em'])->format('d/m') }}
+                            <small>{{ $item['hora'] ?? 'dia' }}</small>
+                        </span>
+                        <span class="dashboard-agenda-title">{{ $item['titulo'] ?? '' }}</span>
+                    </li>
+                @endforeach
+            </ul>
+        </section>
+    @endif
+
     <section class="dashboard-kpi-grid mb-4" data-dashboard-kpi-grid>
         <article class="dashboard-kpi-card" data-dashboard-open-orders-card style="--dashboard-accent: #6f5afc;">
             <span class="dashboard-kpi-label">OS abertas</span>

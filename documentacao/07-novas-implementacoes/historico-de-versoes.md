@@ -1,5 +1,14 @@
 # Historico de versoes
 
+## v5.40.0.0 - 2026-08-22
+
+- nota tecnica criada em `documentacao/07-novas-implementacoes/2026-08-22-backup-restauracao-sistema.md`
+- backup completo do sistema: dump dos bancos, arquivos privados, uploads do legado e configuracao num pacote unico cifrado com AES-256 + PBKDF2, agendado para 03:15 com retencao escalonada (7 diarios / 4 semanais / 6 mensais)
+- painel virou o catalogo unico de backups: `backup:varrer` cataloga tambem os dumps gerados fora do sistema (cron das 02:00, pre-deploy, manuais), marcando origem e conteudo
+- verificacao de integridade confere o rodape `-- Dump completed` alem do sha256 por membro; `gzip -t` sozinho passa em dump truncado
+- nova aba Backup em `/configuracoes/sistema?tab=backups` e modulo RBAC `backups` com 6 permissoes
+- semeadura de modulo passou a contemplar o grupo `super administrador`, que o padrao herdado deixava de fora de toda funcionalidade nova
+
 ## v5.20.7.0 - 2026-07-28
 
 - nota tecnica criada em `documentacao/07-novas-implementacoes/2026-07-28-relato-cliente-orcamento-os.md`
