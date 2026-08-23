@@ -32,6 +32,11 @@ class AgendaGoogleController extends BaseApiController
     {
         $this->authorize('configuracoes:visualizar');
 
+        // Recupera o e-mail da conta quando ele faltar (falha transitória na
+        // hora de conectar). Só faz chamada externa nesse caso — conectado e
+        // com e-mail conhecido, é leitura pura do banco.
+        $this->connection->resolveAccountEmail();
+
         return $this->success(array_merge($this->settings->payload(), [
             'redirect_uri' => $this->connection->redirectUri(),
         ]), request: $request);

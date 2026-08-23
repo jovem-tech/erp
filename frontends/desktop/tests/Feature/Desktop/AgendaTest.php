@@ -289,6 +289,80 @@ class AgendaTest extends TestCase
         );
     }
 
+    public function test_integracoes_mostra_a_conta_google_vinculada(): void
+    {
+        $this->fakeGoogleStatus([
+            'configured' => true, 'connected' => true,
+            'status' => 'success', 'status_label' => 'Conectado',
+            'conta_email' => 'assistencia@jovemtech.eco.br',
+            'calendar_id' => 'abc@group.calendar.google.com',
+        ]);
+
+        $this
+            ->withSession($this->desktopSession(['configuracoes' => ['visualizar', 'editar']]))
+            ->get('/configuracoes/integracoes')
+            ->assertOk()
+            ->assertSee('Vinculado à conta')
+            ->assertSee('assistencia@jovemtech.eco.br');
+    }
+
+    public function test_agenda_mostra_a_conta_google_que_recebe_os_lembretes(): void
+    {
+        $this->fakeBackend([], [
+            'configured' => true, 'connected' => true,
+            'status' => 'success', 'status_label' => 'Conectado',
+            'conta_email' => 'assistencia@jovemtech.eco.br',
+        ]);
+
+        $this
+            ->withSession($this->desktopSession(['agenda' => ['visualizar']]))
+            ->get('/agenda?data=2026-09-10&view=mes')
+            ->assertOk()
+            ->assertSee('assistencia@jovemtech.eco.br');
+    }
+
+    public function test_conta_sem_email_conhecido_nao_quebra_a_tela(): void
+    {
+        // Consentimento sem o escopo de e-mail, ou falha na busca: a tela
+        // precisa continuar dizendo que está conectada.
+        $this->fakeGoogleStatus([
+            'configured' => true, 'connected' => true,
+            'status' => 'success', 'status_label' => 'Conectado',
+            'conta_email' => '',
+        ]);
+
+        $this
+            ->withSession($this->desktopSession(['configuracoes' => ['visualizar', 'editar']]))
+            ->get('/configuracoes/integracoes')
+            ->assertOk()
+            ->assertSee('e-mail não informado');
+    }
+
+    /** @param array<string, mixed> $summary */
+    private function fakeGoogleStatus(array $summary): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response([
+                'status' => 'success',
+                'data' => ['items' => [], 'unread_count' => 0],
+                'error' => null,
+                'meta' => ['pagination' => [
+                    'current_page' => 1, 'per_page' => 6, 'total' => 0,
+                    'last_page' => 1, 'from' => 0, 'to' => 0,
+                ]],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/agenda/google/status*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'settings' => [], 'secret_status' => [], 'summary' => $summary,
+                    'redirect_uri' => 'https://api-erp.jovemtech.eco.br/api/v1/agenda/google/callback',
+                ],
+                'error' => null, 'meta' => [],
+            ], 200),
+            '*' => Http::response(['status' => 'success', 'data' => [], 'error' => null, 'meta' => []], 200),
+        ]);
+    }
+
     /** @return array<string, mixed> */
     private function item(
         int $id,
@@ -348,9 +422,17 @@ class AgendaTest extends TestCase
             ->assertRedirect();
     }
 
-    /** @param array<int, array<string, mixed>> $compromissos */
-    private function fakeBackend(array $compromissos = []): void
+    /**
+     * @param array<int, array<string, mixed>> $compromissos
+     * @param array<string, mixed>|null $googleSummary
+     */
+    private function fakeBackend(array $compromissos = [], ?array $googleSummary = null): void
     {
+        $googleSummary ??= [
+            'configured' => false, 'connected' => false,
+            'status' => 'secondary', 'status_label' => 'Aguardando configuração',
+        ];
+
         Http::fake([
             'http://127.0.0.1:8000/api/v1/notifications*' => Http::response([
                 'status' => 'success',
@@ -368,10 +450,7 @@ class AgendaTest extends TestCase
             ], 200),
             'http://127.0.0.1:8000/api/v1/agenda/google/status*' => Http::response([
                 'status' => 'success',
-                'data' => ['settings' => [], 'secret_status' => [], 'summary' => [
-                    'configured' => false, 'connected' => false, 'status' => 'secondary',
-                    'status_label' => 'Aguardando configuração',
-                ]],
+                'data' => ['settings' => [], 'secret_status' => [], 'summary' => $googleSummary],
                 'error' => null, 'meta' => [],
             ], 200),
             'http://127.0.0.1:8000/api/v1/agenda*' => Http::response([

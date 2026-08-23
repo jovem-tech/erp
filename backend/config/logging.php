@@ -74,6 +74,25 @@ return [
             'replace_placeholders' => true,
         ],
 
+        /*
+         * Trilha das integracoes financeiras (Banco Inter, gateways de
+         * pagamento).
+         *
+         * Canal proprio de proposito: o `stack` de producao roda com
+         * LOG_LEVEL=warning, entao qualquer logger()->info() de webhook ou de
+         * conciliacao e' DESCARTADO — foi o que aconteceu com o webhook do
+         * WhatsApp, que loga em info e nao deixa rastro nenhum em producao.
+         * Aqui o nivel e a retencao nao dependem do LOG_LEVEL global.
+         */
+        'pagamentos' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/pagamentos.log'),
+            'level' => env('LOG_PAGAMENTOS_LEVEL', 'info'),
+            'days' => env('LOG_PAGAMENTOS_DAYS', 180),
+            'permission' => 0664,
+            'replace_placeholders' => true,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

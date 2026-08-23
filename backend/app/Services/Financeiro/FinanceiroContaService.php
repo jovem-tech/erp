@@ -205,6 +205,8 @@ class FinanceiroContaService
                 'nome' => trim((string) $payload['nome']),
                 'tipo' => $payload['tipo'],
                 'instituicao' => $this->nullableString($payload['instituicao'] ?? null),
+                'integracao_provider' => $this->nullableString($payload['integracao_provider'] ?? null),
+                'integracao_conta_ref' => $this->nullableString($payload['integracao_conta_ref'] ?? null),
                 'data_inicio_controle' => $payload['data_inicio_controle'],
                 'considera_disponivel' => (bool) ($payload['considera_disponivel'] ?? true),
                 'ativo' => (bool) ($payload['ativo'] ?? true),
@@ -258,10 +260,10 @@ class FinanceiroContaService
 
             $allowed = [
                 'nome', 'tipo', 'instituicao', 'data_inicio_controle', 'considera_disponivel',
-                'ativo', 'cor', 'observacoes',
+                'ativo', 'cor', 'observacoes', 'integracao_provider', 'integracao_conta_ref',
             ];
             $updates = array_intersect_key($payload, array_flip($allowed));
-            foreach (['instituicao', 'observacoes'] as $nullable) {
+            foreach (['instituicao', 'observacoes', 'integracao_provider', 'integracao_conta_ref'] as $nullable) {
                 if (array_key_exists($nullable, $updates)) {
                     $updates[$nullable] = $this->nullableString($updates[$nullable]);
                 }
@@ -863,6 +865,8 @@ class FinanceiroContaService
             'nome' => $account->nome,
             'tipo' => $account->tipo,
             'instituicao' => $account->instituicao,
+            'integracao_provider' => $account->integracao_provider,
+            'integracao_conta_ref' => $account->integracao_conta_ref,
             'data_inicio_controle' => $account->data_inicio_controle?->toDateString(),
             'considera_disponivel' => (bool) $account->considera_disponivel,
             'ativo' => (bool) $account->ativo,

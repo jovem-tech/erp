@@ -156,11 +156,19 @@ class DesktopNavigation
                         'module' => 'fornecedores',
                         'icon' => 'bi-truck',
                     ],
+                    // Aparelhos/equipamentos não tem entrada visível: o cadastro é
+                    // estritamente derivado do cliente, então a listagem é acessada
+                    // pelo "Mais ações" de Clientes (e o caminho inverso, pelo "Mais
+                    // ações" de Equipamentos). `hidden` mantém o item fora da sidebar
+                    // sem tirá-lo do cálculo de firstAllowedRouteName() — sem isso, um
+                    // usuário só com "equipamentos:visualizar" ficaria sem destino de
+                    // fallback ao esbarrar num redirecionamento de permissão.
                     [
                         'label' => 'Aparelhos / Equip.',
                         'route' => 'equipments.index',
                         'module' => 'equipamentos',
                         'icon' => 'bi-laptop',
+                        'hidden' => true,
                     ],
                     [
                         'label' => 'Serviços',
@@ -169,7 +177,7 @@ class DesktopNavigation
                         'icon' => 'bi-gear-fill',
                     ],
                     [
-                        'label' => 'Estoque de Peças',
+                        'label' => 'Estoque',
                         'route' => 'estoque.index',
                         'module' => 'estoque',
                         'icon' => 'bi-box-seam',
@@ -233,9 +241,15 @@ class DesktopNavigation
                             ],
                         ],
                     ],
+                    // Grupo "Ferramentas" não tem entrada visível: as três telas são
+                    // exatamente as mesmas do dropdown "Mais ações" de Financeiro >
+                    // Lançamentos, então a sidebar só duplicava o atalho. `hidden`
+                    // mantém o grupo fora do menu preservando os filhos no cálculo de
+                    // firstAllowedRouteName() (ex.: usuário só com "precificacao").
                     [
                         'label' => 'Ferramentas',
                         'icon' => 'bi-sliders2',
+                        'hidden' => true,
                         'children' => [
                             [
                                 'label' => 'Cartões e Taxas',
@@ -279,12 +293,6 @@ class DesktopNavigation
             [
                 'label' => 'Processos e Modelos',
                 'items' => [
-                    [
-                        'label' => 'Fluxo de Trabalho OS',
-                        'route' => 'knowledge.os-flow.index',
-                        'module' => 'conhecimento',
-                        'icon' => 'bi-diagram-3-fill',
-                    ],
                     [
                         'label' => 'Modelo da Assistência Técnica',
                         'route' => 'knowledge.assistance-model.index',
@@ -356,6 +364,17 @@ class DesktopNavigation
                         'route' => 'configurations.system.index',
                         'module' => 'configuracoes',
                         'icon' => 'bi-sliders',
+                    ],
+                    // Cadastro dos status de OS: saiu de "Processos e Modelos" em
+                    // 23/08/2026 porque não é material de leitura — edita o catálogo
+                    // que o módulo de OS usa em produção. Continua no módulo RBAC
+                    // 'conhecimento' de propósito: trocar para 'configuracoes' tiraria
+                    // o acesso de quem usa a tela hoje.
+                    [
+                        'label' => 'Status de OS',
+                        'route' => 'knowledge.os-flow.index',
+                        'module' => 'conhecimento',
+                        'icon' => 'bi-list-check',
                     ],
                     [
                         'label' => 'Acesso e Integrações',

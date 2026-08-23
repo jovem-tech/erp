@@ -3,6 +3,9 @@
 **Data:** 21/07/2026
 **Versão:** `5.4.2.0`
 **Status:** ativo no ambiente de desenvolvimento LAN; não publicado na VPS de produção
+**Atualizado em 23/08/2026:** *Aparelhos/Equip.* e o grupo *Ferramentas* saíram da
+sidebar (viraram itens `hidden`) e *Estoque de Peças* passou a se chamar *Estoque* —
+ver `2026-08-23-sidebar-enxuta-atalhos-clientes-equipamentos.md`.
 
 ## Objetivo
 

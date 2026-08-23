@@ -2,6 +2,11 @@
 
 @section('content')
     @php
+        // Aparelhos/equipamentos saiu da sidebar (cadastro derivado do cliente):
+        // a listagem passa a ser alcançada por este "Mais ações".
+        $canViewEquipments = \App\Support\DesktopSession::can('equipamentos', 'visualizar');
+        $canCreateEquipments = \App\Support\DesktopSession::can('equipamentos', 'criar');
+
         $hasActiveFilters = trim((string) ($filters['search'] ?? '')) !== ''
             || trim((string) ($filters['status'] ?? '')) !== '';
         $activeFilterCount = count(array_filter([
@@ -27,6 +32,35 @@
                     <i class="bi bi-plus-lg me-2"></i>
                     Novo cliente
                 </a>
+            @endif
+
+            @if ($canViewEquipments || $canCreateEquipments)
+                <x-list-actions label="Mais ações" size="">
+                    @if ($canViewEquipments)
+                        <li>
+                            <a href="{{ route('equipments.index') }}" class="dropdown-item">
+                                <i class="bi bi-laptop me-2"></i>Aparelhos / Equipamentos
+                            </a>
+                        </li>
+                    @endif
+
+                    @if ($canCreateEquipments)
+                        <li>
+                            <a href="{{ route('equipments.create') }}" class="dropdown-item">
+                                <i class="bi bi-plus-circle me-2"></i>Novo equipamento
+                            </a>
+                        </li>
+                    @endif
+
+                    @if ($canViewEquipments)
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a href="{{ route('equipments.help') }}" class="dropdown-item">
+                                <i class="bi bi-question-circle me-2"></i>Ajuda de equipamentos
+                            </a>
+                        </li>
+                    @endif
+                </x-list-actions>
             @endif
         </x-slot:actions>
 

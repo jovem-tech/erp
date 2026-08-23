@@ -91,6 +91,10 @@ mês abre a visão de mês; clicar num dia abre a visão de dia.
 |---|---|---|
 | Contas a pagar | `financeiro` (tipo=pagar) por `data_vencimento` | `conta_pagar` |
 | Contas a receber | `financeiro` (tipo=receber) | `conta_receber` |
+
+> **Obrigação é saldo, não é lançamento.** As duas fontes ignoram título de
+> valor zero e tratam como resolvido o que não tem mais saldo em aberto — ver
+> "Título sem saldo não é compromisso" abaixo.
 | Retorno pós-serviço | `crm_followups` | `retorno_pos_servico` |
 | Prazo de reparo | `os.data_previsao`, excluindo `OrderStatus::DEADLINE_FREEZE_CODES` | `prazo_os` |
 | Cobrança automática | `os_cobranca_agendamentos` | `cobranca_os` |
@@ -108,6 +112,68 @@ pedida. Criar, atualizar, concluir e cancelar são decisões do
 `AgendaSourceReconciler`, que compara o retorno da fonte com o que já está
 gravado. É por isso que o comando pode rodar de 15 em 15 minutos, duas vezes em
 paralelo ou depois de meses parado, sempre com o mesmo resultado.
+
+## Quando a obrigação chega na agenda
+
+Há dois caminhos, e os dois existem por um motivo:
+
+**Varredura periódica** (`agenda:sincronizar-origens`, de 15 em 15 minutos) —
+mantém a agenda coerente com o resto do sistema: pega o que foi criado por fora,
+conclui o que foi resolvido, cancela o que deixou de valer. Horizonte de −60 a
++400 dias.
+
+**Reflexo imediato** (`AgendaSourceReconciler::reconcileForDate()`) — chamado
+pelo módulo que acabou de criar a obrigação. A janela acompanha a data pedida,
+então funciona **em qualquer horizonte**, inclusive além dos 400 dias.
+
+Hoje quem usa é a baixa da OS, ao agendar o retorno pós-serviço. Para ligar
+outro módulo ao caminho imediato basta uma linha depois de gravar o registro:
+
+```php
+$this->agendaReconciler->reconcileForDate('conta_pagar', $vencimento);
+```
+
+`reconcileForDate()` nunca lança: a agenda é um espelho, e uma falha nela não
+pode derrubar a operação que criou a obrigação.
+
+### Duas armadilhas que já custaram caro
+
+**O horizonte da varredura era 180 dias — exatamente o padrão de retorno
+pós-serviço** (`OrderClosureService::RETURN_FOLLOWUP_DEFAULT_DAYS`). O padrão da
+tela caía na borda, e um dia além dela a obrigação existia em `crm_followups` e
+simplesmente não aparecia na agenda até o tempo passar. Daí o horizonte de 400
+dias, casado com o teto de janela da listagem.
+
+**O horizonte estava escrito em dois lugares** — na constante do reconciliador e
+no valor padrão da opção `--dias-a-frente` do comando. Ampliar a constante não
+mudou nada, porque a execução agendada continuava mandando 180. As opções do
+comando agora nascem vazias e servem só para sobrescrever pontualmente.
+
+### Título sem saldo não é compromisso
+
+A baixa da OS grava um lançamento de cobrança **mesmo quando não sobra nada a
+receber** — garantia, sem custo, devolvido sem reparo. São títulos de R$ 0,00
+com status `pendente`. Na base real eram **13 de 30** contas a receber na
+agenda: linhas de "Receber: Cobrança da OS …" para algo que ninguém jamais
+precisaria fazer. Um dia chegou a exibir 12 itens, quase todos ruído.
+
+Duas regras corrigem isso, e valem para pagar e receber:
+
+- **valor ≤ 0 não entra na coleta.** Não é obrigação: não há o que pagar nem o
+  que cobrar. Como a fonte deixa de reportá-lo, o reconciliador cancela sozinho
+  os que já tinham sido criados — sem código novo.
+- **resolvido é saldo ≤ 0**, não apenas `status = pago`. Cobre o título
+  liquidado por movimentos cujo status não acompanhou: ele parava de exigir ação
+  e continuava na agenda.
+
+> A agenda expôs um defeito que não era dela: encerramento sem cobrança criava
+> título a receber no valor da OS. Ver
+> [2026-08-23-cobranca-indevida-em-encerramento-sem-cobranca.md](2026-08-23-cobranca-indevida-em-encerramento-sem-cobranca.md).
+
+A descrição passou a mostrar **o que falta**, não o valor de face: "R$ 586,00"
+num título com R$ 100,00 já recebidos levava a cobrar o valor errado. E a
+prioridade acompanha o saldo — um título de R$ 5.000 com R$ 50 em aberto não
+merece destaque.
 
 ## Autoridade sobre o dado
 
@@ -167,6 +233,23 @@ conectado.
    (`https://api-erp.jovemtech.eco.br/api/v1/agenda/google/callback` em produção).
 4. Em Configurações → Integrações → **Google Agenda**, salve Client ID e Secret e
    clique em "Conectar com o Google".
+
+### Qual conta está vinculada
+
+Conectado, o painel mostra **"Vinculado à conta \<e-mail\>"** logo abaixo do
+título da sub-aba, e a tela da Agenda repete o e-mail no card do Google. É a
+primeira dúvida de quem abre a tela — ainda mais com várias contas Google no
+mesmo navegador —, e é o celular dessa conta que vai tocar.
+
+O e-mail vem do escopo `userinfo.email`, pedido junto do consentimento. Se a
+captura falhar no momento de conectar (rede, ou consentimento sem esse escopo),
+`GoogleCalendarConnectionService::resolveAccountEmail()` busca de novo na
+primeira leitura de status e grava. Sem essa recuperação, a tela mostraria "—"
+para sempre e a única saída seria desconectar e refazer todo o consentimento só
+para descobrir de qual conta se tratava.
+
+Duas garantias: a busca nunca derruba a tela, e **nunca grava vazio por cima de
+um e-mail já conhecido** — uma falha pontual apagaria a informação boa.
 
 > ⚠️ **O Google recusa IP privado como redirect URI.** O ambiente de bancada
 > (`https://192.168.1.100:8443`) **não pode** ser cadastrado no Cloud Console.

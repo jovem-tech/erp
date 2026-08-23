@@ -91,6 +91,15 @@
         $asaasReady = (bool) ($paymentSummary['asaas']['ready'] ?? false);
         $asaasStatusLabel = (string) ($paymentSummary['asaas']['status_label'] ?? 'Aguardando configuração');
 
+        $interEnabled = old('pagamentos_inter_enabled', (bool) ($paymentSettings['pagamentos_inter_enabled'] ?? false));
+        $interAmbiente = old('pagamentos_inter_ambiente', (string) ($paymentSettings['pagamentos_inter_ambiente'] ?? 'sandbox'));
+        $interClientId = old('pagamentos_inter_client_id', (string) ($paymentSettings['pagamentos_inter_client_id'] ?? ''));
+        $interClientSecret = old('pagamentos_inter_client_secret', '');
+        $interClientSecretConfigured = $isConfiguredSecret($paymentSecretStatus, 'pagamentos_inter_client_secret');
+        $interContaCorrente = old('pagamentos_inter_conta_corrente', (string) ($paymentSettings['pagamentos_inter_conta_corrente'] ?? ''));
+        $interReady = (bool) ($paymentSummary['inter']['ready'] ?? false);
+        $interStatusLabel = (string) ($paymentSummary['inter']['status_label'] ?? 'Aguardando configuração');
+
         $emailIntegration = is_array($integration['email'] ?? null) ? $integration['email'] : [];
         $emailSettings = is_array($emailIntegration['settings'] ?? null) ? $emailIntegration['settings'] : [];
         $emailSecretStatus = is_array($emailIntegration['secret_status'] ?? null) ? $emailIntegration['secret_status'] : [];
@@ -124,6 +133,7 @@
         $agendaGoogleClientId = old('agenda_google_client_id', (string) ($agendaGoogleSettings['agenda_google_client_id'] ?? ''));
         $agendaGoogleSecretConfigured = $isConfiguredSecret($agendaGoogleSecretStatus, 'agenda_google_client_secret');
         $agendaGoogleRedirectUri = (string) ($agendaGoogle['redirect_uri'] ?? '');
+        $agendaGoogleEmail = trim((string) ($agendaGoogleSummary['conta_email'] ?? ''));
     @endphp
 
     <section class="desktop-page-stack">
@@ -653,6 +663,61 @@
                                 <small class="text-muted">Valida a Base URL e a API Key consultando a conta do ambiente informado.</small>
                             </div>
                         </div>
+
+                        <div class="desktop-form-card">
+                            <div class="surface-card-header">
+                                <div>
+                                    <h4 class="surface-title">Banco Inter</h4>
+                                    <p class="surface-subtitle">Pix e extrato direto na conta PJ, via API CDPJ com certificado.</p>
+                                </div>
+                                <span class="badge rounded-pill {{ $interReady ? 'text-bg-success' : 'text-bg-secondary' }}">
+                                    {{ $interStatusLabel }}
+                                </span>
+                            </div>
+
+                            <div class="desktop-grid desktop-grid-two">
+                                <div>
+                                    <label for="interEnabled">Canal habilitado</label>
+                                    <select class="form-select" id="interEnabled" name="pagamentos_inter_enabled">
+                                        <option value="1" @selected((bool) $interEnabled)>Sim</option>
+                                        <option value="0" @selected(! (bool) $interEnabled)>Não</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="interAmbiente">Ambiente</label>
+                                    <select class="form-select" id="interAmbiente" name="pagamentos_inter_ambiente">
+                                        <option value="sandbox" @selected($interAmbiente === 'sandbox')>Sandbox</option>
+                                        <option value="producao" @selected($interAmbiente === 'producao')>Produção</option>
+                                    </select>
+                                </div>
+                                <div class="desktop-grid-span-2">
+                                    <label for="interClientId">Client ID</label>
+                                    <input type="text" id="interClientId" name="pagamentos_inter_client_id" class="form-control" value="{{ $interClientId }}" placeholder="UUID gerado na Aplicação do Internet Banking">
+                                </div>
+                                <div class="desktop-grid-span-2">
+                                    <label for="interClientSecret">Client Secret</label>
+                                    <input type="password" id="interClientSecret" name="pagamentos_inter_client_secret" class="form-control" value="{{ $interClientSecret }}" autocomplete="new-password" placeholder="{{ $interClientSecretConfigured ? 'Credencial salva. Preencha apenas para trocar.' : 'Segredo da Aplicação' }}">
+                                    @if ($interClientSecretConfigured)
+                                        <small class="text-muted">O Client Secret atual permanece salvo se este campo continuar vazio.</small>
+                                    @endif
+                                </div>
+                                <div>
+                                    <label for="interContaCorrente">Conta corrente</label>
+                                    <input type="text" id="interContaCorrente" name="pagamentos_inter_conta_corrente" class="form-control" value="{{ $interContaCorrente }}" placeholder="Somente se houver mais de uma conta">
+                                    <small class="text-muted">Deixe vazio quando a aplicação tem uma única conta vinculada.</small>
+                                </div>
+                            </div>
+
+                            <div class="alert alert-secondary mt-3 mb-0">
+                                <i class="bi bi-shield-lock me-1"></i>
+                                <strong>Certificado e chave privada não ficam aqui.</strong>
+                                Eles são arquivos no servidor, apontados por
+                                <code>INTER_CERT_PATH</code> e <code>INTER_KEY_PATH</code> no <code>.env</code> —
+                                guardá-los no banco os colocaria no backup diário junto da chave que os decifra.
+                                O estado do certificado (validade, dias restantes) aparece em
+                                <strong>Financeiro › Contas</strong>, na conta vinculada.
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -763,6 +828,18 @@
                             <p class="surface-subtitle mb-0">
                                 Espelha a Agenda do ERP num calendário dedicado do Google, para os lembretes chegarem no celular.
                             </p>
+
+                            {{-- De QUAL conta se trata é a primeira dúvida de quem
+                                 abre esta tela — principalmente com várias contas
+                                 Google no mesmo navegador. Fica junto do título, e
+                                 não num rodapé de detalhes. --}}
+                            @if ($agendaGoogleConnected)
+                                <p class="mb-0 mt-2 agenda-google-account">
+                                    <i class="bi bi-person-check me-1"></i>
+                                    Vinculado à conta
+                                    <strong>{{ $agendaGoogleEmail !== '' ? $agendaGoogleEmail : 'Google (e-mail não informado)' }}</strong>
+                                </p>
+                            @endif
                         </div>
                         <span class="badge rounded-pill text-bg-{{ $agendaGoogleSummary['status'] ?? 'secondary' }}">
                             {{ $agendaGoogleSummary['status_label'] ?? 'Aguardando configuração' }}
@@ -838,16 +915,17 @@
                         @endif
 
                         @if ($agendaGoogleConnected)
+                            {{-- Todo acesso com `??`: um resumo sem alguma chave
+                                 derrubava a página inteira de integrações com 500,
+                                 e não só esta linha. --}}
                             <dl class="row mt-4 mb-0 small">
-                                <dt class="col-sm-4">Conta conectada</dt>
-                                <dd class="col-sm-8">{{ $agendaGoogleSummary['conta_email'] ?: '—' }}</dd>
                                 <dt class="col-sm-4">Calendário</dt>
-                                <dd class="col-sm-8"><code>{{ $agendaGoogleSummary['calendar_id'] ?: '—' }}</code></dd>
+                                <dd class="col-sm-8"><code>{{ ($agendaGoogleSummary['calendar_id'] ?? '') ?: '—' }}</code></dd>
                                 <dt class="col-sm-4">Conectado em</dt>
-                                <dd class="col-sm-8">{{ $agendaGoogleSummary['conectado_em'] ?: '—' }}</dd>
+                                <dd class="col-sm-8">{{ ($agendaGoogleSummary['conectado_em'] ?? '') ?: '—' }}</dd>
                                 <dt class="col-sm-4">Última sincronização</dt>
                                 <dd class="col-sm-8">
-                                    {{ $agendaGoogleSummary['ultimo_sync_em'] ?: 'ainda não sincronizou' }}
+                                    {{ ($agendaGoogleSummary['ultimo_sync_em'] ?? '') ?: 'ainda não sincronizou' }}
                                     @if (($agendaGoogleSummary['ultimo_sync_status'] ?? '') === 'erro')
                                         <span class="badge rounded-pill text-bg-danger ms-1">erro</span>
                                     @endif

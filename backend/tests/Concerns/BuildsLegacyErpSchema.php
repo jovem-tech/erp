@@ -1260,6 +1260,10 @@ trait BuildsLegacyErpSchema
             $table->id();
             $table->unsignedBigInteger('user_id')->nullable();
             $table->string('code', 32)->unique();
+            // Espelha 2026_07_11_190000_add_submission_token_to_equipment_collector_pairings_table:
+            // token de uso unico por pareamento, que substituiu o segredo
+            // global COLLECTOR_API_TOKEN na validacao do POST de snapshot.
+            $table->string('submission_token', 64)->nullable();
             $table->longText('snapshot_payload')->nullable();
             $table->longText('snapshot_normalized')->nullable();
             $table->string('source', 120)->nullable();

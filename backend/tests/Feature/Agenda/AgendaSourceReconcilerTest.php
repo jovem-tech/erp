@@ -5,7 +5,9 @@ namespace Tests\Feature\Agenda;
 use App\Models\AgendaCompromisso;
 use App\Models\CrmFollowup;
 use App\Models\Financeiro;
+use App\Models\FinanceiroMovimento;
 use App\Services\Agenda\AgendaSourceReconciler;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Concerns\BuildsLegacyErpSchema;
 use Tests\TestCase;
@@ -59,6 +61,90 @@ class AgendaSourceReconcilerTest extends TestCase
         $this->assertStringContainsString('Conta de energia', $compromisso->titulo);
         $this->assertSame(AgendaCompromisso::STATUS_PENDENTE, $compromisso->status);
         $this->assertTrue($compromisso->isManaged());
+    }
+
+    public function test_titulo_sem_valor_nao_vira_compromisso(): void
+    {
+        // A baixa da OS grava um lançamento de cobrança mesmo quando não sobra
+        // nada a receber (garantia, sem custo, devolvido sem reparo). Eram 13
+        // de 30 na base real, inundando o calendário com "Receber: Cobrança da
+        // OS" que ninguém jamais precisaria fazer.
+        $this->criarContaPagar([
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'descricao' => 'Cobrança da OS OS26070001',
+            'valor' => 0.00,
+        ]);
+
+        $this->reconciler()->reconcile();
+
+        $this->assertSame(0, AgendaCompromisso::query()->count());
+    }
+
+    public function test_compromisso_de_titulo_zerado_ja_criado_e_cancelado(): void
+    {
+        $titulo = $this->criarContaPagar([
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'descricao' => 'Cobrança da OS',
+            'valor' => 150.00,
+        ]);
+
+        $this->reconciler()->reconcile();
+        $this->assertSame(1, AgendaCompromisso::query()->where('status', 'pendente')->count());
+
+        // O título perde o valor (estorno, correção de lançamento).
+        $titulo->update(['valor' => 0.00]);
+        $this->reconciler()->reconcile();
+
+        $this->assertSame(
+            AgendaCompromisso::STATUS_CANCELADO,
+            AgendaCompromisso::query()->where('origem_id', $titulo->id)->first()->status
+        );
+    }
+
+    public function test_titulo_integralmente_liquidado_e_concluido_mesmo_com_status_desatualizado(): void
+    {
+        // Olhar só o `status` deixava passar o título pago por movimentos cujo
+        // status não acompanhou — ele parava de exigir ação e continuava na agenda.
+        $titulo = $this->criarContaPagar(['valor' => 300.00]);
+        $this->reconciler()->reconcile();
+
+        FinanceiroMovimento::query()->create([
+            'financeiro_id' => $titulo->id,
+            'tipo_movimento' => 'saida',
+            'data_movimento' => now()->toDateString(),
+            'valor_movimento' => 300.00,
+        ]);
+        // Status continua "pendente" de propósito.
+        $this->reconciler()->reconcile();
+
+        $this->assertSame(
+            AgendaCompromisso::STATUS_CONCLUIDO,
+            AgendaCompromisso::query()->where('origem_id', $titulo->id)->first()->status
+        );
+    }
+
+    public function test_descricao_mostra_o_saldo_em_aberto_e_nao_o_valor_de_face(): void
+    {
+        // "R$ 500,00" num título com R$ 400,00 já recebidos faz cobrar errado.
+        $titulo = $this->criarContaPagar([
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'descricao' => 'Cobrança parcial',
+            'valor' => 500.00,
+        ]);
+
+        FinanceiroMovimento::query()->create([
+            'financeiro_id' => $titulo->id,
+            'tipo_movimento' => 'entrada',
+            'data_movimento' => now()->toDateString(),
+            'valor_movimento' => 400.00,
+        ]);
+
+        $this->reconciler()->reconcile();
+
+        $descricao = (string) AgendaCompromisso::query()->where('origem_id', $titulo->id)->first()->descricao;
+
+        $this->assertStringContainsString('Em aberto: R$ 100,00', $descricao);
+        $this->assertStringContainsString('já recebido R$ 400,00', $descricao);
     }
 
     public function test_is_idempotent(): void
@@ -174,9 +260,90 @@ class AgendaSourceReconcilerTest extends TestCase
         $this->assertSame('10:00', $compromisso->inicio_em->format('H:i'));
     }
 
+    public function test_reconciles_the_default_six_month_followup(): void
+    {
+        // Regressão real: OrderClosureService::RETURN_FOLLOWUP_DEFAULT_DAYS é
+        // 180, exatamente o horizonte antigo da varredura. O padrão da própria
+        // tela de baixa ficava na borda, e um dia além dela sumia em silêncio.
+        foreach ([180, 181, 200, 365] as $dias) {
+            CrmFollowup::query()->create([
+                'titulo' => 'Retorno +'.$dias,
+                'data_prevista' => now()->addDays($dias)->setTime(10, 0),
+                'status' => CrmFollowup::STATUS_PENDENTE,
+                'origem_evento' => 'teste_'.$dias,
+            ]);
+        }
+
+        $this->reconciler()->reconcile();
+
+        $this->assertSame(
+            4,
+            AgendaCompromisso::query()->where('origem_tipo', 'retorno_pos_servico')->count()
+        );
+    }
+
+    public function test_reconcile_for_date_reaches_beyond_the_sweep_horizon(): void
+    {
+        // Quem agenda um retorno para daqui a dois anos precisa vê-lo na agenda
+        // na hora — não quando o horizonte da varredura periódica alcançar a data.
+        $followup = CrmFollowup::query()->create([
+            'titulo' => 'Retorno muito distante',
+            'data_prevista' => now()->addDays(900)->setTime(10, 0),
+            'status' => CrmFollowup::STATUS_PENDENTE,
+            'origem_evento' => 'teste_distante',
+        ]);
+
+        // A varredura normal não alcança.
+        $this->reconciler()->reconcile();
+        $this->assertDatabaseMissing('agenda_compromissos', [
+            'origem_tipo' => 'retorno_pos_servico',
+            'origem_id' => $followup->id,
+        ]);
+
+        $this->reconciler()->reconcileForDate(
+            'retorno_pos_servico',
+            CarbonImmutable::parse($followup->data_prevista)
+        );
+
+        $this->assertDatabaseHas('agenda_compromissos', [
+            'origem_tipo' => 'retorno_pos_servico',
+            'origem_id' => $followup->id,
+        ]);
+    }
+
+    public function test_reconcile_for_date_only_touches_the_requested_source(): void
+    {
+        $this->criarContaPagar();
+        CrmFollowup::query()->create([
+            'titulo' => 'Retorno',
+            'data_prevista' => now()->addDays(7)->setTime(10, 0),
+            'status' => CrmFollowup::STATUS_PENDENTE,
+            'origem_evento' => 'teste_isolado',
+        ]);
+
+        $this->reconciler()->reconcileForDate('retorno_pos_servico', CarbonImmutable::now()->addDays(7));
+
+        // A conta a pagar não pertence à fonte pedida e não pode ser tocada.
+        $this->assertSame(1, AgendaCompromisso::query()->count());
+        $this->assertSame(
+            'retorno_pos_servico',
+            AgendaCompromisso::query()->first()->origem_tipo
+        );
+    }
+
+    public function test_reconcile_for_date_never_throws(): void
+    {
+        // A agenda é um espelho: uma falha aqui não pode derrubar a baixa da OS
+        // que criou a obrigação.
+        $resultado = $this->reconciler()->reconcileForDate('fonte_inexistente', CarbonImmutable::now());
+
+        $this->assertNull($resultado);
+    }
+
     public function test_ignores_sources_outside_the_window(): void
     {
-        // Fora da janela consultada: nao deve nem criar, nem cancelar nada.
+        // Além do horizonte da varredura (AgendaSourceReconciler::DAYS_AHEAD,
+        // 400 dias): não deve nem criar, nem cancelar nada.
         $this->criarContaPagar(['data_vencimento' => now()->addYears(3)->toDateString()]);
 
         $this->reconciler()->reconcile();

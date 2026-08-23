@@ -591,6 +591,11 @@ class ConfigurationController extends DesktopController
             'pagamentos_asaas_base_url' => trim((string) $request->input('pagamentos_asaas_base_url', '')),
             'pagamentos_asaas_api_key' => trim((string) $request->input('pagamentos_asaas_api_key', '')),
             'pagamentos_asaas_billing_type_default' => trim((string) $request->input('pagamentos_asaas_billing_type_default', 'PIX')),
+            'pagamentos_inter_enabled' => $request->boolean('pagamentos_inter_enabled'),
+            'pagamentos_inter_ambiente' => trim((string) $request->input('pagamentos_inter_ambiente', 'sandbox')),
+            'pagamentos_inter_client_id' => trim((string) $request->input('pagamentos_inter_client_id', '')),
+            'pagamentos_inter_client_secret' => trim((string) $request->input('pagamentos_inter_client_secret', '')),
+            'pagamentos_inter_conta_corrente' => trim((string) $request->input('pagamentos_inter_conta_corrente', '')),
         ];
     }
 

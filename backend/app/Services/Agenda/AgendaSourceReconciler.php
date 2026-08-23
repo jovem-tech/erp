@@ -30,8 +30,19 @@ use Throwable;
  */
 class AgendaSourceReconciler
 {
-    private const DAYS_BACK = 30;
-    private const DAYS_AHEAD = 180;
+    private const DAYS_BACK = 60;
+
+    /**
+     * Horizonte da varredura periodica. Casa com o teto de janela da listagem
+     * (AgendaService::MAX_WINDOW_DAYS): nao adianta materializar compromisso
+     * que a tela nunca conseguiria pedir.
+     *
+     * O valor anterior (180) cortava em silencio exatamente o padrao de retorno
+     * pos-servico de seis meses - a obrigacao existia no banco e nao aparecia
+     * na agenda ate o tempo passar. Para datas alem deste horizonte, quem
+     * garante a presenca imediata e reconcileForDate().
+     */
+    private const DAYS_AHEAD = 400;
 
     public function __construct(
         private readonly AgendaSourceRegistry $registry,
@@ -39,16 +50,25 @@ class AgendaSourceReconciler
     ) {}
 
     /**
+     * @param array<int, string>|null $keys Fontes a reconciliar; null = todas.
      * @return array<string, array{criados: int, atualizados: int, concluidos: int, cancelados: int, erro?: string}>
      */
-    public function reconcile(?CarbonImmutable $from = null, ?CarbonImmutable $to = null): array
+    public function reconcile(?CarbonImmutable $from = null, ?CarbonImmutable $to = null, ?array $keys = null): array
     {
         $from ??= CarbonImmutable::now()->subDays(self::DAYS_BACK)->startOfDay();
         $to ??= CarbonImmutable::now()->addDays(self::DAYS_AHEAD)->endOfDay();
 
+        $sources = $keys === null
+            ? $this->registry->all()
+            : array_filter(
+                $this->registry->all(),
+                static fn (string $key): bool => in_array($key, $keys, true),
+                ARRAY_FILTER_USE_KEY
+            );
+
         $report = [];
 
-        foreach ($this->registry->all() as $key => $source) {
+        foreach ($sources as $key => $source) {
             try {
                 $report[$key] = $this->reconcileSource($source, $from, $to);
             } catch (Throwable $exception) {
@@ -68,6 +88,39 @@ class AgendaSourceReconciler
         }
 
         return $report;
+    }
+
+    /**
+     * Reconcilia uma fonte AGORA, numa janela garantidamente contendo a data
+     * informada.
+     *
+     * Existe por causa da expectativa do usuario: quem agenda um retorno na
+     * baixa da OS espera ve-lo na agenda ao abri-la em seguida, nao no proximo
+     * tique de quinze minutos do agendador. E, como a janela acompanha a data
+     * pedida, funciona tambem para prazos alem do horizonte da varredura
+     * periodica.
+     *
+     * Nunca lanca: a agenda e um espelho: falhar aqui nao pode derrubar a
+     * operacao que criou a obrigacao (fechar uma OS, lancar um titulo).
+     *
+     * @return array{criados: int, atualizados: int, concluidos: int, cancelados: int}|null
+     */
+    public function reconcileForDate(string $key, CarbonImmutable $date): ?array
+    {
+        try {
+            $from = CarbonImmutable::now()->subDays(self::DAYS_BACK)->startOfDay();
+            $to = $date->endOfDay()->max(CarbonImmutable::now()->addDays(self::DAYS_AHEAD)->endOfDay());
+
+            return $this->reconcile($from, $to, [$key])[$key] ?? null;
+        } catch (Throwable $exception) {
+            report($exception);
+            Log::warning('Falha ao refletir obrigação na agenda imediatamente.', [
+                'fonte' => $key,
+                'erro' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     /**

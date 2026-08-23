@@ -43,15 +43,4 @@ class DesktopOrderStatusFlowService
 
         return $response['data']['order_status'] ?? [];
     }
-
-    /** @param array<int|string, array<int, int>> $transitions @return array{statuses: array<int, array<string, mixed>>, transitions: array<int, array<string, mixed>>} */
-    public function updateTransitions(array $transitions): array
-    {
-        $response = $this->apiClient->patch('/knowledge/os-flow/transitions', ['transitions' => $transitions]);
-
-        return [
-            'statuses' => $response['data']['statuses'] ?? [],
-            'transitions' => $response['data']['transitions'] ?? [],
-        ];
-    }
 }

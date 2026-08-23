@@ -2,6 +2,11 @@
 
 @section('content')
     @php
+        // Caminho de volta para o cadastro de origem: equipamento só existe
+        // vinculado a um cliente, e a sidebar não tem mais entrada própria aqui.
+        $canViewClients = \App\Support\DesktopSession::can('clientes', 'visualizar');
+        $canCreateClients = \App\Support\DesktopSession::can('clientes', 'criar');
+
         $hasActiveFilters = trim((string) ($filters['search'] ?? '')) !== '';
         $activeFilterCount = count(array_filter([
             trim((string) ($filters['search'] ?? '')) !== '',
@@ -26,6 +31,34 @@
                     Novo equipamento
                 </a>
             @endif
+
+            <x-list-actions label="Mais ações" size="">
+                @if ($canViewClients)
+                    <li>
+                        <a href="{{ route('clients.index') }}" class="dropdown-item">
+                            <i class="bi bi-people me-2"></i>Clientes
+                        </a>
+                    </li>
+                @endif
+
+                @if ($canCreateClients)
+                    <li>
+                        <a href="{{ route('clients.create') }}" class="dropdown-item">
+                            <i class="bi bi-person-plus me-2"></i>Novo cliente
+                        </a>
+                    </li>
+                @endif
+
+                @if ($canViewClients || $canCreateClients)
+                    <li><hr class="dropdown-divider"></li>
+                @endif
+
+                <li>
+                    <a href="{{ route('equipments.help') }}" class="dropdown-item">
+                        <i class="bi bi-question-circle me-2"></i>Ajuda
+                    </a>
+                </li>
+            </x-list-actions>
         </x-slot:actions>
 
         @if ((int) ($filters['client_id'] ?? 0) > 0)

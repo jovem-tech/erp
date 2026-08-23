@@ -18,6 +18,16 @@ class ClientFlowTest extends TestCase
         $this->rebuildLegacySchema();
         $this->seedRbacCatalog();
 
+        // Grupo 1 (Administrador) recebe as permissoes explicitamente: desde a
+        // v4.0.0.0 `perfil=admin` sem grupo NAO da acesso a nada — o atalho
+        // legado so' volta com RBAC_LEGACY_ADMIN_FALLBACK=true, que e' false
+        // por padrao e nao deve ser ligado para fazer teste passar.
+        $this->grantGroupPermissions(1, [
+            'clientes' => ['visualizar', 'criar', 'editar'],
+        ]);
+
+        // Grupo 3 (Atendente) fica so' com leitura: e' o que o teste de 403
+        // em mutacoes exercita.
         $this->grantGroupPermissions(3, [
             'clientes' => ['visualizar'],
         ]);
@@ -29,7 +39,7 @@ class ClientFlowTest extends TestCase
             'nome' => 'Administrador',
             'email' => 'admin.clients@example.com',
             'perfil' => 'admin',
-            'grupo_id' => null,
+            'grupo_id' => 1,
         ]);
 
         $alphaClientId = $this->createClientRecord([
@@ -92,7 +102,7 @@ class ClientFlowTest extends TestCase
             'nome' => 'Administrador',
             'email' => 'admin.clients.write@example.com',
             'perfil' => 'admin',
-            'grupo_id' => null,
+            'grupo_id' => 1,
         ]);
 
         $token = $this->loginAndGetToken($admin->email);

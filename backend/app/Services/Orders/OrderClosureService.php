@@ -15,11 +15,13 @@ use App\Models\OrderStatusHistory;
 use App\Models\OsCobrancaAgendamento;
 use App\Models\OsMargem;
 use App\Models\User;
+use App\Services\Agenda\AgendaSourceReconciler;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
 use App\Services\Financeiro\FinanceiroCartaoService;
 use App\Services\Financeiro\FinanceiroContaService;
 use App\Services\Financeiro\FinanceiroService;
 use Illuminate\Http\UploadedFile;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -70,7 +72,8 @@ class OrderClosureService
         private readonly FinanceiroContaService $financeiroContaService,
         private readonly WhatsappMessagingService $whatsappMessagingService,
         private readonly OrderClosurePdfService $orderClosurePdfService,
-        private readonly OrderEventService $orderEventService
+        private readonly OrderEventService $orderEventService,
+        private readonly AgendaSourceReconciler $agendaReconciler
     ) {
     }
 
@@ -271,7 +274,15 @@ class OrderClosureService
                 $garantiaDias,
                 $garantiaValidade
             ): array {
-                ['titulo' => $titulo, 'saldo_aberto' => $saldoAberto] = $this->processReceipts($order, $recebimentos, $dataEntrega);
+                // Encerramento sem cobranca nao passa por processReceipts():
+                // ele cria o titulo a receber SEMPRE, e a OS descartada /
+                // devolvida sem reparo ficava com uma cobranca aberta no valor
+                // final da OS que ninguem devia - inflando contas a receber,
+                // fluxo de caixa e DRE, e aparecendo na agenda como cobranca a
+                // fazer.
+                ['titulo' => $titulo, 'saldo_aberto' => $saldoAberto] = $isNonBilledClosure
+                    ? $this->settleNonBilledClosure($order)
+                    : $this->processReceipts($order, $recebimentos, $dataEntrega);
                 $temSaldoPendente = $saldoAberto > 0.009 && ! $isNonBilledClosure;
 
                 $statusAplicado = $temSaldoPendente ? self::PENDING_PAYMENT_STATUS : $encerrarComo;
@@ -325,7 +336,7 @@ class OrderClosureService
                         'data_entrega' => $dataEntrega,
                         'garantia_dias' => $garantiaDias,
                         'garantia_validade' => $garantiaValidade,
-                        'valor_titulo' => round((float) $titulo->valor, 2),
+                        'valor_titulo' => round((float) ($titulo?->valor ?? 0), 2),
                         'saldo_pendente' => round($saldoAberto, 2),
                         'recebimentos' => count($recebimentos),
                     ],
@@ -338,7 +349,7 @@ class OrderClosureService
                     'result' => 'ok',
                     'saldo_aberto' => $saldoAberto,
                     'status_aplicado' => $statusAplicado,
-                    'titulo_valor' => round((float) $titulo->valor, 2),
+                    'titulo_valor' => round((float) ($titulo?->valor ?? 0), 2),
                 ];
             });
         } catch (Throwable $exception) {
@@ -393,6 +404,19 @@ class OrderClosureService
      * @return array<int, string>
      */
     public static function batchClosureCodes(): array
+    {
+        return self::nonBilledClosureStatuses();
+    }
+
+    /**
+     * Encerramentos que NAO cobram nada do cliente. Exposto com este nome
+     * porque quem precisa da lista quase sempre quer a regra financeira, nao a
+     * baixa em lote - e ler `batchClosureCodes()` num contexto financeiro
+     * esconde o motivo.
+     *
+     * @return array<int, string>
+     */
+    public static function nonBilledClosureStatuses(): array
     {
         return self::NON_BILLED_CLOSURE_STATUSES;
     }
@@ -1273,6 +1297,71 @@ class OrderClosureService
     }
 
     /**
+     * Fecha o lado financeiro de um encerramento SEM cobranca.
+     *
+     * A regra de negocio ja estava escrita ("nunca geram lancamento
+     * financeiro"), mas o codigo so ignorava os RECEBIMENTOS - o titulo a
+     * receber continuava sendo criado por processReceipts(), no valor final da
+     * OS. Equipamento descartado ou devolvido sem reparo saia da bancada com
+     * uma cobranca em aberto contra o cliente.
+     *
+     * @return array{titulo: Financeiro|null, saldo_aberto: float}
+     */
+    private function settleNonBilledClosure(Order $order): array
+    {
+        // Mesmo filtro de ensureReceivableTitle(): titulo cancelado nao conta.
+        $titulo = Financeiro::query()
+            ->where('os_id', $order->id)
+            ->where('tipo', Financeiro::TIPO_RECEBER)
+            ->where('status', '!=', Financeiro::STATUS_CANCELADO)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $titulo instanceof Financeiro) {
+            return ['titulo' => null, 'saldo_aberto' => 0.0];
+        }
+
+        // Titulo com movimento significa dinheiro que ja entrou no caixa
+        // (adiantamento antes de o equipamento se revelar irreparavel).
+        // Cancelar apagaria uma entrada real; devolver ou reter e decisao
+        // humana, tomada no Financeiro. Aqui so registramos e seguimos.
+        if ($titulo->movimentos()->exists()) {
+            $resumo = $this->financeiroService->movementSummary($titulo);
+
+            $this->orderEventService->record(
+                (int) $order->id,
+                OrderEvent::CATEGORIA_FINANCEIRO,
+                OrderEvent::TIPO_FECHAMENTO_CONCLUIDO,
+                'Encerramento sem cobrança com valor já recebido',
+                sprintf(
+                    'A OS foi encerrada sem cobrança, mas o título nº %d já tem R$ %s recebidos. Avalie devolução ou retenção no Financeiro.',
+                    (int) $titulo->id,
+                    number_format((float) ($resumo['valor_movimentado'] ?? 0), 2, ',', '.')
+                ),
+                [
+                    'financeiro_id' => (int) $titulo->id,
+                    'valor_movimentado' => round((float) ($resumo['valor_movimentado'] ?? 0), 2),
+                ],
+                null,
+                OrderEvent::ORIGEM_SISTEMA
+            );
+
+            return [
+                'titulo' => $titulo,
+                'saldo_aberto' => round((float) ($resumo['valor_aberto'] ?? 0), 2),
+            ];
+        }
+
+        // Nada recebido e nada a cobrar: o titulo nao deveria existir.
+        // Cancelado, e nao apagado, para o historico do titulo continuar
+        // auditavel e para o DRE/fluxo de caixa filtrarem por status.
+        $this->financeiroService->cancel($titulo);
+
+        return ['titulo' => null, 'saldo_aberto' => 0.0];
+    }
+
+    /**
      * @param array<string, mixed> $simulation
      * @param array<string, mixed> $recebimento
      */
@@ -1451,6 +1540,19 @@ class OrderClosureService
             ],
             $usuarioId,
             OrderEvent::ORIGEM_SISTEMA
+        );
+
+        // Reflete na agenda AGORA. Sem isto o retorno só apareceria no próximo
+        // tique de quinze minutos de `agenda:sincronizar-origens`, e quem
+        // acabou de agendar abre a agenda, não encontra nada e conclui - com
+        // razão - que o agendamento não funcionou.
+        //
+        // Não lança: a agenda é um espelho do que já foi gravado em
+        // `crm_followups`; uma falha aqui não pode derrubar a baixa da OS. A
+        // varredura periódica corrige na sequência.
+        $this->agendaReconciler->reconcileForDate(
+            'retorno_pos_servico',
+            CarbonImmutable::parse($dataPrevista)
         );
 
         return (int) $followup->id;

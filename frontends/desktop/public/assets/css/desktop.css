@@ -9231,3 +9231,15 @@ a.agenda-year-day:hover {
     height: 13px;
     aspect-ratio: auto;
 }
+
+/* Conta Google vinculada — identifica de qual conta partem os lembretes. */
+.agenda-google-account {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--desktop-success-text);
+}
+
+.agenda-summary-google .agenda-google-account {
+    font-size: 0.76rem;
+    max-width: 100%;
+}

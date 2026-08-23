@@ -469,10 +469,29 @@ class FileManagerCoreTest extends TestCase
             ->assertSuccessful();
     }
 
+    /** @var array<int, string> Diretorios reais criados por testes, limpos no tearDown. */
+    private array $diretoriosTemporarios = [];
+
+    protected function tearDown(): void
+    {
+        foreach ($this->diretoriosTemporarios as $dir) {
+            if (is_dir($dir)) {
+                File::deleteDirectory($dir);
+            }
+        }
+
+        $this->diretoriosTemporarios = [];
+
+        parent::tearDown();
+    }
+
     public function test_local_provider_works_on_real_linux_filesystem(): void
     {
         $root = storage_path('framework/testing/file-manager-real-'.Str::uuid()->toString());
         File::ensureDirectoryExists($root);
+        // Registrado para o tearDown: o teste pode falhar no meio e o
+        // diretorio ficaria orfao no storage (ver OrderFlowTest::tearDown).
+        $this->diretoriosTemporarios[] = $root;
         config()->set('filesystems.disks.file_manager_real_test', [
             'driver' => 'local',
             'root' => $root,

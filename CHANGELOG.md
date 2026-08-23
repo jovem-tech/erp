@@ -1,5 +1,70 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.48.1.0 — 2026-08-23 17:13
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Painel de Integracoes e tela da Agenda passam a exibir o e-mail da conta Google vinculada, com recuperacao automatica quando a captura falha ao conectar e sem sobrescrever e-mail conhecido por vazio
+- **Arquivos:** backend/app/Services/Agenda/Google/GoogleCalendarConnectionService.php,backend/app/Http/Controllers/Api/V1/AgendaGoogleController.php,frontends/desktop/resources/views/configurations/integrations.blade.php,frontends/desktop/resources/views/agenda/index.blade.php
+
+## v5.48.0.0 — 2026-08-23 13:52
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Tela de configuracao do Banco Inter: card em Configuracoes > Integracoes com canal, ambiente, Client ID, Client Secret (mascarado, preserva o salvo quando enviado vazio) e conta corrente, com aviso explicito de que certificado e chave privada NAO ficam no banco e sim em arquivo apontado pelo .env. Conta financeira ganha o campo de vinculo com a integracao bancaria nos formularios de criar e editar, aceito apenas em conta do tipo banco (vincular caixa fisico daria conciliacao que nunca fecha por construcao); FinanceiroContaService passa a persistir e serializar integracao_provider/integracao_conta_ref, que antes eram validados mas descartados na gravacao
+
+## v5.47.1.0 — 2026-08-23 13:36
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Sidebar mais enxuta no desktop: Aparelhos/Equip. e o grupo Ferramentas (Financeiro) viram itens ocultos e Estoque de Pecas passa a se chamar Estoque; em troca, Clientes e Equipamentos ganham dropdown 'Mais acoes' apontando um para o outro (listagem, cadastro novo e ajuda), filtrado por RBAC. Os itens saem do menu como 'hidden' em vez de serem apagados porque firstAllowedRouteName() os usa como destino de fallback do middleware de permissao: quem so tem 'equipamentos' ou so 'precificacao' ficaria em redirecionamento sem saida. Ferramentas duplicava exatamente o 'Mais acoes' de Financeiro > Lancamentos
+- **Arquivos:** frontends/desktop/app/Support/DesktopNavigation.php,frontends/desktop/resources/views/clients/index.blade.php,frontends/desktop/resources/views/equipments/index.blade.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/07-novas-implementacoes/2026-08-23-sidebar-enxuta-atalhos-clientes-equipamentos.md,documentacao/07-novas-implementacoes/2026-07-21-sidebar-reorganizacao-e-atalhos.md
+
+## v5.47.0.0 — 2026-08-23 13:24
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Fase 2 da integracao Banco Inter: saldo e extrato bancario (somente leitura). Novo InterBankingService com saldo cacheado por 10 min (a tela nao pode bater no banco a cada carregamento, mas um numero de uma hora atras seria pior que inutil numa conferencia de caixa), extrato com janela maxima validada ANTES da chamada para o erro ser nosso e explicito, e conciliacao que compara o saldo interno (FinanceiroContaService::balanceOf) com o do banco. Divergencia NUNCA vira ajuste automatico: o ajuste e decisao humana com autor registrado, porque um sistema que conserta o proprio saldo apaga a evidencia do erro que causou a diferenca. Migration aditiva liga financeiro_contas ao provedor (integracao_provider/integracao_conta_ref), com validacao que so aceita conta do tipo banco. Quatro rotas GET sob financeiro, todas com authorize(financeiro:visualizar) e teste de 403. InterException passa a distinguir falha local de falha do banco: periodo invalido ou credencial ausente virava 503 INTER_INDISPONIVEL e mandaria o operador investigar o banco quando o problema era o pedido
+
+## v5.46.0.0 — 2026-08-23 13:20
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Encerramento sem cobranca (descartado, devolvido sem reparo, sem custo, garantia) deixa de criar titulo a receber no valor da OS: novo settleNonBilledClosure cancela o titulo sem movimento e preserva o que ja tem valor recebido; comando os:cancelar-cobrancas-sem-cobranca limpa os 24 titulos e R$ 2.050,00 ja gravados
+- **Arquivos:** backend/app/Services/Orders/OrderClosureService.php,backend/app/Console/Commands/CancelNonBilledOrderReceivables.php
+
+## v5.45.0.0 — 2026-08-23 13:09
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Fase 1 da integracao Banco Inter: fundacao de credenciais e cliente mTLS. Novo config/inter.php (caminhos do par certificado/chave no env, nunca no banco); InterCredentials resolve caminhos por metodo e nao por config() no ponto de uso, lista o que falta em vez de devolver so um booleano, e expoe a validade do certificado via openssl_x509_parse; InterTokenStore cacheia o token OAuth2 com Cache::lock (os 2 workers do Supervisor mais o efemero do scheduler pediriam token simultaneamente sem isso) e guarda por 3000s dos 3600s de validade para nunca usar token nos ultimos minutos de vida, com chave por ambiente+client_id+escopos; InterClient centraliza mTLS, Bearer, timeouts e x-conta-corrente, renova o token uma unica vez em caso de 401 no meio da validade e classifica o erro em credencial invalida versus falha temporaria; comando inter:verificar-certificado alerta em D-30/D-15/D-7/D-1 e trata 'nao consigo ler a validade' como falha, nao como valido; client_id/client_secret entram em configuracoes ja cifrados pela Fase 0.1. Escopos limitados a extrato.read, cob.write e cob.read. 26 testes novos com Http::fake e certificado X509 gerado em tempo de teste
+
+## v5.44.4.0 — 2026-08-23 12:54
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige vazamento de diretorios temporarios na suite de testes: OrderFlowTest criava um legacy-public-<uniqid> por METODO de teste sem nunca remover (cerca de 80 por execucao da suite, que acumularam 14 mil diretorios e 157 MB em storage/framework/testing) e FileManagerCoreTest deixava um file-manager-real-<uuid> por execucao; ambos ganham tearDown que apaga o que criaram. Apos a correcao uma execucao completa deixa 3 diretorios de nome fixo, reusados, em vez de 90 novos
+
+## v5.44.3.0 — 2026-08-23 12:47
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Agenda deixa de exibir cobranca de OS sem saldo: fontes financeiras ignoram titulo de valor zero, tratam saldo zerado como resolvido e passam a descrever o valor em aberto no lugar do valor de face
+- **Arquivos:** backend/app/Services/Agenda/Sources/ContasVencimentoSource.php,backend/app/Services/Agenda/Sources/ContasPagarSource.php,backend/app/Services/Agenda/Sources/ContasReceberSource.php
+
+## v5.44.2.0 — 2026-08-23 12:38
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Suite de testes fica verde e deterministica (727 testes, 0 falhas): storage proprio para a suite via LARAVEL_STORAGE_PATH (storage/app/private e 0750 www-data e os testes rodam como o usuario do dev, o que matava todo teste que grava arquivo e ainda deixava lixo no storage real); env do coletor de bancada fixado no phpunit.xml para a suite nao herdar o .env da maquina; DashboardSummaryTest deixa de duplicar o status irreparavel que seedOrderCatalog ja cria; ClientFlowTest passa a dar grupo aos admins (perfil=admin sem grupo nao autoriza nada desde a v4.0.0.0); EquipmentCreationTest resolve o root do coletor por SO e usa o submission_token por pareamento; BuildsLegacyErpSchema espelha a coluna submission_token; FinanceiroMargemTest encerra a OS por OrderClosureService::close(), unico caminho permitido para status de encerramento, e compara valores numericos sem prender o tipo
+
+## v5.44.1.0 — 2026-08-23 12:30
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Retorno pos-servico passa a entrar na agenda no ato da baixa e o horizonte da varredura vai de 180 para 400 dias, corrigindo o corte silencioso no proprio padrao de seis meses
+- **Arquivos:** backend/app/Services/Agenda/AgendaSourceReconciler.php,backend/app/Services/Orders/OrderClosureService.php,backend/app/Console/Commands/Agenda/ReconcileAgendaSources.php
+
+## v5.44.0.0 — 2026-08-23 10:25
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Alertas operacionais ganham canal de saida real: novo OperationalAlertService com urgente() (WhatsApp + e-mail) e relatorio() (so e-mail), destinos em config/alertas.php lidos do env e nao do banco (alerta precisa funcionar QUANDO o banco e o caminho quebrado), deduplicacao por chave no cache para D-30/D-15/D-7/D-1 nao repetirem a cada minuto do scheduler, e duas garantias para o chamador: nunca lanca excecao e sempre grava no canal de log pagamentos antes de tentar entregar; sem SMTP real o e-mail nao conta como entregue, porque cairia no mailer log
+
+## v5.43.0.0 — 2026-08-23 09:37
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Segredos de integracao passam a ser cifrados em repouso: SecretSettings ganha encrypt/decrypt tolerante a valor legado em texto puro, aplicado no upsert e no loadSettings dos servicos de integracoes, pagamentos, e-mail e Google (antes blank() so mascarava a resposta HTTP e o valor seguia cru em configuracoes, e portanto no dump diario sem cifra); novo comando integracoes:cifrar-segredos migra as linhas ja gravadas; novo canal de log 'pagamentos' com nivel e retencao proprios, para a trilha das integracoes financeiras nao ser descartada pelo LOG_LEVEL=warning de producao
+
 ## v5.42.1.0 — 2026-08-23 09:28
 - **Tier:** patch
 - **Autor/Agente:** Codex

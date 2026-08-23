@@ -26,6 +26,11 @@ class ContasReceberSource extends ContasVencimentoSource
         return Financeiro::TIPO_RECEBER;
     }
 
+    protected function verboLiquidado(): string
+    {
+        return 'recebido';
+    }
+
     protected function prefixo(): string
     {
         return 'Receber';

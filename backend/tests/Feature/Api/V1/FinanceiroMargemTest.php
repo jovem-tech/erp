@@ -2,7 +2,6 @@
 
 namespace Tests\Feature\Api\V1;
 
-use App\Services\Orders\OrderWorkflowService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\BuildsLegacyErpSchema;
@@ -22,7 +21,43 @@ class FinanceiroMargemTest extends TestCase
         $this->seedOrderCatalog();
         $this->grantGroupPermissions(1, [
             'financeiro' => ['visualizar', 'criar', 'editar', 'excluir'],
+            'os' => ['visualizar', 'editar', 'encerrar'],
         ]);
+    }
+
+    /**
+     * Encerra a OS pelo unico caminho que a regra de negocio permite.
+     *
+     * Os 5 status de encerramento so' podem ser aplicados por
+     * OrderClosureService::close() — nao por updateStatus() nem por edicao
+     * direta (.agents/skills/sistema-erp-os-fluxo-fechamento). A baixa nao e'
+     * uma troca de status: e' a rotina que cria o titulo financeiro, registra
+     * os recebimentos e dispara o calculo de margem/comissao. Chamar
+     * updateStatus() aqui deixava a margem sem ser calculada, que era
+     * exatamente o que estes testes viam como `null`.
+     */
+    /**
+     * Compara valor numerico do JSON sem prender o TIPO.
+     *
+     * assertJsonPath() usa comparacao identica (===), e os campos de margem
+     * chegam como float (150.0) enquanto o teste escrevia int (150). O
+     * contrato aqui e' o VALOR; o tipo depende do driver (SQLite devolve
+     * float, MySQL devolve DECIMAL como string) e nao e' o que se quer travar.
+     */
+    private function assertJsonNumero(\Illuminate\Testing\TestResponse $response, string $path, float $esperado): void
+    {
+        $this->assertEqualsWithDelta($esperado, (float) $response->json($path), 0.01, $path);
+    }
+
+    private function encerrarComoPago(int $orderId, float $valorRecebido): void
+    {
+        $this->postJson("/api/v1/orders/{$orderId}/closure", [
+            'encerrar_como' => 'entregue_reparado_pago',
+            'data_entrega' => now()->toDateString(),
+            'recebimentos' => [
+                ['valor' => $valorRecebido, 'forma_pagamento' => 'pix'],
+            ],
+        ])->assertOk();
     }
 
     public function test_concluir_os_calcula_margem_automaticamente_usando_estoque_e_comissao(): void
@@ -58,18 +93,19 @@ class FinanceiroMargemTest extends TestCase
             'percentual_padrao' => 10,
         ])->assertCreated();
 
-        app(OrderWorkflowService::class)->updateStatus($orderId, $admin, 'entregue_reparado_pago');
+        $this->encerrarComoPago($orderId, 300.00);
 
         $response = $this->getJson('/api/v1/financeiro/margem/' . $orderId);
 
         // receita 300, custo pecas = 2 * 40 = 80, comissao = 10% de 300 = 30
         // margem = 300 - 80 - 30 = 190 -> 63.33%
-        $response->assertOk()
-            ->assertJsonPath('data.margem.receita_liquida', 300)
-            ->assertJsonPath('data.margem.custo_pecas', 80)
-            ->assertJsonPath('data.margem.custo_comissao', 30)
-            ->assertJsonPath('data.margem.margem_contribuicao', 190)
-            ->assertJsonPath('data.margem.percentual_margem', 63.33);
+        $response->assertOk();
+
+        $this->assertJsonNumero($response, 'data.margem.receita_liquida', 300);
+        $this->assertJsonNumero($response, 'data.margem.custo_pecas', 80);
+        $this->assertJsonNumero($response, 'data.margem.custo_comissao', 30);
+        $this->assertJsonNumero($response, 'data.margem.margem_contribuicao', 190);
+        $this->assertJsonNumero($response, 'data.margem.percentual_margem', 63.33);
     }
 
     public function test_relatorio_por_periodo_agrega_ticket_medio_e_margem_media(): void
@@ -90,15 +126,16 @@ class FinanceiroMargemTest extends TestCase
             'data_entrega' => now(),
         ]);
 
-        app(OrderWorkflowService::class)->updateStatus($orderId, $admin, 'entregue_reparado_pago');
+        $this->encerrarComoPago($orderId, 200.00);
 
         $mes = now()->format('Y-m');
         $response = $this->getJson('/api/v1/financeiro/margem?mes=' . $mes);
 
-        $response->assertOk()
-            ->assertJsonPath('data.margem.total_os', 1)
-            ->assertJsonPath('data.margem.ticket_medio', 200)
-            ->assertJsonPath('data.margem.margem_media_percentual', 100);
+        $response->assertOk();
+
+        $this->assertJsonNumero($response, 'data.margem.total_os', 1);
+        $this->assertJsonNumero($response, 'data.margem.ticket_medio', 200);
+        $this->assertJsonNumero($response, 'data.margem.margem_media_percentual', 100);
     }
 
     public function test_recalcular_manualmente_atualiza_registro(): void
@@ -117,7 +154,8 @@ class FinanceiroMargemTest extends TestCase
 
         $response = $this->postJson('/api/v1/financeiro/margem/' . $orderId . '/recalcular');
 
-        $response->assertOk()->assertJsonPath('data.margem.receita_liquida', 150);
+        $response->assertOk();
+        $this->assertJsonNumero($response, 'data.margem.receita_liquida', 150);
     }
 
     public function test_crud_de_comissoes_e_percentual_padrao(): void
@@ -133,14 +171,17 @@ class FinanceiroMargemTest extends TestCase
 
         $comissaoId = $store->json('data.comissao.id');
 
-        $this->putJson('/api/v1/financeiro/comissoes/' . $comissaoId, [
+        $comissaoResponse = $this->putJson('/api/v1/financeiro/comissoes/' . $comissaoId, [
             'tecnico_id' => $tecnico->id,
             'percentual_padrao' => 12,
-        ])->assertOk()->assertJsonPath('data.comissao.percentual_padrao', 12);
+        ])->assertOk();
 
-        $this->putJson('/api/v1/financeiro/comissoes-padrao', ['percentual_padrao' => 5])
-            ->assertOk()
-            ->assertJsonPath('data.comissao_percentual_padrao', 5);
+        $this->assertJsonNumero($comissaoResponse, 'data.comissao.percentual_padrao', 12);
+
+        $padraoResponse = $this->putJson('/api/v1/financeiro/comissoes-padrao', ['percentual_padrao' => 5])
+            ->assertOk();
+
+        $this->assertJsonNumero($padraoResponse, 'data.comissao_percentual_padrao', 5);
 
         $this->deleteJson('/api/v1/financeiro/comissoes/' . $comissaoId)->assertOk();
 
