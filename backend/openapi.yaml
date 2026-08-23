@@ -33,6 +33,8 @@ tags:
     description: Login, sessão, perfil e senha.
   - name: Dashboard
     description: Sumários agregados para telas iniciais.
+  - name: Agenda
+    description: Compromissos, obrigações e lembretes, com sincronização bidirecional com um calendário dedicado do Google.
   - name: Notificações
     description: Notificações do usuário autenticado.
   - name: Ordens
@@ -5286,6 +5288,336 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
+  /agenda:
+    get:
+      tags:
+        - Agenda
+      summary: Listar compromissos da agenda.
+      description: >
+        Devolve os compromissos que se sobrepõem à janela pedida. Sem a
+        permissão `agenda:ver_todos`, a lista traz apenas os do próprio usuário
+        e os que ainda não têm responsável. Exige agenda:visualizar.
+      parameters:
+        - name: de
+          in: query
+          description: Início da janela (Y-m-d). Padrão, primeiro dia do mês corrente.
+          schema:
+            type: string
+            format: date
+        - name: ate
+          in: query
+          description: Fim da janela (Y-m-d). Limitado a 400 dias após `de`.
+          schema:
+            type: string
+            format: date
+        - name: tipo
+          in: query
+          description: "Chave do tipo: `manual` ou a chave de uma fonte automática (`conta_pagar`, `retorno_pos_servico`, ...)."
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Sem filtro, cancelados ficam de fora.
+          schema:
+            type: string
+            enum: [pendente, concluido, cancelado]
+        - name: responsavel_id
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Compromissos da janela e catálogo de tipos disponíveis.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          compromissos:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/AgendaCompromisso"
+                          tipos:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                key: { type: string }
+                                label: { type: string }
+                                icon: { type: string }
+                          pode_ver_todos:
+                            type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Agenda
+      summary: Criar compromisso manual.
+      description: >
+        Cria um compromisso do tipo `manual`. Sem `responsavel_id`, o autor
+        assume a responsabilidade. Exige agenda:criar.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgendaCompromissoRequest"
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /agenda/resumo:
+    get:
+      tags:
+        - Agenda
+      summary: Resumo da agenda (atrasados, hoje, próximos 7 dias).
+      description: Alimenta a barra de estado da tela de Agenda e o card do dashboard. Exige agenda:visualizar.
+      responses:
+        "200":
+          description: Contadores e os próximos compromissos em aberto.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          atrasados: { type: integer }
+                          hoje: { type: integer }
+                          proximos_7_dias: { type: integer }
+                          proximos:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/AgendaCompromisso"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /agenda/{compromisso}:
+    parameters:
+      - name: compromisso
+        in: path
+        required: true
+        schema:
+          type: integer
+    patch:
+      tags:
+        - Agenda
+      summary: Atualizar compromisso.
+      description: >
+        Em compromisso gerido por uma fonte automática (`gerido: true`), apenas
+        `descricao`, `prioridade` e `lembrete_minutos` são aplicados — título e
+        data pertencem ao módulo de origem e seriam desfeitos na próxima
+        reconciliação. Exige agenda:editar.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgendaCompromissoRequest"
+      responses:
+        "200":
+          description: Compromisso atualizado.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    delete:
+      tags:
+        - Agenda
+      summary: Excluir compromisso manual.
+      description: >
+        Compromisso gerido não pode ser excluído (422 `AGENDA_DELETE_BLOCKED`):
+        ele voltaria na próxima reconciliação, porque a obrigação de origem
+        continua existindo. Exige agenda:excluir.
+      responses:
+        "200":
+          description: Compromisso excluído.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /agenda/{compromisso}/concluir:
+    post:
+      tags:
+        - Agenda
+      summary: Concluir compromisso.
+      description: Exige agenda:editar.
+      parameters:
+        - name: compromisso
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Compromisso concluído.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /agenda/{compromisso}/reabrir:
+    post:
+      tags:
+        - Agenda
+      summary: Reabrir compromisso concluído.
+      description: Exige agenda:editar.
+      parameters:
+        - name: compromisso
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Compromisso reaberto.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /agenda/google/status:
+    get:
+      tags:
+        - Agenda
+      summary: Estado da conexão com o Google Agenda.
+      description: >
+        Credenciais mascaradas, calendário dedicado, conta conectada e resultado
+        da última sincronização. Exige configuracoes:visualizar.
+      responses:
+        "200":
+          description: Estado da integração.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /agenda/google/credenciais:
+    post:
+      tags:
+        - Agenda
+      summary: Salvar Client ID e Client Secret do Google.
+      description: >
+        Campo de segredo enviado vazio preserva o valor atual. Exige
+        configuracoes:editar.
+      responses:
+        "200":
+          description: Credenciais salvas.
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /agenda/google/conectar:
+    post:
+      tags:
+        - Agenda
+      summary: Iniciar o consentimento OAuth.
+      description: >
+        Devolve a URL de consentimento e um `state` de uso único (TTL 15 min).
+        O escopo pedido é `calendar.app.created`, que autoriza o app a ver e
+        editar apenas calendários criados por ele mesmo — os calendários
+        pessoais da conta permanecem inacessíveis. Exige configuracoes:editar.
+      responses:
+        "200":
+          description: URL de autorização.
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /agenda/google/callback:
+    get:
+      tags:
+        - Agenda
+      summary: Retorno do consentimento do Google (página HTML).
+      description: >
+        Rota pública, fora de `auth:sanctum`: quem chega aqui é o navegador
+        redirecionado pelo Google, sem o Bearer token do desktop. A autenticação
+        da chamada é o `state` de uso único emitido em `/agenda/google/conectar`.
+        Troca o `code` pelo refresh token e cria o calendário dedicado.
+      security: []
+      parameters:
+        - name: code
+          in: query
+          schema:
+            type: string
+        - name: state
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Página HTML de confirmação (fecha sozinha).
+          content:
+            text/html:
+              schema:
+                type: string
+        "400":
+          description: Autorização inválida, expirada ou cancelada.
+
+  /agenda/google/conectar-manual:
+    post:
+      tags:
+        - Agenda
+      summary: Conectar colando um refresh token obtido por fora.
+      description: >
+        Saída para ambientes em que o Google recusa o redirect URI (IP privado
+        não é aceito no Cloud Console). Valida o token antes de gravar. Exige
+        configuracoes:editar.
+      responses:
+        "200":
+          description: Conectado.
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /agenda/google/desconectar:
+    post:
+      tags:
+        - Agenda
+      summary: Desconectar do Google.
+      description: >
+        Limpa credenciais de sessão e os vínculos locais de evento. O calendário
+        e os eventos permanecem na conta Google. Exige configuracoes:editar.
+      responses:
+        "200":
+          description: Desconectado.
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /agenda/google/sincronizar:
+    post:
+      tags:
+        - Agenda
+      summary: Sincronizar agora (push e pull).
+      description: Exige agenda:visualizar.
+      responses:
+        "200":
+          description: Estatísticas da sincronização.
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
   /dashboard/summary:
     get:
       tags:
@@ -9494,3 +9826,218 @@ paths:
         "409": { $ref: "#/components/responses/Conflict" }
         "422": { $ref: "#/components/responses/ValidationError" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /backups:
+    get:
+      tags: [Backup e Restauração]
+      summary: Listar o catálogo de backups.
+      description: >
+        Inclui backups gerados fora deste sistema (cron de root, pré-deploy,
+        manuais). Nunca retorna o caminho absoluto do arquivo no servidor.
+      parameters:
+        - name: per_page
+          in: query
+          schema: { type: integer, minimum: 5, maximum: 100, default: 20 }
+        - name: origem
+          in: query
+          schema: { type: string, enum: [painel, agendado, cron_legado, pre_deploy, manual] }
+        - name: conteudo
+          in: query
+          schema: { type: string, enum: [completo, somente_banco] }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Backup e Restauração]
+      summary: Enfileirar um backup completo.
+      description: >
+        Apenas grava a solicitação; a execução ocorre pelo scheduler em até 60s.
+        O pool PHP-FPM corta em 60s, então um backup jamais roda na requisição.
+        Requer frase secreta configurada e ambiente sem bloqueios de preflight.
+      responses:
+        "202": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /backups/resumo:
+    get:
+      tags: [Backup e Restauração]
+      summary: Painel de situação (último backup, agenda, saúde do ambiente).
+      description: >
+        `alerta_sem_backup_completo` indica que só existem cópias "somente banco"
+        — nenhuma imagem ou documento de cliente está protegido.
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /backups/varrer:
+    post:
+      tags: [Backup e Restauração]
+      summary: Catalogar no painel os backups presentes no disco.
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /backups/configuracoes:
+    get:
+      tags: [Backup e Restauração]
+      summary: Ler agenda, retenção e destinos. Segredos vêm mascarados.
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    put:
+      tags: [Backup e Restauração]
+      summary: Atualizar agenda e retenção.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                backup_agendado_habilitado: { type: boolean }
+                backup_horario: { type: string, pattern: '^\d{2}:\d{2}$' }
+                backup_retencao_diarios: { type: integer, minimum: 0, maximum: 365 }
+                backup_retencao_semanais: { type: integer, minimum: 0, maximum: 104 }
+                backup_retencao_mensais: { type: integer, minimum: 0, maximum: 120 }
+                backup_retencao_minimo_copias: { type: integer, minimum: 1, maximum: 50 }
+                backup_incluir_banco_chat: { type: boolean }
+                backup_incluir_legado: { type: boolean }
+                backup_incluir_config: { type: boolean }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /backups/frase-secreta:
+    post:
+      tags: [Backup e Restauração]
+      summary: Definir ou trocar a frase secreta do backup.
+      description: >
+        A frase nunca é devolvida. A resposta traz apenas a impressão
+        (`fingerprint`), que permite identificar pacotes gerados com outra frase.
+        Perder a frase torna todos os backups irrecuperáveis.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [frase, frase_confirmation]
+              properties:
+                frase: { type: string, minLength: 12, maxLength: 200 }
+                frase_confirmation: { type: string, minLength: 12, maxLength: 200 }
+                modo: { type: string, enum: [armazenada, manual], default: armazenada }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /backups/{uuid}:
+    get:
+      tags: [Backup e Restauração]
+      summary: Detalhe de um backup, incluindo progresso e avisos.
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Backup e Restauração]
+      summary: Excluir o arquivo de um backup, mantendo o registro no histórico.
+      description: >
+        Recusa backups fixados e os criados fora do sistema — estes vivem em
+        diretório de root e têm retenção própria do cron do servidor.
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /backups/{uuid}/link-download:
+    post:
+      tags: [Backup e Restauração]
+      summary: Obter URL assinada temporária para baixar o pacote.
+      description: >
+        Devolve um link de 10 minutos em vez dos bytes. O pacote tem ~130 MB e
+        não pode trafegar pelo BFF do desktop, que carrega o corpo inteiro em
+        memória. Permissão `backups:baixar` é separada de `backups:visualizar`
+        porque o pacote contém todos os segredos e arquivos de clientes.
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /backups/{uuid}/verificar:
+    post:
+      tags: [Backup e Restauração]
+      summary: Conferir a integridade de um backup sem restaurar nada.
+      description: >
+        Para pacotes completos, confere o sha256 de cada membro contra o
+        manifesto. Para dumps simples, confere o gzip e o rodapé
+        "-- Dump completed" — `gzip -t` sozinho passa em dump truncado.
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+  /backups/{uuid}/proteger:
+    post:
+      tags: [Backup e Restauração]
+      summary: Fixar ou desafixar um backup contra a retenção automática.
+      parameters:
+        - name: uuid
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                protegido: { type: boolean, default: true }
+      responses:
+        "200": { $ref: "#/components/responses/Success" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }

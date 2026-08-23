@@ -91,6 +91,29 @@ Schedule::command('app:dispatch-pending-document-signature-notifications')
     ->everyFiveMinutes()
     ->withoutOverlapping(5);
 
+// ---------------------------------------------------------------------------
+// Agenda
+// ---------------------------------------------------------------------------
+// Reconciliacao das origens (vencimentos, prazos, retornos, cobrancas). E
+// idempotente por construcao - compara fonte com agenda e converge -, entao
+// rodar de 15 em 15 minutos nao duplica nada e mantem a agenda coerente com o
+// financeiro no mesmo dia em que o titulo e lancado.
+Schedule::command('agenda:sincronizar-origens')
+    ->everyFifteenMinutes()
+    ->name('agenda-reconciliar-origens')
+    ->onOneServer()
+    ->withoutOverlapping(20);
+
+// Sincronizacao com o Google. Cinco minutos e o compromisso entre "o que criei
+// no celular aparece rapido no ERP" e o volume de chamadas a Calendar API; a
+// leitura e incremental (syncToken), entao cada tique custa uma requisicao
+// quando nada mudou. Sai cedo sozinha quando nao ha conexao configurada.
+Schedule::command('agenda:sincronizar-google')
+    ->everyFiveMinutes()
+    ->name('agenda-sincronizar-google')
+    ->onOneServer()
+    ->withoutOverlapping(10);
+
 // Rede de segurança operacional: o Supervisor continua sendo o consumidor
 // principal. Este worker curto impede que uma implantação parcial deixe as filas
 // paradas indefinidamente após o Supervisor entrar em FATAL/BACKOFF.
@@ -118,3 +141,43 @@ Schedule::command('file-manager:purge-trash')
     ->name('file-manager-trash-retention')
     ->onOneServer()
     ->withoutOverlapping(180);
+
+// ---------------------------------------------------------------------------
+// Backup completo do sistema
+// ---------------------------------------------------------------------------
+// Nao usa fila de proposito: retry_after=180 na conexao redis faria um backup
+// de mais de 3 minutos ser re-reservado e rodar DUAS VEZES em paralelo, e o
+// Supervisor so consome as filas "documents,default". O scheduler ja roda a
+// cada minuto como www-data, e runInBackground() destaca o processo - sem teto
+// de 60s do FPM e sem disputar worker com a entrega de documentos.
+if ((bool) config('backup.enabled', true)) {
+    // Atende ao botao "Gerar backup agora": a API grava uma linha pendente e
+    // este tique a executa em ate 60s. Mesmo idioma de file-manager:sync --pending.
+    Schedule::command('backup:executar --pendente')
+        ->everyMinute()
+        ->name('backup-pendente')
+        ->onOneServer()
+        ->withoutOverlapping(240)
+        ->runInBackground();
+
+    // 02:00 (cron de root) e 02:30 (file-manager:purge-trash) ja estao ocupados.
+    Schedule::command('backup:executar --tipo=completo')
+        ->dailyAt((string) config('backup.schedule.daily_time', '03:15'))
+        ->name('backup-diario')
+        ->onOneServer()
+        ->withoutOverlapping(240)
+        ->runInBackground();
+
+    Schedule::command('backup:expurgar')
+        ->dailyAt((string) config('backup.schedule.prune_time', '03:50'))
+        ->name('backup-retencao')
+        ->onOneServer()
+        ->withoutOverlapping(60);
+
+    // O painel e o catalogo unico: varre o disco e cataloga tambem os backups
+    // que este sistema nao gerou (dumps do cron de root, pre-deploy, manuais).
+    Schedule::command('backup:varrer')
+        ->everyFifteenMinutes()
+        ->name('backup-catalogo')
+        ->withoutOverlapping(10);
+}

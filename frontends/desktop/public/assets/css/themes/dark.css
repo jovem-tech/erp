@@ -542,3 +542,96 @@
 [data-theme="dark"] .desktop-system-footer-copyright {
     color: #4A5568;
 }
+
+/* ─── Agenda ─────────────────────────────────────────────────────────────── */
+/* Usa `background` (shorthand) para sobrescrever os gradients claros de
+   desktop.css, seguindo a convenção declarada no topo deste arquivo. */
+
+[data-theme="dark"] .agenda-summary-card,
+[data-theme="dark"] .agenda-calendar-day {
+    background: var(--desktop-surface);
+}
+
+[data-theme="dark"] .agenda-calendar-day.is-weekend {
+    background: var(--desktop-surface-soft);
+}
+
+[data-theme="dark"] .agenda-filter,
+[data-theme="dark"] .agenda-list-item {
+    background: var(--desktop-surface-soft);
+}
+
+[data-theme="dark"] .agenda-filter.is-active {
+    background: linear-gradient(135deg, #7C6EFA, #A099FC);
+    color: #0D1117;
+}
+
+[data-theme="dark"] .agenda-calendar-day.is-today {
+    box-shadow: 0 0 0 2px rgba(124, 110, 250, 0.28);
+}
+
+[data-theme="dark"] .agenda-calendar-day-count {
+    background: rgba(255, 255, 255, 0.10);
+}
+
+/* Os tons de tipo são translúcidos sobre fundo claro; no escuro precisam de
+   mais opacidade para não sumirem. */
+[data-theme="dark"] .agenda-tipo-manual { --agenda-accent: #A099FC; --agenda-bg: rgba(124, 110, 250, 0.20); }
+[data-theme="dark"] .agenda-tipo-conta_pagar { --agenda-accent: #FCA5A5; --agenda-bg: rgba(248, 113, 113, 0.18); }
+[data-theme="dark"] .agenda-tipo-conta_receber { --agenda-accent: #4ADE80; --agenda-bg: rgba(34, 197, 94, 0.18); }
+[data-theme="dark"] .agenda-tipo-retorno_pos_servico { --agenda-accent: #38BDF8; --agenda-bg: rgba(56, 189, 248, 0.18); }
+[data-theme="dark"] .agenda-tipo-prazo_os { --agenda-accent: #FBBF24; --agenda-bg: rgba(251, 191, 36, 0.18); }
+[data-theme="dark"] .agenda-tipo-cobranca_os { --agenda-accent: #C084FC; --agenda-bg: rgba(192, 132, 252, 0.18); }
+
+[data-theme="dark"] .dashboard-agenda-card {
+    background: var(--desktop-surface);
+}
+
+/* ─── Agenda: visões Dia, Semana e Ano ───────────────────────────────────── */
+
+[data-theme="dark"] .agenda-view-toggle {
+    background: var(--desktop-surface-soft);
+}
+
+[data-theme="dark"] .agenda-view-toggle .btn.is-active {
+    background: linear-gradient(135deg, #7C6EFA, #A099FC);
+    color: #0D1117;
+}
+
+[data-theme="dark"] .agenda-timegrid-scroll,
+[data-theme="dark"] .agenda-year-month {
+    background: var(--desktop-surface);
+}
+
+[data-theme="dark"] .agenda-timegrid-head {
+    background: var(--desktop-surface);
+}
+
+[data-theme="dark"] .agenda-timegrid-allday {
+    background: var(--desktop-surface-soft);
+}
+
+[data-theme="dark"] .agenda-timegrid-hours {
+    background: var(--desktop-surface);
+}
+
+[data-theme="dark"] .agenda-timegrid-col.is-today,
+[data-theme="dark"] .agenda-timegrid-allday-cell.is-today {
+    background: rgba(124, 110, 250, 0.10);
+}
+
+[data-theme="dark"] .agenda-timegrid-col.is-weekend {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+[data-theme="dark"] .agenda-timegrid-dayhead.is-today .agenda-timegrid-daynum {
+    color: #0D1117;
+    background: #7C6EFA;
+}
+
+[data-theme="dark"] .agenda-year-day { background: rgba(255, 255, 255, 0.06); }
+[data-theme="dark"] .agenda-year-day.is-outside { background: none; }
+[data-theme="dark"] .agenda-year-day.level-1 { background: rgba(124, 110, 250, 0.28); }
+[data-theme="dark"] .agenda-year-day.level-2 { background: rgba(124, 110, 250, 0.48); }
+[data-theme="dark"] .agenda-year-day.level-3 { background: rgba(124, 110, 250, 0.70); color: #0D1117; }
+[data-theme="dark"] .agenda-year-day.level-4 { background: rgba(160, 153, 252, 0.92); color: #0D1117; }

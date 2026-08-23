@@ -6,6 +6,7 @@ Este diretório concentra a documentação técnica do backend central Laravel, 
 
 - [Backend central mínimo](backend-central-minimo.md)
 - [Backend administrativo e RBAC](backend-administrativo-rbac.md)
+- [Backup e restauração](backup-e-restauracao.md)
 - [Contrato da API do backend central](contrato-api-backend-central.md)
 - [Frontend desktop Laravel](frontend-desktop-laravel.md)
 - [Frontend sistema-hml como BFF](frontend-sistema-hml-bff.md)

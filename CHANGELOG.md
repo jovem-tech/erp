@@ -1,5 +1,23 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.42.0.0 — 2026-08-23 07:20
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Agenda ganha as visoes dia, semana e ano no padrao do Google Agenda: grade de 24 horas com faixa de dia inteiro, divisao de largura entre compromissos sobrepostos e mapa de densidade anual
+- **Arquivos:** frontends/desktop/app/Support/AgendaTimeGrid.php,frontends/desktop/app/Support/CalendarGrid.php,frontends/desktop/app/Http/Controllers/AgendaController.php,frontends/desktop/resources/views/agenda
+
+## v5.41.0.0 — 2026-08-22 20:39
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Modulo Agenda: compromissos, obrigacoes e lembretes num lugar so, com sincronizacao bidirecional com um calendario dedicado do Google
+- **Arquivos:** backend/app/Services/Agenda,backend/app/Models/AgendaCompromisso.php,backend/app/Http/Controllers/Api/V1/AgendaController.php,backend/app/Http/Controllers/Api/V1/AgendaGoogleController.php,frontends/desktop/app/Http/Controllers/AgendaController.php,frontends/desktop/app/Support/CalendarGrid.php,frontends/desktop/resources/views/agenda
+
+## v5.40.0.0 — 2026-08-22 13:42
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Backup completo do sistema (bancos, arquivos e configuração) com criptografia AES-256, agendamento diário, retenção escalonada e catálogo unificado de todos os backups do servidor
+- **Arquivos:** backend/config/backup.php,backend/app/Services/Backups,backend/app/Http/Controllers/Api/V1/BackupController.php,frontends/desktop/resources/views/configurations/backups
+
 ## v5.39.5.0 — 2026-08-21 07:56
 - **Tier:** patch
 - **Autor/Agente:** Codex

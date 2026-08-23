@@ -8376,3 +8376,858 @@ a {
 .matrix-transitions tbody td {
     border-top: 1px solid var(--desktop-border);
 }
+
+/* ==========================================================================
+   Agenda
+   Reaproveita os tokens do tema (--desktop-*) e o mesmo vocabulário visual da
+   grade do Fluxo de Caixa, com o dia mostrando compromissos em vez de valores.
+   ========================================================================== */
+
+.agenda-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 0.9rem;
+}
+
+.agenda-summary-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding: 1rem 1.1rem;
+    border: 1px solid var(--desktop-border);
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
+    box-shadow: var(--desktop-shadow-soft);
+    text-decoration: none;
+    color: inherit;
+    transition: var(--desktop-transition);
+}
+
+a.agenda-summary-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--desktop-primary);
+}
+
+.agenda-summary-label {
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--desktop-text-soft);
+}
+
+.agenda-summary-value {
+    font-size: 1.9rem;
+    line-height: 1.1;
+    font-weight: 800;
+    color: var(--desktop-text);
+}
+
+.agenda-summary-hint {
+    font-size: 0.78rem;
+    color: var(--desktop-text-soft);
+}
+
+.agenda-summary-card.is-late .agenda-summary-value {
+    color: var(--desktop-danger-text);
+}
+
+.agenda-summary-card.is-today .agenda-summary-value {
+    color: var(--desktop-primary);
+}
+
+.agenda-summary-google.is-connected {
+    border-color: rgba(34, 197, 94, 0.45);
+}
+
+/* --- Filtros ------------------------------------------------------------ */
+
+.agenda-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    margin-top: 1rem;
+}
+
+.agenda-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.8rem;
+    border: 1px solid var(--desktop-border);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    color: var(--desktop-text-soft);
+    font-size: 0.79rem;
+    font-weight: 700;
+    text-decoration: none;
+    transition: var(--desktop-transition);
+}
+
+.agenda-filter:hover {
+    border-color: var(--desktop-primary);
+    color: var(--desktop-primary);
+}
+
+.agenda-filter.is-active {
+    color: #fff;
+    background: linear-gradient(135deg, var(--desktop-primary), #8b5cf6);
+    border-color: transparent;
+}
+
+.agenda-filters-divider {
+    width: 1px;
+    height: 22px;
+    margin: 0 0.3rem;
+    background: var(--desktop-border);
+}
+
+/* --- Grade mensal ------------------------------------------------------- */
+
+.agenda-calendar-scroll {
+    overflow-x: auto;
+    padding-bottom: 0.25rem;
+}
+
+.agenda-calendar-weekdays,
+.agenda-calendar-week {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 0.5rem;
+    min-width: 900px;
+}
+
+.agenda-calendar-weekdays {
+    margin-bottom: 0.5rem;
+}
+
+.agenda-calendar-weekday {
+    padding: 0.1rem 0.5rem;
+    color: var(--desktop-text-soft);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.agenda-calendar-week {
+    margin-bottom: 0.5rem;
+}
+
+.agenda-calendar-day {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    /* Seis semanas x altura da célula define se o mês inteiro cabe na tela sem
+       rolar. 118px comporta três compromissos antes de a célula rolar. */
+    min-height: 118px;
+    padding: 0.6rem 0.55rem;
+    border: 1px solid var(--desktop-border);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
+    box-shadow: var(--desktop-shadow-soft);
+}
+
+.agenda-calendar-day.is-outside-month {
+    opacity: 0.5;
+}
+
+.agenda-calendar-day.is-weekend {
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(241, 245, 249, 0.94));
+}
+
+.agenda-calendar-day.is-today {
+    border-color: var(--desktop-primary);
+    box-shadow: 0 0 0 2px rgba(111, 90, 252, 0.16);
+}
+
+.agenda-calendar-day.has-late {
+    border-color: rgba(239, 68, 68, 0.5);
+}
+
+.agenda-calendar-day-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.agenda-calendar-day-number {
+    font-size: 0.9rem;
+    font-weight: 800;
+    color: var(--desktop-text);
+}
+
+.agenda-calendar-day.is-today .agenda-calendar-day-number {
+    color: var(--desktop-primary);
+}
+
+.agenda-calendar-day-count {
+    min-width: 20px;
+    padding: 0.05rem 0.35rem;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.22);
+    color: var(--desktop-text-soft);
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-align: center;
+}
+
+.agenda-calendar-day-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    /* Dia cheio rola dentro da própria célula: sem isto, um dia com dez
+       vencimentos esticaria a semana inteira. */
+    max-height: 132px;
+    overflow-y: auto;
+}
+
+/* --- Compromisso no calendário ------------------------------------------ */
+
+.agenda-event {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    width: 100%;
+    padding: 0.28rem 0.45rem;
+    border: 0;
+    border-left: 3px solid var(--agenda-accent, #94a3b8);
+    border-radius: 7px;
+    background: var(--agenda-bg, rgba(148, 163, 184, 0.12));
+    color: var(--desktop-text);
+    font-size: 0.74rem;
+    text-align: left;
+    cursor: pointer;
+    transition: var(--desktop-transition);
+}
+
+.agenda-event:hover {
+    filter: brightness(0.96);
+    transform: translateX(1px);
+}
+
+.agenda-event-time {
+    flex-shrink: 0;
+    font-weight: 800;
+    font-size: 0.68rem;
+    color: var(--agenda-accent, #64748b);
+}
+
+.agenda-event-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agenda-event.is-done {
+    opacity: 0.55;
+}
+
+.agenda-event.is-done .agenda-event-title {
+    text-decoration: line-through;
+}
+
+.agenda-event.is-late {
+    box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.35);
+}
+
+.agenda-event.is-high .agenda-event-title {
+    font-weight: 700;
+}
+
+/* Cores por tipo — o mesmo par accent/fundo serve ao calendário, à lista e
+   ao chip de filtro, para o usuário reconhecer a categoria sem ler. */
+.agenda-tipo-manual { --agenda-accent: #6f5afc; --agenda-bg: rgba(111, 90, 252, 0.10); }
+.agenda-tipo-conta_pagar { --agenda-accent: #ef4444; --agenda-bg: rgba(239, 68, 68, 0.10); }
+.agenda-tipo-conta_receber { --agenda-accent: #16a34a; --agenda-bg: rgba(22, 163, 74, 0.10); }
+.agenda-tipo-retorno_pos_servico { --agenda-accent: #0ea5e9; --agenda-bg: rgba(14, 165, 233, 0.10); }
+.agenda-tipo-prazo_os { --agenda-accent: #f59e0b; --agenda-bg: rgba(245, 158, 11, 0.12); }
+.agenda-tipo-cobranca_os { --agenda-accent: #a855f7; --agenda-bg: rgba(168, 85, 247, 0.10); }
+
+.agenda-filter.agenda-tipo-manual:not(.is-active),
+.agenda-filter[class*='agenda-tipo-']:not(.is-active) i {
+    color: var(--agenda-accent);
+}
+
+/* --- Lista -------------------------------------------------------------- */
+
+.agenda-list-group {
+    display: grid;
+    grid-template-columns: 130px minmax(0, 1fr);
+    gap: 1rem;
+    padding: 0.9rem 0;
+    border-bottom: 1px solid var(--desktop-border);
+}
+
+.agenda-list-group:last-child {
+    border-bottom: 0;
+}
+
+.agenda-list-date {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+}
+
+.agenda-list-date strong {
+    font-size: 1.1rem;
+    color: var(--desktop-text);
+}
+
+.agenda-list-date span {
+    font-size: 0.76rem;
+    color: var(--desktop-text-soft);
+}
+
+.agenda-list-group.is-today .agenda-list-date strong {
+    color: var(--desktop-primary);
+}
+
+.agenda-list-items {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.agenda-list-item {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid var(--desktop-border);
+    border-left: 3px solid var(--agenda-accent, #94a3b8);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.92);
+}
+
+.agenda-list-item.is-late {
+    border-color: rgba(239, 68, 68, 0.4);
+    border-left-color: #ef4444;
+}
+
+.agenda-list-item.is-done {
+    opacity: 0.6;
+}
+
+.agenda-list-item.is-done .agenda-list-title {
+    text-decoration: line-through;
+}
+
+.agenda-list-time {
+    font-size: 0.76rem;
+    font-weight: 800;
+    color: var(--agenda-accent, #64748b);
+}
+
+.agenda-list-main {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding: 0;
+    border: 0;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    min-width: 0;
+}
+
+.agenda-list-title {
+    font-weight: 700;
+    color: var(--desktop-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.agenda-list-desc {
+    font-size: 0.78rem;
+    color: var(--desktop-text-soft);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+@media (max-width: 767.98px) {
+    .agenda-list-group {
+        grid-template-columns: 1fr;
+        gap: 0.5rem;
+    }
+
+    .agenda-list-date {
+        flex-direction: row;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .agenda-list-item {
+        grid-template-columns: 1fr auto;
+    }
+
+    .agenda-list-time {
+        grid-column: 1 / -1;
+    }
+}
+
+/* Card de agenda no dashboard — só aparece quando há algo a resolver. */
+.dashboard-agenda-card {
+    padding: 1.1rem 1.25rem;
+    border: 1px solid var(--desktop-border);
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
+    box-shadow: var(--desktop-shadow-soft);
+}
+
+.dashboard-agenda-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.9rem;
+}
+
+.dashboard-agenda-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.dashboard-agenda-item {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.45rem 0.6rem;
+    border-left: 3px solid var(--agenda-accent, #94a3b8);
+    border-radius: 10px;
+    background: var(--agenda-bg, rgba(148, 163, 184, 0.10));
+}
+
+.dashboard-agenda-item.is-late {
+    box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.30);
+}
+
+.dashboard-agenda-when {
+    display: flex;
+    flex-direction: column;
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: var(--agenda-accent, #64748b);
+    line-height: 1.15;
+}
+
+.dashboard-agenda-when small {
+    font-size: 0.68rem;
+    font-weight: 600;
+    opacity: 0.8;
+}
+
+.dashboard-agenda-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--desktop-text);
+}
+
+/* ==========================================================================
+   Agenda — visões Dia, Semana e Ano
+   ========================================================================== */
+
+/* Seletor de visão (Dia / Semana / Mês / Ano / Lista) */
+.agenda-view-toggle {
+    display: inline-flex;
+    gap: 0.25rem;
+    padding: 0.25rem;
+    border: 1px solid var(--desktop-border);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.agenda-view-toggle .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 0;
+    border-radius: 999px;
+    padding: 0.4rem 0.85rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--desktop-text-soft);
+}
+
+.agenda-view-toggle .btn.is-active {
+    color: #fff;
+    background: linear-gradient(135deg, var(--desktop-primary), #8b5cf6);
+    box-shadow: 0 10px 22px rgba(111, 90, 252, 0.18);
+}
+
+/* Em telas estreitas só o ícone permanece — cinco rótulos não cabem. */
+@media (max-width: 991.98px) {
+    .agenda-view-toggle .btn span {
+        display: none;
+    }
+}
+
+/* --- Grade horária (Dia e Semana) --------------------------------------- */
+
+.agenda-timegrid {
+    /* Altura de uma hora. Toda a posição de evento é percentual, então mudar
+       este valor reescala a grade inteira sem tocar em PHP. */
+    --agenda-hour-height: 46px;
+    --agenda-gutter-width: 62px;
+    /* Altura do cabeçalho de dias. A faixa de dia inteiro gruda exatamente
+       abaixo dela — as duas precisam do mesmo número, por isso ele mora aqui
+       e não solto em cada regra. */
+    --agenda-head-height: 58px;
+    margin-top: 1rem;
+}
+
+.agenda-timegrid-scroll {
+    /* Rola nos dois eixos dentro da própria caixa: 24 horas x 46px passam de
+       1100px, e sem isto a página inteira viraria uma barra de rolagem só para
+       chegar na tarde. O JS posiciona a rolagem inicial num horário útil. */
+    overflow: auto;
+    max-height: min(66vh, 620px);
+    border: 1px solid var(--desktop-border);
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
+}
+
+.agenda-timegrid-head,
+.agenda-timegrid-allday,
+.agenda-timegrid-body {
+    display: grid;
+    grid-template-columns: var(--agenda-gutter-width) repeat(var(--agenda-columns), minmax(0, 1fr));
+    min-width: 680px;
+}
+
+.agenda-timegrid.is-single-day .agenda-timegrid-head,
+.agenda-timegrid.is-single-day .agenda-timegrid-allday,
+.agenda-timegrid.is-single-day .agenda-timegrid-body {
+    min-width: 0;
+}
+
+.agenda-timegrid-head {
+    position: sticky;
+    top: 0;
+    /* Acima da faixa de dia inteiro, que por sua vez fica acima da coluna de
+       horas — os três se sobrepõem no canto superior esquerdo durante a
+       rolagem, e sem ordem explícita o rótulo de hora vaza por cima. */
+    z-index: 5;
+    min-height: var(--agenda-head-height);
+    border-bottom: 1px solid var(--desktop-border);
+    background: var(--desktop-surface, #fff);
+}
+
+.agenda-timegrid-gutter {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: inherit;
+}
+
+.agenda-timegrid-dayhead {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    padding: 0.6rem 0.35rem;
+    border-left: 1px solid var(--desktop-border);
+}
+
+.agenda-timegrid-weekday {
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--desktop-text-soft);
+}
+
+.agenda-timegrid-daynum {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    font-size: 1rem;
+    font-weight: 800;
+    color: var(--desktop-text);
+}
+
+.agenda-timegrid-dayhead.is-today .agenda-timegrid-daynum {
+    color: #fff;
+    background: var(--desktop-primary);
+}
+
+.agenda-timegrid-dayhead.is-weekend .agenda-timegrid-weekday {
+    color: var(--desktop-text-muted);
+}
+
+/* Faixa de dia inteiro */
+.agenda-timegrid-allday {
+    /* Gruda logo abaixo do cabeçalho: o vencimento do dia precisa continuar
+       visível enquanto se rola até a tarde. */
+    position: sticky;
+    top: var(--agenda-head-height);
+    z-index: 4;
+    border-bottom: 1px solid var(--desktop-border);
+    background: #f6f7fb;
+}
+
+.agenda-timegrid-allday-label {
+    display: block;
+    padding: 0.5rem 0.5rem 0;
+    font-size: 0.64rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: right;
+    color: var(--desktop-text-soft);
+}
+
+.agenda-timegrid-allday-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    /* Um dia com muitos vencimentos rola aqui dentro em vez de empurrar a
+       grade de horas para fora da tela. */
+    max-height: 104px;
+    overflow-y: auto;
+    padding: 0.4rem 0.35rem;
+    border-left: 1px solid var(--desktop-border);
+}
+
+.agenda-timegrid-allday-cell.is-today {
+    background: rgba(111, 90, 252, 0.05);
+}
+
+/* Corpo com as 24 horas */
+.agenda-timegrid-body {
+    position: relative;
+}
+
+.agenda-timegrid-hours {
+    display: flex;
+    flex-direction: column;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #fbfcfe;
+}
+
+.agenda-timegrid-hour {
+    position: relative;
+    height: var(--agenda-hour-height);
+}
+
+.agenda-timegrid-hour span {
+    position: absolute;
+    top: -0.55em;
+    right: 0.5rem;
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: var(--desktop-text-soft);
+    white-space: nowrap;
+}
+
+.agenda-timegrid-col {
+    position: relative;
+    border-left: 1px solid var(--desktop-border);
+}
+
+.agenda-timegrid-col.is-weekend {
+    background: rgba(148, 163, 184, 0.05);
+}
+
+.agenda-timegrid-col.is-today {
+    background: rgba(111, 90, 252, 0.04);
+}
+
+.agenda-timegrid-slot {
+    height: var(--agenda-hour-height);
+    border-top: 1px solid var(--desktop-border);
+}
+
+.agenda-timegrid-slot:first-child {
+    border-top: 0;
+}
+
+/* Linha do "agora" — só na coluna de hoje */
+.agenda-timegrid-now {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: #ef4444;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.agenda-timegrid-now-dot {
+    position: absolute;
+    left: -4px;
+    top: -3px;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #ef4444;
+}
+
+/* Bloco de evento posicionado por hora */
+.agenda-timegrid-event-slot {
+    position: absolute;
+    padding-right: 2px;
+    z-index: 1;
+}
+
+.agenda-event.is-block {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.05rem;
+    width: 100%;
+    height: 100%;
+    padding: 0.25rem 0.4rem;
+    overflow: hidden;
+    border-left-width: 3px;
+    border-radius: 6px;
+    line-height: 1.2;
+}
+
+.agenda-event.is-block.is-compact {
+    flex-direction: row;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.1rem 0.4rem;
+}
+
+.agenda-event.is-block.is-compact .agenda-event-title {
+    display: block;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.agenda-event.is-block .agenda-event-title {
+    white-space: normal;
+    /* Duas linhas no máximo: um bloco de 30 min não comporta mais que isso
+       sem estourar a própria altura. */
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* --- Visão de ano ------------------------------------------------------- */
+
+.agenda-year {
+    display: grid;
+    /* Quatro colunas em tela larga: 12 meses fecham em 3 linhas cheias. Com
+       auto-fit o layout caía em 5+5+2, deixando a última linha órfã. */
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 1.1rem;
+    margin-top: 1rem;
+}
+
+@media (max-width: 1399.98px) {
+    .agenda-year { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 991.98px) {
+    .agenda-year { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 575.98px) {
+    .agenda-year { grid-template-columns: minmax(0, 1fr); }
+}
+
+.agenda-year-month {
+    padding: 0.85rem;
+    border: 1px solid var(--desktop-border);
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
+}
+
+.agenda-year-month-title {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: var(--desktop-text);
+    text-decoration: none;
+}
+
+.agenda-year-month-title:hover {
+    color: var(--desktop-primary);
+}
+
+.agenda-year-weekdays,
+.agenda-year-days {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 2px;
+}
+
+.agenda-year-weekdays span {
+    font-size: 0.6rem;
+    font-weight: 800;
+    text-align: center;
+    color: var(--desktop-text-muted);
+}
+
+.agenda-year-day {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1;
+    border-radius: 5px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    text-decoration: none;
+    color: var(--desktop-text-soft);
+    background: rgba(148, 163, 184, 0.10);
+}
+
+.agenda-year-day.is-outside {
+    background: none;
+}
+
+/* Densidade: escala relativa ao pico do próprio ano. */
+.agenda-year-day.level-1 { background: rgba(111, 90, 252, 0.20); color: var(--desktop-text); }
+.agenda-year-day.level-2 { background: rgba(111, 90, 252, 0.38); color: var(--desktop-text); }
+.agenda-year-day.level-3 { background: rgba(111, 90, 252, 0.60); color: #fff; }
+.agenda-year-day.level-4 { background: rgba(111, 90, 252, 0.85); color: #fff; }
+
+.agenda-year-day.has-late {
+    box-shadow: inset 0 0 0 1.5px #ef4444;
+}
+
+.agenda-year-day.is-today {
+    outline: 2px solid var(--desktop-primary);
+    outline-offset: 1px;
+}
+
+a.agenda-year-day:hover {
+    filter: brightness(0.92);
+}
+
+.agenda-year-legend {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.3rem;
+    margin-top: 0.9rem;
+    font-size: 0.7rem;
+    color: var(--desktop-text-soft);
+}
+
+.agenda-year-legend .agenda-year-day {
+    width: 13px;
+    height: 13px;
+    aspect-ratio: auto;
+}

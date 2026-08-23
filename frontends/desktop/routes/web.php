@@ -1,13 +1,17 @@
 <?php
 
+use App\Http\Controllers\AgendaController;
 use App\Http\Controllers\AssistanceModelController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\BackupController;
 use App\Http\Controllers\BroadcastAuthController;
+use App\Http\Controllers\CaixaController;
 use App\Http\Controllers\ChecklistController;
 use App\Http\Controllers\ClientController;
 use App\Http\Controllers\ConfigurationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DefectController;
+use App\Http\Controllers\DevolucaoController;
 use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\FileManagerController;
 use App\Http\Controllers\FinanceiroCartaoController;
@@ -29,8 +33,6 @@ use App\Http\Controllers\PeopleController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicDocumentSignatureController;
 use App\Http\Controllers\ReportedDefectController;
-use App\Http\Controllers\CaixaController;
-use App\Http\Controllers\DevolucaoController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\ServicoController;
 use App\Http\Controllers\StockController;
@@ -157,6 +159,37 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/configuracoes/sistema', [ConfigurationController::class, 'system'])
         ->middleware('desktop.permission:configuracoes,visualizar')
         ->name('configurations.system.index');
+
+    // Backup e restauracao. A aba vive dentro de /configuracoes/sistema, mas as
+    // acoes tem permissoes proprias: "baixar" e separado de "visualizar" porque
+    // o pacote carrega todos os segredos e todos os arquivos de clientes.
+    Route::get('/configuracoes/backups/dados', [BackupController::class, 'data'])
+        ->middleware('desktop.permission:backups,visualizar')
+        ->name('configurations.backups.data');
+    Route::post('/configuracoes/backups/gerar', [BackupController::class, 'generate'])
+        ->middleware('desktop.permission:backups,criar')
+        ->name('configurations.backups.generate');
+    Route::post('/configuracoes/backups/varrer', [BackupController::class, 'scan'])
+        ->middleware('desktop.permission:backups,visualizar')
+        ->name('configurations.backups.scan');
+    Route::post('/configuracoes/backups/{uuid}/link', [BackupController::class, 'downloadLink'])
+        ->middleware('desktop.permission:backups,baixar')
+        ->name('configurations.backups.link');
+    Route::post('/configuracoes/backups/{uuid}/verificar', [BackupController::class, 'verify'])
+        ->middleware('desktop.permission:backups,restaurar')
+        ->name('configurations.backups.verify');
+    Route::post('/configuracoes/backups/{uuid}/proteger', [BackupController::class, 'pin'])
+        ->middleware('desktop.permission:backups,excluir')
+        ->name('configurations.backups.pin');
+    Route::delete('/configuracoes/backups/{uuid}', [BackupController::class, 'destroy'])
+        ->middleware('desktop.permission:backups,excluir')
+        ->name('configurations.backups.destroy');
+    Route::post('/configuracoes/backups/configuracoes', [BackupController::class, 'updateSettings'])
+        ->middleware('desktop.permission:backups,administrar')
+        ->name('configurations.backups.settings');
+    Route::post('/configuracoes/backups/frase-secreta', [BackupController::class, 'definePassphrase'])
+        ->middleware('desktop.permission:backups,administrar')
+        ->name('configurations.backups.passphrase');
     Route::post('/configuracoes/aparencia', [ConfigurationController::class, 'updateAppearance'])
         ->name('configurations.appearance.update');
     Route::post('/configuracoes/empresa', [ConfigurationController::class, 'updateCompany'])
@@ -207,9 +240,53 @@ Route::middleware('desktop.auth')->group(function (): void {
         ->middleware('desktop.permission:configuracoes,editar')
         ->name('configurations.integrations.gateway-start');
 
+    // Google Agenda — conexão OAuth do módulo Agenda. Fica em Integrações
+    // porque envolve credenciais da empresa e cria um calendário numa conta
+    // Google real: é ato de administração, não de uso da agenda.
+    Route::post('/configuracoes/integracoes/agenda-google/credenciais', [ConfigurationController::class, 'agendaGoogleSaveCredentials'])
+        ->middleware('desktop.permission:configuracoes,editar')
+        ->name('configurations.integrations.agenda-google.credentials');
+    Route::post('/configuracoes/integracoes/agenda-google/conectar', [ConfigurationController::class, 'agendaGoogleConnect'])
+        ->middleware('desktop.permission:configuracoes,editar')
+        ->name('configurations.integrations.agenda-google.connect');
+    Route::post('/configuracoes/integracoes/agenda-google/conectar-manual', [ConfigurationController::class, 'agendaGoogleConnectManual'])
+        ->middleware('desktop.permission:configuracoes,editar')
+        ->name('configurations.integrations.agenda-google.connect-manual');
+    Route::post('/configuracoes/integracoes/agenda-google/desconectar', [ConfigurationController::class, 'agendaGoogleDisconnect'])
+        ->middleware('desktop.permission:configuracoes,editar')
+        ->name('configurations.integrations.agenda-google.disconnect');
+    Route::post('/configuracoes/integracoes/agenda-google/sincronizar', [ConfigurationController::class, 'agendaGoogleSync'])
+        ->middleware('desktop.permission:agenda,visualizar')
+        ->name('configurations.integrations.agenda-google.sync');
+
     Route::get('/dashboard', [DashboardController::class, 'index'])
         ->middleware('desktop.permission:dashboard,visualizar')
         ->name('dashboard');
+
+    // Agenda — logo abaixo do dashboard também nas rotas, na mesma ordem em
+    // que aparece na sidebar.
+    Route::get('/agenda', [AgendaController::class, 'index'])
+        ->middleware('desktop.permission:agenda,visualizar')
+        ->name('agenda.index');
+    Route::post('/agenda', [AgendaController::class, 'store'])
+        ->middleware('desktop.permission:agenda,criar')
+        ->name('agenda.store');
+    Route::patch('/agenda/{compromisso}', [AgendaController::class, 'update'])
+        ->middleware('desktop.permission:agenda,editar')
+        ->whereNumber('compromisso')
+        ->name('agenda.update');
+    Route::post('/agenda/{compromisso}/concluir', [AgendaController::class, 'complete'])
+        ->middleware('desktop.permission:agenda,editar')
+        ->whereNumber('compromisso')
+        ->name('agenda.complete');
+    Route::post('/agenda/{compromisso}/reabrir', [AgendaController::class, 'reopen'])
+        ->middleware('desktop.permission:agenda,editar')
+        ->whereNumber('compromisso')
+        ->name('agenda.reopen');
+    Route::delete('/agenda/{compromisso}', [AgendaController::class, 'destroy'])
+        ->middleware('desktop.permission:agenda,excluir')
+        ->whereNumber('compromisso')
+        ->name('agenda.destroy');
     Route::get('/dashboard/dados', [DashboardController::class, 'data'])
         ->middleware('desktop.permission:dashboard,visualizar')
         ->name('dashboard.data');

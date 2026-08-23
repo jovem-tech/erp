@@ -10,7 +10,18 @@ use App\Enums\Files\FileManagerMode;
 use App\Models\OrderDocumentFile;
 use App\Models\User;
 use App\Observers\OrderDocumentFileObserver;
+use App\Services\Agenda\Sources\AgendaSourceRegistry;
+use App\Services\Agenda\Sources\CobrancaOsSource;
+use App\Services\Agenda\Sources\ContasPagarSource;
+use App\Services\Agenda\Sources\ContasReceberSource;
+use App\Services\Agenda\Sources\PrazoOsSource;
+use App\Services\Agenda\Sources\RetornoPosServicoSource;
 use App\Services\Auth\RbacAuthorizationService;
+use App\Services\Backups\BackupRootRegistry;
+use App\Services\Backups\BackupSettingsService;
+use App\Services\Backups\Contracts\ProcessRunner;
+use App\Services\Backups\SymfonyProcessRunner;
+use App\Services\Company\CompanyProfileService;
 use App\Services\Files\Authorizers\ChatAttachmentFileAuthorizer;
 use App\Services\Files\Authorizers\ConfigurationFileAuthorizer;
 use App\Services\Files\Authorizers\EquipmentFileAuthorizer;
@@ -23,7 +34,6 @@ use App\Services\Files\FileManagerConfiguration;
 use App\Services\Files\LocalFileStorage;
 use App\Services\Files\NullMalwareScanner;
 use App\Services\Files\PopplerPdfThumbnailRenderer;
-use App\Services\Company\CompanyProfileService;
 use App\Services\Integrations\EmailIntegrationSettingsService;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
@@ -46,6 +56,28 @@ class AppServiceProvider extends ServiceProvider
         $this->app->bind(MalwareScanner::class, NullMalwareScanner::class);
         $this->app->bind(PdfThumbnailRenderer::class, PopplerPdfThumbnailRenderer::class);
         $this->app->singleton(FileAuthorizationRegistry::class);
+
+        // Fontes da Agenda. PARA LIGAR UM MODULO NOVO A AGENDA: implemente
+        // App\Services\Agenda\Sources\AgendaSource e acrescente a classe a
+        // esta tag. Nenhum outro arquivo do motor precisa mudar.
+        $this->app->tag([
+            ContasPagarSource::class,
+            ContasReceberSource::class,
+            RetornoPosServicoSource::class,
+            PrazoOsSource::class,
+            CobrancaOsSource::class,
+        ], 'agenda.sources');
+
+        $this->app->singleton(
+            AgendaSourceRegistry::class,
+            static fn ($app): AgendaSourceRegistry => new AgendaSourceRegistry($app->tagged('agenda.sources'))
+        );
+
+        // Costura de teste: backend/phpunit.xml forca sqlite :memory:, entao
+        // mysqldump nunca roda na suite - os testes trocam esta ligacao.
+        $this->app->bind(ProcessRunner::class, SymfonyProcessRunner::class);
+        $this->app->singleton(BackupRootRegistry::class);
+        $this->app->singleton(BackupSettingsService::class);
 
         $versionFile = base_path('../shared/version.php');
 

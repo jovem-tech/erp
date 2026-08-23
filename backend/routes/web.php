@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\BackupDownloadController;
 use App\Http\Controllers\Web\BrowserFaviconController;
 use App\Http\Controllers\Web\BudgetPublicController;
 use App\Http\Controllers\Web\OrderDocumentPublicController;
@@ -64,3 +65,11 @@ Route::get('/documentos/compartilhados/{token}/arquivos/{document}/{format}', [O
     ->whereIn('format', ['a4', '80mm'])
     ->middleware('throttle:120,1')
     ->name('orders.documents.public.file');
+
+// Entrega do pacote de backup por URL assinada de curta duracao. Fica fora do
+// grupo autenticado de proposito: o arquivo tem ~130 MB e nao pode trafegar
+// pelo BFF do desktop, cujo ApiClient carrega o corpo inteiro em memoria. A
+// assinatura temporaria (10 min) substitui a sessao como prova de autorizacao.
+Route::get('/backups/{uuid}/arquivo', BackupDownloadController::class)
+    ->middleware(['signed', 'throttle:6,1'])
+    ->name('backups.arquivo');

@@ -112,6 +112,18 @@
         $googleClientId = old('portal_google_client_id', (string) ($googleSettings['portal_google_client_id'] ?? ''));
         $googleClientSecret = old('portal_google_client_secret', '');
         $googleClientSecretConfigured = $isConfiguredSecret($googleSecretStatus, 'portal_google_client_secret');
+
+        // Google Agenda — integração do módulo Agenda. Credenciais e estado
+        // são próprios: outro consentimento, outro escopo, outro ciclo de vida.
+        $agendaGoogle = $agendaGoogle ?? [];
+        $agendaGoogleSettings = is_array($agendaGoogle['settings'] ?? null) ? $agendaGoogle['settings'] : [];
+        $agendaGoogleSummary = is_array($agendaGoogle['summary'] ?? null) ? $agendaGoogle['summary'] : [];
+        $agendaGoogleSecretStatus = is_array($agendaGoogle['secret_status'] ?? null) ? $agendaGoogle['secret_status'] : [];
+        $agendaGoogleConnected = (bool) ($agendaGoogleSummary['connected'] ?? false);
+        $agendaGoogleConfigured = (bool) ($agendaGoogleSummary['configured'] ?? false);
+        $agendaGoogleClientId = old('agenda_google_client_id', (string) ($agendaGoogleSettings['agenda_google_client_id'] ?? ''));
+        $agendaGoogleSecretConfigured = $isConfiguredSecret($agendaGoogleSecretStatus, 'agenda_google_client_secret');
+        $agendaGoogleRedirectUri = (string) ($agendaGoogle['redirect_uri'] ?? '');
     @endphp
 
     <section class="desktop-page-stack">
@@ -147,6 +159,12 @@
                     </button>
                     <button type="button" class="config-subtab" data-config-subtab="google" aria-pressed="false">
                         <i class="bi bi-google me-1"></i>Portal do Cliente
+                    </button>
+                    <button type="button" class="config-subtab" data-config-subtab="agenda-google" aria-pressed="false" id="agenda-google">
+                        <i class="bi bi-calendar-week me-1"></i>Google Agenda
+                        <span class="badge rounded-pill {{ $agendaGoogleConnected ? 'text-bg-success' : 'text-bg-light border text-secondary' }} ms-1" style="font-size:.65rem;">
+                            {{ $agendaGoogleConnected ? 'Conectado' : 'Off' }}
+                        </span>
                     </button>
                 </div>
 
@@ -738,6 +756,129 @@
                     </div>
                 </div>
 
+                <div class="config-subpanel" data-config-subpanel="agenda-google">
+                    <div class="desktop-config-hero">
+                        <div>
+                            <h3 class="surface-title mb-1">Google Agenda</h3>
+                            <p class="surface-subtitle mb-0">
+                                Espelha a Agenda do ERP num calendário dedicado do Google, para os lembretes chegarem no celular.
+                            </p>
+                        </div>
+                        <span class="badge rounded-pill text-bg-{{ $agendaGoogleSummary['status'] ?? 'secondary' }}">
+                            {{ $agendaGoogleSummary['status_label'] ?? 'Aguardando configuração' }}
+                        </span>
+                    </div>
+
+                    <div class="desktop-form-card">
+                        <div class="alert alert-light border d-flex gap-2 align-items-start">
+                            <i class="bi bi-shield-check fs-5 text-success"></i>
+                            <div class="small">
+                                <strong>Seus outros calendários ficam fora disto.</strong>
+                                O ERP cria um calendário próprio chamado <em>"Agenda ERP"</em> e usa o escopo
+                                <code>calendar.app.created</code>, que autoriza o app a ver e editar
+                                <strong>apenas calendários criados por ele mesmo</strong>. Sua agenda pessoal é
+                                inacessível ao sistema — não por promessa nossa, mas por regra do próprio Google.
+                                O que você criar no celular <em>dentro do calendário "Agenda ERP"</em> volta para cá.
+                            </div>
+                        </div>
+
+                        <div class="desktop-grid desktop-grid-two">
+                            <div>
+                                <label for="agendaGoogleClientId">Google Client ID</label>
+                                <input type="text" id="agendaGoogleClientId" name="agenda_google_client_id"
+                                       class="form-control" value="{{ $agendaGoogleClientId }}"
+                                       form="agendaGoogleCredentialsForm"
+                                       placeholder="123456789-xxxx.apps.googleusercontent.com">
+                            </div>
+                            <div>
+                                <label for="agendaGoogleClientSecret">Google Client Secret</label>
+                                <input type="password" id="agendaGoogleClientSecret" name="agenda_google_client_secret"
+                                       class="form-control" autocomplete="new-password"
+                                       form="agendaGoogleCredentialsForm"
+                                       placeholder="{{ $agendaGoogleSecretConfigured ? 'Credencial salva. Preencha apenas para trocar.' : 'GOCSPX-...' }}">
+                                @if ($agendaGoogleSecretConfigured)
+                                    <small class="text-muted">O segredo atual permanece salvo se este campo continuar vazio.</small>
+                                @endif
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-2 mt-3">
+                            <button type="submit" form="agendaGoogleCredentialsForm" class="btn btn-outline-primary rounded-pill">
+                                <i class="bi bi-save2 me-1"></i>Salvar credenciais
+                            </button>
+
+                            @if ($agendaGoogleConnected)
+                                <button type="submit" form="agendaGoogleSyncForm" class="btn btn-primary rounded-pill">
+                                    <i class="bi bi-arrow-repeat me-1"></i>Sincronizar agora
+                                </button>
+                                <button type="submit" form="agendaGoogleDisconnectForm" class="btn btn-outline-danger rounded-pill">
+                                    <i class="bi bi-plug me-1"></i>Desconectar
+                                </button>
+                            @elseif ($agendaGoogleConfigured)
+                                <button type="submit" form="agendaGoogleConnectForm" class="btn btn-primary rounded-pill">
+                                    <i class="bi bi-google me-1"></i>Conectar com o Google
+                                </button>
+                            @endif
+                        </div>
+
+                        @if ($agendaGoogleConnected)
+                            <dl class="row mt-4 mb-0 small">
+                                <dt class="col-sm-4">Conta conectada</dt>
+                                <dd class="col-sm-8">{{ $agendaGoogleSummary['conta_email'] ?: '—' }}</dd>
+                                <dt class="col-sm-4">Calendário</dt>
+                                <dd class="col-sm-8"><code>{{ $agendaGoogleSummary['calendar_id'] ?: '—' }}</code></dd>
+                                <dt class="col-sm-4">Conectado em</dt>
+                                <dd class="col-sm-8">{{ $agendaGoogleSummary['conectado_em'] ?: '—' }}</dd>
+                                <dt class="col-sm-4">Última sincronização</dt>
+                                <dd class="col-sm-8">
+                                    {{ $agendaGoogleSummary['ultimo_sync_em'] ?: 'ainda não sincronizou' }}
+                                    @if (($agendaGoogleSummary['ultimo_sync_status'] ?? '') === 'erro')
+                                        <span class="badge rounded-pill text-bg-danger ms-1">erro</span>
+                                    @endif
+                                </dd>
+                                @if (($agendaGoogleSummary['ultimo_sync_erro'] ?? '') !== '')
+                                    <dt class="col-sm-4 text-danger">Último erro</dt>
+                                    <dd class="col-sm-8 text-danger">{{ $agendaGoogleSummary['ultimo_sync_erro'] }}</dd>
+                                @endif
+                            </dl>
+                        @endif
+                    </div>
+
+                    <div class="desktop-form-card mt-3">
+                        <h4 class="surface-title fs-6 mb-2">Como configurar no Google Cloud Console</h4>
+                        <ol class="small mb-3 ps-3">
+                            <li>Ative a <strong>Google Calendar API</strong> no projeto.</li>
+                            <li>Crie uma credencial OAuth do tipo <strong>Aplicativo da Web</strong>.</li>
+                            <li>Cadastre este URI de redirecionamento autorizado:</li>
+                        </ol>
+                        <div class="input-group input-group-sm mb-3">
+                            <input type="text" class="form-control" readonly value="{{ $agendaGoogleRedirectUri }}">
+                        </div>
+
+                        {{-- O Google recusa IP privado como redirect URI, então a bancada
+                             (192.168.1.100) não consegue completar o fluxo normal. --}}
+                        <details>
+                            <summary class="small text-muted" style="cursor:pointer">
+                                O Google recusou meu endereço de redirecionamento (ambiente local)
+                            </summary>
+                            <div class="mt-2 small">
+                                <p class="mb-2">
+                                    O Google só aceita domínios públicos ou <code>localhost</code> — um IP de rede
+                                    interna como <code>192.168.1.100</code> é rejeitado no cadastro. Conecte pela
+                                    produção, ou obtenha o <em>refresh token</em> por fora e cole aqui:
+                                </p>
+                                <div class="input-group input-group-sm">
+                                    <input type="password" class="form-control" name="refresh_token"
+                                           form="agendaGoogleManualForm" placeholder="1//0g...">
+                                    <button type="submit" form="agendaGoogleManualForm" class="btn btn-outline-secondary">
+                                        Conectar com este token
+                                    </button>
+                                </div>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+
                 <div class="desktop-config-footer">
                     <div class="text-muted small">
                         As alterações de todas as sub-abas são salvas juntas.
@@ -750,6 +891,15 @@
                     </div>
                 </div>
             </form>
+
+            {{-- Ações do Google Agenda. Ficam fora do formulário principal
+                 porque HTML não permite <form> aninhado; os controles do painel
+                 as alcançam pelo atributo `form=`. --}}
+            <form method="post" id="agendaGoogleCredentialsForm" action="{{ route('configurations.integrations.agenda-google.credentials') }}" class="d-none">@csrf</form>
+            <form method="post" id="agendaGoogleConnectForm" action="{{ route('configurations.integrations.agenda-google.connect') }}" class="d-none">@csrf</form>
+            <form method="post" id="agendaGoogleManualForm" action="{{ route('configurations.integrations.agenda-google.connect-manual') }}" class="d-none">@csrf</form>
+            <form method="post" id="agendaGoogleDisconnectForm" action="{{ route('configurations.integrations.agenda-google.disconnect') }}" class="d-none">@csrf</form>
+            <form method="post" id="agendaGoogleSyncForm" action="{{ route('configurations.integrations.agenda-google.sync') }}" class="d-none">@csrf</form>
         </div>
     </section>
 

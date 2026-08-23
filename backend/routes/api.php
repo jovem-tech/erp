@@ -1,6 +1,9 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AgendaController;
+use App\Http\Controllers\Api\V1\AgendaGoogleController;
 use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\BackupController;
 use App\Http\Controllers\Api\V1\BudgetController;
 use App\Http\Controllers\Api\V1\CatalogController;
 use App\Http\Controllers\Api\V1\Chat\AttachmentController;
@@ -69,6 +72,14 @@ Route::prefix('v1')->group(function (): void {
     Route::get('configuracoes/empresa/login-background-publico', [ConfigurationController::class, 'publicLoginBackground'])
         ->middleware('throttle:60,1')
         ->name('api.v1.configuracoes.empresa.login_background_publico');
+    // Retorno do consentimento do Google. Fora de auth:sanctum de proposito:
+    // quem chega aqui e o navegador redirecionado pelo Google, sem o Bearer
+    // token do desktop. Quem autentica a chamada e o `state` de uso unico
+    // emitido em /agenda/google/conectar.
+    Route::get('agenda/google/callback', [AgendaGoogleController::class, 'callback'])
+        ->middleware('throttle:20,1')
+        ->name('api.v1.agenda.google.callback');
+
     Route::get('public/document-signatures/{token}', [PublicDocumentSignatureController::class, 'show'])
         ->where('token', '[A-Za-z0-9]{64}')
         ->middleware('throttle:60,1');
@@ -100,6 +111,35 @@ Route::prefix('v1')->group(function (): void {
         Route::get('dashboard/summary', [DashboardController::class, 'summary'])
             ->name('api.v1.dashboard.summary');
 
+        // ---------------------------------------------------------------
+        // Agenda
+        // ---------------------------------------------------------------
+        Route::get('agenda', [AgendaController::class, 'index'])->name('api.v1.agenda.index');
+        Route::get('agenda/resumo', [AgendaController::class, 'summary'])->name('api.v1.agenda.summary');
+        Route::post('agenda', [AgendaController::class, 'store'])->name('api.v1.agenda.store');
+        // Antes das rotas com {compromisso} nao ser preciso: 'google' e um
+        // segmento fixo em subcaminho, sem colisao com o binding numerico.
+        Route::get('agenda/google/status', [AgendaGoogleController::class, 'status'])
+            ->name('api.v1.agenda.google.status');
+        Route::post('agenda/google/credenciais', [AgendaGoogleController::class, 'saveCredentials'])
+            ->name('api.v1.agenda.google.credentials');
+        Route::post('agenda/google/conectar', [AgendaGoogleController::class, 'connect'])
+            ->name('api.v1.agenda.google.connect');
+        Route::post('agenda/google/conectar-manual', [AgendaGoogleController::class, 'connectManual'])
+            ->middleware('throttle:10,1')
+            ->name('api.v1.agenda.google.connect_manual');
+        Route::post('agenda/google/desconectar', [AgendaGoogleController::class, 'disconnect'])
+            ->name('api.v1.agenda.google.disconnect');
+        Route::post('agenda/google/sincronizar', [AgendaGoogleController::class, 'syncNow'])
+            ->middleware('throttle:10,1')
+            ->name('api.v1.agenda.google.sync');
+        Route::patch('agenda/{compromisso}', [AgendaController::class, 'update'])->name('api.v1.agenda.update');
+        Route::delete('agenda/{compromisso}', [AgendaController::class, 'destroy'])->name('api.v1.agenda.destroy');
+        Route::post('agenda/{compromisso}/concluir', [AgendaController::class, 'complete'])
+            ->name('api.v1.agenda.complete');
+        Route::post('agenda/{compromisso}/reabrir', [AgendaController::class, 'reopen'])
+            ->name('api.v1.agenda.reopen');
+
         Route::get('file-manager/dashboard', [FileManagerController::class, 'dashboard'])->name('api.v1.file_manager.dashboard');
         Route::post('file-manager/sync', [FileManagerController::class, 'requestSynchronization'])
             ->middleware('throttle:3,1')
@@ -126,6 +166,36 @@ Route::prefix('v1')->group(function (): void {
         Route::post('files/{fileUuid}/restore', [FileManagerController::class, 'restore'])->name('api.v1.files.restore');
         Route::post('files/{fileUuid}/quarantine', [FileManagerController::class, 'quarantine'])->name('api.v1.files.quarantine');
         Route::post('files/{fileUuid}/release-quarantine', [FileManagerController::class, 'releaseQuarantine'])->name('api.v1.files.release_quarantine');
+
+        // ------------------------------------------------------------------
+        // Backup e restauracao
+        // ------------------------------------------------------------------
+        Route::get('backups', [BackupController::class, 'index'])->name('api.v1.backups.index');
+        Route::get('backups/resumo', [BackupController::class, 'summary'])->name('api.v1.backups.summary');
+        Route::get('backups/configuracoes', [BackupController::class, 'settings'])->name('api.v1.backups.settings');
+        Route::put('backups/configuracoes', [BackupController::class, 'updateSettings'])
+            ->middleware('throttle:10,1')
+            ->name('api.v1.backups.settings.update');
+        Route::post('backups/frase-secreta', [BackupController::class, 'definePassphrase'])
+            ->middleware('throttle:5,1')
+            ->name('api.v1.backups.passphrase');
+        Route::post('backups/varrer', [BackupController::class, 'scan'])
+            ->middleware('throttle:6,1')
+            ->name('api.v1.backups.scan');
+        Route::post('backups', [BackupController::class, 'store'])
+            ->middleware('throttle:5,60')
+            ->name('api.v1.backups.store');
+        Route::get('backups/{uuid}', [BackupController::class, 'show'])->name('api.v1.backups.show');
+        Route::post('backups/{uuid}/link-download', [BackupController::class, 'downloadLink'])
+            ->middleware('throttle:10,1')
+            ->name('api.v1.backups.download_link');
+        Route::post('backups/{uuid}/verificar', [BackupController::class, 'verify'])
+            ->middleware('throttle:5,1')
+            ->name('api.v1.backups.verify');
+        Route::post('backups/{uuid}/proteger', [BackupController::class, 'pin'])->name('api.v1.backups.pin');
+        Route::delete('backups/{uuid}', [BackupController::class, 'destroy'])
+            ->middleware('throttle:10,1')
+            ->name('api.v1.backups.destroy');
 
         Route::get('notifications', [NotificationController::class, 'index'])->name('api.v1.notifications.index');
         Route::patch('notifications/{notification}/read', [NotificationController::class, 'markAsRead'])->name('api.v1.notifications.read');
