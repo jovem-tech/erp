@@ -70,8 +70,17 @@ class ConfigurationController extends DesktopController
     }
 
     /**
-     * Abre o consentimento do Google numa aba nova. O redirect precisa sair do
-     * navegador do usuário — não adianta o BFF seguir o Location.
+     * Redireciona para o consentimento do Google. Chamada por GET, em aba nova.
+     *
+     * Não pode ser POST: o Chrome aplica `form-action 'self'` (ver
+     * App\Http\Middleware\SecurityHeaders) também ao redirecionamento que um
+     * envio de formulário segue, e o salto para accounts.google.com era
+     * bloqueado. Um link comum não passa por essa diretiva.
+     *
+     * Não muda estado do sistema: apenas emite um `state` de uso único no cache
+     * e manda o navegador ao Google. Quem forçasse esta URL não conseguiria
+     * nada — o callback exige o `state` emitido aqui e o consentimento do dono
+     * da conta Google.
      */
     public function agendaGoogleConnect(): RedirectResponse
     {

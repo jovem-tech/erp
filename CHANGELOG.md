@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.42.1.0 — 2026-08-23 09:28
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige conexao com o Google Agenda bloqueada por form-action self: rota de consentimento vira GET em aba nova e a pagina de retorno deixa de prometer fechamento automatico
+- **Arquivos:** frontends/desktop/routes/web.php,frontends/desktop/resources/views/configurations/integrations.blade.php,backend/app/Http/Controllers/Api/V1/AgendaGoogleController.php
+
 ## v5.42.0.0 — 2026-08-23 07:20
 - **Tier:** minor
 - **Autor/Agente:** Codex

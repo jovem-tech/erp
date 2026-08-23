@@ -48,6 +48,16 @@
 - [x] Rolagem inicial no primeiro compromisso do período
 - [x] CSS claro e escuro; camadas `sticky` com ordem explícita
 
+## Correções pós-implantação  ✅
+
+- [x] `form-action 'self'` bloqueava o POST de conexão ao seguir o 302 para o
+      Google (erro real na VPS) — rota virou `GET` e o controle virou link
+- [x] Consentimento abre em aba nova, para o guard de sessão não ler a saída da
+      aba do painel como "navegador fechado"
+- [x] Página de retorno deixou de prometer fechamento automático, que o
+      navegador recusa em aba aberta por link
+- [x] Testes de regressão travando o método da rota e o `target="_blank"`
+
 ## Testes  ✅
 
 - [x] `AgendaApiTest` — 10 testes (CRUD, RBAC, autoridade, resumo)

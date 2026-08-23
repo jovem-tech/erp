@@ -815,11 +815,27 @@
                                     <i class="bi bi-plug me-1"></i>Desconectar
                                 </button>
                             @elseif ($agendaGoogleConfigured)
-                                <button type="submit" form="agendaGoogleConnectForm" class="btn btn-primary rounded-pill">
+                                {{-- Link, não botão de formulário: o Chrome aplica
+                                     `form-action 'self'` também ao redirecionamento que
+                                     um POST segue, e o salto para accounts.google.com
+                                     era bloqueado. Em aba nova para o painel não
+                                     disparar o `pagehide` que o guard de sessão leria
+                                     como "navegador fechado". --}}
+                                <a href="{{ route('configurations.integrations.agenda-google.connect') }}"
+                                   target="_blank" rel="noopener"
+                                   class="btn btn-primary rounded-pill">
                                     <i class="bi bi-google me-1"></i>Conectar com o Google
-                                </button>
+                                </a>
                             @endif
                         </div>
+
+                        @if (! $agendaGoogleConnected && $agendaGoogleConfigured)
+                            <p class="surface-subtitle mt-3 mb-0">
+                                A autorização abre numa aba nova. Depois de conceder o acesso,
+                                a aba se fecha sozinha — volte aqui e recarregue a página para
+                                ver a conexão ativa.
+                            </p>
+                        @endif
 
                         @if ($agendaGoogleConnected)
                             <dl class="row mt-4 mb-0 small">
@@ -896,7 +912,6 @@
                  porque HTML não permite <form> aninhado; os controles do painel
                  as alcançam pelo atributo `form=`. --}}
             <form method="post" id="agendaGoogleCredentialsForm" action="{{ route('configurations.integrations.agenda-google.credentials') }}" class="d-none">@csrf</form>
-            <form method="post" id="agendaGoogleConnectForm" action="{{ route('configurations.integrations.agenda-google.connect') }}" class="d-none">@csrf</form>
             <form method="post" id="agendaGoogleManualForm" action="{{ route('configurations.integrations.agenda-google.connect-manual') }}" class="d-none">@csrf</form>
             <form method="post" id="agendaGoogleDisconnectForm" action="{{ route('configurations.integrations.agenda-google.disconnect') }}" class="d-none">@csrf</form>
             <form method="post" id="agendaGoogleSyncForm" action="{{ route('configurations.integrations.agenda-google.sync') }}" class="d-none">@csrf</form>

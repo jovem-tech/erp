@@ -187,10 +187,17 @@ class EmailIntegrationSettingsService
             ->pluck('valor', 'chave')
             ->all();
 
-        return array_merge(self::DEFAULTS, array_map(
-            static fn ($value): string => trim((string) $value),
-            is_array($stored) ? $stored : []
-        ));
+        $settings = self::DEFAULTS;
+
+        foreach (is_array($stored) ? $stored : [] as $key => $value) {
+            $settings[(string) $key] = SecretSettings::decrypt(
+                (string) $key,
+                (string) $value,
+                self::SECRET_KEYS
+            );
+        }
+
+        return $settings;
     }
 
     /**
@@ -364,7 +371,7 @@ class EmailIntegrationSettingsService
         Configuration::query()->updateOrInsert(
             ['chave' => $key],
             [
-                'valor' => $value,
+                'valor' => SecretSettings::encrypt($key, $value, self::SECRET_KEYS),
                 'tipo' => 'texto',
                 'updated_at' => now(),
                 'created_at' => now(),

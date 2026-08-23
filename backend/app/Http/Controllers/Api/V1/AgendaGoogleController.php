@@ -75,7 +75,10 @@ class AgendaGoogleController extends BaseApiController
         $error = trim((string) $request->query('error', ''));
 
         if ($error !== '') {
-            return $this->closingPage('Autorização cancelada no Google: '.e($error), false);
+            return $this->closingPage(
+                'Autorização cancelada no Google ('.e($error).'). Feche esta aba e tente novamente pelo painel.',
+                false
+            );
         }
 
         try {
@@ -86,10 +89,16 @@ class AgendaGoogleController extends BaseApiController
         } catch (Throwable $exception) {
             report($exception);
 
-            return $this->closingPage(e($exception->getMessage()), false);
+            return $this->closingPage(
+                e($exception->getMessage()).' Feche esta aba e tente novamente pelo painel.',
+                false
+            );
         }
 
-        return $this->closingPage('Google Agenda conectado com sucesso. Você já pode fechar esta janela.', true);
+        return $this->closingPage(
+            'Google Agenda conectado. Feche esta aba e recarregue a tela de Integrações no painel para ver a conexão ativa.',
+            true
+        );
     }
 
     /** Saida de emergencia para ambientes onde o Google recusa o redirect URI. */
@@ -154,28 +163,38 @@ class AgendaGoogleController extends BaseApiController
     }
 
     /**
-     * O consentimento acontece numa janela separada; esta pagina fecha sozinha
-     * e devolve o foco ao painel.
+     * Pagina de retorno do consentimento, exibida na aba que o painel abriu.
+     *
+     * Sem auto-close de proposito: `window.close()` so funciona em janela que
+     * o proprio script abriu. Esta aba nasce de um link com target="_blank",
+     * entao o navegador recusaria o fechamento e ainda registraria um aviso no
+     * console. Melhor pedir a acao do que prometer o que nao acontece.
      */
     private function closingPage(string $message, bool $success): Response
     {
         $color = $success ? '#1f9d55' : '#c53030';
+        $icon = $success ? '&#10003;' : '&#33;';
 
         $html = <<<HTML
             <!doctype html>
             <html lang="pt-BR"><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
             <title>Google Agenda</title>
             <style>
               body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f6f7fb;margin:0;
-                   display:flex;align-items:center;justify-content:center;height:100vh;padding:24px}
+                   display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
               .card{background:#fff;border-radius:14px;padding:32px;max-width:460px;text-align:center;
                     box-shadow:0 10px 40px rgba(15,23,42,.12)}
-              h1{font-size:18px;margin:0 0 12px;color:{$color}}
-              p{margin:0;color:#475569;line-height:1.5;font-size:14px}
+              .mark{display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;
+                    border-radius:999px;margin-bottom:14px;font-size:22px;color:#fff;background:{$color}}
+              h1{font-size:18px;margin:0 0 10px;color:#0f172a}
+              p{margin:0;color:#475569;line-height:1.55;font-size:14px}
             </style></head>
-            <body><div class="card"><h1>Google Agenda</h1><p>{$message}</p></div>
-            <script>setTimeout(function(){ window.close(); }, 4000);</script>
-            </body></html>
+            <body><div class="card">
+              <span class="mark">{$icon}</span>
+              <h1>Google Agenda</h1>
+              <p>{$message}</p>
+            </div></body></html>
             HTML;
 
         return response($html, $success ? 200 : 400)

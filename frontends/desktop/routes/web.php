@@ -246,7 +246,13 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/configuracoes/integracoes/agenda-google/credenciais', [ConfigurationController::class, 'agendaGoogleSaveCredentials'])
         ->middleware('desktop.permission:configuracoes,editar')
         ->name('configurations.integrations.agenda-google.credentials');
-    Route::post('/configuracoes/integracoes/agenda-google/conectar', [ConfigurationController::class, 'agendaGoogleConnect'])
+    // GET, e nao POST, de proposito: esta rota termina num 302 para
+    // accounts.google.com, e o Chrome aplica `form-action 'self'` tambem aos
+    // redirecionamentos de um envio de formulario — o POST era bloqueado antes
+    // de sair. Um link comum nao passa por essa diretiva. A tela abre em aba
+    // nova, para a aba do painel nao disparar o `pagehide` que o guard de
+    // sessao leria como "navegador fechado".
+    Route::get('/configuracoes/integracoes/agenda-google/conectar', [ConfigurationController::class, 'agendaGoogleConnect'])
         ->middleware('desktop.permission:configuracoes,editar')
         ->name('configurations.integrations.agenda-google.connect');
     Route::post('/configuracoes/integracoes/agenda-google/conectar-manual', [ConfigurationController::class, 'agendaGoogleConnectManual'])
