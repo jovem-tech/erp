@@ -9,9 +9,13 @@ use Illuminate\Support\Facades\Schema;
 
 class ReconcileAgendaSources extends Command
 {
+    // Sem valor padrao nas opcoes de proposito: o horizonte da varredura vive
+    // em AgendaSourceReconciler. Repeti-lo aqui ja causou um bug real - a
+    // constante foi ampliada e o default do comando continuou em 180, entao a
+    // execucao agendada seguiu cortando o que a classe passara a aceitar.
     protected $signature = 'agenda:sincronizar-origens
-        {--dias-atras=30 : Quantos dias para tras considerar}
-        {--dias-a-frente=180 : Quantos dias para frente considerar}';
+        {--dias-atras= : Sobrescreve quantos dias para tras considerar}
+        {--dias-a-frente= : Sobrescreve quantos dias para frente considerar}';
 
     protected $description = 'Traz para a agenda os vencimentos, prazos, retornos e cobrancas dos demais modulos.';
 
@@ -25,8 +29,15 @@ class ReconcileAgendaSources extends Command
             return self::SUCCESS;
         }
 
-        $from = CarbonImmutable::now()->subDays(max(0, (int) $this->option('dias-atras')))->startOfDay();
-        $to = CarbonImmutable::now()->addDays(max(1, (int) $this->option('dias-a-frente')))->endOfDay();
+        $diasAtras = $this->option('dias-atras');
+        $diasAFrente = $this->option('dias-a-frente');
+
+        $from = $diasAtras !== null && $diasAtras !== ''
+            ? CarbonImmutable::now()->subDays(max(0, (int) $diasAtras))->startOfDay()
+            : null;
+        $to = $diasAFrente !== null && $diasAFrente !== ''
+            ? CarbonImmutable::now()->addDays(max(1, (int) $diasAFrente))->endOfDay()
+            : null;
 
         $report = $reconciler->reconcile($from, $to);
 

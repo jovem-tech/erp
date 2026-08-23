@@ -61,21 +61,28 @@ class DashboardSummaryTest extends TestCase
                 'imei' => 'IMEI-12345',
             ]);
 
-            DB::table('os_status')->insert([
-                'codigo' => 'irreparavel',
-                'nome' => 'Irreparável',
-                'grupo_macro' => 'finalizado_sem_reparo',
-                'icone' => null,
-                'cor' => 'danger',
-                'ordem_fluxo' => 40,
-                'status_final' => 1,
-                'status_pausa' => 0,
-                'gera_evento_crm' => 1,
-                'estado_fluxo_padrao' => 'em_atendimento',
-                'ativo' => 1,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+            // updateOrInsert e nao insert: seedOrderCatalog() no setUp ja cria
+            // o status 'irreparavel' (tests/Concerns/BuildsLegacyErpSchema.php).
+            // Duplicar violava o UNIQUE de os_status.codigo — o que so' nao
+            // aparecia porque este teste morria antes, no primeiro write em
+            // storage/ (Permission denied).
+            DB::table('os_status')->updateOrInsert(
+                ['codigo' => 'irreparavel'],
+                [
+                    'nome' => 'Irreparável',
+                    'grupo_macro' => 'finalizado_sem_reparo',
+                    'icone' => null,
+                    'cor' => 'danger',
+                    'ordem_fluxo' => 40,
+                    'status_final' => 1,
+                    'status_pausa' => 0,
+                    'gera_evento_crm' => 1,
+                    'estado_fluxo_padrao' => 'em_atendimento',
+                    'ativo' => 1,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]
+            );
 
             $this->createOrderRecord([
                 'numero_os' => 'OS25120099',

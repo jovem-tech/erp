@@ -58,6 +58,21 @@
       navegador recusa em aba aberta por link
 - [x] Testes de regressão travando o método da rota e o `target="_blank"`
 
+- [x] Retorno pós-serviço não aparecia na agenda: horizonte da varredura era
+      180 dias — o mesmo padrão da tela de baixa — e o valor estava duplicado no
+      comando, anulando a ampliação da constante
+- [x] `reconcileForDate()` reflete a obrigação na agenda no ato, em qualquer
+      horizonte; ligado à baixa da OS
+
+- [x] Contas a receber de valor zero (cobrança de OS sem saldo) inundavam o
+      calendário: fontes passam a ignorar título sem valor e a tratar saldo ≤ 0
+      como resolvido; descrição mostra o que falta, não o valor de face
+
+- [x] E-mail da conta Google vinculada exibido no painel de Integrações e no
+      card da Agenda, com recuperação quando a captura falha ao conectar
+- [x] Acessos ao resumo do Google na view passam a tolerar chave ausente (um
+      resumo incompleto derrubava a página de integrações inteira com 500)
+
 ## Testes  ✅
 
 - [x] `AgendaApiTest` — 10 testes (CRUD, RBAC, autoridade, resumo)

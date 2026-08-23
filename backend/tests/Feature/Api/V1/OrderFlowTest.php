@@ -20,6 +20,7 @@ use App\Services\Files\LegacyCompatibleFileAdapter;
 use App\Services\Orders\OrderClosureService;
 use App\Services\Pdf\PdfDefaultTemplates;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\File;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
@@ -70,6 +71,22 @@ class OrderFlowTest extends TestCase
         config([
             'filesystems.disks.legacy_public.root' => $this->legacyPublicRoot,
         ]);
+    }
+
+    /**
+     * Remove o diretorio criado no setUp.
+     *
+     * Sem isto cada METODO de teste deixava uma pasta `legacy-public-<uniqid>`
+     * para tras — ~80 por execucao da suite, que em alguns meses viraram
+     * 14 mil diretorios e 157 MB no storage.
+     */
+    protected function tearDown(): void
+    {
+        if (isset($this->legacyPublicRoot) && is_dir($this->legacyPublicRoot)) {
+            File::deleteDirectory($this->legacyPublicRoot);
+        }
+
+        parent::tearDown();
     }
 
     public function test_index_returns_only_orders_assigned_to_authenticated_technician(): void
@@ -3120,6 +3137,147 @@ class OrderFlowTest extends TestCase
 
         $this->assertNull($duplicateId);
         $this->assertSame(1, DB::table('crm_followups')->where('os_id', $orderId)->count());
+
+        // O retorno precisa estar NA AGENDA já nesta resposta. Antes disso ele
+        // só aparecia no tique seguinte de `agenda:sincronizar-origens` — até
+        // quinze minutos depois —, e quem acabou de agendar abria a agenda,
+        // não encontrava nada e concluía que o agendamento falhou.
+        $this->assertDatabaseHas('agenda_compromissos', [
+            'origem_tipo' => 'retorno_pos_servico',
+            'origem_id' => (int) $followup->id,
+            'status' => 'pendente',
+        ]);
+    }
+
+    public function test_encerramento_sem_cobranca_nao_cria_titulo_a_receber(): void
+    {
+        // Regressão real: equipamento descartado e devolvido sem reparo saíam
+        // da baixa com uma cobrança aberta no valor final da OS. Eram 24
+        // títulos e R$ 2.050,00 de contas a receber contra clientes que não
+        // deviam nada — refletidos no fluxo de caixa, no DRE e na agenda.
+        $this->assertNonBilledClosureLeavesNoReceivable('descartado');
+    }
+
+    public function test_devolvido_sem_reparo_nao_cria_titulo_a_receber(): void
+    {
+        $this->assertNonBilledClosureLeavesNoReceivable('devolvido_sem_reparo');
+    }
+
+    public function test_entregue_sem_custo_nao_cria_titulo_a_receber(): void
+    {
+        $this->assertNonBilledClosureLeavesNoReceivable('entregue_reparado_sem_custo');
+    }
+
+    private function assertNonBilledClosureLeavesNoReceivable(string $encerramento): void
+    {
+        [$manager, $orderId] = $this->seedManagerOrderForUpdate();
+        DB::table('os')->where('id', $orderId)->update(['valor_final' => 220.00]);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/v1/orders/{$orderId}/closure", [
+                'encerrar_como' => $encerramento,
+                'data_entrega' => now()->toDateString(),
+            ])->assertOk();
+
+        $abertos = DB::table('financeiro')
+            ->where('os_id', $orderId)
+            ->where('tipo', 'receber')
+            ->where('status', '!=', 'cancelado')
+            ->count();
+
+        $this->assertSame(0, $abertos, "Encerramento {$encerramento} deixou cobrança em aberto.");
+    }
+
+    public function test_encerramento_sem_cobranca_cancela_titulo_preexistente_sem_movimento(): void
+    {
+        [$manager, $orderId] = $this->seedManagerOrderForUpdate();
+        DB::table('os')->where('id', $orderId)->update(['valor_final' => 150.00]);
+
+        $tituloId = (int) DB::table('financeiro')->insertGetId([
+            'os_id' => $orderId,
+            'cliente_id' => (int) DB::table('os')->where('id', $orderId)->value('cliente_id'),
+            'tipo' => 'receber',
+            'categoria' => 'Serviço',
+            'descricao' => 'Cobrança da OS',
+            'valor' => 150.00,
+            'data_vencimento' => now()->toDateString(),
+            'status' => 'pendente',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $token = $this->loginAndGetToken($manager->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/v1/orders/{$orderId}/closure", [
+                'encerrar_como' => 'descartado',
+                'data_entrega' => now()->toDateString(),
+            ])->assertOk();
+
+        $this->assertSame('cancelado', DB::table('financeiro')->where('id', $tituloId)->value('status'));
+    }
+
+    public function test_encerramento_sem_cobranca_preserva_titulo_com_valor_ja_recebido(): void
+    {
+        // Dinheiro que já entrou no caixa não pode ser apagado por um
+        // encerramento: devolver ou reter é decisão humana.
+        [$manager, $orderId] = $this->seedManagerOrderForUpdate();
+        DB::table('os')->where('id', $orderId)->update(['valor_final' => 200.00]);
+        $token = $this->loginAndGetToken($manager->email);
+
+        // Adiantamento antes de o equipamento se revelar irreparável: mesmo
+        // endpoint da baixa, com classificacao_baixa='adiantamento'.
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/v1/orders/{$orderId}/closure", [
+                'classificacao_baixa' => 'adiantamento',
+                'encerrar_como' => 'entregue_reparado_pago',
+                'data_entrega' => now()->toDateString(),
+                'recebimentos' => [['valor' => 50.00, 'forma_pagamento' => 'pix']],
+            ])->assertOk();
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/v1/orders/{$orderId}/closure", [
+                'encerrar_como' => 'descartado',
+                'data_entrega' => now()->toDateString(),
+            ])->assertOk();
+
+        $titulo = DB::table('financeiro')->where('os_id', $orderId)->where('tipo', 'receber')->first();
+
+        $this->assertNotNull($titulo);
+        $this->assertNotSame('cancelado', $titulo->status);
+        $this->assertSame(
+            50.0,
+            (float) DB::table('financeiro_movimentos')->where('financeiro_id', $titulo->id)->sum('valor_movimento')
+        );
+    }
+
+    public function test_agendar_retorno_alem_do_horizonte_da_varredura_entra_na_agenda_na_hora(): void
+    {
+        [$manager, $orderId] = $this->seedManagerOrderForUpdate();
+        DB::table('os')->where('id', $orderId)->update(['valor_final' => 100.00]);
+        $token = $this->loginAndGetToken($manager->email);
+
+        // Dois anos à frente: muito além do horizonte da varredura periódica.
+        $retornoData = now()->addDays(730)->toDateString();
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/v1/orders/{$orderId}/closure", [
+                'encerrar_como' => 'entregue_reparado_pago',
+                'data_entrega' => now()->toDateString(),
+                'agendar_retorno' => true,
+                'retorno_data' => $retornoData,
+                'recebimentos' => [
+                    ['valor' => 100.00, 'forma_pagamento' => 'pix'],
+                ],
+            ])->assertOk();
+
+        $followupId = (int) DB::table('crm_followups')->where('os_id', $orderId)->value('id');
+
+        $this->assertDatabaseHas('agenda_compromissos', [
+            'origem_tipo' => 'retorno_pos_servico',
+            'origem_id' => $followupId,
+        ]);
     }
 
     public function test_process_pending_os_collections_command_sends_due_charges(): void

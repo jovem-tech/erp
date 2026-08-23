@@ -22,6 +22,11 @@ class PaymentIntegrationSettingsService
         'pagamentos_asaas_base_url' => 'https://api-sandbox.asaas.com/v3',
         'pagamentos_asaas_api_key' => '',
         'pagamentos_asaas_billing_type_default' => 'PIX',
+        'pagamentos_inter_enabled' => '0',
+        'pagamentos_inter_ambiente' => 'sandbox',
+        'pagamentos_inter_client_id' => '',
+        'pagamentos_inter_client_secret' => '',
+        'pagamentos_inter_conta_corrente' => '',
     ];
 
     /**
@@ -30,6 +35,7 @@ class PaymentIntegrationSettingsService
     private const SECRET_KEYS = [
         'pagamentos_mercadopago_access_token',
         'pagamentos_asaas_api_key',
+        'pagamentos_inter_client_secret',
     ];
 
     /**
@@ -61,6 +67,28 @@ class PaymentIntegrationSettingsService
         }
 
         return $this->payload();
+    }
+
+    /**
+     * Settings do Inter ja' decifradas.
+     *
+     * Existe para o App\Services\Integrations\Inter\InterCredentials nao
+     * reimplementar leitura + decifragem de `configuracoes` — o segredo tem um
+     * unico caminho de saida.
+     *
+     * @return array<string, string>
+     */
+    public function interSettings(): array
+    {
+        $settings = $this->loadSettings();
+
+        return [
+            'pagamentos_inter_enabled' => $settings['pagamentos_inter_enabled'] ?? '0',
+            'pagamentos_inter_ambiente' => $settings['pagamentos_inter_ambiente'] ?? 'sandbox',
+            'pagamentos_inter_client_id' => $settings['pagamentos_inter_client_id'] ?? '',
+            'pagamentos_inter_client_secret' => $settings['pagamentos_inter_client_secret'] ?? '',
+            'pagamentos_inter_conta_corrente' => $settings['pagamentos_inter_conta_corrente'] ?? '',
+        ];
     }
 
     /**
@@ -237,6 +265,12 @@ class PaymentIntegrationSettingsService
                 continue;
             }
 
+            if ($key === 'pagamentos_inter_ambiente') {
+                $ambiente = mb_strtolower(trim((string) $value));
+                $normalized[$key] = in_array($ambiente, ['sandbox', 'producao'], true) ? $ambiente : 'sandbox';
+                continue;
+            }
+
             if ($key === 'pagamentos_asaas_billing_type_default') {
                 $billingType = strtoupper(trim((string) $value));
                 $normalized[$key] = in_array($billingType, ['PIX', 'BOLETO', 'CREDIT_CARD'], true) ? $billingType : 'PIX';
@@ -265,7 +299,22 @@ class PaymentIntegrationSettingsService
             && trim((string) ($settings['pagamentos_asaas_base_url'] ?? '')) !== ''
             && trim((string) ($settings['pagamentos_asaas_api_key'] ?? '')) !== '';
 
+        $interEnabled = $this->isTruthy((string) ($settings['pagamentos_inter_enabled'] ?? '0'));
+        // "Pronto" aqui e' so' o que esta' EM `configuracoes`. O certificado
+        // vive em disco e quem sabe dele e' o InterCredentials — a tela mostra
+        // esse lado pela rota /financeiro/inter/status.
+        $interReady = $interEnabled
+            && trim((string) ($settings['pagamentos_inter_client_id'] ?? '')) !== ''
+            && trim((string) ($settings['pagamentos_inter_client_secret'] ?? '')) !== '';
+
         return [
+            'inter' => [
+                'enabled' => $interEnabled,
+                'ready' => $interReady,
+                'ambiente' => (string) ($settings['pagamentos_inter_ambiente'] ?? 'sandbox'),
+                'status' => $interReady ? 'success' : 'secondary',
+                'status_label' => $interReady ? 'Credenciais salvas' : 'Aguardando configuração',
+            ],
             'mercado_pago' => [
                 'enabled' => $mercadoPagoEnabled,
                 'ready' => $mercadoPagoReady,
@@ -300,6 +349,7 @@ class PaymentIntegrationSettingsService
         return in_array($key, [
             'pagamentos_mercadopago_enabled',
             'pagamentos_asaas_enabled',
+            'pagamentos_inter_enabled',
         ], true);
     }
 

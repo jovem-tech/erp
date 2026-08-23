@@ -4,8 +4,6 @@ namespace App\Services\Agenda\Google;
 
 use App\Models\Configuration;
 use App\Support\SecretSettings;
-use Illuminate\Contracts\Encryption\DecryptException;
-use Illuminate\Support\Facades\Crypt;
 
 /**
  * Credenciais e estado da conexao com o Google Agenda.
@@ -49,9 +47,11 @@ class GoogleCalendarSettingsService
     ];
 
     /**
-     * Cifradas em repouso com o APP_KEY. O refresh token e uma credencial de
-     * longa duracao: quem le a tabela `configuracoes` num dump nao pode sair
-     * escrevendo na agenda da empresa.
+     * Cifradas em repouso com o APP_KEY, via SecretSettings::encrypt/decrypt -
+     * a mesma rotina dos demais servicos de integracao, para as duas nao
+     * divergirem. O refresh token e uma credencial de longa duracao: quem le a
+     * tabela `configuracoes` num dump nao pode sair escrevendo na agenda da
+     * empresa.
      *
      * @var array<int, string>
      */
@@ -107,9 +107,7 @@ class GoogleCalendarSettingsService
 
     public function put(string $key, string $value): void
     {
-        $stored = in_array($key, self::ENCRYPTED_KEYS, true) && $value !== ''
-            ? Crypt::encryptString($value)
-            : $value;
+        $stored = SecretSettings::encrypt($key, $value, self::ENCRYPTED_KEYS);
 
         Configuration::query()->updateOrInsert(
             ['chave' => $key],
@@ -173,27 +171,10 @@ class GoogleCalendarSettingsService
         $settings = self::DEFAULTS;
 
         foreach (is_array($stored) ? $stored : [] as $key => $value) {
-            $settings[(string) $key] = $this->decode((string) $key, (string) $value);
+            $settings[(string) $key] = SecretSettings::decrypt((string) $key, (string) $value, self::ENCRYPTED_KEYS);
         }
 
         return $settings;
-    }
-
-    /**
-     * Tolera valor legado em texto puro em vez de estourar DecryptException -
-     * mesmo raciocinio do cast App\Casts\EncryptedSecret.
-     */
-    private function decode(string $key, string $value): string
-    {
-        if ($value === '' || ! in_array($key, self::ENCRYPTED_KEYS, true)) {
-            return trim($value);
-        }
-
-        try {
-            return trim(Crypt::decryptString($value));
-        } catch (DecryptException) {
-            return trim($value);
-        }
     }
 
     /**

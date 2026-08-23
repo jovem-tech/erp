@@ -341,11 +341,131 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Processos e Modelos')
             ->assertSee('Relatórios')
             ->assertSee('Fluxo de Caixa')
-            ->assertSee('Ferramentas')
-            ->assertSee('Precificação')
             ->assertSee('Acesso e Integrações')
             ->assertSee('Grupos e Permissões')
-            ->assertSee('Integrações');
+            ->assertSee('Integrações')
+            // O grupo "Ferramentas" saiu da sidebar: as três telas dele são as
+            // mesmas do "Mais ações" de Financeiro > Lançamentos.
+            ->assertDontSee('Ferramentas')
+            ->assertDontSee('Precificação')
+            ->assertDontSee('Cartões e Taxas')
+            ->assertDontSee('Configurações Financeiras');
+    }
+
+    public function test_clients_list_offers_equipments_shortcut_instead_of_sidebar_entry(): void
+    {
+        // "Aparelhos / Equip." saiu da sidebar por ser cadastro derivado do
+        // cliente; a listagem passa a ser alcançada pelo "Mais ações" daqui.
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/clients*' => Http::response([
+                'status' => 'success',
+                'data' => ['clients' => []],
+                'error' => null,
+                'meta' => [
+                    'pagination' => [
+                        'current_page' => 1,
+                        'per_page' => 15,
+                        'total' => 0,
+                        'last_page' => 1,
+                        'from' => 0,
+                        'to' => 0,
+                    ],
+                ],
+            ]),
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response([
+                'status' => 'success',
+                'data' => ['items' => [], 'unread_count' => 0],
+                'error' => null,
+                'meta' => [
+                    'pagination' => [
+                        'current_page' => 1,
+                        'per_page' => 6,
+                        'total' => 0,
+                        'last_page' => 1,
+                        'from' => 0,
+                        'to' => 0,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $this
+            ->withSession($this->desktopSession([
+                'clientes' => ['visualizar'],
+                'equipamentos' => ['visualizar', 'criar'],
+            ], syncedAt: 0))
+            ->get('/clientes')
+            ->assertOk()
+            ->assertDontSee('Aparelhos / Equip.')
+            ->assertSee('Mais ações')
+            ->assertSee('Aparelhos / Equipamentos')
+            ->assertSee('Novo equipamento')
+            ->assertSee(route('equipments.index'), false)
+            ->assertSee(route('equipments.help'), false);
+    }
+
+    public function test_equipments_list_offers_clients_shortcut(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/equipments*' => Http::response([
+                'status' => 'success',
+                'data' => ['equipments' => []],
+                'error' => null,
+                'meta' => [
+                    'pagination' => [
+                        'current_page' => 1,
+                        'per_page' => 15,
+                        'total' => 0,
+                        'last_page' => 1,
+                        'from' => 0,
+                        'to' => 0,
+                    ],
+                ],
+            ]),
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response([
+                'status' => 'success',
+                'data' => ['items' => [], 'unread_count' => 0],
+                'error' => null,
+                'meta' => [
+                    'pagination' => [
+                        'current_page' => 1,
+                        'per_page' => 6,
+                        'total' => 0,
+                        'last_page' => 1,
+                        'from' => 0,
+                        'to' => 0,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $this
+            ->withSession($this->desktopSession([
+                'equipamentos' => ['visualizar'],
+                'clientes' => ['visualizar', 'criar'],
+            ], syncedAt: 0))
+            ->get('/equipamentos')
+            ->assertOk()
+            ->assertSee('Mais ações')
+            ->assertSee('Novo cliente')
+            ->assertSee(route('clients.index'), false)
+            ->assertSee(route('clients.create'), false);
+    }
+
+    public function test_hidden_sidebar_entries_still_serve_as_permission_fallback(): void
+    {
+        // Itens ocultos (equipamentos e o grupo "Ferramentas") continuam no
+        // cálculo de firstAllowedRouteName(): quem só tem permissão neles
+        // precisa de um destino ao esbarrar num redirecionamento de permissão.
+        $this
+            ->withSession($this->desktopSession(['equipamentos' => ['visualizar']]))
+            ->get('/usuarios')
+            ->assertRedirect(route('equipments.index'));
+
+        $this
+            ->withSession($this->desktopSession(['precificacao' => ['visualizar']]))
+            ->get('/usuarios')
+            ->assertRedirect(route('financeiro.precificacao.index'));
     }
 
     public function test_permission_middleware_redirects_to_first_allowed_route(): void

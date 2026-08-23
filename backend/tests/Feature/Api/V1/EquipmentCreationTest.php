@@ -45,7 +45,15 @@ class EquipmentCreationTest extends TestCase
             ->assertJsonPath('data.form.max_photos', 4)
             ->assertJsonPath('data.form.password_modes.0.value', 'desenho')
             ->assertJsonPath('data.form.collector.pairing_ttl_minutes', 30)
-            ->assertJsonPath('data.form.collector.local_root', config('services.collector.local_root'))
+            // O root do coletor e' resolvido por sistema operacional
+            // (EquipmentWorkflowService::getCollectorLocalRootPath). Fixar a
+            // chave do Windows quebrava no ambiente oficial, que e' Linux
+            // desde 2026-07-04.
+            ->assertJsonPath('data.form.collector.local_root', config(
+                PHP_OS_FAMILY === 'Windows'
+                    ? 'services.collector.local_root'
+                    : 'services.collector.local_root_linux'
+            ))
             ->assertJsonPath('data.form.desktop_defaults.marca_nome', 'Montado')
             ->assertJsonPath('data.form.desktop_defaults.modelo_nome', 'Desktop montado')
             ->assertJsonStructure([
@@ -262,9 +270,14 @@ class EquipmentCreationTest extends TestCase
                 'numero_serie' => 'SN-SEM-FOTO-001',
             ]);
 
+        // O contrato e' "fotos foi rejeitado", nao a frase exata: a mensagem
+        // passa pelo tradutor (APP_LOCALE=pt_BR) e reescrever a copy nao pode
+        // quebrar o teste.
         $response->assertUnprocessable()
             ->assertJsonPath('error.code', 'VALIDATION_ERROR')
-            ->assertJsonPath('error.details.fotos.0', 'validation.required');
+            ->assertJsonStructure(['error' => ['details' => ['fotos']]]);
+
+        $this->assertNotEmpty($response->json('error.details.fotos'));
     }
 
     public function test_store_rejects_accessories_because_they_belong_to_an_order(): void
@@ -549,7 +562,11 @@ class EquipmentCreationTest extends TestCase
         $root = storage_path('framework/testing/collector-local-read');
         @mkdir($root, 0777, true);
 
+        // As duas chaves: getCollectorLocalRootPath() escolhe por sistema
+        // operacional, entao sobrescrever so' a do Windows nao tem efeito no
+        // ambiente oficial, que e' Linux.
         config()->set('services.collector.local_root', $root);
+        config()->set('services.collector.local_root_linux', $root);
 
         file_put_contents($root.DIRECTORY_SEPARATOR.'last-snapshot.json', json_encode([
             'savedAtUtc' => '2026-06-24T18:00:00Z',
@@ -590,7 +607,9 @@ class EquipmentCreationTest extends TestCase
         @mkdir($root, 0777, true);
 
         config()->set('services.collector.local_root', $root);
+        config()->set('services.collector.local_root_linux', $root);
         config()->set('services.collector.published_root', storage_path('framework/testing/collector-published-missing'));
+        config()->set('services.collector.published_root_linux', storage_path('framework/testing/collector-published-missing'));
 
         file_put_contents($root.DIRECTORY_SEPARATOR.'last-snapshot.json', json_encode([
             'snapshot' => [
@@ -635,8 +654,18 @@ class EquipmentCreationTest extends TestCase
 
         $code = (string) $pairingResponse->json('data.pairing.code');
 
+        // Desde 2026_07_11_190000 a validacao usa o submission_token de uso
+        // unico do pareamento, nao mais o segredo global COLLECTOR_API_TOKEN.
+        // Ele nao volta no JSON de proposito (so' e' embutido no script
+        // personalizado do coletor), entao o teste le do banco.
+        $submissionToken = (string) DB::table('equipment_collector_pairings')
+            ->where('code', $code)
+            ->value('submission_token');
+
+        $this->assertNotSame('', $submissionToken);
+
         $snapshotResponse = $this
-            ->withHeader('X-Collector-Token', 'collector-secret')
+            ->withHeader('X-Collector-Token', $submissionToken)
             ->postJson('/api/v1/collector/snapshots', [
                 'pairing_code' => $code,
                 'source' => 'bench-agent',

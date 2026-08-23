@@ -19,16 +19,34 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
-        <!-- Cache de views proprio da suite. Sem isto, testes (usuario do dev)
-             e site (www-data) compilam Blade no MESMO diretorio e quem chegar
-             depois quebra: o teste morre com "touch(): Utime failed" ao tocar
-             arquivo do outro dono, e o site responde 500 pelo mesmo motivo. -->
-        <env name="VIEW_COMPILED_PATH" value="./storage/framework/testing/views"/>
+        <!-- Storage proprio da suite. Generaliza o que antes so' valia para as
+             views compiladas: testes rodam como o usuario do dev, mas
+             storage/ pertence a www-data e storage/app/private e' 0750 — o
+             grupo nao escreve. Resultado: todo teste que grava arquivo
+             (thumbnail de PDF, foto de equipamento, PDF de orcamento) morria
+             com "mkdir(): Permission denied", e os que sobreviviam deixavam
+             lixo no storage real (157 MB / 14 mil entradas acumuladas).
+             Aqui a suite escreve num diretorio que ela mesma possui. -->
+        <env name="LARAVEL_STORAGE_PATH" value="./.phpunit-storage"/>
+        <!-- Mantido explicito: sem isto, testes (usuario do dev) e site
+             (www-data) compilam Blade no MESMO diretorio e quem chegar depois
+             quebra com "touch(): Utime failed". -->
+        <env name="VIEW_COMPILED_PATH" value="./.phpunit-storage/framework/views"/>
         <!-- APP_URL fixo: sem isto os testes herdam a URL real do .env e o
              self-check de integracoes faz chamada HTTP REAL ao servidor dev
              (fora do Http::fake, que so cobre 127.0.0.1:8000). -->
         <env name="APP_URL" value="http://127.0.0.1:8000"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <!-- Coletor de bancada com valores fixos: sem isto a suite herda o
+             .env da maquina do dev (COLLECTOR_LOCAL_ROOT_LINUX aponta para a
+             storage real aqui) e os testes que afirmam o caminho padrao
+             falham em qualquer maquina que tenha a variavel definida. Mesmo
+             raciocinio do APP_URL logo acima. -->
+        <env name="COLLECTOR_API_TOKEN" value=""/>
+        <env name="COLLECTOR_LOCAL_ROOT" value="C:\JovemTechBenchCollector"/>
+        <env name="COLLECTOR_LOCAL_ROOT_LINUX" value="/home/JovemTechBenchCollector"/>
+        <env name="COLLECTOR_PUBLISHED_ROOT" value=""/>
+        <env name="COLLECTOR_PUBLISHED_ROOT_LINUX" value=""/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>

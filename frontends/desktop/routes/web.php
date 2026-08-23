@@ -1047,9 +1047,6 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::match(['put', 'patch'], '/conhecimento/fluxo-os/status/{status}', [OrderStatusFlowController::class, 'updateStatus'])
         ->middleware('desktop.permission:conhecimento,editar')
         ->name('knowledge.os-flow.status.update');
-    Route::match(['put', 'patch'], '/conhecimento/fluxo-os/transicoes', [OrderStatusFlowController::class, 'updateTransitions'])
-        ->middleware('desktop.permission:conhecimento,editar')
-        ->name('knowledge.os-flow.transitions.update');
 
     Route::get('/servicos', [ServicoController::class, 'index'])
         ->middleware('desktop.permission:servicos,visualizar')

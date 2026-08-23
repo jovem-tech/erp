@@ -26,6 +26,11 @@ class ContasPagarSource extends ContasVencimentoSource
         return Financeiro::TIPO_PAGAR;
     }
 
+    protected function verboLiquidado(): string
+    {
+        return 'pago';
+    }
+
     protected function prefixo(): string
     {
         return 'Pagar';

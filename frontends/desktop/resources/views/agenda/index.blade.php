@@ -93,9 +93,15 @@
             <span class="agenda-summary-label">
                 <i class="bi bi-google me-1"></i>Google Agenda
             </span>
+            @php $googleEmail = trim((string) ($google['conta_email'] ?? '')); @endphp
             <strong class="agenda-summary-value fs-6">{{ $google['status_label'] ?? 'Não configurado' }}</strong>
             <span class="agenda-summary-hint">
                 @if ($google['connected'] ?? false)
+                    {{-- Qual conta recebe os lembretes é o que importa saber aqui:
+                         é o celular dela que vai tocar. --}}
+                    @if ($googleEmail !== '')
+                        <span class="agenda-google-account d-block text-truncate" title="{{ $googleEmail }}">{{ $googleEmail }}</span>
+                    @endif
                     Lembretes chegam no seu celular.
                 @else
                     <a href="{{ route('configurations.integrations.index') }}#agenda-google">Conectar para receber no celular</a>

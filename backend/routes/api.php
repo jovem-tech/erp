@@ -21,6 +21,7 @@ use App\Http\Controllers\Api\V1\EquipmentCollectorController;
 use App\Http\Controllers\Api\V1\EquipmentController;
 use App\Http\Controllers\Api\V1\EstoqueController;
 use App\Http\Controllers\Api\V1\FileManagerController;
+use App\Http\Controllers\Api\V1\InterBankingController;
 use App\Http\Controllers\Api\V1\FinanceiroCartaoController;
 use App\Http\Controllers\Api\V1\FinanceiroCartaoCreditoController;
 use App\Http\Controllers\Api\V1\FinanceiroCatalogController;
@@ -357,6 +358,23 @@ Route::prefix('v1')->group(function (): void {
                 Route::match(['put', 'patch'], 'contas/{conta}', [FinanceiroContaController::class, 'update'])->name('contas.update');
                 Route::get('contas/{conta}/extrato', [FinanceiroContaController::class, 'statement'])->name('contas.extrato');
                 Route::post('contas/{conta}/ajustes', [FinanceiroContaController::class, 'adjust'])->name('contas.ajustes.store');
+
+                // Banco Inter — somente leitura. `atualizar=1` forca refresh do
+                // saldo, que e' cacheado por alguns minutos para nao bater no
+                // banco a cada carregamento de tela.
+                Route::get('inter/status', [InterBankingController::class, 'status'])
+                    ->middleware('throttle:30,1')
+                    ->name('inter.status');
+                Route::get('contas/{conta}/saldo-bancario', [InterBankingController::class, 'saldo'])
+                    ->middleware('throttle:30,1')
+                    ->name('contas.saldo-bancario');
+                Route::get('contas/{conta}/extrato-bancario', [InterBankingController::class, 'extrato'])
+                    ->middleware('throttle:20,1')
+                    ->name('contas.extrato-bancario');
+                Route::get('contas/{conta}/conciliacao-bancaria', [InterBankingController::class, 'conciliacao'])
+                    ->middleware('throttle:30,1')
+                    ->name('contas.conciliacao-bancaria');
+
                 Route::post('contas-transferencias', [FinanceiroContaController::class, 'transfer'])->name('contas.transferencias.store');
                 Route::post('contas-transferencias/{transferencia}/cancelar', [FinanceiroContaController::class, 'cancelTransfer'])->name('contas.transferencias.cancelar');
                 Route::post('contas-cartoes/{cartao}/confirmar', [FinanceiroContaController::class, 'confirmCard'])->name('contas.cartoes.confirmar');

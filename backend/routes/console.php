@@ -74,6 +74,15 @@ Artisan::command('app:dispatch-pending-document-signature-notifications', functi
 })->purpose('Recupera designações sem aviso e reenfileira falhas transitórias.');
 
 Schedule::command('sanctum:prune-expired --hours=24')->daily();
+
+// Certificado do Banco Inter: a falha classica desta integracao e' o
+// certificado vencer e tudo parar em silencio. O alerta antecipado (D-30,
+// D-15, D-7, D-1) e' o que troca "cliente ligou reclamando" por "avisado com
+// um mes de antecedencia". O proprio comando deduplica, entao rodar todo dia
+// nao vira spam.
+Schedule::command('inter:verificar-certificado --alertar')
+    ->dailyAt('07:10')
+    ->withoutOverlapping();
 Schedule::command('app:process-pending-os-collections')->everyFifteenMinutes();
 // Roda de hora em hora (nao so 1x/dia): o dedupe interno garante um aviso por
 // OS/tipo/dia, e OS cujo prazo foi definido AO LONGO do proprio dia ainda

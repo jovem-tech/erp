@@ -86,6 +86,7 @@ class FinanceiroContaController extends DesktopController
         $payload = $this->normalizeMoneyPayload($payload, ['saldo_inicial']);
         $payload['considera_disponivel'] = $request->boolean('considera_disponivel');
         $payload['ativo'] = true;
+        $payload['integracao_provider'] = trim((string) ($payload['integracao_provider'] ?? '')) ?: null;
 
         return $this->persist(
             fn () => $this->financeiroContaService->create($payload),
@@ -99,6 +100,7 @@ class FinanceiroContaController extends DesktopController
         unset($payload['saldo_inicial']);
         $payload['considera_disponivel'] = $request->boolean('considera_disponivel');
         $payload['ativo'] = $request->boolean('ativo');
+        $payload['integracao_provider'] = trim((string) ($payload['integracao_provider'] ?? '')) ?: null;
 
         return $this->persist(
             fn () => $this->financeiroContaService->update($conta, $payload),
@@ -211,6 +213,9 @@ class FinanceiroContaController extends DesktopController
             'ativo' => ['nullable', 'boolean'],
             'cor' => ['nullable', 'regex:/^#[0-9A-Fa-f]{6}$/'],
             'observacoes' => ['nullable', 'string', 'max:2000'],
+            // "Nenhuma" chega como string vazia do <select>; o backend so'
+            // aceita null ou 'inter', entao normalizamos aqui.
+            'integracao_provider' => ['nullable', Rule::in(['', 'inter'])],
             'formas_padrao' => ['nullable', 'array'],
             'formas_padrao.*' => ['string', Rule::in(self::PAYMENT_METHODS)],
         ];

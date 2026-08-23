@@ -11,6 +11,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use App\Jobs\Agenda\PushAgendaCompromissoToGoogleJob;
 use Illuminate\Support\Facades\Http;
+use Laravel\Sanctum\Sanctum;
 use Illuminate\Support\Facades\Queue;
 use Tests\Concerns\BuildsLegacyErpSchema;
 use Tests\TestCase;
@@ -422,6 +423,67 @@ class GoogleCalendarSyncTest extends TestCase
 
         $this->assertSame(0, $stats['importados']);
         Http::assertNothingSent();
+    }
+
+    public function test_status_expoe_o_email_da_conta_vinculada(): void
+    {
+        app(GoogleCalendarSettingsService::class)->put('agenda_google_conta_email', 'assistencia@jovemtech.eco.br');
+
+        $this->seedIntegrationsPermission();
+        Sanctum::actingAs($this->createUserRecord(['grupo_id' => 1]), ['*']);
+
+        $this->getJson('/api/v1/agenda/google/status')
+            ->assertOk()
+            ->assertJsonPath('data.summary.conta_email', 'assistencia@jovemtech.eco.br')
+            ->assertJsonPath('data.summary.connected', true);
+    }
+
+    public function test_email_ausente_e_recuperado_na_leitura_do_status(): void
+    {
+        // A captura no momento de conectar pode falhar em silêncio (rede, ou
+        // consentimento sem o escopo de e-mail). Sem esta recuperação, a tela
+        // mostraria "—" para sempre e só desconectar resolveria.
+        app(GoogleCalendarSettingsService::class)->put('agenda_google_conta_email', '');
+
+        Http::fake([
+            'oauth2.googleapis.com/token' => Http::response(['access_token' => 'a', 'expires_in' => 3600]),
+            '*/oauth2/v3/userinfo*' => Http::response(['email' => 'recuperado@jovemtech.eco.br']),
+        ]);
+
+        $this->seedIntegrationsPermission();
+        Sanctum::actingAs($this->createUserRecord(['grupo_id' => 1]), ['*']);
+
+        $this->getJson('/api/v1/agenda/google/status')
+            ->assertOk()
+            ->assertJsonPath('data.summary.conta_email', 'recuperado@jovemtech.eco.br');
+
+        // E fica gravado: a próxima leitura não repete a chamada externa.
+        $this->assertSame(
+            'recuperado@jovemtech.eco.br',
+            app(GoogleCalendarSettingsService::class)->get('agenda_google_conta_email')
+        );
+    }
+
+    public function test_falha_ao_buscar_email_nao_derruba_o_status_nem_apaga_o_conhecido(): void
+    {
+        app(GoogleCalendarSettingsService::class)->put('agenda_google_conta_email', 'conhecido@jovemtech.eco.br');
+
+        Http::fake([
+            'oauth2.googleapis.com/token' => Http::response([], 500),
+            '*' => Http::response([], 500),
+        ]);
+
+        $this->seedIntegrationsPermission();
+        Sanctum::actingAs($this->createUserRecord(['grupo_id' => 1]), ['*']);
+
+        $this->getJson('/api/v1/agenda/google/status')
+            ->assertOk()
+            ->assertJsonPath('data.summary.conta_email', 'conhecido@jovemtech.eco.br');
+    }
+
+    private function seedIntegrationsPermission(): void
+    {
+        $this->grantGroupPermissions(1, ['configuracoes' => ['visualizar', 'editar']]);
     }
 
     public function test_refresh_token_is_stored_encrypted(): void

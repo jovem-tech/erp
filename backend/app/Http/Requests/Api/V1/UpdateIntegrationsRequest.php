@@ -50,6 +50,11 @@ class UpdateIntegrationsRequest extends FormRequest
             'pagamentos_asaas_base_url' => ['nullable', 'string', 'max:255'],
             'pagamentos_asaas_api_key' => ['nullable', 'string', 'max:255'],
             'pagamentos_asaas_billing_type_default' => ['nullable', 'string', 'in:PIX,BOLETO,CREDIT_CARD'],
+            'pagamentos_inter_enabled' => ['nullable', 'boolean'],
+            'pagamentos_inter_ambiente' => ['nullable', 'string', 'in:sandbox,producao'],
+            'pagamentos_inter_client_id' => ['nullable', 'string', 'max:255'],
+            'pagamentos_inter_client_secret' => ['nullable', 'string', 'max:255'],
+            'pagamentos_inter_conta_corrente' => ['nullable', 'string', 'max:30'],
 
             'smtp_host' => ['nullable', 'string', 'max:255'],
             'smtp_port' => ['nullable', 'integer', 'min:1', 'max:65535'],

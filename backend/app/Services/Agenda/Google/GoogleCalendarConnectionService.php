@@ -6,6 +6,7 @@ use App\Models\AgendaCompromisso;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use RuntimeException;
+use Throwable;
 
 /**
  * Fluxo de consentimento OAuth e criacao do calendario dedicado.
@@ -84,7 +85,7 @@ class GoogleCalendarConnectionService
 
         $accessToken = trim((string) ($tokens['access_token'] ?? ''));
         if ($accessToken !== '') {
-            $this->settings->put('agenda_google_conta_email', $this->client->accountEmail($accessToken));
+            $this->storeAccountEmail($this->client->accountEmail($accessToken));
         }
 
         $this->ensureCalendar();
@@ -94,6 +95,48 @@ class GoogleCalendarConnectionService
         $this->push->pushPending();
 
         return $this->settings->payload();
+    }
+
+    /**
+     * E-mail da conta Google conectada, buscando uma unica vez quando faltar.
+     *
+     * A captura na hora de conectar pode falhar em silencio - erro transitorio
+     * de rede, ou consentimento em que o usuario desmarcou o escopo de e-mail.
+     * Sem esta recuperacao, a tela mostraria "-" para sempre e a unica saida
+     * seria desconectar e refazer todo o consentimento so para descobrir de
+     * qual conta se trata.
+     *
+     * Nunca lanca: saber o e-mail e conveniencia, nao pode derrubar a tela de
+     * integracoes nem a agenda.
+     */
+    public function resolveAccountEmail(): string
+    {
+        $email = $this->settings->get('agenda_google_conta_email');
+
+        if ($email !== '' || ! $this->settings->isConnected()) {
+            return $email;
+        }
+
+        try {
+            return $this->storeAccountEmail($this->client->accountEmail($this->client->accessToken()));
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return '';
+        }
+    }
+
+    private function storeAccountEmail(string $email): string
+    {
+        $email = trim($email);
+
+        // Nao grava vazio por cima de um e-mail ja conhecido: uma falha
+        // pontual apagaria a informacao boa que ja estava la.
+        if ($email !== '') {
+            $this->settings->put('agenda_google_conta_email', $email);
+        }
+
+        return $email;
     }
 
     /**
@@ -152,7 +195,7 @@ class GoogleCalendarConnectionService
         // Falha cedo se o token colado nao servir, em vez de deixar a tela
         // dizendo "conectado" e o sync morrer silenciosamente.
         $accessToken = $this->client->accessToken();
-        $this->settings->put('agenda_google_conta_email', $this->client->accountEmail($accessToken));
+        $this->storeAccountEmail($this->client->accountEmail($accessToken));
 
         $this->ensureCalendar();
         $this->settings->put('agenda_google_conectado_em', now()->toDateTimeString());
