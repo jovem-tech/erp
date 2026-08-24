@@ -29,6 +29,8 @@ class StockController extends DesktopController
             'categoria' => trim((string) $request->query('categoria', '')),
             'tipo_equipamento' => trim((string) $request->query('tipo_equipamento', '')),
             'status' => trim((string) $request->query('status', '')),
+            // Destino do alerta "itens abaixo do estoque minimo" do dashboard.
+            'estoque_baixo' => $request->boolean('estoque_baixo') ? 1 : 0,
             'page' => (int) $request->query('page', 1),
             'per_page' => (int) $request->query('per_page', 15),
         ];

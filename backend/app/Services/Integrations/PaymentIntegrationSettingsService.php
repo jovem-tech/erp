@@ -27,6 +27,11 @@ class PaymentIntegrationSettingsService
         'pagamentos_inter_client_id' => '',
         'pagamentos_inter_client_secret' => '',
         'pagamentos_inter_conta_corrente' => '',
+        // Chave Pix do RECEBEDOR usada na cobranca. Precisa ser uma chave
+        // registrada no proprio Inter para esta conta — as de
+        // financeiro_chaves_pix servem para exibir no orcamento e podem ser de
+        // outro banco, entao nao ha fallback automatico aqui de proposito.
+        'pagamentos_inter_chave_pix' => '',
     ];
 
     /**
@@ -88,6 +93,7 @@ class PaymentIntegrationSettingsService
             'pagamentos_inter_client_id' => $settings['pagamentos_inter_client_id'] ?? '',
             'pagamentos_inter_client_secret' => $settings['pagamentos_inter_client_secret'] ?? '',
             'pagamentos_inter_conta_corrente' => $settings['pagamentos_inter_conta_corrente'] ?? '',
+            'pagamentos_inter_chave_pix' => $settings['pagamentos_inter_chave_pix'] ?? '',
         ];
     }
 

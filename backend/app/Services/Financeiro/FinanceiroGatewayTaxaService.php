@@ -35,6 +35,16 @@ class FinanceiroGatewayTaxaService
                     ],
                 ],
             ],
+            'inter' => [
+                'label' => 'Banco Inter',
+                'modes' => [
+                    [
+                        'code' => 'PIX',
+                        'label' => 'PIX',
+                        'description' => 'Cobranca Pix imediata (cob) na conta PJ do Inter, com copia e cola.',
+                    ],
+                ],
+            ],
             'mercado_pago' => [
                 'label' => 'Mercado Pago',
                 'modes' => [
@@ -202,6 +212,12 @@ class FinanceiroGatewayTaxaService
 
         $taxPercent = round((float) ($config['taxa_percentual'] ?? 0), 4);
         $fixedFee = round((float) ($config['taxa_fixa'] ?? 0), 2);
+        $minFee = isset($config['taxa_minima']) && $config['taxa_minima'] !== null
+            ? round((float) $config['taxa_minima'], 2)
+            : null;
+        $capFee = isset($config['taxa_teto']) && $config['taxa_teto'] !== null
+            ? round((float) $config['taxa_teto'], 2)
+            : null;
         $chargeAmount = $baseAmount;
         $feeAmount = 0.0;
 
@@ -213,6 +229,24 @@ class FinanceiroGatewayTaxaService
 
             $chargeAmount = round(($baseAmount + $fixedFee) / $divisor, 2);
             $feeAmount = round(max(0, $chargeAmount - $baseAmount), 2);
+
+            /*
+             * Piso e teto (tarifa do Pix cobranca do Inter: 0,9%, min R$ 0,10,
+             * teto R$ 1,50).
+             *
+             * Quando a taxa e' limitada, o gross-up deixa de ser proporcional e
+             * vira soma direta: o cliente paga base + limite, e voce liquida
+             * exatamente a base. Colunas nulas nao entram aqui — e' o caso de
+             * todas as taxas de cartao ja cadastradas, cujo calculo segue
+             * identico.
+             */
+            if ($capFee !== null && $feeAmount > $capFee) {
+                $feeAmount = $capFee;
+                $chargeAmount = round($baseAmount + $feeAmount, 2);
+            } elseif ($minFee !== null && $feeAmount < $minFee) {
+                $feeAmount = $minFee;
+                $chargeAmount = round($baseAmount + $feeAmount, 2);
+            }
         }
 
         return [
@@ -227,6 +261,8 @@ class FinanceiroGatewayTaxaService
             'fee_amount' => $feeAmount,
             'tax_percent' => $taxPercent,
             'fixed_fee' => $fixedFee,
+            'min_fee' => $minFee,
+            'cap_fee' => $capFee,
             'is_configured' => $config !== null,
             'has_fee' => $feeAmount > 0.009,
             'summary' => $feeAmount > 0.009
@@ -316,6 +352,10 @@ class FinanceiroGatewayTaxaService
             'modalidade' => $mode,
             'taxa_percentual' => round((float) ($payload['taxa_percentual'] ?? 0), 4),
             'taxa_fixa' => round((float) ($payload['taxa_fixa'] ?? 0), 2),
+            // null = sem limite. Zero seria diferente de "nao ha teto", entao
+            // string vazia e ausencia viram null, nao 0.
+            'taxa_minima' => $this->limiteOuNulo($payload['taxa_minima'] ?? null),
+            'taxa_teto' => $this->limiteOuNulo($payload['taxa_teto'] ?? null),
             'ordem_exibicao' => max(0, (int) ($payload['ordem_exibicao'] ?? 0)),
             'ativo' => (int) filter_var($payload['ativo'] ?? true, FILTER_VALIDATE_BOOL),
             'observacoes' => trim((string) ($payload['observacoes'] ?? '')) !== '' ? trim((string) $payload['observacoes']) : null,
@@ -467,14 +507,37 @@ class FinanceiroGatewayTaxaService
                 'ativo' => 1,
                 'observacoes' => 'Tabela inicial parametrizada para o Mercado Pago. Validar com o contrato vigente.',
             ],
+            [
+                'id' => 8,
+                'provider' => 'inter',
+                'modalidade' => 'PIX',
+                // 0,9% com piso de R$ 0,10 e teto de R$ 1,50: acima de
+                // R$ 166,67 a tarifa e' fixa em R$ 1,50.
+                'taxa_percentual' => 0.9,
+                'taxa_fixa' => 0.00,
+                'taxa_minima' => 0.10,
+                'taxa_teto' => 1.50,
+                'ordem_exibicao' => 5,
+                'ativo' => 1,
+                'observacoes' => 'Tarifa publica de Pix cobranca (QR imediato). CONFIRMAR na sua tabela de tarifas: e negociavel por plano.',
+            ],
         ];
+    }
+
+    private function limiteOuNulo(mixed $valor): ?float
+    {
+        if ($valor === null || $valor === '' || ! is_numeric($valor)) {
+            return null;
+        }
+
+        return round((float) $valor, 2);
     }
 
     private function normalizeProvider(string $provider): string
     {
         $provider = strtolower(trim($provider));
 
-        return in_array($provider, ['asaas', 'mercado_pago'], true) ? $provider : '';
+        return in_array($provider, ['asaas', 'inter', 'mercado_pago'], true) ? $provider : '';
     }
 
     private function normalizeMode(string $provider, ?string $mode): string

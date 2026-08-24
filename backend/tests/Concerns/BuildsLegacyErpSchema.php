@@ -930,6 +930,7 @@ trait BuildsLegacyErpSchema
             $table->foreign('bandeira_id')->references('id')->on('financeiro_cartao_bandeiras')->nullOnDelete();
             $table->index(['operadora_id', 'bandeira_id', 'modalidade'], 'idx_financeiro_cartao_taxas_catalogo');
         });
+
     }
 
     private function createClientsTable(): void

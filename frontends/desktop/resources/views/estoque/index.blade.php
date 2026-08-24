@@ -104,6 +104,17 @@
         </div>
 
         <div>
+            <label for="estoque_baixo">Estoque</label>
+            {{-- Destino do alerta "itens abaixo do estoque mínimo" do dashboard.
+                 Precisa aparecer no formulário para o usuário ver que a lista
+                 chegou filtrada — e poder tirar o filtro. --}}
+            <select id="estoque_baixo" name="estoque_baixo" class="form-select">
+                <option value="" @selected((int) ($filters['estoque_baixo'] ?? 0) !== 1)>Todos os níveis</option>
+                <option value="1" @selected((int) ($filters['estoque_baixo'] ?? 0) === 1)>Somente abaixo do mínimo</option>
+            </select>
+        </div>
+
+        <div>
             <label for="per_page">Itens por página</label>
             <select id="per_page" name="per_page" class="form-select">
                 @foreach ([15, 30, 50] as $size)

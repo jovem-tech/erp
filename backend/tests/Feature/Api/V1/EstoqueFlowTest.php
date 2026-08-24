@@ -67,6 +67,55 @@ class EstoqueFlowTest extends TestCase
             ->assertJsonPath('data.pecas.0.nome', 'Fonte 500W');
     }
 
+    public function test_estoque_index_filters_parts_below_minimum(): void
+    {
+        $admin = $this->createUserRecord([
+            'nome' => 'Administrador',
+            'email' => 'admin.estoque.baixo@example.com',
+            'perfil' => 'admin',
+            'grupo_id' => 1,
+        ]);
+
+        $this->createPecaRecord([
+            'codigo' => 'PC00001',
+            'nome' => 'Fonte 500W',
+            'quantidade_atual' => 2,
+            'estoque_minimo' => 3,
+        ]);
+
+        // Igual ao mínimo também conta como crítico — mesmo critério de
+        // Peca::estoqueBaixo() e do alerta do dashboard.
+        $this->createPecaRecord([
+            'codigo' => 'PC00002',
+            'nome' => 'Cabo flat',
+            'quantidade_atual' => 4,
+            'estoque_minimo' => 4,
+        ]);
+
+        $this->createPecaRecord([
+            'codigo' => 'PC00003',
+            'nome' => 'Memória DDR4',
+            'quantidade_atual' => 12,
+            'estoque_minimo' => 4,
+        ]);
+
+        $token = $this->loginAndGetToken($admin->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->getJson('/api/v1/estoque?estoque_baixo=1&per_page=10');
+
+        $response->assertOk()
+            ->assertJsonPath('meta.pagination.total', 2)
+            ->assertJsonPath('data.pecas.0.nome', 'Cabo flat')
+            ->assertJsonPath('data.pecas.1.nome', 'Fonte 500W');
+
+        // Sem o filtro, a listagem continua completa.
+        $this->withHeader('Authorization', 'Bearer ' . $token)
+            ->getJson('/api/v1/estoque?per_page=10')
+            ->assertOk()
+            ->assertJsonPath('meta.pagination.total', 3);
+    }
+
     public function test_admin_can_crud_movements_export_and_import_parts(): void
     {
         $admin = $this->createUserRecord([

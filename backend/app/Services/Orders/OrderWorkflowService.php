@@ -46,6 +46,23 @@ use Throwable;
 
 class OrderWorkflowService
 {
+    /**
+     * Predicados dos tres alertas operacionais do dashboard. Vivem aqui, e nao
+     * dentro do DashboardSummaryService, porque cada um tem DOIS consumidores
+     * que precisam concordar: a contagem exibida no painel de atencao e o
+     * filtro da listagem que aquele alerta abre. Enquanto o SQL estava escrito
+     * so no servico do dashboard, a listagem nao tinha como reproduzir o
+     * numero — e um alerta que abre uma lista com outra contagem e' pior do que
+     * nao ter link nenhum.
+     */
+    public const STALE_REFERENCE_SQL = 'COALESCE(os.status_atualizado_em, os.updated_at, os.created_at)';
+
+    public const PENDING_BUDGET_SQL = '(os.orcamento_aprovado IS NULL OR os.orcamento_aprovado = 0) AND os.valor_total > 0';
+
+    public const READY_PICKUP_SQL = "LOWER(TRIM(COALESCE(os.estado_fluxo, ''))) = 'pronto'"
+        . " OR (COALESCE(TRIM(os.estado_fluxo), '') = ''"
+        . " AND LOWER(TRIM(COALESCE(os.status, ''))) IN ('pronto', 'concluido', 'aguardando_retirada'))";
+
     private const ENTRY_CHECKLIST_TYPE_CODE = 'entrada';
 
     /**
@@ -135,6 +152,25 @@ class OrderWorkflowService
         $openingTo = $this->normalizeDateValue($filters['data_abertura_ate'] ?? null);
         if ($openingTo !== null) {
             $query->whereDate('os.data_abertura', '<=', $openingTo);
+        }
+
+        // Trio de filtros espelhando os alertas do dashboard — ver as constantes
+        // no topo desta classe. Cada um abre a listagem exatamente com o
+        // conjunto que o painel contou.
+        $staleDays = (int) ($filters['sem_movimento_dias'] ?? 0);
+        if ($staleDays > 0) {
+            $query->whereRaw(
+                self::STALE_REFERENCE_SQL . ' < ?',
+                [now()->copy()->subDays($staleDays)->toDateTimeString()]
+            );
+        }
+
+        if (filter_var($filters['orcamento_pendente'] ?? false, FILTER_VALIDATE_BOOL)) {
+            $query->whereRaw('(' . self::PENDING_BUDGET_SQL . ')');
+        }
+
+        if (filter_var($filters['pronto_retirada'] ?? false, FILTER_VALIDATE_BOOL)) {
+            $query->whereRaw('(' . self::READY_PICKUP_SQL . ')');
         }
 
         if (($filters['valor_min'] ?? '') !== '') {

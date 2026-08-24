@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-08-23T17:13:34-03:00`
-- Versao do sistema: `5.48.1`
+- Gerado em: `2026-08-23T17:26:28-03:00`
+- Versao do sistema: `5.49.1`
 - Versao da API: `1.6.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -197,6 +197,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-08-22-backup-restauracao-sistema.md` - Backup completo do sistema
 - `documentacao/07-novas-implementacoes/2026-08-22-modulo-agenda-google-calendar.md` - Módulo Agenda com sincronização Google (2026-08-22)
 - `documentacao/07-novas-implementacoes/2026-08-23-cobranca-indevida-em-encerramento-sem-cobranca.md` - Cobrança indevida em encerramento sem cobrança (2026-08-23)
+- `documentacao/07-novas-implementacoes/2026-08-23-modelo-assistencia-real-e-fim-da-matriz-de-transicoes.md` - Modelo da Assistência passa a refletir o sistema; matriz de transições sai da tela
 - `documentacao/07-novas-implementacoes/2026-08-23-sidebar-enxuta-atalhos-clientes-equipamentos.md` - Sidebar mais enxuta: equipamentos e ferramentas financeiras viram atalho de listagem
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 - `documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md` - Revisão de segurança — Fluxo de orçamento na assistência (com OS)

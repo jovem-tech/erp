@@ -490,4 +490,120 @@ class DashboardSummaryTest extends TestCase
             Carbon::setTestNow();
         }
     }
+
+    public function test_low_stock_panel_lists_real_parts_and_total_for_users_with_stock_permission(): void
+    {
+        // Antes desta versão o payload trazia `low_stock` sempre vazio (lista
+        // fixa no serviço), então o card "Alerta de estoque baixo" era incapaz
+        // de mostrar qualquer coisa.
+        // Só o módulo que falta: grantGroupPermissions() insere (não faz
+        // upsert) e o setUp desta classe já deu dashboard/os ao grupo 3.
+        $this->grantGroupPermissions(3, [
+            'estoque' => ['visualizar'],
+        ]);
+
+        $this->createPecaRecord([
+            'codigo' => 'PC00001',
+            'nome' => 'Fonte 500W',
+            'quantidade_atual' => 1,
+            'estoque_minimo' => 3,
+        ]);
+        $this->createPecaRecord([
+            'codigo' => 'PC00002',
+            'nome' => 'Cabo flat',
+            'quantidade_atual' => 4,
+            'estoque_minimo' => 4,
+        ]);
+        $this->createPecaRecord([
+            'codigo' => 'PC00003',
+            'nome' => 'Memória DDR4',
+            'quantidade_atual' => 30,
+            'estoque_minimo' => 4,
+        ]);
+
+        $user = $this->createUserRecord([
+            'nome' => 'Gerente Estoque',
+            'email' => 'gerente.estoque@example.com',
+            'perfil' => 'gerente',
+            'grupo_id' => 3,
+        ]);
+
+        Sanctum::actingAs($user, ['*']);
+
+        $this->getJson('/api/v1/dashboard/summary')
+            ->assertOk()
+            ->assertJsonPath('data.access.can_view_stock', true)
+            ->assertJsonPath('data.stats.low_stock_total', 2)
+            ->assertJsonCount(2, 'data.low_stock')
+            // Ordenado pelo mais crítico primeiro: quem está mais longe do
+            // mínimo aparece antes na lista curta do painel.
+            ->assertJsonPath('data.low_stock.0.nome', 'Fonte 500W')
+            ->assertJsonPath('data.low_stock.0.quantidade_atual', 1)
+            ->assertJsonPath('data.low_stock.0.estoque_minimo', 3)
+            ->assertJsonPath('data.low_stock.1.nome', 'Cabo flat');
+    }
+
+    public function test_low_stock_panel_stays_empty_for_users_without_stock_permission(): void
+    {
+        $this->createPecaRecord([
+            'nome' => 'Fonte 500W',
+            'quantidade_atual' => 1,
+            'estoque_minimo' => 3,
+        ]);
+
+        // Grupo 4 não recebe 'estoque' no setUp desta classe.
+        $user = $this->createUserRecord([
+            'nome' => 'Atendente',
+            'email' => 'atendente.sem.estoque@example.com',
+            'perfil' => 'atendente',
+            'grupo_id' => 4,
+        ]);
+
+        Sanctum::actingAs($user, ['*']);
+
+        $this->getJson('/api/v1/dashboard/summary')
+            ->assertOk()
+            ->assertJsonPath('data.access.can_view_stock', false)
+            ->assertJsonPath('data.stats.low_stock_total', 0)
+            ->assertJsonCount(0, 'data.low_stock');
+    }
+
+    public function test_recent_orders_expose_days_without_status_movement(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-02-20 10:00:00'));
+
+        try {
+            $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Parado']);
+            $equipmentId = $this->createEquipmentRecord($clientId, ['resumo_tecnico' => 'Notebook']);
+
+            // Aberta há 40 dias e sem trocar de status há 30: são duas idades
+            // distintas, e o marcador de prioridade da tabela usa a segunda.
+            $this->createOrderRecord([
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'numero_os' => 'OS26020001',
+                'status' => 'triagem',
+                'data_abertura' => Carbon::parse('2026-01-11 10:00:00'),
+                'status_atualizado_em' => Carbon::parse('2026-01-21 10:00:00'),
+            ]);
+
+            $user = $this->createUserRecord([
+                'nome' => 'Gerente',
+                'email' => 'gerente.parada@example.com',
+                'perfil' => 'gerente',
+                'grupo_id' => 3,
+            ]);
+
+            Sanctum::actingAs($user, ['*']);
+
+            $this->getJson('/api/v1/dashboard/summary')
+                ->assertOk()
+                ->assertJsonPath('data.recent_orders.0.dias_em_aberto', 40)
+                ->assertJsonPath('data.recent_orders.0.dias_sem_movimento', 30)
+                // O alerta agregado usa o mesmo limiar de 15 dias.
+                ->assertJsonPath('data.alerts.os_paradas', 1);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
 }

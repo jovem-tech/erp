@@ -1,5 +1,31 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.51.1.0 — 2026-08-23 22:25
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Prepara a base para a Fase 5: teste de concorrencia real contra MySQL e certificado de teste deterministico. Novo grupo mysql no phpunit (excluido do run padrao) com teste que abre DUAS conexoes PDO e prova que duas gravacoes simultaneas do mesmo e2eid produzem UMA liquidacao — a suite roda SQLite em memoria, onde concorrencia entre conexoes nao existe. Nao cria banco proprio porque erp_app nao tem CREATE DATABASE: usa a base de desenvolvimento tocando apenas linhas com prefixo proprio e limpando no finally, inclusive quando o teste falha. E a geracao de certificado vencido deixa de depender de flags do openssl que nao existem em toda versao (-not_before/-not_after, -days negativo) e passa a avancar o relogio com Carbon::setTestNow, o que tornava o teste de certificado vencido dependente da maquina
+
+## v5.51.0.0 — 2026-08-23 17:56
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Fase 4 da integracao Banco Inter: emissao de cobranca Pix. Novo InterCobrancaService com o txid gerado do nosso lado e a linha gravada ANTES da chamada ao banco — emitir e escrita em dois sistemas sem transacao entre eles, e um timeout depois do banco ter criado a cobranca deixaria cobranca viva la fora sem rastro aqui. Falha de emissao marca FALHA_EMISSAO e MANTEM a linha, porque falha nao significa nao criada; na tentativa seguinte o servico pergunta ao banco antes de emitir outra, adota a existente quando ela existe, emite nova so com 404 confirmado e RECUSA quando o banco nao responde (duas cobrancas vivas para o mesmo titulo e pior que nenhuma). Cobra o SALDO e nao o total do titulo. Chave Pix exige configuracao explicita, sem fallback para financeiro_chaves_pix, que serve para exibir no orcamento e pode ser de outro banco. Documento invalido emite sem devedor em vez de derrubar a cobranca, e o CPF vai para o banco mas nao para a trilha local. Tres rotas com authorize e teste de 403. O codigo Pix entra no lembrete D+1/D+3/D+5 que ja existia, com a regra de que falha do Inter nunca impede o lembrete de sair
+
+## v5.50.0.0 — 2026-08-23 17:37
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Taxa de gateway ganha piso e teto, e o Banco Inter entra no catalogo. A tarifa de Pix cobranca do Inter e 0,9 por cento com minimo de R$0,10 e teto de R$1,50; registrar so o percentual faria uma OS de R$1.000 aparecer com R$9,00 de taxa em vez de R$1,50, e esse numero entra no calculo de margem. Quando o limite atua o gross-up deixa de ser proporcional e vira soma direta (cliente paga base mais o limite, e a liquidacao devolve exatamente a base). Campos nulos nao entram no calculo, entao todas as taxas de cartao ja cadastradas seguem com resultado identico — ha teste que fixa isso. Correcao de rota no meio do caminho: cheguei a criar migration adicionando colunas a tabela financeiro_gateway_taxas, mas essa tabela e vestigial e nao e lida por ninguem; as taxas vivem como JSON em configuracoes. Migration revertida e removida
+
+## v5.49.1.0 — 2026-08-23 17:26
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Modelo da Assistencia Tecnica deixa de afirmar o que o sistema nao faz e passa a derivar do catalogo vivo: saem SLAs de 15/30 min e 24 h, limite de WIP 3, prioridade por aging e escalonamento automatico (nenhum existe: os_status nao tem coluna de prazo e a string WIP so aparecia no proprio controller), alem das etapas inexistentes 'Qualidade' e 'Pos-venda' e de cinco status com nome errado. Indicadores e raias agora saem de os_status. A tela Fluxo de Trabalho OS vira 'Status de OS' e vai para Administracao: removidos o diagrama de fluxo e a matriz de transicoes, que desenhavam uma maquina de estados que o backend abandonou em 09/08/2026 por nao refletir o trabalho real. Mantido o cadastro de status, unico lugar que gerencia os_status. Novo App\Support\OrderStatusMacroGroups compartilha o vocabulario das macrofases entre as duas telas
+- **Arquivos:** frontends/desktop/app/Support/OrderStatusMacroGroups.php,frontends/desktop/app/Support/DesktopNavigation.php,frontends/desktop/app/Http/Controllers/AssistanceModelController.php,frontends/desktop/app/Http/Controllers/OrderStatusFlowController.php,frontends/desktop/app/Services/DesktopOrderStatusFlowService.php,frontends/desktop/resources/views/knowledge/assistance-model/index.blade.php,frontends/desktop/resources/views/knowledge/os-flow/index.blade.php,frontends/desktop/routes/web.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/07-novas-implementacoes/2026-08-23-modelo-assistencia-real-e-fim-da-matriz-de-transicoes.md
+
+## v5.49.0.0 — 2026-08-23 17:24
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Fase 3 da integracao Banco Inter: modelo de dados da cobranca. Tres tabelas aditivas com papeis distintos — inter_cobrancas (o que emitimos, com txid unico e escopo abertas() que ja exclui expirada, cancelada e concluida), inter_liquidacoes (o que o banco confirmou, com UNIQUE no e2eid: e ali que mora a idempotencia da integracao, resolvida pelo banco de dados e nao pela ordem de execucao do PHP) e inter_eventos (trilha append-only com decisao, motivo, payload recebido e payload da reconsulta, para investigar baixa indevida sem depender de log em arquivo que rotaciona). A separacao entre cobranca e liquidacao e o que permite pagamento parcial e multiplos Pix na mesma cobranca sem gambiarra. A imagem do QR nao e' guardada de proposito: e derivavel do copia-e-cola e engordaria o dump diario. Nao foi semeada linha do Inter em financeiro_gateway_taxas porque a tabela nao expressa teto e registrar 0,9 por cento sem o teto de R,50 superestimaria a taxa acima de R67 e contaminaria o calculo de margem
+
 ## v5.48.1.0 — 2026-08-23 17:13
 - **Tier:** patch
 - **Autor/Agente:** Codex

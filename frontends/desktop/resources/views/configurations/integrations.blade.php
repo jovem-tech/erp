@@ -97,6 +97,7 @@
         $interClientSecret = old('pagamentos_inter_client_secret', '');
         $interClientSecretConfigured = $isConfiguredSecret($paymentSecretStatus, 'pagamentos_inter_client_secret');
         $interContaCorrente = old('pagamentos_inter_conta_corrente', (string) ($paymentSettings['pagamentos_inter_conta_corrente'] ?? ''));
+        $interChavePix = old('pagamentos_inter_chave_pix', (string) ($paymentSettings['pagamentos_inter_chave_pix'] ?? ''));
         $interReady = (bool) ($paymentSummary['inter']['ready'] ?? false);
         $interStatusLabel = (string) ($paymentSummary['inter']['status_label'] ?? 'Aguardando configuração');
 
@@ -700,6 +701,11 @@
                                     @if ($interClientSecretConfigured)
                                         <small class="text-muted">O Client Secret atual permanece salvo se este campo continuar vazio.</small>
                                     @endif
+                                </div>
+                                <div class="desktop-grid-span-2">
+                                    <label for="interChavePix">Chave Pix do recebedor</label>
+                                    <input type="text" id="interChavePix" name="pagamentos_inter_chave_pix" class="form-control" value="{{ $interChavePix }}" maxlength="200" placeholder="CNPJ, telefone, e-mail ou chave aleatória">
+                                    <small class="text-muted">Precisa ser uma chave registrada <strong>nesta conta do Inter</strong>. As chaves de Financeiro › Formas de pagamento servem para exibir no orçamento e podem ser de outro banco — por isso não há preenchimento automático aqui.</small>
                                 </div>
                                 <div>
                                     <label for="interContaCorrente">Conta corrente</label>

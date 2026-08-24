@@ -85,6 +85,19 @@ return [
         'saldo_cache_segundos' => (int) env('INTER_SALDO_CACHE', 600),
     ],
 
+    'cobranca' => [
+        'path' => (string) env('INTER_COB_PATH', 'pix/v2/cob'),
+
+        // Validade da cobranca. Tres dias e' o padrao: tempo suficiente para o
+        // cliente pagar sem deixar cobranca velha pendurada poluindo a
+        // conciliacao. Cobranca nao paga nao custa nada (a tarifa incide no
+        // recebimento), entao o limite aqui e' higiene, nao custo.
+        'expiracao_segundos' => (int) env('INTER_COB_EXPIRACAO', 259200),
+
+        // Texto que aparece para o pagador no app do banco. 140 chars no Pix.
+        'solicitacao_pagador' => (string) env('INTER_COB_SOLICITACAO', 'Pagamento de servico'),
+    ],
+
     // Token do Inter vale ~1h; renovamos antes para nao correr o risco de
     // usar um token que expira no meio do voo.
     'token' => [

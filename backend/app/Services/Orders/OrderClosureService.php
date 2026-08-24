@@ -17,6 +17,7 @@ use App\Models\OsMargem;
 use App\Models\User;
 use App\Services\Agenda\AgendaSourceReconciler;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
+use App\Services\Integrations\Inter\InterCobrancaService;
 use App\Services\Financeiro\FinanceiroCartaoService;
 use App\Services\Financeiro\FinanceiroContaService;
 use App\Services\Financeiro\FinanceiroService;
@@ -71,6 +72,7 @@ class OrderClosureService
         private readonly FinanceiroCartaoService $financeiroCartaoService,
         private readonly FinanceiroContaService $financeiroContaService,
         private readonly WhatsappMessagingService $whatsappMessagingService,
+        private readonly InterCobrancaService $interCobrancaService,
         private readonly OrderClosurePdfService $orderClosurePdfService,
         private readonly OrderEventService $orderEventService,
         private readonly AgendaSourceReconciler $agendaReconciler
@@ -1127,7 +1129,12 @@ class OrderClosureService
                 continue;
             }
 
-            $mensagem = $this->buildPendingChargeMessage($order, $saldoAberto, (int) $row->prazo_dias);
+            $mensagem = $this->buildPendingChargeMessage(
+                $order,
+                $saldoAberto,
+                (int) $row->prazo_dias,
+                $this->resolvePixCopiaECola($titulo)
+            );
 
             try {
                 $send = $this->whatsappMessagingService->sendSystemMessage(
@@ -1558,12 +1565,16 @@ class OrderClosureService
         return (int) $followup->id;
     }
 
-    private function buildPendingChargeMessage(Order $order, float $saldoAberto, int $prazoDia): string
-    {
+    private function buildPendingChargeMessage(
+        Order $order,
+        float $saldoAberto,
+        int $prazoDia,
+        ?string $pixCopiaECola = null
+    ): string {
         $cliente = trim((string) ($order->client?->nome_razao ?? 'cliente'));
         $numeroOs = trim((string) ($order->numero_os ?: ('#' . $order->id)));
 
-        return sprintf(
+        $mensagem = sprintf(
             'Olá, %s. A OS %s já foi concluída e ainda consta um saldo pendente de R$ %s. '
                 . 'Este é um lembrete automático do %dº dia após a entrega. '
                 . 'Se preferir, responda esta mensagem para combinarmos a quitação.',
@@ -1572,6 +1583,36 @@ class OrderClosureService
             number_format($saldoAberto, 2, ',', '.'),
             $prazoDia
         );
+
+        if ($pixCopiaECola !== null && $pixCopiaECola !== '') {
+            $mensagem .= "\n\nPara pagar por Pix, copie o código abaixo e cole no app do seu banco:\n"
+                . $pixCopiaECola;
+        }
+
+        return $mensagem;
+    }
+
+    /**
+     * Codigo Pix para o lembrete de cobranca, quando a integracao estiver ativa.
+     *
+     * Regra: falha do Inter NUNCA impede o lembrete de sair. O objetivo do
+     * agendamento e' cobrar o cliente; anexar o Pix e' conveniencia. Trocar uma
+     * cobranca que sai sem Pix por uma cobranca que nao sai seria pior.
+     */
+    private function resolvePixCopiaECola(Financeiro $titulo): ?string
+    {
+        try {
+            $cobranca = $this->interCobrancaService->emitir($titulo);
+
+            return trim((string) ($cobranca->pix_copia_e_cola ?? '')) ?: null;
+        } catch (Throwable $exception) {
+            logger()->info('[COBRANCA] Lembrete seguira sem Pix.', [
+                'financeiro_id' => (int) $titulo->id,
+                'motivo' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     private function ensureReceivableTitle(Order $order, string $dataEntrega): Financeiro

@@ -596,6 +596,7 @@ class ConfigurationController extends DesktopController
             'pagamentos_inter_client_id' => trim((string) $request->input('pagamentos_inter_client_id', '')),
             'pagamentos_inter_client_secret' => trim((string) $request->input('pagamentos_inter_client_secret', '')),
             'pagamentos_inter_conta_corrente' => trim((string) $request->input('pagamentos_inter_conta_corrente', '')),
+            'pagamentos_inter_chave_pix' => trim((string) $request->input('pagamentos_inter_chave_pix', '')),
         ];
     }
 
