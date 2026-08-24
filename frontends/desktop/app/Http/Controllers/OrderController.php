@@ -50,6 +50,13 @@ class OrderController extends DesktopController
             'data_abertura_ate' => trim((string) $request->query('data_abertura_ate', '')),
             'valor_min' => trim((string) $request->query('valor_min', '')),
             'valor_max' => trim((string) $request->query('valor_max', '')),
+            // Alertas do dashboard: cada chip do painel "O que merece sua
+            // atencao hoje" abre esta listagem com um destes, para que a
+            // contagem do painel se reproduza aqui. Ver as constantes de
+            // predicado em OrderWorkflowService.
+            'sem_movimento_dias' => (int) $request->query('sem_movimento_dias', 0),
+            'orcamento_pendente' => $request->boolean('orcamento_pendente') ? 1 : 0,
+            'pronto_retirada' => $request->boolean('pronto_retirada') ? 1 : 0,
             // Selecao multipla via checkboxes (filtros avancados): independente dos
             // campos 'status'/'grupo_macro' acima (selects de valor unico), somam-se
             // a eles (AND) quando os dois mecanismos forem preenchidos juntos.

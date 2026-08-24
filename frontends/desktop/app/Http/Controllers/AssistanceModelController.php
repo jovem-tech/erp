@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\DesktopOrderStatusFlowService;
+use App\Support\OrderStatusMacroGroups;
 use Illuminate\Support\Str;
 use Illuminate\View\View;
 use Throwable;
@@ -16,317 +17,296 @@ class AssistanceModelController extends DesktopController
 
     public function index(): View
     {
+        // O catalogo e' lido uma vez e compartilhado entre os dois blocos da
+        // pagina: antes cada um fazia a propria chamada a API central.
+        $statuses = $this->fetchStatuses();
+
         return view('knowledge.assistance-model.index', array_merge(
-            $this->buildViewData(),
-            $this->buildNaturalJourneyViewData()
+            $this->buildViewData($statuses),
+            $this->buildNaturalJourneyViewData($statuses)
         ));
     }
 
     /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function fetchStatuses(): array
+    {
+        try {
+            $result = $this->orderStatusFlowService->index();
+
+            return is_array($result['statuses'] ?? null) ? $result['statuses'] : [];
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return [];
+        }
+    }
+
+    /**
+     * Conteudo do modelo operacional.
+     *
+     * Reescrito em 23/08/2026: a versao anterior era texto fixo que afirmava
+     * coisas que o sistema nunca fez — SLA de 15 min na triagem, 30 min no
+     * diagnostico, 24 h no orcamento, limite de WIP de 3 OS por tecnico,
+     * prioridade por aging e escalonamento automatico. Nada disso existe:
+     * `os_status` nao tem coluna de prazo e a string "WIP" so aparecia neste
+     * arquivo. A trilha tambem citava etapas inexistentes ("Qualidade" como
+     * status, "Pos-venda") e apelidava as reais ("Diagnostico" no lugar de
+     * "Diagnostico Tecnico").
+     *
+     * Agora tudo que e numero ou nome de etapa sai do catalogo vivo, e o texto
+     * fixo se limita a comportamento que existe no codigo.
+     *
+     * @param  array<int, array<string, mixed>>  $statuses
      * @return array<string, mixed>
      */
-    private function buildViewData(): array
+    private function buildViewData(array $statuses): array
     {
+        $active = collect($statuses)
+            ->filter(static fn (array $status): bool => (bool) ($status['ativo'] ?? false))
+            ->sortBy(static fn (array $status): string => sprintf(
+                '%010d-%s',
+                (int) ($status['ordem_fluxo'] ?? 0),
+                mb_strtolower(trim((string) ($status['nome'] ?? '')))
+            ))
+            ->values();
+
+        $groups = $active
+            ->groupBy(static fn (array $status): string => trim((string) ($status['grupo_macro'] ?? '')))
+            ->sortBy(static fn ($groupStatuses): int => (int) $groupStatuses->min('ordem_fluxo'));
+
+        $pauseCount = $active->filter(static fn (array $s): bool => (bool) ($s['status_pausa'] ?? false))->count();
+        $finalCount = $active->filter(static fn (array $s): bool => (bool) ($s['status_final'] ?? false))->count();
+
         return [
-            'pageTitle' => 'Modelo Ideal da Assistência Técnica',
+            'pageTitle' => 'Modelo da Assistência Técnica',
             'visualSummary' => [
                 [
-                    'label' => 'Fila única',
-                    'value' => '1',
-                    'detail' => 'Uma única fila por prioridade, sem filas paralelas invisíveis.',
+                    'label' => 'Status ativos',
+                    'value' => (string) $active->count(),
+                    'detail' => 'Situações que uma OS pode assumir no catálogo atual.',
                 ],
                 [
-                    'label' => 'Triagem inicial',
-                    'value' => '15 min',
-                    'detail' => 'Tempo máximo para classificar, registrar e encaminhar a OS.',
+                    'label' => 'Macrofases',
+                    'value' => (string) $groups->count(),
+                    'detail' => 'Agrupamentos usados para organizar o catálogo de status.',
                 ],
                 [
-                    'label' => 'Orçamento',
-                    'value' => '24 h',
-                    'detail' => 'Janela curta para resposta e escalonamento automático.',
+                    'label' => 'Status de pausa',
+                    'value' => (string) $pauseCount,
+                    'detail' => 'Marcam a OS como parada, com o motivo declarado.',
                 ],
                 [
-                    'label' => 'WIP técnico',
-                    'value' => '3',
-                    'detail' => 'Limite de OS simultâneas por técnico para reduzir multitarefa.',
+                    'label' => 'Saídas finais',
+                    'value' => (string) $finalCount,
+                    'detail' => 'Status terminais: encerram a OS em vez de deixá-la na fila.',
                 ],
             ],
-            'workflowTrail' => [
-                'Recepção',
-                'Triagem',
-                'Aguardando Avaliação',
-                'Diagnóstico',
-                'Orçamento',
-                'Autorização',
-                'Reparo',
-                'Execução',
-                'Qualidade',
-                'Entrega',
-                'Pós-venda',
+            'workflowTrail' => $groups
+                ->keys()
+                ->map(static fn (string $grupoMacro): string => OrderStatusMacroGroups::label($grupoMacro))
+                ->all(),
+            'modelPillars' => $this->buildModelPillars($pauseCount, $finalCount),
+            'workflowLanes' => $this->buildWorkflowLanes($groups),
+            'queueRules' => $this->buildQueueRules(),
+            'specialCases' => $this->buildSpecialCases(),
+        ];
+    }
+
+    /**
+     * Principios do modelo. Cada um corresponde a comportamento que existe de
+     * fato no codigo — a lista antiga misturava intencao com implementacao.
+     *
+     * @return array<int, array<string, string>>
+     */
+    private function buildModelPillars(int $pauseCount, int $finalCount): array
+    {
+        return [
+            [
+                'icon' => 'bi-signpost-split-fill',
+                'title' => 'Status sugerido, nunca imposto',
+                'description' => 'A OS aceita qualquer status ativo. O catálogo de transições apenas destaca as próximas etapas prováveis na tela — desde 09/08/2026 ele deixou de bloquear o destino, porque o técnico avança várias etapas do atendimento antes de registrar no sistema.',
             ],
-            'modelPillars' => [
-                [
-                    'icon' => 'bi-person-check-fill',
-                    'title' => 'Uma OS, um dono',
-                    'description' => 'Cada ordem precisa de responsável, próximo passo e prazo. Sem dono, a fila quebra.',
-                ],
-                [
-                    'icon' => 'bi-stopwatch-fill',
-                    'title' => 'Tempo timebox',
-                    'description' => 'Triagem, orçamento e retorno precisam de SLA visível para evitar espera silenciosa.',
-                ],
-                [
-                    'icon' => 'bi-funnel-fill',
-                    'title' => 'Prioridade por aging',
-                    'description' => 'OS antigas sobem de prioridade mesmo quando entraram depois, evitando FIFO cego.',
-                ],
-                [
-                    'icon' => 'bi-shield-check',
-                    'title' => 'Garantia como via rápida',
-                    'description' => 'Casos cobertos seguem fora da fila comercial comum, por verificação e cumprimento de garantia.',
-                ],
-                [
-                    'icon' => 'bi-box-seam',
-                    'title' => 'Peça bloqueia visível',
-                    'description' => 'Aguardando peça vira estado explícito com revisão agendada, não um “fica para depois”.',
-                ],
-                [
-                    'icon' => 'bi-graph-up-arrow',
-                    'title' => 'Escalonamento automático',
-                    'description' => 'Se a resposta ou a ação não acontece, o caso sobe de nível antes de virar gargalo.',
-                ],
+            [
+                'icon' => 'bi-lock-fill',
+                'title' => 'Encerramento só pela baixa',
+                'description' => 'Os status do grupo Encerramento não podem ser aplicados pelo modal de "Alterar status": só a baixa da OS os grava. Isso impede marcar entrega sem passar pelo fechamento financeiro, e sair desse estado exige cancelar a baixa.',
             ],
-            'workflowLanes' => [
-                [
-                    'key' => 'recepcao',
-                    'label' => 'Recepção e Triagem',
-                    'description' => 'A OS entra, ganha prioridade e sai com um dono definido. Se não houver triagem, a fila começa errada.',
-                    'accent' => '#0ea5e9',
-                    'soft_accent' => 'rgba(14, 165, 233, 0.12)',
-                    'chips' => ['SLA 15 min', 'Fila única', 'Prioridade por aging'],
-                    'steps' => [
-                        [
-                            'order' => '01',
-                            'title' => 'Recepção',
-                            'code' => 'Entrada controlada',
-                            'owner' => 'Atendimento',
-                            'timebox' => 'imediato',
-                            'entry' => 'OS criada ou recebida',
-                            'exit' => 'Cadastro mínimo validado',
-                            'risk' => 'Pedido sem dados vira retrabalho',
-                        ],
-                        [
-                            'order' => '02',
-                            'title' => 'Triagem',
-                            'code' => 'Classificação + prioridade',
-                            'owner' => 'Atendimento / líder',
-                            'timebox' => '15 min',
-                            'entry' => 'OS liberada para fila',
-                            'exit' => 'Encaminhada ao caminho correto',
-                            'risk' => 'Fila quebra quando todo caso “é urgente”',
-                        ],
-                        [
-                            'order' => '03',
-                            'title' => 'Verificação de Garantia',
-                            'code' => 'Cobertura ativa',
-                            'owner' => 'Supervisor',
-                            'timebox' => 'prioritária',
-                            'entry' => 'Cobertura confirmada',
-                            'exit' => 'Cumprimento de garantia ou solução imediata',
-                            'risk' => 'Garantia misturada ao fluxo comercial',
-                        ],
-                    ],
-                ],
-                [
-                    'key' => 'diagnostico',
-                    'label' => 'Diagnóstico e Orçamento',
-                    'description' => 'O técnico valida a causa, decide se há reparo e só então abre orçamento. A aprovação precisa de prazo curto e cobrança ativa.',
-                    'accent' => '#6f5afc',
-                    'soft_accent' => 'rgba(111, 90, 252, 0.12)',
-                    'chips' => ['Dono técnico', 'Orçamento 24 h', 'Retorno ativo'],
-                    'steps' => [
-                        [
-                            'order' => '04',
-                            'title' => 'Diagnóstico Técnico',
-                            'code' => 'Causa raiz',
-                            'owner' => 'Técnico',
-                            'timebox' => '30 min',
-                            'entry' => 'Avaliação concluída',
-                            'exit' => 'Tem reparo? decidido',
-                            'risk' => 'OS parada sem ação concreta',
-                        ],
-                        [
-                            'order' => '05',
-                            'title' => 'Orçamento',
-                            'code' => 'Aprovação do cliente',
-                            'owner' => 'Atendimento / comercial',
-                            'timebox' => '24 h',
-                            'entry' => 'Reparo com custo adicional',
-                            'exit' => 'Aprovado, recusado ou cancelado',
-                            'risk' => 'Espera infinita sem escalonamento',
-                        ],
-                        [
-                            'order' => '06',
-                            'title' => 'Aguardando Peça',
-                            'code' => 'Peça pendente',
-                            'owner' => 'Almoxarifado / compras',
-                            'timebox' => 'bloqueado',
-                            'entry' => 'Orçamento aprovado',
-                            'exit' => 'Material liberado para execução',
-                            'risk' => 'Reparo travado sem visibilidade da peça',
-                        ],
-                    ],
-                ],
-                [
-                    'key' => 'execucao',
-                    'label' => 'Execução e Qualidade',
-                    'description' => 'A produção precisa de limite de WIP, execução focada e teste obrigatório antes da saída. Sem isso, a fila vira multitarefa permanente.',
-                    'accent' => '#16a34a',
-                    'soft_accent' => 'rgba(22, 163, 74, 0.12)',
-                    'chips' => ['WIP 3', 'Teste obrigatório', 'Retrabalho controlado'],
-                    'steps' => [
-                        [
-                            'order' => '07',
-                            'title' => 'Execução',
-                            'code' => 'Reparo em andamento',
-                            'owner' => 'Técnico',
-                            'timebox' => 'com limite',
-                            'entry' => 'Peça e aprovação liberadas',
-                            'exit' => 'Serviço concluído',
-                            'risk' => 'Multitarefa e procrastinação de bancada',
-                        ],
-                        [
-                            'order' => '08',
-                            'title' => 'Qualidade',
-                            'code' => 'Teste final',
-                            'owner' => 'QC / líder',
-                            'timebox' => 'imediato',
-                            'entry' => 'Reparo concluído',
-                            'exit' => 'Entrega autorizada',
-                            'risk' => 'Entrega sem validação final',
-                        ],
-                    ],
-                ],
-                [
-                    'key' => 'encerramento',
-                    'label' => 'Entrega e Pós-venda',
-                    'description' => 'A saída é controlada: entrega, pagamento pendente, devolução sem reparo, cancelamento ou garantia retornam como terminal claro.',
-                    'accent' => '#f59e0b',
-                    'soft_accent' => 'rgba(245, 158, 11, 0.14)',
-                    'chips' => ['Saída controlada', 'Cobrança separada', 'Garantia ativa'],
-                    'steps' => [
-                        [
-                            'order' => '09',
-                            'title' => 'Entrega',
-                            'code' => 'Encerramento operacional',
-                            'owner' => 'Atendimento',
-                            'timebox' => 'imediato',
-                            'entry' => 'Teste aprovado',
-                            'exit' => 'OS entregue ao cliente',
-                            'risk' => 'Retirada sem orientação final',
-                        ],
-                        [
-                            'order' => '10',
-                            'title' => 'Pós-venda',
-                            'code' => 'Garantia e retorno',
-                            'owner' => 'CRM / atendimento',
-                            'timebox' => 'follow-up',
-                            'entry' => 'OS entregue',
-                            'exit' => 'Cobrança, garantia ou reabertura controlada',
-                            'risk' => 'Perda de feedback e recompra',
-                        ],
-                    ],
-                ],
+            [
+                'icon' => 'bi-pause-circle-fill',
+                'title' => 'Pausa é estado declarado',
+                'description' => sprintf(
+                    '%d dos status ativos marcam a OS como parada — espera de peça, de autorização ou de pagamento. A espera aparece como parada declarada, não como uma OS eternamente "em andamento".',
+                    $pauseCount
+                ),
             ],
-            'queueRules' => [
-                [
-                    'title' => 'Fila única',
-                    'icon' => 'bi-inboxes-fill',
-                    'rule' => 'não criar filas paralelas por técnico, pessoa ou telefone',
-                    'impact' => 'reduz favorecimento informal e facilita priorização real',
-                ],
-                [
-                    'title' => 'Próxima ação obrigatória',
-                    'icon' => 'bi-arrow-right-circle-fill',
-                    'rule' => 'cada OS precisa sair de uma etapa com a próxima ação definida',
-                    'impact' => 'evita casos sem dono e sem direção',
-                ],
-                [
-                    'title' => 'SLA timebox',
-                    'icon' => 'bi-alarm-fill',
-                    'rule' => 'triagem, orçamento e revisão precisam de prazo curto de retorno',
-                    'impact' => 'impede espera silenciosa e procrastinação acumulada',
-                ],
-                [
-                    'title' => 'Aging primeiro',
-                    'icon' => 'bi-sort-down',
-                    'rule' => 'casos mais antigos sobem de prioridade quando empatam em urgência',
-                    'impact' => 'evita FIFO cego e melhora justiça operacional',
-                ],
-                [
-                    'title' => 'WIP limitado',
-                    'icon' => 'bi-layers-fill',
-                    'rule' => 'cada técnico trabalha poucas OS ao mesmo tempo para reduzir troca de contexto',
-                    'impact' => 'melhora fluxo de conclusão e diminui retrabalho',
-                ],
-                [
-                    'title' => 'Escalonamento',
-                    'icon' => 'bi-exclamation-triangle-fill',
-                    'rule' => 'se o prazo expira, o caso sobe para liderança ou atendimento ativo',
-                    'impact' => 'impede que um caso travado consuma a fila inteira',
-                ],
+            [
+                'icon' => 'bi-box-arrow-right',
+                'title' => 'Saída classificada',
+                'description' => sprintf(
+                    'Não existe um único "fechado": as %d saídas finais estão separadas entre concluído, finalizado sem reparo, encerrado e cancelado, para que perda e desistência possam ser analisadas em vez de somem num só balde.',
+                    $finalCount
+                ),
             ],
-            'specialCases' => [
-                [
-                    'title' => 'Garantia',
-                    'icon' => 'bi-shield-check',
-                    'color' => '#0ea5e9',
-                    'entry' => 'cobertura confirmada',
-                    'rule' => 'segue via de garantia, fora da fila comercial comum, até o cumprimento ou a conclusão da garantia',
-                    'exit' => 'execução ou encerramento sem cobrança comum',
-                ],
-                [
-                    'title' => 'Aguardando peça',
-                    'icon' => 'bi-box-seam',
-                    'color' => '#8b5cf6',
-                    'entry' => 'reparo depende de componente',
-                    'rule' => 'fica marcado como bloqueio visível com revisão agendada',
-                    'exit' => 'reparo libera quando a peça entra',
-                ],
-                [
-                    'title' => 'Pagamento pendente',
-                    'icon' => 'bi-credit-card-2-front',
-                    'color' => '#f59e0b',
-                    'entry' => 'cobrança ou saldo em aberto',
-                    'rule' => 'não trava a produção concluída, mas mantém follow-up ativo e saldo visível',
-                    'exit' => 'quitação, acordo financeiro ou retorno controlado para a fila',
-                ],
-                [
-                    'title' => 'Cancelada / sem reparo',
-                    'icon' => 'bi-x-circle-fill',
-                    'color' => '#64748b',
-                    'entry' => 'cliente recusa, sem viabilidade ou sem solução',
-                    'rule' => 'encerra com motivo classificado para análise de perda',
-                    'exit' => 'baixa operacional sem falsa permanência na fila',
-                ],
+            [
+                'icon' => 'bi-shield-check',
+                'title' => 'Garantia com via própria',
+                'description' => 'Garantia não entra na fila comercial comum: tem status próprios de verificação, cumprimento, conclusão e entrega, o que permite separar retorno coberto de serviço novo nos relatórios.',
+            ],
+            [
+                'icon' => 'bi-clock-history',
+                'title' => 'Toda mudança vira evento',
+                'description' => 'Cada troca de status grava um evento na linha do tempo da OS, com autor e momento. É o que permite reconstruir o atendimento depois — o histórico não depende de alguém ter escrito uma observação.',
             ],
         ];
     }
 
     /**
+     * Uma raia por macrofase, com os status reais dela. Antes as raias eram
+     * quatro blocos fixos com etapas inventadas e prazos que ninguem media.
+     *
+     * @param  \Illuminate\Support\Collection<string, \Illuminate\Support\Collection<int, array<string, mixed>>>  $groups
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildWorkflowLanes(\Illuminate\Support\Collection $groups): array
+    {
+        return $groups
+            ->map(static function ($groupStatuses, string $grupoMacro): array {
+                $groupStatuses = $groupStatuses->values();
+
+                $pause = $groupStatuses->filter(static fn (array $s): bool => (bool) ($s['status_pausa'] ?? false))->count();
+                $final = $groupStatuses->filter(static fn (array $s): bool => (bool) ($s['status_final'] ?? false))->count();
+
+                $chips = [sprintf('%d %s', $groupStatuses->count(), $groupStatuses->count() === 1 ? 'status' : 'status')];
+                if ($pause > 0) {
+                    $chips[] = sprintf('%d em pausa', $pause);
+                }
+                if ($final > 0) {
+                    $chips[] = sprintf('%d final%s', $final, $final === 1 ? '' : 'is');
+                }
+
+                return [
+                    'key' => $grupoMacro,
+                    'label' => OrderStatusMacroGroups::label($grupoMacro),
+                    'description' => OrderStatusMacroGroups::description($grupoMacro),
+                    'accent' => OrderStatusMacroGroups::accent($grupoMacro),
+                    'soft_accent' => OrderStatusMacroGroups::softAccent($grupoMacro),
+                    'chips' => $chips,
+                    'steps' => $groupStatuses
+                        ->map(static function (array $status): array {
+                            $flags = [];
+                            if (! empty($status['status_pausa'])) {
+                                $flags[] = 'Pausa';
+                            }
+                            if (! empty($status['status_final'])) {
+                                $flags[] = 'Final';
+                            }
+
+                            return [
+                                'order' => str_pad((string) (int) ($status['ordem_fluxo'] ?? 0), 2, '0', STR_PAD_LEFT),
+                                'title' => trim((string) ($status['nome'] ?? '')) ?: 'Sem nome',
+                                'code' => trim((string) ($status['codigo'] ?? '')),
+                                'flow_state' => OrderStatusMacroGroups::flowStateLabel((string) ($status['estado_fluxo_padrao'] ?? '')),
+                                'flags' => $flags,
+                            ];
+                        })
+                        ->all(),
+                ];
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return array<int, array<string, string>>
+     */
+    private function buildQueueRules(): array
+    {
+        return [
+            [
+                'title' => 'Status e estado juntos',
+                'icon' => 'bi-link-45deg',
+                'rule' => 'a mudança de status grava também o estado de fluxo da OS (em atendimento, em execução, pausado, pronto, encerrado ou cancelado)',
+                'impact' => 'a leitura macro da fila não depende de decorar o significado de cada um dos status do catálogo',
+            ],
+            [
+                'title' => 'Pausa visível',
+                'icon' => 'bi-pause-circle',
+                'rule' => 'esperar peça, autorização ou pagamento exige mover a OS para um status marcado como pausa',
+                'impact' => 'a espera fica contável e separada do trabalho realmente em andamento',
+            ],
+            [
+                'title' => 'Baixa fecha a OS',
+                'icon' => 'bi-lock',
+                'rule' => 'os status de encerramento são gravados pela baixa, não pelo modal de alterar status',
+                'impact' => 'não existe OS entregue sem o fechamento financeiro correspondente ter sido feito',
+            ],
+            [
+                'title' => 'Evento por mudança',
+                'icon' => 'bi-clock-history',
+                'rule' => 'cada troca de status registra autor e momento na linha do tempo da OS',
+                'impact' => 'dá para reconstruir o atendimento sem depender da memória de quem atendeu',
+            ],
+            [
+                'title' => 'Prazo é da OS',
+                'icon' => 'bi-calendar-check',
+                'rule' => 'a previsão de entrega fica na OS (data de previsão), não em cada status',
+                'impact' => 'o compromisso com o cliente é um só, em vez de uma soma de prazos por etapa que ninguém acompanha',
+            ],
+        ];
+    }
+
+    /**
+     * Ramos que saem do caminho feliz, descritos pelos status reais que os
+     * representam no catalogo.
+     *
+     * @return array<int, array<string, string>>
+     */
+    private function buildSpecialCases(): array
+    {
+        return [
+            [
+                'title' => 'Garantia',
+                'icon' => 'bi-shield-check',
+                'color' => '#0ea5e9',
+                'entry' => 'Verificação de Garantia',
+                'rule' => 'segue por Cumprimento de Garantia em vez da execução comercial comum',
+                'exit' => 'Garantia Concluída ou Entregue - Reparado em Garantia',
+            ],
+            [
+                'title' => 'Aguardando peça',
+                'icon' => 'bi-box-seam',
+                'color' => '#d79b00',
+                'entry' => 'Aguardando Peça',
+                'rule' => 'status de pausa: a OS sai da execução e fica declaradamente parada',
+                'exit' => 'volta para Aguardando Reparo ou Em Execução do Serviço',
+            ],
+            [
+                'title' => 'Pendência financeira',
+                'icon' => 'bi-credit-card-2-front',
+                'color' => '#f59e0b',
+                'entry' => 'Pagamento Pendente ou Entregue - Pendência Financeira',
+                'rule' => 'não trava a produção já concluída, mas mantém o saldo visível como pausa',
+                'exit' => 'Entregue - Reparado e Pago após a quitação',
+            ],
+            [
+                'title' => 'Sem reparo',
+                'icon' => 'bi-x-circle-fill',
+                'color' => '#b85450',
+                'entry' => 'Irreparável ou Reparo Recusado',
+                'rule' => 'encerra por um caminho próprio, separado do reparo concluído',
+                'exit' => 'Devolvido Sem Reparo, Equipamento Descartado ou Cancelado',
+            ],
+        ];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $statuses
      * @return array<string, mixed>
      */
-    private function buildNaturalJourneyViewData(): array
+    private function buildNaturalJourneyViewData(array $statuses): array
     {
-        $statuses = [];
-
-        try {
-            $result = $this->orderStatusFlowService->index();
-            $statuses = is_array($result['statuses'] ?? null) ? $result['statuses'] : [];
-        } catch (Throwable $exception) {
-            report($exception);
-        }
-
         $journeySteps = $this->buildNaturalJourneySteps($statuses);
 
         return [
@@ -359,7 +339,6 @@ class AssistanceModelController extends DesktopController
                 'code' => '',
                 'kind' => 'context',
                 'accent' => '#0ea5e9',
-                'timebox' => 'imediato',
                 'owner' => 'Atendimento',
                 'description' => 'Cliente entrega o equipamento e a OS nasce com cadastro mínimo.',
                 'entry' => 'Chegada física do equipamento',
@@ -373,7 +352,6 @@ class AssistanceModelController extends DesktopController
                 'code' => 'triagem',
                 'kind' => 'status',
                 'accent' => '#38bdf8',
-                'timebox' => '15 min',
                 'owner' => 'Atendimento / líder',
                 'description' => 'Classifica prioridade, registra contexto e define o próximo passo.',
                 'entry' => 'OS recebida na assistência',
@@ -387,7 +365,6 @@ class AssistanceModelController extends DesktopController
                 'code' => 'aguardando_avaliacao',
                 'kind' => 'status',
                 'accent' => '#f59e0b',
-                'timebox' => '24 h',
                 'owner' => 'Atendimento / comercial',
                 'description' => 'A OS aguarda avaliação inicial antes de entrar no diagnóstico técnico.',
                 'entry' => 'OS recebida na assistência',
@@ -401,7 +378,6 @@ class AssistanceModelController extends DesktopController
                 'code' => 'diagnostico',
                 'kind' => 'status',
                 'accent' => '#6f5afc',
-                'timebox' => '30 min',
                 'owner' => 'Técnico',
                 'description' => 'O técnico aprofunda a causa, confirma viabilidade e prepara o orçamento.',
                 'entry' => 'Avaliação concluída',
@@ -415,7 +391,6 @@ class AssistanceModelController extends DesktopController
                 'code' => 'aguardando_orcamento',
                 'kind' => 'status',
                 'accent' => '#4f46e5',
-                'timebox' => '24 h',
                 'owner' => 'Atendimento / comercial',
                 'description' => 'O diagnóstico vira preço, prazo e escopo antes de qualquer reparo.',
                 'entry' => 'Diagnóstico concluído',
@@ -429,12 +404,11 @@ class AssistanceModelController extends DesktopController
                 'code' => 'aguardando_autorizacao',
                 'kind' => 'status',
                 'accent' => '#8b5cf6',
-                'timebox' => '24 h',
                 'owner' => 'Atendimento / comercial',
                 'description' => 'O cliente aprova, recusa ou pede ajuste no orçamento enviado.',
                 'entry' => 'Orçamento emitido',
                 'exit' => 'Autorização registrada',
-                'risk' => 'Aprovação sem SLA vira fila parada',
+                'risk' => 'Aprovação sem retorno ativo deixa a OS parada',
             ],
             [
                 'key' => 'reparo',
@@ -443,7 +417,6 @@ class AssistanceModelController extends DesktopController
                 'code' => 'aguardando_reparo',
                 'kind' => 'status',
                 'accent' => '#16a34a',
-                'timebox' => 'conforme peça',
                 'owner' => 'Técnico / estoque',
                 'description' => 'Autorizado, o item entra na bancada ou aguarda material.',
                 'entry' => 'Autorização confirmada',
@@ -457,9 +430,8 @@ class AssistanceModelController extends DesktopController
                 'code' => 'reparo_execucao',
                 'kind' => 'status',
                 'accent' => '#f59e0b',
-                'timebox' => 'com limite',
                 'owner' => 'Técnico',
-                'description' => 'Reparo em andamento com WIP limitado por técnico.',
+                'description' => 'Reparo em andamento, com o técnico responsável registrado na OS.',
                 'entry' => 'Bancada liberada',
                 'exit' => 'Serviço concluído',
                 'risk' => 'Multitarefa e procrastinação de bancada',
@@ -471,7 +443,6 @@ class AssistanceModelController extends DesktopController
                 'code' => 'testes_operacionais',
                 'kind' => 'status',
                 'accent' => '#0ea5e9',
-                'timebox' => 'rápido',
                 'owner' => 'Técnico / QC',
                 'description' => 'Funcionamento básico validado antes da conferência final.',
                 'entry' => 'Reparo executado',
@@ -485,7 +456,6 @@ class AssistanceModelController extends DesktopController
                 'code' => 'testes_finais',
                 'kind' => 'status',
                 'accent' => '#38bdf8',
-                'timebox' => 'imediato',
                 'owner' => 'QC / líder',
                 'description' => 'Checagem final antes do encerramento ou da entrega.',
                 'entry' => 'Funcionamento básico validado',
@@ -499,7 +469,6 @@ class AssistanceModelController extends DesktopController
                 'code' => 'reparo_concluido',
                 'kind' => 'status',
                 'accent' => '#16a34a',
-                'timebox' => 'imediato',
                 'owner' => 'Atendimento',
                 'description' => 'OS encerrada tecnicamente e pronta para saída.',
                 'entry' => 'Testes finais aprovados',
@@ -513,7 +482,6 @@ class AssistanceModelController extends DesktopController
                 'code' => 'entregue_reparado_pago',
                 'kind' => 'status',
                 'accent' => '#0f766e',
-                'timebox' => 'imediato',
                 'owner' => 'Atendimento',
                 'description' => 'Cliente retira o equipamento e o ciclo fica encerrado.',
                 'entry' => 'OS liberada para saída',
@@ -547,7 +515,6 @@ class AssistanceModelController extends DesktopController
                     'resolved_label' => $resolvedLabel,
                     'code' => $resolvedCode,
                     'accent' => $resolvedColor,
-                    'timebox' => $definition['timebox'],
                     'owner' => $definition['owner'],
                     'description' => $definition['description'],
                     'entry' => $definition['entry'],

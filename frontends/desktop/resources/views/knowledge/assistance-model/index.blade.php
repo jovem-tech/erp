@@ -17,10 +17,11 @@
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
         <div>
             <p class="desktop-eyebrow">Gestão de Conhecimento</p>
-            <h2 class="surface-title fs-3 mb-2">{{ $pageTitle ?? 'Modelo Ideal da Assistência Técnica' }}</h2>
+            <h2 class="surface-title fs-3 mb-2">{{ $pageTitle ?? 'Modelo da Assistência Técnica' }}</h2>
             <p class="surface-subtitle mb-0">
-                Fluxo pensado para evitar procrastinação operacional, fila quebrada e OS sem dono.
-                A lógica abaixo prioriza triagem rápida, responsabilidade clara, SLA curto e saída controlada.
+                Como o atendimento está desenhado neste sistema: as fases, os status reais de cada uma
+                e as regras que o próprio código aplica. Tudo o que aparece abaixo é lido do catálogo
+                de status em uso, não de um modelo escrito à parte.
             </p>
         </div>
     </div>
@@ -136,7 +137,6 @@
                             <div class="workflow-node-body">
                                 <div class="workflow-node-flags">
                                     <span class="workflow-node-state">{{ $step['owner'] ?? 'Dono não definido' }}</span>
-                                    <span class="workflow-node-state">{{ $step['timebox'] ?? 'sem prazo' }}</span>
                                 </div>
 
                                 <div class="workflow-node-metrics">
@@ -216,25 +216,23 @@
         <div class="surface-card-header">
             <div>
                 <p class="desktop-eyebrow">Mapa operacional</p>
-                <h2 class="surface-title">Uma fila, um dono, uma próxima ação</h2>
+                <h2 class="surface-title">As fases e os status de cada uma</h2>
                 <p class="surface-subtitle mb-0">
-                    O desenho abaixo organiza a assistência técnica como um funil saudável:
-                    triagem rápida, garantia tratada como via prioritária, diagnóstico com decisão objetiva,
-                    execução com WIP limitado e encerramento sem esconder pendências.
+                    Cada raia abaixo é uma macrofase do catálogo, com os status ativos que pertencem a ela,
+                    o estado de fluxo que cada um grava na OS e a marcação de pausa ou de saída final.
                 </p>
             </div>
 
             <div class="workflow-legend">
-                <span class="workflow-legend-item">Fila única</span>
-                <span class="workflow-legend-item is-transition">WIP limitado</span>
-                <span class="workflow-legend-item is-pause">Pausa com revisão</span>
-                <span class="workflow-legend-item is-final">Saída controlada</span>
+                <span class="workflow-legend-item">Macrofase</span>
+                <span class="workflow-legend-item is-pause">Pausa</span>
+                <span class="workflow-legend-item is-final">Saída final</span>
             </div>
         </div>
 
         <div class="workflow-overview-grid">
             <div>
-                <p class="workflow-overview-label">Trajeto ideal</p>
+                <p class="workflow-overview-label">Fases do atendimento</p>
                 <div class="workflow-trail">
                     @forelse ($workflowTrail as $trailLabel)
                         <span class="workflow-trail-step">{{ $trailLabel }}</span>
@@ -293,29 +291,19 @@
                                     <div class="workflow-node-copy">
                                         <div class="workflow-node-title-row">
                                             <h4 class="workflow-node-title">{{ $step['title'] ?? '' }}</h4>
-                                            <span class="workflow-node-state">{{ $step['timebox'] ?? 'sem prazo' }}</span>
+                                            <span class="workflow-node-state">{{ $step['flow_state'] ?? 'Sem estado' }}</span>
                                         </div>
                                         <p class="workflow-node-code">{{ $step['code'] ?? '' }}</p>
                                     </div>
                                 </div>
 
                                 <div class="workflow-node-body">
-                                    <div class="workflow-node-flags">
-                                        <span class="workflow-node-state">Dono: {{ $step['owner'] ?? 'não definido' }}</span>
-                                    </div>
-
                                     <div class="workflow-node-metrics">
-                                        <span class="desktop-chip">Entrada: {{ $step['entry'] ?? 'não informada' }}</span>
-                                        <span class="desktop-chip">Saída: {{ $step['exit'] ?? 'não informada' }}</span>
-                                    </div>
-
-                                    <div class="workflow-node-destinations">
-                                        <strong>Risco evitado</strong>
-                                        <div class="workflow-node-destination-list">
-                                            <div class="workflow-node-destination">
-                                                <span class="workflow-node-empty">{{ $step['risk'] ?? 'Sem risco descrito.' }}</span>
-                                            </div>
-                                        </div>
+                                        @forelse ($step['flags'] ?? [] as $flag)
+                                            <span class="desktop-chip">{{ $flag }}</span>
+                                        @empty
+                                            <span class="desktop-chip">Etapa de andamento</span>
+                                        @endforelse
                                     </div>
                                 </div>
                             </article>
@@ -342,8 +330,8 @@
                 <p class="desktop-eyebrow">Princípios operacionais</p>
                 <h2 class="surface-title">Regras que seguram a fila</h2>
                 <p class="surface-subtitle mb-0">
-                    O modelo funciona quando o time para de depender de memória e passa a operar com regra clara:
-                    dono definido, prazo curto, prioridade real e escalonamento quando algo emperra.
+                    Os princípios abaixo não são intenção: cada um corresponde a um comportamento
+                    que o sistema aplica hoje, na mudança de status, na baixa ou no histórico da OS.
                 </p>
             </div>
         </div>
@@ -369,10 +357,10 @@
         <div class="surface-table-header">
             <div>
                 <p class="desktop-eyebrow mb-1">Regras da fila</p>
-                <h2 class="surface-title">Anti-gargalo e anti-procrastinação</h2>
+                <h2 class="surface-title">O que o sistema garante</h2>
                 <p class="surface-subtitle mb-0">
-                    Essas regras impedem o comportamento mais comum de assistência técnica ruim:
-                    muita OS aberta, pouca clareza, retorno sem prazo e produção escondida atrás de “está olhando”.
+                    Regras aplicadas pelo código, com o efeito prático de cada uma na leitura da fila.
+                    O que depende de disciplina do time, e não do sistema, ficou de fora desta tabela.
                 </p>
             </div>
         </div>

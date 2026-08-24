@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\V1\EquipmentController;
 use App\Http\Controllers\Api\V1\EstoqueController;
 use App\Http\Controllers\Api\V1\FileManagerController;
 use App\Http\Controllers\Api\V1\InterBankingController;
+use App\Http\Controllers\Api\V1\InterCobrancaController;
 use App\Http\Controllers\Api\V1\FinanceiroCartaoController;
 use App\Http\Controllers\Api\V1\FinanceiroCartaoCreditoController;
 use App\Http\Controllers\Api\V1\FinanceiroCatalogController;
@@ -362,6 +363,21 @@ Route::prefix('v1')->group(function (): void {
                 // Banco Inter — somente leitura. `atualizar=1` forca refresh do
                 // saldo, que e' cacheado por alguns minutos para nao bater no
                 // banco a cada carregamento de tela.
+                // Cobranca Pix do titulo. POST e' idempotente por titulo:
+                // dois cliques devolvem a mesma cobranca, nao duas.
+                Route::get('{financeiro}/cobranca-pix', [InterCobrancaController::class, 'show'])
+                    ->whereNumber('financeiro')
+                    ->middleware('throttle:60,1')
+                    ->name('cobranca-pix.show');
+                Route::post('{financeiro}/cobranca-pix', [InterCobrancaController::class, 'store'])
+                    ->whereNumber('financeiro')
+                    ->middleware('throttle:20,1')
+                    ->name('cobranca-pix.store');
+                Route::delete('{financeiro}/cobranca-pix', [InterCobrancaController::class, 'destroy'])
+                    ->whereNumber('financeiro')
+                    ->middleware('throttle:20,1')
+                    ->name('cobranca-pix.destroy');
+
                 Route::get('inter/status', [InterBankingController::class, 'status'])
                     ->middleware('throttle:30,1')
                     ->name('inter.status');

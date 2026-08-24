@@ -20,22 +20,9 @@ class DashboardController extends DesktopController
 
     public function index(Request $request): View
     {
-        // Card "Compromissos" do topo. O dashboard é a primeira tela do dia e
-        // não pode cair porque a agenda falhou — sem permissão ou com erro, o
-        // card simplesmente não aparece.
-        $agenda = [];
-
-        if (DesktopSession::can('agenda', 'visualizar')) {
-            try {
-                $agenda = $this->agendaService->summary();
-            } catch (Throwable) {
-                $agenda = [];
-            }
-        }
-
         return view('dashboard.index', [
             'pageTitle' => 'Dashboard',
-            'agenda' => $agenda,
+            'agenda' => $this->agendaSummary(),
             'dashboard' => [
                 'dataUrl' => route('dashboard.data'),
                 'filters' => $this->dashboardService->bootstrapFilters($this->normalizeFilters($request)),
@@ -45,12 +32,38 @@ class DashboardController extends DesktopController
 
     public function data(Request $request): JsonResponse
     {
+        // A agenda entra aqui também, e não só no index: o painel "O que merece
+        // sua atenção hoje" conta compromissos atrasados junto com os alertas de
+        // OS, estoque e financeiro. Se o refresh por filtro devolvesse o painel
+        // sem a agenda, o chip de atrasados sumiria ao trocar o ano.
+        $agenda = $this->agendaSummary();
+
         return response()->json([
             'status' => 'success',
-            'data' => $this->dashboardService->summary($this->normalizeFilters($request)),
+            'data' => $this->dashboardService->summary($this->normalizeFilters($request), $agenda),
             'error' => null,
             'meta' => [],
         ]);
+    }
+
+    /**
+     * Resumo da agenda para o topo do painel. O dashboard é a primeira tela do
+     * dia e não pode cair porque a agenda falhou — sem permissão ou com erro,
+     * os itens de agenda simplesmente não aparecem.
+     *
+     * @return array<string, mixed>
+     */
+    private function agendaSummary(): array
+    {
+        if (! DesktopSession::can('agenda', 'visualizar')) {
+            return [];
+        }
+
+        try {
+            return $this->agendaService->summary();
+        } catch (Throwable) {
+            return [];
+        }
     }
 
     public function help(): View

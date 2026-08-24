@@ -55,6 +55,7 @@ class UpdateIntegrationsRequest extends FormRequest
             'pagamentos_inter_client_id' => ['nullable', 'string', 'max:255'],
             'pagamentos_inter_client_secret' => ['nullable', 'string', 'max:255'],
             'pagamentos_inter_conta_corrente' => ['nullable', 'string', 'max:30'],
+            'pagamentos_inter_chave_pix' => ['nullable', 'string', 'max:200'],
 
             'smtp_host' => ['nullable', 'string', 'max:255'],
             'smtp_port' => ['nullable', 'integer', 'min:1', 'max:65535'],

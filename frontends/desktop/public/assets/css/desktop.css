@@ -8772,23 +8772,6 @@ a.agenda-summary-card:hover {
 }
 
 /* Card de agenda no dashboard — só aparece quando há algo a resolver. */
-.dashboard-agenda-card {
-    padding: 1.1rem 1.25rem;
-    border: 1px solid var(--desktop-border);
-    border-radius: 20px;
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
-    box-shadow: var(--desktop-shadow-soft);
-}
-
-.dashboard-agenda-head {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 0.9rem;
-}
-
 .dashboard-agenda-list {
     display: flex;
     flex-direction: column;
@@ -9242,4 +9225,478 @@ a.agenda-year-day:hover {
 .agenda-summary-google .agenda-google-account {
     font-size: 0.76rem;
     max-width: 100%;
+}
+
+/* ==========================================================================
+   Dashboard — refinamento etapa 2
+   Bloco no fim do arquivo de propósito: sobrescreve as regras originais do
+   painel (legendas, grid secundário) sem reescrevê-las no meio do arquivo, e
+   carrega as próprias media queries depois das antigas.
+   ========================================================================== */
+
+/* --- Saudação ----------------------------------------------------------- */
+
+.dashboard-page-hero .desktop-page-hero-copy h2 {
+    text-transform: none;
+}
+
+.dashboard-page-hero .desktop-page-hero-copy p {
+    margin-top: 0.3rem;
+}
+
+/* --- O que merece sua atenção hoje -------------------------------------- */
+
+.dashboard-attention {
+    padding: 1.15rem 1.3rem 1.25rem;
+    border: 1px solid var(--desktop-border);
+    border-radius: 20px;
+    background: var(--desktop-surface);
+    box-shadow: var(--desktop-shadow-soft);
+}
+
+.dashboard-attention-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.dashboard-attention-title {
+    margin: 0.35rem 0 0;
+    color: var(--desktop-heading);
+    font-size: 1.05rem;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.dashboard-attention-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.15rem;
+    color: var(--desktop-primary);
+    font-size: 0.82rem;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.dashboard-attention-all:hover {
+    text-decoration: underline;
+}
+
+.dashboard-attention-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 0.7rem;
+}
+
+/* Chip: compacto de propósito. Quatro cards grandes empurrariam os
+   indicadores para fora da primeira tela — o oposto do objetivo. */
+.dashboard-attention-chip {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    min-width: 0;
+    padding: 0.7rem 0.85rem;
+    border: 1px solid var(--desktop-border);
+    border-left: 3px solid var(--tone-color, #94a3b8);
+    border-radius: 12px;
+    background: var(--tone-bg, rgba(148, 163, 184, 0.08));
+    color: inherit;
+    text-decoration: none;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.dashboard-attention-chip:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--desktop-shadow-soft);
+    color: inherit;
+    text-decoration: none;
+}
+
+.dashboard-attention-chip.tone-danger { --tone-color: #ef4444; --tone-bg: rgba(239, 68, 68, 0.08); }
+.dashboard-attention-chip.tone-warning { --tone-color: #f59e0b; --tone-bg: rgba(245, 158, 11, 0.09); }
+.dashboard-attention-chip.tone-attention { --tone-color: #eab308; --tone-bg: rgba(234, 179, 8, 0.10); }
+.dashboard-attention-chip.tone-info { --tone-color: #3b82f6; --tone-bg: rgba(59, 130, 246, 0.08); }
+.dashboard-attention-chip.tone-success { --tone-color: #22c55e; --tone-bg: rgba(34, 197, 94, 0.08); }
+
+.dashboard-attention-value {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--desktop-heading);
+    font-size: 1.45rem;
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.01em;
+}
+
+.dashboard-attention-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    background: var(--tone-color, #94a3b8);
+    flex-shrink: 0;
+}
+
+.dashboard-attention-label {
+    color: var(--desktop-text-soft);
+    font-size: 0.8rem;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+.dashboard-attention-action {
+    margin-top: 0.3rem;
+    color: var(--tone-color, var(--desktop-primary));
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+/* Estado positivo: ocupa a faixa inteira e fecha o assunto. */
+.dashboard-attention-clear {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid rgba(34, 197, 94, 0.25);
+    border-radius: 12px;
+    background: rgba(34, 197, 94, 0.07);
+}
+
+.dashboard-attention-clear i {
+    color: #16a34a;
+    font-size: 1.4rem;
+}
+
+.dashboard-attention-clear strong {
+    display: block;
+    color: var(--desktop-heading);
+    font-size: 0.92rem;
+    font-weight: 800;
+}
+
+.dashboard-attention-clear span {
+    color: var(--desktop-text-soft);
+    font-size: 0.8rem;
+}
+
+.dashboard-attention-agenda {
+    margin-top: 1.1rem;
+    padding-top: 0.95rem;
+    border-top: 1px solid var(--desktop-border);
+}
+
+.dashboard-attention-agenda-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.6rem;
+}
+
+.dashboard-attention-agenda-link {
+    color: var(--desktop-primary);
+    font-size: 0.78rem;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.dashboard-attention-agenda-link:hover {
+    text-decoration: underline;
+}
+
+/* Tons discretos da agenda: vermelho só para o que já venceu. */
+.dashboard-agenda-item.is-today {
+    box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.28);
+}
+
+.dashboard-agenda-item.is-upcoming {
+    box-shadow: none;
+}
+
+/* --- Skeletons ---------------------------------------------------------- */
+
+.dashboard-skeleton {
+    display: block;
+    border-radius: 6px;
+    background: linear-gradient(
+        90deg,
+        rgba(148, 163, 184, 0.16) 25%,
+        rgba(148, 163, 184, 0.28) 37%,
+        rgba(148, 163, 184, 0.16) 63%
+    );
+    background-size: 400% 100%;
+    animation: dashboard-skeleton-shimmer 1.4s ease infinite;
+}
+
+.dashboard-skeleton-value { width: 58%; height: 1.6rem; }
+.dashboard-skeleton-line { width: 80%; height: 0.72rem; margin-top: 0.35rem; }
+.dashboard-skeleton-link { width: 42%; height: 0.66rem; margin-top: 0.45rem; }
+.dashboard-skeleton-inline { display: inline-block; width: 3.2rem; height: 0.85rem; vertical-align: middle; }
+.dashboard-skeleton-row { width: 100%; height: 1.15rem; }
+
+.dashboard-attention-chip.is-skeleton {
+    border-left-color: var(--desktop-border);
+    background: var(--desktop-surface-soft);
+    pointer-events: none;
+}
+
+@keyframes dashboard-skeleton-shimmer {
+    0% { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dashboard-skeleton {
+        animation: none;
+    }
+}
+
+/* --- Indicadores -------------------------------------------------------- */
+
+.dashboard-kpi-trend {
+    margin: 0.15rem 0 0;
+    font-size: 0.76rem;
+    font-weight: 800;
+}
+
+.dashboard-kpi-trend.is-up { color: #16a34a; }
+.dashboard-kpi-trend.is-down { color: #ef4444; }
+
+/* --- Gráficos grandes lado a lado --------------------------------------- */
+
+.dashboard-charts-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+}
+
+@media (min-width: 1440px) {
+    .dashboard-charts-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+/* --- OS por status ------------------------------------------------------ */
+
+.dashboard-panel-total {
+    color: var(--desktop-text-soft);
+    font-size: 0.78rem;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+/* Uma linha por macrofase, com rolagem própria. Em duas colunas de status
+   individuais a legenda virava uma parede de catorze itens. */
+.dashboard-status-chart-layout .dashboard-status-legend,
+.dashboard-status-legend {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.4rem;
+    max-height: 268px;
+    overflow-y: auto;
+    padding-right: 0.3rem;
+}
+
+.dashboard-status-legend-item {
+    background: var(--desktop-surface-soft);
+    color: inherit;
+    text-decoration: none;
+    transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+a.dashboard-status-legend-item:hover {
+    border-color: var(--desktop-primary);
+    background: var(--desktop-surface);
+    color: inherit;
+    text-decoration: none;
+}
+
+.dashboard-status-legend-item > div {
+    min-width: 0;
+}
+
+/* Detalhe: os status reais que compõem a macrofase. O agrupamento é visual —
+   nenhum status deixa de ser exibido. */
+.dashboard-status-detail {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    margin-top: 0.12rem;
+    opacity: 0.75;
+    font-size: 0.68rem;
+}
+
+/* --- Legenda de equipamentos -------------------------------------------- */
+
+.dashboard-equipment-legend {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 0.3rem;
+    scrollbar-width: thin;
+}
+
+.dashboard-equipment-legend-item {
+    background: var(--desktop-surface-soft);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* --- Resumo financeiro -------------------------------------------------- */
+
+.dashboard-context-headline {
+    margin-bottom: 0.9rem;
+}
+
+.dashboard-context-headline-value {
+    display: block;
+    margin-top: 0.2rem;
+    color: var(--desktop-heading);
+    font-size: 1.75rem;
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+}
+
+.dashboard-context-headline-value.is-negative {
+    color: #ef4444;
+}
+
+.dashboard-context-metrics {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dashboard-context-metric {
+    background: var(--desktop-surface-soft);
+}
+
+/* --- Últimas OS --------------------------------------------------------- */
+
+.dashboard-panel-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    flex-wrap: wrap;
+}
+
+.dashboard-orders-table tbody tr {
+    transition: background 0.12s ease;
+}
+
+.dashboard-orders-table tbody tr:hover {
+    background: var(--desktop-surface-soft);
+}
+
+.dashboard-order-number {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+/* Marcador só aparece quando há algo real a sinalizar — pintar todas as
+   linhas equivale a não pintar nenhuma. */
+.dashboard-order-priority {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    flex-shrink: 0;
+    background: #94a3b8;
+}
+
+.dashboard-order-priority.tone-danger { background: #ef4444; }
+.dashboard-order-priority.tone-warning { background: #f59e0b; }
+.dashboard-order-priority.tone-success { background: #22c55e; }
+
+/* --- Estoque baixo ------------------------------------------------------ */
+
+.dashboard-low-stock-item.is-critical {
+    border-left: 3px solid #ef4444;
+}
+
+/* --- Espaçamento e respiro ---------------------------------------------- */
+
+/* Escopado em .dashboard-page: .dashboard-panel e .dashboard-panel-head também
+   vestem as telas de ajuda, que não fazem parte deste refinamento. */
+.dashboard-page .dashboard-panel {
+    padding: 1.35rem;
+}
+
+.dashboard-page .dashboard-panel-head {
+    margin-bottom: 1.15rem;
+}
+
+.dashboard-page .dashboard-panel-head p {
+    margin-top: 0.25rem;
+}
+
+.dashboard-kpi-grid,
+.dashboard-secondary-grid {
+    gap: 1.25rem;
+}
+
+/* --- Responsivo --------------------------------------------------------- */
+
+@media (max-width: 1280px) {
+    .dashboard-secondary-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .dashboard-secondary-grid [data-dashboard-status-panel],
+    .dashboard-secondary-grid [data-dashboard-context-panel] {
+        grid-column: span 1;
+    }
+}
+
+@media (max-width: 1024px) {
+    .dashboard-status-chart-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .dashboard-status-chart-layout .dashboard-status-legend,
+    .dashboard-status-legend {
+        max-height: none;
+        overflow-y: visible;
+    }
+}
+
+@media (max-width: 768px) {
+    .dashboard-attention {
+        padding: 1rem;
+    }
+
+    .dashboard-attention-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .dashboard-kpi-grid,
+    .dashboard-secondary-grid,
+    .dashboard-charts-grid {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1rem;
+    }
+
+    .dashboard-context-metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .dashboard-page .dashboard-panel {
+        padding: 1.1rem;
+    }
+}
+
+@media (max-width: 430px) {
+    .dashboard-attention-value {
+        font-size: 1.3rem;
+    }
+
+    .dashboard-context-metrics {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .dashboard-context-headline-value {
+        font-size: 1.5rem;
+    }
 }

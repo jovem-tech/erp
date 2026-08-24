@@ -48,6 +48,13 @@ class EstoqueController extends BaseApiController
             $query->where('status', $status);
         }
 
+        // Mesmo criterio de lowStock() e de Peca::estoqueBaixo(): o alerta do
+        // dashboard abre esta listagem com estoque_baixo=1 e a contagem tem de
+        // bater com o numero mostrado no painel.
+        if (filter_var($request->query('estoque_baixo'), FILTER_VALIDATE_BOOL)) {
+            $query->whereColumn('quantidade_atual', '<=', 'estoque_minimo');
+        }
+
         $paginator = $query
             ->orderBy('nome')
             ->paginate($perPage)

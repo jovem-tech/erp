@@ -23,6 +23,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
@@ -237,6 +238,79 @@ class OrderFlowTest extends TestCase
 
         $orders = collect($response->json('data.orders'));
         $this->assertFalse($orders->contains(fn (array $item): bool => (int) ($item['id'] ?? 0) === $firstOrder));
+    }
+
+    public function test_index_supports_the_dashboard_alert_filters(): void
+    {
+        // Cada chip do painel "O que merece sua atenção hoje" abre esta
+        // listagem com um destes filtros. Eles existem para que a contagem do
+        // painel se reproduza aqui — um alerta que abre uma lista com outro
+        // total é pior do que um alerta sem link.
+        [$manager, $techA, , $clientA, , $equipmentA] = $this->seedAdminOrderActors();
+
+        Carbon::setTestNow(Carbon::parse('2026-03-20 10:00:00'));
+
+        try {
+            $parada = $this->createOrderRecord([
+                'numero_os' => 'OS26030001',
+                'cliente_id' => $clientA,
+                'equipamento_id' => $equipmentA,
+                'tecnico_id' => $techA->id,
+                'status' => 'triagem',
+                'estado_fluxo' => 'em_atendimento',
+                'status_atualizado_em' => Carbon::parse('2026-02-20 10:00:00'),
+            ]);
+
+            $recente = $this->createOrderRecord([
+                'numero_os' => 'OS26030002',
+                'cliente_id' => $clientA,
+                'equipamento_id' => $equipmentA,
+                'tecnico_id' => $techA->id,
+                'status' => 'triagem',
+                'estado_fluxo' => 'em_atendimento',
+                'status_atualizado_em' => Carbon::parse('2026-03-19 10:00:00'),
+            ]);
+
+            $semOrcamento = $this->createOrderRecord([
+                'numero_os' => 'OS26030003',
+                'cliente_id' => $clientA,
+                'equipamento_id' => $equipmentA,
+                'status' => 'triagem',
+                'estado_fluxo' => 'em_atendimento',
+                'valor_total' => 350.00,
+                'orcamento_aprovado' => 0,
+            ]);
+
+            $pronta = $this->createOrderRecord([
+                'numero_os' => 'OS26030004',
+                'cliente_id' => $clientA,
+                'equipamento_id' => $equipmentA,
+                'status' => 'triagem',
+                'estado_fluxo' => 'pronto',
+            ]);
+
+            $token = $this->loginAndGetToken($manager->email);
+            $get = fn (string $query): array => $this
+                ->withHeader('Authorization', 'Bearer '.$token)
+                ->getJson('/api/v1/orders?'.$query)
+                ->assertOk()
+                ->json('data.orders');
+
+            $paradas = collect($get('sem_movimento_dias=15'))->pluck('id')->all();
+            $this->assertSame([$parada], $paradas);
+            $this->assertNotContains($recente, $paradas);
+
+            $orcamentos = collect($get('orcamento_pendente=1'))->pluck('id')->all();
+            $this->assertSame([$semOrcamento], $orcamentos);
+
+            $prontas = collect($get('pronto_retirada=1'))->pluck('id')->all();
+            $this->assertSame([$pronta], $prontas);
+
+            // Sem filtro, a listagem segue completa.
+            $this->assertCount(4, $get('per_page=50'));
+        } finally {
+            Carbon::setTestNow();
+        }
     }
 
     public function test_status_catalog_is_available_to_order_viewers_for_listing_filters(): void

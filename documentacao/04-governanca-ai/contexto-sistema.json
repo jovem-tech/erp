@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-08-23T17:13:34-03:00",
+    "generated_at": "2026-08-23T17:26:28-03:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "5.48.1",
+        "app_version": "5.49.1",
         "api_version": "1.6.1",
         "production_target": "Ubuntu VPS",
         "development_target": "Ubuntu Server LAN - BANCADA-02 (192.168.1.100)"
@@ -616,6 +616,10 @@
                 {
                     "file": "documentacao/07-novas-implementacoes/2026-08-23-cobranca-indevida-em-encerramento-sem-cobranca.md",
                     "title": "Cobrança indevida em encerramento sem cobrança (2026-08-23)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-08-23-modelo-assistencia-real-e-fim-da-matriz-de-transicoes.md",
+                    "title": "Modelo da Assistência passa a refletir o sistema; matriz de transições sai da tela"
                 },
                 {
                     "file": "documentacao/07-novas-implementacoes/2026-08-23-sidebar-enxuta-atalhos-clientes-equipamentos.md",

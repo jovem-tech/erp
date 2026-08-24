@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\Equipment;
 use App\Models\Financeiro;
 use App\Models\OrderStatus;
+use App\Models\Peca;
 use App\Models\User;
 use App\Services\Auth\RbacAuthorizationService;
 use App\Services\Orders\OrderWorkflowService;
@@ -72,13 +73,29 @@ class DashboardSummaryService
     /**
      * Expressão SQL para a data de referência usada no alerta de "OS parada".
      */
-    private const STALE_REFERENCE_SQL = 'COALESCE(os.status_atualizado_em, os.updated_at, os.created_at)';
+    private const STALE_REFERENCE_SQL = OrderWorkflowService::STALE_REFERENCE_SQL;
 
     /**
      * TTL curto: o painel tolera ate 1 minuto de atraso em troca de evitar
      * ~15 queries de agregacao a cada carregamento/refresh do dashboard.
      */
     private const CACHE_TTL_SECONDS = 60;
+
+    /**
+     * Dias sem movimentacao de status a partir dos quais uma OS conta como
+     * "parada". Era um literal dentro de buildAlerts(); virou constante porque
+     * agora tres consumidores dependem do MESMO numero: o alerta agregado, o
+     * marcador de prioridade de cada OS recente e o link que abre a lista de
+     * OS ja filtrada por esse limiar. Divergir aqui faria o painel prometer
+     * uma contagem que a lista de destino nao reproduz.
+     */
+    public const STALE_ORDER_DAYS = 15;
+
+    /**
+     * Teto de itens criticos devolvidos ao painel de estoque. O contador
+     * (low_stock_total) continua sendo o numero real.
+     */
+    private const LOW_STOCK_PREVIEW_LIMIT = 8;
 
     /**
      * Paleta própria do gráfico de status. Não usa diretamente a cor do
@@ -192,10 +209,11 @@ class DashboardSummaryService
         $technicianSummary = $canViewOrders
             ? $this->buildTechnicianSummary($user, $access)
             : $this->emptyTechnicianSummary();
+        $lowStock = $this->buildLowStock($access);
 
         return [
             'access' => $access,
-            'stats' => $this->buildStats($user, $access, $financialSummary, $technicianSummary),
+            'stats' => $this->buildStats($user, $access, $financialSummary, $technicianSummary, $lowStock['total']),
             'hero_card' => $this->buildHeroCard($user, $access, $financialSummary, $technicianSummary),
             'context_card' => $this->buildContextCard($access, $financialSummary, $technicianSummary),
             'charts' => [
@@ -217,7 +235,7 @@ class DashboardSummaryService
             'recent_orders' => $this->buildRecentOrders($user, $access),
             'recent_clients' => $this->buildRecentClients($user),
             'recent_equipments' => $this->buildRecentEquipments($user),
-            'low_stock' => [],
+            'low_stock' => $lowStock['items'],
         ];
     }
 
@@ -233,6 +251,7 @@ class DashboardSummaryService
             'is_technician' => $profile === 'tecnico',
             'has_financial_access' => $this->rbacAuthorizationService->allows($user, 'financeiro', 'visualizar'),
             'can_view_orders' => $this->rbacAuthorizationService->allows($user, 'os', 'visualizar'),
+            'can_view_stock' => $this->rbacAuthorizationService->allows($user, 'estoque', 'visualizar'),
             'can_view_clients' => $this->rbacAuthorizationService->allows($user, 'clientes', 'visualizar'),
             'can_view_equipments' => $this->rbacAuthorizationService->allows($user, 'equipamentos', 'visualizar'),
             'can_view_users' => $this->rbacAuthorizationService->allows($user, 'usuarios', 'visualizar'),
@@ -449,7 +468,8 @@ class DashboardSummaryService
         User $user,
         array $access,
         array $financialSummary,
-        array $technicianSummary
+        array $technicianSummary,
+        int $lowStockTotal = 0
     ): array {
         $clientCount = $access['can_view_clients'] ? Client::query()->count() : 0;
         $equipmentCount = $access['can_view_equipments'] ? Equipment::query()->count() : 0;
@@ -486,6 +506,7 @@ class DashboardSummaryService
             'faturamento_mes' => $financialSummary['receitas'] ?? 0.0,
             'faturamento_mes_anterior' => $financialSummary['previous_month_revenue'] ?? 0.0,
             'comissao_acumulada' => $technicianSummary['commission_total'] ?? 0.0,
+            'low_stock_total' => $lowStockTotal,
         ];
     }
 
@@ -1060,18 +1081,15 @@ class DashboardSummaryService
      */
     private function buildAlerts(User $user): array
     {
-        $staleThreshold = now()->copy()->subDays(15);
+        $staleThreshold = now()->copy()->subDays(self::STALE_ORDER_DAYS);
 
         $row = $this->openOperationalOrdersQuery($user)
-            ->selectRaw("
-                SUM(CASE WHEN " . self::STALE_REFERENCE_SQL . " < ? THEN 1 ELSE 0 END) as os_paradas,
-                SUM(CASE WHEN (os.orcamento_aprovado IS NULL OR os.orcamento_aprovado = 0) AND os.valor_total > 0 THEN 1 ELSE 0 END) as orcamentos_pendentes,
-                SUM(CASE
-                    WHEN LOWER(TRIM(os.estado_fluxo)) = 'pronto' THEN 1
-                    WHEN (os.estado_fluxo IS NULL OR TRIM(os.estado_fluxo) = '') AND LOWER(TRIM(os.status)) IN ('pronto', 'concluido', 'aguardando_retirada') THEN 1
-                    ELSE 0
-                END) as prontos_retirada
-            ", [$staleThreshold])
+            ->selectRaw(
+                'SUM(CASE WHEN ' . self::STALE_REFERENCE_SQL . ' < ? THEN 1 ELSE 0 END) as os_paradas,'
+                . ' SUM(CASE WHEN ' . OrderWorkflowService::PENDING_BUDGET_SQL . ' THEN 1 ELSE 0 END) as orcamentos_pendentes,'
+                . ' SUM(CASE WHEN ' . OrderWorkflowService::READY_PICKUP_SQL . ' THEN 1 ELSE 0 END) as prontos_retirada',
+                [$staleThreshold]
+            )
             ->first();
 
         return [
@@ -1079,6 +1097,48 @@ class DashboardSummaryService
             'orcamentos_pendentes' => (int) ($row->orcamentos_pendentes ?? 0),
             'prontos_retirada' => (int) ($row->prontos_retirada ?? 0),
         ];
+    }
+
+    /**
+     * Itens abaixo do estoque minimo. Ate esta versao o painel devolvia uma
+     * lista fixa vazia, entao o card "Alerta de estoque baixo" era incapaz de
+     * mostrar qualquer coisa — nao por falta de itens criticos, mas por falta
+     * de consulta. A regra e a MESMA de Peca::estoqueBaixo() e de
+     * EstoqueController::lowStock(); duplicar o criterio aqui faria o alerta
+     * divergir da lista que ele abre.
+     *
+     * @param array<string, mixed> $access
+     * @return array{items: array<int, array<string, mixed>>, total: int}
+     */
+    private function buildLowStock(array $access): array
+    {
+        if (! ($access['can_view_stock'] ?? false) || ! Schema::hasTable('pecas')) {
+            return ['items' => [], 'total' => 0];
+        }
+
+        $query = Peca::query()
+            ->where('ativo', 1)
+            ->whereColumn('quantidade_atual', '<=', 'estoque_minimo');
+
+        $total = (clone $query)->count();
+
+        $items = $query
+            ->orderBy('quantidade_atual')
+            ->orderBy('nome')
+            ->limit(self::LOW_STOCK_PREVIEW_LIMIT)
+            ->get()
+            ->map(static fn (Peca $peca): array => [
+                'id' => (int) $peca->id,
+                'codigo' => (string) ($peca->codigo ?? ''),
+                'nome' => (string) ($peca->nome ?? ''),
+                'quantidade_atual' => (int) ($peca->quantidade_atual ?? 0),
+                'estoque_minimo' => (int) ($peca->estoque_minimo ?? 0),
+                'unidade' => (string) ($peca->unidade ?? 'UN'),
+            ])
+            ->values()
+            ->all();
+
+        return ['items' => $items, 'total' => $total];
     }
 
     /**
@@ -1098,8 +1158,19 @@ class DashboardSummaryService
             $date = $this->parseOrderDate($order['data_abertura'] ?? $order['created_at'] ?? null)
                 ?? $this->parseOrderDate($order['status_atualizado_em'] ?? null);
 
+            // Duas idades diferentes, de proposito: 'dias_em_aberto' conta
+            // desde a abertura (quanto o cliente espera) e 'dias_sem_movimento'
+            // conta desde a ultima troca de status (se a OS travou). A segunda
+            // usa a mesma referencia do alerta os_paradas — ver
+            // STALE_REFERENCE_SQL — para que o marcador vermelho da linha e a
+            // contagem do painel de atencao nunca se contradigam.
+            $movedAt = $this->parseOrderDate($order['status_atualizado_em'] ?? null)
+                ?? $this->parseOrderDate($order['updated_at'] ?? null)
+                ?? $date;
+
             return array_merge($order, [
                 'dias_em_aberto' => $this->calculateOrderAgeDays($date),
+                'dias_sem_movimento' => $this->calculateOrderAgeDays($movedAt),
                 'data_label' => $date?->format('d/m/Y') ?? 'Sem data',
             ]);
         }, $paginator->items());

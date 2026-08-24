@@ -219,6 +219,18 @@ class DesktopFrontendTest extends TestCase
             ->assertSessionMissing('desktop_auth');
     }
 
+    /**
+     * Payload exato que o Blade emite em window.__DESKTOP_DASHBOARD.
+     *
+     * Montado com o mesmo Js::from() da view em vez de repetir o escaping à
+     * mão: a serialização escapa aspas e barras em três níveis, e uma cópia
+     * literal aqui quebraria em qualquer mudança de flags do helper.
+     */
+    private function dashboardBootstrapPayload(): string
+    {
+        return (string) \Illuminate\Support\Js::from(['dataUrl' => route('dashboard.data')]);
+    }
+
     public function test_dashboard_recovers_permissions_from_backend_when_session_snapshot_is_incomplete(): void
     {
         Http::fake([
@@ -247,10 +259,14 @@ class DesktopFrontendTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertSee('window.__DESKTOP_DASHBOARD = {"dataUrl":"', false)
+            ->assertSee('window.__DESKTOP_DASHBOARD = ', false)
+            ->assertSee($this->dashboardBootstrapPayload(), false)
             ->assertSessionHas('desktop_auth.user.permissions.dashboard.0', 'visualizar');
 
-        Http::assertSentCount(1);
+        // Asserção sobre a chamada que importa, não sobre a contagem global: o
+        // layout também busca a marca da empresa, e um contador fixo aqui quebra
+        // sempre que qualquer partial do shell ganha uma requisição.
+        Http::assertSent(static fn ($request): bool => str_ends_with($request->url(), '/api/v1/auth/me'));
     }
 
     public function test_dashboard_index_renders_shell_before_summary_hydration(): void
@@ -263,14 +279,77 @@ class DesktopFrontendTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertSee('window.__DESKTOP_DASHBOARD = {"dataUrl":"', false)
-            ->assertSee(route('dashboard.data'), false)
-            ->assertSee('Janeiro')
+            ->assertSee('window.__DESKTOP_DASHBOARD = ', false)
+            ->assertSee($this->dashboardBootstrapPayload(), false)
             ->assertSee('dashboardYear')
-            ->assertSee('dashboardEquipmentMonth')
-            ->assertSee('dashboardEquipmentYear');
+            ->assertSee('dashboardEquipmentYear')
+            // A casca nasce com skeleton, nao com zeros: um "0" renderizado e
+            // depois trocado e' lido como informacao pelo usuario.
+            ->assertSee('dashboard-skeleton')
+            ->assertDontSee('R$ 0,00');
 
         Http::assertNothingSent();
+    }
+
+    public function test_dashboard_attention_panel_renders_agenda_chip_and_hides_zeroed_alerts(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/agenda/resumo' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'atrasados' => 3,
+                    'hoje' => 0,
+                    'proximos' => [],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'dashboard' => ['visualizar'],
+                'agenda' => ['visualizar'],
+                'os' => ['visualizar'],
+            ]))
+            ->get('/dashboard');
+
+        $response
+            ->assertOk()
+            ->assertSee('O que merece sua atenção hoje')
+            ->assertSee('compromissos atrasados')
+            // O chip aponta para a agenda de verdade, nao para um link morto.
+            ->assertSee(route('agenda.index', ['view' => 'lista']), false);
+    }
+
+    public function test_dashboard_attention_panel_omits_agenda_chip_when_nothing_is_late(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/agenda/resumo' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'atrasados' => 0,
+                    'hoje' => 0,
+                    'proximos' => [],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'dashboard' => ['visualizar'],
+                'agenda' => ['visualizar'],
+            ]))
+            ->get('/dashboard');
+
+        // Zero atrasados nao vira alerta: um card zerado todo dia ensina o
+        // usuario a ignorar aquela regiao da tela.
+        $response
+            ->assertOk()
+            ->assertSee('O que merece sua atenção hoje')
+            ->assertDontSee('compromissos atrasados');
     }
 
     public function test_sidebar_groups_registries_and_moves_team_to_administration(): void
@@ -3317,7 +3396,7 @@ class DesktopFrontendTest extends TestCase
             ->assertSessionHasInput('status', 'aguardando_reparo');
     }
 
-    public function test_knowledge_os_flow_index_renders_visual_workflow_diagram_and_edit_sections(): void
+    public function test_knowledge_os_status_index_renders_catalog_without_flow_diagram_or_matrix(): void
     {
         Http::fake(array_merge($this->notificationsFixture(), [
             'http://127.0.0.1:8000/api/v1/auth/me' => Http::response([
@@ -3459,11 +3538,12 @@ class DesktopFrontendTest extends TestCase
             ))
             ->get('/conhecimento/fluxo-os');
 
+        // A tela virou apenas o cadastro do catálogo de status, agrupado por
+        // macrofase, e mudou de nome/seção junto (23/08/2026).
         $response
             ->assertOk()
-            ->assertSee('Conhecimento')
-            ->assertSee('Processos e Modelos')
-            ->assertSee('Mapa visual do andamento')
+            ->assertSee('Status de OS')
+            ->assertSee('Administração')
             ->assertSee('Recepção')
             ->assertSee('Diagnóstico')
             ->assertSee('Execução')
@@ -3471,25 +3551,23 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Triagem')
             ->assertSee('Aguardando Reparo')
             ->assertSee('Entregue Reparo')
-            ->assertSee('Entregue Pagamento Pendente');
+            ->assertSee('Entregue Pagamento Pendente')
+            // Edição de status continua disponível para quem tem 'editar'.
+            ->assertSee(route('knowledge.os-flow.status.update', 1), false);
 
-        // Matriz operacional agrupada em dois níveis: super-grupo (Início /
-        // Execução / Término) + macrofase, refletindo os status da fixture.
+        // O diagrama de fluxo e a matriz de transições saíram: a matriz nunca foi
+        // trava (o backend aceita qualquer status ativo desde 09/08/2026) e a
+        // sequência que ela desenhava não corresponde ao atendimento real.
         $response
-            ->assertSee('Grupo 1 · Início')
-            ->assertSee('Grupo 2 · Execução')
-            ->assertSee('Grupo 3 · Término');
+            ->assertDontSee('Mapa visual do andamento')
+            ->assertDontSee('Matriz operacional de transições')
+            ->assertDontSee('Grupo 1 · Início')
+            ->assertDontSee('name="transitions[1][]"', false);
 
-        // As células continuam id-based (o agrupamento não pode quebrar o
-        // name/value nem o estado marcado): transição semeada 1 (Triagem) -> 2
-        // (Diagnóstico Técnico) tem que renderizar o checkbox marcado.
-        $response
-            ->assertSee('name="transitions[1][]"', false)
-            ->assertSeeInOrder([
-                'name="transitions[1][]"',
-                'value="2"',
-                'checked',
-            ], false);
+        $this->assertFalse(
+            \Illuminate\Support\Facades\Route::has('knowledge.os-flow.transitions.update'),
+            'A rota de gravação da matriz de transições deve ter sido removida.'
+        );
     }
 
     public function test_knowledge_assistance_model_index_renders_visual_workflow_and_queue_rules(): void
@@ -3709,11 +3787,14 @@ class DesktopFrontendTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertSee('Modelo Ideal')
+            ->assertSee('Modelo da Assist')
             ->assertSee('Fluxo natural de uma OS reparada e entregue')
             ->assertSee('Cliente entra, passa por or')
             ->assertSee('Status atuais')
-            ->assertSee('Uma fila, um dono, uma pr')
+            // Raias agora saem do catálogo: macrofases reais e contadores reais.
+            ->assertSee('As fases e os status de cada uma')
+            ->assertSee('Status ativos')
+            ->assertSee('Macrofases')
             ->assertSee('Triagem')
             ->assertSee('Garantia')
             ->assertSee('Diagnostico Tecnico')
@@ -3726,8 +3807,6 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Testes Finais')
             ->assertSee('Reparo Concluido')
             ->assertSee('Equipamento Entregue')
-            ->assertSee('Fila')
-            ->assertSee('WIP t')
             ->assertSee('Aguardando pe')
             ->assertSee('Entregue - Pendencia Financeira')
             ->assertSeeInOrder([
@@ -3742,6 +3821,18 @@ class DesktopFrontendTest extends TestCase
                 'Equipamento Entregue',
             ])
             ->assertSee(route('knowledge.assistance-model.index'), false);
+
+        // A página afirmava SLAs, limite de WIP, priorização por aging e
+        // escalonamento automático — nada disso existe no sistema. Também citava
+        // etapas fora do catálogo ("Pós-venda", "Qualidade" como status).
+        $response
+            ->assertDontSee('WIP')
+            ->assertDontSee('15 min')
+            ->assertDontSee('30 min')
+            ->assertDontSee('24 h')
+            ->assertDontSee('aging')
+            ->assertDontSee('Escalonamento')
+            ->assertDontSee('Pós-venda');
     }
 
     public function test_dashboard_navbar_renders_user_menu_notifications_and_nova_os(): void

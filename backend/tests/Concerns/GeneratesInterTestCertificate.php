@@ -3,6 +3,8 @@
 namespace Tests\Concerns;
 
 use App\Services\Integrations\PaymentIntegrationSettingsService;
+use Carbon\CarbonImmutable;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\File;
 
 /**
@@ -16,8 +18,21 @@ trait GeneratesInterTestCertificate
 {
     private ?string $interCertDir = null;
 
+    /**
+     * Gera um par certificado/chave real para os testes.
+     *
+     * Validade negativa NAO e' produzida pelo openssl (as flags -not_before/
+     * -not_after nao existem em todas as versoes, e -days negativo tambem nao e'
+     * portavel — isso deixava o teste de certificado vencido passando ou
+     * falhando conforme a maquina). Em vez disso o certificado nasce valido e o
+     * RELOGIO do teste avanca: Carbon::setTestNow e' deterministico e nao
+     * depende do binario instalado.
+     */
     protected function gerarCertificadoDeTeste(int $diasDeValidade = 365, string $passphrase = ''): void
     {
+        $vencido = $diasDeValidade < 0;
+        $diasReais = $vencido ? 1 : max(1, $diasDeValidade);
+
         $this->interCertDir = storage_path('framework/testing/inter-cert-'.bin2hex(random_bytes(6)));
         File::ensureDirectoryExists($this->interCertDir);
 
@@ -39,62 +54,23 @@ trait GeneratesInterTestCertificate
 
         $this->assertNotFalse($csr, 'Nao foi possivel gerar a CSR de teste.');
 
-        // openssl_csr_sign so' aceita validade em dias inteiros e positivos.
-        // Para simular certificado JA vencido, assinamos com 1 dia e voltamos
-        // o relogio via serialNumber? Nao da'. Entao usamos $days negativo
-        // atraves de um certificado com notBefore no passado: a forma portavel
-        // e' assinar com |dias| e, quando negativo, regravar com o binario do
-        // openssl, que aceita -startdate/-enddate.
-        if ($diasDeValidade >= 0) {
-            $cert = openssl_csr_sign($csr, null, $key, $diasDeValidade, ['digest_alg' => 'sha256']);
-            $this->assertNotFalse($cert, 'Nao foi possivel assinar o certificado de teste.');
-            openssl_x509_export_to_file($cert, $certPath);
-        } else {
-            $this->gerarCertificadoVencido($certPath, $keyPath, abs($diasDeValidade));
-        }
+        $cert = openssl_csr_sign($csr, null, $key, $diasReais, ['digest_alg' => 'sha256']);
+        $this->assertNotFalse($cert, 'Nao foi possivel assinar o certificado de teste.');
 
-        if ($diasDeValidade >= 0) {
-            openssl_pkey_export_to_file($key, $keyPath, $passphrase === '' ? null : $passphrase);
-        }
+        openssl_x509_export_to_file($cert, $certPath);
+        openssl_pkey_export_to_file($key, $keyPath, $passphrase === '' ? null : $passphrase);
 
         config([
             'inter.certificado.cert_path' => $certPath,
             'inter.certificado.key_path' => $keyPath,
             'inter.certificado.key_passphrase' => $passphrase,
         ]);
-    }
 
-    /**
-     * Certificado com notAfter no passado. Usa o binario do openssl porque a
-     * extensao do PHP nao expoe -enddate.
-     */
-    private function gerarCertificadoVencido(string $certPath, string $keyPath, int $diasAtras): void
-    {
-        $inicio = gmdate('ymdHis', time() - (($diasAtras + 30) * 86400)).'Z';
-        $fim = gmdate('ymdHis', time() - ($diasAtras * 86400)).'Z';
-
-        $comando = sprintf(
-            'openssl req -x509 -newkey rsa:2048 -nodes -keyout %s -out %s -subj "/CN=inter-test-vencido" -not_before %s -not_after %s 2>/dev/null',
-            escapeshellarg($keyPath),
-            escapeshellarg($certPath),
-            escapeshellarg($inicio),
-            escapeshellarg($fim)
-        );
-
-        exec($comando, $saida, $status);
-
-        if ($status !== 0 || ! is_file($certPath)) {
-            // OpenSSL < 3.2 nao tem -not_before/-not_after. Cai para -days
-            // negativo, que versoes antigas aceitam.
-            $fallback = sprintf(
-                'openssl req -x509 -newkey rsa:2048 -nodes -keyout %s -out %s -subj "/CN=inter-test-vencido" -days -%d 2>/dev/null',
-                escapeshellarg($keyPath),
-                escapeshellarg($certPath),
-                $diasAtras
-            );
-            exec($fallback, $saida2, $status2);
-
-            $this->assertSame(0, $status2, 'Nao foi possivel gerar certificado vencido para o teste.');
+        if ($vencido) {
+            // Relogio adiante do vencimento. O TestCase do Laravel limpa o
+            // setTestNow sozinho no tearDown.
+            CarbonImmutable::setTestNow(CarbonImmutable::now()->addDays($diasReais + abs($diasDeValidade)));
+            Carbon::setTestNow(Carbon::now()->addDays($diasReais + abs($diasDeValidade)));
         }
     }
 
