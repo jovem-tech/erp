@@ -23,7 +23,8 @@ class Movimentacao extends Model
         'peca_id' => 'integer',
         'os_id' => 'integer',
         'responsavel_id' => 'integer',
-        'quantidade' => 'integer',
+        // Ver Peca::$casts: DECIMAL(14,4) desde 2026_08_27_000001.
+        'quantidade' => 'decimal:4',
         'created_at' => 'datetime',
     ];
 

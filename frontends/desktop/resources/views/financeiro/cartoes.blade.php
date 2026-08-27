@@ -38,7 +38,7 @@
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
         <div>
             <p class="desktop-eyebrow">Financeiro</p>
-            <h2 class="surface-title fs-3 mb-2">Cartões e Taxas</h2>
+            <h2 class="surface-title fs-3 mb-2">Cartões e Taxas <x-favorite-toggle /></h2>
             <p class="surface-subtitle mb-0">
                 Cadastre operadoras, bandeiras, faixas de parcelas e taxas online com o mesmo fluxo operacional do legado.
                 Todos os selects visíveis seguem o padrão Select2 do desktop.

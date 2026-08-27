@@ -3,8 +3,8 @@
 namespace App\Http\Middleware;
 
 use App\Exceptions\ApiRequestException;
-use App\Models\UserPreference;
 use App\Services\ApiClient;
+use App\Support\DesktopPreferences;
 use App\Support\DesktopSession;
 use App\Support\SessionSecuritySettings;
 use Closure;
@@ -81,14 +81,9 @@ class EnsureBackendToken
             }
         }
 
-        // Carrega preferência de tema persistida na primeira request autenticada da sessão
-        if (! session()->has('desktop_theme')) {
-            $userId = (int) (DesktopSession::user()['id'] ?? 0);
-            if ($userId > 0) {
-                $theme = UserPreference::where('api_user_id', $userId)->value('desktop_theme');
-                session()->put('desktop_theme', $theme ?? 'default');
-            }
-        }
+        // Carrega as preferências pessoais (tema, modo de navegação e favoritos)
+        // persistidas, numa única leitura na primeira request autenticada da sessão.
+        DesktopPreferences::hydrateSession();
 
         return $next($request);
     }

@@ -140,7 +140,7 @@
     <section class="desktop-page-stack">
         <div class="desktop-page-hero">
             <div>
-                <h2>Configurações</h2>
+                <h2>Configurações <x-favorite-toggle /></h2>
                 <p>Esta página fica dedicada somente às integrações. Aparência, dados da empresa e segurança foram movidos para Configurações do Sistema.</p>
             </div>
 

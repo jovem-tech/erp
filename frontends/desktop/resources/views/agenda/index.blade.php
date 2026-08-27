@@ -49,7 +49,7 @@
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
         <div>
             <p class="desktop-eyebrow">Visão geral</p>
-            <h2 class="surface-title fs-3 mb-2">Agenda</h2>
+            <h2 class="surface-title fs-3 mb-2">Agenda <x-favorite-toggle /></h2>
             <p class="surface-subtitle mb-0">
                 Compromissos, obrigações e lembretes num lugar só — {{ $periodLabel }}.
             </p>

@@ -314,7 +314,11 @@ class SearchService
                 'id' => (int) ($part['id'] ?? 0),
                 'label' => $code !== '' ? $code : ($name !== '' ? $name : 'Peça'),
                 'subtitle' => trim((string) ($part['categoria'] ?? ($part['fornecedor'] ?? ''))),
-                'meta' => 'QTD: ' . (int) ($part['quantidade_atual'] ?? 0),
+                // Sem (int): saldo 2,5 aparecia como 2 na busca global. Apara
+                // zeros a direita para "10" nao virar "10,0000".
+                'meta' => 'QTD: ' . rtrim(rtrim(number_format(
+                    round((float) ($part['quantidade_atual'] ?? 0), 4), 4, ',', '.'
+                ), '0'), ','),
                 'url' => DesktopSession::can('estoque', 'editar')
                     ? route('estoque.edit', (int) ($part['id'] ?? 0))
                     : route('estoque.index', ['search' => $query]),

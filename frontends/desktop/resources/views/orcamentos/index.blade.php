@@ -55,7 +55,7 @@
                 </a>
             @endif
 
-            <x-list-actions label="Mais ações" size="">
+            <x-list-actions label="Mais ações" size="" :favoritable="true">
                 <li>
                     <a href="{{ route('orcamentos.help') }}" class="dropdown-item">
                         <i class="bi bi-question-circle me-2"></i>Ajuda
@@ -107,7 +107,7 @@
     <section class="surface-table">
         <div class="surface-table-header">
             <div>
-                <h2 class="surface-title">Orçamentos cadastrados</h2>
+                <h2 class="surface-title">Orçamentos cadastrados <x-favorite-toggle /></h2>
                 <p class="surface-subtitle">
                     A tabela segue o padrão do legado, com número, cliente, vínculos, validade e total por registro.
                 </p>

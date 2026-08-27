@@ -54,6 +54,8 @@
             <i class="bi bi-house-door"></i>
         </a>
 
+        @include('layouts.partials.favorites')
+
         <div
             class="dropdown desktop-notification-dropdown"
             data-desktop-notification-root
@@ -249,32 +251,36 @@
                 <ul class="dropdown-menu dropdown-menu-end list-actions-menu desktop-quick-create-menu">
                     @if ($canCreateOrder)
                         <li>
-                            <a href="{{ route('orders.create') }}" class="dropdown-item">
-                                <i class="bi bi-clipboard-check-fill me-2"></i>Nova OS
+                            <a href="{{ route('orders.create') }}" class="dropdown-item desktop-quick-create-item" data-desktop-quick-create="os">
+                                <span><i class="bi bi-clipboard-check-fill me-2"></i>Nova OS</span>
+                                <kbd class="desktop-shortcut-key">F1</kbd>
                             </a>
                         </li>
                     @endif
 
                     @if ($canCreateOrcamento)
                         <li>
-                            <a href="{{ route('orcamentos.create') }}" class="dropdown-item">
-                                <i class="bi bi-receipt me-2"></i>Novo orçamento
+                            <a href="{{ route('orcamentos.create') }}" class="dropdown-item desktop-quick-create-item" data-desktop-quick-create="orcamento">
+                                <span><i class="bi bi-receipt me-2"></i>Novo orçamento</span>
+                                <kbd class="desktop-shortcut-key">F2</kbd>
                             </a>
                         </li>
                     @endif
 
                     @if ($canCreateVenda)
                         <li>
-                            <a href="{{ route('vendas.create') }}" class="dropdown-item">
-                                <i class="bi bi-upc-scan me-2"></i>Nova venda
+                            <a href="{{ route('vendas.create') }}" class="dropdown-item desktop-quick-create-item" data-desktop-quick-create="venda">
+                                <span><i class="bi bi-upc-scan me-2"></i>Nova venda</span>
+                                <kbd class="desktop-shortcut-key">F3</kbd>
                             </a>
                         </li>
                     @endif
 
                     @if ($canCreateLancamento)
                         <li>
-                            <a href="{{ route('financeiro.create') }}" class="dropdown-item">
-                                <i class="bi bi-cash-coin me-2"></i>Novo lançamento
+                            <a href="{{ route('financeiro.create') }}" class="dropdown-item desktop-quick-create-item" data-desktop-quick-create="lancamento">
+                                <span><i class="bi bi-cash-coin me-2"></i>Novo lançamento</span>
+                                <kbd class="desktop-shortcut-key">F4</kbd>
                             </a>
                         </li>
                     @endif

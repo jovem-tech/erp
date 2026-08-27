@@ -10,6 +10,16 @@
             'preco_custo' => 0,
             'preco_venda' => 0,
         ], is_array($part ?? null) ? $part : []);
+        // Quantidade e DECIMAL(14,4) desde specs/036-estoque-nucleo-razao:
+        // mostra a fracao quando existe e apara zeros a direita, para "10" nao
+        // aparecer como "10,0000".
+        $qtd = static function ($valor): string {
+            $numero = round((float) ($valor ?? 0), 4);
+
+            return $numero === floor($numero)
+                ? number_format($numero, 0, ',', '.')
+                : rtrim(rtrim(number_format($numero, 4, ',', '.'), '0'), ',');
+        };
     @endphp
 
     <section class="desktop-form-card mb-4">
@@ -40,7 +50,7 @@
             <div class="col-md-4">
                 <div class="surface-card p-3 h-100">
                     <div class="text-secondary small">Quantidade atual</div>
-                    <strong class="d-block display-6">{{ (int) ($part['quantidade_atual'] ?? 0) }}</strong>
+                    <strong class="d-block display-6">{{ $qtd($part['quantidade_atual'] ?? 0) }}</strong>
                 </div>
             </div>
             <div class="col-md-4">
@@ -75,7 +85,7 @@
 
             <div>
                 <label for="quantidade">Quantidade</label>
-                <input type="number" id="quantidade" name="quantidade" class="form-control @error('quantidade') is-invalid @enderror" value="{{ old('quantidade', 1) }}" min="1" step="1">
+                <input type="number" id="quantidade" name="quantidade" class="form-control @error('quantidade') is-invalid @enderror" value="{{ old('quantidade', 1) }}" min="0.0001" step="any">
                 @error('quantidade')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
 
@@ -155,7 +165,7 @@
                                     <span class="badge bg-warning text-dark">Ajuste</span>
                                 @endif
                             </td>
-                            <td data-label="Quantidade">{{ (int) ($movement['quantidade'] ?? 0) }}</td>
+                            <td data-label="Quantidade">{{ $qtd($movement['quantidade'] ?? 0) }}</td>
                             <td data-label="Motivo">{{ trim((string) ($movement['motivo'] ?? '')) !== '' ? $movement['motivo'] : '-' }}</td>
                             <td data-label="Origem">
                                 @if ($numeroVenda !== '' && \App\Support\DesktopSession::can('vendas', 'visualizar') && ! empty($movement['venda_id']))

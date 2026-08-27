@@ -9,7 +9,7 @@
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
         <div class="flex-grow-1">
             <p class="desktop-eyebrow">Gestão de Conhecimento</p>
-            <h2 class="surface-title fs-3 mb-2">Modelos PDF</h2>
+            <h2 class="surface-title fs-3 mb-2">Modelos PDF <x-favorite-toggle /></h2>
             <p class="surface-subtitle mb-0">
                 Motor central de documentos: todo PDF do sistema é gerado a partir dos modelos abaixo.
                 Edite por blocos, pré-visualize, publique — novas emissões passam a usar a versão publicada;

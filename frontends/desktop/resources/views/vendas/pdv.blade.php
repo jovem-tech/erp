@@ -360,6 +360,13 @@
 @endsection
 
 @section('content')
+    {{-- F2/F3/F4 já têm dono aqui (confirmar venda, tela cheia, abrir cliente,
+         em vendas-pdv.js), então os atalhos globais do "+ Novo" cedem essas três
+         — e o F3 de "Nova venda" seria mesmo redundante onde a venda está sendo
+         feita. F1 fica de fora da lista de propósito: abrir uma OS a partir do
+         balcão é caso real, e o PDV não usa essa tecla. --}}
+    <div data-desktop-fkeys-owner="F2 F3 F4" hidden aria-hidden="true"></div>
+
     @php
         $formasPagamento = (array) ($form['formas_pagamento'] ?? []);
         $contas = (array) ($form['contas'] ?? []);

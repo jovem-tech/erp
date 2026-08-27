@@ -10,7 +10,7 @@
     <section class="surface-card">
         <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
             <div>
-                <h1 class="surface-title mb-1">Caixa</h1>
+                <h1 class="surface-title mb-1">Caixa <x-favorite-toggle /></h1>
                 <p class="surface-subtitle mb-0">
                     @if ($aberto)
                         Turno aberto por {{ $sessao['operador_nome'] ?? '—' }}

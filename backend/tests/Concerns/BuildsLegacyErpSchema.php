@@ -1023,9 +1023,11 @@ trait BuildsLegacyErpSchema
             $table->string('localizacao', 120)->nullable();
             $table->decimal('preco_custo', 10, 2)->default(0);
             $table->decimal('preco_venda', 10, 2)->default(0);
-            $table->integer('quantidade_atual')->default(0);
-            $table->integer('estoque_minimo')->default(0);
-            $table->integer('estoque_maximo')->default(0);
+            // Espelha 2026_08_27_000001_widen_stock_quantities_to_decimal:
+            // insumo se mede em fracao (0,5 m de cabo), e INT impediria isso.
+            $table->decimal('quantidade_atual', 14, 4)->default(0);
+            $table->decimal('estoque_minimo', 14, 4)->default(0);
+            $table->decimal('estoque_maximo', 14, 4)->default(0);
             $table->text('observacoes')->nullable();
             $table->boolean('ativo')->default(true);
             $table->dateTime('created_at')->nullable();
@@ -1058,7 +1060,8 @@ trait BuildsLegacyErpSchema
             $table->unsignedBigInteger('venda_id')->nullable();
             $table->unsignedBigInteger('venda_item_id')->nullable();
             $table->string('tipo', 30);
-            $table->integer('quantidade');
+            // Espelha 2026_08_27_000001_widen_stock_quantities_to_decimal.
+            $table->decimal('quantidade', 14, 4);
             $table->string('motivo', 255)->nullable();
             $table->unsignedBigInteger('responsavel_id')->nullable();
             $table->dateTime('created_at')->nullable();
@@ -1361,6 +1364,10 @@ trait BuildsLegacyErpSchema
             $table->dateTime('data_entrada')->nullable();
             $table->date('data_previsao')->nullable();
             $table->dateTime('data_conclusao')->nullable();
+            // Espelha 2026_08_26_000001_add_custos_variaveis_to_margem_module:
+            // horas de bancada informadas pelo tecnico ao concluir o reparo,
+            // base da margem por hora (recurso restrito).
+            $table->decimal('tempo_tecnico_horas', 10, 2)->nullable();
             $table->dateTime('data_entrega')->nullable();
             $table->dateTime('baixa_tecnica_em')->nullable();
             $table->unsignedBigInteger('baixa_tecnica_por')->nullable();
@@ -1959,7 +1966,12 @@ trait BuildsLegacyErpSchema
             $table->string('tipo_item', 30)->default('servico');
             $table->unsignedBigInteger('referencia_id')->nullable();
             $table->string('descricao', 255);
-            $table->decimal('quantidade', 12, 3)->default(1);
+            // Espelha 2026_08_27_000001_widen_stock_quantities_to_decimal.
+            // ATENCAO: este espelho declarava (12,3) enquanto o banco real era
+            // (10,2) — o teste rodava contra um schema MAIS generoso que a
+            // producao, e foi por isso que o truncamento do PDF de orcamento
+            // nunca apareceu em teste. Agora os dois sao (14,4).
+            $table->decimal('quantidade', 14, 4)->default(1);
             $table->decimal('valor_unitario', 12, 2)->default(0);
             $table->decimal('desconto', 12, 2)->default(0);
             $table->string('desconto_tipo', 20)->default('valor');

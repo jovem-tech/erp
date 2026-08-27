@@ -50,6 +50,68 @@ class FinanceiroMargemTest extends TestCase
             ->assertSee('OS2606002');
     }
 
+    /**
+     * O ranking por hora e o aviso de OS sem apontamento sao o que traduz a
+     * margem por hora em decisao: sem o aviso, o operador nao sabe que o
+     * numero exibido ignora parte do periodo.
+     */
+    public function test_margem_page_renders_ranking_por_hora_e_alerta_de_apontamento(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/margem*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'margem' => [
+                        'mes' => '2026-06',
+                        'periodo_label' => '06/2026',
+                        'total_os' => 3,
+                        'receita_total' => 1280,
+                        'ticket_medio' => 426.67,
+                        'margem_media_percentual' => 25,
+                        'margem_total' => 320,
+                        'custos_variaveis' => [
+                            'pecas' => 900,
+                            'comissao' => 40,
+                            'taxa_recebimento' => 15,
+                            'imposto' => 5,
+                            'total' => 960,
+                        ],
+                        'horas' => [
+                            'total' => 4.0,
+                            'os_com_apontamento' => 1,
+                            'os_sem_apontamento' => 2,
+                            'margem_por_hora' => 80.0,
+                        ],
+                        'por_tecnico' => [],
+                        'piores_os' => [],
+                        'melhores_os' => [],
+                        'melhores_por_hora' => [
+                            ['os_id' => 12, 'numero_os' => 'OS2606003', 'tempo_tecnico_horas' => 4, 'margem_por_hora' => 80],
+                        ],
+                        'piores_por_hora' => [
+                            ['os_id' => 12, 'numero_os' => 'OS2606003', 'tempo_tecnico_horas' => 4, 'margem_por_hora' => 80],
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar']]))
+            ->get('/financeiro/relatorios/margem?mes=2026-06');
+
+        $response->assertOk()
+            ->assertSee('Margem por hora de técnico')
+            ->assertSee('Composição dos custos variáveis')
+            ->assertSee('Índice de contribuição')
+            ->assertSee('OS2606003')
+            // 2 das 3 OS ficaram fora do ranking — precisa estar explícito.
+            ->assertSee('2 OS do período ficaram sem horas apontadas');
+    }
+
     public function test_configuracoes_page_renders_comissoes(): void
     {
         Http::fake([

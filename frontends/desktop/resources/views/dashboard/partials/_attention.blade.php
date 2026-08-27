@@ -74,6 +74,11 @@
                             {{ $inicio->format('d/m') }}
                             <small>{{ $item['hora'] ?? 'dia' }}</small>
                         </span>
+                        {{-- A cor forte da linha é a urgência (is-late/is-today); o
+                             tipo (conta a pagar, prazo de OS...) vira só este
+                             pontinho — antes pintava a linha inteira e um boleto
+                             de 3 semanas parecia tão urgente quanto um vencido. --}}
+                        <span class="dashboard-agenda-type-dot" aria-hidden="true"></span>
                         <span class="dashboard-agenda-title">{{ $item['titulo'] ?? '' }}</span>
                     </li>
                 @endforeach

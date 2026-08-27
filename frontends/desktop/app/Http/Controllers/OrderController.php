@@ -1280,6 +1280,7 @@ class OrderController extends DesktopController
             ],
             'observacao' => ['nullable', 'string'],
             'garantia_dias' => ['nullable', 'integer', 'in:90,180,365,730'],
+            'tempo_tecnico_horas' => ['nullable', 'numeric', 'min:0', 'max:999'],
             'notificar_cliente' => ['nullable', 'boolean'],
             'agendar_retorno' => ['nullable', 'boolean'],
             'retorno_data' => ['nullable', 'date'],
@@ -1312,6 +1313,10 @@ class OrderController extends DesktopController
             'equipamento_entregue' => $request->boolean('equipamento_entregue'),
             'observacao' => $validated['observacao'] ?? null,
             'garantia_dias' => $validated['garantia_dias'] ?? null,
+            // O backend só usa este valor quando a OS ainda não tem
+            // apontamento (OrderClosureService::resolveTempoTecnicoFallback) —
+            // o que o técnico registrou ao concluir o reparo tem precedência.
+            'tempo_tecnico_horas' => $validated['tempo_tecnico_horas'] ?? null,
             'notificar_cliente' => $request->boolean('notificar_cliente'),
             'agendar_retorno' => $isBaixa && $request->boolean('agendar_retorno'),
             'retorno_data' => $validated['retorno_data'] ?? null,
@@ -1552,6 +1557,13 @@ class OrderController extends DesktopController
             'equipamento_numero_serie' => (string) ($data['equipamento_numero_serie'] ?? ''),
             'diagnostico_tecnico' => (string) ($data['diagnostico_tecnico'] ?? ''),
             'solucao_aplicada' => (string) ($data['solucao_aplicada'] ?? ''),
+            // Apontamento de horas já existente, para o modal repreencher em
+            // vez de pedir de novo (e para o técnico corrigir se errou).
+            // Mantém null quando não há apontamento: 0 significaria "levou
+            // zero hora", que é diferente de "ninguém informou".
+            'tempo_tecnico_horas' => ($data['tempo_tecnico_horas'] ?? null) !== null
+                ? (float) $data['tempo_tecnico_horas']
+                : null,
             'proximas_etapas' => is_array($data['proximas_etapas'] ?? null) ? $data['proximas_etapas'] : [],
             'status_disponiveis' => is_array($data['status_disponiveis'] ?? null) ? $data['status_disponiveis'] : [],
             // Vem do backend (OrderWorkflowService::CLIENT_STATUS_MESSAGE_TEMPLATE);
@@ -1605,6 +1617,7 @@ class OrderController extends DesktopController
             'comunicar_cliente' => ['nullable', 'boolean'],
             'novo_prazo' => ['nullable', 'date_format:Y-m-d'],
             'mensagem_cliente' => ['nullable', 'string', 'max:2000'],
+            'tempo_tecnico_horas' => ['nullable', 'numeric', 'min:0', 'max:999'],
         ], [], [
             'status' => 'status',
             'observacao' => 'observação',
@@ -1613,6 +1626,7 @@ class OrderController extends DesktopController
             'comunicar_cliente' => 'notificar cliente',
             'novo_prazo' => 'novo prazo de entrega',
             'mensagem_cliente' => 'mensagem ao cliente',
+            'tempo_tecnico_horas' => 'horas de bancada',
         ]);
 
         try {
@@ -1624,7 +1638,10 @@ class OrderController extends DesktopController
                 $validated['solucao_aplicada'] ?? null,
                 filter_var($validated['comunicar_cliente'] ?? false, FILTER_VALIDATE_BOOL),
                 $validated['novo_prazo'] ?? null,
-                $validated['mensagem_cliente'] ?? null
+                $validated['mensagem_cliente'] ?? null,
+                ($validated['tempo_tecnico_horas'] ?? '') !== ''
+                    ? (float) $validated['tempo_tecnico_horas']
+                    : null
             );
         } catch (ApiAuthenticationException $exception) {
             if ($request->wantsJson()) {

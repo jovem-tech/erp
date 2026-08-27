@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Services\CompanyProfileService;
 use App\Services\SearchService;
 use App\Support\DesktopNavigation;
+use App\Support\DesktopPreferences;
 use App\Support\DesktopSession;
 use App\Support\SessionSecuritySettings;
 use Illuminate\Support\Facades\View;
@@ -58,6 +59,14 @@ class DesktopAppServiceProvider extends ServiceProvider
 
             $view->with('desktopUser', DesktopSession::user());
             $view->with('desktopNavigation', app(DesktopNavigation::class)->sections());
+
+            // Preferências pessoais de navegação. O layout precisa do modo
+            // antes de decidir as classes do shell, e a navbar precisa dos
+            // favoritos já resolvidos — por isso saem daqui, e não de cada
+            // controller.
+            $view->with('desktopNavMode', DesktopPreferences::navigationMode());
+            $view->with('desktopFavorites', DesktopPreferences::favorites());
+            $view->with('desktopFavoriteRoute', DesktopNavigation::currentFavoritableRoute());
             $view->with('desktopSearchScopes', app(SearchService::class)->scopes());
             $view->with('desktopNotifications', [
                 'items' => [],

@@ -123,7 +123,11 @@ class BudgetPdfContextFactory extends OrderPdfContextFactory
             ->map(static fn (BudgetItem $item): array => [
                 'tipo' => (string) ($item->tipo_item ?? ''),
                 'descricao' => (string) ($item->descricao ?? ''),
-                'quantidade' => (int) ($item->quantidade ?? 0),
+                // float, nao int: orcamento_itens.quantidade sempre foi decimal.
+                // Com (int), um orcamento de 1,5 h de servico imprimia "1" no PDF
+                // que o cliente assina — divergindo do valor total, que usava a
+                // quantidade real.
+                'quantidade' => (float) ($item->quantidade ?? 0),
                 'valor_unitario' => (float) ($item->valor_unitario ?? 0),
                 'desconto' => (float) ($item->desconto ?? 0),
                 'acrescimo' => (float) ($item->acrescimo ?? 0),

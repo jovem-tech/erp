@@ -9,6 +9,7 @@ use App\Models\PrecificacaoCategoriaEncargo;
 use App\Models\PrecificacaoComponente;
 use App\Models\PrecificacaoServicoOverride;
 use App\Models\Servico;
+use App\Support\RegimeTributario;
 
 class PrecificacaoService
 {
@@ -16,6 +17,11 @@ class PrecificacaoService
      * @var array<string, string>
      */
     private const DEFAULTS = [
+        // Regime tributário da empresa. Decide se o imposto é custo VARIÁVEL
+        // (Simples: proporcional ao faturamento, desconta da margem de cada OS)
+        // ou FIXO (MEI: DAS de valor fixo mensal, entra abaixo da linha e
+        // pertence ao ponto de equilíbrio). Ver App\Support\RegimeTributario.
+        RegimeTributario::CHAVE => RegimeTributario::PADRAO,
         'precificacao_peca_base' => 'custo',
         'precificacao_peca_encargos_percentual' => '15',
         'precificacao_peca_margem_percentual' => '45',
@@ -276,11 +282,17 @@ class PrecificacaoService
             );
         }
 
+        $regime = RegimeTributario::normalizar($settings[RegimeTributario::CHAVE] ?? null);
+
         return [
             'custo_hora_produtiva' => round($custoHora, 2),
             'margem_percentual' => round($margem, 2),
             'taxa_recebimento_percentual' => round($taxa, 2),
             'imposto_percentual' => round($imposto, 2),
+            'regime_tributario' => $regime,
+            // Quando falso (MEI), o imposto não é proporcional à venda: o DAS é
+            // fixo mensal e pertence aos custos fixos, não à margem de cada OS.
+            'imposto_variavel' => RegimeTributario::temImpostoVariavel($regime),
             'tempo_padrao_horas' => round($tempoPadrao, 2),
             'usar_componentes' => $usarComponentes,
             'aplicar_catalogo' => $aplicarCatalogo,
@@ -312,6 +324,9 @@ class PrecificacaoService
     private function normalizeSettingValue(string $key, mixed $value): string
     {
         return match ($key) {
+            // Enum, não decimal: cair no `default` faria normalizeDecimal('mei')
+            // devolver 0 e o regime virar lixo silenciosamente.
+            RegimeTributario::CHAVE => RegimeTributario::normalizar((string) $value),
             'precificacao_peca_base' => in_array(strtolower(trim((string) $value)), ['venda', 'custo'], true)
                 ? strtolower(trim((string) $value))
                 : self::DEFAULTS[$key],

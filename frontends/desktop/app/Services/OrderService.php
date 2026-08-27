@@ -189,7 +189,8 @@ class OrderService
         ?string $solucaoAplicada = null,
         bool $comunicarCliente = false,
         ?string $novoPrazo = null,
-        ?string $mensagemCliente = null
+        ?string $mensagemCliente = null,
+        ?float $tempoTecnicoHoras = null
     ): array {
         $payload = ['comunicar_cliente' => $comunicarCliente];
         if ($status !== null && $status !== '') {
@@ -209,6 +210,11 @@ class OrderService
         }
         if ($mensagemCliente !== null && trim($mensagemCliente) !== '') {
             $payload['mensagem_cliente'] = $mensagemCliente;
+        }
+        // Enviado inclusive quando zero: 0 é a forma de o técnico APAGAR um
+        // apontamento errado. Só a ausência do campo significa "não mexer".
+        if ($tempoTecnicoHoras !== null) {
+            $payload['tempo_tecnico_horas'] = $tempoTecnicoHoras;
         }
 
         $response = $this->apiClient->patch('/orders/'.$id.'/status', $payload);

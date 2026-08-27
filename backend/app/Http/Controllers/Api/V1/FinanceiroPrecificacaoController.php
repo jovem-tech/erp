@@ -3,8 +3,10 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Services\Financeiro\PrecificacaoService;
+use App\Support\RegimeTributario;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class FinanceiroPrecificacaoController extends BaseApiController
 {
@@ -27,6 +29,10 @@ class FinanceiroPrecificacaoController extends BaseApiController
         $this->authorize('financeiro:editar');
 
         $validated = $request->validate([
+            // Decide se o imposto é custo VARIÁVEL (Simples: proporcional ao
+            // faturamento, desconta da margem de cada OS) ou FIXO (MEI: DAS de
+            // valor fixo mensal, pertence ao ponto de equilíbrio).
+            RegimeTributario::CHAVE => ['nullable', 'string', Rule::in(RegimeTributario::codigos())],
             'precificacao_peca_base' => ['nullable', 'string', 'in:custo,venda'],
             'precificacao_peca_encargos_percentual' => ['nullable', 'numeric', 'min:0', 'max:500'],
             'precificacao_peca_margem_percentual' => ['nullable', 'numeric', 'min:0', 'max:500'],

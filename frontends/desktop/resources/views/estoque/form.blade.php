@@ -132,19 +132,19 @@
 
             <div>
                 <label for="quantidade_atual">Quantidade atual</label>
-                <input type="number" id="quantidade_atual" name="quantidade_atual" class="form-control @error('quantidade_atual') is-invalid @enderror" value="{{ old('quantidade_atual', $part['quantidade_atual']) }}" min="0" step="1">
+                <input type="number" id="quantidade_atual" name="quantidade_atual" class="form-control @error('quantidade_atual') is-invalid @enderror" value="{{ old('quantidade_atual', $part['quantidade_atual']) }}" min="0" step="any">
                 @error('quantidade_atual')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
 
             <div>
                 <label for="estoque_minimo">Estoque mínimo</label>
-                <input type="number" id="estoque_minimo" name="estoque_minimo" class="form-control @error('estoque_minimo') is-invalid @enderror" value="{{ old('estoque_minimo', $part['estoque_minimo']) }}" min="0" step="1">
+                <input type="number" id="estoque_minimo" name="estoque_minimo" class="form-control @error('estoque_minimo') is-invalid @enderror" value="{{ old('estoque_minimo', $part['estoque_minimo']) }}" min="0" step="any">
                 @error('estoque_minimo')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
 
             <div>
                 <label for="estoque_maximo">Estoque máximo</label>
-                <input type="number" id="estoque_maximo" name="estoque_maximo" class="form-control @error('estoque_maximo') is-invalid @enderror" value="{{ old('estoque_maximo', $part['estoque_maximo']) }}" min="0" step="1">
+                <input type="number" id="estoque_maximo" name="estoque_maximo" class="form-control @error('estoque_maximo') is-invalid @enderror" value="{{ old('estoque_maximo', $part['estoque_maximo']) }}" min="0" step="any">
                 @error('estoque_maximo')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
 

@@ -90,7 +90,7 @@ class SaleStockService
             }
 
             foreach ($entry['itens'] as $item) {
-                $quantity = (int) round((float) $item->quantidade);
+                $quantity = round((float) $item->quantidade, 4);
 
                 if ($quantity <= 0) {
                     continue;
@@ -111,11 +111,11 @@ class SaleStockService
 
             // Decremento atômico. O saldo PODE ficar negativo quando o operador
             // confirmou a venda sem estoque: é o sinal honesto de que o
-            // inventário precisa de acerto, e a coluna é `int` com sinal.
+            // inventário precisa de acerto, e a coluna é decimal com sinal.
             Peca::query()
                 ->whereKey($partId)
                 ->update([
-                    'quantidade_atual' => DB::raw('quantidade_atual - '.(int) round($entry['quantidade'])),
+                    'quantidade_atual' => DB::raw('quantidade_atual - '.$this->quantidadeSql((float) $entry['quantidade'])),
                     'updated_at' => $now,
                 ]);
         }
@@ -158,7 +158,9 @@ class SaleStockService
         // Mesma ordem determinística da baixa.
         $totals = $movements
             ->groupBy('peca_id')
-            ->map(static fn (Collection $group): int => (int) $group->sum('quantidade'))
+            // O `int` estava tambem no RETURN TYPE da closure: trocar so o cast
+            // nao adiantaria, o PHP converteria de volta na saida.
+            ->map(static fn (Collection $group): float => (float) $group->sum('quantidade'))
             ->sortKeys();
 
         Peca::query()
@@ -174,7 +176,7 @@ class SaleStockService
                 'venda_id' => (int) $sale->id,
                 'venda_item_id' => $movement->venda_item_id,
                 'tipo' => 'entrada',
-                'quantidade' => (int) $movement->quantidade,
+                'quantidade' => (float) $movement->quantidade,
                 'motivo' => 'Estorno da venda '.$sale->numero,
                 'responsavel_id' => $actorId,
                 'created_at' => $now,
@@ -185,7 +187,7 @@ class SaleStockService
             Peca::query()
                 ->whereKey($partId)
                 ->update([
-                    'quantidade_atual' => DB::raw('quantidade_atual + '.(int) $quantity),
+                    'quantidade_atual' => DB::raw('quantidade_atual + '.$this->quantidadeSql((float) $quantity)),
                     'updated_at' => $now,
                 ]);
         }
@@ -199,7 +201,7 @@ class SaleStockService
      * Diferente de creditForSaleCancellation(), que devolve tudo: aqui só volta
      * o que o cliente trouxe de fato (specs/029-devolucao-troca).
      *
-     * @param  array<int, array{peca_id: int, venda_item_id: int, quantidade: int}>  $lines
+     * @param  array<int, array{peca_id: int, venda_item_id: int, quantidade: float}>  $lines
      */
     public function creditForReturn(Sale $sale, string $returnNumber, array $lines, ?int $actorId): void
     {
@@ -207,7 +209,7 @@ class SaleStockService
 
         foreach ($lines as $line) {
             $partId = (int) ($line['peca_id'] ?? 0);
-            $quantity = (int) round((float) ($line['quantidade'] ?? 0));
+            $quantity = round((float) ($line['quantidade'] ?? 0), 4);
 
             if ($partId <= 0 || $quantity <= 0) {
                 continue;
@@ -234,7 +236,7 @@ class SaleStockService
 
         foreach ($lines as $line) {
             $partId = (int) ($line['peca_id'] ?? 0);
-            $quantity = (int) round((float) ($line['quantidade'] ?? 0));
+            $quantity = round((float) ($line['quantidade'] ?? 0), 4);
 
             if ($partId <= 0 || $quantity <= 0) {
                 continue;
@@ -259,7 +261,7 @@ class SaleStockService
             Peca::query()
                 ->whereKey($partId)
                 ->update([
-                    'quantidade_atual' => DB::raw('quantidade_atual + '.(int) $quantity),
+                    'quantidade_atual' => DB::raw('quantidade_atual + '.$this->quantidadeSql((float) $quantity)),
                     'updated_at' => $now,
                 ]);
         }
@@ -327,6 +329,20 @@ class SaleStockService
      * @param  Collection<int, SaleItem>  $items
      * @return array<int, array{quantidade: float, itens: array<int, SaleItem>}>
      */
+    /**
+     * Formata quantidade para interpolar em SQL cru.
+     *
+     * `quantidade_atual` virou DECIMAL(14,4) (migration 2026_08_27_000001) e a
+     * concatenacao direta de float em SQL e armadilha dupla: locale pt_BR
+     * escreveria "1,5" (virgula quebra o SQL) e valores pequenos virariam
+     * notacao cientifica ("1.0E-5"). number_format com ponto fixo elimina as
+     * duas. Nao da para usar bind aqui porque a expressao e DB::raw.
+     */
+    private function quantidadeSql(float $quantidade): string
+    {
+        return number_format($quantidade, 4, '.', '');
+    }
+
     private function aggregateDemand(Collection $items): array
     {
         $demand = [];

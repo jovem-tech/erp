@@ -280,7 +280,8 @@ class SaleWorkflowService
                 'unidade' => (string) ($part->unidade ?? 'UN'),
                 'valor_unitario' => $sale > 0 ? $sale : $cost,
                 'custo_unitario' => $cost,
-                'saldo' => (int) ($part->quantidade_atual ?? 0),
+                // float: saldo 1,25 aparecia como 1 na busca do PDV.
+            'saldo' => (float) ($part->quantidade_atual ?? 0),
                 'controla_estoque' => true,
             ];
         }

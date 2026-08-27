@@ -190,13 +190,16 @@ class EstoqueController extends BaseApiController
 
         $validated = $request->validate([
             'tipo' => ['required', 'string', 'in:entrada,saida,ajuste'],
-            'quantidade' => ['required', 'integer', 'min:1'],
+            // numeric, nao integer: a coluna virou DECIMAL(14,4) na migration
+            // 2026_08_27_000001 justamente para aceitar insumo fracionado
+            // (0,5 m de cabo). O piso e a menor fracao representavel.
+            'quantidade' => ['required', 'numeric', 'min:0.0001'],
             'motivo' => ['nullable', 'string', 'max:255'],
             'os_id' => ['nullable', 'integer', 'exists:os,id'],
         ]);
 
-        $newQuantity = (int) ($part->quantidade_atual ?? 0);
-        $quantity = (int) $validated['quantidade'];
+        $newQuantity = (float) ($part->quantidade_atual ?? 0);
+        $quantity = round((float) $validated['quantidade'], 4);
 
         if ($validated['tipo'] === 'entrada') {
             $newQuantity += $quantity;
@@ -206,14 +209,14 @@ class EstoqueController extends BaseApiController
             $newQuantity = $quantity;
         }
 
-        $newQuantity = max(0, $newQuantity);
+        $newQuantity = round(max(0, $newQuantity), 4);
 
         DB::transaction(static function () use ($part, $validated, $newQuantity, $request): void {
             Movimentacao::query()->create([
                 'peca_id' => (int) $part->id,
                 'os_id' => isset($validated['os_id']) ? (int) $validated['os_id'] : null,
                 'tipo' => (string) $validated['tipo'],
-                'quantidade' => (int) $validated['quantidade'],
+                'quantidade' => round((float) $validated['quantidade'], 4),
                 'motivo' => $validated['motivo'] ?? null,
                 'responsavel_id' => (int) $request->user()->id,
                 'created_at' => now(),
@@ -349,9 +352,9 @@ class EstoqueController extends BaseApiController
                     (string) ($part->localizacao ?? ''),
                     number_format((float) ($part->preco_custo ?? 0), 2, ',', '.'),
                     number_format((float) ($part->preco_venda ?? 0), 2, ',', '.'),
-                    (int) ($part->quantidade_atual ?? 0),
-                    (int) ($part->estoque_minimo ?? 0),
-                    (int) ($part->estoque_maximo ?? 0),
+                    $this->formatQuantidadeCsv($part->quantidade_atual ?? 0),
+                    $this->formatQuantidadeCsv($part->estoque_minimo ?? 0),
+                    $this->formatQuantidadeCsv($part->estoque_maximo ?? 0),
                     (string) ($part->status ?? ''),
                     (string) ($part->observacoes ?? ''),
                 ], ';');
@@ -415,9 +418,9 @@ class EstoqueController extends BaseApiController
             'localizacao' => ['nullable', 'string', 'max:120'],
             'preco_custo' => ['nullable', 'numeric', 'min:0'],
             'preco_venda' => ['nullable', 'numeric', 'min:0'],
-            'quantidade_atual' => ['nullable', 'integer', 'min:0'],
-            'estoque_minimo' => ['nullable', 'integer', 'min:0'],
-            'estoque_maximo' => ['nullable', 'integer', 'min:0'],
+            'quantidade_atual' => ['nullable', 'numeric', 'min:0'],
+            'estoque_minimo' => ['nullable', 'numeric', 'min:0'],
+            'estoque_maximo' => ['nullable', 'numeric', 'min:0'],
             'observacoes' => ['nullable', 'string'],
             'status' => ['nullable', 'string', 'max:30'],
             'ativo' => ['nullable', 'boolean'],
@@ -465,9 +468,9 @@ class EstoqueController extends BaseApiController
         $payload['localizacao'] = $this->normalizeText($validated['localizacao'] ?? null);
         $payload['preco_custo'] = $this->normalizeDecimal($validated['preco_custo'] ?? 0);
         $payload['preco_venda'] = $this->normalizeDecimal($validated['preco_venda'] ?? 0);
-        $payload['quantidade_atual'] = (int) ($validated['quantidade_atual'] ?? 0);
-        $payload['estoque_minimo'] = (int) ($validated['estoque_minimo'] ?? 0);
-        $payload['estoque_maximo'] = (int) ($validated['estoque_maximo'] ?? 0);
+        $payload['quantidade_atual'] = round((float) ($validated['quantidade_atual'] ?? 0), 4);
+        $payload['estoque_minimo'] = round((float) ($validated['estoque_minimo'] ?? 0), 4);
+        $payload['estoque_maximo'] = round((float) ($validated['estoque_maximo'] ?? 0), 4);
         $payload['observacoes'] = $this->normalizeText($validated['observacoes'] ?? null);
         $payload['status'] = $this->normalizeStatus($validated['status'] ?? null);
         $payload['ativo'] = $request->boolean('ativo', true);
@@ -512,9 +515,9 @@ class EstoqueController extends BaseApiController
                 'localizacao' => $this->normalizeText($data['localizacao'] ?? null),
                 'preco_custo' => $this->normalizeDecimal($data['preco_custo'] ?? 0),
                 'preco_venda' => $this->normalizeDecimal($data['preco_venda'] ?? 0),
-                'quantidade_atual' => (int) ($data['quantidade_atual'] ?? 0),
-                'estoque_minimo' => (int) ($data['estoque_minimo'] ?? 0),
-                'estoque_maximo' => (int) ($data['estoque_maximo'] ?? 0),
+                'quantidade_atual' => $this->normalizeDecimal($data['quantidade_atual'] ?? 0),
+                'estoque_minimo' => $this->normalizeDecimal($data['estoque_minimo'] ?? 0),
+                'estoque_maximo' => $this->normalizeDecimal($data['estoque_maximo'] ?? 0),
                 'status' => $this->normalizeStatus($data['status'] ?? null),
                 'observacoes' => $this->normalizeText($data['observacoes'] ?? null),
                 'ativo' => true,
@@ -550,9 +553,11 @@ class EstoqueController extends BaseApiController
             'localizacao' => (string) ($peca->localizacao ?? ''),
             'preco_custo' => (float) ($peca->preco_custo ?? 0),
             'preco_venda' => (float) ($peca->preco_venda ?? 0),
-            'quantidade_atual' => (int) ($peca->quantidade_atual ?? 0),
-            'estoque_minimo' => (int) ($peca->estoque_minimo ?? 0),
-            'estoque_maximo' => (int) ($peca->estoque_maximo ?? 0),
+            // float, nao int: DECIMAL(14,4) desde 2026_08_27_000001. Truncar
+            // aqui devolveria 1 para um saldo real de 1,25.
+            'quantidade_atual' => (float) ($peca->quantidade_atual ?? 0),
+            'estoque_minimo' => (float) ($peca->estoque_minimo ?? 0),
+            'estoque_maximo' => (float) ($peca->estoque_maximo ?? 0),
             'ativo' => (bool) ($peca->ativo ?? false),
             'status' => (string) ($peca->status ?? 'ativo'),
             'encerrado_em' => $this->formatDateTime($peca->encerrado_em),
@@ -608,7 +613,9 @@ class EstoqueController extends BaseApiController
                 'saida' => 'Saída',
                 default => 'Ajuste',
             },
-            'quantidade' => (int) data_get($movement, 'quantidade', 0),
+            // float: DECIMAL(14,4) desde 2026_08_27_000001. Com (int), uma
+            // saida de 0,5 aparecia como 0 na ficha da peca.
+            'quantidade' => (float) data_get($movement, 'quantidade', 0),
             'motivo' => (string) data_get($movement, 'motivo', ''),
             'responsavel_id' => data_get($movement, 'responsavel_id') !== null ? (int) data_get($movement, 'responsavel_id') : null,
             'responsavel_nome' => (string) data_get($movement, 'responsavel_nome', ''),
@@ -625,6 +632,25 @@ class EstoqueController extends BaseApiController
         $trimmed = trim($value);
 
         return $trimmed === '' ? null : $trimmed;
+    }
+
+    /**
+     * Quantidade para o CSV de exportacao.
+     *
+     * Sai no formato pt-BR ("1.234,5"), o mesmo dos precos, para que
+     * normalizeDecimal() consiga reler no import — exportar e reimportar tem
+     * de fechar. Zeros a direita sao aparados: "10" e mais legivel que
+     * "10,0000" numa planilha que o dono vai abrir no Excel.
+     */
+    private function formatQuantidadeCsv(mixed $valor): string
+    {
+        $numero = round((float) $valor, 4);
+
+        if ($numero === floor($numero)) {
+            return number_format($numero, 0, ',', '.');
+        }
+
+        return rtrim(rtrim(number_format($numero, 4, ',', '.'), '0'), ',');
     }
 
     private function normalizeDecimal(mixed $value): float

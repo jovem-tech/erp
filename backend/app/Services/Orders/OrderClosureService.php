@@ -260,6 +260,7 @@ class OrderClosureService
             : null;
 
         $observacao = trim((string) ($payload['observacao'] ?? ''));
+        $tempoTecnicoHoras = $this->resolveTempoTecnicoFallback($order, $payload);
         $agendarRetorno = filter_var($payload['agendar_retorno'] ?? false, FILTER_VALIDATE_BOOL);
         $retornoData = $this->normalizeDate($payload['retorno_data'] ?? null)
             ?? Carbon::now()->addDays(self::RETURN_FOLLOWUP_DEFAULT_DAYS)->toDateString();
@@ -274,7 +275,8 @@ class OrderClosureService
                 $recebimentos,
                 $isNonBilledClosure,
                 $garantiaDias,
-                $garantiaValidade
+                $garantiaValidade,
+                $tempoTecnicoHoras
             ): array {
                 // Encerramento sem cobranca nao passa por processReceipts():
                 // ele cria o titulo a receber SEMPRE, e a OS descartada /
@@ -294,7 +296,15 @@ class OrderClosureService
                     $actor,
                     $statusAplicado,
                     $observacao !== '' ? $observacao : null,
-                    viaClosureFlow: true
+                    viaClosureFlow: true,
+                    // Última janela para o apontamento de horas: updateStatus()
+                    // dispara o cálculo da margem quando aplica um status
+                    // final, então informar depois da baixa deixaria a OS fora
+                    // da margem por hora até um recálculo manual. Só passa
+                    // adiante quando a OS ainda não tem apontamento — o que o
+                    // técnico registrou na conclusão do reparo é a fonte
+                    // melhor e não pode ser sobrescrito na baixa.
+                    tempoTecnicoHoras: $tempoTecnicoHoras
                 );
 
                 if (($statusResult['result'] ?? 'error') !== 'ok') {
@@ -1396,6 +1406,35 @@ class OrderClosureService
     }
 
     /**
+     * Horas de bancada a aplicar na baixa, ou null para não mexer no que já
+     * existe.
+     *
+     * A precedência é deliberada: quem viveu o reparo é o técnico que o
+     * concluiu, não quem opera o caixa. A baixa só preenche o vazio — e um
+     * vazio, aqui, custa caro: sem horas a OS fica fora do ranking de margem
+     * por hora, que é justamente o critério de priorização quando a bancada é
+     * o gargalo.
+     *
+     * @param array<string, mixed> $payload
+     */
+    private function resolveTempoTecnicoFallback(Order $order, array $payload): ?float
+    {
+        if ((float) ($order->tempo_tecnico_horas ?? 0) > 0) {
+            return null;
+        }
+
+        $informado = $payload['tempo_tecnico_horas'] ?? null;
+
+        if ($informado === null || $informado === '') {
+            return null;
+        }
+
+        $horas = round((float) $informado, 2);
+
+        return $horas > 0 ? $horas : null;
+    }
+
+    /**
      * @param array<string, mixed> $simulation
      */
     private function registerCardFeeExpense(Order $order, array $simulation, int $movementId): void
@@ -1427,6 +1466,15 @@ class OrderClosureService
             'data_pagamento' => $simulation['data_prevista_repasse'] ?? null,
             'forma_pagamento' => ($simulation['modalidade'] ?? '') === 'debito' ? 'cartao_debito' : 'cartao_credito',
             'observacoes' => 'Despesa criada automaticamente na baixa da OS para registrar o custo líquido da operadora.',
+            // Sem grupo/subgrupo a despesa ficava invisivel no DRE: o
+            // relatorio agrupa por `grupo_dre` (groupByCompetencia filtra
+            // where grupo_dre = 'Despesas Operacionais'), entao um titulo com
+            // grupo nulo nao caia em nenhuma linha — impacta_dre=true nao
+            // bastava. A taxa saia do caixa e nunca aparecia no resultado.
+            // Mesma classificacao usada pela irma
+            // FinanceiroService::registerCardFeeExpense().
+            'grupo_dre' => 'Despesas Operacionais',
+            'subgrupo_dre' => 'Taxas e impostos',
             'impacta_dre' => true,
             'impacta_fluxo_caixa' => true,
             'dre_fixo_mensal' => false,

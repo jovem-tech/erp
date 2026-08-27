@@ -15,7 +15,7 @@
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
         <div>
             <p class="desktop-eyebrow">Pessoas</p>
-            <h2 class="surface-title fs-3 mb-2">Equipe da assistência</h2>
+            <h2 class="surface-title fs-3 mb-2">Equipe da assistência <x-favorite-toggle /></h2>
             <p class="surface-subtitle mb-0">Cadastre técnicos, administrativo e comercial operacional separadamente dos usuários de acesso.</p>
         </div>
     </div>

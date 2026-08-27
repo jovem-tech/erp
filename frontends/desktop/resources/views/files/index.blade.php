@@ -112,7 +112,7 @@
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
         <div>
             <p class="desktop-eyebrow">Biblioteca de documentos</p>
-            <h1 class="surface-title fs-3 mb-2">Gerenciador de Arquivos</h1>
+            <h1 class="surface-title fs-3 mb-2">Gerenciador de Arquivos <x-favorite-toggle /></h1>
             <p class="surface-subtitle mb-0">Navegue por categoria, visualize, selecione e gerencie os arquivos do ERP.</p>
         </div>
         <div class="d-flex flex-wrap gap-2">

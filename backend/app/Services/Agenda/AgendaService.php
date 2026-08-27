@@ -24,6 +24,17 @@ class AgendaService
     /** Teto do intervalo consultavel de uma vez, em dias. */
     private const MAX_WINDOW_DAYS = 400;
 
+    /**
+     * Horizonte de `proximos` no resumo do dashboard, em dias.
+     *
+     * Sem teto, a lista buscava os proximos 5 pendentes onde quer que
+     * estivessem no calendario - numa semana calma isso trazia um boleto de
+     * 3 semanas a frente so para completar a contagem, com o mesmo peso
+     * visual de algo realmente iminente. Mesma janela de proximos_7_dias
+     * abaixo, para as duas leituras do resumo concordarem.
+     */
+    private const PROXIMOS_HORIZON_DAYS = 7;
+
     public function __construct(
         private readonly GoogleCalendarSyncDispatcher $syncDispatcher
     ) {}
@@ -85,7 +96,7 @@ class AgendaService
                 ->whereBetween('inicio_em', [$today->addDay(), $today->addDays(7)->endOfDay()])
                 ->count(),
             'proximos' => $open()
-                ->where('inicio_em', '>=', $today)
+                ->whereBetween('inicio_em', [$today, $today->addDays(self::PROXIMOS_HORIZON_DAYS)->endOfDay()])
                 ->orderBy('inicio_em')
                 ->limit(5)
                 ->get()

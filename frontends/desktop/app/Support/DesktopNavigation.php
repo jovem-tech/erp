@@ -60,6 +60,85 @@ class DesktopNavigation
     }
 
     /**
+     * Todas as paginas favoritaveis, achatadas (sem secoes) e ja filtradas pela
+     * permissao do usuario, indexadas pelo nome da rota.
+     *
+     * Diferente de sections(), inclui os itens marcados como `hidden`: eles
+     * ficam fora da sidebar por decisao de navegacao (o PDV e' alcancado pelo
+     * botao "Nova venda", devolucoes pelo "Mais acoes" da listagem de vendas),
+     * mas continuam sendo paginas legitimas que o usuario pode querer fixar nos
+     * favoritos.
+     *
+     * @return array<string, array<string, string>>
+     */
+    public static function favoritableItems(): array
+    {
+        $items = [];
+
+        foreach (self::definition() as $section) {
+            foreach ($section['items'] as $item) {
+                self::collectFavoritable($item, (string) $section['label'], $items);
+            }
+        }
+
+        return $items;
+    }
+
+    /**
+     * @return array<string, string>|null
+     */
+    public static function findFavoritable(mixed $routeName): ?array
+    {
+        if (! is_string($routeName) || $routeName === '') {
+            return null;
+        }
+
+        return self::favoritableItems()[$routeName] ?? null;
+    }
+
+    /**
+     * Nome da rota da requisicao atual, quando ela e' uma pagina favoritavel.
+     * Usado pela navbar para decidir se mostra a estrela e em que estado.
+     */
+    public static function currentFavoritableRoute(): ?string
+    {
+        $current = Route::currentRouteName();
+
+        return self::findFavoritable($current) !== null ? (string) $current : null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @param  array<string, array<string, string>>  $items
+     */
+    private static function collectFavoritable(array $item, string $sectionLabel, array &$items): void
+    {
+        if (isset($item['children']) && is_array($item['children'])) {
+            foreach ($item['children'] as $child) {
+                self::collectFavoritable($child, $sectionLabel, $items);
+            }
+
+            return;
+        }
+
+        // filterItem() e' a unica fonte de verdade sobre RBAC + rota registrada.
+        // Reusa-la aqui garante que favoritos e sidebar nunca divirjam sobre o
+        // que este usuario pode enxergar.
+        $allowed = self::filterItem($item);
+
+        if ($allowed === null) {
+            return;
+        }
+
+        $items[(string) $allowed['route']] = [
+            'label' => (string) ($allowed['label'] ?? ''),
+            'route' => (string) $allowed['route'],
+            'icon' => (string) ($allowed['icon'] ?? 'bi-dot'),
+            'section' => $sectionLabel,
+        ];
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     private static function definition(): array

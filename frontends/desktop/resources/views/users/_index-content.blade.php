@@ -55,7 +55,7 @@
 <section class="surface-table">
     <div class="surface-table-header">
         <div>
-            <h2 class="surface-title">Usuários</h2>
+            <h2 class="surface-title">Usuários <x-favorite-toggle only="users.index" /></h2>
             <p class="surface-subtitle">{{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} usuários retornados pela API administrativa.</p>
         </div>
     </div>

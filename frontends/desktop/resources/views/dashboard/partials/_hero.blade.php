@@ -30,6 +30,8 @@
     </div>
 
     <div class="desktop-hero-actions">
+        <x-favorite-toggle />
+
         <a href="{{ route('dashboard.help') }}" class="btn btn-outline-light">
             <i class="bi bi-question-circle me-1"></i>
             Ajuda do dashboard

@@ -13,6 +13,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DefectController;
 use App\Http\Controllers\DevolucaoController;
 use App\Http\Controllers\EquipmentController;
+use App\Http\Controllers\FavoriteController;
 use App\Http\Controllers\FileManagerController;
 use App\Http\Controllers\FinanceiroCartaoController;
 use App\Http\Controllers\FinanceiroCartaoCreditoController;
@@ -192,6 +193,13 @@ Route::middleware('desktop.auth')->group(function (): void {
         ->name('configurations.backups.passphrase');
     Route::post('/configuracoes/aparencia', [ConfigurationController::class, 'updateAppearance'])
         ->name('configurations.appearance.update');
+    // Preferências pessoais: sem `desktop.permission` de propósito — quem está
+    // logado pode ajustar a própria navegação e os próprios favoritos, mesmo
+    // sem permissão de editar configurações do sistema.
+    Route::post('/configuracoes/navegacao', [ConfigurationController::class, 'updateNavigation'])
+        ->name('configurations.navigation.update');
+    Route::post('/favoritos/alternar', [FavoriteController::class, 'toggle'])
+        ->name('favorites.toggle');
     Route::post('/configuracoes/empresa', [ConfigurationController::class, 'updateCompany'])
         ->middleware('desktop.permission:configuracoes,editar')
         ->name('configurations.company.update');

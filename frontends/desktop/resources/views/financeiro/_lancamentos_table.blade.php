@@ -9,7 +9,7 @@
 <section class="surface-table">
     <div class="surface-table-header">
         <div>
-            <h2 class="surface-title">Títulos financeiros</h2>
+            <h2 class="surface-title">Títulos financeiros <x-favorite-toggle only="financeiro.index" /></h2>
             <p class="surface-subtitle">
                 {{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} lançamentos retornados pela API central.
             </p>

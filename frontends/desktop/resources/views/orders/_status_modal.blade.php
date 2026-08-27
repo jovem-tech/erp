@@ -701,6 +701,34 @@
                                                 <div class="form-text">Esta OS estava com o prazo congelado. Confirme ou ajuste o novo prazo de entrega.</div>
                                             </div>
 
+                                            {{-- Horas de bancada. Aparece quando o destino escolhido
+                                                 congela o prazo (OrderStatus::DEADLINE_FREEZE_CODES),
+                                                 ou seja, quando o técnico está dando o reparo por
+                                                 concluído — o momento em que ele ainda lembra o tempo
+                                                 gasto. É a base da margem por hora. --}}
+                                            <div class="os-status-modal-section d-none" id="orderStatusModalTempoWrapper">
+                                                <label class="form-label" for="orderStatusModalTempo">Horas de bancada</label>
+                                                <div class="input-group">
+                                                    <input
+                                                        type="number"
+                                                        id="orderStatusModalTempo"
+                                                        name="tempo_tecnico_horas"
+                                                        class="form-control"
+                                                        min="0"
+                                                        max="999"
+                                                        step="0.25"
+                                                        placeholder="Ex.: 1,5"
+                                                        disabled
+                                                    >
+                                                    <span class="input-group-text">h</span>
+                                                </div>
+                                                <div class="form-text">
+                                                    Tempo efetivo de trabalho no equipamento, sem contar espera de peça ou fila.
+                                                    Alimenta a margem por hora — o que mostra quais serviços realmente compensam
+                                                    quando a bancada está cheia. Pode deixar em branco.
+                                                </div>
+                                            </div>
+
                                             {{-- Observações --}}
                                             <div class="os-status-modal-section">
                                                 <label class="form-label" for="orderStatusModalObservacao">Observações</label>

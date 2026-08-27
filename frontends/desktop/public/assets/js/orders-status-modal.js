@@ -30,6 +30,8 @@
     const proceduresSaveBtn = document.getElementById('orderStatusModalProceduresSave');
     const novoPrazoWrapper = document.getElementById('orderStatusModalNovoPrazoWrapper');
     const novoPrazoInput = document.getElementById('orderStatusModalNovoPrazo');
+    const tempoWrapper = document.getElementById('orderStatusModalTempoWrapper');
+    const tempoInput = document.getElementById('orderStatusModalTempo');
     const mapFrameEl = document.getElementById('orderStatusModalMapFrame');
     const mapErrorEl = document.getElementById('orderStatusModalMapError');
     const mapTabBtn = document.getElementById('orderStatusModalTabMapBtn');
@@ -112,6 +114,20 @@
             novoPrazoInput.required = false;
             novoPrazoInput.value = '';
         }
+    };
+
+    // Apontamento de horas: escondido e desabilitado por padrão. Input
+    // disabled não entra no FormData, então uma OS cujo destino não conclui o
+    // reparo nunca envia o campo — e o backend só mexe na coluna quando ele
+    // vem. Sem isso, avançar um status qualquer apagaria o apontamento.
+    const hideTempoSection = () => {
+        tempoWrapper?.classList.add('d-none');
+        if (tempoInput) tempoInput.disabled = true;
+    };
+
+    const showTempoSection = () => {
+        tempoWrapper?.classList.remove('d-none');
+        if (tempoInput) tempoInput.disabled = false;
     };
 
     const setText = (id, text) => {
@@ -491,6 +507,15 @@
         statusCongelaPrazoAtual = Boolean(data.status_congela_prazo);
         hideNovoPrazoSection();
 
+        // Repõe o apontamento já existente para o técnico conferir/corrigir,
+        // em vez de pedir o número de novo. Campo vazio = sem apontamento.
+        hideTempoSection();
+        if (tempoInput) {
+            tempoInput.value = data.tempo_tecnico_horas !== null && data.tempo_tecnico_horas !== undefined
+                ? String(data.tempo_tecnico_horas)
+                : '';
+        }
+
         // Mensagem ao cliente: template vem do backend; estado começa zerado a
         // cada abertura (switch desligado, sem texto, sem edição manual).
         numeroOsAtual = numeroOs;
@@ -747,6 +772,16 @@
             }
         } else {
             hideNovoPrazoSection();
+        }
+
+        // O destino congela o prazo = o técnico está dando o reparo por
+        // concluído. É a hora certa de pedir as horas de bancada: ele acabou
+        // de sair do equipamento e ainda lembra o tempo gasto. Depois da baixa
+        // o dado não entra mais na margem sem recálculo manual.
+        if (destinoCongelaPrazo && selectEl.value !== '') {
+            showTempoSection();
+        } else {
+            hideTempoSection();
         }
 
         // O nome do status entra na mensagem ao cliente — mantém em dia.

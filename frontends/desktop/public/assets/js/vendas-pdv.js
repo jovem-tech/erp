@@ -945,6 +945,50 @@
             setInterval(atualizarAgendaTerminal, 1000);
         }
 
+        const limparVenda = () => {
+            itensBody.innerHTML = '';
+            pagamentosBox.innerHTML = '';
+            recalcular();
+            buscaInput.focus();
+        };
+
+        // Esc anunciado na tela como "limpa" continua limpando, mas pergunta
+        // antes: e' a mesma tecla que o reflexo do operador usa para "cancelar o
+        // que estou fazendo", e um toque errado apagava uma venda de quinze itens
+        // sem nenhuma forma de voltar. O foco vai para o botao de confirmar, entao
+        // quem quis limpar mesmo resolve com Esc + Enter.
+        const limparVendaComConfirmacao = () => {
+            const quantidade = itensBody.querySelectorAll('.pdv-item').length;
+
+            if (quantidade === 0) {
+                return;
+            }
+
+            if (!window.Swal) {
+                if (window.confirm('Limpar a venda e descartar os itens do carrinho?')) {
+                    limparVenda();
+                }
+
+                return;
+            }
+
+            window.Swal.fire({
+                icon: 'warning',
+                title: 'Limpar a venda?',
+                text: quantidade === 1
+                    ? 'O item do carrinho será descartado.'
+                    : `Os ${quantidade} itens do carrinho serão descartados.`,
+                showCancelButton: true,
+                focusConfirm: true,
+                confirmButtonText: 'Limpar',
+                cancelButtonText: 'Manter',
+            }).then((resultado) => {
+                if (resultado.isConfirmed) {
+                    limparVenda();
+                }
+            });
+        };
+
         document.addEventListener('keydown', (evento) => {
             if (evento.key === 'F2') {
                 evento.preventDefault();
@@ -982,10 +1026,7 @@
 
                 if (itensBody.querySelectorAll('.pdv-item').length > 0) {
                     evento.preventDefault();
-                    itensBody.innerHTML = '';
-                    pagamentosBox.innerHTML = '';
-                    recalcular();
-                    buscaInput.focus();
+                    limparVendaComConfirmacao();
                 }
             }
         });
@@ -1019,6 +1060,14 @@
 
             return faltantes;
         };
+
+        // Venda em andamento e' trabalho nao salvo: sair da pagina descartava o
+        // carrinho em silencio, por qualquer caminho (sidebar, inicio, "+ Novo",
+        // F5, fechar a aba). O shell pergunta antes; aqui so' respondemos se ha
+        // o que perder. submitLiberado exclui a saida legitima — enviar a venda.
+        window.erpRegisterUnsavedWork?.(
+            () => !submitLiberado && itensBody.querySelectorAll('.pdv-item').length > 0
+        );
 
         form.addEventListener('submit', (evento) => {
             if (submitLiberado) return;

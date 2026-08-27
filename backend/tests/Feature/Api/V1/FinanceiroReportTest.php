@@ -1086,4 +1086,203 @@ class FinanceiroReportTest extends TestCase
 
         $response->assertStatus(403);
     }
+
+    /**
+     * Monta um cenario fechado de custeio variavel:
+     *
+     *   Receita              10.000
+     *   (-) CMV (pecas)       3.000
+     *   (-) Comissoes           500
+     *   (-) Desp. variaveis     500
+     *   = MC                  6.000  (60%)
+     *   (-) Custos fixos      3.000
+     *   = Resultado           3.000
+     *
+     * Numeros redondos de proposito: um erro de sinal ou de fonte aparece na
+     * hora, em vez de se esconder num decimal.
+     */
+    private function seedCenarioGerencial(): void
+    {
+        $clienteId = $this->createClientRecord();
+
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clienteId,
+            'equipamento_id' => $this->createEquipmentRecord($clienteId),
+            'status' => 'entregue_reparado_pago',
+            'valor_total' => 10000,
+            'desconto' => 0,
+            'valor_final' => 10000,
+            'data_entrega' => now()->startOfMonth()->addDays(3),
+        ]);
+
+        DB::table('os_margem')->insert([
+            'os_id' => $orderId,
+            'receita_liquida' => 10000,
+            'custo_pecas' => 3000,
+            'custo_comissao' => 500,
+            'custo_taxa_recebimento' => 0,
+            'custo_imposto' => 0,
+            'margem_contribuicao' => 6500,
+            'percentual_margem' => 65,
+            'calculado_em' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        Financeiro::create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'avulso' => true,
+            'categoria' => 'Aluguel',
+            'descricao' => 'Aluguel do mês',
+            'valor' => 3000,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->startOfMonth()->addDays(5),
+            'data_competencia' => now()->startOfMonth()->addDays(5),
+            'grupo_dre' => 'Despesas Operacionais',
+            'subgrupo_dre' => 'Aluguel',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+            'dre_fixo_mensal' => true,
+        ]);
+
+        Financeiro::create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'avulso' => true,
+            'categoria' => 'Impostos e taxas',
+            'descricao' => 'Taxas sobre venda',
+            'valor' => 500,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->startOfMonth()->addDays(6),
+            'data_competencia' => now()->startOfMonth()->addDays(6),
+            'grupo_dre' => 'Despesas Operacionais',
+            'subgrupo_dre' => 'Taxas e impostos',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+            'dre_fixo_mensal' => false,
+        ]);
+    }
+
+    /**
+     * A linha que faltava no DRE: separa os custos pelo COMPORTAMENTO (variam
+     * ou nao com o volume) e revela quanto sobra de cada real vendido para
+     * pagar o fixo. O lucro bruto legado nao responde isso — nem sequer
+     * enxerga o custo das pecas.
+     */
+    public function test_dre_gerencial_calcula_margem_de_contribuicao_com_cmv_de_estoque(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $this->seedCenarioGerencial();
+
+        $response = $this->getJson('/api/v1/financeiro/relatorios/dre?mes=' . now()->format('Y-m'))->assertOk();
+
+        $response
+            ->assertJsonPath('data.dre.gerencial.disponivel', true)
+            ->assertJsonPath('data.dre.gerencial.custos_variaveis.cmv_pecas', 3000.0)
+            ->assertJsonPath('data.dre.gerencial.custos_variaveis.comissoes', 500.0)
+            ->assertJsonPath('data.dre.gerencial.custos_variaveis.despesas_variaveis', 500.0)
+            ->assertJsonPath('data.dre.gerencial.custos_variaveis.total', 4000.0)
+            ->assertJsonPath('data.dre.gerencial.margem_contribuicao', 6000.0)
+            ->assertJsonPath('data.dre.gerencial.indice_contribuicao_percentual', 60.0)
+            ->assertJsonPath('data.dre.gerencial.custos_fixos', 3000.0)
+            ->assertJsonPath('data.dre.gerencial.resultado_operacional', 3000.0);
+
+        // O lucro bruto legado continua ignorando o CMV — por isso ele nao
+        // pode ser lido como "quanto sobrou".
+        $response->assertJsonPath('data.dre.lucro_bruto', 10000.0);
+    }
+
+    /**
+     * Ponto de equilibrio, margem de seguranca e GAO derivam da MC. Respondem
+     * "quanto preciso faturar para nao ter prejuizo" e "quanto posso cair
+     * antes de entrar no vermelho".
+     */
+    public function test_dre_gerencial_calcula_ponto_de_equilibrio_e_alavancagem(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $this->seedCenarioGerencial();
+
+        $response = $this->getJson('/api/v1/financeiro/relatorios/dre?mes=' . now()->format('Y-m'))->assertOk();
+
+        // PE = custo fixo / indice de contribuicao = 3.000 / 0,60 = 5.000
+        $response
+            ->assertJsonPath('data.dre.gerencial.analise_cvp.ponto_equilibrio_receita', 5000.0)
+            ->assertJsonPath('data.dre.gerencial.analise_cvp.ponto_equilibrio_atingido', true)
+            // Faturou o dobro do necessario para empatar.
+            ->assertJsonPath('data.dre.gerencial.analise_cvp.percentual_do_equilibrio', 200.0)
+            // Pode perder metade do faturamento antes de dar prejuizo.
+            ->assertJsonPath('data.dre.gerencial.analise_cvp.margem_seguranca_valor', 5000.0)
+            ->assertJsonPath('data.dre.gerencial.analise_cvp.margem_seguranca_percentual', 50.0)
+            // GAO 2: cada 1% de variacao na receita move 2% o resultado.
+            ->assertJsonPath('data.dre.gerencial.analise_cvp.grau_alavancagem_operacional', 2.0);
+    }
+
+    /**
+     * Sem indice de contribuicao positivo nao existe ponto de equilibrio: se
+     * cada venda ja nasce sem cobrir o proprio custo variavel, vender mais
+     * afunda mais e nenhum volume zera o resultado. Devolver um numero aqui
+     * seria pior que devolver nada.
+     */
+    public function test_dre_gerencial_nao_inventa_ponto_de_equilibrio_com_margem_negativa(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $clienteId = $this->createClientRecord();
+
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clienteId,
+            'equipamento_id' => $this->createEquipmentRecord($clienteId),
+            'status' => 'entregue_reparado_pago',
+            'valor_total' => 1000,
+            'desconto' => 0,
+            'valor_final' => 1000,
+            'data_entrega' => now()->startOfMonth()->addDays(3),
+        ]);
+
+        // Peca custou mais que o preco cobrado: MC negativa.
+        DB::table('os_margem')->insert([
+            'os_id' => $orderId,
+            'receita_liquida' => 1000,
+            'custo_pecas' => 1400,
+            'custo_comissao' => 0,
+            'custo_taxa_recebimento' => 0,
+            'custo_imposto' => 0,
+            'margem_contribuicao' => -400,
+            'percentual_margem' => -40,
+            'calculado_em' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->getJson('/api/v1/financeiro/relatorios/dre?mes=' . now()->format('Y-m'))->assertOk();
+
+        $this->assertEquals(-400.0, $response->json('data.dre.gerencial.margem_contribuicao'));
+        $this->assertNull($response->json('data.dre.gerencial.analise_cvp.ponto_equilibrio_receita'));
+        $this->assertNull($response->json('data.dre.gerencial.analise_cvp.margem_seguranca_valor'));
+        $this->assertNull($response->json('data.dre.gerencial.analise_cvp.grau_alavancagem_operacional'));
+    }
+
+    /**
+     * MC e um conceito de CONFRONTACAO: o custo da peca pertence ao mes da
+     * entrega, nao ao mes em que o cliente pagou. No regime de caixa o bloco
+     * sai marcado como indisponivel, com o motivo — em vez de exibir um numero
+     * que nao corresponde a periodo nenhum.
+     */
+    public function test_dre_caixa_nao_apresenta_margem_de_contribuicao(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $this->seedCenarioGerencial();
+
+        $response = $this->getJson('/api/v1/financeiro/relatorios/dre-caixa?mes=' . now()->format('Y-m'))->assertOk();
+
+        $response->assertJsonPath('data.dre.gerencial.disponivel', false);
+        $this->assertNotEmpty($response->json('data.dre.gerencial.motivo'));
+        $this->assertNull($response->json('data.dre.gerencial.margem_contribuicao'));
+    }
 }
