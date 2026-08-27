@@ -22,7 +22,7 @@
     <section class="desktop-page-stack">
         <div class="desktop-page-hero">
             <div>
-                <h2>Precificação</h2>
+                <h2>Precificação <x-favorite-toggle /></h2>
                 <p>Módulo financeiro dedicado à formação de preço de peças e serviços, com regras centrais vindas do backend.</p>
             </div>
 
@@ -114,9 +114,36 @@
                                 <label>Taxa de recebimento (%)</label>
                                 <input type="number" step="0.01" min="0" max="100" class="form-control" name="precificacao_servico_taxa_recebimento_percentual" value="{{ old('precificacao_servico_taxa_recebimento_percentual', $settings['precificacao_servico_taxa_recebimento_percentual'] ?? '3.5') }}">
                             </div>
+                            @php
+                                $regimeAtual = old('regime_tributario', $settings['regime_tributario'] ?? 'mei');
+                                $impostoVariavel = in_array($regimeAtual, ['simples', 'outro'], true);
+                            @endphp
+                            <div>
+                                <label>Regime tributário</label>
+                                <select name="regime_tributario" class="form-select" id="regimeTributario">
+                                    <option value="mei" @selected($regimeAtual === 'mei')>MEI</option>
+                                    <option value="simples" @selected($regimeAtual === 'simples')>Simples Nacional</option>
+                                    <option value="outro" @selected($regimeAtual === 'outro')>Outro (Lucro Presumido/Real)</option>
+                                </select>
+                                <div class="form-text">
+                                    Define se o imposto desconta da margem de cada OS ou entra nos custos fixos.
+                                </div>
+                            </div>
                             <div>
                                 <label>Imposto (%)</label>
-                                <input type="number" step="0.01" min="0" max="100" class="form-control" name="precificacao_servico_imposto_percentual" value="{{ old('precificacao_servico_imposto_percentual', $settings['precificacao_servico_imposto_percentual'] ?? '0') }}">
+                                <input type="number" step="0.01" min="0" max="100" class="form-control"
+                                       id="impostoPercentual"
+                                       name="precificacao_servico_imposto_percentual"
+                                       value="{{ old('precificacao_servico_imposto_percentual', $settings['precificacao_servico_imposto_percentual'] ?? '0') }}">
+                                <div id="impostoHintMei" @class(['form-text', 'd-none' => $impostoVariavel])>
+                                    No MEI o DAS é <strong>valor fixo mensal</strong>: não muda se você fizer 10 ou 100 OS,
+                                    então não desconta da margem. Lance-o como <strong>despesa fixa</strong> no financeiro —
+                                    assim ele entra no ponto de equilíbrio, que é onde ele pertence.
+                                </div>
+                                <div id="impostoHintVariavel" @class(['form-text', 'd-none' => ! $impostoVariavel])>
+                                    Use a alíquota <strong>efetiva</strong> do seu último DAS, não a nominal da tabela.
+                                    Ela desconta da margem de contribuição de cada OS.
+                                </div>
                             </div>
                             <div>
                                 <label>Tempo padrão (h)</label>
@@ -498,4 +525,29 @@
             </div>
         </div>
     </section>
+@endsection
+
+@section('scripts')
+    <script>
+        // Troca a explicação do campo Imposto conforme o regime, sem recarregar
+        // a página. A distinção importa: no MEI o DAS é fixo e pertence aos
+        // custos fixos (ponto de equilíbrio); no Simples ele é proporcional à
+        // venda e desconta da margem de cada OS.
+        (function () {
+            const regime = document.getElementById('regimeTributario');
+            const hintMei = document.getElementById('impostoHintMei');
+            const hintVariavel = document.getElementById('impostoHintVariavel');
+
+            if (!regime || !hintMei || !hintVariavel) return;
+
+            const sincronizar = () => {
+                const variavel = regime.value === 'simples' || regime.value === 'outro';
+                hintMei.classList.toggle('d-none', variavel);
+                hintVariavel.classList.toggle('d-none', !variavel);
+            };
+
+            regime.addEventListener('change', sincronizar);
+            sincronizar();
+        })();
+    </script>
 @endsection

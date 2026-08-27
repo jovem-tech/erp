@@ -19,9 +19,16 @@
             </span>
         </a>
 
-        <button type="button" class="sidebar-toggle d-none d-lg-inline-flex" id="sidebarToggle" aria-label="Recolher navegacao">
-            <i class="bi bi-chevron-left"></i>
-        </button>
+        {{-- No modo sanduíche a sidebar é uma gaveta: não há o que recolher, e o
+             botão só confunde (um leitor de tela ainda anunciaria "Recolher
+             navegação" numa gaveta). Some do DOM em vez de sumir por CSS porque
+             o `.d-lg-inline-flex` do Bootstrap é `!important` e vencia o
+             `display:none` de `.desktop-sidebar.is-hidden .sidebar-toggle`. --}}
+        @unless ($desktopSidebarHidden ?? false)
+            <button type="button" class="sidebar-toggle d-none d-lg-inline-flex" id="sidebarToggle" aria-label="Recolher navegacao">
+                <i class="bi bi-chevron-left"></i>
+            </button>
+        @endunless
     </div>
 
     @php

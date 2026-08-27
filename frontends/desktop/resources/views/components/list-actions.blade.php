@@ -3,6 +3,10 @@
     'align' => 'end',
     'variant' => 'outline-light',
     'size' => 'sm',
+    // Liga o item "Adicionar aos favoritos" no topo do menu. Fica desligado por
+    // padrão porque este mesmo componente monta os dropdowns "Ações" de LINHA
+    // das tabelas — favoritar é uma ação da página, não de um registro.
+    'favoritable' => false,
 ])
 
 @php
@@ -27,6 +31,13 @@
         <i class="bi bi-chevron-down"></i>
     </button>
     <ul class="dropdown-menu dropdown-menu-{{ $align }} list-actions-menu">
+        @if ($favoritable)
+            <x-favorite-toggle variant="dropdown-item" />
+
+            @if (($desktopFavoriteRoute ?? null) && trim((string) $slot) !== '')
+                <li><hr class="dropdown-divider"></li>
+            @endif
+        @endif
         {{ $slot }}
     </ul>
 </div>

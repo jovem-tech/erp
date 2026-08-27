@@ -26,7 +26,7 @@
                 <i class="bi bi-cart-check me-2"></i>Ir para vendas
             </a>
 
-            <x-list-actions label="Mais ações" size="">
+            <x-list-actions label="Mais ações" size="" :favoritable="true">
                 <li>
                     <a href="{{ route('devolucoes.help') }}" class="dropdown-item">
                         <i class="bi bi-question-circle me-2"></i>Ajuda
@@ -58,7 +58,7 @@
     <section class="surface-table">
         <div class="surface-table-header">
             <div>
-                <h2 class="surface-title">Devoluções</h2>
+                <h2 class="surface-title">Devoluções <x-favorite-toggle /></h2>
                 <p class="surface-subtitle">
                     Produtos que voltaram do balcão. Para registrar uma devolução, abra a venda de origem.
                 </p>

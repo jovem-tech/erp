@@ -24,6 +24,7 @@ class Order extends Model
         'data_entrada' => 'datetime',
         'data_previsao' => 'date',
         'data_conclusao' => 'datetime',
+        'tempo_tecnico_horas' => 'float',
         'data_entrega' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',

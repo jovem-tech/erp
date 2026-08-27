@@ -783,6 +783,45 @@
                                         <div class="invalid-feedback">{{ $message }}</div>
                                     @enderror
                                 </div>
+
+                                @php
+                                    // Rede de segurança: o momento natural do apontamento é a
+                                    // conclusão do reparo. Só pede aqui quando ninguém informou —
+                                    // depois da baixa a margem já foi calculada e o dado não entra
+                                    // mais sem recálculo manual. Se já existe, mostra em modo leitura
+                                    // para não induzir a sobrescrever (o backend ignoraria mesmo).
+                                    $tempoApontado = $order['tempo_tecnico_horas'] ?? null;
+                                @endphp
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label" for="tempoTecnicoHoras">Horas de bancada</label>
+                                    @if ($tempoApontado !== null)
+                                        <input type="text" class="form-control" disabled
+                                               value="{{ number_format((float) $tempoApontado, 2, ',', '.') }} h">
+                                        <p class="form-text mb-0">Informado pelo técnico na conclusão do reparo.</p>
+                                    @else
+                                        <div class="input-group">
+                                            <input
+                                                type="number"
+                                                id="tempoTecnicoHoras"
+                                                name="tempo_tecnico_horas"
+                                                class="form-control @error('tempo_tecnico_horas') is-invalid @enderror"
+                                                min="0"
+                                                max="999"
+                                                step="0.25"
+                                                placeholder="Ex.: 1,5"
+                                                value="{{ old('tempo_tecnico_horas') }}"
+                                            >
+                                            <span class="input-group-text">h</span>
+                                            @error('tempo_tecnico_horas')
+                                                <div class="invalid-feedback">{{ $message }}</div>
+                                            @enderror
+                                        </div>
+                                        <p class="form-text mb-0">
+                                            Esta OS não teve horas apontadas. Sem elas, ela fica fora do relatório de
+                                            margem por hora. Pode deixar em branco.
+                                        </p>
+                                    @endif
+                                </div>
                             </div>
 
                             {{-- Visível só quando Classificação = Adiantamento/Sinal --}}

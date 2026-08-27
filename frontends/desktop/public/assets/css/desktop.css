@@ -200,10 +200,6 @@ a {
     margin-left: 0;
 }
 
-.desktop-sidebar.is-hidden .sidebar-toggle {
-    display: none;
-}
-
 .desktop-sidebar-overlay {
     position: fixed;
     inset: 0;
@@ -1936,6 +1932,131 @@ a {
 
 .desktop-correspondence-dropdown .desktop-notification-badge {
     background: #4f46e5;
+}
+
+/* ─── Atalhos de teclado do "+ Novo" ─────────────────────────────────────── */
+
+.desktop-quick-create-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+}
+
+.desktop-shortcut-key {
+    flex-shrink: 0;
+    padding: 0.1rem 0.4rem;
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    border-bottom-width: 2px;
+    border-radius: 6px;
+    background: rgba(148, 163, 184, 0.1);
+    color: var(--desktop-text-soft);
+    font-family: inherit;
+    font-size: 0.68rem;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+/* ─── Favoritos da navbar ─────────────────────────────────────────────────── */
+
+.desktop-favorites-dropdown .desktop-icon-button {
+    color: var(--desktop-primary);
+}
+
+.desktop-favorites-dropdown .desktop-notification-badge {
+    background: var(--desktop-primary);
+}
+
+.desktop-favorites-menu {
+    width: min(100vw - 2rem, 340px);
+}
+
+.desktop-favorites-list {
+    display: grid;
+    gap: 0.3rem;
+    max-height: 360px;
+    overflow: auto;
+    padding-right: 0.15rem;
+}
+
+.desktop-favorites-link {
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.6rem 0.7rem;
+    border-radius: 14px;
+    border: 1px solid transparent;
+    color: var(--desktop-heading);
+    text-decoration: none;
+    transition: var(--desktop-transition);
+}
+
+.desktop-favorites-link:hover,
+.desktop-favorites-link:focus-visible {
+    background: rgba(111, 90, 252, 0.06);
+    border-color: rgba(111, 90, 252, 0.22);
+    color: var(--desktop-primary);
+}
+
+.desktop-favorites-link > .bi {
+    flex-shrink: 0;
+    font-size: 1rem;
+    color: var(--desktop-primary);
+}
+
+.desktop-favorites-link-copy {
+    display: grid;
+    gap: 0.05rem;
+    min-width: 0;
+}
+
+.desktop-favorites-link-copy strong {
+    font-size: 0.88rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.desktop-favorites-link-copy small {
+    color: var(--desktop-text-soft);
+    font-size: 0.72rem;
+}
+
+/* A estrela mora ao lado do TÍTULO da página, não na topbar: ela fixa a página
+   em que o operador está, e ficar colada no nome dessa página é o que torna a
+   ação óbvia. Some sozinha onde não há o que favoritar. */
+.desktop-favorite-star {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.9rem;
+    height: 1.9rem;
+    margin-left: 0.4rem;
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--desktop-text-soft);
+    font-size: 0.95rem;
+    vertical-align: middle;
+    transition: var(--desktop-transition);
+}
+
+.desktop-favorite-star:hover,
+.desktop-favorite-star:focus-visible {
+    background: rgba(111, 90, 252, 0.08);
+    color: var(--desktop-primary);
+}
+
+.desktop-favorite-star.is-active,
+.desktop-favorite-star.is-active:hover,
+.desktop-favorite-star.is-active:focus-visible {
+    color: #f59e0b;
+}
+
+.desktop-favorite-star.is-busy,
+.desktop-favorite-action.is-busy {
+    opacity: 0.55;
+    pointer-events: none;
 }
 
 .document-signature-pending-anchor {
@@ -6667,6 +6788,7 @@ a {
 
 .dashboard-status-chart-layout .dashboard-status-legend {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
     align-self: center;
     align-content: start;
     max-height: none;
@@ -8781,19 +8903,32 @@ a.agenda-summary-card:hover {
     list-style: none;
 }
 
+/* Urgência (is-late/is-today/is-upcoming) é quem manda na cor forte da
+   linha — borda e fundo. O tipo (--agenda-accent, vindo de .agenda-tipo-*)
+   fica reduzido ao pontinho em .dashboard-agenda-type-dot: antes o tipo
+   pintava a linha inteira, e um boleto vencendo em 3 semanas ficava tão
+   vermelho quanto um item realmente atrasado. */
 .dashboard-agenda-item {
     display: grid;
-    grid-template-columns: 76px minmax(0, 1fr);
+    grid-template-columns: 76px 10px minmax(0, 1fr);
     align-items: center;
-    gap: 0.75rem;
+    gap: 0.6rem;
     padding: 0.45rem 0.6rem;
-    border-left: 3px solid var(--agenda-accent, #94a3b8);
+    border-left: 3px solid var(--desktop-border);
     border-radius: 10px;
-    background: var(--agenda-bg, rgba(148, 163, 184, 0.10));
+    background: var(--desktop-surface-soft);
+}
+
+.dashboard-agenda-type-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: var(--agenda-accent, #94a3b8);
 }
 
 .dashboard-agenda-item.is-late {
-    box-shadow: inset 0 0 0 1px rgba(239, 68, 68, 0.30);
+    border-left-color: #ef4444;
+    background: rgba(239, 68, 68, 0.08);
 }
 
 .dashboard-agenda-when {
@@ -8801,7 +8936,7 @@ a.agenda-summary-card:hover {
     flex-direction: column;
     font-size: 0.8rem;
     font-weight: 800;
-    color: var(--agenda-accent, #64748b);
+    color: var(--desktop-text-soft);
     line-height: 1.15;
 }
 
@@ -9408,13 +9543,16 @@ a.agenda-year-day:hover {
     text-decoration: underline;
 }
 
-/* Tons discretos da agenda: vermelho só para o que já venceu. */
+/* Tons discretos da agenda: vermelho só para o que já venceu, âmbar para
+   hoje, neutro para o resto — ver .dashboard-agenda-item acima. */
 .dashboard-agenda-item.is-today {
-    box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.28);
+    border-left-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.08);
 }
 
 .dashboard-agenda-item.is-upcoming {
-    box-shadow: none;
+    border-left-color: var(--desktop-border);
+    background: var(--desktop-surface-soft);
 }
 
 /* --- Skeletons ---------------------------------------------------------- */
@@ -9487,17 +9625,6 @@ a.agenda-year-day:hover {
     font-size: 0.78rem;
     font-weight: 800;
     white-space: nowrap;
-}
-
-/* Uma linha por macrofase, com rolagem própria. Em duas colunas de status
-   individuais a legenda virava uma parede de catorze itens. */
-.dashboard-status-chart-layout .dashboard-status-legend,
-.dashboard-status-legend {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 0.4rem;
-    max-height: 268px;
-    overflow-y: auto;
-    padding-right: 0.3rem;
 }
 
 .dashboard-status-legend-item {

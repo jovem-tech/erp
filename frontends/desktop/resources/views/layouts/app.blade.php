@@ -5,11 +5,21 @@
         'warning' => session('warning'),
         'info' => session('info'),
     ];
-    // Telas operacionais de tela cheia: a sidebar vira menu sanduíche para
-    // liberar largura. O PDV entra aqui porque precisa caber na tela sem
-    // rolagem (specs/027-vendas-balcao-pdv).
-    $desktopSidebarHidden = $desktopSidebarHidden ?? request()->routeIs('orders.index', 'orders.create', 'vendas.create');
-    $desktopSidebarCollapsed = $desktopSidebarCollapsed ?? false;
+    // Modo de navegação do shell. Por padrão segue a preferência do usuário
+    // (Configurações do Sistema > Aparência): 'fixed' mantém a sidebar
+    // presente, 'drawer' esconde tudo atrás do botão sanduíche da navbar.
+    //
+    // O PDV é a única tela que ignora a preferência: ela precisa caber na tela
+    // sem rolagem (specs/027-vendas-balcao-pdv). A listagem e a criação de OS
+    // eram forçadas junto até 2026-08-26 e passaram a obedecer o usuário.
+    $desktopSidebarHidden = $desktopSidebarHidden
+        ?? (request()->routeIs('vendas.create')
+            || ($desktopNavMode ?? \App\Support\DesktopPreferences::NAV_MODE_FIXED) === \App\Support\DesktopPreferences::NAV_MODE_DRAWER);
+    // Padrão de tela, só no modo 'fixed': a listagem de OS abre com a sidebar
+    // retraída (80px) para devolver largura à tabela operacional, que é a mais
+    // densa do sistema. É só um padrão — uma escolha explícita do usuário no
+    // botão de recolher vence (o desktop.js compara com o localStorage).
+    $desktopSidebarCollapsed = $desktopSidebarCollapsed ?? request()->routeIs('orders.index');
     $desktopEmbedded = (bool) ($desktopEmbedded ?? $embedded ?? request()->boolean('embedded'));
     $desktopAuthenticatedUser = \App\Support\DesktopSession::user();
     $desktopSignaturePending = (int) ($desktopAuthenticatedUser['id'] ?? 0) > 0

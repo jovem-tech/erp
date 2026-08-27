@@ -35,7 +35,7 @@
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
         <div>
             <p class="desktop-eyebrow">Financeiro</p>
-            <h2 class="surface-title fs-3 mb-2">Fluxo de caixa</h2>
+            <h2 class="surface-title fs-3 mb-2">Fluxo de caixa <x-favorite-toggle /></h2>
             <p class="surface-subtitle mb-0">Movimentos já realizados e títulos com vencimento previsto, referência: {{ $fluxo['periodo_label'] ?? '' }}.</p>
         </div>
 

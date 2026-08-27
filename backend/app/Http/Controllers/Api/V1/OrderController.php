@@ -913,6 +913,9 @@ class OrderController extends BaseApiController
             novoPrazo: isset($validated['novo_prazo']) && $validated['novo_prazo'] !== '' ? (string) $validated['novo_prazo'] : null,
             mensagemCliente: isset($validated['mensagem_cliente']) && trim((string) $validated['mensagem_cliente']) !== ''
                 ? (string) $validated['mensagem_cliente']
+                : null,
+            tempoTecnicoHoras: isset($validated['tempo_tecnico_horas']) && $validated['tempo_tecnico_horas'] !== ''
+                ? (float) $validated['tempo_tecnico_horas']
                 : null
         );
 

@@ -37,6 +37,43 @@ class FinanceiroPrecificacaoTest extends TestCase
             ->assertSee('Categorias de serviço');
     }
 
+    /**
+     * O regime tributario e o que decide se o imposto desconta da margem de
+     * cada OS (Simples) ou entra nos custos fixos (MEI, DAS fixo mensal). Com
+     * MEI selecionado a tela precisa dizer isso — senao o operador enche o
+     * campo de imposto achando que esta sendo preciso, e passa a subtrair de
+     * cada venda uma despesa que nao varia com venda nenhuma.
+     */
+    public function test_index_page_renders_regime_tributario_com_explicacao_do_mei(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->notificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/precificacao' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'precificacao' => $this->precificacaoDataset(),
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'precificacao' => ['visualizar', 'editar'],
+            ]))
+            ->get('/financeiro/precificacao?tab=configuracao');
+
+        $response
+            ->assertOk()
+            ->assertSee('Regime tributário')
+            ->assertSee('MEI')
+            ->assertSee('Simples Nacional')
+            ->assertSee('valor fixo mensal')
+            // A dica do MEI é a visível; a do regime variável fica oculta.
+            ->assertSee('id="impostoHintVariavel" class="form-text d-none"', false);
+    }
+
     public function test_simulator_routes_return_the_backend_calculation_payload(): void
     {
         Http::fake([
@@ -140,6 +177,7 @@ class FinanceiroPrecificacaoTest extends TestCase
     {
         return [
             'settings' => [
+                'regime_tributario' => 'mei',
                 'precificacao_peca_base' => 'custo',
                 'precificacao_peca_encargos_percentual' => '12',
                 'precificacao_peca_margem_percentual' => '45',

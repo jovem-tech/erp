@@ -20,9 +20,12 @@ class Peca extends Model
         'id' => 'integer',
         'preco_custo' => 'decimal:2',
         'preco_venda' => 'decimal:2',
-        'quantidade_atual' => 'integer',
-        'estoque_minimo' => 'integer',
-        'estoque_maximo' => 'integer',
+        // decimal:4, nao integer: as colunas viraram DECIMAL(14,4) na
+        // migration 2026_08_27_000001 e um cast 'integer' truncaria 0,5 para
+        // 0 em silencio, sem erro nenhum.
+        'quantidade_atual' => 'decimal:4',
+        'estoque_minimo' => 'decimal:4',
+        'estoque_maximo' => 'decimal:4',
         'ativo' => 'boolean',
         'encerrado_em' => 'datetime',
         'created_at' => 'datetime',

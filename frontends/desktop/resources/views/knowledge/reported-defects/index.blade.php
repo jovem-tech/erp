@@ -4,7 +4,7 @@
     <section class="desktop-form-card mb-4">
         <div class="surface-card-header">
             <div>
-                <h2 class="surface-title">Defeitos Relatados</h2>
+                <h2 class="surface-title">Defeitos Relatados <x-favorite-toggle /></h2>
                 <p class="surface-subtitle">
                     Catálogo de relatos de defeito exibido para o cliente na abertura de OS.
                 </p>

@@ -14,6 +14,16 @@
             trim((string) ($filters['tipo_equipamento'] ?? '')) !== '',
             trim((string) ($filters['status'] ?? '')) !== '',
         ]));
+        // Quantidade e DECIMAL(14,4) desde specs/036-estoque-nucleo-razao:
+        // mostra a fracao quando existe e apara zeros a direita, para "10" nao
+        // aparecer como "10,0000".
+        $qtd = static function ($valor): string {
+            $numero = round((float) ($valor ?? 0), 4);
+
+            return $numero === floor($numero)
+                ? number_format($numero, 0, ',', '.')
+                : rtrim(rtrim(number_format($numero, 4, ',', '.'), '0'), ',');
+        };
     @endphp
 
     <x-list-filters
@@ -35,7 +45,7 @@
                 </a>
             @endif
 
-            <x-list-actions label="Mais ações" size="">
+            <x-list-actions label="Mais ações" size="" :favoritable="true">
                 <li>
                     <a href="{{ route('estoque.help') }}" class="dropdown-item">
                         <i class="bi bi-question-circle me-2"></i>Ajuda
@@ -127,7 +137,7 @@
     <section class="surface-table">
         <div class="surface-table-header">
             <div>
-                <h2 class="surface-title">Cadastro de peças</h2>
+                <h2 class="surface-title">Cadastro de peças <x-favorite-toggle /></h2>
                 <p class="surface-subtitle">
                     {{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} peças retornadas pela API central.
                 </p>
@@ -174,7 +184,7 @@
                             ], is_array($part) ? $part : []);
                             $partId = (int) ($part['id'] ?? 0);
                             $isActive = (string) ($part['status'] ?? 'ativo') === 'ativo' && (bool) ($part['ativo'] ?? true);
-                            $lowStock = (int) ($part['quantidade_atual'] ?? 0) <= (int) ($part['estoque_minimo'] ?? 0);
+                            $lowStock = (float) ($part['quantidade_atual'] ?? 0) <= (float) ($part['estoque_minimo'] ?? 0);
                         @endphp
                         <tr>
                             <td data-label="Código">{{ trim((string) ($part['codigo'] ?? '')) !== '' ? $part['codigo'] : '-' }}</td>
@@ -188,8 +198,8 @@
                             <td data-label="Tipo de equipamento">{{ trim((string) ($part['tipo_equipamento'] ?? '')) !== '' ? $part['tipo_equipamento'] : '-' }}</td>
                             <td data-label="Custo">R$ {{ number_format((float) ($part['preco_custo'] ?? 0), 2, ',', '.') }}</td>
                             <td data-label="Venda">R$ {{ number_format((float) ($part['preco_venda'] ?? 0), 2, ',', '.') }}</td>
-                            <td data-label="Qtd.">{{ (int) ($part['quantidade_atual'] ?? 0) }}</td>
-                            <td data-label="Mín.">{{ (int) ($part['estoque_minimo'] ?? 0) }}</td>
+                            <td data-label="Qtd.">{{ $qtd($part['quantidade_atual'] ?? 0) }}</td>
+                            <td data-label="Mín.">{{ $qtd($part['estoque_minimo'] ?? 0) }}</td>
                             <td data-label="Status">
                                 @include('layouts.partials.status-pill', [
                                     'label' => $isActive ? 'Ativo' : 'Inativo',

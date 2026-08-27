@@ -58,6 +58,18 @@ class CloseOrderRequest extends BaseApiFormRequest
                 'string',
                 'max:2000',
             ],
+            // Rede de segurança do apontamento de horas: o momento natural de
+            // informar é a conclusão do reparo (UpdateOrderStatusRequest), mas
+            // OS antigas e fluxos que pularam aquela etapa chegam aqui sem o
+            // dado — e depois da baixa a margem já está calculada. Só preenche
+            // quando a OS ainda não tem apontamento; nunca sobrescreve o que o
+            // técnico informou (ver OrderClosureService::close()).
+            'tempo_tecnico_horas' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:999',
+            ],
             // Prazo de garantia entregue ao cliente. Mesma lista fechada do
             // orçamento: a baixa é o momento em que ela vira compromisso, com
             // validade contada a partir da data de entrega.

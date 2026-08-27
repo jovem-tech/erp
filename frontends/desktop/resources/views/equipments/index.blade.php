@@ -32,7 +32,7 @@
                 </a>
             @endif
 
-            <x-list-actions label="Mais ações" size="">
+            <x-list-actions label="Mais ações" size="" :favoritable="true">
                 @if ($canViewClients)
                     <li>
                         <a href="{{ route('clients.index') }}" class="dropdown-item">
@@ -78,7 +78,7 @@
     <section class="surface-table">
         <div class="surface-table-header">
             <div>
-                <h2 class="surface-title">Cadastro de equipamentos</h2>
+                <h2 class="surface-title">Cadastro de equipamentos <x-favorite-toggle /></h2>
                 <p class="surface-subtitle">
                     {{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} equipamentos retornados pela API central.
                 </p>

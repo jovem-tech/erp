@@ -4,7 +4,7 @@
     <section class="desktop-form-card mb-4">
         <div class="surface-card-header">
             <div>
-                <h2 class="surface-title">Templates WhatsApp</h2>
+                <h2 class="surface-title">Templates WhatsApp <x-favorite-toggle /></h2>
                 <p class="surface-subtitle">
                     Mensagens automáticas de WhatsApp para eventos da OS e follow-up de clientes.
                 </p>

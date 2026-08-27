@@ -763,7 +763,7 @@ class DesktopFrontendTest extends TestCase
             ->assertSessionHas('error', 'Acesso negado à listagem de OS.');
     }
 
-    public function test_orders_index_starts_with_hidden_sidebar_for_workspace_wide_table(): void
+    public function test_orders_index_follows_the_user_navigation_preference(): void
     {
         Http::fake(array_merge($this->notificationsFixture(), [
             'http://127.0.0.1:8000/api/v1/orders/status-catalog' => Http::response([
@@ -872,8 +872,15 @@ class DesktopFrontendTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('Filtros avançados')
-            ->assertSee('desktop-sidebar is-hidden', false)
-            ->assertSee('desktop-main is-full', false)
+            // Até 2026-08-26 esta tela forçava o menu sanduíche por rota. Agora
+            // quem manda é a preferência do usuário (Configurações > Aparência),
+            // cujo padrão é a sidebar fixa — só o PDV continua forçado. No modo
+            // fixo esta tela abre RETRAÍDA (80px), que devolve largura à tabela
+            // sem tirar o menu da tela.
+            ->assertDontSee('desktop-sidebar is-hidden', false)
+            ->assertDontSee('desktop-main is-full', false)
+            ->assertSee('desktop-sidebar is-collapsed', false)
+            ->assertSee('desktop-main is-expanded', false)
             ->assertSee('OS26060006')
             ->assertSee('Notebook Dell Inspiron 15')
             ->assertSee('Gerar orçamento')
@@ -3933,10 +3940,15 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('dropdown-menu-start desktop-notification-menu', false)
             ->assertSee('data-bs-boundary="viewport"', false)
             ->assertDontSee('dropdown-menu-end desktop-notification-menu', false)
-            ->assertDontSee('Configurações do sistema');
+            ->assertDontSee('Configurações do sistema')
+            // O MENU de favoritos entrou na topbar em 2026-08-26 e reaproveita a
+            // moldura de dropdown de ícone do sino e do envelope. A estrela que
+            // fixa a página não fica aqui — ela mora ao lado do título, dentro
+            // do conteúdo (ver FavoritesTest).
+            ->assertSee('data-desktop-favorites-root', false);
 
-        $this->assertSame(2, substr_count($response->getContent(), 'dropdown-menu-start desktop-notification-menu'));
-        $this->assertSame(2, substr_count($response->getContent(), 'data-bs-boundary="viewport"'));
+        $this->assertSame(3, substr_count($response->getContent(), 'dropdown-menu-start desktop-notification-menu'));
+        $this->assertSame(3, substr_count($response->getContent(), 'data-bs-boundary="viewport"'));
     }
 
     public function test_dashboard_data_route_returns_expanded_summary_json(): void

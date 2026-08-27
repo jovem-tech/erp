@@ -47,6 +47,67 @@ class FinanceiroReportTest extends TestCase
         $response->assertOk()->assertSee('DRE de caixa');
     }
 
+    /**
+     * A leitura gerencial e a que responde "quanto sobra de cada real vendido
+     * para pagar o fixo". Precisa aparecer com a linha de margem de
+     * contribuicao e a decomposicao dos custos variaveis — inclusive o CMV,
+     * que a demonstracao contabil nao enxerga.
+     */
+    public function test_dre_page_renders_margem_de_contribuicao_e_analise_cvp(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/relatorios/dre*' => Http::response([
+                'status' => 'success',
+                'data' => ['dre' => $this->fakeDrePayload('competencia')],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar']]))
+            ->get('/financeiro/relatorios/dre?mes=2026-06');
+
+        $response->assertOk()
+            ->assertSee('Resultado gerencial (custeio variável)')
+            ->assertSee('(=) Margem de contribuição')
+            ->assertSee('Peças aplicadas (custo de estoque)')
+            // CMV de R$ 150 — invisível na demonstração contábil.
+            ->assertSee('R$ 150,00')
+            ->assertSee('Análise custo-volume-lucro')
+            ->assertSee('Ponto de equilíbrio')
+            ->assertSee('Margem de segurança')
+            ->assertSee('Alavancagem operacional');
+    }
+
+    /**
+     * No regime de caixa a tela nao pode exibir uma MC: o custo da peca
+     * pertence ao mes da entrega, nao ao mes do recebimento. Mostra o motivo
+     * e o caminho para o relatorio correto.
+     */
+    public function test_dre_caixa_explica_ausencia_da_margem_de_contribuicao(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/relatorios/dre-caixa*' => Http::response([
+                'status' => 'success',
+                'data' => ['dre' => $this->fakeDrePayload('caixa')],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar']]))
+            ->get('/financeiro/relatorios/dre-caixa?mes=2026-06');
+
+        $response->assertOk()
+            ->assertSee('Margem de contribuição não se apura em regime de caixa')
+            ->assertSee('Ver o DRE por competência')
+            ->assertDontSee('Análise custo-volume-lucro');
+    }
+
     public function test_fluxo_caixa_page_renders_linhas_diarias(): void
     {
         Http::fake([
@@ -138,6 +199,46 @@ class FinanceiroReportTest extends TestCase
      */
     private function fakeDrePayload(string $modo): array
     {
+        // Margem de contribuição é conceito de competência: o backend devolve
+        // o bloco indisponível (com motivo) no regime de caixa, e a tela troca
+        // a demonstração gerencial por um aviso.
+        $gerencial = $modo === 'caixa'
+            ? [
+                'disponivel' => false,
+                'motivo' => 'A margem de contribuição é apurada por competência.',
+                'custos_fixos' => 100,
+                'despesas_variaveis' => 0,
+            ]
+            : [
+                'disponivel' => true,
+                'receita_liquida' => 450,
+                'custos_variaveis' => [
+                    'cmv_pecas' => 150,
+                    'comissoes' => 30,
+                    'despesas_variaveis' => 0,
+                    'custos_diretos_os' => 0,
+                    'total' => 180,
+                ],
+                'margem_contribuicao' => 270,
+                'indice_contribuicao_percentual' => 60,
+                'custos_fixos' => 100,
+                'outras_receitas' => 0,
+                'resultado_operacional' => 170,
+                'analise_cvp' => [
+                    'ponto_equilibrio_receita' => 166.67,
+                    'ponto_equilibrio_atingido' => true,
+                    'percentual_do_equilibrio' => 270.0,
+                    'margem_seguranca_valor' => 283.33,
+                    'margem_seguranca_percentual' => 62.96,
+                    'grau_alavancagem_operacional' => 1.59,
+                ],
+                'reconciliacao' => [
+                    'margem_soma_os' => 270,
+                    'imposto_estimado_os' => 0,
+                    'taxa_recebimento_os' => 0,
+                ],
+            ];
+
         return [
             'periodo_label' => '06/2026',
             'modo' => $modo,
@@ -147,6 +248,7 @@ class FinanceiroReportTest extends TestCase
             'despesas_operacionais' => ['total' => 100, 'por_subgrupo' => ['Aluguel' => 100]],
             'lucro_bruto' => 450,
             'resultado_liquido' => 350,
+            'gerencial' => $gerencial,
         ];
     }
 

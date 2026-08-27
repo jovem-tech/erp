@@ -1,5 +1,71 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.58.1.0 — 2026-08-27 09:31
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Estoque: fecha a janela de corrupcao aberta na v5.58 (validacao relaxada para numeric sem o alargamento aplicado, com o MySQL arredondando 0,5 para 1 em silencio) e elimina 10 truncamentos de quantidade remanescentes, incluindo o PDF de orcamento que o cliente assina. Migration emendada para preservar nulidade e defaults das colunas legadas em vez de impor NOT NULL DEFAULT 0
+
+## v5.58.0.0 — 2026-08-27 08:03
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Estoque Fase 1a (specs/036): quantidades passam de INT para DECIMAL(14,4) para aceitar insumo fracionado (0,5 m de cabo), enquanto o estoque tem 9 pecas e 1 movimentacao e a mudanca custa nada. Corrige o cast dos models que truncaria ao ler, blinda a interpolacao de float em SQL cru contra locale pt-BR, e faz o CSV de estoque fechar no round-trip export/import. Primeiro teste de estoque do desktop
+
+## v5.57.0.0 — 2026-08-27 02:36
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Regime tributario como conceito de primeira classe (MEI padrao, Simples, Outro): decide se o imposto e custo variavel que desconta da margem de cada OS ou custo fixo que pertence ao ponto de equilibrio. No MEI o DAS e valor fixo mensal e a margem devolve 0 mesmo com aliquota configurada; configuravel em Financeiro > Precificacao para quando a assistencia crescer e mudar de regime
+
+## v5.56.1.0 — 2026-08-27 02:17
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Comando financeiro:recalcular-margem para reprocessar o cache os_margem com a formula nova (taxa de recebimento e imposto): sem ele o historico ficava com a margem antiga inflada convivendo com a nova, e OsMargemService::recalcularEmLote() era codigo sem chamador. Simula por padrao, aplica com --aplicar. Corrige tambem a margem por hora por tecnico, que dividia a margem de todas as OS pelas horas de apenas parte delas
+
+## v5.56.0.0 — 2026-08-26 13:56
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Margem de contribuicao completa e DRE gerencial: margem por OS passa a descontar taxa de recebimento real e imposto, media do periodo vira indice de contribuicao ponderado, novo apontamento de horas de bancada habilita margem por hora, DRE ganha demonstracao por custeio variavel com CMV de estoque e analise custo-volume-lucro (ponto de equilibrio, margem de seguranca, GAO), e taxa de cartao da baixa de OS passa a ser classificada no DRE
+
+## v5.55.0.0 — 2026-08-26 10:06
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Desktop: protecao de trabalho nao salvo. Uma venda em andamento no PDV sumia sem aviso por qualquer saida da pagina — sidebar, inicio, + Novo, F5, fechar a aba — porque o carrinho vive so no DOM. Agora o shell expoe window.erpRegisterUnsavedWork e um unico beforeunload cobre todas as saidas de uma vez, em vez de cada caminho lembrar de perguntar. A sonda do PDV exclui submitLiberado, senao toda venda concluida perguntaria se o operador quer mesmo sair. Sonda que lanca excecao e tratada como nada a perder, para bug de tela nao prender o usuario. O guard solta o loader de pagina num timeout quando o usuario decide ficar: o loader e armado no clique e nem pageshow nem pagehide disparam numa navegacao cancelada, o que deixaria a tela coberta para sempre. E o Esc do PDV passa a confirmar antes de descartar o carrinho, com foco no confirmar para quem quis limpar resolver com Esc + Enter
+- **Arquivos:** frontends/desktop/public/assets/js/desktop.js,frontends/desktop/public/assets/js/vendas-pdv.js,frontends/desktop/tests/Unit/UnsavedWorkGuardTest.php
+
+## v5.54.1.0 — 2026-08-26 09:54
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Desktop: a reivindicacao de teclas de funcao vira POR TECLA (data-desktop-fkeys-owner="F2 F3 F4") em vez de por tela. O PDV bloqueava as quatro, mas so' usa tres — F1 volta a abrir Nova OS a partir do balcao, que e' o caso do cliente que chega para deixar aparelho e nao para comprar. Teste novo le o vendas-pdv.js e confere que as teclas reivindicadas no Blade sao as mesmas que o script trata, para a lista nao passar a mentir em silencio se o PDV mudar de tecla
+- **Arquivos:** frontends/desktop/public/assets/js/desktop.js,frontends/desktop/resources/views/vendas/pdv.blade.php,frontends/desktop/tests/Feature/Desktop/QuickCreateShortcutsTest.php
+
+## v5.54.0.0 — 2026-08-26 09:26
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Desktop: atalhos F1..F4 para os itens do botao + Novo (nova OS, orcamento, venda, lancamento), com a tecla visivel no menu. O atalho aciona o proprio link do dropdown em vez de repetir rotas no JS, entao herda o RBAC e o listener de navegacao interna do guard de sessao; sem permissao a tecla volta a ser do navegador. Desligado quando ha modal aberto e em telas que reivindicam as teclas de funcao via data-desktop-fkeys-owner — hoje o PDV, onde F2/F3/F4 ja confirmam venda, alternam tela cheia e abrem o cliente
+- **Arquivos:** frontends/desktop/resources/views/layouts/partials/navbar.blade.php,frontends/desktop/public/assets/js/desktop.js,frontends/desktop/resources/views/vendas/pdv.blade.php,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/tests/Feature/Desktop/QuickCreateShortcutsTest.php
+
+## v5.53.0.0 — 2026-08-26 08:47
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Fase 5 da integracao Banco Inter: baixa automatica por conciliacao. Novo InterLiquidacaoService onde a ordem das operacoes E a garantia: INSERT em inter_liquidacoes com o e2eid PRIMEIRO, baixa depois — na ordem inversa duas execucoes simultaneas poderiam ambas passar pelo registerMovement antes de qualquer uma gravar a marca. Violacao de UNIQUE e tratada como ja processado, nao como erro. A baixa passa exclusivamente por FinanceiroService::registerMovement, que ja tem transacao, lock e recusa de valor acima do saldo; nao existe caminho paralelo. Pagamento parcial e registrado normalmente; pagamento MAIOR que o saldo em aberto NAO vira baixa automatica e dispara alerta, porque o excedente exige decisao humana — mas a liquidacao fica gravada com movimento nulo, para dinheiro que entrou na conta nunca sumir do radar. Baixa automatica vai para os_eventos com origem=automacao e usuario_id nulo, deixando explicito no historico que quem lancou foi a maquina. Novo comando inter:conciliar agendado a cada 15 minutos, que e o caminho PRINCIPAL de baixa e nao um plano B: funciona sem webhook, sem porta aberta e sem VPS. Job LiquidarCobrancaInterJob com ShouldBeUnique por cobranca, deixando claro em comentario que a unicidade do job e conveniencia e nao a garantia — a garantia e o indice unico no banco
+
+## v5.52.1.1 — 2026-08-26 08:07
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Desktop: botao de recolher a sidebar sai do DOM no modo sanduiche. A regra CSS que tentava esconde-lo perdia para o .d-lg-inline-flex do Bootstrap, que e !important, entao o chevron aparecia dentro da gaveta aberta — inclusive em /os antes desta entrega. Fora do HTML ele tambem sai da arvore de acessibilidade, onde anunciaria Recolher navegacao numa gaveta
+- **Arquivos:** frontends/desktop/resources/views/layouts/partials/sidebar.blade.php,frontends/desktop/public/assets/css/desktop.css
+
+## v5.52.1.0 — 2026-08-26 04:41
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Desktop: listagem de OS abre com a sidebar retraida no modo fixo (padrao de tela que a escolha explicita do usuario vence, via os dois sentidos do localStorage), e a estrela de favoritar sai da navbar para o lado do TITULO da pagina em 30 telas — colada no nome da pagina a acao diz sozinha o que fixa. Partials compartilhados usam a prop only= em vez de @if inline, que quebra a compilacao do Blade quando envolve tag de componente na mesma linha
+- **Arquivos:** frontends/desktop/resources/views/layouts/app.blade.php,frontends/desktop/public/assets/js/desktop.js,frontends/desktop/resources/views/components/favorite-toggle.blade.php,frontends/desktop/resources/views/layouts/partials/favorites.blade.php,frontends/desktop/public/assets/css/desktop.css
+
+## v5.52.0.0 — 2026-08-26 04:18
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Desktop: modo de navegacao (sidebar fixa x menu sanduiche) como preferencia por usuario e menu de Favoritos na navbar
+- **Arquivos:** frontends/desktop/app/Support/DesktopPreferences.php,frontends/desktop/app/Support/DesktopNavigation.php,frontends/desktop/app/Http/Controllers/FavoriteController.php,frontends/desktop/resources/views/layouts/app.blade.php,frontends/desktop/resources/views/layouts/partials/favorites.blade.php,frontends/desktop/resources/views/components/favorite-toggle.blade.php,frontends/desktop/database/migrations/2026_08_26_000001_add_navigation_prefs_to_user_preferences_table.php
+
 ## v5.51.1.0 — 2026-08-23 22:25
 - **Tier:** patch
 - **Autor/Agente:** Codex

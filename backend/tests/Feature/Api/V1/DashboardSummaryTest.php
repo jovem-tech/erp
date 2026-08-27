@@ -530,7 +530,7 @@ class DashboardSummaryTest extends TestCase
 
         Sanctum::actingAs($user, ['*']);
 
-        $this->getJson('/api/v1/dashboard/summary')
+        $response = $this->getJson('/api/v1/dashboard/summary')
             ->assertOk()
             ->assertJsonPath('data.access.can_view_stock', true)
             ->assertJsonPath('data.stats.low_stock_total', 2)
@@ -538,9 +538,14 @@ class DashboardSummaryTest extends TestCase
             // Ordenado pelo mais crítico primeiro: quem está mais longe do
             // mínimo aparece antes na lista curta do painel.
             ->assertJsonPath('data.low_stock.0.nome', 'Fonte 500W')
-            ->assertJsonPath('data.low_stock.0.quantidade_atual', 1)
-            ->assertJsonPath('data.low_stock.0.estoque_minimo', 3)
             ->assertJsonPath('data.low_stock.1.nome', 'Cabo flat');
+
+        // O contrato aqui e o VALOR, nao o tipo: as quantidades viraram
+        // DECIMAL(14,4) (migration 2026_08_27_000001) e o card passou a devolver
+        // 1.0 no lugar de 1. assertJsonPath compara com === e travaria no tipo.
+        // Mesmo precedente de FinanceiroMargemTest e EstoqueFlowTest.
+        $this->assertEqualsWithDelta(1, (float) $response->json('data.low_stock.0.quantidade_atual'), 0.0001);
+        $this->assertEqualsWithDelta(3, (float) $response->json('data.low_stock.0.estoque_minimo'), 0.0001);
     }
 
     public function test_low_stock_panel_stays_empty_for_users_without_stock_permission(): void

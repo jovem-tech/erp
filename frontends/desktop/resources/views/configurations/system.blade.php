@@ -59,7 +59,7 @@
     <section class="desktop-page-stack">
         <div class="desktop-page-hero">
             <div>
-                <h2>Configurações do Sistema</h2>
+                <h2>Configurações do Sistema <x-favorite-toggle /></h2>
                 <p>Este bloco concentra aparência, dados institucionais e controles de sessão e segurança. As integrações ficam em uma página própria.</p>
             </div>
         </div>
@@ -172,12 +172,100 @@
                     </div>
                 </form>
 
+                @php
+                    $currentNavMode = $desktopNavMode ?? \App\Support\DesktopPreferences::NAV_MODE_FIXED;
+                @endphp
+                <form method="POST" action="{{ route('configurations.navigation.update') }}" class="mt-4">
+                    @csrf
+                    <input type="hidden" name="navigation_mode" id="navModeInput" value="{{ $currentNavMode }}">
+
+                    <div class="desktop-form-card mb-0">
+                        <div class="surface-card-header">
+                            <div>
+                                <h3 class="surface-title mb-1">Navegação do menu</h3>
+                                <p class="surface-subtitle mb-0">Escolha como o menu principal ocupa a tela. A preferência é sua — não afeta os outros usuários.</p>
+                            </div>
+                            <button type="submit" class="btn btn-primary btn-sm">
+                                <i class="bi bi-check2 me-1"></i>Salvar navegação
+                            </button>
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-3 mt-1">
+
+                            {{-- Card: sidebar sempre visível (comportamento histórico) --}}
+                            <div class="nav-mode-card {{ $currentNavMode === 'fixed' ? 'is-active' : '' }}"
+                                 data-nav-mode-value="fixed"
+                                 onclick="pickNavMode(this)"
+                                 style="cursor:pointer; width:170px; border:2px solid var(--desktop-border); border-radius:16px; overflow:hidden; transition: border-color .18s, box-shadow .18s;">
+                                <div style="height:88px; background:#f5f7fc; display:flex; align-items:stretch; overflow:hidden; border-radius:12px 12px 0 0;">
+                                    <div style="width:44px; background:var(--desktop-primary); flex-shrink:0; padding:9px 6px; display:flex; flex-direction:column; gap:5px;">
+                                        <div style="height:5px; background:rgba(255,255,255,.9); border-radius:3px;"></div>
+                                        <div style="height:5px; background:rgba(255,255,255,.45); border-radius:3px;"></div>
+                                        <div style="height:5px; background:rgba(255,255,255,.45); border-radius:3px;"></div>
+                                        <div style="height:5px; background:rgba(255,255,255,.45); border-radius:3px;"></div>
+                                    </div>
+                                    <div style="flex:1; padding:10px 8px; display:flex; flex-direction:column; gap:5px;">
+                                        <div style="height:5px; background:#cbd5e1; border-radius:3px; width:88%;"></div>
+                                        <div style="height:5px; background:#e2e8f0; border-radius:3px; width:66%;"></div>
+                                        <div style="height:5px; background:#e2e8f0; border-radius:3px; width:78%;"></div>
+                                        <div style="height:5px; background:#e2e8f0; border-radius:3px; width:52%;"></div>
+                                    </div>
+                                </div>
+                                <div style="padding:10px 12px; background:var(--desktop-surface);">
+                                    <div class="d-flex align-items-center justify-content-between">
+                                        <span style="font-size:.82rem; font-weight:600; color:var(--desktop-heading);">Sidebar fixa</span>
+                                        <i class="bi bi-check-circle-fill nav-mode-check-icon" style="font-size:.9rem; color:var(--desktop-primary); display:{{ $currentNavMode === 'fixed' ? 'inline' : 'none' }};"></i>
+                                    </div>
+                                    <small style="color:var(--desktop-text-soft); font-size:.72rem;">Menu sempre à vista · pode recolher</small>
+                                </div>
+                            </div>
+
+                            {{-- Card: menu sanduíche (o shell limpo da listagem de OS) --}}
+                            <div class="nav-mode-card {{ $currentNavMode === 'drawer' ? 'is-active' : '' }}"
+                                 data-nav-mode-value="drawer"
+                                 onclick="pickNavMode(this)"
+                                 style="cursor:pointer; width:170px; border:2px solid var(--desktop-border); border-radius:16px; overflow:hidden; transition: border-color .18s, box-shadow .18s;">
+                                <div style="height:88px; background:#f5f7fc; display:flex; flex-direction:column; overflow:hidden; border-radius:12px 12px 0 0;">
+                                    <div style="height:24px; background:#ffffff; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; padding:0 9px; flex-shrink:0;">
+                                        <div style="display:flex; flex-direction:column; gap:2px;">
+                                            <div style="width:11px; height:2px; background:var(--desktop-primary); border-radius:2px;"></div>
+                                            <div style="width:11px; height:2px; background:var(--desktop-primary); border-radius:2px;"></div>
+                                            <div style="width:11px; height:2px; background:var(--desktop-primary); border-radius:2px;"></div>
+                                        </div>
+                                    </div>
+                                    <div style="flex:1; padding:10px 8px; display:flex; flex-direction:column; gap:5px;">
+                                        <div style="height:5px; background:#cbd5e1; border-radius:3px; width:100%;"></div>
+                                        <div style="height:5px; background:#e2e8f0; border-radius:3px; width:92%;"></div>
+                                        <div style="height:5px; background:#e2e8f0; border-radius:3px; width:97%;"></div>
+                                        <div style="height:5px; background:#e2e8f0; border-radius:3px; width:70%;"></div>
+                                    </div>
+                                </div>
+                                <div style="padding:10px 12px; background:var(--desktop-surface);">
+                                    <div class="d-flex align-items-center justify-content-between">
+                                        <span style="font-size:.82rem; font-weight:600; color:var(--desktop-heading);">Menu sanduíche</span>
+                                        <i class="bi bi-check-circle-fill nav-mode-check-icon" style="font-size:.9rem; color:var(--desktop-primary); display:{{ $currentNavMode === 'drawer' ? 'inline' : 'none' }};"></i>
+                                    </div>
+                                    <small style="color:var(--desktop-text-soft); font-size:.72rem;">Tela cheia · menu abre pelo ☰</small>
+                                </div>
+                            </div>
+
+                        </div>
+                    </div>
+                </form>
+
                 <style>
                     .theme-picker-card.is-active {
                         border-color: var(--desktop-primary) !important;
                         box-shadow: 0 0 0 3px var(--desktop-primary-soft);
                     }
                     .theme-picker-card:hover:not(.is-active) {
+                        border-color: var(--desktop-primary);
+                    }
+                    .nav-mode-card.is-active {
+                        border-color: var(--desktop-primary) !important;
+                        box-shadow: 0 0 0 3px var(--desktop-primary-soft);
+                    }
+                    .nav-mode-card:hover:not(.is-active) {
                         border-color: var(--desktop-primary);
                     }
                 </style>
@@ -190,6 +278,16 @@
                         el.classList.add('is-active');
                         el.querySelector('.theme-check-icon').style.display = 'inline';
                         document.getElementById('themeInput').value = el.dataset.themeValue;
+                    }
+
+                    function pickNavMode(el) {
+                        document.querySelectorAll('.nav-mode-card').forEach(function(c) {
+                            c.classList.remove('is-active');
+                            c.querySelector('.nav-mode-check-icon').style.display = 'none';
+                        });
+                        el.classList.add('is-active');
+                        el.querySelector('.nav-mode-check-icon').style.display = 'inline';
+                        document.getElementById('navModeInput').value = el.dataset.navModeValue;
                     }
                 </script>
             </div>

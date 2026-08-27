@@ -371,7 +371,7 @@ class BudgetWorkflowService
                 'categoria' => (string) ($peca->categoria ?? ''),
                 'preco_custo' => (float) ($peca->preco_custo ?? 0),
                 'preco_venda' => (float) ($peca->preco_venda ?? 0),
-                'quantidade_atual' => (int) ($peca->quantidade_atual ?? 0),
+                'quantidade_atual' => (float) ($peca->quantidade_atual ?? 0),
             ])
             ->values()
             ->all();

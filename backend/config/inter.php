@@ -96,6 +96,12 @@ return [
 
         // Texto que aparece para o pagador no app do banco. 140 chars no Pix.
         'solicitacao_pagador' => (string) env('INTER_COB_SOLICITACAO', 'Pagamento de servico'),
+
+        // Por quantos dias apos o vencimento a cobranca continua sendo
+        // conferida. Cobranca vencida nao volta a ser paga, mas um Pix feito
+        // perto do vencimento pode aparecer depois — a folga cobre isso sem
+        // consultar cobranca velha para sempre.
+        'conciliar_apos_vencimento_dias' => (int) env('INTER_CONCILIAR_FOLGA_DIAS', 7),
     ],
 
     // Token do Inter vale ~1h; renovamos antes para nao correr o risco de

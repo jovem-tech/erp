@@ -12,6 +12,10 @@ use Illuminate\Support\Collection;
 
 class FinanceiroReportService
 {
+    public function __construct(private readonly OsMargemService $osMargemService)
+    {
+    }
+
     /**
      * DRE por competência: reconhece a receita de OS pela data de entrega e as
      * demais entradas/saídas pela data de competência do lançamento (mesmo
@@ -46,7 +50,15 @@ class FinanceiroReportService
         $outrasReceitas = $this->groupByCompetencia(Financeiro::TIPO_RECEBER, null, $inicio, $fim, excludeOs: true);
         $despesasOperacionais = $this->groupByCompetencia(Financeiro::TIPO_PAGAR, 'Despesas Operacionais', $inicio, $fim, incluirFixoVariavel: true);
 
-        return $this->buildSummary($label, 'competencia', $receitaOs, $custosDiretos, $outrasReceitas, $despesasOperacionais);
+        return $this->buildSummary(
+            $label,
+            'competencia',
+            $receitaOs,
+            $custosDiretos,
+            $outrasReceitas,
+            $despesasOperacionais,
+            $this->osMargemService->totaisPorPeriodo($inicio, $fim)
+        );
     }
 
     /**
@@ -66,7 +78,12 @@ class FinanceiroReportService
         $outrasReceitas = $this->groupByMovimento(Financeiro::TIPO_RECEBER, null, $inicio, $fim, excludeOs: true);
         $despesasOperacionais = $this->groupByMovimento(Financeiro::TIPO_PAGAR, 'Despesas Operacionais', $inicio, $fim, incluirFixoVariavel: true);
 
-        return $this->buildSummary($label, 'caixa', $receitaOs, $custosDiretos, $outrasReceitas, $despesasOperacionais);
+        // Sem bloco de margem de contribuição no regime de caixa: o custo das
+        // peças é reconhecido pelo consumo na OS (competência da entrega), e
+        // confrontá-lo com um recebimento que pode ter caído em outro mês
+        // produziria uma MC que não corresponde a período nenhum. MC é um
+        // conceito de confrontação — ver buildSummary().
+        return $this->buildSummary($label, 'caixa', $receitaOs, $custosDiretos, $outrasReceitas, $despesasOperacionais, null);
     }
 
     /**
@@ -297,6 +314,7 @@ class FinanceiroReportService
     }
 
     /**
+     * @param array<string, float|int>|null $margemOs totais de os_margem no período
      * @return array<string, mixed>
      */
     private function buildSummary(
@@ -305,7 +323,8 @@ class FinanceiroReportService
         array $receitaOs,
         array $custosDiretos,
         array $outrasReceitas,
-        array $despesasOperacionais
+        array $despesasOperacionais,
+        ?array $margemOs
     ): array {
         $custosDiretosTotal = (float) ($custosDiretos['total'] ?? 0);
         $outrasReceitasTotal = (float) ($outrasReceitas['total'] ?? 0);
@@ -322,8 +341,158 @@ class FinanceiroReportService
             'custos_diretos' => $custosDiretos,
             'outras_receitas' => $outrasReceitas,
             'despesas_operacionais' => $despesasOperacionais,
+            // Mantidos por compatibilidade de contrato (API pública, mobile e
+            // testes existentes). São a leitura por ABSORÇÃO e continuam sem
+            // enxergar o custo das peças — a leitura gerencial correta está em
+            // `gerencial` abaixo.
             'lucro_bruto' => $lucroBruto,
             'resultado_liquido' => $resultadoLiquido,
+            'gerencial' => $this->buildManagerialSummary(
+                $receitaLiquidaOs,
+                $custosDiretosTotal,
+                $outrasReceitasTotal,
+                $despesasOperacionais,
+                $margemOs
+            ),
+        ];
+    }
+
+    /**
+     * Bloco de custeio VARIÁVEL: separa custos pelo comportamento (variam ou
+     * não com o volume) em vez de pela natureza, e por isso é ele — não o
+     * lucro bruto — que responde "quanto sobra de cada real vendido para
+     * pagar o fixo".
+     *
+     * Fontes, e por que cada uma:
+     *  - CMV e comissões vêm de `os_margem`, que já mede o custo REAL de peça
+     *    baixada do estoque por OS. O grupo "Custo Direto (OS)" do financeiro
+     *    reconhece pela competência da COMPRA, e um lote comprado em março e
+     *    aplicado em maio jogaria o custo no mês errado.
+     *  - Despesas variáveis (taxa de cartão, impostos) vêm do financeiro, que
+     *    é o registro real. `os_margem` também guarda a taxa por OS, mas usá-la
+     *    aqui duplicaria o mesmo título.
+     *
+     * O imposto ESTIMADO por OS (parâmetro de precificação) fica de fora de
+     * propósito: o DRE é demonstração contábil e só reconhece o que foi
+     * lançado. A diferença aparece em `reconciliacao`.
+     *
+     * @param array<string, mixed> $despesasOperacionais
+     * @param array<string, float|int>|null $margemOs
+     * @return array<string, mixed>
+     */
+    private function buildManagerialSummary(
+        float $receitaLiquidaOs,
+        float $custosDiretosTotal,
+        float $outrasReceitasTotal,
+        array $despesasOperacionais,
+        ?array $margemOs
+    ): array {
+        $fixoVariavel = $despesasOperacionais['por_fixo_variavel'] ?? [];
+        $despesasVariaveis = round((float) ($fixoVariavel['variaveis'] ?? 0), 2);
+        $custosFixos = round((float) ($fixoVariavel['fixas'] ?? 0), 2);
+
+        if ($margemOs === null) {
+            return [
+                'disponivel' => false,
+                'motivo' => 'A margem de contribuição é apurada por competência: '
+                    . 'o custo da peça pertence ao mês em que a OS foi entregue, '
+                    . 'não ao mês em que o cliente pagou.',
+                'custos_fixos' => $custosFixos,
+                'despesas_variaveis' => $despesasVariaveis,
+            ];
+        }
+
+        $cmv = round((float) ($margemOs['pecas'] ?? 0), 2);
+        $comissoes = round((float) ($margemOs['comissao'] ?? 0), 2);
+
+        $custosVariaveisTotal = round($cmv + $comissoes + $despesasVariaveis + $custosDiretosTotal, 2);
+        $margemContribuicao = round($receitaLiquidaOs - $custosVariaveisTotal, 2);
+
+        // Índice de contribuição (RCM): quanto de cada real de receita sobra
+        // para pagar o fixo. É ele, não a margem em reais, que permite
+        // comparar meses de faturamento diferente.
+        $indiceContribuicao = $receitaLiquidaOs > 0
+            ? round(($margemContribuicao / $receitaLiquidaOs) * 100, 2)
+            : 0.0;
+
+        $resultadoOperacional = round($margemContribuicao - $custosFixos + $outrasReceitasTotal, 2);
+
+        return [
+            'disponivel' => true,
+            'receita_liquida' => round($receitaLiquidaOs, 2),
+            'custos_variaveis' => [
+                'cmv_pecas' => $cmv,
+                'comissoes' => $comissoes,
+                'despesas_variaveis' => $despesasVariaveis,
+                'custos_diretos_os' => round($custosDiretosTotal, 2),
+                'total' => $custosVariaveisTotal,
+            ],
+            'margem_contribuicao' => $margemContribuicao,
+            'indice_contribuicao_percentual' => $indiceContribuicao,
+            'custos_fixos' => $custosFixos,
+            'outras_receitas' => round($outrasReceitasTotal, 2),
+            'resultado_operacional' => $resultadoOperacional,
+            'analise_cvp' => $this->buildCvpAnalysis(
+                $receitaLiquidaOs,
+                $margemContribuicao,
+                $indiceContribuicao,
+                $custosFixos,
+                $resultadoOperacional
+            ),
+            'reconciliacao' => [
+                // Diferença entre a MC do DRE e a soma das MCs por OS. Vem do
+                // imposto estimado por OS (que o DRE não reconhece, por não
+                // ser lançamento) e de despesas variáveis não vinculadas a OS.
+                'margem_soma_os' => round((float) ($margemOs['margem'] ?? 0), 2),
+                'imposto_estimado_os' => round((float) ($margemOs['imposto'] ?? 0), 2),
+                'taxa_recebimento_os' => round((float) ($margemOs['taxa_recebimento'] ?? 0), 2),
+            ],
+        ];
+    }
+
+    /**
+     * Análise Custo-Volume-Lucro.
+     *
+     * Ponto de equilíbrio contábil: faturamento em que a MC total cobre
+     * exatamente o custo fixo (resultado zero). Margem de segurança: a folga
+     * entre o faturamento real e esse ponto — é a métrica de risco
+     * operacional. GAO: quanto o resultado se move para cada 1% de variação
+     * na receita; alto = estrutura pesada de custo fixo, resultado sensível.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildCvpAnalysis(
+        float $receita,
+        float $margemContribuicao,
+        float $indiceContribuicao,
+        float $custosFixos,
+        float $resultadoOperacional
+    ): array {
+        // Sem índice de contribuição positivo não existe ponto de equilíbrio:
+        // se cada venda já nasce sem cobrir o próprio custo variável, vender
+        // mais afunda mais, e nenhum volume zera o resultado.
+        $temEquilibrio = $indiceContribuicao > 0;
+        $pontoEquilibrio = $temEquilibrio ? round($custosFixos / ($indiceContribuicao / 100), 2) : null;
+
+        $margemSegurancaValor = $pontoEquilibrio !== null ? round($receita - $pontoEquilibrio, 2) : null;
+        $margemSegurancaPercentual = $margemSegurancaValor !== null && $receita > 0
+            ? round(($margemSegurancaValor / $receita) * 100, 2)
+            : null;
+
+        return [
+            'ponto_equilibrio_receita' => $pontoEquilibrio,
+            'ponto_equilibrio_atingido' => $pontoEquilibrio !== null ? $receita >= $pontoEquilibrio : null,
+            'percentual_do_equilibrio' => $pontoEquilibrio !== null && $pontoEquilibrio > 0
+                ? round(($receita / $pontoEquilibrio) * 100, 2)
+                : null,
+            'margem_seguranca_valor' => $margemSegurancaValor,
+            'margem_seguranca_percentual' => $margemSegurancaPercentual,
+            // GAO só faz sentido acima do ponto de equilíbrio; com resultado
+            // zero ou negativo o quociente explode ou troca de sinal e deixa
+            // de significar alavancagem.
+            'grau_alavancagem_operacional' => $resultadoOperacional > 0
+                ? round($margemContribuicao / $resultadoOperacional, 2)
+                : null,
         ];
     }
 

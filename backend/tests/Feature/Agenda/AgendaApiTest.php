@@ -280,4 +280,33 @@ class AgendaApiTest extends TestCase
             ->assertJsonPath('data.hoje', 2)
             ->assertJsonPath('data.proximos_7_dias', 1);
     }
+
+    /**
+     * `proximos` alimenta o painel de atenção do dashboard, não só o
+     * contador. Sem teto de horizonte, num período calmo a lista buscava o
+     * que fosse preciso lá na frente só para completar 5 itens — um boleto
+     * a 3 semanas de distância aparecia com o mesmo peso visual de algo
+     * realmente iminente.
+     */
+    public function test_proximos_list_stays_within_the_same_seven_day_horizon_as_the_counter(): void
+    {
+        $this->travelTo(CarbonImmutable::parse('2026-09-10 10:00:00'));
+
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $base = [
+            'responsavel_id' => $admin->id, 'status' => 'pendente', 'tipo' => 'manual',
+        ];
+
+        AgendaCompromisso::query()->create($base + ['titulo' => 'Semana', 'inicio_em' => now()->addDays(3)]);
+        AgendaCompromisso::query()->create($base + ['titulo' => 'Longe', 'inicio_em' => now()->addDays(40)]);
+
+        $response = $this->getJson('/api/v1/agenda/resumo')->assertOk();
+
+        $titulos = collect($response->json('data.proximos'))->pluck('titulo');
+
+        $this->assertTrue($titulos->contains('Semana'));
+        $this->assertFalse($titulos->contains('Longe'));
+    }
 }

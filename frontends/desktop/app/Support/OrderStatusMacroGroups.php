@@ -48,16 +48,23 @@ class OrderStatusMacroGroups
         };
     }
 
+    /**
+     * Paleta das 10 macrofases. `execucao`/`concluido` eram dois verdes quase
+     * idênticos e `qualidade`/`interrupcao`/`orcamento` eram três tons de
+     * dourado — no donut do dashboard, onde essas fatias ficam pequenas e
+     * espremidas lado a lado, ficavam indistinguíveis. Cada matiz aqui é
+     * usado uma única vez.
+     */
     public static function accent(string $grupoMacro): string
     {
         return match (mb_strtolower(trim($grupoMacro))) {
             'recepcao' => '#0ea5e9',
             'diagnostico' => '#6f5afc',
             'orcamento' => '#f59e0b',
-            'execucao' => '#16a34a',
-            'qualidade' => '#d6b656',
-            'interrupcao' => '#d79b00',
-            'concluido' => '#22c55e',
+            'execucao' => '#0d9488',
+            'qualidade' => '#db2777',
+            'interrupcao' => '#c2410c',
+            'concluido' => '#16a34a',
             'finalizado_sem_reparo' => '#b85450',
             'encerrado' => '#64748b',
             'cancelado' => '#ef4444',
@@ -71,10 +78,10 @@ class OrderStatusMacroGroups
             'recepcao' => 'rgba(14, 165, 233, 0.12)',
             'diagnostico' => 'rgba(111, 90, 252, 0.12)',
             'orcamento' => 'rgba(245, 158, 11, 0.14)',
-            'execucao' => 'rgba(22, 163, 74, 0.12)',
-            'qualidade' => 'rgba(214, 182, 86, 0.16)',
-            'interrupcao' => 'rgba(215, 155, 0, 0.14)',
-            'concluido' => 'rgba(34, 197, 94, 0.12)',
+            'execucao' => 'rgba(13, 148, 136, 0.12)',
+            'qualidade' => 'rgba(219, 39, 119, 0.12)',
+            'interrupcao' => 'rgba(194, 65, 12, 0.14)',
+            'concluido' => 'rgba(22, 163, 74, 0.12)',
             'finalizado_sem_reparo' => 'rgba(184, 84, 80, 0.12)',
             'encerrado' => 'rgba(100, 116, 139, 0.12)',
             'cancelado' => 'rgba(239, 68, 68, 0.12)',

@@ -55,6 +55,17 @@ class UpdateOrderStatusRequest extends BaseApiFormRequest
                 'date_format:Y-m-d',
                 'after_or_equal:today',
             ],
+            // Horas de bancada gastas no reparo, informadas pelo técnico ao
+            // concluir. Base da margem por hora — o critério de priorização
+            // quando a bancada, e não o caixa, é o recurso restrito.
+            // Teto de 999h: acima disso é digitação errada (minutos no lugar
+            // de horas), não uma OS real.
+            'tempo_tecnico_horas' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:999',
+            ],
         ];
     }
 }

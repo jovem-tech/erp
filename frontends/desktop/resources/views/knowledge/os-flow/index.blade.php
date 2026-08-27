@@ -10,7 +10,7 @@
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
         <div>
             <p class="desktop-eyebrow">Administração</p>
-            <h2 class="surface-title fs-3 mb-2">Status de OS</h2>
+            <h2 class="surface-title fs-3 mb-2">Status de OS <x-favorite-toggle /></h2>
             <p class="surface-subtitle mb-0">
                 Catálogo dos status que uma ordem de serviço pode assumir, agrupados por macrofase.
                 A mudança de status na OS não é restrita a uma sequência: qualquer status ativo é aceito,

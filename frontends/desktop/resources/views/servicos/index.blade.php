@@ -31,7 +31,7 @@
                 </a>
             @endif
 
-            <x-list-actions label="Mais ações" size="">
+            <x-list-actions label="Mais ações" size="" :favoritable="true">
                 <li>
                     <a href="{{ route('servicos.help') }}" class="dropdown-item">
                         <i class="bi bi-question-circle me-2"></i>Ajuda
@@ -90,7 +90,7 @@
     <section class="surface-table">
         <div class="surface-table-header">
             <div>
-                <h2 class="surface-title">Cadastro de serviços</h2>
+                <h2 class="surface-title">Cadastro de serviços <x-favorite-toggle /></h2>
                 <p class="surface-subtitle">
                     {{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} serviços retornados pela API central.
                 </p>

@@ -4,7 +4,7 @@
     <section class="desktop-form-card mb-4">
         <div class="surface-card-header">
             <div>
-                <h2 class="surface-title">Base de Defeitos</h2>
+                <h2 class="surface-title">Base de Defeitos <x-favorite-toggle /></h2>
                 <p class="surface-subtitle">
                     Catálogo interno de defeitos comuns por tipo de equipamento, com procedimentos de reparo.
                 </p>

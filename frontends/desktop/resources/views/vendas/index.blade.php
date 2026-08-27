@@ -35,7 +35,7 @@
                 </a>
             @endif
 
-            <x-list-actions label="Mais ações" size="">
+            <x-list-actions label="Mais ações" size="" :favoritable="true">
                 <li>
                     <a href="{{ route('devolucoes.index') }}" class="dropdown-item">
                         <i class="bi bi-arrow-return-left me-2"></i>Devoluções
@@ -117,7 +117,7 @@
     <section class="surface-table">
         <div class="surface-table-header">
             <div>
-                <h2 class="surface-title">Vendas de balcão</h2>
+                <h2 class="surface-title">Vendas de balcão <x-favorite-toggle /></h2>
                 <p class="surface-subtitle">
                     Produtos, acessórios e serviços vendidos sem vínculo com ordem de serviço.
                 </p>

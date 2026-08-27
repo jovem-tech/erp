@@ -3,7 +3,11 @@
 Frontend desktop Laravel/Blade do `sistema-erp`, preservando a estrutura visual do legado `sistema-hml` sem acesso direto ao banco de dados.
 
 O shell visual do desktop segue o padrao claro do legado: sidebar branca e recolhivel, topbar branca, cards com acento superior e blocos amplos para leitura rapida em desktop e em telas reduzidas. O rodape institucional do sistema aparece no fim da pagina em formato minimalista, exibindo versao, credito de desenvolvimento e copyright a partir da configuracao central.
-Na listagem de OS, o shell abre com a sidebar retraida por padrao para ampliar a area util da tabela operacional.
+O modo de navegacao e' uma preferencia de cada usuario, escolhida em Configuracoes do Sistema > Aparencia: `fixed` mantem a sidebar presente (padrao) e `drawer` esconde tudo atras do botao sanduiche da navbar, liberando a largura inteira. Ate' 2026-08-26 a listagem de OS e a criacao de OS forcavam o modo sanduiche por rota; hoje so' o PDV (`vendas.create`) continua forcado, porque precisa caber na tela sem rolagem.
+No modo `fixed` a listagem de OS (`/os`) abre com a sidebar RETRAIDA (80px) em vez de expandida, para devolver largura a' tabela mais densa do sistema sem tirar o menu da tela; e' so' um padrao de tela, e uma escolha explicita do usuario no botao de recolher/expandir passa a valer em todas as telas.
+O botao "+ Novo" da topbar tem atalhos de teclado: F1 nova OS, F2 novo orcamento, F3 nova venda, F4 novo lancamento — a tecla aparece no proprio menu. O atalho aciona o link do menu, entao respeita a permissao; sem permissao a tecla volta a ser do navegador. Telas que precisam de teclas de funcao para si as reivindicam em `data-desktop-fkeys-owner="F2 F3 F4"` — por tecla, nao por tela. Hoje so' o PDV reivindica, e so' as tres que usa: F1 continua abrindo Nova OS de la'.
+Telas com trabalho em andamento registram uma sonda em `window.erpRegisterUnsavedWork(fn)`; um unico `beforeunload` no shell pergunta antes de sair, cobrindo todas as saidas de uma vez (link, atalho, F5, fechar a aba). Hoje quem usa e' o PDV, cujo carrinho vive so' no DOM — e cujo Esc passou a confirmar antes de descartar a venda.
+A topbar traz o MENU de Favoritos por usuario (ate' 12 paginas). A estrela que fixa a pagina fica ao lado do TITULO da pagina, dentro do conteudo — colada no nome da coisa que ela fixa —, e as listagens repetem a acao no "Mais acoes".
 
 ## Responsabilidade deste projeto
 
@@ -256,6 +260,8 @@ Abas de detalhes de OS (`.os-tabs-card`) em devices ≤480px renderizam como **g
 ```
 
 ### Sidebar em modo retraído (collapsed)
+
+Vale para quem está no modo `fixed`; no modo `drawer` a sidebar vira gaveta e o botão de recolher some.
 A navegação lateral em modo retraído (80px) oferece experiência de usuário robusta:
 
 #### ✅ Acessibilidade

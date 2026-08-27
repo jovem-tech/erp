@@ -152,14 +152,23 @@ class EstoqueFlowTest extends TestCase
 
         $partId = (int) $createResponse->json('data.peca.id');
 
-        $this->withHeader('Authorization', 'Bearer ' . $token)
+        $movementResponse = $this->withHeader('Authorization', 'Bearer ' . $token)
             ->postJson('/api/v1/estoque/' . $partId . '/movimentacoes', [
                 'tipo' => 'saida',
                 'quantidade' => 3,
                 'motivo' => 'Uso em OS',
             ])
-            ->assertOk()
-            ->assertJsonPath('data.peca.quantidade_atual', 5);
+            ->assertOk();
+
+        // O contrato aqui e o VALOR, nao o tipo. `quantidade_atual` virou
+        // DECIMAL(14,4) (migration 2026_08_27_000001) e a API passou a
+        // devolver 5.0 no lugar de 5; assertJsonPath compara com ===, entao
+        // travaria no tipo. Mesmo precedente de FinanceiroMargemTest.
+        $this->assertEqualsWithDelta(
+            5,
+            (float) $movementResponse->json('data.peca.quantidade_atual'),
+            0.0001
+        );
 
         $this->assertDatabaseHas('movimentacoes', [
             'peca_id' => $partId,

@@ -83,7 +83,7 @@
                 <span class="desktop-chip" id="osResultsCount">{{ number_format((int) ($pagination['total'] ?? 0), 0, ',', '.') }} resultados</span>
                 @if ($canEditOrder)
                     <span class="desktop-chip" id="osBulkSelectionCount">0 selecionadas</span>
-                    <x-list-actions label="Mais ações" size="">
+                    <x-list-actions label="Mais ações" size="" :favoritable="true">
                         <li>
                             <button type="button" class="dropdown-item" id="osBulkClosureTrigger" disabled>
                                 <i class="bi bi-box-seam me-2"></i>Dar baixa em lote
@@ -318,7 +318,7 @@
     <section class="surface-table">
         <div class="surface-table-header">
             <div>
-                <h2 class="surface-title">Ordens de Serviço</h2>
+                <h2 class="surface-title">Ordens de Serviço <x-favorite-toggle /></h2>
             </div>
         </div>
 

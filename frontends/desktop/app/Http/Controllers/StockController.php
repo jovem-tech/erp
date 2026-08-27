@@ -247,7 +247,9 @@ class StockController extends DesktopController
         try {
             $validated = $request->validate([
                 'tipo' => ['required', 'string', 'in:entrada,saida,ajuste'],
-                'quantidade' => ['required', 'integer', 'min:1'],
+                // numeric: insumo se mede em fracao (0,5 m de cabo). A coluna
+                // virou DECIMAL(14,4) — ver specs/036-estoque-nucleo-razao.
+                'quantidade' => ['required', 'numeric', 'min:0.0001'],
                 'motivo' => ['nullable', 'string', 'max:255'],
                 'os_id' => ['nullable', 'integer'],
             ]);
@@ -438,9 +440,9 @@ class StockController extends DesktopController
             'localizacao' => ['nullable', 'string', 'max:120'],
             'preco_custo' => ['nullable', 'numeric', 'min:0'],
             'preco_venda' => ['nullable', 'numeric', 'min:0'],
-            'quantidade_atual' => ['nullable', 'integer', 'min:0'],
-            'estoque_minimo' => ['nullable', 'integer', 'min:0'],
-            'estoque_maximo' => ['nullable', 'integer', 'min:0'],
+            'quantidade_atual' => ['nullable', 'numeric', 'min:0'],
+            'estoque_minimo' => ['nullable', 'numeric', 'min:0'],
+            'estoque_maximo' => ['nullable', 'numeric', 'min:0'],
             'status' => ['nullable', 'string', 'in:ativo,encerrado,inativo'],
             'observacoes' => ['nullable', 'string'],
             'ativo' => ['nullable', 'boolean'],
@@ -466,9 +468,9 @@ class StockController extends DesktopController
             'localizacao' => trim((string) ($validated['localizacao'] ?? '')),
             'preco_custo' => (float) ($validated['preco_custo'] ?? 0),
             'preco_venda' => (float) ($validated['preco_venda'] ?? 0),
-            'quantidade_atual' => (int) ($validated['quantidade_atual'] ?? 0),
-            'estoque_minimo' => (int) ($validated['estoque_minimo'] ?? 0),
-            'estoque_maximo' => (int) ($validated['estoque_maximo'] ?? 0),
+            'quantidade_atual' => round((float) ($validated['quantidade_atual'] ?? 0), 4),
+            'estoque_minimo' => round((float) ($validated['estoque_minimo'] ?? 0), 4),
+            'estoque_maximo' => round((float) ($validated['estoque_maximo'] ?? 0), 4),
             'status' => trim((string) ($validated['status'] ?? 'ativo')),
             'observacoes' => trim((string) ($validated['observacoes'] ?? '')),
             'ativo' => $request->boolean('ativo', true),

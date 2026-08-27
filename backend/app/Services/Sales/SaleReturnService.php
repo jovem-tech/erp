@@ -412,7 +412,11 @@ class SaleReturnService
             $custoUnitario = round((float) $saleItem->custo_unitario, 2);
             $retornaEstoque = (bool) $saleItem->baixa_estoque;
 
-            // Estoque conta em unidades inteiras (movimentacoes.quantidade é INT).
+            // Regra provisoria: enquanto nao existe unidade de medida por peca,
+            // toda devolucao ao estoque exige quantidade inteira. Passa a ser
+            // dirigida pela unidade do item na proxima entrega (specs/036) —
+            // ate la, e o unico anteparo contra fracao chegar ao razao por aqui.
+            // NAO e mais verdade que a coluna seja INT: virou DECIMAL(14,4).
             if ($retornaEstoque && floor($quantidade) !== $quantidade) {
                 throw new RuntimeException(
                     'Itens que voltam ao estoque precisam de quantidade inteira: "'.$saleItem->descricao.'".'
@@ -496,7 +500,8 @@ class SaleReturnService
             $stockLines[] = [
                 'peca_id' => $line['peca_id'],
                 'venda_item_id' => $line['venda_item_id'],
-                'quantidade' => (int) round($line['quantidade']),
+                // float: devolucao de 0,5 creditava 1 no razao.
+                'quantidade' => round((float) $line['quantidade'], 4),
             ];
         }
 

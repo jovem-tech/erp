@@ -1131,8 +1131,10 @@ class DashboardSummaryService
                 'id' => (int) $peca->id,
                 'codigo' => (string) ($peca->codigo ?? ''),
                 'nome' => (string) ($peca->nome ?? ''),
-                'quantidade_atual' => (int) ($peca->quantidade_atual ?? 0),
-                'estoque_minimo' => (int) ($peca->estoque_minimo ?? 0),
+                // float nos dois: com (int), o card dizia "0,5 m em estoque ·
+                // minimo 0" — um alerta que se contradiz sozinho.
+                'quantidade_atual' => (float) ($peca->quantidade_atual ?? 0),
+                'estoque_minimo' => (float) ($peca->estoque_minimo ?? 0),
                 'unidade' => (string) ($peca->unidade ?? 'UN'),
             ])
             ->values()

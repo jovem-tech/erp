@@ -17,7 +17,7 @@
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
         <div>
             <p class="desktop-eyebrow">Gestão de Conhecimento</p>
-            <h2 class="surface-title fs-3 mb-2">{{ $pageTitle ?? 'Modelo da Assistência Técnica' }}</h2>
+            <h2 class="surface-title fs-3 mb-2">{{ $pageTitle ?? 'Modelo da Assistência Técnica' }} <x-favorite-toggle /></h2>
             <p class="surface-subtitle mb-0">
                 Como o atendimento está desenhado neste sistema: as fases, os status reais de cada uma
                 e as regras que o próprio código aplica. Tudo o que aparece abaixo é lido do catálogo

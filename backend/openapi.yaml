@@ -2314,6 +2314,13 @@ components:
           type: string
           maxLength: 2000
           nullable: true
+        tempo_tecnico_horas:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 999
+          nullable: true
+          description: "Horas de bancada gastas no reparo. O momento natural de informar é a entrada num status de OrderStatus::DEADLINE_FREEZE_CODES (reparo dado por concluído). Base da margem por hora em os_margem. Envie 0 para apagar um apontamento; omitir o campo mantém o valor atual."
 
     CloseOrderReceipt:
       type: object
@@ -2383,6 +2390,13 @@ components:
           type: string
           maxLength: 2000
           nullable: true
+        tempo_tecnico_horas:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 999
+          nullable: true
+          description: "Rede de segurança do apontamento de horas. Só é aplicado quando a OS ainda NÃO tem tempo_tecnico_horas — o que o técnico registrou ao concluir o reparo tem precedência e nunca é sobrescrito na baixa."
         recebimentos:
           type: array
           nullable: true

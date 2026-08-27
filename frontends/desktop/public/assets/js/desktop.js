@@ -152,6 +152,64 @@ const DesktopUi = (() => {
         });
     };
 
+    /* --------------------------------------------------------------------- */
+    /* Trabalho nao salvo                                                      */
+    /* --------------------------------------------------------------------- */
+
+    // Telas com trabalho em andamento (o carrinho do PDV, por exemplo) registram
+    // aqui uma sonda. Enquanto alguma responder "sim", o navegador pergunta antes
+    // de sair.
+    //
+    // Um unico beforeunload no shell cobre TODAS as saidas de uma vez — link da
+    // sidebar, botao de inicio, "+ Novo", atalho de teclado, F5, fechar a aba,
+    // voltar. A alternativa seria cada caminho de saida lembrar de perguntar, e
+    // bastava um esquecer para o trabalho sumir.
+    //
+    // Registrado de forma sincrona, fora do init(): os scripts de pagina rodam no
+    // mesmo DOMContentLoaded e precisam da API ja existindo quando se registram.
+    const unsavedWorkProbes = new Set();
+
+    const hasUnsavedWork = () => {
+        for (const probe of unsavedWorkProbes) {
+            try {
+                if (probe()) {
+                    return true;
+                }
+            } catch (error) {
+                // Sonda quebrada nao pode prender o usuario na pagina.
+            }
+        }
+
+        return false;
+    };
+
+    window.erpRegisterUnsavedWork = (probe) => {
+        if (typeof probe !== 'function') {
+            return () => {};
+        }
+
+        unsavedWorkProbes.add(probe);
+
+        return () => unsavedWorkProbes.delete(probe);
+    };
+
+    window.addEventListener('beforeunload', (event) => {
+        if (!hasUnsavedWork()) {
+            return;
+        }
+
+        // O loader de pagina e' armado no clique do link, ANTES do dialogo. Se o
+        // usuario decidir ficar, a navegacao nao acontece e nem pageshow nem
+        // pagehide disparam — sem isto a tela ficaria coberta pelo loader para
+        // sempre. O timeout roda depois que o dialogo e' dispensado.
+        window.setTimeout(hidePageLoader, 0);
+
+        // Navegadores ignoram texto customizado ha anos; estes dois passos sao o
+        // que ainda dispara o dialogo nativo.
+        event.preventDefault();
+        event.returnValue = '';
+    });
+
     const isSameOriginUrl = (url) => {
         try {
             return new URL(url, window.location.href).origin === window.location.origin;
@@ -944,9 +1002,22 @@ const DesktopUi = (() => {
             }
         };
 
-        if (!isHiddenLayout && localStorage.getItem(collapseStorageKey) === '1') {
+        // O servidor pode entregar a sidebar já retraída como padrão da tela
+        // (hoje: a listagem de OS). Esse padrão só vale enquanto o usuário não
+        // se manifestou: uma vez que ele usa o botão de recolher/expandir, a
+        // escolha dele passa a valer em todas as telas, inclusive nessa.
+        // Por isso os dois sentidos são aplicados aqui — sem o ramo '0', quem
+        // expandisse na listagem de OS a veria retraída de novo a cada visita.
+        const storedCollapse = localStorage.getItem(collapseStorageKey);
+
+        if (!isHiddenLayout && storedCollapse === '1') {
             sidebar.classList.add('is-collapsed');
             main.classList.add('is-expanded');
+        }
+
+        if (!isHiddenLayout && storedCollapse === '0') {
+            sidebar.classList.remove('is-collapsed');
+            main.classList.remove('is-expanded');
         }
 
         // Um grupo ativo chega renderizado pelo servidor com `is-open`. No
@@ -1003,6 +1074,234 @@ const DesktopUi = (() => {
             if (event.key === 'Escape' && sidebar.classList.contains('is-open')) {
                 closeMobileSidebar();
             }
+        });
+    };
+
+    const initFavorites = () => {
+        const root = document.querySelector('[data-desktop-favorites-root]');
+
+        if (!(root instanceof HTMLElement)) {
+            return;
+        }
+
+        const toggleUrl = root.dataset.desktopFavoritesToggleUrl || '';
+        const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        const badge = root.querySelector('[data-desktop-favorites-badge]');
+        const list = root.querySelector('[data-desktop-favorites-list]');
+
+        if (toggleUrl === '') {
+            return;
+        }
+
+        const notify = (icon, title) => {
+            if (typeof Swal === 'undefined') {
+                return;
+            }
+
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                timer: icon === 'error' ? 6500 : 2600,
+                timerProgressBar: true,
+                showConfirmButton: false,
+                icon,
+                title,
+                customClass: { popup: 'swal-desktop-toast' },
+            });
+        };
+
+        // Um mesmo route pode ter dois gatilhos na página (a estrela da navbar e
+        // o item do "Mais ações"); os dois precisam refletir o mesmo estado.
+        const syncTriggers = (routeName, isFavorite) => {
+            document.querySelectorAll('[data-desktop-favorite-toggle]').forEach((trigger) => {
+                if (!(trigger instanceof HTMLElement) || trigger.dataset.favoriteRoute !== routeName) {
+                    return;
+                }
+
+                const label = isFavorite ? 'Remover dos favoritos' : 'Adicionar aos favoritos';
+
+                trigger.setAttribute('aria-pressed', isFavorite ? 'true' : 'false');
+                trigger.classList.toggle('is-active', isFavorite);
+
+                const icon = trigger.querySelector('[data-desktop-favorite-icon]');
+                if (icon instanceof HTMLElement) {
+                    icon.classList.toggle('bi-star-fill', isFavorite);
+                    icon.classList.toggle('bi-star', !isFavorite);
+                }
+
+                const copy = trigger.querySelector('[data-desktop-favorite-label]');
+                if (copy instanceof HTMLElement) {
+                    copy.textContent = label;
+                } else {
+                    trigger.setAttribute('aria-label', label);
+                    trigger.setAttribute('title', label);
+                }
+            });
+        };
+
+        const renderList = (favorites) => {
+            if (!(list instanceof HTMLElement)) {
+                return;
+            }
+
+            if (badge instanceof HTMLElement) {
+                badge.textContent = String(favorites.length);
+                badge.classList.toggle('d-none', favorites.length === 0);
+            }
+
+            list.textContent = '';
+
+            if (favorites.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'desktop-notification-empty';
+                empty.setAttribute('data-desktop-favorites-empty', '');
+                empty.textContent = 'Nenhum favorito ainda. Use a estrela ao lado do título da página para fixá-la aqui.';
+                list.appendChild(empty);
+
+                return;
+            }
+
+            favorites.forEach((favorite) => {
+                const link = document.createElement('a');
+                link.className = 'desktop-favorites-link';
+                link.href = favorite.url || '#';
+
+                const icon = document.createElement('i');
+                icon.className = 'bi ' + (favorite.icon || 'bi-dot');
+                link.appendChild(icon);
+
+                const copy = document.createElement('span');
+                copy.className = 'desktop-favorites-link-copy';
+
+                const title = document.createElement('strong');
+                title.textContent = favorite.label || '';
+                copy.appendChild(title);
+
+                const section = document.createElement('small');
+                section.textContent = favorite.section || '';
+                copy.appendChild(section);
+
+                link.appendChild(copy);
+                list.appendChild(link);
+            });
+        };
+
+        document.addEventListener('click', (event) => {
+            const trigger = event.target instanceof Element
+                ? event.target.closest('[data-desktop-favorite-toggle]')
+                : null;
+
+            if (!(trigger instanceof HTMLElement)) {
+                return;
+            }
+
+            event.preventDefault();
+
+            const routeName = trigger.dataset.favoriteRoute || '';
+            if (routeName === '' || trigger.classList.contains('is-busy')) {
+                return;
+            }
+
+            trigger.classList.add('is-busy');
+
+            const body = new URLSearchParams();
+            body.set('route', routeName);
+
+            fetch(toggleUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'X-CSRF-TOKEN': csrfToken,
+                    'X-Requested-With': 'XMLHttpRequest',
+                    Accept: 'application/json',
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: body.toString(),
+            })
+                .then((response) => response.json().then((payload) => ({ ok: response.ok, payload })))
+                .then(({ ok, payload }) => {
+                    if (!ok || !payload || payload.ok !== true) {
+                        notify('error', payload?.mensagem || 'Não foi possível atualizar os favoritos.');
+
+                        return;
+                    }
+
+                    syncTriggers(routeName, payload.favorito === true);
+                    renderList(Array.isArray(payload.favoritos) ? payload.favoritos : []);
+                    notify('success', payload.mensagem || 'Favoritos atualizados.');
+                })
+                .catch(() => {
+                    notify('error', 'Não foi possível atualizar os favoritos.');
+                })
+                .finally(() => {
+                    trigger.classList.remove('is-busy');
+                });
+        });
+    };
+
+    const initQuickCreateShortcuts = () => {
+        // F1..F4 disparam os itens do botão "+ Novo". Os alvos são os próprios
+        // links do dropdown, e não URLs repetidas aqui: assim a permissão já
+        // resolvida no Blade continua valendo (sem link, sem atalho) e não há
+        // duas listas de rotas para manter em sincronia.
+        const keys = {
+            F1: 'os',
+            F2: 'orcamento',
+            F3: 'venda',
+            F4: 'lancamento',
+        };
+
+        document.addEventListener('keydown', (event) => {
+            const target = keys[event.key];
+
+            if (!target || event.ctrlKey || event.altKey || event.shiftKey || event.metaKey) {
+                return;
+            }
+
+            // Páginas podem reivindicar teclas de função para si. A reivindicação
+            // é POR TECLA — o valor lista quais (ex.: "F2 F3 F4"). Sem valor,
+            // reivindica todas: padrão seguro para quem esquecer de listar.
+            //
+            // Bloquear a tela inteira seria grosseiro demais: o PDV usa F2/F3/F4
+            // (confirmar venda, tela cheia, abrir cliente) mas não usa F1, e
+            // abrir uma OS a partir do balcão é justamente o caso de quem
+            // atende alguém que chegou para deixar um aparelho, não para comprar.
+            const claimsThisKey = Array.from(
+                document.querySelectorAll('[data-desktop-fkeys-owner]')
+            ).some((owner) => {
+                const claimed = (owner.getAttribute('data-desktop-fkeys-owner') || '').trim();
+
+                return claimed === '' || claimed.split(/\s+/).includes(event.key);
+            });
+
+            if (claimsThisKey) {
+                return;
+            }
+
+            // Modal aberto quase sempre significa trabalho em andamento (baixa
+            // em lote, cadastro rápido, pagamento). Sair da página descartaria
+            // esse trabalho sem aviso.
+            if (document.querySelector('.modal.show')) {
+                return;
+            }
+
+            const link = document.querySelector(`[data-desktop-quick-create="${target}"]`);
+
+            if (!(link instanceof HTMLElement)) {
+                // Sem permissão para criar: devolve a tecla ao navegador em vez
+                // de engolir o atalho nativo silenciosamente.
+                return;
+            }
+
+            event.preventDefault();
+
+            // O guard de sessão ("navegador fechado = deslogar") só reconhece
+            // saída legítima quando avisado; sem isto a próxima página trata a
+            // navegação como fechamento e desloga o usuário. O click() já
+            // dispara o listener do guard, e a chamada explícita cobre o caso
+            // de o listener não estar ativo.
+            window.erpMarkInternalNavigation?.();
+            link.click();
         });
     };
 
@@ -2014,6 +2313,8 @@ const DesktopUi = (() => {
     const init = () => {
         initSidebar();
         initSidebarGroups();
+        initFavorites();
+        initQuickCreateShortcuts();
         initConfigSubtabs();
         initPasswordToggles();
         initFlash();

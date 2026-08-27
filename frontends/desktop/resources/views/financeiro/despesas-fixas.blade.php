@@ -15,7 +15,7 @@
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
         <div>
             <p class="desktop-eyebrow">Financeiro</p>
-            <h2 class="surface-title fs-3 mb-2">Despesas</h2>
+            <h2 class="surface-title fs-3 mb-2">Despesas <x-favorite-toggle /></h2>
             <p class="surface-subtitle mb-0">Todas as contas a pagar da assistência — fixas (água, luz, internet, pró-labore...) e variáveis (peças, imprevistos...).</p>
         </div>
 

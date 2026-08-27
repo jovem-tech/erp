@@ -4,7 +4,7 @@
     <section class="surface-table">
         <div class="surface-table-header">
             <div>
-                <h2 class="surface-title">Grupos e níveis de acesso</h2>
+                <h2 class="surface-title">Grupos e níveis de acesso <x-favorite-toggle /></h2>
                 <p class="surface-subtitle">A gestão do RBAC continua centralizada no backend. O desktop apenas consome a API administrativa.</p>
             </div>
 

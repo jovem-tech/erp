@@ -972,7 +972,8 @@ class OrderWorkflowService
         bool $comunicarCliente = false,
         bool $viaClosureFlow = false,
         ?string $novoPrazo = null,
-        ?string $mensagemCliente = null
+        ?string $mensagemCliente = null,
+        ?float $tempoTecnicoHoras = null
     ): array {
         $order = Order::query()->find($orderId);
 
@@ -1080,7 +1081,8 @@ class OrderWorkflowService
             $enteringDeadlineFreeze,
             $leavingDeadlineFreeze,
             $novoPrazo,
-            $prazoAnterior
+            $prazoAnterior,
+            $tempoTecnicoHoras
         ): void {
             $updateData = ['updated_at' => $now];
 
@@ -1097,6 +1099,18 @@ class OrderWorkflowService
             if ($leavingDeadlineFreeze) {
                 $updateData['data_conclusao'] = null;
                 $updateData['data_previsao'] = $novoPrazo;
+            }
+
+            // Apontamento de horas de bancada. Aceito em qualquer atualização
+            // (o técnico pode corrigir depois), mas o momento natural é a
+            // entrada em DEADLINE_FREEZE — quando o reparo é dado por
+            // concluído e ele ainda lembra o tempo gasto. Zero apaga o
+            // apontamento; a margem por hora trata null e 0 como "sem
+            // apontamento" e deixa a OS fora do ranking por hora.
+            if ($tempoTecnicoHoras !== null) {
+                $updateData['tempo_tecnico_horas'] = $tempoTecnicoHoras > 0
+                    ? round($tempoTecnicoHoras, 2)
+                    : null;
             }
 
             if ($diagnosticoTecnico !== null) {
@@ -2701,6 +2715,13 @@ class OrderWorkflowService
             'data_entrada' => $this->formatDateTime($order->data_entrada ?? null),
             'data_previsao' => $this->formatDate($order->data_previsao ?? null),
             'data_conclusao' => $this->formatDateTime($order->data_conclusao ?? null),
+            // Horas de bancada apontadas pelo técnico. Null (e não 0) quando
+            // ninguém informou: "levou zero hora" e "não sabemos quanto levou"
+            // são coisas diferentes, e só a segunda deve deixar a OS fora do
+            // ranking de margem por hora.
+            'tempo_tecnico_horas' => ($order->tempo_tecnico_horas ?? null) !== null
+                ? (float) $order->tempo_tecnico_horas
+                : null,
             'data_entrega' => $this->formatDateTime($order->data_entrega ?? null),
             // Mesmo cálculo de SLA usado no card da listagem (mapSummary) — ver
             // resolveDeadlineState(). Aqui alimenta o resumo de prazo no

@@ -12,6 +12,7 @@ use App\Services\ConfigurationService;
 use App\Services\DocumentationService;
 use App\Services\GroupService;
 use App\Services\UserService;
+use App\Support\DesktopPreferences;
 use App\Support\DesktopSession;
 use App\Support\SessionSecuritySettings;
 use Illuminate\Http\JsonResponse;
@@ -409,6 +410,28 @@ class ConfigurationController extends DesktopController
         return redirect()
             ->route('configurations.system.index', ['tab' => 'aparencia'])
             ->with('success', 'Tema alterado com sucesso.');
+    }
+
+    /**
+     * Modo de navegacao do shell — preferencia pessoal, no mesmo molde do tema:
+     * sem `desktop.permission`, porque nao configura o sistema para ninguem
+     * alem de quem esta salvando.
+     */
+    public function updateNavigation(Request $request): RedirectResponse
+    {
+        $mode = (string) $request->input('navigation_mode', DesktopPreferences::NAV_MODE_FIXED);
+
+        if (! in_array($mode, DesktopPreferences::navigationModes(), true)) {
+            return back()->with('error', 'Modo de navegação inválido.');
+        }
+
+        DesktopPreferences::storeNavigationMode($mode);
+
+        return redirect()
+            ->route('configurations.system.index', ['tab' => 'aparencia'])
+            ->with('success', $mode === DesktopPreferences::NAV_MODE_DRAWER
+                ? 'Navegação alterada para menu sanduíche.'
+                : 'Navegação alterada para sidebar fixa.');
     }
 
     public function help(): View
