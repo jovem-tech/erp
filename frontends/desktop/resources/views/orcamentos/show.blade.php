@@ -285,8 +285,21 @@
     <section class="surface-card mb-4">
         <div class="surface-card-header">
             <div>
+                @php
+                    // A legenda prometia "com custo, margem" desde sempre, e a
+                    // tabela nunca teve essas colunas. Agora ela tem — para quem
+                    // pode ver — e a frase passa a ser condicional (specs/037).
+                    $veCusto = \App\Support\DesktopSession::can('financeiro', 'visualizar')
+                        || \App\Support\DesktopSession::can('precificacao', 'visualizar');
+                @endphp
                 <h2 class="surface-title">Itens do orçamento</h2>
-                <p class="surface-subtitle">Serviços e peças com custo, margem e observações por linha.</p>
+                <p class="surface-subtitle">
+                    @if ($veCusto)
+                        Serviços e peças com custo, margem e observações por linha.
+                    @else
+                        Serviços e peças com valores e observações por linha.
+                    @endif
+                </p>
             </div>
         </div>
 
@@ -302,6 +315,10 @@
                         <th>Desconto</th>
                         <th>Acréscimo</th>
                         <th>Total</th>
+                        @if ($veCusto)
+                            <th class="text-end">Custo unit.</th>
+                            <th class="text-end">Margem</th>
+                        @endif
                     </tr>
                     </thead>
                     <tbody>
@@ -319,6 +336,27 @@
                             <td data-label="Desconto">R$ {{ number_format((float) ($item['desconto'] ?? 0), 2, ',', '.') }}</td>
                             <td data-label="Acréscimo">R$ {{ number_format((float) ($item['acrescimo'] ?? 0), 2, ',', '.') }}</td>
                             <td data-label="Total" class="fw-bold">R$ {{ number_format((float) ($item['total'] ?? 0), 2, ',', '.') }}</td>
+                            @if ($veCusto)
+                                @php
+                                    $margemPercentual = (float) ($item['percentual_margem'] ?? 0);
+                                    $recomendado = (float) ($item['valor_recomendado'] ?? 0);
+                                    $unitario = (float) ($item['valor_unitario'] ?? 0);
+                                    $abaixoDoPiso = $recomendado > 0 && $unitario > 0 && $unitario < $recomendado;
+                                    $corMargem = $abaixoDoPiso || $margemPercentual < 15
+                                        ? 'danger'
+                                        : ($margemPercentual >= 30 ? 'success' : 'warning');
+                                @endphp
+                                <td data-label="Custo unit." class="text-end">
+                                    R$ {{ number_format((float) ($item['preco_custo_referencia'] ?? 0), 2, ',', '.') }}
+                                </td>
+                                <td data-label="Margem" class="text-end text-{{ $corMargem }}">
+                                    R$ {{ number_format((float) ($item['valor_margem'] ?? 0), 2, ',', '.') }}
+                                    <small class="d-block">{{ number_format($margemPercentual, 1, ',', '.') }}%</small>
+                                    @if ($abaixoDoPiso)
+                                        <small class="d-block">abaixo do recomendado</small>
+                                    @endif
+                                </td>
+                            @endif
                         </tr>
                     @endforeach
                     </tbody>
@@ -328,6 +366,9 @@
                         <td data-label="Desconto">R$ {{ number_format($itemsDescontoTotal, 2, ',', '.') }}</td>
                         <td data-label="Acréscimo">R$ {{ number_format($itemsAcrescimoTotal, 2, ',', '.') }}</td>
                         <td data-label="Total" class="fw-bold">R$ {{ number_format($itemsTotalGeral, 2, ',', '.') }}</td>
+                        @if ($veCusto)
+                            <td colspan="2"></td>
+                        @endif
                     </tr>
                     </tfoot>
                 </table>

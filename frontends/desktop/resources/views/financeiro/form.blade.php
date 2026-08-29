@@ -35,13 +35,53 @@
     $categoriaAtualGrupoNome = collect($categorias ?? [])->firstWhere('nome', $currentCategoria)['dre_grupo']['nome'] ?? null;
     $isPecaCategoria = $categoriaAtualGrupoNome === 'Custo Direto (OS)';
     $hideOsCliente = $tipo === 'pagar' && ! $isPecaCategoria;
-    // "Despesa fixa?" vem ANTES da categoria no fluxo (não depois): a
-    // escolha aqui filtra quais categorias aparecem na Categoria logo
-    // abaixo, em vez de a categoria definir um padrão que o usuário só
-    // ajustaria depois.
-    $dreFixoMensalValue = old('dre_fixo_mensal', isset($lancamento['dre_fixo_mensal'])
-        ? ((bool) $lancamento['dre_fixo_mensal'] ? '1' : '0')
-        : '');
+    // Filtro da lista de categorias — só encurta a lista, não classifica nada.
+    // Não viaja no payload (fora do whitelist de validatedPayload()).
+    $categoriaFiltro = (string) old('categoria_filtro', '');
+    // Override explícito da classificação. Vazio = usa o padrão da categoria,
+    // que é o caminho normal; o campo nasce fechado e desabilitado.
+    $dreFixoOverride = (string) old('dre_fixo_mensal', '');
+    // Em EDIÇÃO o backend prioriza o valor já gravado sobre o padrão da
+    // categoria (resolveClassification): trocar a categoria não reclassifica.
+    // Sem isso a tela prometeria uma mudança que o servidor ignora.
+    $classificacaoSalva = ! empty($lancamento['id'] ?? null)
+        ? ((bool) ($lancamento['dre_fixo_mensal'] ?? false) ? '1' : '0')
+        : '';
+    $catAtual = collect($categorias ?? [])->firstWhere('nome', $currentCategoria);
+    $categoriaPadraoFixo = is_array($catAtual)
+        ? (bool) ($catAtual['dre_fixo_mensal_padrao'] ?? false)
+        : null; // null = categoria nova ou fora do catálogo
+    // Espelha a precedência do backend: override > gravado > categoria > false.
+    $classificacaoEfetiva = $tipo === 'pagar' && (
+        $dreFixoOverride !== ''
+            ? $dreFixoOverride === '1'
+            : ($classificacaoSalva !== ''
+                ? $classificacaoSalva === '1'
+                : (bool) $categoriaPadraoFixo)
+    );
+    $mostraClassificacaoResumo = $tipo === 'pagar' && $currentCategoria !== '';
+    $classificacaoOrigemTexto = match (true) {
+        $dreFixoOverride !== '' => ' (definido por você)',
+        $classificacaoSalva !== '' => ' (deste lançamento)',
+        $categoriaPadraoFixo === null => ' (categoria nova — o sistema assume variável)',
+        default => ' (padrão de ' . $currentCategoria . ')',
+    };
+    // Entrada no estoque (specs/039). Só na criação: o backend recusa
+    // `itens_estoque` em PUT/PATCH, e este partial é compartilhado com o edit.
+    // O que já foi gerado aparece no detalhe do lançamento, não aqui.
+    $canEntradaEstoque = $canEntradaEstoque ?? false;
+    $mostraEntradaEstoque = $canEntradaEstoque && empty($lancamento['id'] ?? null);
+    $itensEstoqueAntigos = array_values(array_filter(
+        (array) old('itens_estoque', []),
+        static fn ($item): bool => is_array($item) && (int) ($item['peca_id'] ?? 0) > 0
+    ));
+    // O switch nasce ligado quando a categoria é de compra de peça, quando o
+    // usuário veio do botão "Entrada por compra" do Estoque, ou quando um erro
+    // de validação devolveu o formulário com linhas preenchidas.
+    $entradaEstoqueLigada = filter_var(
+        old('entrada_estoque', ($entradaEstoqueLigada ?? false) || $isPecaCategoria),
+        FILTER_VALIDATE_BOOL
+    ) || $itensEstoqueAntigos !== [];
     $valorRaw = old('valor', (string) ($lancamento['valor'] ?? ''));
     $defaultDataVencimento = old('data_vencimento') ?: ($lancamento['data_vencimento'] ?: date('Y-m-d'));
     $defaultDataPagamento = old('data_pagamento') ?: (string) ($lancamento['data_pagamento'] ?? '');
@@ -87,7 +127,12 @@
         @endif
     </div>
 
-    <form method="post" action="{{ $formAction }}" class="desktop-form-stack" id="financeiroForm">
+    {{-- data-classificacao-salva: em edição o backend prioriza o valor gravado
+         sobre o padrão da categoria, então trocar a categoria NÃO reclassifica.
+         O JS lê isto para a linha de resumo dizer "(deste lançamento)" em vez
+         de prometer uma mudança que o servidor ignora. --}}
+    <form method="post" action="{{ $formAction }}" class="desktop-form-stack" id="financeiroForm"
+          data-classificacao-salva="{{ $classificacaoSalva }}">
         @csrf
         @php
             // Origem "fatura do cartão": vem na querystring do link de editar e
@@ -104,9 +149,9 @@
             @method($formMethod)
         @endif
 
-        <div class="desktop-grid desktop-grid-four">
+        <div class="desktop-grid desktop-grid-three">
             <div>
-                <label for="financeiroTipo">Tipo *</label>
+                <x-campo-label for="financeiroTipo" ajuda="Diz se o lançamento é uma <strong>entrada</strong> ou uma <strong>saída</strong> de dinheiro. Só as saídas podem ser classificadas como fixas ou variáveis.">Tipo *</x-campo-label>
                 <select id="financeiroTipo" name="tipo" class="form-select" required @disabled($hasMovements || $tipoLocked)>
                     @unless ($tipoLocked)
                         <option value="receber" @selected($tipo === 'receber')>A receber</option>
@@ -125,37 +170,16 @@
                     <small class="text-muted d-block mt-1">Esta tela é só para despesas. Para lançar um recebimento, use Lançamentos.</small>
                 @endif
             </div>
-
-            <div id="financeiroClassificacaoWrapper" @class(['d-none' => $tipo !== 'pagar'])>
-                <label for="financeiroClassificacaoFixa">Despesa fixa?</label>
-                <select id="financeiroClassificacaoFixa" name="dre_fixo_mensal" class="form-select">
-                    <option value="" @selected($dreFixoMensalValue === '')>Todas as categorias</option>
-                    <option value="1" @selected($dreFixoMensalValue === '1')>Despesa fixa</option>
-                    <option value="0" @selected($dreFixoMensalValue === '0')>Despesa variável</option>
-                </select>
-                <small class="text-muted d-block mt-1">Filtra a Categoria abaixo para mostrar só as fixas ou só as variáveis.</small>
-            </div>
-
-            <div>
-                <label for="financeiroValorDisplay">Valor *</label>
-                <input
-                    type="text"
-                    id="financeiroValorDisplay"
-                    class="form-control @error('valor') is-invalid @enderror"
-                    placeholder="R$ 0,00"
-                    inputmode="numeric"
-                    autocomplete="off"
-                    aria-describedby="financeiroValorHidden"
-                    required
-                >
-                <input type="hidden" id="financeiroValorHidden" name="valor" value="{{ $valorRaw }}">
-                @error('valor')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
-            </div>
         </div>
 
-        <div class="desktop-grid">
-            <div>
-                <label for="financeiroCategoria">Categoria *</label>
+        {{-- Grade do Bootstrap e não `desktop-grid`: aqui as duas colunas têm
+             larguras diferentes (2/3 e 1/3), e as classes de span do
+             desktop-grid são todas full-width. O filtro fica ao LADO da
+             categoria, como campo normal — solto no canto direito ele lia como
+             se não pertencesse a nada. --}}
+        <div class="row g-3">
+            <div class="col-lg-8">
+                <x-campo-label for="financeiroCategoria" ajuda="Agrupa o lançamento no DRE e nos relatórios — é por ela que você enxerga para onde o dinheiro foi quando for analisar o mês. Cada categoria já traz um padrão de fixa ou variável, mostrado logo abaixo depois que você escolhe.">Categoria *</x-campo-label>
                 <select
                     id="financeiroCategoria"
                     name="categoria"
@@ -172,10 +196,13 @@
                         @php
                             $catNome = (string) ($catOpt['nome'] ?? '');
                             $catFixo = (bool) ($catOpt['dre_fixo_mensal_padrao'] ?? false);
-                            $matchesClassificacao = $dreFixoMensalValue === ''
+                            // A categoria já escolhida nunca some da lista: o
+                            // filtro não pode invalidar o que o operador
+                            // selecionou.
+                            $matchesClassificacao = $categoriaFiltro === ''
                                 || $catNome === $currentCategoria
-                                || ($dreFixoMensalValue === '1' && $catFixo)
-                                || ($dreFixoMensalValue === '0' && ! $catFixo);
+                                || ($categoriaFiltro === '1' && $catFixo)
+                                || ($categoriaFiltro === '0' && ! $catFixo);
                         @endphp
                         @if ($catNome !== '' && $matchesClassificacao)
                             <option
@@ -187,12 +214,60 @@
                     @endforeach
                 </select>
                 @error('categoria')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
-                <small class="text-muted d-block mt-1">A categoria define automaticamente o grupo e subgrupo do DRE (máx. 50 caracteres).</small>
+
+                {{-- A classificação como RESULTADO, não como pergunta: mostra o
+                     que o backend vai aplicar e de onde veio. Antes o operador
+                     não tinha como saber que "Aluguel" já era fixa — e por isso
+                     nunca via o checkbox de repetir. --}}
+                <div id="financeiroClassificacaoResumo" @class(['d-none' => ! $mostraClassificacaoResumo])>
+                    <small class="text-muted d-block mt-1">
+                        Classificação: <strong data-classificacao-texto>{{ $classificacaoEfetiva ? 'Despesa fixa' : 'Despesa variável' }}</strong><span data-classificacao-origem>{{ $classificacaoOrigemTexto }}</span>
+                        <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-classificacao-alterar>alterar</button>
+                    </small>
+                </div>
+
+                {{-- Override. Renderizado sempre (escondido) e não criado por
+                     JS: assim o old() volta depois de erro de validação e a
+                     tela degrada sem JavaScript. Fechado => disabled => não
+                     viaja => o backend aplica o padrão da categoria. --}}
+                <div id="financeiroClassificacaoOverrideWrapper" @class(['mt-2', 'd-none' => $dreFixoOverride === ''])>
+                    <x-campo-label for="financeiroClassificacaoOverride" ajuda="É o campo que decide se a despesa entra no <strong>ponto de equilíbrio</strong> e no cálculo do custo-hora. <strong>Fixa</strong>: existe todo mês, você fazendo 1 ou 100 OS — aluguel, luz, internet, DAS do MEI, o seu pró-labore. <strong>Variável</strong>: só existe quando há venda — peça comprada para a OS, comissão, taxa de cartão.<span class='tip-exemplo'>Em branco: usa o padrão da categoria escolhida — mostrado logo acima.</span>">Classificação no DRE</x-campo-label>
+                    <select id="financeiroClassificacaoOverride"
+                            name="dre_fixo_mensal"
+                            class="form-select"
+                            @disabled($dreFixoOverride === '')>
+                        <option value="" @selected($dreFixoOverride === '')>Usar o padrão da categoria</option>
+                        <option value="1" @selected($dreFixoOverride === '1')>Despesa fixa</option>
+                        <option value="0" @selected($dreFixoOverride === '0')>Despesa variável</option>
+                    </select>
+                </div>
+            </div>
+
+            {{-- Filtro, não classificação. O campo antigo perguntava "Despesa
+                 fixa?" e oferecia "Todas as categorias" como resposta —
+                 misturava o valor do campo com o escopo do filtro, e era a
+                 maior fonte de confusão da tela. `categoria_filtro` está fora
+                 do whitelist de validatedPayload(), então nunca chega à API. --}}
+            <div id="financeiroCategoriaFiltroWrapper" @class(['col-lg-4', 'd-none' => $tipo !== 'pagar'])>
+                <label for="financeiroCategoriaFiltro" class="form-label">Mostrar</label>
+                <select id="financeiroCategoriaFiltro"
+                        name="categoria_filtro"
+                        class="form-select"
+                        data-select2="false">
+                    <option value="" @selected($categoriaFiltro === '')>Todas</option>
+                    <option value="1" @selected($categoriaFiltro === '1')>Só fixas</option>
+                    <option value="0" @selected($categoriaFiltro === '0')>Só variáveis</option>
+                </select>
+                <small class="text-muted d-block mt-1">Só encurta a lista ao lado.</small>
             </div>
         </div>
 
         @if (empty($lancamento['id']))
-            <div id="financeiroRepetirWrapper" class="form-check" @class(['d-none' => $dreFixoMensalValue !== '1'])>
+            {{-- Segue a classificação EFETIVA, não um select. Amarrado ao
+                 select antigo, o checkbox era inalcançável no caminho normal:
+                 filtro em "todas" + Aluguel dá um lançamento fixo, e o operador
+                 nunca via a opção de repetir. --}}
+            <div id="financeiroRepetirWrapper" @class(['form-check', 'd-none' => ! $classificacaoEfetiva])>
                 <input
                     type="checkbox"
                     id="financeiroRepetirMeses"
@@ -211,7 +286,7 @@
 
         <div class="desktop-grid">
             <div>
-                <label for="financeiroDescricao">Descrição *</label>
+                <x-campo-label for="financeiroDescricao" ajuda="O que você vai ler daqui a seis meses tentando lembrar do que se trata. Inclua o mês de referência nas contas recorrentes.<span class='tip-exemplo'>Bom: “Energia elétrica — agosto”. Ruim: “conta”.</span>">Descrição *</x-campo-label>
                 <input type="text" id="financeiroDescricao" name="descricao" class="form-control" maxlength="255" value="{{ old('descricao', $lancamento['descricao'] ?? '') }}" placeholder="Ex.: OS OS20260001, Aluguel referente a junho..." required>
             </div>
         </div>
@@ -219,12 +294,31 @@
         <div class="desktop-form-section">
             <div class="desktop-form-section-title">
                 <i class="bi bi-calendar-event"></i>
-                <span>DATAS E STATUS</span>
+                <span>PAGAMENTO</span>
             </div>
 
             <div class="desktop-grid desktop-grid-three">
+                {{-- Quanto, quando e como: o trio que descreve o pagamento fica
+                     junto. O núcleo acima responde só "o que é" (tipo,
+                     categoria, descrição). --}}
                 <div>
-                    <label for="financeiroDataVencimento" data-cartao-credito-vencimento-label>Data de vencimento *</label>
+                    <x-campo-label for="financeiroValorDisplay" ajuda="Valor cheio da conta. Se a despesa é <strong>compartilhada com a sua casa</strong> (luz, internet de quem atende em casa), lance só a parte da oficina — o resto não é custo do negócio.<span class='tip-exemplo'>Luz de R$ 300 com 30% de uso na oficina → lance R$ 90.</span>">Valor *</x-campo-label>
+                    <input
+                        type="text"
+                        id="financeiroValorDisplay"
+                        class="form-control @error('valor') is-invalid @enderror"
+                        placeholder="R$ 0,00"
+                        inputmode="numeric"
+                        autocomplete="off"
+                        aria-describedby="financeiroValorHidden"
+                        required
+                    >
+                    <input type="hidden" id="financeiroValorHidden" name="valor" value="{{ $valorRaw }}">
+                    @error('valor')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                </div>
+
+                <div>
+                    <x-campo-label for="financeiroDataVencimento" data-cartao-credito-vencimento-label ajuda="Quando a conta vence. É por <strong>esta data</strong> que o lançamento cai no mês do DRE por competência — mesmo que você pague antes ou depois.<span class='tip-exemplo'>Conta de agosto paga em setembro pertence a agosto.</span>">Data de vencimento *</x-campo-label>
                     <input type="date" id="financeiroDataVencimento" name="data_vencimento" class="form-control" value="{{ $defaultDataVencimento }}" @if(empty($lancamento['id'])) data-set-today="1" @endif required>
                     <small class="text-muted d-none mt-1" data-cartao-credito-vencimento-hint>
                         Definido pela fatura do cartão — veja abaixo.
@@ -232,7 +326,7 @@
                 </div>
 
                 <div>
-                    <label for="financeiroStatus">Status</label>
+                    <x-campo-label for="financeiroStatus" ajuda="<strong>Pendente</strong>: ainda não saiu do caixa. <strong>Pago</strong>: já saiu. O DRE por competência conta os dois (o que importa é o mês de vencimento); o fluxo de caixa só conta o que está pago.">Status</x-campo-label>
                     {{-- data-has-movements diz ao JS se este título já tem baixa
                          real: só sem baixa o status pode ser travado em
                          "Pendente" para compra no crédito (ver
@@ -248,13 +342,20 @@
                         <option value="pago" @selected($status === 'pago')>Pago</option>
                         <option value="cancelado" @selected($status === 'cancelado') @disabled($hasMovements)>Cancelado</option>
                     </select>
-                    <small class="text-muted d-block mt-1" data-status-hint-padrao>Selecionar "Pago" sem baixa registrada gera a baixa total automaticamente.</small>
+                    {{-- Nasce escondido: só se aplica depois de o operador
+                         escolher "Pago". Quem alterna é initStatusHints(). --}}
+                    <small class="text-muted d-none mt-1" data-status-hint-padrao>Este lançamento já nasce com a baixa total registrada na conta abaixo.</small>
                     <small class="text-muted d-none mt-1" data-status-cartao-credito-hint>
                         Compra no crédito fica sempre pendente — quem liquida é a fatura do cartão.
                     </small>
                 </div>
 
-                <div>
+                {{-- Só aparece quando faz efeito: em "a pagar" ela pode abrir o
+                     bloco do cartão, e em "pago" ela escolhe a conta padrão da
+                     baixa. Num recebimento pendente é pura intenção — a forma
+                     real é escolhida na hora da baixa, e o backend zera a
+                     coluna-resumo enquanto o título está pendente. --}}
+                <div id="financeiroFormaPagamentoWrapper" @class(['d-none' => ! ($tipo === 'pagar' || $status === 'pago')])>
                     <label for="financeiroFormaPagamento">Forma de pagamento</label>
                     {{--
                         Este campo grava na coluna-resumo do título, que é um ENUM fixo
@@ -280,10 +381,10 @@
                             <option value="{{ $forma['codigo'] }}" @selected($formaPagamento === $forma['codigo'])>{{ $rotuloForma }}</option>
                         @endforeach
                     </select>
-                    <p class="small text-secondary mt-1 mb-0" data-forma-pagamento-hint-receber @class(['d-none' => $tipo === 'pagar'])>
+                    <p data-forma-pagamento-hint-receber @class(['small', 'text-secondary', 'mt-1', 'mb-0', 'd-none' => $tipo === 'pagar'])>
                         Formas personalizadas ficam disponíveis na hora da baixa. No cartão, a taxa da operadora é calculada na baixa.
                     </p>
-                    <p class="small text-secondary mt-1 mb-0" data-forma-pagamento-hint-pagar @class(['d-none' => $tipo !== 'pagar'])>
+                    <p data-forma-pagamento-hint-pagar @class(['small', 'text-secondary', 'mt-1', 'mb-0', 'd-none' => $tipo !== 'pagar'])>
                         No cartão, escolha abaixo qual cartão da assistência foi usado. Não há taxa de operadora aqui — isso só existe ao receber do cliente.
                     </p>
                 </div>
@@ -362,19 +463,24 @@
                                 <option value="{{ (int) $account['id'] }}" @selected((int) old('conta_financeira_id', 0) === (int) $account['id'])>{{ $account['nome'] }}</option>
                             @endforeach
                         </select>
-                        <small class="text-muted d-block mt-1">Obrigatória quando o título já for criado como pago.</small>
                     </div>
                 @endif
             </div>
         </div>
 
-        <div class="desktop-form-section" id="financeiroVinculosSection" @class(['d-none' => $dreFixoMensalValue === '1'])>
+        {{-- Sempre visível. Antes sumia inteira na despesa fixa, forçando
+             `avulso` e apagando o fornecedor já escolhido — mas aluguel tem
+             locador e internet tem provedora. Agora somem só OS e Cliente, que
+             de fato não se aplicam. --}}
+        <div class="desktop-form-section" id="financeiroVinculosSection">
             <div class="desktop-form-section-title">
                 <i class="bi bi-link-45deg"></i>
                 <span>VÍNCULOS</span>
             </div>
 
-            <div class="form-check form-switch mb-3">
+            {{-- O switch só diz algo enquanto OS/Cliente estão na tela.
+                 Escondidos, ele era um controle sem nenhum efeito observável. --}}
+            <div id="financeiroAvulsoWrapper" @class(['form-check', 'form-switch', 'mb-3', 'd-none' => $hideOsCliente])>
                 <input type="hidden" name="avulso" value="{{ $hasMovements && $avulso ? 1 : 0 }}">
                 <input
                     type="checkbox"
@@ -440,7 +546,11 @@
                         @endif
                     </div>
                     @error('cliente_id')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
-                    <small class="text-muted d-block mt-1">Opcional no avulso. Quando informado, o recebimento aparece no histórico financeiro do cliente.</small>
+                    {{-- Em "a pagar" o backend descarta cliente_id
+                         (FinanceiroService::resolveClassification): o campo só
+                         pré-filtra a busca de OS acima. Dizer isso evita a
+                         promessa falsa de que o cliente fica gravado na despesa. --}}
+                    <small class="text-muted d-block mt-1">Ao receber, entra no histórico financeiro do cliente. Numa despesa serve só para encontrar a OS mais rápido — não fica gravado.</small>
                 </div>
 
                 <div id="financeiroFornecedorWrapper" @class(['d-none' => $tipo === 'receber'])>
@@ -458,10 +568,18 @@
                         @endif
                     </select>
                     @error('fornecedor_id')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
-                    <small class="text-muted d-block mt-1">Toda conta a pagar deve estar vinculada a um fornecedor.</small>
+                    <small class="text-muted d-block mt-1">Toda conta a pagar deve estar vinculada a um fornecedor — também nas fixas: aluguel tem locador, internet tem provedora.</small>
                 </div>
             </div>
         </div>
+
+        @if ($mostraEntradaEstoque)
+            @include('financeiro.partials.entrada-estoque', [
+                'entradaLigada' => $entradaEstoqueLigada,
+                'canQuickPeca' => $canQuickPeca ?? false,
+                'itensAntigos' => $itensEstoqueAntigos,
+            ])
+        @endif
 
         <div class="desktop-form-section">
             <div class="desktop-form-section-title">
@@ -469,7 +587,8 @@
                 <span>OBSERVAÇÕES</span>
             </div>
 
-            <textarea name="observacoes" class="form-control" rows="3">{{ old('observacoes', $lancamento['observacoes'] ?? '') }}</textarea>
+            <label for="financeiroObservacoes" class="visually-hidden">Observações</label>
+            <textarea id="financeiroObservacoes" name="observacoes" class="form-control" rows="3" placeholder="Anotações internas sobre este lançamento (opcional).">{{ old('observacoes', $lancamento['observacoes'] ?? '') }}</textarea>
         </div>
 
         <div class="desktop-form-actions">
@@ -498,5 +617,11 @@
 @if ($canQuickClient)
     @push('modals')
         @include('clients.quick-modal')
+    @endpush
+@endif
+
+@if ($mostraEntradaEstoque && ($canQuickPeca ?? false))
+    @push('modals')
+        @include('financeiro.partials.peca-quick-modal')
     @endpush
 @endif

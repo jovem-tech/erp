@@ -8,6 +8,8 @@ use App\Http\Requests\Api\V1\UpsertFinanceiroRequest;
 use App\Models\Financeiro;
 use App\Models\OrderStatus;
 use App\Services\Auth\AdminCredentialVerifier;
+use App\Services\Estoque\EntradaPecaService;
+use App\Services\Estoque\SaldoInsuficienteException;
 use App\Services\Financeiro\FinanceiroCartaoCreditoService;
 use App\Services\Financeiro\FinanceiroService;
 use App\Services\Orders\OrderClosureService;
@@ -20,7 +22,8 @@ class FinanceiroController extends BaseApiController
     public function __construct(
         private readonly FinanceiroService $financeiroService,
         private readonly OrderClosureService $orderClosureService,
-        private readonly AdminCredentialVerifier $adminCredentialVerifier
+        private readonly AdminCredentialVerifier $adminCredentialVerifier,
+        private readonly EntradaPecaService $entradaPecaService
     ) {
     }
 
@@ -82,6 +85,13 @@ class FinanceiroController extends BaseApiController
     {
         $this->authorize('financeiro:criar');
 
+        // Autorização dupla quando a compra dá entrada no estoque (specs/039).
+        // `estoque:editar` e não `criar` porque o que se faz é mexer no saldo de
+        // peça que já existe — mesma escolha da 038.
+        if (filled($request->input('itens_estoque'))) {
+            $this->authorize('estoque:editar');
+        }
+
         try {
             $financeiro = $this->financeiroService->create($request->validated());
         } catch (Throwable $exception) {
@@ -131,6 +141,26 @@ class FinanceiroController extends BaseApiController
                 'Esta OS está encerrada. Títulos vinculados a uma OS encerrada não podem ser excluídos — use "Cancelar" para preservar o histórico e corrigir o status da OS.',
                 409,
                 'FINANCEIRO_DELETE_BLOCKED_OS_ENCERRADA',
+                null,
+                request: $request
+            );
+        }
+
+        // Exclusão é hard delete, e `movimentacoes.financeiro_id` não tem FK
+        // (nenhuma coluna daquela família legada tem). Este 409 é a única
+        // barreira contra movimentação órfã apontando para um título que não
+        // existe mais. "Cancelar" faz o certo: estorna a entrada e preserva o
+        // histórico.
+        $entradas = $this->entradaPecaService->contarEntradas((int) $financeiro->id);
+
+        if ($entradas > 0) {
+            return $this->error(
+                sprintf(
+                    'Este lançamento deu entrada de %d peça(s) no estoque e não pode ser excluído. Use "Cancelar" — o estoque é estornado junto e o histórico fica preservado.',
+                    $entradas
+                ),
+                409,
+                'FINANCEIRO_DELETE_BLOCKED_ENTRADA_ESTOQUE',
                 null,
                 request: $request
             );
@@ -229,13 +259,35 @@ class FinanceiroController extends BaseApiController
         if (! $this->resolveOsIsEncerrada($financeiro)) {
             // OS aberta (ou título sem OS vinculada): fluxo simples de sempre,
             // sem motivo nem confirmação de admin.
+            $entradas = $this->entradaPecaService->contarEntradas((int) $financeiro->id);
+
             try {
-                $financeiro = $this->financeiroService->cancel($financeiro);
+                $financeiro = $this->financeiroService->cancel(
+                    $financeiro,
+                    filter_var($request->input('confirmar_estoque_insuficiente', false), FILTER_VALIDATE_BOOL)
+                );
+            } catch (SaldoInsuficienteException $exception) {
+                // A peça comprada já saiu (aplicada em OS ou vendida). Estornar
+                // deixaria saldo negativo — decisão humana, como no PDV e na 038.
+                // O erro nomeia os ofensores: mensagem que não diz qual peça
+                // faltou obriga a caçar linha por linha.
+                return $this->error(
+                    'As peças deste lançamento já saíram do estoque. Cancelar vai deixar o saldo negativo.',
+                    422,
+                    'FINANCEIRO_CANCEL_ESTOQUE_INSUFICIENTE',
+                    ['itens' => $exception->faltas()],
+                    request: $request
+                );
             } catch (Throwable $exception) {
                 return $this->error($exception->getMessage(), 422, 'FINANCEIRO_CANCEL_FAILED', null, request: $request);
             }
 
-            return $this->success(['lancamento' => $financeiro], request: $request);
+            return $this->success([
+                'lancamento' => $financeiro,
+                // Quem cancelou precisa saber o que aconteceu com o estoque —
+                // inclusive que `preco_custo` NÃO voltou ao valor anterior.
+                'entradas_estornadas' => $entradas,
+            ], request: $request);
         }
 
         $validated = $request->validated();

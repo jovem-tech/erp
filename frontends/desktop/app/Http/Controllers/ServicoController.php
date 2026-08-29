@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
+use App\Services\FinanceiroPrecificacaoService;
 use App\Services\ServicoService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -17,8 +18,45 @@ use Throwable;
 class ServicoController extends DesktopController
 {
     public function __construct(
-        private readonly ServicoService $servicoService
+        private readonly ServicoService $servicoService,
+        private readonly FinanceiroPrecificacaoService $financeiroPrecificacaoService
     ) {
+    }
+
+    /**
+     * Preço sugerido para o cadastro de serviço (specs/037).
+     *
+     * Delega ao mesmo simulador da tela de precificação. A resposta traz a
+     * cadeia completa — mão de obra, custo direto, risco, divisor — que a tela
+     * renderiza para tornar `tempo_padrao_horas` um campo vivo: até aqui ele
+     * existia e nenhum cálculo real o lia.
+     */
+    public function suggestPrice(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'servico_id' => ['nullable', 'integer', 'min:1'],
+            'tempo_padrao_horas' => ['nullable', 'numeric', 'min:0'],
+            'custo_direto_padrao' => ['nullable', 'numeric', 'min:0'],
+            'valor_cadastro' => ['nullable', 'numeric', 'min:0'],
+            'tipo_equipamento' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        try {
+            $simulacao = $this->financeiroPrecificacaoService->simulateServico(
+                $this->normalizeMoneyPayload($validated, ['custo_direto_padrao', 'valor_cadastro'])
+            );
+        } catch (ApiAuthenticationException $exception) {
+            return $this->jsonFailure($exception->getMessage() ?: 'Sua sessão expirou. Faça login novamente.', 401);
+        } catch (ApiAuthorizationException $exception) {
+            return $this->jsonFailure($exception->getMessage() ?: 'Sem permissão para simular preços.', 403);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            // Sugestão é conveniência: falhar aqui não pode impedir o cadastro.
+            return $this->jsonFailure('Não foi possível calcular a sugestão agora.', 500);
+        }
+
+        return response()->json(['success' => true, 'simulation' => $simulacao]);
     }
 
     public function index(Request $request): View

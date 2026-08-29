@@ -66,6 +66,10 @@ class FinanceiroService
     }
 
     /**
+     * Devolve o envelope `data` inteiro, não só `lancamento`: o cancelamento
+     * também informa quantas entradas de estoque foram estornadas (specs/039),
+     * e a tela precisa disso para avisar que o custo das peças não voltou.
+     *
      * @param array<string, mixed> $payload
      * @return array<string, mixed>
      */
@@ -73,7 +77,7 @@ class FinanceiroService
     {
         $response = $this->apiClient->post('/financeiro/' . $id . '/cancelar', $payload);
 
-        return $response['data']['lancamento'] ?? [];
+        return $response['data'] ?? [];
     }
 
     /**

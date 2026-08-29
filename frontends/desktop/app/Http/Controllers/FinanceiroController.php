@@ -8,6 +8,7 @@ use App\Exceptions\ApiRequestException;
 use App\Services\ClientService;
 use App\Services\FinanceiroService;
 use App\Services\OrderService;
+use App\Services\StockService;
 use App\Services\SupplierService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -23,6 +24,7 @@ class FinanceiroController extends DesktopController
         private readonly ClientService $clientService,
         private readonly OrderService $orderService,
         private readonly SupplierService $supplierService,
+        private readonly StockService $stockService,
     ) {
     }
 
@@ -182,6 +184,70 @@ class FinanceiroController extends DesktopController
         ]);
     }
 
+    /**
+     * Busca de peças para a entrada de estoque do lançamento (specs/039).
+     *
+     * Espelha searchSuppliers() acima. Rota própria e não `vendas.items.search`:
+     * aquela mistura peça com serviço e exige `vendas:criar` — quem lança uma
+     * compra não é necessariamente quem opera o PDV.
+     */
+    public function searchParts(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q'        => ['nullable', 'string', 'max:100'],
+            'page'     => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:20'],
+        ]);
+
+        $search  = trim((string) ($validated['q'] ?? ''));
+        $page    = max(1, (int) ($validated['page'] ?? 1));
+        $perPage = max(1, min(20, (int) ($validated['per_page'] ?? 10)));
+
+        try {
+            $result = $this->stockService->paginate(array_filter([
+                'search'   => $search,
+                'page'     => $page,
+                'per_page' => $perPage,
+                // Peça encerrada não recebe compra nova.
+                'status'   => 'ativo',
+            ], static fn ($v): bool => $v !== '' && $v !== 0));
+        } catch (ApiAuthenticationException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 401);
+        } catch (ApiAuthorizationException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 403);
+        } catch (ApiRequestException $e) {
+            $status = $e->statusCode() > 0 ? $e->statusCode() : 422;
+            return response()->json(['success' => false, 'message' => $e->getMessage()], $status);
+        }
+
+        $parts = array_map(static function (array $part): array {
+            $id     = (int) ($part['id'] ?? 0);
+            $codigo = trim((string) ($part['codigo'] ?? ''));
+            $nome   = trim((string) ($part['nome'] ?? ''));
+            $label  = $codigo !== '' ? $codigo.' — '.$nome : $nome;
+
+            return [
+                'id'           => $id,
+                'text'         => $label !== '' ? $label : ('Peça #'.$id),
+                'codigo'       => $codigo,
+                'nome'         => $nome,
+                'unidade'      => trim((string) ($part['unidade'] ?? 'UN')),
+                'categoria'    => trim((string) ($part['categoria'] ?? '')),
+                // Pré-preenche o custo da linha e mostra "3 em estoque → 8".
+                // Menos digitação é o que decide a adoção (lição da 038).
+                'saldo'        => (float) ($part['quantidade_atual'] ?? 0),
+                'preco_custo'  => (float) ($part['preco_custo'] ?? 0),
+                'preco_venda'  => (float) ($part['preco_venda'] ?? 0),
+            ];
+        }, $result['items'] ?? []);
+
+        return response()->json([
+            'success'    => true,
+            'parts'      => $parts,
+            'pagination' => $result['pagination'] ?? [],
+        ]);
+    }
+
     public function index(Request $request): View
     {
         $filters = [
@@ -287,6 +353,26 @@ class FinanceiroController extends DesktopController
             $lancamento['data_compra'] = now()->toDateString();
         }
 
+        // Entrada "Entrada por compra" (tela de Estoque): já abre com a seção
+        // de peças ligada, para quem estava pensando em estoque não ter que
+        // descobrir que a porta fica no Financeiro.
+        //
+        // A categoria precisa vir junto: a seção de estoque só aparece na
+        // categoria de compra de peça, então sem isto o botão levaria a uma
+        // tela onde a seção prometida não está.
+        $entradaEstoquePreSelecionada = $request->boolean('entrada_estoque');
+        if ($entradaEstoquePreSelecionada) {
+            $lancamento['tipo'] = 'pagar';
+            $lancamento['categoria'] = $this->primeiraCategoriaDePeca($catalog['categorias'] ?? [])
+                ?? $lancamento['categoria'];
+        }
+
+        // `visualizar` E `editar`: a busca de peça bate em GET /estoque e a
+        // gravação exige editar. Com só um dos dois, a tela renderizaria um
+        // campo de busca que só devolve 403.
+        $canEntradaEstoque = \App\Support\DesktopSession::can('estoque', 'visualizar')
+            && \App\Support\DesktopSession::can('estoque', 'editar');
+
         return view('financeiro.create', [
             'pageTitle' => $tipoLocked ? 'Nova despesa' : 'Novo lançamento',
             'lancamento' => $lancamento,
@@ -296,7 +382,36 @@ class FinanceiroController extends DesktopController
             'formasPagamento' => $catalog['formas_pagamento'],
             'cartoesCredito' => $catalog['cartoes_credito'] ?? [],
             'canQuickClient' => \App\Support\DesktopSession::can('clientes', 'criar'),
+            'canEntradaEstoque' => $canEntradaEstoque,
+            // Separado, espelhando $canQuickClient: quem pode dar entrada mas
+            // não pode cadastrar peça vê a busca sem o botão "+".
+            'canQuickPeca' => \App\Support\DesktopSession::can('estoque', 'criar'),
+            'entradaEstoqueLigada' => $entradaEstoquePreSelecionada,
         ]);
+    }
+
+    /**
+     * Categoria de compra de peça, pelo GRUPO de DRE e não pelo nome.
+     *
+     * Hoje só "Compra de peças" está em "Custo Direto (OS)", mas o catálogo já
+     * prevê "Compra emergencial de peças" — casar pelo nome exigiria lembrar de
+     * mexer aqui, e ninguém lembraria.
+     *
+     * @param  array<int, array<string, mixed>>  $categorias
+     */
+    private function primeiraCategoriaDePeca(array $categorias): ?string
+    {
+        foreach ($categorias as $categoria) {
+            if (($categoria['dre_grupo']['nome'] ?? null) === 'Custo Direto (OS)') {
+                $nome = trim((string) ($categoria['nome'] ?? ''));
+
+                if ($nome !== '') {
+                    return $nome;
+                }
+            }
+        }
+
+        return null;
     }
 
     public function show(int $financeiro): View|RedirectResponse
@@ -488,21 +603,60 @@ class FinanceiroController extends DesktopController
             'admin_password' => (string) $request->input('admin_password', ''),
         ], static fn ($value): bool => $value !== '');
 
+        // Cancelar estorna as entradas de estoque que o lançamento gerou
+        // (specs/039). Se a peça já saiu, o backend recusa nomeando as peças e
+        // o operador precisa reconfirmar — decisão humana, não do sistema.
+        if ($request->boolean('confirmar_estoque_insuficiente')) {
+            $payload['confirmar_estoque_insuficiente'] = true;
+        }
+
         try {
-            $this->financeiroService->cancel($financeiro, $payload);
+            $resultado = $this->financeiroService->cancel($financeiro, $payload);
         } catch (ApiAuthenticationException $exception) {
             return redirect()->route('login')->with('error', $exception->getMessage());
         } catch (ApiAuthorizationException $exception) {
             return redirect()->route('financeiro.index')->with('error', $exception->getMessage());
         } catch (ApiRequestException $exception) {
+            $detalhes = $exception->details();
+
+            // Saldo insuficiente para estornar: mostra quais peças e oferece a
+            // reconfirmação, em vez de deixar o operador num beco sem saída.
+            if (is_array($detalhes) && ($detalhes['itens'] ?? []) !== []) {
+                $nomes = collect($detalhes['itens'])
+                    ->map(static fn (array $item): string => sprintf(
+                        '%s (tem %s, precisa de %s)',
+                        trim((string) ($item['codigo'] ?? '') . ' ' . (string) ($item['nome'] ?? '')) ?: 'Peça #' . ($item['peca_id'] ?? '?'),
+                        rtrim(rtrim(number_format((float) ($item['disponivel'] ?? 0), 4, ',', '.'), '0'), ','),
+                        rtrim(rtrim(number_format((float) ($item['solicitado'] ?? 0), 4, ',', '.'), '0'), ','),
+                    ))
+                    ->implode('; ');
+
+                return redirect()
+                    ->to($this->successTarget($request, $financeiro))
+                    ->with('error', $exception->getMessage() . ' ' . $nomes)
+                    ->with('estoque_insuficiente_financeiro_id', $financeiro);
+            }
+
             return redirect()
                 ->to($this->successTarget($request, $financeiro))
                 ->with('error', $exception->getMessage());
         }
 
+        $estornadas = (int) ($resultado['entradas_estornadas'] ?? 0);
+
+        $mensagem = $estornadas > 0
+            // O custo não volta: não existe histórico do valor anterior, e
+            // adivinhar seria pior que não mexer. Dizer isso é obrigação — quem
+            // cancelou precisa saber o que ficou para trás.
+            ? sprintf(
+                'Lançamento cancelado e %d entrada(s) de estoque estornada(s). O custo de cadastro das peças NÃO foi revertido.',
+                $estornadas
+            )
+            : 'Lançamento cancelado com sucesso.';
+
         return redirect()
             ->to($this->successTarget($request, $financeiro))
-            ->with('success', 'Lançamento cancelado com sucesso.');
+            ->with('success', $mensagem);
     }
 
     public function pay(Request $request, int $financeiro): RedirectResponse
@@ -609,6 +763,25 @@ class FinanceiroController extends DesktopController
      */
     private function validatedPayload(Request $request): array
     {
+        // Linhas em branco saem ANTES da validação, não depois.
+        //
+        // A tabela de peças sempre tem pelo menos uma linha vazia esperando
+        // preenchimento, e o operador pode clicar "Adicionar peça" e não usar a
+        // linha. Se essas chegarem ao `validate()`, o `min:1` do peca_id reprova
+        // o lançamento inteiro por causa de uma linha que ninguém preencheu.
+        $itensBrutos = $request->input('itens_estoque');
+
+        if (is_array($itensBrutos)) {
+            $request->merge([
+                'itens_estoque' => array_values(array_filter(
+                    $itensBrutos,
+                    static fn ($item): bool => is_array($item)
+                        && (int) ($item['peca_id'] ?? 0) > 0
+                        && (float) ($item['quantidade'] ?? 0) > 0
+                )),
+            ]);
+        }
+
         $validated = $request->validate([
             'tipo' => ['required', 'string', 'in:receber,pagar'],
             'categoria' => ['required', 'string', 'max:50'],
@@ -629,8 +802,18 @@ class FinanceiroController extends DesktopController
             'avulso' => ['nullable', 'boolean'],
             'dre_fixo_mensal' => ['nullable', 'boolean'],
             'repetir_proximos_meses' => ['nullable', 'boolean'],
+            // Entrada no estoque (specs/039). A regra de negócio (só "pagar",
+            // só criação, soma ≤ valor) é do backend — aqui só o formato, para
+            // não duplicar a fonte da verdade.
+            'entrada_estoque' => ['nullable', 'boolean'],
+            'itens_estoque' => ['nullable', 'array', 'max:50'],
+            'itens_estoque.*.peca_id' => ['required', 'integer', 'min:1'],
+            'itens_estoque.*.quantidade' => ['required', 'numeric', 'min:0.0001', 'max:999999'],
+            'itens_estoque.*.custo_unitario' => ['nullable', 'numeric', 'min:0', 'max:99999999.99'],
+            'itens_estoque.*.preco_venda' => ['nullable', 'numeric', 'min:0', 'max:99999999.99'],
         ], [], [
             'tipo' => 'tipo',
+            'itens_estoque' => 'peças da entrada',
             'categoria' => 'categoria',
             'descricao' => 'descrição',
             'valor' => 'valor',
@@ -679,6 +862,25 @@ class FinanceiroController extends DesktopController
         } else {
             unset($validated['repetir_proximos_meses']);
         }
+
+        // A seção de estoque fica montada na tela mesmo desligada (o operador
+        // pode ter preenchido linhas e depois desmarcado o switch). O switch é
+        // que decide se as peças viajam — sem esta guarda, desmarcar não
+        // desmarcaria nada e a compra entraria no estoque assim mesmo.
+        //
+        // Em edição nunca viaja: o backend recusa `itens_estoque` em PUT/PATCH
+        // com 422, e mandar só para colher o erro seria ruído.
+        $entradaLigada = $request->boolean('entrada_estoque')
+            && $validated['tipo'] === 'pagar'
+            && $request->isMethod('post');
+
+        // As linhas em branco já saíram antes do validate(); aqui só resta
+        // decidir se as que sobraram viajam.
+        if (! $entradaLigada || ($validated['itens_estoque'] ?? []) === []) {
+            unset($validated['itens_estoque']);
+        }
+
+        unset($validated['entrada_estoque']);
 
         return $validated;
     }

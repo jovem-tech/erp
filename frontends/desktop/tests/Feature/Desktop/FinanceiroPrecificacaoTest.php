@@ -38,6 +38,50 @@ class FinanceiroPrecificacaoTest extends TestCase
     }
 
     /**
+     * Os campos de precificacao sao os mais tecnicos do sistema e o dono
+     * precisa preenche-los sozinho. Cada rotulo carrega um "?" com tooltip
+     * dizendo para que o campo serve e como preenche-lo bem — sem isso a tela
+     * so faz sentido para quem ja sabe contabilidade de custos.
+     *
+     * O teste olha o atributo `data-bs-title`, nao o texto visivel: e ele que
+     * o Bootstrap injeta no balao. Um `title=` nativo nao serve (demora ~1s,
+     * nao aceita HTML, nao abre no foco por teclado).
+     */
+    public function test_campos_de_precificacao_trazem_ajuda_no_rotulo(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->notificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/precificacao' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'precificacao' => $this->precificacaoDataset(),
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'precificacao' => ['visualizar', 'editar'],
+            ]))
+            ->get('/financeiro/precificacao?tab=configuracao');
+
+        $response->assertOk()
+            ->assertSee('data-bs-toggle="tooltip"', false)
+            // O custo-hora e o campo que o dono mais erra: sem a ajuda ele
+            // digita um numero de cabeca em vez de lancar o custo fixo.
+            ->assertSee('uma hora da sua bancada', false)
+            // A taxa de recebimento ja foi confundida com imposto na pratica.
+            ->assertSee('maquininha', false)
+            ->assertSee('Não é imposto', false)
+            // "Aplicar piso" e um interruptor que ainda nao age: a ajuda tem
+            // de dizer isso, senao o dono liga e confia num bloqueio que nao
+            // existe.
+            ->assertSee('Este botão ainda não age', false);
+    }
+
+    /**
      * O regime tributario e o que decide se o imposto desconta da margem de
      * cada OS (Simples) ou entra nos custos fixos (MEI, DAS fixo mensal). Com
      * MEI selecionado a tela precisa dizer isso — senao o operador enche o

@@ -36,6 +36,7 @@ use App\Http\Controllers\Api\V1\HealthController;
 use App\Http\Controllers\Api\V1\KnowledgeController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\OrderController;
+use App\Http\Controllers\Api\V1\OrderStockController;
 use App\Http\Controllers\Api\V1\OrderStatusFlowController;
 use App\Http\Controllers\Api\V1\OsPdfTemplateController;
 use App\Http\Controllers\Api\V1\PdfTemplateEngineController;
@@ -467,6 +468,15 @@ Route::prefix('v1')->group(function (): void {
         Route::get('orders/{order}/documents/{document}', [OrderController::class, 'document'])->name('api.v1.orders.documents.show');
         Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus'])->name('api.v1.orders.status.update');
         Route::post('orders/{order}/procedures', [OrderController::class, 'storeProcedure'])->name('api.v1.orders.procedures.store');
+        // Aplicacao de peca na OS (specs/038) — o caminho que faz o CMV deixar
+        // de ser zero. Estatica antes da paramétrica nao se aplica aqui: ambas
+        // sao paramétricas e o sufixo difere.
+        Route::get('orders/{order}/estoque', [OrderStockController::class, 'show'])
+            ->whereNumber('order')
+            ->name('api.v1.orders.estoque.show');
+        Route::post('orders/{order}/estoque/aplicar', [OrderStockController::class, 'apply'])
+            ->whereNumber('order')
+            ->name('api.v1.orders.estoque.apply');
         Route::get('orders/{order}/closure', [OrderController::class, 'closureMetadata'])->name('api.v1.orders.closure.metadata');
         Route::post('orders/{order}/closure', [OrderController::class, 'close'])->name('api.v1.orders.closure.store');
         Route::post('orders/{order}/closure/cancel', [OrderController::class, 'cancelClosure'])->name('api.v1.orders.closure.cancel');

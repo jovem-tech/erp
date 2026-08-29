@@ -43,6 +43,60 @@ class VendaTest extends TestCase
             ->assertSee('vendas-pdv.js', false);
     }
 
+    /**
+     * Varredura de visibilidade — specs/037, Fase 5.
+     *
+     * Custo e margem apareciam na listagem e no detalhe da venda para qualquer
+     * um com `vendas:visualizar` — inclusive o balconista. É o mesmo dado que o
+     * dono acabou de decidir proteger no PDV e no orçamento.
+     */
+    public function test_listagem_esconde_o_card_de_margem_de_quem_nao_ve_financeiro(): void
+    {
+        Http::fake($this->fixtures());
+
+        // Sem `financeiro:visualizar`.
+        $this->withSession($this->desktopSession(['vendas' => ['visualizar']]))
+            ->get('/vendas')
+            ->assertOk()
+            ->assertSee('Total vendido')
+            ->assertDontSee('Margem');
+
+        // Com permissão financeira o card volta.
+        $this->withSession($this->desktopSession([
+            'vendas' => ['visualizar'],
+            'financeiro' => ['visualizar'],
+        ]))
+            ->get('/vendas')
+            ->assertOk()
+            ->assertSee('Margem');
+    }
+
+    /**
+     * Margem no PDV — specs/037-precificacao-integrada-ao-fluxo.
+     *
+     * O backend sempre calculou custo e margem e mandava para o navegador; o JS
+     * descartava (`grep custo vendas-pdv.js` nao devolvia nada). O operador
+     * dava desconto as cegas. Estes sao os ganchos que passaram a existir.
+     */
+    public function test_pdv_tem_os_ganchos_de_margem_e_aviso_de_piso(): void
+    {
+        Http::fake($this->fixtures());
+
+        $this->withSession($this->desktopSession(['vendas' => ['visualizar', 'criar']]))
+            ->get('/vendas/nova')
+            ->assertOk()
+            // Margem por linha vive DENTRO da celula de total: o PDV roda em
+            // tela cheia e uma setima coluna nao caberia.
+            ->assertSee('pdv-item-margem', false)
+            ->assertSee('pdv-item-total', false)
+            // Resumo de custo/margem no rodape, escondido ate o backend
+            // confirmar que este usuario pode ver numero.
+            ->assertSee('id="pdvCustoTotal"', false)
+            ->assertSee('id="pdvMargemTotal"', false)
+            // O aviso de piso vale para todos, inclusive quem nao ve o numero.
+            ->assertSee('id="pdvAvisoPiso"', false);
+    }
+
     public function test_pdv_ocupa_a_tela_inteira_com_a_sidebar_recolhida(): void
     {
         Http::fake($this->fixtures());

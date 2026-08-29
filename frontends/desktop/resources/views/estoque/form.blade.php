@@ -128,6 +128,10 @@
                 <label for="preco_venda">Venda</label>
                 <input type="number" id="preco_venda" name="preco_venda" class="form-control @error('preco_venda') is-invalid @enderror" value="{{ old('preco_venda', $part['preco_venda']) }}" min="0" step="0.01">
                 @error('preco_venda')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                {{-- Preço sugerido (specs/037). Em peça nova com o campo vazio, a
+                     sugestão preenche sozinha; havendo qualquer digitação, ela vira
+                     dica com botão — nunca sobrescreve o que o operador escreveu. --}}
+                <div class="form-text d-none" id="precoSugestao"></div>
             </div>
 
             <div>
@@ -230,4 +234,17 @@
             </div>
         </form>
     </section>
+@endsection
+
+@section('scripts')
+    <script>
+        window.__DESKTOP_ESTOQUE_FORM = {
+            sugerirPrecoUrl: @json(route('estoque.suggest-price')),
+            csrf: @json(csrf_token()),
+            // Modo edição: a peça já tem preço decidido, e a sugestão nunca
+            // pode sobrescrevê-lo.
+            edicao: @json(($mode ?? 'create') === 'edit'),
+        };
+    </script>
+    <script src="{{ asset('assets/js/estoque-form.js') }}?v={{ filemtime(public_path('assets/js/estoque-form.js')) }}-{{ filesize(public_path('assets/js/estoque-form.js')) }}"></script>
 @endsection

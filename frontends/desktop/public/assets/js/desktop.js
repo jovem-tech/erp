@@ -2242,6 +2242,43 @@ const DesktopUi = (() => {
         });
     };
 
+    // Tooltips de ajuda de campo. O Bootstrap 5 nao inicializa tooltip
+    // sozinho (ao contrario do 4), entao sem esta funcao todo
+    // `data-bs-toggle="tooltip"` da aplicacao vira apenas o balao nativo do
+    // navegador — que demora ~1s, nao aceita HTML e nao aparece no foco por
+    // teclado. Aqui eles viram tooltip de verdade, com `focus` incluso no
+    // trigger para funcionar em toque e em navegacao por Tab.
+    const initFieldTooltips = (container = document) => {
+        if (typeof bootstrap === 'undefined' || typeof bootstrap.Tooltip !== 'function') {
+            return;
+        }
+
+        const scope = container instanceof Document || container instanceof Element ? container : document;
+
+        scope.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {
+            if (el.dataset.tooltipBound === '1') {
+                return;
+            }
+            el.dataset.tooltipBound = '1';
+
+            try {
+                new bootstrap.Tooltip(el, {
+                    html: el.dataset.bsHtml === 'true',
+                    // `click` fecha o balao ao tocar de novo no proprio icone;
+                    // sem ele, em toque o tooltip fica presa ate o proximo tap
+                    // fora do elemento.
+                    trigger: 'hover focus click',
+                    placement: el.dataset.bsPlacement || 'top',
+                    container: 'body',
+                    boundary: 'viewport',
+                    customClass: 'campo-ajuda-tip',
+                });
+            } catch (error) {
+                logError('initFieldTooltips', error);
+            }
+        });
+    };
+
     const initDropdowns = (container = document) => {
         if (typeof bootstrap === 'undefined' || typeof bootstrap.Dropdown !== 'function') {
             return;
@@ -2331,12 +2368,14 @@ const DesktopUi = (() => {
         initSearchAutocomplete();
         initPhotoFallbacks();
         initDropdowns();
+        initFieldTooltips();
     };
 
     return {
         init,
         refreshSelect2,
         refreshDropdowns: initDropdowns,
+        refreshFieldTooltips: initFieldTooltips,
         refreshPhotoViewers: initPhotoViewers,
         refreshPhotoFallbacks: initPhotoFallbacks,
         logError,

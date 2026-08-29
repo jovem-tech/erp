@@ -29,7 +29,7 @@
         attentionSlot: el('[data-dashboard-attention-slot]'),
         openOrdersCard: el('[data-dashboard-open-orders-card]'),
         heroCard: el('[data-dashboard-hero-card]'),
-        deliveredCard: el('[data-dashboard-delivered-card]'),
+        secondaryCard: el('[data-dashboard-secondary-card]'),
         summaryCard: el('[data-dashboard-summary-card]'),
         contextPanel: el('[data-dashboard-context-panel]'),
         ordersSlot: el('[data-dashboard-orders-slot]'),
@@ -140,7 +140,6 @@
         const trend = summary?.revenueTrend || null;
 
         setText(nodes.openOrdersCard?.querySelector('[data-dashboard-open-orders-value]'), formatNumber(stats.orders ?? 0));
-        setText(nodes.deliveredCard?.querySelector('[data-dashboard-delivered-value]'), formatNumber(stats.equipamento_entregue_total ?? 0));
 
         if (nodes.heroCard) {
             const value = nodes.heroCard.querySelector('[data-dashboard-hero-value]');
@@ -188,6 +187,41 @@
                     action.setAttribute('aria-hidden', 'true');
                     action.setAttribute('tabindex', '-1');
                     action.href = '#';
+                }
+            }
+        }
+
+        if (nodes.secondaryCard) {
+            const card = summary?.secondaryCard || {};
+            const value = nodes.secondaryCard.querySelector('[data-dashboard-secondary-value]');
+            const icon = nodes.secondaryCard.querySelector('[data-dashboard-secondary-icon]');
+            const trendNode = nodes.secondaryCard.querySelector('[data-dashboard-secondary-trend]');
+
+            nodes.secondaryCard.style.setProperty('--dashboard-accent', card.accent || '#f59e0b');
+            setText(nodes.secondaryCard.querySelector('[data-dashboard-secondary-label]'), card.label || 'Equipamento entregue');
+            setText(
+                nodes.secondaryCard.querySelector('[data-dashboard-secondary-meta]'),
+                card.meta || 'Ordens concluídas e baixadas com entrega técnica registrada.'
+            );
+
+            if (value) {
+                value.textContent = card.value_type === 'money' ? formatMoney(card.value ?? 0) : formatNumber(card.value ?? 0);
+            }
+
+            if (icon) {
+                icon.className = `bi ${card.icon || 'bi-box2-heart-fill'} dashboard-kpi-icon`;
+            }
+
+            // "good" já vem invertido do backend: para despesa, cair é a
+            // notícia boa (verde), diferente da tendência de faturamento.
+            if (trendNode) {
+                const cardTrend = card.trend;
+                if (cardTrend) {
+                    trendNode.textContent = cardTrend.label;
+                    trendNode.className = `dashboard-kpi-trend is-${cardTrend.good ? 'up' : 'down'}`;
+                    trendNode.hidden = false;
+                } else {
+                    trendNode.hidden = true;
                 }
             }
         }

@@ -81,6 +81,30 @@ class Financeiro extends Model
         return FinanceiroFormaPagamento::options();
     }
 
+    /**
+     * O que conta como CUSTO FIXO no DRE.
+     *
+     * Definicao unica, compartilhada entre o DRE gerencial
+     * (FinanceiroReportService) e o custo-hora produtiva
+     * (CustoHoraService). Duplicar "o que e custo fixo" em dois lugares
+     * significaria, mais cedo ou mais tarde, um ponto de equilibrio que nao
+     * bate com o preco cobrado — exatamente o descompasso que specs/037 veio
+     * corrigir.
+     *
+     * A JANELA fica de fora de proposito: os dois consumidores precisam de
+     * recortes diferentes. O DRE soma todo fixo com vencimento ate o fim do
+     * mes (heuristica de "recorrente ainda vigente"); o custo-hora precisa de
+     * limite inferior, ou somaria anos de aluguel num mes so.
+     */
+    public function scopeFixasDre(Builder $query): Builder
+    {
+        return $query
+            ->where('tipo', self::TIPO_PAGAR)
+            ->where('status', '!=', self::STATUS_CANCELADO)
+            ->where('impacta_dre', true)
+            ->where('dre_fixo_mensal', true);
+    }
+
     public function scopeWithFilters(Builder $query, array $filters): Builder
     {
         $tipo = trim((string) ($filters['tipo'] ?? ''));

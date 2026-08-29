@@ -200,7 +200,10 @@ class FileScanService
             ])->save();
         }
 
-        return $run->fresh('findings') ?? $run;
+        $fresh = $run->fresh('findings') ?? $run;
+        $fresh->discardIfUneventful();
+
+        return $fresh;
     }
 
     /**

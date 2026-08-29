@@ -67,6 +67,9 @@
                 <label for="valor">Valor</label>
                 <input type="number" id="valor" name="valor" class="form-control @error('valor') is-invalid @enderror" value="{{ old('valor', $service['valor']) }}" min="0" step="0.01">
                 @error('valor')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                {{-- Preço sugerido (specs/037). Mesma regra do cadastro de peça:
+                     preenche o campo vazio, nunca sobrescreve digitação. --}}
+                <div class="form-text d-none" id="precoSugestao"></div>
             </div>
 
             <div>
@@ -76,9 +79,23 @@
             </div>
 
             <div>
-                <label for="custo_direto_padrao">Custo direto padrão</label>
+                <label for="custo_direto_padrao">Custo de materiais por execução</label>
                 <input type="number" id="custo_direto_padrao" name="custo_direto_padrao" class="form-control @error('custo_direto_padrao') is-invalid @enderror" value="{{ old('custo_direto_padrao', $service['custo_direto_padrao']) }}" min="0" step="0.01">
                 @error('custo_direto_padrao')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                {{-- Nada dizia ao operador se mão de obra entrava aqui, e metade
+                     dos cadastros a incluía — o que dupla-contaria contra
+                     tempo × custo-hora. O rótulo é a correção (specs/037). --}}
+                <p class="form-text mb-0">
+                    Só materiais e consumíveis (pasta térmica, cola, fita). <strong>Não inclua mão de obra</strong>
+                    — ela é calculada a partir do tempo padrão × custo-hora.
+                </p>
+            </div>
+
+            {{-- Cadeia de custo: é literalmente a saída que o motor já produz.
+                 Torna `tempo_padrao_horas` um campo vivo — até aqui ele existia
+                 e nenhum cálculo real o lia. --}}
+            <div class="col-span-full">
+                <div class="surface-card p-3 d-none" id="cadeiaCusto"></div>
             </div>
 
             <div>
@@ -99,4 +116,15 @@
             </div>
         </form>
     </section>
+@endsection
+
+@section('scripts')
+    <script>
+        window.__DESKTOP_SERVICO_FORM = {
+            sugerirPrecoUrl: @json(route('servicos.suggest-price')),
+            csrf: @json(csrf_token()),
+            edicao: @json(($mode ?? 'create') === 'edit'),
+        };
+    </script>
+    <script src="{{ asset('assets/js/servicos-form.js') }}?v={{ filemtime(public_path('assets/js/servicos-form.js')) }}-{{ filesize(public_path('assets/js/servicos-form.js')) }}"></script>
 @endsection

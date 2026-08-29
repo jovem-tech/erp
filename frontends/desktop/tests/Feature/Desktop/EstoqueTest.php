@@ -63,6 +63,38 @@ class EstoqueTest extends TestCase
     }
 
     /**
+     * Preço sugerido no cadastro — specs/037, Fase 2.
+     *
+     * O formulário não tinha uma linha de JavaScript: `preco_venda` era
+     * digitação livre e o operador fazia custo × margem de cabeça. O campo
+     * *código* já tinha sugestão automática; o preço, que dá o lucro, não.
+     */
+    public function test_formulario_de_peca_carrega_a_sugestao_de_preco(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/estoque/form-data' => Http::response([
+                'status' => 'success',
+                'data' => ['form' => ['tipos_equipamento' => [], 'status_options' => []]],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['estoque' => ['visualizar', 'criar']]))
+            ->get('/estoque/novo');
+
+        $response->assertOk()
+            ->assertSee('id="precoSugestao"', false)
+            ->assertSee('estoque-form.js', false)
+            ->assertSee('sugerirPrecoUrl', false)
+            // Modo criação: a regra do "sujo" precisa saber que pode
+            // pré-preencher o campo vazio.
+            ->assertSee('edicao: false', false);
+    }
+
+    /**
      * Mesma forma usada pelas demais suites de desktop (o helper e privado por
      * classe neste repositorio, nao um trait compartilhado).
      *

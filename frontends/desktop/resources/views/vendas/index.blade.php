@@ -99,7 +99,13 @@
                 ['rotulo' => 'Total vendido', 'valor' => $money($summary['total_vendido'] ?? 0), 'icone' => 'bi-cash-coin'],
                 ['rotulo' => 'Vendas', 'valor' => number_format((int) ($summary['total_vendas'] ?? 0), 0, ',', '.'), 'icone' => 'bi-receipt'],
                 ['rotulo' => 'Ticket médio', 'valor' => $money($summary['ticket_medio'] ?? 0), 'icone' => 'bi-graph-up'],
-                ['rotulo' => 'Margem', 'valor' => $money($summary['total_margem'] ?? 0) . ' (' . number_format((float) ($summary['margem_percentual'] ?? 0), 2, ',', '.') . '%)', 'icone' => 'bi-percent'],
+                // O card de margem so existe para quem tem permissao financeira
+                // (specs/037): ate aqui aparecia para qualquer um que abrisse a
+                // listagem de vendas.
+                ...((\App\Support\DesktopSession::can('financeiro', 'visualizar')
+                    || \App\Support\DesktopSession::can('precificacao', 'visualizar'))
+                    ? [['rotulo' => 'Margem', 'valor' => $money($summary['total_margem'] ?? 0) . ' (' . number_format((float) ($summary['margem_percentual'] ?? 0), 2, ',', '.') . '%)', 'icone' => 'bi-percent']]
+                    : []),
             ] as $card)
                 <div class="col-12 col-sm-6 col-xl-3">
                     <div class="surface-card h-100">

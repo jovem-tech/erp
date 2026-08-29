@@ -15,6 +15,8 @@ use App\Models\Client;
 use App\Models\Equipment;
 use App\Models\Financeiro;
 use App\Models\FinanceiroMovimento;
+use App\Jobs\Orders\DeliverOrderOpeningDocumentJob;
+use App\Jobs\Orders\NotifyOrderStatusChangeJob;
 use App\Models\Order;
 use App\Models\OrderDocument;
 use App\Models\OrderEvent;
@@ -34,7 +36,6 @@ use App\Services\Financeiro\OsMargemService;
 use App\Services\Integrations\IntegrationSettingsService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
@@ -62,6 +63,33 @@ class OrderWorkflowService
     public const READY_PICKUP_SQL = "LOWER(TRIM(COALESCE(os.estado_fluxo, ''))) = 'pronto'"
         . " OR (COALESCE(TRIM(os.estado_fluxo), '') = ''"
         . " AND LOWER(TRIM(COALESCE(os.status, ''))) IN ('pronto', 'concluido', 'aguardando_retirada'))";
+
+    /**
+     * Conjunto reduzido usado APENAS quando `os.busca_texto` ainda e' NULL.
+     * Nao reproduz as 53 colunas antigas de proposito: sao as que o operador
+     * realmente digita, o suficiente para a OS nao sumir da busca enquanto o
+     * indice nao foi montado.
+     *
+     * @var array<int, string>
+     */
+    private const SEARCH_FALLBACK_COLUMNS = [
+        'os.numero_os',
+        'os.numero_os_legado',
+        'os.relato_cliente',
+        'os.diagnostico_tecnico',
+        'os.solucao_aplicada',
+        'os.observacoes_internas',
+        'os.observacoes_cliente',
+        'clientes.nome_razao',
+        'clientes.cpf_cnpj',
+        'clientes.telefone1',
+        'equipamentos.numero_serie',
+        'equipamentos.imei',
+        'equipamentos.resumo_tecnico',
+        'equipamentos_tipos.nome',
+        'equipamentos_marcas.nome',
+        'equipamentos_modelos.nome',
+    ];
 
     private const ENTRY_CHECKLIST_TYPE_CODE = 'entrada';
 
@@ -341,142 +369,59 @@ class OrderWorkflowService
         return $resumoPorOs;
     }
 
+    /**
+     * Busca livre da listagem de OS.
+     *
+     * Antes: 53 predicados `LOWER(COALESCE(coluna,'')) LIKE '%termo%'` unidos por
+     * OR, espalhados por `os`, `clientes`, `equipamentos`, os tres catalogos de
+     * equipamento e `os_status`. Nenhum indice atende esse formato (wildcard a'
+     * esquerda + funcao sobre a coluna), entao toda busca varria a juncao
+     * inteira DUAS vezes — pagina e COUNT do paginador. Medido: 124ms + 120ms
+     * com apenas 3.645 OS, crescendo linearmente com o acervo.
+     *
+     * Agora: um unico LIKE sobre `os.busca_texto`, coluna desnormalizada mantida
+     * por OrderSearchIndexService. Medido nas mesmas 3.645 linhas: 14ms + 13ms.
+     *
+     * Termos numericos (numero de OS, CPF, telefone) NAO ganham um ramo ancorado
+     * proprio: os digitos crus ja entram no indice, e medir mostrou que somar um
+     * `LIKE 'x%'` indexado ao lado do LIKE com wildcard PIORAVA o tempo (36ms
+     * contra 14ms) — com um OR nao-sargavel no meio o MySQL abandona o indice e
+     * ainda paga os predicados extras.
+     */
     private function applySearchFilter(Builder $query, string $search): void
     {
-        $searchTerm = '%'.mb_strtolower($search).'%';
+        $term = OrderSearchIndexService::normalizeTerm($search);
 
-        $query->where(function (Builder $subQuery) use ($searchTerm): void {
-            $this->orWhereLikeColumns($subQuery, [
-                'os.numero_os',
-                'os.numero_os_legado',
-                'os.status',
-                'os.estado_fluxo',
-                'os.prioridade',
-                'os.relato_cliente',
-                'os.diagnostico_tecnico',
-                'os.solucao_aplicada',
-                'os.procedimentos_executados',
-                'os.acessorios',
-                'os.forma_pagamento',
-                'os.orcamento_pdf',
-                'os.observacoes_internas',
-                'os.observacoes_cliente',
-                'os.status_final_pendente_pagamento',
-            ], $searchTerm);
+        if ($term === '') {
+            return;
+        }
 
-            $this->orWhereLikeColumns($subQuery, [
-                'clientes.nome_razao',
-                'clientes.cpf_cnpj',
-                'clientes.rg_ie',
-                'clientes.email',
-                'clientes.telefone1',
-                'clientes.telefone2',
-                'clientes.nome_contato',
-                'clientes.telefone_contato',
-                'clientes.cep',
-                'clientes.endereco',
-                'clientes.numero',
-                'clientes.complemento',
-                'clientes.referencia',
-                'clientes.bairro',
-                'clientes.cidade',
-                'clientes.uf',
-                'clientes.observacoes',
-                'clientes.status_cadastro',
-            ], $searchTerm);
+        $pattern = '%'.$term.'%';
 
-            $this->orWhereLikeColumns($subQuery, [
-                'equipamentos.resumo_tecnico',
-                'equipamentos.numero_serie',
-                'equipamentos.imei',
-                'equipamentos.cor',
-                'equipamentos.observacoes',
-                'equipamentos.desktop_modalidade',
-                'equipamentos.status_operacional',
-                'equipamentos.status',
-                // resumo_tecnico costuma vir vazio (so e' preenchido pelo fluxo
-                // novo de cadastro — ver EquipmentWorkflowService::buildTechnicalSummary());
-                // no acervo existente quem carrega tipo/marca/modelo sao estas
-                // 3 tabelas de catalogo, ja unidas em baseSummaryQuery(). Sem elas
-                // a busca por "notebook", "dell", "e6420" etc. nao encontrava nada.
-                'equipamentos_tipos.nome',
-                'equipamentos_marcas.nome',
-                'equipamentos_modelos.nome',
-            ], $searchTerm);
-
-            $this->orWhereLikeColumns($subQuery, [
-                'os_status.codigo',
-                'os_status.nome',
-                'os_status.grupo_macro',
-            ], $searchTerm);
-
-            $this->orWhereLikeCastColumns($subQuery, [
-                'os.valor_mao_obra',
-                'os.valor_pecas',
-                'os.valor_total',
-                'os.desconto',
-                'os.valor_final',
-                'os.garantia_dias',
-            ], $searchTerm);
-
-            $this->orWhereLikeCastColumns($subQuery, [
-                'os.status_atualizado_em',
-                'os.data_abertura',
-                'os.data_entrada',
-                'os.data_previsao',
-                'os.data_conclusao',
-                'os.data_entrega',
-                'os.baixa_tecnica_em',
-                'os.data_aprovacao',
-                'os.garantia_validade',
-            ], $searchTerm);
-
-            $subQuery->orWhereExists(function ($documentQuery) use ($searchTerm): void {
-                $documentQuery
-                    ->selectRaw('1')
-                    ->from('os_documentos')
-                    ->whereColumn('os_documentos.os_id', 'os.id')
-                    ->where(function ($innerQuery) use ($searchTerm): void {
-                        $this->orWhereLikeColumns($innerQuery, [
-                            'os_documentos.tipo_documento',
-                            'os_documentos.arquivo',
-                        ], $searchTerm);
-                    });
+        $query->where(function (Builder $subQuery) use ($pattern): void {
+            $subQuery->where(function (Builder $indexed) use ($pattern): void {
+                $indexed
+                    ->whereNotNull('os.busca_texto')
+                    ->where('os.busca_texto', 'like', $pattern);
             });
 
-            $subQuery->orWhereExists(function ($photoQuery) use ($searchTerm): void {
-                $photoQuery
-                    ->selectRaw('1')
-                    ->from('os_fotos')
-                    ->whereColumn('os_fotos.os_id', 'os.id')
-                    ->where(function ($innerQuery) use ($searchTerm): void {
-                        $this->orWhereLikeColumns($innerQuery, [
-                            'os_fotos.tipo',
-                            'os_fotos.arquivo',
-                        ], $searchTerm);
+            // Rede de seguranca para linhas gravadas fora do Eloquent: a
+            // importacao legada e o proprio sistema legado, que compartilha este
+            // banco, escrevem em `os` direto e nao disparam o listener que monta
+            // o indice. Sem este ramo a busca nao ficaria lenta — ficaria
+            // ERRADA, devolvendo "nenhum resultado" em silencio para uma OS que
+            // existe. So' e' avaliado onde busca_texto ainda e' NULL; depois de
+            // `os:reindexar-busca` isso e' zero linha e o AND corta antes.
+            $subQuery->orWhere(function (Builder $fallback) use ($pattern): void {
+                $fallback
+                    ->whereNull('os.busca_texto')
+                    ->where(function (Builder $columns) use ($pattern): void {
+                        foreach (self::SEARCH_FALLBACK_COLUMNS as $column) {
+                            $columns->orWhere($column, 'like', $pattern);
+                        }
                     });
             });
         });
-    }
-
-    /**
-     * @param  array<int, string>  $columns
-     */
-    private function orWhereLikeColumns(Builder|QueryBuilder $query, array $columns, string $searchTerm): void
-    {
-        foreach ($columns as $column) {
-            $query->orWhereRaw('LOWER(COALESCE('.$column.", '')) LIKE ?", [$searchTerm]);
-        }
-    }
-
-    /**
-     * @param  array<int, string>  $columns
-     */
-    private function orWhereLikeCastColumns(Builder|QueryBuilder $query, array $columns, string $searchTerm): void
-    {
-        foreach ($columns as $column) {
-            $query->orWhereRaw('LOWER(COALESCE(CAST('.$column." AS CHAR), '')) LIKE ?", [$searchTerm]);
-        }
     }
 
     public function showForUser(User $actor, int $orderId): array
@@ -1217,7 +1162,32 @@ class OrderWorkflowService
         }
 
         if ($statusChanged && $comunicarCliente && $updatedOrder instanceof Order) {
-            $this->sendStatusChangeClientNotification($updatedOrder, $newStatus, $observacao, $mensagemCliente);
+            try {
+                NotifyOrderStatusChangeJob::dispatch(
+                    (int) $updatedOrder->id,
+                    $newStatus,
+                    $observacao,
+                    $mensagemCliente
+                );
+            } catch (Throwable $exception) {
+                // Se nem enfileirar deu, o aviso ao cliente nao vai acontecer:
+                // grava o desfecho no historico agora, sincronamente, para que a
+                // OS nao fique sem vestigio da tentativa. Registrar e' barato;
+                // era o ENVIO que custava os 40s.
+                logger()->warning('[API V1][ORDERS] Falha ao enfileirar aviso de status ao cliente', [
+                    'order_id' => (int) $updatedOrder->id,
+                    'message' => $exception->getMessage(),
+                ]);
+
+                $this->recordClientMessageEvent(
+                    $updatedOrder,
+                    $newStatus,
+                    trim((string) ($updatedOrder->client?->telefone1 ?? '')),
+                    'falha',
+                    trim((string) $mensagemCliente),
+                    $exception->getMessage()
+                );
+            }
         }
 
         logger()->info('[API V1][ORDERS] Status alterado', [
@@ -1975,9 +1945,12 @@ class OrderWorkflowService
             }
         }
 
-        $openingDocument = $shouldSendOpeningPdf
-            ? $this->generateOpeningDocument($order, $actor)
-            : null;
+        // A geracao do PDF e o envio ao cliente saem daqui para a fila `documents`
+        // (DeliverOrderOpeningDocumentJob). Antes rodavam nesta requisicao, e o
+        // par "PDF em dois formatos + ate' duas tentativas de WhatsApp de 20s"
+        // fazia a abertura de OS segurar um worker do PHP-FPM por dezenas de
+        // segundos — com o pool do desktop pequeno, era o caminho mais curto
+        // para o sistema inteiro travar sob operacao intensa.
         $createdOrder = $order;
 
         try {
@@ -1996,23 +1969,41 @@ class OrderWorkflowService
         $openingDelivery = [
             'requested' => $shouldSendOpeningPdf,
             'sent' => false,
+            'queued' => false,
             'channel' => null,
             'message' => '',
         ];
 
         if ($shouldSendOpeningPdf) {
-            try {
-                $openingDelivery = $this->sendOpeningDocumentToClient(
-                    $createdOrder,
-                    is_array($openingDocument) ? $openingDocument : []
-                );
-            } catch (Throwable $exception) {
-                $this->logOrderPostCreationFailure($order, 'opening_document_delivery', $exception);
-                $openingDelivery['message'] = 'A OS foi criada, mas o envio do PDF ao cliente não pôde ser concluído.';
-                $warnings[] = $this->orderCreationWarning(
-                    'ORDER_OPENING_DELIVERY_FAILED',
-                    (string) $openingDelivery['message']
-                );
+            // A ausencia de telefone e' conferida AQUI, e nao no job: e' leitura
+            // de banco (barata) cuja resposta o operador precisa ver ainda na
+            // tela de criacao, com o cliente na frente dele e o cadastro aberto
+            // para corrigir. So' o que custa caro — gerar o PDF e falar com o
+            // gateway de WhatsApp — e' que vai para a fila.
+            $openingPhone = $this->resolveClientNotificationPhone(
+                $createdOrder instanceof Order ? $createdOrder : $order
+            );
+
+            if ($openingPhone === '') {
+                $openingDelivery['message'] = 'Cliente sem telefone cadastrado para receber o PDF de abertura.';
+            } else {
+                try {
+                    DeliverOrderOpeningDocumentJob::dispatch((int) $order->id, (int) $actor->id);
+
+                    $openingDelivery['queued'] = true;
+                    $openingDelivery['channel'] = 'fila';
+                    $openingDelivery['message'] = 'O PDF de abertura esta sendo gerado e sera enviado ao cliente em instantes.';
+                } catch (Throwable $exception) {
+                    // Falha ao ENFILEIRAR (Redis fora, por exemplo) e' diferente
+                    // de falha ao entregar: aqui nada foi agendado, entao o
+                    // operador precisa saber que o cliente nao recebera nada.
+                    $this->logOrderPostCreationFailure($order, 'opening_document_dispatch', $exception);
+                    $openingDelivery['message'] = 'A OS foi criada, mas o envio do PDF ao cliente nao pode ser agendado.';
+                    $warnings[] = $this->orderCreationWarning(
+                        'ORDER_OPENING_DELIVERY_FAILED',
+                        (string) $openingDelivery['message']
+                    );
+                }
             }
         }
 
@@ -2062,9 +2053,10 @@ class OrderWorkflowService
         return [
             'result' => 'ok',
             'order' => $mappedOrder,
-            'opening_document' => is_array($openingDocument)
-                ? $this->sanitizeOpeningDocumentFeedback($openingDocument)
-                : null,
+            // Sempre nulo no retorno sincrono: quem gera o PDF agora e' o job. O
+            // desktop le 'opening_delivery.queued' para dizer ao operador que o
+            // documento esta a caminho.
+            'opening_document' => null,
             'opening_delivery' => $openingDelivery,
             'idempotent_replay' => false,
             'warnings' => $warnings,
@@ -4460,7 +4452,7 @@ class OrderWorkflowService
         return $texto;
     }
 
-    private function sendStatusChangeClientNotification(
+    public function sendStatusChangeClientNotification(
         Order $order,
         string $newStatus,
         ?string $observacao,
@@ -4568,6 +4560,27 @@ class OrderWorkflowService
     }
 
     /**
+     * Gera o PDF de abertura e o entrega ao cliente. Chamado pelo
+     * DeliverOrderOpeningDocumentJob, fora da requisicao HTTP.
+     *
+     * O par gerar+entregar vive junto de proposito: a entrega precisa do caminho
+     * absoluto que a geracao acabou de produzir.
+     *
+     * @return array<string, mixed>
+     */
+    public function deliverOpeningDocument(Order $order, User $actor): array
+    {
+        $openingDocument = $this->generateOpeningDocument($order, $actor);
+
+        $detailed = $this->detailQuery()->find((int) $order->id);
+        if ($detailed instanceof Order) {
+            $order = $detailed;
+        }
+
+        return $this->sendOpeningDocumentToClient($order, $openingDocument);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function generateOpeningDocument(Order $order, User $actor): array
@@ -4596,21 +4609,6 @@ class OrderWorkflowService
             'file_name' => (string) ($result['file_name'] ?? ''),
             'message' => (string) ($result['message'] ?? ''),
             'skipped' => (bool) ($result['skipped'] ?? false),
-        ];
-    }
-
-    /**
-     * @param  array<string, mixed>  $openingDocument
-     * @return array<string, mixed>
-     */
-    private function sanitizeOpeningDocumentFeedback(array $openingDocument): array
-    {
-        return [
-            'generated' => (bool) ($openingDocument['generated'] ?? false),
-            'document_id' => isset($openingDocument['document_id']) ? (int) $openingDocument['document_id'] : null,
-            'file_name' => (string) ($openingDocument['file_name'] ?? ''),
-            'message' => (string) ($openingDocument['message'] ?? ''),
-            'skipped' => (bool) ($openingDocument['skipped'] ?? false),
         ];
     }
 

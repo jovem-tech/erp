@@ -5,6 +5,7 @@ namespace App\Services\Dashboard;
 use App\Models\Client;
 use App\Models\Equipment;
 use App\Models\Financeiro;
+use App\Models\FinanceiroMovimento;
 use App\Models\OrderStatus;
 use App\Models\Peca;
 use App\Models\User;
@@ -505,6 +506,9 @@ class DashboardSummaryService
             'equipamento_entregue_mes_atual' => $financialSummary['delivered_operational_current_month_count'] ?? 0,
             'faturamento_mes' => $financialSummary['receitas'] ?? 0.0,
             'faturamento_mes_anterior' => $financialSummary['previous_month_revenue'] ?? 0.0,
+            'despesas_pagas_mes' => $financialSummary['despesas_pagas'] ?? 0.0,
+            'despesas_pagas_mes_anterior' => $financialSummary['despesas_pagas_mes_anterior'] ?? 0.0,
+            'despesas_pendentes' => $financialSummary['pendentes'] ?? 0.0,
             'comissao_acumulada' => $technicianSummary['commission_total'] ?? 0.0,
             'low_stock_total' => $lowStockTotal,
         ];
@@ -966,9 +970,18 @@ class DashboardSummaryService
         $receitas = (float) ($currentMonthRow->total ?? 0);
         $despesas = (float) ($despesasRow->total ?? 0);
 
+        // Pago de fato (regime de caixa), diferente de `despesas` acima: soma
+        // os movimentos de baixa (financeiro_movimentos) do mês, e não o custo
+        // estimado das OS abertas. Cobre baixa total e parcial — um título
+        // "parcial" já tirou dinheiro do caixa na parte paga.
+        $despesasPagasAtual = $this->paidPagarTotal($currentPeriodStart, $currentPeriodEnd);
+        $despesasPagasAnterior = $this->paidPagarTotal($previousPeriodStart, $previousPeriodEnd);
+
         return [
             'receitas' => $receitas,
             'despesas' => $despesas,
+            'despesas_pagas' => $despesasPagasAtual,
+            'despesas_pagas_mes_anterior' => $despesasPagasAnterior,
             'resultado_caixa' => $receitas - $despesas,
             'pendentes' => (float) ($pendentesRow->total ?? 0),
             'month' => $currentMonth,
@@ -981,6 +994,22 @@ class DashboardSummaryService
     }
 
     /**
+     * Soma dos movimentos de saída (regime de caixa) de contas a pagar num
+     * período — mesma fonte e mesmo filtro (`impacta_fluxo_caixa`) que
+     * FinanceiroReportService usa no Fluxo de Caixa, para os dois nunca
+     * divergirem sobre "quanto saiu do caixa" no mesmo período.
+     */
+    private function paidPagarTotal(string $start, string $end): float
+    {
+        return (float) FinanceiroMovimento::query()
+            ->join('financeiro', 'financeiro.id', '=', 'financeiro_movimentos.financeiro_id')
+            ->where('financeiro.tipo', Financeiro::TIPO_PAGAR)
+            ->where('financeiro.impacta_fluxo_caixa', true)
+            ->whereRaw('financeiro_movimentos.data_movimento >= ? AND financeiro_movimentos.data_movimento < ?', [$start, $end])
+            ->sum('financeiro_movimentos.valor_movimento');
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function emptyFinancialSummary(array $access): array
@@ -988,6 +1017,8 @@ class DashboardSummaryService
         return [
             'receitas' => 0.0,
             'despesas' => 0.0,
+            'despesas_pagas' => 0.0,
+            'despesas_pagas_mes_anterior' => 0.0,
             'resultado_caixa' => 0.0,
             'pendentes' => 0.0,
             'month' => (int) now()->month,

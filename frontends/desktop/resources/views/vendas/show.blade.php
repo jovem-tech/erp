@@ -144,13 +144,19 @@
                     <dt class="col-7 fs-5 fw-semibold">Total</dt>
                     <dd class="col-5 text-end fs-5 fw-semibold">{{ $money($venda['total'] ?? 0) }}</dd>
 
-                    <dt class="col-7 fw-normal text-secondary">Custo</dt>
-                    <dd class="col-5 text-end">{{ $money($venda['custo_total'] ?? 0) }}</dd>
-                    <dt class="col-7 fw-normal text-secondary">Margem</dt>
-                    <dd class="col-5 text-end">
-                        {{ $money($venda['margem_valor'] ?? 0) }}
-                        <small class="text-secondary">({{ number_format((float) ($venda['margem_percentual'] ?? 0), 2, ',', '.') }}%)</small>
-                    </dd>
+                    {{-- Custo e margem so para quem tem permissao financeira
+                         (specs/037). Ate esta entrega apareciam para qualquer um
+                         com `vendas:visualizar` — inclusive o balconista. --}}
+                    @if (\App\Support\DesktopSession::can('financeiro', 'visualizar')
+                        || \App\Support\DesktopSession::can('precificacao', 'visualizar'))
+                        <dt class="col-7 fw-normal text-secondary">Custo</dt>
+                        <dd class="col-5 text-end">{{ $money($venda['custo_total'] ?? 0) }}</dd>
+                        <dt class="col-7 fw-normal text-secondary">Margem</dt>
+                        <dd class="col-5 text-end">
+                            {{ $money($venda['margem_valor'] ?? 0) }}
+                            <small class="text-secondary">({{ number_format((float) ($venda['margem_percentual'] ?? 0), 2, ',', '.') }}%)</small>
+                        </dd>
+                    @endif
                 </dl>
             </div>
         </div>

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiAuthorizationException;
+use App\Exceptions\ApiConnectionException;
 use App\Exceptions\ApiRequestException;
 use App\Support\DesktopSession;
 use Illuminate\Http\Client\ConnectionException;
@@ -14,6 +15,17 @@ use Illuminate\Support\Facades\Http;
 
 class ApiClient
 {
+    /**
+     * Duas tentativas, nao tres: a segunda cobre o soluco de rede pontual, e a
+     * terceira so' prolongava a ocupacao do worker e triplicava a carga sobre um
+     * backend que ja estava em dificuldade.
+     */
+    private const RETRY_MAX_ATTEMPTS = 2;
+
+    private const RETRY_BASE_DELAY_MS = 250;
+
+    private const RETRY_MAX_DELAY_MS = 1000;
+
     public function login(string $email, string $password, string $deviceName): array
     {
         $response = $this->guestRequest('post', '/auth/login', [
@@ -96,12 +108,23 @@ class ApiClient
     }
 
     /**
+     * Leitura publica (sem token). NAO retenta por padrao.
+     *
+     * Os dois usos sao a marca da empresa — resolvida em TODA renderizacao de
+     * view, com fallback proprio quando falha — e a pagina publica de
+     * assinatura. Retentar a marca sairia caro justamente no cenario ruim: com
+     * a API degradada, cada pagina do sistema pagaria duas chamadas perdidas
+     * mais o backoff, para no fim exibir o mesmo fallback. Falhar rapido e cair
+     * no padrao e' melhor do que insistir por um dado decorativo.
+     *
      * @param array<string, mixed> $query
      */
-    public function guestGet(string $uri, array $query = []): array
+    public function guestGet(string $uri, array $query = [], bool $retry = false): array
     {
+        $send = fn (): Response => $this->guestRequest('get', $uri, [], $query);
+
         return $this->parseResponse(
-            $this->retryRequest(fn() => $this->guestRequest('get', $uri, [], $query)),
+            $retry ? $this->retryRequest($send) : $send(),
             false
         );
     }
@@ -110,7 +133,7 @@ class ApiClient
     public function guestPost(string $uri, array $payload = []): array
     {
         return $this->parseResponse(
-            $this->retryRequest(fn() => $this->guestRequest('post', $uri, $payload)),
+            $this->guestRequest('post', $uri, $payload),
             false
         );
     }
@@ -118,7 +141,7 @@ class ApiClient
     public function post(string $uri, array $payload = []): array
     {
         return $this->parseResponse(
-            $this->retryRequest(fn() => $this->authenticatedRequest('post', $uri, $payload))
+            $this->authenticatedRequest('post', $uri, $payload)
         );
     }
 
@@ -141,21 +164,21 @@ class ApiClient
     public function postMultipart(string $uri, array $payload = [], array $files = []): array
     {
         return $this->parseResponse(
-            $this->retryRequest(fn() => $this->authenticatedMultipartRequest($uri, $payload, $files))
+            $this->authenticatedMultipartRequest($uri, $payload, $files)
         );
     }
 
     public function put(string $uri, array $payload = []): array
     {
         return $this->parseResponse(
-            $this->retryRequest(fn() => $this->authenticatedRequest('put', $uri, $payload))
+            $this->authenticatedRequest('put', $uri, $payload)
         );
     }
 
     public function patch(string $uri, array $payload = []): array
     {
         return $this->parseResponse(
-            $this->retryRequest(fn() => $this->authenticatedRequest('patch', $uri, $payload))
+            $this->authenticatedRequest('patch', $uri, $payload)
         );
     }
 
@@ -165,7 +188,7 @@ class ApiClient
     public function delete(string $uri, array $payload = []): array
     {
         return $this->parseResponse(
-            $this->retryRequest(fn() => $this->authenticatedRequest('delete', $uri, $payload))
+            $this->authenticatedRequest('delete', $uri, $payload)
         );
     }
 
@@ -300,8 +323,11 @@ class ApiClient
             }
 
             return $response;
-        } catch (ConnectionException) {
-            throw new ApiRequestException('Nao foi possivel conectar ao backend central.');
+        } catch (ConnectionException $exception) {
+            throw new ApiConnectionException(
+                'Nao foi possivel conectar ao backend central.',
+                previous: $exception
+            );
         }
     }
 
@@ -316,8 +342,11 @@ class ApiClient
                     'json' => $payload,
                     'query' => $query,
                 ]);
-        } catch (ConnectionException) {
-            throw new ApiRequestException('Nao foi possivel conectar ao backend central.');
+        } catch (ConnectionException $exception) {
+            throw new ApiConnectionException(
+                'Nao foi possivel conectar ao backend central.',
+                previous: $exception
+            );
         }
     }
 
@@ -384,8 +413,11 @@ class ApiClient
             }
 
             return $response;
-        } catch (ConnectionException) {
-            throw new ApiRequestException('Nao foi possivel conectar ao backend central.');
+        } catch (ConnectionException $exception) {
+            throw new ApiConnectionException(
+                'Nao foi possivel conectar ao backend central.',
+                previous: $exception
+            );
         }
     }
 
@@ -449,73 +481,58 @@ class ApiClient
     }
 
     /**
-     * Executa uma requisição com retry automático usando exponential backoff
-     * 
-     * Configuração:
-     * - Máximo de tentativas: 3
-     * - Delay inicial: 1 segundo
-     * - Multiplica o delay por 2 a cada tentativa (1s, 2s, 4s)
-     * 
-     * Não faz retry em erros de autenticação (401, 403) ou validação (422)
+     * Reexecuta a requisicao apenas quando reexecutar e' seguro.
+     *
+     * O criterio nao e' "deu erro", e' "repetir isto pode causar dano?":
+     *
+     * - Falha de transporte (ApiConnectionException) e' retentada, porque nesse
+     *   caso nao ha garantia de que o backend chegou a receber o comando... mas
+     *   so' para leituras. Antes este ramo era CODIGO MORTO: authenticatedRequest()
+     *   e irmas ja convertiam ConnectionException em ApiRequestException, que o
+     *   laco nao capturava — entao a unica retentativa que existia de fato era a
+     *   de 5xx, exatamente a que nao deveria existir para comandos mutaveis.
+     * - HTTP 5xx e' retentado so' em leitura. Num POST/PUT/DELETE o backend pode
+     *   ter concluido o efeito e falhado depois (ao serializar a resposta, ao
+     *   enviar notificacao), e repetir duplicaria o efeito.
+     * - 401/403/422 nunca sao retentados: a resposta nao muda por insistencia.
+     *
+     * O backoff e' curto e com jitter de proposito. Ele existe para absorver um
+     * soluco de rede, nao para esperar o backend terminar um trabalho longo —
+     * cada usleep() aqui congela um worker do PHP-FPM, e o pool do desktop e'
+     * pequeno (pm.max_children). Sem jitter, varios workers que falharam no
+     * mesmo instante voltariam juntos e bateriam no backend em rajada.
      */
-    private function retryRequest(callable $request, int $maxAttempts = 3, int $delayMs = 1000): Response
+    private function retryRequest(callable $request, int $maxAttempts = self::RETRY_MAX_ATTEMPTS): Response
     {
-        $lastException = null;
-        $lastResponse = null;
+        $attempt = 0;
 
-        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+        while (true) {
+            $attempt++;
+
             try {
                 $response = $request();
 
-                // Não fazer retry em erros de autenticação/autorização/validação
-                if ($response->status() === 401 
-                    || $response->status() === 403 
-                    || $response->status() === 422) {
+                if ($attempt >= $maxAttempts || ! $response->serverError()) {
                     return $response;
                 }
-
-                // Se bem-sucedido, retornar
-                if ($response->successful()) {
-                    return $response;
-                }
-
-                // Erros 5xx podem ser retentados
-                if ($response->serverError()) {
-                    $lastResponse = $response;
-
-                    if ($attempt < $maxAttempts) {
-                        // Exponential backoff: 1s, 2s, 4s
-                        $waitMs = $delayMs * (2 ** ($attempt - 1));
-                        usleep($waitMs * 1000);
-                        continue;
-                    }
-                }
-
-                // Outros erros não são retentados
-                return $response;
-
-            } catch (ConnectionException $e) {
-                $lastException = $e;
-
-                if ($attempt < $maxAttempts) {
-                    // Exponential backoff para ConnectionException
-                    $waitMs = $delayMs * (2 ** ($attempt - 1));
-                    usleep($waitMs * 1000);
-                    continue;
+            } catch (ApiConnectionException $exception) {
+                if ($attempt >= $maxAttempts) {
+                    throw $exception;
                 }
             }
-        }
 
-        // Se todas as tentativas falharam, retornar última resposta ou lançar exceção
-        if ($lastResponse instanceof Response) {
-            return $lastResponse;
+            $this->sleepBeforeRetry($attempt);
         }
+    }
 
-        if ($lastException instanceof ConnectionException) {
-            throw new ApiRequestException('Nao foi possivel conectar ao backend central apos ' . $maxAttempts . ' tentativas.');
-        }
+    private function sleepBeforeRetry(int $attempt): void
+    {
+        $delayMs = min(
+            self::RETRY_BASE_DELAY_MS * (2 ** ($attempt - 1)),
+            self::RETRY_MAX_DELAY_MS
+        );
 
-        throw new ApiRequestException('Falha na requisicao apos ' . $maxAttempts . ' tentativas.');
+        usleep(($delayMs + random_int(0, self::RETRY_BASE_DELAY_MS)) * 1000);
     }
 
     private function url(string $uri): string

@@ -3,6 +3,7 @@
 namespace App\Exceptions;
 
 use RuntimeException;
+use Throwable;
 
 class ApiRequestException extends RuntimeException
 {
@@ -12,9 +13,10 @@ class ApiRequestException extends RuntimeException
     public function __construct(
         string $message,
         private readonly int $statusCode = 0,
-        private readonly ?array $details = null
+        private readonly ?array $details = null,
+        ?Throwable $previous = null
     ) {
-        parent::__construct($message, $statusCode);
+        parent::__construct($message, $statusCode, $previous);
     }
 
     public function statusCode(): int

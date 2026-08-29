@@ -35,13 +35,31 @@ class PrecificacaoService
         'precificacao_servico_usa_componentes' => '1',
         'precificacao_servico_aplicar_catalogo' => '1',
         'precificacao_servico_aplicar_piso' => '0',
+        // Capacidade produtiva da bancada — base do custo-hora calculado
+        // (specs/037). GLOBAL, nao por servico: a oficina tem N tecnicos
+        // independentemente do servico cotado, e capacidade por servico
+        // produziria dois custos-hora contraditorios na mesma empresa.
+        //
+        // horas_dia = 6, nao 8: 8 e o dia PAGO; a fracao produtiva de uma
+        // bancada real fica perto de 75%. Default 8 subprecifica sempre.
+        'precificacao_capacidade_tecnicos' => '1',
+        'precificacao_capacidade_horas_dia' => '6',
+        'precificacao_capacidade_dias_mes' => '22',
+        // Janela do custo-hora: meses FECHADOS. O mes corrente esta sempre
+        // incompleto, e usa-lo faria o custo-hora despencar no dia 3 e dobrar
+        // no dia 28, conforme aluguel e folha vao caindo.
+        'precificacao_custo_hora_meses_base' => '3',
+        // Limites do semaforo de margem, em percentual.
+        'precificacao_semaforo_verde_percentual' => '30',
+        'precificacao_semaforo_amarelo_percentual' => '15',
     ];
 
     public function __construct(
         private readonly PrecificacaoComponente $componenteModel,
         private readonly PrecificacaoCategoria $categoriaModel,
         private readonly PrecificacaoCategoriaEncargo $categoriaEncargoModel,
-        private readonly PrecificacaoServicoOverride $servicoOverrideModel
+        private readonly PrecificacaoServicoOverride $servicoOverrideModel,
+        private readonly CustoHoraService $custoHoraService
     ) {
     }
 
@@ -124,6 +142,10 @@ class PrecificacaoService
             $this->upsertConfig((string) $key, (string) $value);
         }
 
+        // Capacidade e custo fixo mudam o custo-hora; o cache de 10 min nao pode
+        // segurar um numero velho logo depois de o dono ajustar a configuracao.
+        $this->custoHoraService->esquecerCache();
+
         $this->syncCategorias($payload);
         $this->syncCategoriaEncargos($payload);
         $this->syncComponentes($payload);
@@ -203,14 +225,26 @@ class PrecificacaoService
      */
     private function loadSettings(): array
     {
+        // Uma query, nao uma por chave.
+        //
+        // Este metodo era um `foreach (DEFAULTS)` com um `->value()` dentro:
+        // 16 SELECTs sequenciais por chamada. Nao era visivel enquanto o motor
+        // so servia a tela de configuracao, mas buildPieceQuote() e
+        // buildServiceQuote() chamam loadSettings() de novo internamente — e a
+        // partir do momento em que o orcamento passa a cotar item a item, um
+        // orcamento de 20 linhas custaria ~300 queries.
+        //
+        // Pre-condicao para a precificacao sair da tela de config e entrar no
+        // fluxo real (specs/037), nao otimizacao prematura.
+        $gravados = Configuration::query()
+            ->whereIn('chave', array_keys(self::DEFAULTS))
+            ->pluck('valor', 'chave');
+
         $settings = [];
 
         foreach (self::DEFAULTS as $key => $default) {
-            $value = Configuration::query()
-                ->where('chave', $key)
-                ->value('valor');
-
-            $settings[$key] = (string) ($value ?? $default);
+            $valor = $gravados[$key] ?? null;
+            $settings[$key] = (string) ($valor ?? $default);
         }
 
         return $settings;
@@ -259,7 +293,13 @@ class PrecificacaoService
      */
     private function buildServiceRules(array $settings): array
     {
-        $custoHora = $this->normalizeDecimal($settings['precificacao_servico_custo_hora_produtiva'] ?? 40, 40.0);
+        // O custo-hora deixa de ser um numero digitado sem lastro e passa a vir
+        // dos custos fixos reais do DRE (specs/037). O valor manual continua
+        // existindo como escape hatch — CustoHoraService cai nele quando a
+        // capacidade nao esta configurada ou nao ha custo fixo lancado, e
+        // NUNCA devolve zero.
+        $custoHoraResolvido = $this->custoHoraService->resolver();
+        $custoHora = (float) $custoHoraResolvido['valor'];
         $margem = $this->normalizePercent($settings['precificacao_servico_margem_percentual'] ?? 25, 25.0);
         $taxa = $this->normalizePercent($settings['precificacao_servico_taxa_recebimento_percentual'] ?? 3.5, 3.5);
         $imposto = $this->normalizePercent($settings['precificacao_servico_imposto_percentual'] ?? 0, 0.0);
@@ -286,6 +326,13 @@ class PrecificacaoService
 
         return [
             'custo_hora_produtiva' => round($custoHora, 2),
+            // Origem e confiabilidade sobem juntas: a tela precisa poder dizer
+            // "seu fixo do trimestre indica R$ X/h" ou avisar que caiu no
+            // manual, em vez de exibir um numero sem procedencia.
+            'custo_hora_origem' => (string) $custoHoraResolvido['origem'],
+            'custo_hora_confiavel' => (bool) $custoHoraResolvido['confiavel'],
+            'custo_hora_motivo' => $custoHoraResolvido['motivo'],
+            'custo_hora_base' => $custoHoraResolvido['base'],
             'margem_percentual' => round($margem, 2),
             'taxa_recebimento_percentual' => round($taxa, 2),
             'imposto_percentual' => round($imposto, 2),
@@ -668,6 +715,12 @@ class PrecificacaoService
             'preco_custo_referencia' => round($precoCusto, 2),
             'preco_venda_referencia' => round($precoVenda, 2),
             'preco_base' => round($precoBase, 2),
+            // O que a regra calculou, ANTES de `respeitar_preco_venda` puxar o
+            // valor para cima. Sem este campo, quando o preco de tabela e maior
+            // que o calculado, `valor_recomendado` devolve o proprio preco que
+            // ja estava la — e a dica de "sugerido" na tela le como quebrada,
+            // porque sugere exatamente o que o operador digitou.
+            'valor_calculado' => round(max(0.0, $valorCalculado), 2),
             'percentual_encargos' => round((float) $settings['encargos_percentual'], 2),
             'valor_encargos' => $encargosValor,
             'percentual_margem' => round((float) $settings['margem_percentual'], 2),
@@ -751,6 +804,12 @@ class PrecificacaoService
         return [
             'tempo_padrao_horas' => round($tempoPadrao, 2),
             'custo_hora_produtiva' => round($custoHora, 2),
+            // Procedencia do custo-hora: sem ela o operador ve um numero e nao
+            // sabe se veio dos custos fixos reais ou de um default esquecido.
+            // Nao e dado sensivel — sobrevive a redacao de propósito.
+            'custo_hora_origem' => (string) ($settings['custo_hora_origem'] ?? ''),
+            'custo_hora_confiavel' => (bool) ($settings['custo_hora_confiavel'] ?? true),
+            'custo_hora_motivo' => $settings['custo_hora_motivo'] ?? null,
             'custo_mao_obra' => $custoMaoObra,
             'custo_direto_padrao' => round($custoDiretoPadrao, 2),
             'custo_direto_componente' => round($custoDiretoComponente, 2),

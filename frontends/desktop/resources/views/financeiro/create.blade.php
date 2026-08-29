@@ -32,6 +32,9 @@
         'categorias' => $categorias ?? [],
         'accountDataset' => $accountDataset ?? [],
         'canQuickClient' => $canQuickClient ?? false,
+        'canEntradaEstoque' => $canEntradaEstoque ?? false,
+        'canQuickPeca' => $canQuickPeca ?? false,
+        'entradaEstoqueLigada' => $entradaEstoqueLigada ?? false,
         'tipoLocked' => $tipoLocked,
         'formAction' => route('financeiro.store'),
         'formMethod' => 'POST',
@@ -55,5 +58,23 @@
     <script src="{{ asset('assets/js/financeiro-form.js') }}?v={{ filemtime(public_path('assets/js/financeiro-form.js')) }}"></script>
     @if ($canQuickClient ?? false)
         <script src="{{ asset('assets/js/clients-form.js') }}?v={{ filemtime(public_path('assets/js/clients-form.js')) }}"></script>
+    @endif
+    @if ($canEntradaEstoque ?? false)
+        <script>
+            window.__DESKTOP_FINANCEIRO_ENTRADA_ESTOQUE = {!! \Illuminate\Support\Js::from([
+                'partSearchUrl' => route('financeiro.parts.search'),
+                // Rotas do módulo de estoque, reusadas: criar endpoint próprio
+                // duplicaria o cadastro rápido e o simulador de preço.
+                'quickStoreUrl' => ($canQuickPeca ?? false) ? route('estoque.quick.store') : null,
+                'suggestPriceUrl' => route('estoque.suggest-price'),
+                'csrf' => csrf_token(),
+                // Mapa categoria → grupo de DRE: é o que decide se o switch
+                // "esta compra dá entrada no estoque" nasce ligado.
+                'gruposPorCategoria' => collect($categorias ?? [])
+                    ->mapWithKeys(fn ($c) => [(string) ($c['nome'] ?? '') => (string) ($c['dre_grupo']['nome'] ?? '')])
+                    ->all(),
+            ]) !!};
+        </script>
+        <script src="{{ asset('assets/js/financeiro-entrada-estoque.js') }}?v={{ filemtime(public_path('assets/js/financeiro-entrada-estoque.js')) }}"></script>
     @endif
 @endsection

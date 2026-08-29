@@ -227,6 +227,51 @@ ser tratado como operação destrutiva. Para rollback imediato, defina
 `FILE_MANAGER_ALLOW_PERMANENT_DELETION=false` e execute `php artisan config:clear`;
 arquivos já expurgados não podem ser recuperados pela aplicação e dependem de backup.
 
+## Retenção do histórico de varreduras (`file_scan_runs`)
+
+Distinta da lixeira acima: aquela apaga **arquivos**, esta apaga o **log das
+execuções** de varredura e catalogação.
+
+Sem retenção, a tabela crescia **11.232 linhas por dia** — uma a cada 7,7
+segundos, 24h, porque `file-manager:sync --pending` roda a cada minuto e
+`file-manager:sync` a cada 5, cada um gravando uma linha **por root**. Medida em
+2026-08-27, tinha 382.781 linhas e **373,6 MB**: a maior tabela do banco,
+ocupando 35% do `innodb_buffer_pool_size` de 1 GB e disputando cache com `os` e
+`clientes`, que a operação usa o dia inteiro. Dessas, 186.474 eram
+`catalog_legacy` com média de **0,0** arquivos processados.
+
+Duas defesas, a partir da v5.60.0.0:
+
+1. **Execução sem evento não é gravada.** Ao terminar, uma varredura que não
+   processou nada, não achou nada e não falhou é descartada
+   (`FileScanRun::discardIfUneventful()`). O registro existe **durante** a
+   execução porque os achados precisam do `id` para a FK — por isso o descarte
+   acontece no fim, e só quando `finding_count = 0`: apagar um run com achados
+   levaria os achados junto no `cascadeOnDelete`.
+
+2. **Retenção diária às `02:40`:**
+
+```bash
+php artisan file-manager:purge-scan-runs
+```
+
+Execuções com achado **ainda em aberto** são preservadas seja qual for a idade —
+é o único conteúdo desta tabela que alguém consulta depois. O expurgo roda em
+lotes, para não segurar a tabela nem o undo log num banco em uso.
+
+| Chave `.env` | Padrão | Efeito |
+|---|---|---|
+| `FILE_MANAGER_SCAN_RUN_RETENTION_DAYS` | 14 | Idade mínima para expurgar |
+| `FILE_MANAGER_SCAN_RUN_PURGE_BATCH_SIZE` | 5000 | Teto de linhas por execução |
+
+Validação operacional — confira sempre antes da primeira execução real:
+
+```bash
+php artisan file-manager:purge-scan-runs --dry-run
+```
+
+O `--dry-run` só informa quantas linhas seriam apagadas, sem tocar em nada.
+
 ## Rollout por categoria
 
 Exemplo do piloto de fundo de login:

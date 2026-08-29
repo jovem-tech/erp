@@ -173,6 +173,41 @@ class DesktopSession
         ]);
     }
 
+    /**
+     * Troca APENAS o token da sessao, preservando usuario, remember_me e os
+     * marcadores de atividade.
+     *
+     * Existe porque ApiClient::refreshToken() ja a chamava — junto de
+     * storeExpiresAt() — mas nenhuma das duas existia nesta classe. O efeito era
+     * um Error fatal ("Call to undefined method") exatamente no caminho de
+     * sucesso da renovacao: todo usuario cujo token expirava no meio da sessao
+     * levava um 500 em vez da renovacao transparente que o codigo pretendia.
+     */
+    public static function storeToken(string $token): void
+    {
+        if (! is_array(session(self::SESSION_KEY))) {
+            return;
+        }
+
+        session([self::SESSION_KEY . '.token' => $token]);
+    }
+
+    public static function storeExpiresAt(?string $expiresAt): void
+    {
+        if (! is_array(session(self::SESSION_KEY))) {
+            return;
+        }
+
+        session([self::SESSION_KEY . '.expires_at' => $expiresAt]);
+    }
+
+    public static function expiresAt(): ?string
+    {
+        $expiresAt = session(self::SESSION_KEY . '.expires_at');
+
+        return is_string($expiresAt) && $expiresAt !== '' ? $expiresAt : null;
+    }
+
     public static function forget(): void
     {
         session()->forget(self::SESSION_KEY);

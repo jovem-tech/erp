@@ -15,9 +15,12 @@ use App\Models\OrderEvent;
 use App\Models\OrderStatus;
 use App\Models\Peca;
 use App\Models\Servico;
+use App\Support\ModoPrecificacao;
+use App\Support\VisibilidadeCusto;
 use App\Models\User;
 use App\Services\Financeiro\FinanceiroService;
 use App\Services\Financeiro\OsMargemService;
+use App\Services\Financeiro\PrecificacaoService;
 use App\Services\Notifications\NotificationDispatchService;
 use App\Services\Orders\OrderEventService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -35,7 +38,8 @@ class BudgetWorkflowService
         private readonly NotificationDispatchService $notificationDispatchService,
         private readonly FinanceiroService $financeiroService,
         private readonly OsMargemService $osMargemService,
-        private readonly BudgetCommercialTermsService $budgetCommercialTermsService
+        private readonly BudgetCommercialTermsService $budgetCommercialTermsService,
+        private readonly PrecificacaoService $precificacaoService
     ) {}
 
     /**
@@ -1126,6 +1130,12 @@ class BudgetWorkflowService
      */
     private function budgetDetail(Budget $budget): array
     {
+        // Visibilidade de custo do usuario da requisicao (specs/037). Resolvida
+        // uma vez aqui e capturada pelas arrow functions do mapeamento.
+        $veCusto = VisibilidadeCusto::mostraNumero(
+            VisibilidadeCusto::paraUsuario(auth()->user())
+        );
+
         $client = $budget->client;
         $equipment = $budget->equipment;
         $order = $budget->order;
@@ -1232,6 +1242,16 @@ class BudgetWorkflowService
                 'acrescimo_percentual' => $item->acrescimo_percentual !== null ? round((float) $item->acrescimo_percentual, 4) : null,
                 'total' => (float) ($item->total ?? 0),
                 'observacoes' => (string) ($item->observacoes ?? ''),
+                // `valor_recomendado` e `modo_precificacao` valem para todos: o
+                // primeiro e o piso (quem vende precisa saber que passou dele) e
+                // o segundo nao revela custo. O resto e composicao de custo e
+                // some para quem nao tem permissao financeira.
+                //
+                // Redigido AQUI, no payload: ate a Fase 4 estes campos eram
+                // zeros e o vazamento era inocuo. Agora carregam custo real.
+                'valor_recomendado' => (float) ($item->valor_recomendado ?? 0),
+                'modo_precificacao' => (string) ($item->modo_precificacao ?? ''),
+            ] + ($veCusto ? [
                 'preco_custo_referencia' => (float) ($item->preco_custo_referencia ?? 0),
                 'preco_venda_referencia' => (float) ($item->preco_venda_referencia ?? 0),
                 'preco_base' => (float) ($item->preco_base ?? 0),
@@ -1239,9 +1259,7 @@ class BudgetWorkflowService
                 'valor_encargos' => (float) ($item->valor_encargos ?? 0),
                 'percentual_margem' => (float) ($item->percentual_margem ?? 0),
                 'valor_margem' => (float) ($item->valor_margem ?? 0),
-                'valor_recomendado' => (float) ($item->valor_recomendado ?? 0),
-                'modo_precificacao' => (string) ($item->modo_precificacao ?? ''),
-            ])->all(),
+            ] : []))->all(),
             'historico' => $budget->histories->sortByDesc('created_at')->take(10)->values()->map(static fn (BudgetStatusHistory $history): array => [
                 'id' => (int) $history->id,
                 'status_anterior' => (string) ($history->status_anterior ?? ''),
@@ -1295,15 +1313,44 @@ class BudgetWorkflowService
      */
     private function summary(Builder $query): array
     {
-        $totalValue = (float) (clone $query)->sum('total');
-        $counts = [];
+        // Uma agregacao, nao quinze. Antes este metodo rodava um COUNT por
+        // status (sao 13 em Budget::statusOptions()), mais um SUM e mais um
+        // COUNT total — cada um varrendo o conjunto filtrado inteiro, a cada
+        // carregamento da listagem de orcamentos. Um GROUP BY entrega os mesmos
+        // numeros numa passada so'.
+        $rows = (clone $query)
+            ->reorder()
+            ->groupBy('orcamentos.status')
+            ->select('orcamentos.status')
+            ->selectRaw('COUNT(*) as itens')
+            ->selectRaw('SUM(orcamentos.total) as valor')
+            ->get();
 
-        foreach (array_column(Budget::statusOptions(), 'value') as $status) {
-            $counts[$status] = (clone $query)->where('orcamentos.status', $status)->count();
+        // Todos os status aparecem no retorno, inclusive os zerados: a tela
+        // monta os chips de filtro a partir destas chaves, e um status ausente
+        // sumiria do painel em vez de mostrar zero.
+        $counts = array_fill_keys(array_column(Budget::statusOptions(), 'value'), 0);
+        $total = 0;
+        $totalValue = 0.0;
+
+        foreach ($rows as $row) {
+            $status = (string) $row->status;
+            $itens = (int) $row->itens;
+
+            // Status fora do catalogo (registro legado, valor gravado a mao)
+            // entra no total e no valor, mas NAO cria chave nova em by_status —
+            // o formato antigo expunha exatamente as chaves de statusOptions(),
+            // e a tela itera sobre elas.
+            if (array_key_exists($status, $counts)) {
+                $counts[$status] = $itens;
+            }
+
+            $total += $itens;
+            $totalValue += (float) $row->valor;
         }
 
         return array_merge([
-            'total' => (clone $query)->count(),
+            'total' => $total,
             'total_value' => round($totalValue, 2),
             'by_status' => $counts,
         ], $counts);
@@ -1759,8 +1806,22 @@ class BudgetWorkflowService
     /**
      * @param  array<int, mixed>  $items
      */
+    /**
+     * Regrava os itens do orcamento.
+     *
+     * ARMADILHA: este metodo APAGA e reinsere tudo a cada save. Enquanto os
+     * campos de precificacao eram zeros literais isso era inofensivo; agora
+     * que eles carregam a cotacao, editar a observacao de um orcamento ja
+     * aprovado o REPRECIFICARIA pelas configuracoes de hoje — e um snapshot
+     * que se recalcula nao e snapshot de nada.
+     *
+     * Por isso, em orcamento fechado, a cotacao das linhas anteriores e
+     * preservada em vez de recalculada.
+     */
     private function syncItems(Budget $budget, array $items): float
     {
+        $cotacaoCongelada = $this->cotacaoCongelada($budget);
+
         BudgetItem::query()->where('orcamento_id', $budget->id)->delete();
 
         $normalizedItems = [];
@@ -1801,6 +1862,24 @@ class BudgetWorkflowService
             );
             $total = round($base - $discount['amount'] + $addition['amount'], 2);
 
+            // Orcamento fechado: reaproveita a cotacao gravada na primeira vez,
+            // chaveada por tipo+referencia. Sem isso, cada save reescreveria o
+            // historico com os parametros de hoje.
+            $congelada = $cotacaoCongelada[$tipoItem.':'.(string) $referenciaId] ?? null;
+            if ($congelada !== null) {
+                $referenceData = $congelada + $referenceData;
+            }
+
+            $custoReferencia = (float) ($referenceData['preco_custo_referencia'] ?? 0);
+            $vendaReferencia = (float) ($referenceData['preco_venda_referencia'] ?? 0);
+            $valorRecomendado = (float) ($referenceData['valor_recomendado'] ?? 0);
+
+            // Margem contra o preco efetivamente cobrado nesta linha.
+            $valorMargem = round($valorUnitario - $custoReferencia, 2);
+            $percentualMargem = $valorUnitario > 0
+                ? round(($valorMargem / $valorUnitario) * 100, 2)
+                : 0.0;
+
             $normalizedItems[] = [
                 'orcamento_id' => $budget->id,
                 'tipo_item' => $tipoItem,
@@ -1817,15 +1896,27 @@ class BudgetWorkflowService
                 'total' => round($total, 2),
                 'ordem' => (int) ($item['ordem'] ?? $order),
                 'observacoes' => $observacoes,
-                'preco_custo_referencia' => (float) ($referenceData['preco_custo_referencia'] ?? 0),
-                'preco_venda_referencia' => (float) ($referenceData['preco_venda_referencia'] ?? 0),
+                'preco_custo_referencia' => $custoReferencia,
+                'preco_venda_referencia' => $vendaReferencia,
                 'preco_base' => (float) ($referenceData['preco_base'] ?? $valorUnitario),
                 'percentual_encargos' => (float) ($referenceData['percentual_encargos'] ?? 0),
                 'valor_encargos' => (float) ($referenceData['valor_encargos'] ?? 0),
-                'percentual_margem' => (float) ($referenceData['percentual_margem'] ?? 0),
-                'valor_margem' => (float) ($referenceData['valor_margem'] ?? 0),
-                'valor_recomendado' => (float) ($referenceData['valor_recomendado'] ?? 0),
-                'modo_precificacao' => (string) ($referenceData['modo_precificacao'] ?? ($item['modo_precificacao'] ?? 'manual')),
+                // Margem REAL cobrada, nao a meta das configuracoes. Guardar a
+                // meta faria a coluna dizer 45% numa linha que o vendedor
+                // descontou para 5% — mentira gravada. A meta mora em
+                // `valor_recomendado`, e e contra ela que o semaforo compara.
+                'percentual_margem' => $percentualMargem,
+                'valor_margem' => $valorMargem,
+                'valor_recomendado' => $valorRecomendado,
+                // Resolvido por COMPARACAO no servidor. Vindo do cliente (como
+                // era ate specs/037, com 'manual' literal em cinco lugares), a
+                // coluna registraria intencao declarada, nao fato.
+                'modo_precificacao' => ModoPrecificacao::resolver(
+                    $valorUnitario,
+                    $valorRecomendado > 0 ? $valorRecomendado : null,
+                    $vendaReferencia > 0 ? $vendaReferencia : null,
+                    $referenciaId !== null && $referenciaId > 0 && $referenceData !== []
+                ),
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
@@ -1843,6 +1934,44 @@ class BudgetWorkflowService
     }
 
     /**
+     * Cotacao ja gravada, para orcamento que nao pode mais ser reprecificado.
+     *
+     * Vazio quando o orcamento ainda esta aberto — ai recotar e o certo, porque
+     * o operador ainda esta montando a proposta.
+     *
+     * @return array<string, array<string, float>>
+     */
+    private function cotacaoCongelada(Budget $budget): array
+    {
+        $fechados = [
+            Budget::STATUS_APPROVED,
+            Budget::STATUS_PACKAGE_APPROVED,
+            Budget::STATUS_PENDING_OS,
+            Budget::STATUS_REJECTED,
+            Budget::STATUS_EXPIRED,
+        ];
+
+        if (! in_array((string) $budget->status, $fechados, true)) {
+            return [];
+        }
+
+        return BudgetItem::query()
+            ->where('orcamento_id', $budget->id)
+            ->get()
+            ->mapWithKeys(static fn (BudgetItem $item): array => [
+                (string) $item->tipo_item.':'.(string) ($item->referencia_id ?? '') => [
+                    'preco_custo_referencia' => (float) ($item->preco_custo_referencia ?? 0),
+                    'preco_venda_referencia' => (float) ($item->preco_venda_referencia ?? 0),
+                    'preco_base' => (float) ($item->preco_base ?? 0),
+                    'percentual_encargos' => (float) ($item->percentual_encargos ?? 0),
+                    'valor_encargos' => (float) ($item->valor_encargos ?? 0),
+                    'valor_recomendado' => (float) ($item->valor_recomendado ?? 0),
+                ],
+            ])
+            ->all();
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function resolveItemReferenceData(string $type, ?int $referenceId): array
@@ -1856,18 +1985,30 @@ class BudgetWorkflowService
             if ($service instanceof Servico) {
                 $value = (float) ($service->valor ?? 0);
 
+                // Chama o motor de precificacao (specs/037). Ate esta entrega
+                // estes campos eram gravados com ZERO literal e ninguem os lia:
+                // a coluna existia e nao respondia nada.
+                $cotacao = $this->precificacaoService->simulateServico([
+                    'servico_id' => $referenceId,
+                    'tempo_padrao_horas' => (float) ($service->tempo_padrao_horas ?? 0),
+                    'custo_direto_padrao' => (float) ($service->custo_direto_padrao ?? 0),
+                    'valor_cadastro' => $value,
+                    'tipo_equipamento' => (string) ($service->tipo_equipamento ?? ''),
+                ]);
+
                 return [
                     'descricao' => (string) ($service->nome ?? ''),
                     'valor_unitario' => $value,
-                    'preco_base' => $value,
+                    'preco_base' => (float) ($cotacao['custo_total'] ?? $value),
+                    // Custo direto apenas: a mao de obra so entra quando os
+                    // cadastros forem revisados sob o rotulo novo de
+                    // `custo_direto_padrao` — antes disso somaria duas vezes
+                    // nas linhas que ja a incluem (specs/037, Fase 3).
                     'preco_custo_referencia' => (float) ($service->custo_direto_padrao ?? 0),
                     'preco_venda_referencia' => $value,
-                    'percentual_encargos' => 0,
-                    'valor_encargos' => 0,
-                    'percentual_margem' => 0,
-                    'valor_margem' => 0,
-                    'valor_recomendado' => $value,
-                    'modo_precificacao' => 'manual',
+                    'percentual_encargos' => (float) ($cotacao['risco_percentual'] ?? 0),
+                    'valor_encargos' => (float) ($cotacao['valor_risco'] ?? 0),
+                    'valor_recomendado' => (float) ($cotacao['preco_minimo'] ?? $value),
                 ];
             }
         }
@@ -1878,18 +2019,22 @@ class BudgetWorkflowService
                 $cost = (float) ($part->preco_custo ?? 0);
                 $sale = (float) ($part->preco_venda ?? 0);
 
+                $cotacao = $this->precificacaoService->simulatePeca([
+                    'peca_id' => $referenceId,
+                    'preco_custo' => $cost,
+                    'preco_venda' => $sale,
+                    'categoria' => (string) ($part->categoria ?? ''),
+                ]);
+
                 return [
                     'descricao' => (string) ($part->nome ?? ''),
                     'valor_unitario' => $sale > 0 ? $sale : $cost,
-                    'preco_base' => $cost > 0 ? $cost : $sale,
+                    'preco_base' => (float) ($cotacao['preco_base'] ?? ($cost > 0 ? $cost : $sale)),
                     'preco_custo_referencia' => $cost,
                     'preco_venda_referencia' => $sale,
-                    'percentual_encargos' => 0,
-                    'valor_encargos' => 0,
-                    'percentual_margem' => 0,
-                    'valor_margem' => 0,
-                    'valor_recomendado' => $sale > 0 ? $sale : $cost,
-                    'modo_precificacao' => 'manual',
+                    'percentual_encargos' => (float) ($cotacao['percentual_encargos'] ?? 0),
+                    'valor_encargos' => (float) ($cotacao['valor_encargos'] ?? 0),
+                    'valor_recomendado' => (float) ($cotacao['valor_recomendado'] ?? ($sale > 0 ? $sale : $cost)),
                 ];
             }
         }

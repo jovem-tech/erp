@@ -47,6 +47,30 @@ Os dois processos `sistema-erp-queue-worker_*` devem aparecer como `RUNNING`. O 
 - Local (Windows/XAMPP): a partir de 2026-06-30 `CACHE_STORE=database` e `SESSION_DRIVER=database` (antes `file`), pois o driver `file` nao funciona corretamente quando ha mais de um worker/processo PHP atendendo a aplicacao (cache e sessao ficam isolados por processo). Tabelas `cache`, `cache_locks` e `sessions` criadas via `php artisan cache:table` e `php artisan session:table`. Nenhuma instalacao adicional necessaria (usa a mesma conexao MySQL ja configurada).
 - Producao: `SESSION_DRIVER=redis` ja e o padrao planejado desde 2026-06-25. `CACHE_STORE` tambem deveria ser `redis`, mas `backend/.env.production.example` tinha o nome de variavel errado (`CACHE_DRIVER`, nao lido por esta versao do Laravel) ate ser corrigido em 2026-06-30 (ver `documentacao/07-novas-implementacoes/2026-06-30-otimizacao-performance-backend-desktop.md`) - conferir/corrigir o `.env` real do VPS, que nao esta neste checkout.
 
+### Divergencia medida em 2026-08-27 (v5.60.0.0) — pendente
+
+Os dois pontos acima descrevem o PLANO. A auditoria de desempenho conferiu o
+`.env` real do servidor de desenvolvimento (`192.168.1.100`) e encontrou:
+
+| App | `SESSION_DRIVER` | `CACHE_STORE` | `QUEUE_CONNECTION` |
+|---|---|---|---|
+| `backend/` | `redis` OK | `redis` OK | `redis` OK |
+| `frontends/desktop/` | **`file`** | **`file`** | **`sync`** |
+
+O desktop nunca migrou. Isso importa porque o `FileSessionHandler` do Laravel
+grava com `LOCK_EX`: requisicoes concorrentes **da mesma sessao** serializam,
+entao uma requisicao lenta congela as outras abas e chamadas AJAX daquele mesmo
+operador. E' o sintoma que o usuario descreve como "o sistema travou".
+
+Agravantes medidos: `SESSION_LIFETIME=43200` (30 dias) com `lottery [2,100]`, e
+770 arquivos em `storage/framework/sessions` — o GC varre o diretorio em 2% das
+requisicoes. A sessao presa ao disco de um no' tambem impede escala horizontal.
+
+O Redis ja esta instalado, com senha, em `127.0.0.1`, e o backend ja o usa: a
+correcao nao exige infraestrutura nova, apenas trocar as tres chaves no
+`frontends/desktop/.env`. Nao foi aplicada porque o escopo daquela entrega era
+codigo; ver `07-novas-implementacoes/2026-08-27-gargalos-travamento-operacao-intensa.md`.
+
 ## Scheduler
 
 - Windows: Task Scheduler chamando `php artisan schedule:run`
@@ -70,6 +94,7 @@ tarefas pesadas (dump, varredura de arquivos) competem por I/O e por lock.
 | diário | `sanctum:prune-expired --hours=24` | `routes/console.php` |
 | **02:00** | `erp-backup.sh` — dump só de `sistema_hml` | `/etc/cron.d/sistema-erp-backup` (root) |
 | **02:30** | `file-manager:purge-trash` | `routes/console.php` |
+| **02:40** | `file-manager:purge-scan-runs` (retenção do histórico de varreduras) | `routes/console.php` |
 | **03:15** | **`backup:executar --tipo=completo`** | `routes/console.php` |
 | **03:50** | **`backup:expurgar`** (retenção) | `routes/console.php` |
 

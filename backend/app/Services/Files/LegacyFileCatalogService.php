@@ -248,6 +248,12 @@ class LegacyFileCatalogService
             ],
         ])->save();
 
+        // Varredura que nao encontrou nada nao vira historico. Ver
+        // FileScanRun::discardIfUneventful(): 186 mil execucoes de
+        // `catalog_legacy` com media de 0,0 arquivos processados eram metade das
+        // 383 mil linhas da tabela.
+        $run->discardIfUneventful();
+
         ksort($result['categories']);
 
         return $result;

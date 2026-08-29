@@ -46,6 +46,12 @@ return [
         'trash_days' => (int) env('FILE_MANAGER_TRASH_RETENTION_DAYS', 30),
         'allowed_trash_days' => [0, 7, 30, 90],
         'purge_batch_size' => max(1, min(1000, (int) env('FILE_MANAGER_TRASH_PURGE_BATCH_SIZE', 250))),
+        // Historico de varreduras (file_scan_runs). Sem prazo, a tabela crescia
+        // 11.232 linhas/dia e ja somava 383 mil linhas / 373 MB — 35% do
+        // innodb_buffer_pool_size, disputando cache com `os` e `clientes`.
+        // Execucoes COM achado em aberto nunca sao apagadas, independente da idade.
+        'scan_run_days' => max(1, (int) env('FILE_MANAGER_SCAN_RUN_RETENTION_DAYS', 14)),
+        'scan_run_batch_size' => max(100, min(20_000, (int) env('FILE_MANAGER_SCAN_RUN_PURGE_BATCH_SIZE', 5_000))),
     ],
     'batch_download' => [
         'max_files' => max(1, min(100, (int) env('FILE_MANAGER_BATCH_DOWNLOAD_MAX_FILES', 50))),

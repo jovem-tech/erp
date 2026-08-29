@@ -2,6 +2,15 @@
 
 Data: 2026-07-11
 
+> **Atualizado em 2026-08-27 (v5.60.0.0).** O comportamento descrito abaixo era
+> **síncrono**: a geração do PDF e o envio ao cliente aconteciam dentro do
+> `POST /orders`. Isso mudou — os dois passaram para a fila `documents`
+> (`DeliverOrderOpeningDocumentJob`), e `opening_document` agora é sempre `null`
+> na resposta da criação. Este documento permanece como registro do que foi
+> entregue em julho; para o comportamento atual, ver
+> `2026-08-27-gargalos-travamento-operacao-intensa.md` e
+> `03-arquitetura-tecnica/idempotencia-criacao-os.md`.
+
 ## Objetivo
 
 Restaurar o fluxo documental da abertura da OS no desktop:

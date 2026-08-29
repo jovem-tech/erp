@@ -7,9 +7,13 @@ use App\Contracts\Files\FileStorage;
 use App\Contracts\Files\MalwareScanner;
 use App\Contracts\Files\PdfThumbnailRenderer;
 use App\Enums\Files\FileManagerMode;
+use App\Models\Client;
+use App\Models\Equipment;
+use App\Models\Order;
 use App\Models\OrderDocumentFile;
 use App\Models\User;
 use App\Observers\OrderDocumentFileObserver;
+use App\Observers\OrderSearchIndexObserver;
 use App\Services\Agenda\Sources\AgendaSourceRegistry;
 use App\Services\Agenda\Sources\CobrancaOsSource;
 use App\Services\Agenda\Sources\ContasPagarSource;
@@ -113,6 +117,21 @@ class AppServiceProvider extends ServiceProvider
         $fileAuthorizers->register('user', app(UserProfilePhotoFileAuthorizer::class));
         $fileAuthorizers->register('chat_attachment', app(ChatAttachmentFileAuthorizer::class));
         OrderDocumentFile::observe(app(OrderDocumentFileObserver::class));
+
+        // Indice de busca da OS (os.busca_texto). Registrado como listener de
+        // `saved` em vez de ::observe() porque o mesmo objeto atende tres
+        // modelos diferentes — a OS e os dois cadastros cujo texto ela carrega.
+        Order::saved(static function (Order $order): void {
+            app(OrderSearchIndexObserver::class)->savedOrder($order);
+        });
+
+        Client::saved(static function (Client $client): void {
+            app(OrderSearchIndexObserver::class)->savedClient($client);
+        });
+
+        Equipment::saved(static function (Equipment $equipment): void {
+            app(OrderSearchIndexObserver::class)->savedEquipment($equipment);
+        });
 
         // As paginas HTML publicas da API (orcamento, documentos compartilhados
         // e telas de erro) exibem o mesmo favicon do desktop. Resolver a logo

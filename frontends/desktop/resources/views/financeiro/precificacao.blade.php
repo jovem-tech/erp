@@ -55,29 +55,29 @@
 
                         <div class="desktop-grid desktop-grid-two">
                             <div>
-                                <label>Base da peça</label>
+                                <x-campo-label ajuda="Sobre qual valor a margem incide. <strong>Custo da peça</strong> parte do que você pagou ao fornecedor — é o certo na maioria dos casos. <strong>Venda da peça</strong> parte do preço já cadastrado; só use se você segue tabela de fabricante.<span class='tip-exemplo'>Na dúvida: Custo da peça.</span>">Base da peça</x-campo-label>
                                 <select name="precificacao_peca_base" class="form-select">
                                     <option value="custo" @selected(old('precificacao_peca_base', $settings['precificacao_peca_base'] ?? 'custo') === 'custo')>Custo da peça</option>
                                     <option value="venda" @selected(old('precificacao_peca_base', $settings['precificacao_peca_base'] ?? 'custo') === 'venda')>Venda da peça</option>
                                 </select>
                             </div>
                             <div>
-                                <label>Encargos totais (%)</label>
+                                <x-campo-label ajuda="Tudo que a peça custa <strong>além</strong> do que o fornecedor cobrou: frete, embalagem e a peça que chega quebrada. Some esses gastos do mês e divida pelo total comprado.<span class='tip-exemplo'>Peça de R$ 100 com 15% → R$ 15 de encargos.</span>">Encargos totais (%)</x-campo-label>
                                 <input type="number" step="0.01" min="0" max="500" class="form-control" name="precificacao_peca_encargos_percentual" value="{{ old('precificacao_peca_encargos_percentual', $settings['precificacao_peca_encargos_percentual'] ?? '15') }}">
                             </div>
                             <div>
-                                <label>Margem da peça (%)</label>
+                                <x-campo-label ajuda="Quanto você quer ganhar revendendo a peça. <strong>Não é o seu lucro</strong>: daqui ainda saem aluguel, luz e o seu pró-labore. Em assistência, 40% a 50% é a faixa usual.<span class='tip-exemplo'>Custo R$ 100 + 15% encargos + 45% margem → R$ 209.</span>">Margem da peça (%)</x-campo-label>
                                 <input type="number" step="0.01" min="0" max="500" class="form-control" name="precificacao_peca_margem_percentual" value="{{ old('precificacao_peca_margem_percentual', $settings['precificacao_peca_margem_percentual'] ?? '45') }}">
                             </div>
                             <div>
-                                <label>Respeitar preço de venda</label>
+                                <x-campo-label ajuda="<strong>Sim</strong>: se a peça já tem preço de venda cadastrado e ele é maior que o calculado, o sistema mantém o seu preço. <strong>Não</strong>: recalcula sempre pelo custo, ignorando o cadastro.<span class='tip-exemplo'>Na dúvida: Sim.</span>">Respeitar preço de venda</x-campo-label>
                                 <select name="precificacao_peca_respeitar_preco_venda" class="form-select">
                                     <option value="1" @selected($boolValue(old('precificacao_peca_respeitar_preco_venda', $settings['precificacao_peca_respeitar_preco_venda'] ?? '1')))>Sim</option>
                                     <option value="0" @selected(! $boolValue(old('precificacao_peca_respeitar_preco_venda', $settings['precificacao_peca_respeitar_preco_venda'] ?? '1')))>Não</option>
                                 </select>
                             </div>
                             <div>
-                                <label>Usar componentes da peça</label>
+                                <x-campo-label ajuda="<strong>Sim</strong>: se você cadastrar itens de encargo (frete, perda, embalagem) separados, a soma deles <strong>substitui</strong> o percentual de encargos acima. Enquanto não houver nenhum cadastrado, este campo não muda nada.<span class='tip-exemplo'>Você tem 0 componentes hoje — o valor que vale é o campo Encargos.</span>">Usar componentes da peça</x-campo-label>
                                 <select name="precificacao_peca_usa_componentes" class="form-select">
                                     <option value="1" @selected($boolValue(old('precificacao_peca_usa_componentes', $settings['precificacao_peca_usa_componentes'] ?? '1')))>Sim</option>
                                     <option value="0" @selected(! $boolValue(old('precificacao_peca_usa_componentes', $settings['precificacao_peca_usa_componentes'] ?? '1')))>Não</option>
@@ -103,15 +103,15 @@
 
                         <div class="desktop-grid desktop-grid-three">
                             <div>
-                                <label>Custo hora produtiva (R$)</label>
+                                <x-campo-label ajuda="Quanto custa <strong>uma hora da sua bancada</strong>, antes de qualquer lucro. Sai de: custos fixos do mês ÷ horas que você realmente conserta. <strong>Você não precisa calcular</strong> — lance aluguel, luz, DAS e o seu pró-labore no Financeiro como despesa fixa e o sistema calcula sozinho.<span class='tip-exemplo'>R$ 1.700 de fixo ÷ 77 h de bancada = R$ 22/h.</span>">Custo hora produtiva (R$)</x-campo-label>
                                 <input type="number" step="0.01" min="0" class="form-control" name="precificacao_servico_custo_hora_produtiva" value="{{ old('precificacao_servico_custo_hora_produtiva', $settings['precificacao_servico_custo_hora_produtiva'] ?? '40') }}">
                             </div>
                             <div>
-                                <label>Margem alvo (%)</label>
+                                <x-campo-label ajuda="Quanto deve sobrar do serviço <strong>depois</strong> de pagar a mão de obra e o material. É com ela que o sistema sugere o preço e acende o alerta de preço baixo. 20% a 30% é o comum em assistência.<span class='tip-exemplo'>Custo R$ 45 com margem 25% → preço R$ 60.</span>">Margem alvo (%)</x-campo-label>
                                 <input type="number" step="0.01" min="0" max="500" class="form-control" name="precificacao_servico_margem_percentual" value="{{ old('precificacao_servico_margem_percentual', $settings['precificacao_servico_margem_percentual'] ?? '25') }}">
                             </div>
                             <div>
-                                <label>Taxa de recebimento (%)</label>
+                                <x-campo-label ajuda="A fatia que a <strong>maquininha</strong> desconta de cada venda no cartão — está na fatura da operadora. Débito e crédito à vista ficam entre 2% e 4%; parcelado passa de 5%. Use a média das suas vendas. <strong>Não é imposto</strong>.<span class='tip-exemplo'>Se quase tudo é Pix ou dinheiro, deixe perto de 0.</span>">Taxa de recebimento (%)</x-campo-label>
                                 <input type="number" step="0.01" min="0" max="100" class="form-control" name="precificacao_servico_taxa_recebimento_percentual" value="{{ old('precificacao_servico_taxa_recebimento_percentual', $settings['precificacao_servico_taxa_recebimento_percentual'] ?? '3.5') }}">
                             </div>
                             @php
@@ -119,7 +119,7 @@
                                 $impostoVariavel = in_array($regimeAtual, ['simples', 'outro'], true);
                             @endphp
                             <div>
-                                <label>Regime tributário</label>
+                                <x-campo-label ajuda="Decide se o imposto sai da margem de cada OS ou entra nos custos fixos. <strong>MEI</strong>: o DAS é valor fixo e não desconta da margem. <strong>Simples / Outro</strong>: o imposto é percentual sobre a venda e desconta de cada atendimento.">Regime tributário</x-campo-label>
                                 <select name="regime_tributario" class="form-select" id="regimeTributario">
                                     <option value="mei" @selected($regimeAtual === 'mei')>MEI</option>
                                     <option value="simples" @selected($regimeAtual === 'simples')>Simples Nacional</option>
@@ -130,7 +130,7 @@
                                 </div>
                             </div>
                             <div>
-                                <label>Imposto (%)</label>
+                                <x-campo-label ajuda="Percentual que sai de <strong>cada venda</strong> para o imposto. <strong>No MEI deixe 0</strong> — o DAS não muda se você fizer 10 ou 100 OS, então ele é custo fixo, não percentual. Só preencha no Simples ou outro regime, com a alíquota <strong>efetiva</strong> do último DAS.<span class='tip-exemplo'>MEI: o DAS vai no Financeiro como despesa fixa.</span>">Imposto (%)</x-campo-label>
                                 <input type="number" step="0.01" min="0" max="100" class="form-control"
                                        id="impostoPercentual"
                                        name="precificacao_servico_imposto_percentual"
@@ -146,25 +146,25 @@
                                 </div>
                             </div>
                             <div>
-                                <label>Tempo padrão (h)</label>
+                                <x-campo-label ajuda="Quanto tempo de bancada o sistema assume quando o serviço <strong>não tem tempo próprio</strong> cadastrado. É esse tempo que vira dinheiro: tempo × custo-hora. Use uma média honesta, incluindo montar e testar.<span class='tip-exemplo'>1,5 h × R$ 22/h = R$ 33 de mão de obra.</span>">Tempo padrão (h)</x-campo-label>
                                 <input type="number" step="0.01" min="0.1" class="form-control" name="precificacao_servico_tempo_padrao_horas" value="{{ old('precificacao_servico_tempo_padrao_horas', $settings['precificacao_servico_tempo_padrao_horas'] ?? '1') }}">
                             </div>
                             <div>
-                                <label>Usar componentes de serviço</label>
+                                <x-campo-label ajuda="<strong>Sim</strong>: usa os itens de custo e de risco cadastrados (consumíveis, reserva de garantia) somando-os ao custo do serviço. Enquanto não houver nenhum cadastrado, não muda nada.">Usar componentes de serviço</x-campo-label>
                                 <select name="precificacao_servico_usa_componentes" class="form-select">
                                     <option value="1" @selected($boolValue(old('precificacao_servico_usa_componentes', $settings['precificacao_servico_usa_componentes'] ?? '1')))>Sim</option>
                                     <option value="0" @selected(! $boolValue(old('precificacao_servico_usa_componentes', $settings['precificacao_servico_usa_componentes'] ?? '1')))>Não</option>
                                 </select>
                             </div>
                             <div>
-                                <label>Aplicar catálogo</label>
+                                <x-campo-label ajuda="<strong>Sim</strong>: quando o serviço já tem valor cadastrado, o sistema usa esse valor em vez do calculado — respeita a sua tabela de preços. <strong>Não</strong>: recalcula sempre pelo tempo e custo.<span class='tip-exemplo'>Na dúvida: Sim.</span>">Aplicar catálogo</x-campo-label>
                                 <select name="precificacao_servico_aplicar_catalogo" class="form-select">
                                     <option value="1" @selected($boolValue(old('precificacao_servico_aplicar_catalogo', $settings['precificacao_servico_aplicar_catalogo'] ?? '1')))>Sim</option>
                                     <option value="0" @selected(! $boolValue(old('precificacao_servico_aplicar_catalogo', $settings['precificacao_servico_aplicar_catalogo'] ?? '1')))>Não</option>
                                 </select>
                             </div>
                             <div>
-                                <label>Aplicar piso</label>
+                                <x-campo-label ajuda="<strong>Este botão ainda não age.</strong> A intenção é bloquear a venda abaixo do custo; hoje o sistema apenas <strong>avisa</strong> em vermelho e deixa você decidir. Pode deixar em Não.<span class='tip-exemplo'>O aviso já funciona no orçamento e no PDV.</span>">Aplicar piso</x-campo-label>
                                 <select name="precificacao_servico_aplicar_piso" class="form-select">
                                     <option value="1" @selected($boolValue(old('precificacao_servico_aplicar_piso', $settings['precificacao_servico_aplicar_piso'] ?? '0')))>Sim</option>
                                     <option value="0" @selected(! $boolValue(old('precificacao_servico_aplicar_piso', $settings['precificacao_servico_aplicar_piso'] ?? '0')))>Não</option>

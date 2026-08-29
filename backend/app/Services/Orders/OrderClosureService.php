@@ -3,10 +3,14 @@
 namespace App\Services\Orders;
 
 use App\Models\Budget;
+use App\Models\BudgetItem;
 use App\Models\CrmFollowup;
 use App\Models\Financeiro;
+use App\Models\Movimentacao;
 use App\Models\FinanceiroFormaPagamento;
 use App\Models\FinanceiroMovimentoCartao;
+use App\Jobs\Orders\NotifyOrderAdvanceJob;
+use App\Jobs\Orders\NotifyOrderClosureJob;
 use App\Models\Order;
 use App\Models\OrderEvent;
 use App\Models\OrderItem;
@@ -381,17 +385,20 @@ class OrderClosureService
             $this->createReturnFollowup((int) $order->id, $retornoData, (int) $actor->id);
         }
 
+        // null = "ainda nao se sabe": o envio foi para a fila. O desktop so'
+        // avisa o operador quando o valor e' estritamente false (falha real),
+        // entao enfileirar nao produz alarme falso na tela.
         $notificacaoEnviada = null;
         if (filter_var($payload['notificar_cliente'] ?? false, FILTER_VALIDATE_BOOL)) {
-            $notificacaoEnviada = $this->sendClosureNotification(
-                $order,
+            NotifyOrderClosureJob::dispatch(
+                (int) $order->id,
                 (string) $result['status_aplicado'],
                 $dataEntrega,
                 $observacao,
                 $recebimentos,
                 (float) $result['saldo_aberto'],
                 (float) $result['titulo_valor'],
-                $actor
+                (int) $actor->id
             );
         }
 
@@ -674,8 +681,8 @@ class OrderClosureService
 
         $notificacaoEnviada = null;
         if (filter_var($payload['notificar_cliente'] ?? false, FILTER_VALIDATE_BOOL)) {
-            $notificacaoEnviada = $this->sendAdvanceNotification(
-                $order,
+            NotifyOrderAdvanceJob::dispatch(
+                (int) $order->id,
                 $equipamentoEntregue,
                 (float) $result['saldo_aberto']
             );
@@ -1106,9 +1113,25 @@ class OrderClosureService
 
         $summary['agendamentos_lidos'] = $rows->count();
 
+        // Duas consultas para o lote inteiro, em vez de duas POR agendamento.
+        // Com o limite de 200 por execucao, o laco fazia ate' 400 idas ao banco
+        // a cada tique do agendador — e cada uma delas voltava para a mesma
+        // dezena de OS e titulos, ja que varios agendamentos (D+1/D+3/D+5)
+        // apontam para a mesma OS.
+        $orders = Order::query()
+            ->with('client')
+            ->whereIn('id', $rows->pluck('os_id')->filter()->unique()->all())
+            ->get()
+            ->keyBy('id');
+
+        $titulos = Financeiro::query()
+            ->whereIn('id', $rows->pluck('financeiro_id')->filter()->unique()->all())
+            ->get()
+            ->keyBy('id');
+
         foreach ($rows as $row) {
-            $order = Order::query()->with('client')->find($row->os_id);
-            $titulo = $row->financeiro_id ? Financeiro::query()->find($row->financeiro_id) : null;
+            $order = $orders->get((int) $row->os_id);
+            $titulo = $row->financeiro_id ? $titulos->get((int) $row->financeiro_id) : null;
 
             if (! $order instanceof Order || ! $titulo instanceof Financeiro || (string) $order->status !== self::PENDING_PAYMENT_STATUS) {
                 $row->update(['status' => OsCobrancaAgendamento::STATUS_CANCELADO, 'ultima_tentativa_em' => Carbon::now()]);
@@ -1698,7 +1721,7 @@ class OrderClosureService
     /**
      * @param array<int, array<string, mixed>> $recebimentos
      */
-    private function sendClosureNotification(
+    public function sendClosureNotification(
         Order $order,
         string $statusAplicadoCodigo,
         string $dataEntrega,
@@ -1818,7 +1841,7 @@ class OrderClosureService
      * registerAdvance() — mensagem simples de texto (sem PDF de encerramento,
      * já que a OS não foi encerrada).
      */
-    private function sendAdvanceNotification(
+    public function sendAdvanceNotification(
         Order $order,
         bool $equipamentoEntregue,
         float $saldoRestante
@@ -1990,30 +2013,40 @@ class OrderClosureService
      */
     private function buildCostSummary(int $orderId): array
     {
-        $rows = OrderItem::query()
-            ->selectRaw("tipo, COALESCE(SUM(COALESCE(preco_custo_referencia, 0) * COALESCE(quantidade, 1)), 0) as total")
-            ->where('os_id', $orderId)
-            ->groupBy('tipo')
-            ->get();
+        // Ate specs/037 esta soma vinha de `os_itens.preco_custo_referencia` —
+        // uma tabela com 2.306 linhas e ZERO com custo preenchido. O ERP novo
+        // nunca escreve nela e o legado parou em 30/04/2026. Resultado: a tela
+        // de encerramento mostrava "Custo estimado: R$ 0,00" em TODA OS,
+        // exatamente no momento em que o dono decide se a OS deu lucro.
+        //
+        // Agora vem das mesmas fontes que a margem usa, para o encerramento e o
+        // DRE nunca discordarem sobre a mesma OS:
+        //  - peca: saida de estoque valorizada (identico a
+        //    OsMargemService::custoPecasAplicadas());
+        //  - servico: custo de referencia do orcamento vinculado, que a Fase 4
+        //    finalmente passou a preencher.
+        $custoPecas = (float) Movimentacao::query()
+            ->join('pecas', 'pecas.id', '=', 'movimentacoes.peca_id')
+            ->where('movimentacoes.os_id', $orderId)
+            ->where('movimentacoes.tipo', 'saida')
+            ->selectRaw('COALESCE(SUM(movimentacoes.quantidade * pecas.preco_custo), 0) as total')
+            ->value('total');
 
-        $summary = ['pecas' => 0.0, 'servicos' => 0.0, 'total' => 0.0];
+        $custoServicos = (float) BudgetItem::query()
+            ->join('orcamentos', 'orcamentos.id', '=', 'orcamento_itens.orcamento_id')
+            ->where('orcamentos.os_id', $orderId)
+            ->where('orcamento_itens.tipo_item', 'servico')
+            ->selectRaw('COALESCE(SUM(orcamento_itens.preco_custo_referencia * orcamento_itens.quantidade), 0) as total')
+            ->value('total');
 
-        foreach ($rows as $row) {
-            $tipo = strtolower(trim((string) $row->tipo));
-            $valor = round((float) $row->total, 2);
+        $pecas = round($custoPecas, 2);
+        $servicos = round($custoServicos, 2);
 
-            if ($tipo === 'peca') {
-                $summary['pecas'] = $valor;
-            } elseif ($tipo === 'servico') {
-                $summary['servicos'] = $valor;
-            }
-
-            $summary['total'] += $valor;
-        }
-
-        $summary['total'] = round($summary['total'], 2);
-
-        return $summary;
+        return [
+            'pecas' => $pecas,
+            'servicos' => $servicos,
+            'total' => round($pecas + $servicos, 2),
+        ];
     }
 
     /**

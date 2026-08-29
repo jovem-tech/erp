@@ -115,6 +115,14 @@
                 saldoPorPeca.set(Number(item.referencia_id), Number(item.saldo) || 0);
             }
 
+            // Cotação vinda do backend, já redigida pela permissão de quem
+            // buscou: `custo_unitario` só existe para quem pode ver número.
+            // Guardada no dataset para o recálculo ser local — `recalcular()`
+            // roda a cada tecla e não pode fazer fetch.
+            linha.dataset.custoUnitario = item.custo_unitario == null ? '' : String(item.custo_unitario);
+            linha.dataset.precoMinimo = item.preco_minimo == null ? '' : String(item.preco_minimo);
+            linha.dataset.faixa = item.faixa || 'indefinido';
+
             itensBody.appendChild(fragmento);
             reindexarItens();
             recalcular();
@@ -273,13 +281,110 @@
         /* Totais                                                              */
         /* ------------------------------------------------------------------ */
 
+        /* ------------------------------------------------------------------ */
+        /* Margem e semáforo (specs/037)                                       */
+        /* ------------------------------------------------------------------ */
+
+        // Limites vindos do servidor, nunca hard-coded: semáforo que discorda
+        // entre tela e banco é pior que semáforo nenhum.
+        // Defaults espelham os do backend; o servidor sobrescreve na primeira
+        // busca (`adotarConfigPreco`). Nunca inventar limite no cliente:
+        // semáforo que discorda entre tela e banco é pior que semáforo nenhum.
+        let limiteVerde = 30;
+        let limiteAmarelo = 15;
+        // `completo` só quando o backend mandou custo. Se ele redigiu o
+        // payload, o número não existe aqui — e não há o que exibir.
+        let mostraCusto = false;
+
+        const adotarConfigPreco = (dados) => {
+            if (dados && dados.limites_semaforo) {
+                limiteVerde = Number(dados.limites_semaforo.verde ?? limiteVerde);
+                limiteAmarelo = Number(dados.limites_semaforo.amarelo ?? limiteAmarelo);
+            }
+            if (dados && typeof dados.visibilidade_custo === 'string') {
+                mostraCusto = dados.visibilidade_custo === 'completo';
+            }
+        };
+
+        // Segunda linha da sugestão de busca. Para quem não vê número, sai só
+        // a bolinha — que já é a informação que decide se vale vender.
+        const linhaDeMargemDaSugestao = (item) => {
+            const faixa = item.faixa || 'indefinido';
+            const cor = { verde: 'success', amarelo: 'warning', vermelho: 'danger' }[faixa] || 'secondary';
+            const bolinha = `<span class="text-${cor}">●</span>`;
+
+            if (!mostraCusto || item.custo_unitario == null) {
+                return `<small class="d-block fw-normal">${bolinha}</small>`;
+            }
+
+            const percentual = Number(item.margem_percentual ?? 0);
+            return `<small class="d-block fw-normal text-secondary">${bolinha} `
+                + `custo ${money(item.custo_unitario)} · ${percentual.toFixed(1).replace('.', ',')}%</small>`;
+        };
+
+        const corDaFaixa = (percentual, abaixoDoPiso) => {
+            if (abaixoDoPiso || percentual < 0) return 'danger';
+            if (percentual >= limiteVerde) return 'success';
+            return percentual >= limiteAmarelo ? 'warning' : 'danger';
+        };
+
+        const atualizarResumoMargem = (temCusto, custoTotal, total, abaixoDoPiso) => {
+            const custoLabel = document.getElementById('pdvCustoLabel');
+            const custoValor = document.getElementById('pdvCustoTotal');
+            const margemLabel = document.getElementById('pdvMargemLabel');
+            const margemValor = document.getElementById('pdvMargemTotal');
+            const aviso = document.getElementById('pdvAvisoPiso');
+
+            const exibirResumo = mostraCusto && temCusto;
+
+            [custoLabel, custoValor, margemLabel, margemValor].forEach((el) => {
+                if (el) el.classList.toggle('d-none', !exibirResumo);
+            });
+
+            if (exibirResumo) {
+                const margem = Math.round((total - custoTotal) * 100) / 100;
+                const percentual = total > 0 ? (margem / total) * 100 : 0;
+
+                setText(custoValor, money(custoTotal));
+                setText(margemValor, `${money(margem)} · ${percentual.toFixed(1).replace('.', ',')}%`);
+                margemValor.className = `col-6 text-end mb-0 text-${corDaFaixa(percentual, margem < 0)}`;
+            }
+
+            if (!aviso) return;
+
+            // O aviso de piso vale para TODOS, inclusive quem não vê o número:
+            // é a única forma de o técnico saber que passou do limite.
+            if (abaixoDoPiso > 0) {
+                aviso.classList.remove('d-none');
+                aviso.textContent = abaixoDoPiso === 1
+                    ? '1 item está abaixo do custo com este desconto.'
+                    : `${abaixoDoPiso} itens estão abaixo do custo com este desconto.`;
+            } else {
+                aviso.classList.add('d-none');
+                aviso.textContent = '';
+            }
+        };
+
         const recalcular = () => {
             let subtotal = 0;
+            let custoTotal = 0;
+            let temCusto = false;
+            const linhasComCusto = [];
 
             itensBody.querySelectorAll('.pdv-item').forEach((linha) => {
                 const total = totalDaLinha(linha);
                 subtotal += total;
                 setText(linha.querySelector('.pdv-item-total'), money(total));
+
+                const quantidade = parseNumber(linha.querySelector('[data-campo="quantidade"]').value);
+                const custoUnit = linha.dataset.custoUnitario === '' ? null : Number(linha.dataset.custoUnitario);
+
+                if (custoUnit !== null && !Number.isNaN(custoUnit)) {
+                    temCusto = true;
+                    custoTotal += custoUnit * quantidade;
+                }
+
+                linhasComCusto.push({ linha, total, quantidade, custoUnit });
             });
 
             const modo = descontoTipo.value;
@@ -288,6 +393,38 @@
                 : parseNumber(descontoValor.value);
 
             const total = Math.max(0, Math.round((subtotal - desconto) * 100) / 100);
+
+            // O desconto de cabeçalho é rateado por linha para saber quais
+            // caíram abaixo do custo. Sem ratear, um desconto de 30% no total
+            // apareceria como se nenhuma linha tivesse mudado de faixa.
+            const fatorDesconto = subtotal > 0 ? total / subtotal : 1;
+            let abaixoDoPiso = 0;
+
+            linhasComCusto.forEach(({ linha, total: totalLinha, quantidade, custoUnit }) => {
+                const alvo = linha.querySelector('.pdv-item-margem');
+                if (!alvo) return;
+
+                if (custoUnit === null || Number.isNaN(custoUnit) || totalLinha <= 0) {
+                    alvo.className = 'd-block fw-normal pdv-item-margem text-secondary';
+                    alvo.textContent = mostraCusto ? 'sem custo' : '';
+                    return;
+                }
+
+                const liquido = Math.round(totalLinha * fatorDesconto * 100) / 100;
+                const custoLinha = Math.round(custoUnit * quantidade * 100) / 100;
+                const margem = liquido - custoLinha;
+                const percentual = liquido > 0 ? (margem / liquido) * 100 : 0;
+                const furou = liquido < custoLinha;
+
+                if (furou) abaixoDoPiso += 1;
+
+                alvo.className = `d-block fw-normal pdv-item-margem text-${corDaFaixa(percentual, furou)}`;
+                alvo.textContent = mostraCusto
+                    ? `${money(margem)} · ${percentual.toFixed(1).replace('.', ',')}%`
+                    : (furou ? 'abaixo do custo' : '');
+            });
+
+            atualizarResumoMargem(temCusto, custoTotal, total, abaixoDoPiso);
 
             setText(document.getElementById('pdvSubtotal'), money(subtotal));
             setText(document.getElementById('pdvDesconto'), money(desconto));
@@ -392,8 +529,9 @@
                 const direita = document.createElement('span');
                 // flex-shrink-0: o preço nunca é espremido pelo nome longo, e
                 // text-nowrap mantém "R$ 1.167,12" numa linha só.
-                direita.className = 'fw-semibold text-nowrap flex-shrink-0';
-                direita.textContent = money(item.valor_unitario);
+                direita.className = 'fw-semibold text-nowrap flex-shrink-0 text-end';
+                direita.innerHTML = money(item.valor_unitario)
+                    + linhaDeMargemDaSugestao(item);
 
                 botao.appendChild(esquerda);
                 botao.appendChild(direita);
@@ -437,7 +575,10 @@
 
             fetch(url, { headers: { Accept: 'application/json' } })
                 .then((resposta) => resposta.json())
-                .then((dados) => renderResultados(Array.isArray(dados.itens) ? dados.itens : []))
+                .then((dados) => {
+                    adotarConfigPreco(dados);
+                    renderResultados(Array.isArray(dados.itens) ? dados.itens : []);
+                })
                 .catch(() => renderResultados([]));
         };
 

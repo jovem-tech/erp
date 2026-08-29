@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Services\Financeiro\PrecificacaoService;
 use App\Support\RegimeTributario;
+use App\Support\VisibilidadeCusto;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -53,9 +54,37 @@ class FinanceiroPrecificacaoController extends BaseApiController
         ], request: $request);
     }
 
+    /**
+     * Simulacao de preco de peca.
+     *
+     * Serve dois publicos desde specs/037: a tela de precificacao (que sempre
+     * teve `financeiro:visualizar`) e o CADASTRO DE PECA, onde quem digita e
+     * frequentemente um estoquista sem permissao financeira nenhuma.
+     *
+     * Exigir `financeiro:visualizar` aqui deixaria o preco sugerido inacessivel
+     * justamente para quem cadastra. A resposta e redigida por visibilidade —
+     * o estoquista recebe o valor sugerido e o semaforo, nao a composicao de
+     * custo.
+     */
     public function simulatePeca(Request $request): JsonResponse
     {
-        $this->authorize('financeiro:visualizar');
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        if (! $user->can('financeiro:visualizar')
+            && ! $user->can('precificacao:visualizar')
+            && ! $user->can('estoque:criar')
+            && ! $user->can('estoque:editar')) {
+            return $this->error(
+                'Você não tem permissão para simular preços.',
+                403,
+                'PRECIFICACAO_NAO_AUTORIZADO',
+                null,
+                request: $request
+            );
+        }
 
         $validated = $request->validate([
             'peca_id' => ['nullable', 'integer', 'min:1'],
@@ -64,14 +93,69 @@ class FinanceiroPrecificacaoController extends BaseApiController
             'categoria' => ['nullable', 'string', 'max:120'],
         ]);
 
+        $simulacao = $this->precificacaoService->simulatePeca($validated);
+
         return $this->success([
-            'simulation' => $this->precificacaoService->simulatePeca($validated),
+            'simulation' => $this->redigirSimulacao($simulacao, $user),
         ], request: $request);
     }
 
+    /**
+     * Remove a composicao de custo de quem nao pode ve-la.
+     *
+     * A chave nao pode existir no JSON: esconder na view deixa o numero no
+     * devtools. Mesma regra de PrecoQuote::toArray(), aplicada aqui porque a
+     * simulacao devolve o array cru do motor.
+     *
+     * @param array<string, mixed> $simulacao
+     * @return array<string, mixed>
+     */
+    private function redigirSimulacao(array $simulacao, mixed $user): array
+    {
+        $visibilidade = VisibilidadeCusto::paraUsuario($user);
+        $simulacao['visibilidade_custo'] = $visibilidade;
+
+        if ($visibilidade === VisibilidadeCusto::COMPLETO) {
+            return $simulacao;
+        }
+
+        foreach (VisibilidadeCusto::CAMPOS_SENSIVEIS as $campo) {
+            unset($simulacao[$campo]);
+        }
+
+        // `percentual_encargos` nao esta na lista generica porque em outros
+        // contextos e so um parametro; aqui ele revela a composicao do custo.
+        unset($simulacao['percentual_encargos'], $simulacao['preco_base'], $simulacao['categoria_override']);
+
+        return $simulacao;
+    }
+
+    /**
+     * Simulacao de preco de servico.
+     *
+     * Mesma razao de simulatePeca(): quem cadastra servico frequentemente nao
+     * tem permissao financeira, e exigi-la deixaria a sugestao inacessivel
+     * justamente para quem digita o preco. Resposta redigida por visibilidade.
+     */
     public function simulateServico(Request $request): JsonResponse
     {
-        $this->authorize('financeiro:visualizar');
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        if (! $user->can('financeiro:visualizar')
+            && ! $user->can('precificacao:visualizar')
+            && ! $user->can('servicos:criar')
+            && ! $user->can('servicos:editar')) {
+            return $this->error(
+                'Você não tem permissão para simular preços.',
+                403,
+                'PRECIFICACAO_NAO_AUTORIZADO',
+                null,
+                request: $request
+            );
+        }
 
         $validated = $request->validate([
             'servico_id' => ['nullable', 'integer', 'min:1'],
@@ -82,7 +166,10 @@ class FinanceiroPrecificacaoController extends BaseApiController
         ]);
 
         return $this->success([
-            'simulation' => $this->precificacaoService->simulateServico($validated),
+            'simulation' => $this->redigirSimulacao(
+                $this->precificacaoService->simulateServico($validated),
+                $user
+            ),
         ], request: $request);
     }
 }

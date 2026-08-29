@@ -1,5 +1,75 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.69.2.1 — 2026-08-29 03:13
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Filtro 'Mostrar' passa a ficar ao lado da Categoria como campo normal (colunas 2/3 e 1/3) em vez de solto no canto direito, onde lia como se nao pertencesse a nada
+
+## v5.69.2.0 — 2026-08-29 03:00
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Valor e Data de vencimento movidos para a seção Pagamento: o núcleo do formulário responde só o que é (tipo, categoria, descrição) e a seção agrupa quanto, quando e como
+
+## v5.69.1.0 — 2026-08-29 02:45
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Seção de entrada no estoque passa a aparecer só na categoria de compra de peça (grupo Custo Direto (OS)); atalho 'Entrada por compra' já abre com a categoria escolhida; corrigido atributo class duplicado em 5 lugares do form, que fazia o d-none ser ignorado pelo navegador
+
+## v5.69.0.0 — 2026-08-29 02:29
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Formulário de lançamento com revelação progressiva: 'Despesa fixa?' vira filtro honesto de categorias + classificação exibida como resultado, despesa fixa passa a aceitar fornecedor, forma de pagamento só quando faz efeito, e correção de 6 defeitos (repetir inalcançável, dois donos do d-none, perda de OS/cliente ao trocar categoria)
+
+## v5.68.0.0 — 2026-08-28 23:15
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Entrada de estoque a partir do lançamento financeiro (specs/039): peças da compra viram movimentação de entrada na mesma transação do título, com cadastro rápido inline, sugestão de preço e estorno no cancelamento
+
+## v5.67.0.0 — 2026-08-28 12:04
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Ajuda contextual nos campos de precificação e de lançamento financeiro
+
+## v5.66.0.0 — 2026-08-27 20:33
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Baixa de peca na OS (specs/038): o CMV deixa de ser zero. Botao Aplicar pecas do orcamento no lugar do alerta passivo, com modal pre-preenchido pelo que falta aplicar, e motor unico EstoqueMovimentacaoService generalizando a implementacao de baixa que ja estava correta em vendas - lock ordenado por id, decremento atomico e agregacao por peca. Saldo negativo so com confirmacao explicita, e o erro nomeia as pecas que faltaram
+
+## v5.65.0.0 — 2026-08-27 20:02
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Precificacao Fase 5 (specs/037): a tela de encerramento de OS mostrava Custo estimado R$ 0,00 em TODA OS porque somava os_itens.preco_custo_referencia, uma coluna com 2306 linhas e zero preenchidas. Passa a vir das mesmas fontes da margem: saida de estoque valorizada para pecas e orcamento_itens para servicos. Fecha tambem custo e margem na listagem e no detalhe da venda, que apareciam para qualquer um com vendas:visualizar
+
+## v5.64.0.0 — 2026-08-27 19:55
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Precificacao Fase 4 (specs/037): orcamento passa a gravar cotacao real no lugar dos zeros literais, com percentual_margem guardando a margem COBRADA e nao a meta, e modo_precificacao resolvido por comparacao no servidor. Orcamento fechado deixa de ser reprecificado ao ser editado, porque syncItems apaga e reinsere tudo a cada save. Tela ganha colunas de custo e margem com semaforo, o payload passa a ser redigido por permissao, e a legenda que prometia custo e margem sem ter as colunas deixa de mentir
+
+## v5.63.0.0 — 2026-08-27 18:54
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Precificacao Fase 3 (specs/037): custo-hora deixa de ser numero digitado e passa a ser calculado dos custos fixos reais do DRE, com definicao de custo fixo unica (Financeiro::scopeFixasDre) compartilhada entre os dois. Escada de guardas que nunca devolve zero, janela de meses fechados com limite inferior e capacidade global. Cadastro de servico ganha preco sugerido e a cadeia de custo visivel, e custo_direto_padrao vira Custo de materiais para acabar com a dupla contagem de mao de obra
+
+## v5.62.0.0 — 2026-08-27 18:20
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Precificacao Fase 2 (specs/037): cadastro de peca ganha preco sugerido que pre-preenche o campo vazio e nunca sobrescreve digitacao (regra do sujo, com edicao e old() nascendo sujos). Simulador passa a aceitar estoque:criar|editar com resposta redigida por visibilidade, porque quem cadastra peca costuma nao ter permissao financeira. Expoe valor_calculado alem do recomendado para tratar respeitar_preco_venda, que antes sugeria o proprio numero ja digitado
+
+## v5.61.0.0 — 2026-08-27 17:46
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Precificacao Fases 0 e 1 (specs/037): o motor sai da tela de configuracao e entra no fluxo. PDV passa a exibir custo, margem por linha e aviso de piso ao dar desconto, com o desconto de cabecalho rateado por linha; custo redigido por permissao no DTO e nao na view, para nao chegar ao DOM de quem nao pode ver. Nunca bloqueia a venda. Fecha tambem a brecha do custo_unitario enviado pelo cliente e reduz loadSettings de 16 queries para 1
+
+## v5.60.0.0 — 2026-08-27 17:36
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Elimina gargalos de travamento sob operacao intensa: PDF de abertura e avisos de WhatsApp saem da requisicao para a fila, retry do desktop deixa de reexecutar comandos mutaveis, busca de OS troca 53 LIKE por coluna indexada (244ms para 27ms), listagem de orcamentos usa uma agregacao no lugar de quinze e file_scan_runs ganha retencao
+
+## v5.59.0.0 — 2026-08-27 17:31
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Precificacao Fase 0 (specs/037): fundacao para o motor sair da tela de configuracao e entrar no fluxo. loadSettings deixa de ser N+1 (16 queries para 1), tres catalogos fechados (VisibilidadeCusto, FaixaMargem, ModoPrecificacao) e o DTO PrecoQuote que faz a redacao de custo por permissao no payload, nao na view. Fecha tambem a brecha em que o custo_unitario enviado pelo cliente sobrescrevia o custo de cadastro e zerava a margem gravada da venda
+
 ## v5.58.1.0 — 2026-08-27 09:31
 - **Tier:** patch
 - **Autor/Agente:** Codex
