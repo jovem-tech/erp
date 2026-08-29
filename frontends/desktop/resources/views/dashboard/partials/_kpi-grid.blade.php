@@ -31,13 +31,18 @@
         <i class="bi {{ $heroCard['icon'] ?? 'bi-graph-up-arrow' }} dashboard-kpi-icon" data-dashboard-hero-icon></i>
     </article>
 
-    <article class="dashboard-kpi-card" data-dashboard-delivered-card style="--dashboard-accent: #f59e0b;">
-        <span class="dashboard-kpi-label">Equipamento entregue</span>
-        <div class="dashboard-kpi-value" data-dashboard-delivered-value>
+    {{-- Alterna entre "Despesas pagas" (regime de caixa) e "Equipamento
+         entregue" conforme has_financial_access — mesmo critério do hero card
+         logo acima. Só o valor nasce como skeleton: rótulo/copy/ícone chegam
+         prontos do primeiro render (default) e o JS os substitui depois. --}}
+    <article class="dashboard-kpi-card" data-dashboard-secondary-card style="--dashboard-accent: {{ $secondaryCard['accent'] ?? '#f59e0b' }};">
+        <span class="dashboard-kpi-label" data-dashboard-secondary-label>{{ $secondaryCard['label'] ?? 'Equipamento entregue' }}</span>
+        <div class="dashboard-kpi-value" data-dashboard-secondary-value>
             <span class="dashboard-skeleton dashboard-skeleton-value"></span>
         </div>
-        <p class="dashboard-kpi-copy">Ordens concluídas e baixadas com entrega técnica registrada.</p>
-        <i class="bi bi-box2-heart-fill dashboard-kpi-icon"></i>
+        <p class="dashboard-kpi-trend" data-dashboard-secondary-trend hidden></p>
+        <p class="dashboard-kpi-copy" data-dashboard-secondary-meta>{{ $secondaryCard['meta'] ?? 'Ordens concluídas e baixadas com entrega técnica registrada.' }}</p>
+        <i class="bi {{ $secondaryCard['icon'] ?? 'bi-box2-heart-fill' }} dashboard-kpi-icon" data-dashboard-secondary-icon></i>
     </article>
 
     <article class="dashboard-kpi-card dashboard-summary-card" data-dashboard-summary-card style="--dashboard-accent: #4f46e5;">

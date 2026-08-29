@@ -736,6 +736,60 @@
                 @endif
             </article>
 
+    {{--
+        Peças que este lançamento movimentou (specs/039).
+
+        Sem esta tabela, `movimentacoes.financeiro_id` seria encanamento
+        invisível: a pergunta "de onde veio esta entrada?" só teria resposta em
+        SQL. Mostra também as saídas de estorno, para o cancelamento contar a
+        história inteira.
+    --}}
+    @php $entradasEstoque = $detalhes['entradas_estoque'] ?? []; @endphp
+    @if ($entradasEstoque !== [])
+        <article class="surface-card">
+            <h3 class="surface-title fs-5 mb-2">
+                <i class="bi bi-box-seam me-2"></i>
+                Estoque movimentado
+            </h3>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Peça</th>
+                            <th>Movimento</th>
+                            <th class="text-end">Qtd.</th>
+                            <th class="text-end">Custo unit.</th>
+                            <th>Quando</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach ($entradasEstoque as $mov)
+                            <tr>
+                                <td>
+                                    <a href="{{ route('estoque.movements', $mov['peca_id']) }}">
+                                        {{ trim(($mov['codigo'] ?? '') . ' ' . ($mov['nome'] ?? '')) ?: 'Peça #' . $mov['peca_id'] }}
+                                    </a>
+                                </td>
+                                <td>
+                                    @if (($mov['tipo'] ?? '') === 'entrada')
+                                        <span class="badge bg-success-subtle text-success">Entrada</span>
+                                    @else
+                                        <span class="badge bg-warning-subtle text-warning">Estorno</span>
+                                    @endif
+                                </td>
+                                <td class="text-end">{{ rtrim(rtrim(number_format((float) ($mov['quantidade'] ?? 0), 4, ',', '.'), '0'), ',') }}</td>
+                                <td class="text-end">
+                                    {{ $mov['custo_unitario'] !== null ? 'R$ ' . number_format((float) $mov['custo_unitario'], 2, ',', '.') : '—' }}
+                                </td>
+                                <td>{{ $date($mov['created_at'] ?? null, true) }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
+        </article>
+    @endif
+
     <article class="surface-card">
         <h3 class="surface-title fs-5 mb-2">
             <i class="bi bi-shield-check me-2"></i>

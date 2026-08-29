@@ -493,6 +493,20 @@
                                 @if(($custoAuditoria['pendencia_baixa_estoque'] ?? false) && ($custoAuditoria['mensagem'] ?? '') !== '')
                                     <div class="small mt-2">{{ $custoAuditoria['mensagem'] }}</div>
                                 @endif
+
+                                {{-- O alerta era passivo: mandava "registre a movimentação"
+                                     e deixava o técnico procurar onde. Trocar texto passivo
+                                     por ação é a diferença entre o dado existir e não
+                                     existir — e é o CMV que depende disso (specs/038). --}}
+                                @if (\App\Support\DesktopSession::can('estoque', 'editar'))
+                                    <button type="button"
+                                            class="btn btn-sm btn-primary mt-2"
+                                            id="osAplicarPecasBtn"
+                                            data-os-id="{{ (int) ($order['id'] ?? 0) }}">
+                                        <i class="bi bi-box-arrow-in-down me-1"></i>
+                                        Aplicar peças do orçamento
+                                    </button>
+                                @endif
                             </div>
                         @endif
                     </div>
@@ -634,6 +648,9 @@
     @endif
     @include('orders._status_modal')
     @include('orders._cancel_closure_modal')
+    @if (\App\Support\DesktopSession::can('estoque', 'editar'))
+        @include('orders._aplicar_pecas_modal')
+    @endif
     @include('layouts.partials.photo-viewer-modal')
     @if ($checklist)
         @include('orders._checklist_detail_modal')
@@ -650,11 +667,19 @@
             closureUrlTemplate: '{{ route('orders.closure.show', ['order' => '__ORDER__']) }}',
             csrfToken: '{{ csrf_token() }}',
         };
+        window.__DESKTOP_OS_ESTOQUE = {
+            contextoUrlTemplate: '{{ route('orders.estoque.context', ['order' => '__ORDER__']) }}',
+            aplicarUrlTemplate: '{{ route('orders.estoque.apply', ['order' => '__ORDER__']) }}',
+            csrfToken: '{{ csrf_token() }}',
+        };
         window.__DESKTOP_CANCEL_CLOSURE_MODAL = {
             cancelUrlTemplate: '{{ route('orders.closure.cancel', ['order' => '__ORDER__']) }}',
             csrfToken: '{{ csrf_token() }}',
         };
     </script>
+    @if (\App\Support\DesktopSession::can('estoque', 'editar'))
+        <script src="{{ asset('assets/js/orders-aplicar-pecas.js') }}?v={{ filemtime(public_path('assets/js/orders-aplicar-pecas.js')) }}-{{ filesize(public_path('assets/js/orders-aplicar-pecas.js')) }}"></script>
+    @endif
     {{-- orders-map.js registra window.DesktopOsMap.create(), usado pela aba
          "Mapa de status" do modal de alteração de status (_status_modal). Sem
          ele o SVG do mapa fica estático: sem decoração, sem zoom/pan/clique. --}}

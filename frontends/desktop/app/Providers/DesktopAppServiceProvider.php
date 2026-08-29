@@ -38,6 +38,11 @@ class DesktopAppServiceProvider extends ServiceProvider
         ]);
 
         $this->app->singleton(DesktopNavigation::class, fn (): DesktopNavigation => new DesktopNavigation());
+
+        // Uma instancia por requisicao para que a memoizacao de branding() valha
+        // de fato: sem este binding, cada app(CompanyProfileService::class) do
+        // View::composer('*') devolvia um objeto NOVO e o memo nunca era usado.
+        $this->app->scoped(CompanyProfileService::class);
     }
 
     /**
@@ -53,8 +58,16 @@ class DesktopAppServiceProvider extends ServiceProvider
         // Segurança (ou o padrão do .env, se a tabela ainda não existir).
         SessionSecuritySettings::applyToRuntimeConfig();
 
+        // Continua em '*' de proposito. Restringir aos layouts parece obvio, mas
+        // quebra: com @extends, o Blade renderiza a view FILHA primeiro (para
+        // coletar as sections) e so' depois o layout — entao os @include feitos
+        // dentro das sections da filha rodam ANTES do composer do layout, e as
+        // variaveis nao existiriam la' (a estrela de favorito do dashboard some,
+        // entre outras). O custo de repeticao foi resolvido onde ele realmente
+        // estava: em CompanyProfileService::branding(), a unica destas chamadas
+        // que fazia I/O a cada view renderizada.
         View::composer('*', function ($view): void {
-            $appName = trim((string) config('app.name', ));
+            $appName = trim((string) config('app.name'));
             $version = (string) config('app.version', '3.0.0');
 
             $view->with('desktopUser', DesktopSession::user());

@@ -6,6 +6,8 @@ use App\Contracts\Files\PdfThumbnailRenderer;
 use App\DTO\Files\FileContext;
 use App\Enums\Files\FileCategory;
 use App\Enums\Files\FileOrigin;
+use App\Jobs\Orders\DeliverOrderOpeningDocumentJob;
+use App\Jobs\Orders\NotifyOrderStatusChangeJob;
 use App\Jobs\ProcessOrderDocumentSendJob;
 use App\Models\Files\ManagedFile;
 use App\Models\Files\ManagedFileLegacyAlias;
@@ -21,6 +23,7 @@ use App\Services\Orders\OrderClosureService;
 use App\Services\Pdf\PdfDefaultTemplates;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Carbon;
@@ -1976,13 +1979,21 @@ class OrderFlowTest extends TestCase
                 'garantia_dias' => 90,
             ]);
 
+        // A geracao do PDF passou para o DeliverOrderOpeningDocumentJob, entao a
+        // resposta da criacao confirma o AGENDAMENTO. O documento em si continua
+        // sendo verificado abaixo — no banco, na listagem e na rota que o serve —,
+        // que e' o que este teste sempre existiu para provar. Com QUEUE_CONNECTION
+        // = sync no phpunit.xml o job ja rodou quando a resposta chega.
         $response->assertCreated()
             ->assertJsonPath('status', 'success')
-            ->assertJsonPath('data.opening_document.generated', true)
-            ->assertJsonPath('data.order.documentos.0.tipo_documento', 'abertura');
+            ->assertJsonPath('data.opening_delivery.requested', true)
+            ->assertJsonPath('data.opening_delivery.queued', true);
 
         $orderId = (int) $response->json('data.order.id');
-        $documentId = (int) $response->json('data.order.documentos.0.id');
+        $documentId = (int) DB::table('os_documentos')
+            ->where('os_id', $orderId)
+            ->where('tipo_documento', 'abertura')
+            ->value('id');
         $relativePath = (string) DB::table('os_documentos')
             ->where('id', $documentId)
             ->value('arquivo');
@@ -2013,6 +2024,75 @@ class OrderFlowTest extends TestCase
             ->assertOk()
             ->assertHeader('Content-Type', 'application/pdf');
 
+    }
+
+    /**
+     * O ponto desta entrega: POST /orders nao pode mais bloquear na geracao do
+     * PDF nem em chamada externa de WhatsApp. Http::preventStrayRequests() faz o
+     * teste FALHAR se qualquer requisicao HTTP real escapar durante a criacao —
+     * e' isso que impede a regressao voltar sem ninguem perceber.
+     */
+    public function test_order_creation_queues_delivery_without_blocking_on_external_calls(): void
+    {
+        Storage::fake('local');
+        Queue::fake();
+        Http::preventStrayRequests();
+
+        [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
+        $this->seedOpeningDocumentTemplates();
+        $token = $this->loginAndGetToken($manager->email);
+
+        $response = $this
+            ->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'tecnico_id' => $technician->id,
+                'status' => 'triagem',
+                'relato_cliente' => 'Cliente relata falha intermitente no vídeo.',
+                'enviar_pdf_cliente' => true,
+                'garantia_dias' => 90,
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.opening_delivery.requested', true)
+            ->assertJsonPath('data.opening_delivery.queued', true)
+            ->assertJsonPath('data.opening_delivery.sent', false);
+
+        $orderId = (int) $response->json('data.order.id');
+
+        Queue::assertPushed(
+            DeliverOrderOpeningDocumentJob::class,
+            static fn (DeliverOrderOpeningDocumentJob $job): bool => $job->queue === 'documents'
+        );
+
+        // Nada de PDF gravado durante a requisicao: quem grava e' o worker.
+        $this->assertDatabaseMissing('os_documentos', [
+            'os_id' => $orderId,
+            'tipo_documento' => 'abertura',
+        ]);
+    }
+
+    public function test_status_change_client_notification_is_queued_instead_of_sent_inline(): void
+    {
+        Queue::fake();
+        Http::preventStrayRequests();
+
+        [$user, $assignedOrder] = $this->seedTechnicianOrders();
+        $token = $this->loginAndGetToken($user->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->patchJson("/api/v1/orders/{$assignedOrder}/status", [
+                'status' => 'aguardando_reparo',
+                'comunicar_cliente' => true,
+                'mensagem_cliente' => 'Equipamento avaliado, aguardando aprovação.',
+            ])
+            ->assertOk();
+
+        Queue::assertPushed(
+            NotifyOrderStatusChangeJob::class,
+            static fn (NotifyOrderStatusChangeJob $job): bool => $job->queue === 'documents'
+        );
     }
 
     public function test_document_center_zip_download_returns_a_valid_zip_file(): void
@@ -2138,11 +2218,14 @@ class OrderFlowTest extends TestCase
 
         $createResponse->assertCreated()
             ->assertJsonPath('status', 'success')
-            ->assertJsonPath('data.opening_document.generated', true);
+            ->assertJsonPath('data.opening_delivery.queued', true);
 
         $orderId = (int) $createResponse->json('data.order.id');
         $orderNumber = (string) $createResponse->json('data.order.numero_os');
-        $documentId = (int) $createResponse->json('data.order.documentos.0.id');
+        $documentId = (int) DB::table('os_documentos')
+            ->where('os_id', $orderId)
+            ->where('tipo_documento', 'abertura')
+            ->value('id');
 
         $shareResponse = $this
             ->withHeader('Authorization', 'Bearer '.$token)
@@ -2200,11 +2283,14 @@ class OrderFlowTest extends TestCase
                 'enviar_pdf_cliente' => true,
             ]);
 
+        // Cliente sem telefone continua sendo detectado NA REQUISICAO (e' leitura
+        // de banco, nao chamada externa): o operador precisa ver isso na hora, e
+        // nada chega a ser enfileirado.
         $response->assertCreated()
             ->assertJsonPath('status', 'success')
-            ->assertJsonPath('data.opening_document.generated', true)
             ->assertJsonPath('data.opening_delivery.requested', true)
             ->assertJsonPath('data.opening_delivery.sent', false)
+            ->assertJsonPath('data.opening_delivery.queued', false)
             ->assertJsonPath(
                 'data.opening_delivery.message',
                 'Cliente sem telefone cadastrado para receber o PDF de abertura.'
@@ -2956,9 +3042,14 @@ class OrderFlowTest extends TestCase
                 ],
             ]);
 
+        // notificacao_enviada agora e' null: o aviso ao cliente foi para a fila
+        // (NotifyOrderClosureJob) e a requisicao nao espera o resultado. A
+        // garantia que este teste protege continua valendo, e ficou mais forte:
+        // o dispatch acontece FORA da DB::transaction do encerramento, entao a
+        // baixa ja esta commitada antes de qualquer tentativa de envio.
         $response->assertOk()
             ->assertJsonPath('data.order.status', 'entregue_reparado_pago')
-            ->assertJsonPath('data.notificacao_enviada', false);
+            ->assertJsonPath('data.notificacao_enviada', null);
 
         $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'entregue_reparado_pago']);
     }

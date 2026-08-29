@@ -26,12 +26,21 @@
         tipoSelect: document.getElementById('financeiroTipo'),
         fornecedorWrapper: document.getElementById('financeiroFornecedorWrapper'),
         fornecedorSelect: document.getElementById('financeiroFornecedorId'),
-        classificacaoWrapper: document.getElementById('financeiroClassificacaoWrapper'),
-        classificacaoSelect: document.getElementById('financeiroClassificacaoFixa'),
+        // Filtro da lista de categorias. NÃO é a classificação do lançamento —
+        // não viaja no payload (o nome está fora do whitelist do controller).
+        categoriaFiltroWrapper: document.getElementById('financeiroCategoriaFiltroWrapper'),
+        categoriaFiltro: document.getElementById('financeiroCategoriaFiltro'),
+        // Resumo da classificação resolvida + override (este sim é dre_fixo_mensal).
+        classificacaoResumo: document.getElementById('financeiroClassificacaoResumo'),
+        classificacaoOverrideWrapper: document.getElementById('financeiroClassificacaoOverrideWrapper'),
+        classificacaoOverride: document.getElementById('financeiroClassificacaoOverride'),
         repetirWrapper: document.getElementById('financeiroRepetirWrapper'),
         osWrapper: document.getElementById('financeiroOsWrapper'),
         clienteWrapper: document.getElementById('financeiroClienteWrapper'),
         vinculosSection: document.getElementById('financeiroVinculosSection'),
+        avulsoWrapper: document.getElementById('financeiroAvulsoWrapper'),
+        formaPagamentoWrapper: document.getElementById('financeiroFormaPagamentoWrapper'),
+        form: document.getElementById('financeiroForm'),
     };
 
     const escapeHtml = (unsafe) => String(unsafe ?? '')
@@ -42,6 +51,98 @@
         .replace(/'/g, '&#039;');
 
     const normalizeText = (value) => String(value ?? '').trim();
+
+    /**
+     * DONA ÚNICA de #financeiroRepetirWrapper.
+     *
+     * Antes eram duas: syncRepetirVisibility() (dentro de initVinculos) e
+     * syncParcelasHint() (dentro de initCartaoCredito). Elas alternavam o mesmo
+     * `d-none` sem se falar, então escolher 12x escondia o checkbox e mexer na
+     * classificação depois o trazia de volta — parcelamento e repetição são
+     * mutuamente exclusivos por decisão de negócio, e a tela deixava os dois
+     * ligados.
+     *
+     * Vive no escopo do módulo justamente para que nenhum init "seja dono" dela.
+     * Lê o estado do DOM em vez de receber parâmetros: assim não há estado
+     * compartilhado entre os dois inits que poderia divergir de novo.
+     */
+    const parcelasAtuais = () => {
+        const select = document.querySelector('[data-cartao-credito-parcelas]');
+        return parseInt(select?.value ?? '1', 10) || 1;
+    };
+
+    /**
+     * Classificação de DRE que o backend VAI aplicar — espelho exato da
+     * precedência de FinanceiroService::resolveClassification():
+     *
+     *     payload > valor já gravado > padrão da categoria > false
+     *
+     * Existe porque a tela precisa mostrar a classificação REAL, não a que o
+     * operador escolheu num select. O bug que motivou isto: deixar o filtro em
+     * "todas" e escolher Aluguel produzia um lançamento fixo com o checkbox de
+     * repetição invisível — o caso de uso mais óbvio, inalcançável.
+     *
+     * `origem` alimenta a linha de resumo na tela; sem ela o operador não tem
+     * como saber POR QUE está fixa.
+     */
+    const classificacaoEfetiva = () => {
+        const ehPagar = !els.tipoSelect || els.tipoSelect.value === 'pagar';
+        if (!ehPagar) { return { aplica: false, fixa: false, origem: 'na', categoria: '' }; }
+
+        const categoriaNome = normalizeText(els.categoriaSelect?.value);
+        const base = { aplica: true, categoria: categoriaNome };
+
+        // 1. Override explícito do operador.
+        const override = normalizeText(els.classificacaoOverride?.value);
+        if (override !== '') {
+            return { ...base, fixa: override === '1', origem: 'override' };
+        }
+
+        // 2. Em EDIÇÃO o backend prioriza o valor gravado sobre o padrão da
+        //    categoria — trocar a categoria aqui não muda a classificação. Sem
+        //    este passo a tela prometeria uma mudança que o servidor ignora.
+        const salva = normalizeText(els.form?.dataset?.classificacaoSalva);
+        if (salva !== '') {
+            return { ...base, fixa: salva === '1', origem: 'lancamento' };
+        }
+
+        if (categoriaNome === '') {
+            return { ...base, fixa: false, origem: 'sem-categoria' };
+        }
+
+        // 3. Padrão da categoria, pelo atributo que o servidor já renderizou.
+        const option = els.categoriaSelect?.selectedOptions?.[0];
+        if (option?.dataset?.fixo !== undefined) {
+            return { ...base, fixa: option.dataset.fixo === '1', origem: 'categoria' };
+        }
+
+        // 4. Mesma coisa pelo catálogo — cobre a <option> fora-do-catálogo que o
+        //    Blade renderiza sem data-fixo quando old() traz categoria estranha.
+        const catalogo = Array.isArray(config.categorias) ? config.categorias : [];
+        const categoria = catalogo.find((c) => normalizeText(c?.nome) === categoriaNome);
+        if (categoria) {
+            return { ...base, fixa: Boolean(categoria.dre_fixo_mensal_padrao), origem: 'categoria' };
+        }
+
+        // 5. Categoria criada na hora (Select2 tags): o backend faz `?? false`.
+        return { ...base, fixa: false, origem: 'nova' };
+    };
+
+    const syncRepetir = () => {
+        if (!(els.repetirWrapper instanceof HTMLElement)) { return; }
+
+        const ehPagar = !els.tipoSelect || els.tipoSelect.value === 'pagar';
+        const visivel = ehPagar && classificacaoEfetiva().fixa && parcelasAtuais() <= 1;
+
+        els.repetirWrapper.classList.toggle('d-none', !visivel);
+
+        // Zera, não preserva: é flag de ação. Deixada marcada fora de contexto,
+        // ela cria 11 títulos futuros que ninguém pediu.
+        if (!visivel) {
+            const checkbox = els.repetirWrapper.querySelector('input[type="checkbox"]');
+            if (checkbox instanceof HTMLInputElement) { checkbox.checked = false; }
+        }
+    };
 
     const initFinancialAccount = () => {
         if (!(els.accountSelect instanceof HTMLSelectElement) || !(els.statusSelect instanceof HTMLSelectElement)) { return; }
@@ -86,7 +187,6 @@
         const parcelasWrapper = document.querySelector('[data-cartao-credito-parcelas-wrapper]');
         const parcelasSelect = document.querySelector('[data-cartao-credito-parcelas]');
         const parcelasHint = document.querySelector('[data-cartao-credito-parcelas-hint]');
-        const repetirWrapper = els.repetirWrapper;
         const vencimentoInput = document.getElementById('financeiroDataVencimento');
         const vencimentoHint = document.querySelector('[data-cartao-credito-vencimento-hint]');
         const CREDITO = 'cartao_credito';
@@ -143,8 +243,6 @@
         // sairia do saldo em aberto da fatura sem ninguém ter pago a fatura. O
         // backend normaliza de qualquer jeito; travar aqui é para o usuário não
         // escolher algo que seria silenciosamente desfeito.
-        const statusHintPadrao = document.querySelector('[data-status-hint-padrao]');
-        const statusHintCartao = document.querySelector('[data-status-cartao-credito-hint]');
 
         const syncStatusLock = () => {
             const statusSelect = els.statusSelect;
@@ -170,8 +268,13 @@
                 }
             });
 
-            statusHintPadrao?.classList.toggle('d-none', locked);
-            statusHintCartao?.classList.toggle('d-none', !locked);
+            // Comunica o travamento por DOM em vez de mexer nos <small>
+            // diretamente: quem é dono dos dois hints é initStatusHints(), que
+            // roda SEMPRE. Esta função vive dentro de initCartaoCredito, que
+            // retorna cedo quando não há cartão cadastrado — numa instalação
+            // sem cartões os hints nunca eram sincronizados.
+            statusSelect.dataset.cartaoLocked = locked ? '1' : '0';
+            statusSelect.dispatchEvent(new CustomEvent('financeiro:status-lock', { bubbles: true }));
 
             if (locked && statusSelect.value !== 'pendente') {
                 statusSelect.value = 'pendente';
@@ -320,16 +423,11 @@
             if (!parcelasHint || !(parcelasSelect instanceof HTMLSelectElement)) { return; }
 
             const parcelas = parseInt(parcelasSelect.value, 10) || 1;
-            const repetirVisivel = parcelas > 1;
 
-            // Esconde "repetir nos próximos meses" enquanto houver parcelamento.
-            if (repetirWrapper instanceof HTMLElement) {
-                repetirWrapper.classList.toggle('d-none', repetirVisivel);
-                if (repetirVisivel) {
-                    const checkbox = repetirWrapper.querySelector('input[type="checkbox"]');
-                    if (checkbox instanceof HTMLInputElement) { checkbox.checked = false; }
-                }
-            }
+            // Parcelamento e repetição são mutuamente exclusivos, mas quem
+            // decide a visibilidade do "repetir" é syncRepetir() — dona única.
+            // Alternar o d-none aqui também é o que fazia os dois se atropelarem.
+            syncRepetir();
 
             if (parcelas <= 1) {
                 parcelasHint.textContent = 'O valor informado acima é o total da compra.';
@@ -400,21 +498,68 @@
     // própria assistência (fatura/conta). Vive fora de initCartaoCredito de
     // propósito — a explicação precisa aparecer mesmo sem nenhum cartão
     // cadastrado, que é justamente quando o usuário mais se confunde.
-    const initFormaPagamentoHints = () => {
+    const initFormaPagamento = () => {
         const hintReceber = document.querySelector('[data-forma-pagamento-hint-receber]');
         const hintPagar = document.querySelector('[data-forma-pagamento-hint-pagar]');
-
-        if (!hintReceber || !hintPagar) { return; }
 
         const sync = () => {
             const isPagar = !(els.tipoSelect instanceof HTMLSelectElement)
                 || els.tipoSelect.value === 'pagar';
-            hintReceber.classList.toggle('d-none', isPagar);
-            hintPagar.classList.toggle('d-none', !isPagar);
+            const ehPago = els.statusSelect instanceof HTMLSelectElement
+                && els.statusSelect.value === 'pago';
+
+            hintReceber?.classList.toggle('d-none', isPagar);
+            hintPagar?.classList.toggle('d-none', !isPagar);
+
+            // Em "a pagar" o campo abre o bloco do cartão; em "pago" ele escolhe
+            // a conta padrão. Fora disso é intenção que o backend descarta.
+            const visivel = isPagar || ehPago;
+            els.formaPagamentoWrapper?.classList.toggle('d-none', !visivel);
+
+            // Preserva o valor e tira do POST — voltar para "a pagar" reabre o
+            // campo com a escolha anterior intacta.
+            if (els.paymentMethodSelect instanceof HTMLSelectElement) {
+                els.paymentMethodSelect.disabled = !visivel;
+            }
         };
 
         els.tipoSelect?.addEventListener('change', sync);
-        if (window.jQuery) { window.jQuery(els.tipoSelect).on('change', sync); }
+        els.statusSelect?.addEventListener('change', sync);
+        if (window.jQuery) {
+            window.jQuery(els.tipoSelect).on('change', sync);
+            window.jQuery(els.statusSelect).on('change', sync);
+        }
+        sync();
+    };
+
+    /**
+     * DONO ÚNICO dos dois <small> sob o Status.
+     *
+     * Vive fora de initCartaoCredito porque aquele faz `return` cedo quando não
+     * há cartão cadastrado — e numa instalação sem cartões os hints nunca eram
+     * sincronizados, deixando "Selecionar Pago gera a baixa automaticamente"
+     * na tela de um lançamento pendente, onde não se aplica.
+     */
+    const initStatusHints = () => {
+        const hintPadrao = document.querySelector('[data-status-hint-padrao]');
+        const hintCartao = document.querySelector('[data-status-cartao-credito-hint]');
+
+        if (!(els.statusSelect instanceof HTMLSelectElement) || (!hintPadrao && !hintCartao)) { return; }
+
+        const sync = () => {
+            const travadoPeloCartao = els.statusSelect.dataset.cartaoLocked === '1';
+            const temBaixa = els.statusSelect.getAttribute('data-has-movements') === '1';
+            const ehPago = els.statusSelect.value === 'pago';
+
+            // O aviso de baixa automática só vale quando o operador acabou de
+            // escolher "Pago" num título que ainda não tem baixa.
+            hintPadrao?.classList.toggle('d-none', !(ehPago && !travadoPeloCartao && !temBaixa));
+            hintCartao?.classList.toggle('d-none', !travadoPeloCartao);
+        };
+
+        els.statusSelect.addEventListener('change', sync);
+        els.statusSelect.addEventListener('financeiro:status-lock', sync);
+        if (window.jQuery) { window.jQuery(els.statusSelect).on('change', sync); }
         sync();
     };
 
@@ -478,6 +623,13 @@
         if (hidden) { hidden.value = amount.toFixed(2); }
     };
 
+    // Exportados para financeiro-entrada-estoque.js (specs/039), que mascara o
+    // custo de cada linha de peça com exatamente a mesma regra. Duplicar as três
+    // funções lá criaria dois formatos de dinheiro no mesmo formulário — e o
+    // segundo divergiria do primeiro na primeira correção que só um deles
+    // recebesse.
+    window.desktopFinanceiroMask = { rawToDisplay, displayToRaw, applyMaskFromDigits };
+
     const initValorMask = () => {
         const display = els.valorDisplay;
         const hidden = els.valorHidden;
@@ -536,6 +688,27 @@
             language: {
                 noResults: () => 'Nenhuma categoria. Pressione Enter para criar.',
                 searching: () => 'Buscando...',
+            },
+            // O Select2 RENDERIZA opções `disabled` — cinzentas, mas visíveis.
+            // Sem este matcher, um filtro que promete "só as fixas" mostra as
+            // variáveis assim mesmo, o que não é filtro nenhum.
+            matcher: (params, data) => {
+                const termo = normalizeText(params.term).toLowerCase();
+                const texto = normalizeText(data.text);
+
+                if (termo !== '' && !texto.toLowerCase().includes(termo)) { return null; }
+                if (texto === '') { return data; }
+
+                const filtro = els.categoriaFiltro instanceof HTMLSelectElement ? els.categoriaFiltro.value : '';
+                if (filtro === '') { return data; }
+
+                // A já escolhida passa sempre (o filtro não pode invalidar a
+                // escolha do operador); a criada na hora também, porque a pessoa
+                // está justamente digitando um nome que ainda não existe.
+                const fixo = data.element?.dataset?.fixo;
+                if (fixo === undefined || data.element?.selected) { return data; }
+
+                return fixo === filtro ? data : null;
             },
         });
     };
@@ -936,106 +1109,180 @@
             }
         };
 
-        // Fornecedor e "Despesa fixa?" só existem para "a pagar".
+        // Fornecedor, filtro de categoria e classificação só existem em "a pagar".
+        //
+        // Fornecedor é `required` em TODA conta a pagar, despesa fixa inclusive:
+        // aluguel tem locador, internet tem provedora. Antes a despesa fixa
+        // escondia a seção inteira e apagava o fornecedor já escolhido,
+        // contradizendo o texto do próprio campo.
         const syncClassificacaoVisibility = () => {
             if (!els.tipoSelect) { return; }
 
             const isPagar = els.tipoSelect.value === 'pagar';
             els.fornecedorWrapper?.classList.toggle('d-none', !isPagar);
-            els.classificacaoWrapper?.classList.toggle('d-none', !isPagar);
+            els.categoriaFiltroWrapper?.classList.toggle('d-none', !isPagar);
 
             if (els.fornecedorSelect instanceof HTMLSelectElement) {
                 els.fornecedorSelect.required = isPagar;
-                if (!isPagar) { clearSelect2Value(els.fornecedorSelect); }
+                // Desabilita em vez de limpar: some do POST e da validação
+                // HTML5 sem destruir o que o operador já tinha escolhido.
+                els.fornecedorSelect.disabled = !isPagar;
             }
 
-            if (!isPagar && els.classificacaoSelect instanceof HTMLSelectElement) {
-                els.classificacaoSelect.value = '';
+            // O override some junto e para de viajar; o filtro pode manter o
+            // valor, já que só desapareceu da tela.
+            if (els.classificacaoOverride instanceof HTMLSelectElement) {
+                els.classificacaoOverride.disabled = !isPagar
+                    || els.classificacaoOverrideWrapper?.classList.contains('d-none') === true;
+                if (!isPagar) { els.classificacaoOverride.value = ''; }
             }
+        };
+
+        // Linha "Classificação: Despesa fixa (padrão de Aluguel) · alterar".
+        //
+        // É a resposta visível à pergunta que o select antigo fazia mal: em vez
+        // de perguntar "é fixa?" e aceitar "todas as categorias" como resposta,
+        // mostra o que o backend vai realmente aplicar, e de onde veio.
+        const syncClassificacaoResumo = () => {
+            if (!(els.classificacaoResumo instanceof HTMLElement)) { return; }
+
+            const resultado = classificacaoEfetiva();
+            const mostrar = resultado.aplica && resultado.origem !== 'sem-categoria';
+
+            els.classificacaoResumo.classList.toggle('d-none', !mostrar);
+            if (!mostrar) { return; }
+
+            const texto = els.classificacaoResumo.querySelector('[data-classificacao-texto]');
+            const origem = els.classificacaoResumo.querySelector('[data-classificacao-origem]');
+
+            if (texto) { texto.textContent = resultado.fixa ? 'Despesa fixa' : 'Despesa variável'; }
+            if (!origem) { return; }
+
+            origem.textContent = {
+                override: ' (definido por você)',
+                lancamento: ' (deste lançamento)',
+                nova: ' (categoria nova — o sistema assume variável)',
+            }[resultado.origem] ?? ` (padrão de ${resultado.categoria})`;
         };
 
         // OS vinculada e Cliente só fazem sentido, em "a pagar", quando a
         // despesa é compra de peça ligada a uma OS (categoria do grupo DRE
         // "Custo Direto (OS)") — para despesas operacionais genéricas
         // (Energia, Água, Internet, Aluguel...) não há relação com OS/cliente.
-        const syncOsClienteState = () => {
-            if (!els.tipoSelect || (!els.osWrapper && !els.clienteWrapper)) { return; }
+        const osClienteOcultos = () => {
+            if (!els.tipoSelect) { return false; }
 
             const isPagar = els.tipoSelect.value === 'pagar';
             const categoriaNome = els.categoriaSelect instanceof HTMLSelectElement ? els.categoriaSelect.value : '';
             const categorias = Array.isArray(config.categorias) ? config.categorias : [];
             const categoria = categorias.find((c) => normalizeText(c?.nome) === normalizeText(categoriaNome));
             const isPecaCategoria = categoria?.dre_grupo?.nome === 'Custo Direto (OS)';
-            const hide = isPagar && !isPecaCategoria;
+
+            return isPagar && !isPecaCategoria;
+        };
+
+        /**
+         * DONA ÚNICA do `disabled` do select de OS.
+         *
+         * Duas razões independentes desabilitam a OS — o switch "avulso" e a
+         * visibilidade — e cada uma escrevendo `.disabled` por conta própria
+         * reproduziria o bug dos dois donos que acabamos de matar no Repetir.
+         * Aqui elas viram um OU só.
+         */
+        const syncOsHabilitada = () => {
+            if (!(els.osSelect instanceof HTMLSelectElement)) { return; }
+
+            const avulsoMarcado = els.avulsoInput instanceof HTMLInputElement && els.avulsoInput.checked;
+            els.osSelect.disabled = avulsoMarcado || osClienteOcultos();
+        };
+
+        // OS vinculada e Cliente só fazem sentido, em "a pagar", quando a
+        // despesa é compra de peça ligada a uma OS (categoria do grupo DRE
+        // "Custo Direto (OS)") — para despesas operacionais genéricas
+        // (Energia, Água, Internet, Aluguel...) não há relação com OS/cliente.
+        //
+        // Esconder DESABILITA, nunca limpa. Esta função é chamada também na
+        // troca de Tipo e no `pageshow`: com `clearSelect2Value` aqui, um F5
+        // apagava a OS e o cliente que o operador já tinha escolhido.
+        const syncOsClienteState = () => {
+            if (!els.tipoSelect || (!els.osWrapper && !els.clienteWrapper)) { return; }
+
+            const hide = osClienteOcultos();
 
             els.osWrapper?.classList.toggle('d-none', hide);
             els.clienteWrapper?.classList.toggle('d-none', hide);
 
-            if (hide) {
-                clearSelect2Value(els.osSelect);
-                clearSelect2Value(els.clientSelect);
+            if (els.clientSelect instanceof HTMLSelectElement) {
+                els.clientSelect.disabled = hide;
+            }
+
+            syncOsHabilitada();
+        };
+
+        // O switch "avulso" só diz algo enquanto OS/Cliente estão na tela:
+        // escondidos, ele é um controle sem nenhum efeito observável.
+        const syncAvulsoVisibility = () => {
+            const ocultos = osClienteOcultos();
+            els.avulsoWrapper?.classList.toggle('d-none', ocultos);
+
+            // `!disabled` importa: em edição com baixa quem manda é o hidden
+            // espelho, e o backend recusa mudar `avulso` num título com
+            // movimentos. Marcar aqui seria mentira cosmética.
+            if (ocultos && els.avulsoInput instanceof HTMLInputElement && !els.avulsoInput.disabled) {
+                els.avulsoInput.checked = true;
             }
         };
 
-        // "Despesa fixa?" filtra as opções de Categoria (via atributo
-        // data-fixo, já presente em cada <option>), em vez de a categoria
-        // definir um padrão que o usuário só ajustaria depois — o fluxo é
-        // "escolho fixa/variável" → "só então vejo as categorias certas".
+        // O filtro só encurta a lista de Categoria. NÃO decide a classificação
+        // do lançamento — quem decide é a categoria escolhida (ou o override).
+        //
+        // A opção já selecionada nunca é escondida: sem essa regra o filtro
+        // invalidaria a escolha do operador e a limparia, que era o
+        // comportamento antigo.
         const filterCategoriaOptions = () => {
             if (!(els.categoriaSelect instanceof HTMLSelectElement)) { return; }
 
-            const filterValue = els.classificacaoSelect instanceof HTMLSelectElement ? els.classificacaoSelect.value : '';
-            let selectedStillValid = filterValue === '' || els.categoriaSelect.value === '';
+            const filterValue = els.categoriaFiltro instanceof HTMLSelectElement ? els.categoriaFiltro.value : '';
+            const selecionada = els.categoriaSelect.value;
 
             Array.from(els.categoriaSelect.options).forEach((option) => {
                 if (option.value === '') { return; }
-                const matches = filterValue === '' || option.dataset.fixo === filterValue;
+                const matches = filterValue === ''
+                    || option.value === selecionada
+                    || option.dataset.fixo === undefined
+                    || option.dataset.fixo === filterValue;
                 option.hidden = !matches;
                 option.disabled = !matches;
-                if (matches && option.value === els.categoriaSelect.value) { selectedStillValid = true; }
             });
-
-            if (!selectedStillValid) { clearSelect2Value(els.categoriaSelect); }
         };
 
-        const syncRepetirVisibility = () => {
-            const isFixa = els.classificacaoSelect instanceof HTMLSelectElement && els.classificacaoSelect.value === '1';
-            els.repetirWrapper?.classList.toggle('d-none', !isFixa);
-        };
-
-        // Despesa fixa mensal (água, luz, aluguel...) nunca tem OS, cliente
-        // ou fornecedor — a seção inteira de Vínculos some para não
-        // confundir o operador com campos que não fazem sentido pra esse
-        // tipo de lançamento. "Lançamento avulso" fica marcado (é sempre o
-        // caso) e qualquer OS/cliente/fornecedor já selecionado é limpo.
-        const syncVinculosVisibility = () => {
-            if (!els.vinculosSection) { return; }
-
-            const isFixa = els.classificacaoSelect instanceof HTMLSelectElement && els.classificacaoSelect.value === '1';
-            els.vinculosSection.classList.toggle('d-none', isFixa);
-
-            // Fornecedor fica dentro dessa seção: escondê-la sem também tirar o
-            // `required` deixa um campo obrigatório invisível, e o navegador
-            // recusa o submit nativo (HTML5) sem nenhuma mensagem visível pro
-            // operador — daí checar `isFixa` aqui, não só `isPagar`.
-            if (els.fornecedorSelect instanceof HTMLSelectElement) {
-                const isPagar = !els.tipoSelect || els.tipoSelect.value === 'pagar';
-                els.fornecedorSelect.required = isPagar && !isFixa;
-            }
-
-            if (isFixa) {
-                if (els.avulsoInput instanceof HTMLInputElement) { els.avulsoInput.checked = true; }
-                clearSelect2Value(els.osSelect);
-                clearSelect2Value(els.clientSelect);
-                clearSelect2Value(els.fornecedorSelect);
+        // "alterar" abre o override e não fecha mais: re-esconder um controle
+        // que a pessoa abriu de propósito é desorientador.
+        const abrirOverride = () => {
+            els.classificacaoOverrideWrapper?.classList.remove('d-none');
+            if (els.classificacaoOverride instanceof HTMLSelectElement) {
+                els.classificacaoOverride.disabled = false;
             }
         };
 
-        syncClassificacaoVisibility();
-        syncOsClienteState();
-        filterCategoriaOptions();
-        syncRepetirVisibility();
-        syncVinculosVisibility();
+        els.classificacaoResumo
+            ?.querySelector('[data-classificacao-alterar]')
+            ?.addEventListener('click', abrirOverride);
+
+        // Um ponto só de sincronização, usado na carga, nos handlers e no
+        // pageshow. Antes eram três listas paralelas — e já tinham divergido:
+        // syncRepetir ficou de fora do handler de Tipo, deixando o checkbox
+        // "repetir nos próximos 12 meses" visível e marcado num a receber.
+        const sincronizarTudo = () => {
+            syncClassificacaoVisibility();
+            syncOsClienteState();
+            syncAvulsoVisibility();
+            filterCategoriaOptions();
+            syncClassificacaoResumo();
+            syncRepetir();
+        };
+
+        sincronizarTudo();
 
         // Tipo e "Despesa fixa?" são <select class="form-select"> comuns
         // (sem data-native-select="true"), então o auto-init global de
@@ -1054,13 +1301,15 @@
             if (hasSelect2) { $(select).on('change', handler); }
         };
 
-        bindChange(els.tipoSelect, () => { syncClassificacaoVisibility(); syncOsClienteState(); filterCategoriaOptions(); syncVinculosVisibility(); });
-        bindChange(els.classificacaoSelect, () => { filterCategoriaOptions(); syncRepetirVisibility(); syncVinculosVisibility(); });
+        bindChange(els.tipoSelect, sincronizarTudo);
+        bindChange(els.categoriaFiltro, filterCategoriaOptions);
+        bindChange(els.classificacaoOverride, () => { syncClassificacaoResumo(); syncRepetir(); });
 
         if (els.categoriaSelect instanceof HTMLSelectElement) {
-            els.categoriaSelect.addEventListener('change', syncOsClienteState);
+            const aoTrocarCategoria = () => { syncOsClienteState(); syncAvulsoVisibility(); syncClassificacaoResumo(); syncRepetir(); };
+            els.categoriaSelect.addEventListener('change', aoTrocarCategoria);
             if (hasSelect2) {
-                $(els.categoriaSelect).on('change select2:select select2:unselect', syncOsClienteState);
+                $(els.categoriaSelect).on('change select2:select select2:unselect', aoTrocarCategoria);
             }
         }
 
@@ -1068,13 +1317,7 @@
         // página (form state restoration) SEM disparar 'change' — 'pageshow'
         // dispara depois de qualquer restauração desse tipo (recarregar,
         // voltar/avançar), então reconferir o estado ali cobre esse caso.
-        window.addEventListener('pageshow', () => {
-            syncClassificacaoVisibility();
-            syncOsClienteState();
-            filterCategoriaOptions();
-            syncRepetirVisibility();
-            syncVinculosVisibility();
-        });
+        window.addEventListener('pageshow', sincronizarTudo);
 
         if (!(els.avulsoInput instanceof HTMLInputElement) || !(els.osSelect instanceof HTMLSelectElement)) {
             return;
@@ -1083,8 +1326,11 @@
         const syncAvulsoState = () => {
             const isAvulso = els.avulsoInput.checked;
 
+            // Marcar avulso LIMPA a OS de propósito — não é visibilidade, é
+            // invalidação semântica: o backend recusa `avulso` com `os_id`
+            // preenchido. O `disabled` fica com syncOsHabilitada(), dona única.
             if (isAvulso) { clearSelect2Value(els.osSelect); }
-            els.osSelect.disabled = isAvulso;
+            syncOsHabilitada();
 
             if (els.osHelp instanceof HTMLElement) {
                 els.osHelp.textContent = isAvulso
@@ -1246,7 +1492,8 @@
     runInit('initValorMask', initValorMask);
     runInit('initCategoriaSelect', initCategoriaSelect);
     runInit('initFinancialAccount', initFinancialAccount);
-    runInit('initFormaPagamentoHints', initFormaPagamentoHints);
+    runInit('initFormaPagamento', initFormaPagamento);
+    runInit('initStatusHints', initStatusHints);
     runInit('initCartaoCredito', initCartaoCredito);
     runInit('initDataPagamento', initDataPagamento);
     runInit('initClientSelect', initClientSelect);

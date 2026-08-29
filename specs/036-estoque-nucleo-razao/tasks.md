@@ -13,7 +13,16 @@
 
 ## Bloco B — Razão e motor único
 - [ ] Migration de colunas do razão + `estoque_localizacoes`
-- [ ] `EstoqueMovimentacaoService` + DTOs + exceções
+      ⚠️ `movimentacoes.custo_unitario` **já foi criada pela `039`** (entrada de
+      estoque no lançamento): com N itens numa compra, o custo por linha só
+      existe no instante do lançamento, então não dava para esperar. Use
+      `Schema::hasColumn()` — vira no-op. A semântica é a desta spec: custo
+      congelado na movimentação.
+      ⚠️ `movimentacoes.financeiro_id` também já existe (mesma entrega). Não é
+      `compra_id`: um título a pagar não é uma nota de compra, e os dois vão
+      coexistir na mesma linha quando Compras nascer.
+- [x] `EstoqueMovimentacaoService` + DTOs + exceções — **entregue pela `038`**
+      (motor único, lock ordenado, agregação por peça). Falta só o custo médio.
 - [ ] `CustoMedioCalculator` + teste unitário das 4 bordas
 - [ ] `SaleStockService` como fachada (testes de venda intocados)
 - [ ] Fechar `update()` / `store()` / `importCsv()`

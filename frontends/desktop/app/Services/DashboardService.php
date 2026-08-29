@@ -87,6 +87,7 @@ class DashboardService
             'attention' => $this->buildAttentionItems($access, $stats, $alerts, $financial, $agenda),
             'revenueTrend' => $this->buildRevenueTrend($stats),
             'heroCard' => $heroCard,
+            'secondaryCard' => $this->buildSecondaryCard($access, $stats),
             'contextCard' => $this->arrayValue($data['context_card'] ?? []),
             'charts' => [
                 'monthly' => $this->arrayValue($data['charts']['monthly'] ?? []),
@@ -277,6 +278,81 @@ class DashboardService
             'label' => sprintf(
                 '%s%s%% vs. mês anterior',
                 $variation >= 0 ? '↑ ' : '↓ ',
+                number_format(abs(round($variation, 1)), 1, ',', '.')
+            ),
+        ];
+    }
+
+    /**
+     * Card "Despesas pagas" x "Equipamento entregue": mesmo critério de
+     * has_financial_access do heroCard/contextCard — quem não enxerga
+     * faturamento também não vê quanto a assistência pagou nem o que está
+     * pendente, e continua vendo a métrica operacional original.
+     *
+     * @param array<string, mixed> $access
+     * @param array<string, mixed> $stats
+     * @return array<string, mixed>
+     */
+    private function buildSecondaryCard(array $access, array $stats): array
+    {
+        if (! ($access['has_financial_access'] ?? false)) {
+            return [
+                'type' => 'operational',
+                'label' => 'Equipamento entregue',
+                'value' => (int) ($stats['equipamento_entregue_total'] ?? 0),
+                'value_type' => 'count',
+                'trend' => null,
+                'meta' => 'Ordens concluídas e baixadas com entrega técnica registrada.',
+                'icon' => 'bi-box2-heart-fill',
+                'accent' => '#f59e0b',
+            ];
+        }
+
+        $pendentes = (float) ($stats['despesas_pendentes'] ?? 0);
+
+        return [
+            'type' => 'financial',
+            'label' => 'Despesas pagas',
+            'value' => (float) ($stats['despesas_pagas_mes'] ?? 0),
+            'value_type' => 'money',
+            'trend' => $this->buildExpenseTrend($stats),
+            'meta' => $pendentes > 0
+                ? $this->formatMoney($pendentes) . ' em contas pendentes (mês atual e anteriores).'
+                : 'Nenhuma conta a pagar pendente.',
+            'icon' => 'bi-cash-coin',
+            'accent' => '#ef4444',
+        ];
+    }
+
+    /**
+     * Variação das despesas pagas contra o mês anterior. Igual ao
+     * buildRevenueTrend em forma, mas invertido em significado: para
+     * faturamento, subir é bom; para despesa, subir é ruim. `good` carrega
+     * esse julgamento separado de `direction` (que só descreve o número) para
+     * a view pintar a cor certa sem repetir a inversão.
+     *
+     * @param array<string, mixed> $stats
+     * @return array<string, mixed>|null
+     */
+    private function buildExpenseTrend(array $stats): ?array
+    {
+        $current = (float) ($stats['despesas_pagas_mes'] ?? 0);
+        $previous = (float) ($stats['despesas_pagas_mes_anterior'] ?? 0);
+
+        if ($previous <= 0.0) {
+            return null;
+        }
+
+        $variation = (($current - $previous) / $previous) * 100;
+        $increased = $variation >= 0;
+
+        return [
+            'direction' => $increased ? 'up' : 'down',
+            'good' => ! $increased,
+            'percent' => abs(round($variation, 1)),
+            'label' => sprintf(
+                '%s%s%% vs. mês anterior',
+                $increased ? '↑ ' : '↓ ',
                 number_format(abs(round($variation, 1)), 1, ',', '.')
             ),
         ];

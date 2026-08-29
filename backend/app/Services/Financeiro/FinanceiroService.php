@@ -10,14 +10,17 @@ use App\Models\FinanceiroCategoria;
 use App\Models\FinanceiroFormaPagamento;
 use App\Models\FinanceiroMovimento;
 use App\Models\FinanceiroMovimentoCartao;
+use App\Models\Movimentacao;
 use App\Models\Order;
 use App\Models\OrderEvent;
 use App\Models\Sale;
 use App\Models\Supplier;
+use App\Services\Estoque\EntradaPecaService;
 use App\Services\Orders\OrderEventService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use RuntimeException;
 
@@ -36,7 +39,8 @@ class FinanceiroService
         private readonly FinanceiroCartaoService $financeiroCartaoService,
         private readonly FinanceiroCartaoCreditoService $financeiroCartaoCreditoService,
         private readonly FinanceiroContaService $financeiroContaService,
-        private readonly OrderEventService $orderEventService
+        private readonly OrderEventService $orderEventService,
+        private readonly EntradaPecaService $entradaPecaService
     ) {}
 
     /**
@@ -254,6 +258,29 @@ class FinanceiroService
                         'valor' => round((float) $financeiro->valor, 2),
                         'origem_tipo' => $financeiro->origem_tipo,
                     ]
+                );
+            }
+
+            // Entrada no estoque das peças compradas (specs/039).
+            //
+            // AQUI, antes do ramo de parcelas, e não depois: comprar em 3x gera
+            // mais 2 títulos logo abaixo, e cada um deles passaria de novo por
+            // este ponto se a chamada ficasse lá — três entradas para uma compra
+            // só. A compra aconteceu uma vez; o que se parcela é o pagamento.
+            //
+            // Dentro da transação do create(): título e movimentações são
+            // atômicos, nunca sobra um sem o outro.
+            //
+            // A guarda de chave vazia também protege os chamadores internos
+            // (ensureReceivableTitle da baixa, fluxos de venda e OS), que nunca
+            // mandam `itens_estoque` e por isso jamais disparam estoque.
+            $itensEstoque = $payload['itens_estoque'] ?? [];
+
+            if (is_array($itensEstoque) && $itensEstoque !== []) {
+                $this->entradaPecaService->registrarDeLancamento(
+                    $financeiro,
+                    $itensEstoque,
+                    Auth::id()
                 );
             }
 
@@ -518,6 +545,37 @@ class FinanceiroService
      *
      * @return array<string, mixed>
      */
+    /**
+     * Peças que este lançamento movimentou no estoque (specs/039).
+     *
+     * Sem isto `movimentacoes.financeiro_id` seria encanamento invisível e a
+     * auditoria — "de onde veio esta entrada?" — só existiria em SQL. Inclui as
+     * saídas de estorno para o cancelamento contar a história inteira.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function stockEntriesDetail(Financeiro $financeiro): array
+    {
+        return Movimentacao::query()
+            ->with('peca')
+            ->where('financeiro_id', (int) $financeiro->id)
+            ->orderBy('id')
+            ->get()
+            ->map(static fn (Movimentacao $movimento): array => [
+                'id' => (int) $movimento->id,
+                'peca_id' => (int) $movimento->peca_id,
+                'codigo' => (string) ($movimento->peca->codigo ?? ''),
+                'nome' => (string) ($movimento->peca->nome ?? ''),
+                'tipo' => (string) $movimento->tipo,
+                'quantidade' => (float) $movimento->quantidade,
+                'custo_unitario' => $movimento->custo_unitario !== null
+                    ? round((float) $movimento->custo_unitario, 2)
+                    : null,
+                'created_at' => $movimento->created_at?->toIso8601String(),
+            ])
+            ->all();
+    }
+
     public function detailContext(Financeiro $financeiro): array
     {
         $financeiro->loadMissing([
@@ -555,6 +613,7 @@ class FinanceiroService
                 ->all(),
             'cartao_credito' => $this->creditCardDetail($financeiro),
             'fatura_cartao' => $this->creditCardInvoiceReceiptDetail($financeiro),
+            'entradas_estoque' => $this->stockEntriesDetail($financeiro),
             'impactos' => [
                 'impacta_dre' => (bool) $financeiro->impacta_dre,
                 'impacta_fluxo_caixa' => (bool) $financeiro->impacta_fluxo_caixa,
@@ -581,12 +640,39 @@ class FinanceiroService
      * cartão (ver registerCardFeeExpense()), essa despesa é cancelada junto —
      * senão ela ficaria órfã, continuando a pesar no fluxo de caixa e no DRE
      * mesmo depois da receita que a gerou ter sido estornada.
+     *
+     * Se o título deu entrada de peça no estoque (specs/039), as entradas também
+     * são estornadas — decisão diferente da 038 de propósito: lá a peça foi
+     * fisicamente aplicada num aparelho; aqui o que motiva o cancelamento é o
+     * equívoco (lançamento errado, ou peça que nunca chegou), e deixar o saldo
+     * inflado seria a mentira. Se a peça já saiu, `$permitirEstoqueNegativo`
+     * decide entre recusar nomeando as peças ou aceitar o saldo negativo.
+     *
+     * Tudo numa transação só: até esta entrega o método fazia várias escritas
+     * soltas, o que era tolerável enquanto nenhuma delas mexia em estoque.
+     *
+     * @throws \App\Services\Estoque\SaldoInsuficienteException
      */
-    public function cancel(Financeiro $financeiro): Financeiro
+    public function cancel(Financeiro $financeiro, bool $permitirEstoqueNegativo = false): Financeiro
     {
         if ($financeiro->status === Financeiro::STATUS_CANCELADO) {
             throw new RuntimeException('Este título já está cancelado.');
         }
+
+        return DB::transaction(
+            fn (): Financeiro => $this->cancelWithinTransaction($financeiro, $permitirEstoqueNegativo)
+        );
+    }
+
+    private function cancelWithinTransaction(Financeiro $financeiro, bool $permitirEstoqueNegativo): Financeiro
+    {
+        // Antes de qualquer outra escrita: se o estoque recusar (peça já saiu e
+        // sem confirmação), a transação inteira volta e o título continua ativo.
+        $this->entradaPecaService->estornarDeLancamento(
+            $financeiro,
+            Auth::id(),
+            $permitirEstoqueNegativo
+        );
 
         $movimentoIds = $financeiro->movimentos()->pluck('id');
 
@@ -1574,6 +1660,9 @@ class FinanceiroService
         // financeiro — mantê-las no payload quebraria o Financeiro::create().
         unset($resolved['repetir_proximos_meses']);
         unset($resolved['parcelas']);
+        // Peças da compra viram movimentações de estoque no create(), não
+        // colunas de financeiro (specs/039).
+        unset($resolved['itens_estoque']);
 
         $resolved['tipo'] = $tipo;
         $resolved['status'] = trim((string) ($payload['status'] ?? $existing?->status ?? '')) !== ''

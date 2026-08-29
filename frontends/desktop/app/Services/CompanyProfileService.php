@@ -12,6 +12,9 @@ class CompanyProfileService
 
     private const BRANDING_CACHE_SECONDS = 60;
 
+    /** @var array{name: string, has_logo: bool, has_login_background: bool}|null */
+    private ?array $brandingMemo = null;
+
     public function __construct(
         private readonly ApiClient $apiClient
     ) {
@@ -46,6 +49,7 @@ class CompanyProfileService
         ]), $files);
 
         Cache::forget(self::BRANDING_CACHE_KEY);
+        $this->brandingMemo = null;
 
         return $response['data'] ?? [];
     }
@@ -85,7 +89,32 @@ class CompanyProfileService
     /**
      * @return array{name: string, has_logo: bool, has_login_background: bool}
      */
+    /**
+     * Memoizado por requisicao ALEM do cache de 60s.
+     *
+     * O View::composer('*') do DesktopAppServiceProvider dispara para cada view
+     * renderizada, e uma tela de OS renderiza ~14 delas — o que significava ~14
+     * leituras do cache (em disco, com CACHE_STORE=file) por pagina para
+     * devolver sempre o mesmo valor. A marca da empresa nao muda no meio de uma
+     * requisicao, entao resolver uma vez basta.
+     *
+     * A propriedade e' de instancia e o servico e' resolvido por requisicao, o
+     * que mantem o valor preso ao ciclo de vida certo — nada de estatico, que
+     * vazaria entre requisicoes na suite de testes.
+     */
     public function branding(): array
+    {
+        if ($this->brandingMemo !== null) {
+            return $this->brandingMemo;
+        }
+
+        return $this->brandingMemo = $this->resolveBranding();
+    }
+
+    /**
+     * @return array{name: string, has_logo: bool, has_login_background: bool}
+     */
+    private function resolveBranding(): array
     {
         return Cache::remember(self::BRANDING_CACHE_KEY, now()->addSeconds(self::BRANDING_CACHE_SECONDS), function (): array {
             try {

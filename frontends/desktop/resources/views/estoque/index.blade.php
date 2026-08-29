@@ -45,6 +45,21 @@
                 </a>
             @endif
 
+            {{--
+                Entrada por compra (specs/039). A porta fica no Financeiro — a
+                compra É um lançamento —, mas quem pensa "chegou peça" está
+                nesta tela, não naquela. Sem este botão a funcionalidade existe
+                e ninguém acha.
+            --}}
+            @if (\App\Support\DesktopSession::can('estoque', 'editar')
+                && \App\Support\DesktopSession::can('financeiro', 'criar'))
+                <a href="{{ route('financeiro.create', ['tipo' => 'pagar', 'entrada_estoque' => 1]) }}"
+                   class="btn btn-outline-primary">
+                    <i class="bi bi-box-arrow-in-down me-2"></i>
+                    Entrada por compra
+                </a>
+            @endif
+
             <x-list-actions label="Mais ações" size="" :favoritable="true">
                 <li>
                     <a href="{{ route('estoque.help') }}" class="dropdown-item">

@@ -152,6 +152,69 @@ class DashboardPanelTest extends TestCase
         $this->assertNull($this->dashboardData()['revenueTrend']);
     }
 
+    public function test_secondary_card_shows_paid_expenses_with_inverted_trend_color_for_financial_users(): void
+    {
+        $this->fakeBackend([
+            'stats' => [
+                'despesas_pagas_mes' => 2200.0,
+                'despesas_pagas_mes_anterior' => 2000.0,
+                'despesas_pendentes' => 340.50,
+            ],
+        ]);
+
+        $card = $this->dashboardData()['secondaryCard'];
+
+        $this->assertSame('financial', $card['type']);
+        $this->assertSame('Despesas pagas', $card['label']);
+        $this->assertSame(2200.0, $card['value']);
+        $this->assertSame('R$ 340,50 em contas pendentes (mês atual e anteriores).', $card['meta']);
+
+        // Gastar mais é notícia ruim: ao contrário da tendência de
+        // faturamento, aqui a seta "para cima" (subiu 10%) precisa pintar de
+        // vermelho — o campo `good` carrega esse julgamento invertido.
+        $this->assertSame('up', $card['trend']['direction']);
+        $this->assertFalse($card['trend']['good']);
+        $this->assertSame('↑ 10,0% vs. mês anterior', $card['trend']['label']);
+    }
+
+    public function test_secondary_card_shows_a_falling_expense_trend_as_good(): void
+    {
+        $this->fakeBackend([
+            'stats' => [
+                'despesas_pagas_mes' => 800.0,
+                'despesas_pagas_mes_anterior' => 1000.0,
+                'despesas_pendentes' => 0,
+            ],
+        ]);
+
+        $card = $this->dashboardData()['secondaryCard'];
+
+        $this->assertSame('down', $card['trend']['direction']);
+        $this->assertTrue($card['trend']['good']);
+        $this->assertSame('Nenhuma conta a pagar pendente.', $card['meta']);
+    }
+
+    public function test_secondary_card_falls_back_to_delivered_equipment_without_financial_access(): void
+    {
+        $this->fakeBackend([
+            'access' => ['has_financial_access' => false],
+            'stats' => [
+                'equipamento_entregue_total' => 2160,
+                // Presentes no payload mas não podem vazar para quem não tem
+                // acesso financeiro.
+                'despesas_pagas_mes' => 2200.0,
+                'despesas_pagas_mes_anterior' => 2000.0,
+            ],
+        ]);
+
+        $card = $this->dashboardData()['secondaryCard'];
+
+        $this->assertSame('operational', $card['type']);
+        $this->assertSame('Equipamento entregue', $card['label']);
+        $this->assertSame(2160, $card['value']);
+        $this->assertNull($card['trend']);
+    }
+
     /**
      * @param array<string, mixed> $overrides
      */

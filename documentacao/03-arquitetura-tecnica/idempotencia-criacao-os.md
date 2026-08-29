@@ -48,7 +48,7 @@ sequenceDiagram
     else chave nova
         A->>B: Transação OS + histórico + checklist
         B-->>A: commit
-        A->>E: fotos, PDF, envio, notificação e broadcast
+        A->>E: fotos, notificação, broadcast e enfileiramento do PDF/envio
         E-->>A: sucesso ou aviso
         A-->>D: 201 + OS + warnings
     end
@@ -79,11 +79,26 @@ Somente OS, histórico inicial e checklist essencial pertencem à transação
 principal. Depois do commit, as etapas abaixo são isoladas:
 
 - persistência/catalogação das fotos;
-- geração de PDF de abertura;
-- envio do documento ao cliente;
+- **enfileiramento** da geração do PDF de abertura e do envio ao cliente;
 - notificação interna;
 - broadcast em tempo real;
 - montagem da projeção detalhada da resposta.
+
+A partir da v5.60.0.0, gerar o PDF e entregá-lo ao cliente **não acontecem mais
+nesta requisição**: o `DeliverOrderOpeningDocumentJob` faz os dois na fila
+`documents`. Antes eram o PDF em dois formatos mais até duas tentativas de
+WhatsApp (inbox e, se falhar, envio direto) com timeout de 20s cada — a abertura
+de OS podia segurar um worker do PHP-FPM por dezenas de segundos, e o pool do
+desktop tem `pm.max_children` pequeno.
+
+Consequências no contrato da resposta:
+
+- `opening_document` é **sempre `null`** na resposta da criação;
+- `opening_delivery` ganhou `queued`; com `queued=true`, `sent=false` é o estado
+  **normal**, não um erro — o desktop só alerta quando o enfileiramento falha;
+- a ausência de telefone do cliente continua sendo detectada **na requisição**
+  (é leitura de banco, e o operador precisa ver isso com o cliente à frente),
+  e nesse caso nada é enfileirado.
 
 Falha nessas etapas gera `warnings` e log estruturado com `order_id`, estágio e
 classe da exceção. A resposta não registra mensagem interna, path, credencial

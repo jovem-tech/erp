@@ -158,6 +158,17 @@ Schedule::command('file-manager:purge-trash')
     ->onOneServer()
     ->withoutOverlapping(180);
 
+// Retencao do historico de varreduras. Sem isto a file_scan_runs crescia
+// 11.232 linhas/dia sem teto (383 mil linhas / 373 MB quando foi medida), e a
+// maior tabela do banco passava a ser um log — ocupando 35% do buffer pool que
+// deveria estar guardando `os` e `clientes`. 02:40 fica entre a lixeira (02:30)
+// e o backup diario (03:15).
+Schedule::command('file-manager:purge-scan-runs')
+    ->dailyAt('02:40')
+    ->name('file-manager-scan-run-retention')
+    ->onOneServer()
+    ->withoutOverlapping(180);
+
 // ---------------------------------------------------------------------------
 // Backup completo do sistema
 // ---------------------------------------------------------------------------

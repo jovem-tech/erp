@@ -7,6 +7,7 @@
         // painéis nascem com skeleton, nunca com zeros de placeholder.
         $dashboard = is_array($dashboard ?? null) ? $dashboard : [];
         $heroCard = is_array($dashboard['heroCard'] ?? null) ? $dashboard['heroCard'] : [];
+        $secondaryCard = is_array($dashboard['secondaryCard'] ?? null) ? $dashboard['secondaryCard'] : [];
         $contextCard = is_array($dashboard['contextCard'] ?? null) ? $dashboard['contextCard'] : [];
         $filters = is_array($dashboard['filters'] ?? null) ? $dashboard['filters'] : [];
         $years = is_array($filters['years'] ?? null) ? $filters['years'] : [];

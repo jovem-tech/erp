@@ -5,6 +5,7 @@ namespace Tests\Concerns;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Cache;
+use App\Services\Orders\OrderSearchIndexService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Schema;
@@ -721,7 +722,7 @@ trait BuildsLegacyErpSchema
      */
     protected function createOrderRecord(array $overrides = []): int
     {
-        return (int) DB::table('os')->insertGetId(array_merge([
+        $orderId = (int) DB::table('os')->insertGetId(array_merge([
             'numero_os' => 'OS'.now()->format('ym').str_pad((string) random_int(1000, 9999), 4, '0', STR_PAD_LEFT),
             'cliente_id' => 1,
             'equipamento_id' => 1,
@@ -744,6 +745,14 @@ trait BuildsLegacyErpSchema
             'created_at' => now(),
             'updated_at' => now(),
         ], $overrides));
+
+        // Este helper grava via query builder, entao o listener de `saved` que
+        // mantem os.busca_texto nao dispara. Montar o indice aqui faz a suite
+        // exercitar o MESMO caminho da producao (busca pela coluna indexada) em
+        // vez de cair sempre na rede de seguranca de busca_texto NULL.
+        app(OrderSearchIndexService::class)->rebuildForOrders([$orderId]);
+
+        return $orderId;
     }
 
     private function createRbacTables(): void
@@ -1059,9 +1068,15 @@ trait BuildsLegacyErpSchema
             // Idem: espelham a migration 2026_08_12_000002.
             $table->unsignedBigInteger('venda_id')->nullable();
             $table->unsignedBigInteger('venda_item_id')->nullable();
+            // Espelha 2026_08_28_000001: qual lancamento financeiro gerou esta
+            // entrada. Quarto membro da familia os_id/venda_id/venda_item_id.
+            $table->unsignedBigInteger('financeiro_id')->nullable();
             $table->string('tipo', 30);
             // Espelha 2026_08_27_000001_widen_stock_quantities_to_decimal.
             $table->decimal('quantidade', 14, 4);
+            // Espelha 2026_08_28_000001: custo congelado no movimento. NULL em
+            // saida — "nao sei o custo" nao e "o custo e zero".
+            $table->decimal('custo_unitario', 14, 4)->nullable();
             $table->string('motivo', 255)->nullable();
             $table->unsignedBigInteger('responsavel_id')->nullable();
             $table->dateTime('created_at')->nullable();
@@ -1383,6 +1398,10 @@ trait BuildsLegacyErpSchema
             $table->date('garantia_validade')->nullable();
             $table->text('observacoes_internas')->nullable();
             $table->text('observacoes_cliente')->nullable();
+            // Espelha 2026_08_27_000002_add_busca_texto_to_os: coluna
+            // desnormalizada que substitui os 53 LIKE espalhados por 7 tabelas
+            // na busca da listagem de OS.
+            $table->text('busca_texto')->nullable();
             $table->dateTime('created_at')->nullable();
             $table->dateTime('updated_at')->nullable();
             // Espelha as colunas geradas/indexadas criadas pela migration

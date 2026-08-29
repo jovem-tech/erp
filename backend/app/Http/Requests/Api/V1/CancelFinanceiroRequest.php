@@ -30,6 +30,10 @@ class CancelFinanceiroRequest extends BaseApiFormRequest
             'admin_email' => ['nullable', 'string', 'email'],
             'admin_password' => ['nullable', 'string'],
             'motivo' => ['nullable', 'string', Rule::in(['sem_reparo', 'erro_cobranca', 'fechamento_indevido'])],
+            // Cancelar um lançamento estorna as entradas de estoque que ele
+            // gerou (specs/039). Se a peça já saiu, o estorno deixa saldo
+            // negativo e exige esta confirmação — mesmo nome usado na 038.
+            'confirmar_estoque_insuficiente' => ['nullable', 'boolean'],
         ];
     }
 }

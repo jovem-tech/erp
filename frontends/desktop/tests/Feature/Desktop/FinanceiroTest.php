@@ -484,6 +484,38 @@ class FinanceiroTest extends TestCase
         });
     }
 
+    /**
+     * "Despesa fixa?" e o campo mais consequente do formulario: e ele que
+     * decide se o lancamento entra no ponto de equilibrio e no custo-hora.
+     * Marcar errado nao da erro nenhum — so faz o DRE mentir. Por isso a
+     * ajuda precisa dar o criterio ("existe todo mes, independente de venda")
+     * em vez de repetir o rotulo.
+     */
+    public function test_campos_do_lancamento_trazem_ajuda_no_rotulo(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => ['categorias' => []],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar']]))
+            ->get('/financeiro/novo?tipo=pagar');
+
+        $response->assertOk()
+            ->assertSee('data-bs-toggle="tooltip"', false)
+            ->assertSee('ponto de equilíbrio', false)
+            // O criterio, nao o rotulo repetido.
+            ->assertSee('existe todo mês, você fazendo 1 ou 100 OS', false)
+            // Competencia: o mes e o do vencimento, nao o do pagamento.
+            ->assertSee('mesmo que você pague antes ou depois', false);
+    }
+
     public function test_create_with_tipo_pagar_query_locks_tipo_to_pagar(): void
     {
         Http::fake([
@@ -953,50 +985,121 @@ class FinanceiroTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/id="financeiroClienteWrapper"\s+class="d-none"/', $response->getContent());
     }
 
-    public function test_create_page_hides_vinculos_section_when_despesa_fixa_chosen(): void
+    /**
+     * Despesa fixa tem fornecedor: aluguel tem locador, internet tem provedora.
+     *
+     * Antes a seção de VÍNCULOS inteira sumia na despesa fixa, forçando o
+     * lançamento a avulso e apagando o fornecedor já escolhido — contradizendo
+     * o texto do próprio campo ("toda conta a pagar deve ter fornecedor").
+     */
+    public function test_despesa_fixa_ainda_oferece_fornecedor(): void
     {
-        Http::fake([
-            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
-            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
-                'status' => 'success',
-                'data' => ['categorias' => []],
-                'error' => null,
-                'meta' => [],
-            ], 200),
-        ]);
+        $this->fakeCatalogoComAluguel();
 
         $response = $this
             ->withSession(array_merge(
                 $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
-                ['_old_input' => ['tipo' => 'pagar', 'dre_fixo_mensal' => '1']]
+                ['_old_input' => ['tipo' => 'pagar', 'categoria' => 'Aluguel']]
             ))
             ->get('/financeiro/novo');
 
         $response->assertOk();
-        $this->assertMatchesRegularExpression('/id="financeiroVinculosSection"\s+class="d-none"/', $response->getContent());
+        $content = $response->getContent();
+
+        $this->assertDoesNotMatchRegularExpression('/id="financeiroVinculosSection"[^>]*\bd-none\b/', $content);
+        $this->assertDoesNotMatchRegularExpression('/id="financeiroFornecedorWrapper"\s+class="d-none"/', $content);
+        // OS continua fora: aluguel não tem ordem de serviço.
+        $this->assertMatchesRegularExpression('/id="financeiroOsWrapper"\s+class="d-none"/', $content);
     }
 
-    public function test_create_page_shows_vinculos_section_when_despesa_variavel_chosen(): void
+    /**
+     * Sem OS e Cliente na tela, o switch "avulso" é um controle sem nenhum
+     * efeito observável.
+     */
+    public function test_despesa_fixa_esconde_o_switch_avulso(): void
+    {
+        $this->fakeCatalogoComAluguel();
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
+                ['_old_input' => ['tipo' => 'pagar', 'categoria' => 'Aluguel']]
+            ))
+            ->get('/financeiro/novo');
+
+        $response->assertOk()->assertSee('financeiroAvulso', false);
+        $this->assertMatchesRegularExpression('/id="financeiroAvulsoWrapper"[^>]*\bd-none\b/', $response->getContent());
+    }
+
+    public function test_recebimento_mantem_avulso_e_esconde_fornecedor(): void
+    {
+        $this->fakeCatalogoComAluguel();
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar']]))
+            ->get('/financeiro/novo');
+
+        $response->assertOk();
+        $content = $response->getContent();
+
+        $this->assertDoesNotMatchRegularExpression('/id="financeiroAvulsoWrapper"[^>]*\bd-none\b/', $content);
+        $this->assertMatchesRegularExpression('/id="financeiroFornecedorWrapper"\s+class="d-none"/', $content);
+    }
+
+    /**
+     * O bug que motivou o refinamento: com o filtro em "Todas" e uma categoria
+     * cujo padrão é fixo, o lançamento É fixo no backend — então o checkbox de
+     * repetição precisa aparecer. Antes ele estava amarrado ao select e ficava
+     * inalcançável no caminho mais comum.
+     */
+    public function test_repetir_aparece_para_categoria_fixa_sem_filtro(): void
+    {
+        $this->fakeCatalogoComAluguel();
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
+                ['_old_input' => ['tipo' => 'pagar', 'categoria' => 'Aluguel']]
+            ))
+            ->get('/financeiro/novo');
+
+        $response->assertOk();
+        $this->assertDoesNotMatchRegularExpression('/id="financeiroRepetirWrapper"[^>]*\bd-none\b/', $response->getContent());
+    }
+
+    public function test_repetir_fica_escondido_para_categoria_variavel(): void
+    {
+        $this->fakeCatalogoComAluguel();
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
+                ['_old_input' => ['tipo' => 'pagar', 'categoria' => 'Compra de embalagens']]
+            ))
+            ->get('/financeiro/novo');
+
+        $response->assertOk();
+        $this->assertMatchesRegularExpression('/id="financeiroRepetirWrapper"[^>]*\bd-none\b/', $response->getContent());
+    }
+
+    private function fakeCatalogoComAluguel(): void
     {
         Http::fake([
             'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
             'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
                 'status' => 'success',
-                'data' => ['categorias' => []],
+                'data' => [
+                    'categorias' => [
+                        ['id' => 1, 'nome' => 'Aluguel', 'tipo' => 'pagar', 'dre_fixo_mensal_padrao' => true],
+                        ['id' => 2, 'nome' => 'Compra de embalagens', 'tipo' => 'pagar', 'dre_fixo_mensal_padrao' => false],
+                    ],
+                    'contas_financeiras' => ['contas' => [], 'contas_padrao' => [], 'tipos' => []],
+                    'formas_pagamento' => [],
+                ],
                 'error' => null,
                 'meta' => [],
             ], 200),
         ]);
-
-        $response = $this
-            ->withSession(array_merge(
-                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
-                ['_old_input' => ['tipo' => 'pagar', 'dre_fixo_mensal' => '0']]
-            ))
-            ->get('/financeiro/novo');
-
-        $response->assertOk();
-        $this->assertDoesNotMatchRegularExpression('/id="financeiroVinculosSection"\s+class="d-none"/', $response->getContent());
     }
 
     public function test_store_omits_dre_fixo_mensal_when_tipo_is_receber(): void
@@ -1064,61 +1167,98 @@ class FinanceiroTest extends TestCase
         });
     }
 
-    public function test_create_page_renders_classificacao_select_beside_tipo(): void
+    /**
+     * O campo antigo perguntava "Despesa fixa?" e oferecia "Todas as
+     * categorias" como resposta — misturava o valor do campo com o escopo do
+     * filtro. Agora são duas coisas separadas: um filtro honesto da lista, e a
+     * classificação mostrada como resultado.
+     */
+    public function test_create_page_renders_filtro_de_categoria_e_override(): void
     {
-        Http::fake([
-            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
-            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
-                'status' => 'success',
-                'data' => ['categorias' => [], 'contas_financeiras' => ['contas' => [], 'contas_padrao' => [], 'tipos' => []], 'formas_pagamento' => []],
-                'error' => null,
-                'meta' => [],
-            ], 200),
-        ]);
-
-        $response = $this
-            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar']]))
-            ->get('/financeiro/novo');
-
-        $response->assertOk()
-            ->assertSee('financeiroClassificacaoFixa', false)
-            ->assertSee('Despesa fixa?')
-            ->assertSee('Todas as categorias')
-            ->assertSee('Despesa variável');
-    }
-
-    public function test_create_page_filters_categoria_options_by_classificacao(): void
-    {
-        Http::fake([
-            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
-            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
-                'status' => 'success',
-                'data' => [
-                    'categorias' => [
-                        ['id' => 1, 'nome' => 'Aluguel', 'tipo' => 'pagar', 'dre_fixo_mensal_padrao' => true],
-                        ['id' => 2, 'nome' => 'Compra de embalagens', 'tipo' => 'pagar', 'dre_fixo_mensal_padrao' => false],
-                    ],
-                    'contas_financeiras' => ['contas' => [], 'contas_padrao' => [], 'tipos' => []],
-                    'formas_pagamento' => [],
-                ],
-                'error' => null,
-                'meta' => [],
-            ], 200),
-        ]);
+        $this->fakeCatalogoComAluguel();
 
         $response = $this
             ->withSession(array_merge(
                 $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
-                ['_old_input' => ['tipo' => 'pagar', 'dre_fixo_mensal' => '1']]
+                ['_old_input' => ['tipo' => 'pagar']]
             ))
             ->get('/financeiro/novo');
 
         $response->assertOk()
-            // Servidor já filtra as opções que não batem com a
-            // classificação escolhida (degrada bem mesmo sem JS) — só a
-            // categoria fixa aparece como <option> no HTML.
+            // O filtro, com nome que não colide com o payload.
+            ->assertSee('financeiroCategoriaFiltro', false)
+            ->assertSee('name="categoria_filtro"', false)
+            ->assertSee('Só fixas')
+            ->assertSee('Só variáveis')
+            // O override é quem carrega dre_fixo_mensal, e nasce desabilitado
+            // para não viajar enquanto ninguém clicar em "alterar".
+            ->assertSee('financeiroClassificacaoOverride', false)
+            ->assertSee('Usar o padrão da categoria')
+            ->assertSee('Classificação no DRE');
+
+        $this->assertMatchesRegularExpression(
+            '/id="financeiroClassificacaoOverrideWrapper"[^>]*\bd-none\b/',
+            $response->getContent()
+        );
+    }
+
+    public function test_linha_de_classificacao_mostra_a_origem_do_padrao(): void
+    {
+        $this->fakeCatalogoComAluguel();
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
+                ['_old_input' => ['tipo' => 'pagar', 'categoria' => 'Aluguel']]
+            ))
+            ->get('/financeiro/novo');
+
+        $response->assertOk()
+            ->assertSee('Despesa fixa')
+            ->assertSee('(padrão de Aluguel)');
+    }
+
+    public function test_create_page_filters_categoria_options_by_classificacao(): void
+    {
+        $this->fakeCatalogoComAluguel();
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
+                ['_old_input' => ['tipo' => 'pagar', 'categoria_filtro' => '1']]
+            ))
+            ->get('/financeiro/novo');
+
+        $response->assertOk()
+            // Servidor já filtra as opções que não batem com o filtro escolhido
+            // (degrada bem mesmo sem JS) — só a categoria fixa aparece como
+            // <option> no HTML.
             ->assertSee('value="Aluguel"', false)
             ->assertDontSee('value="Compra de embalagens"', false);
+    }
+
+    /**
+     * O filtro não pode invalidar a escolha do operador: a categoria já
+     * selecionada continua na lista mesmo quando não bate com o filtro. Antes,
+     * o JS limpava a seleção nesse caso.
+     */
+    public function test_filtro_nao_esconde_a_categoria_ja_escolhida(): void
+    {
+        $this->fakeCatalogoComAluguel();
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
+                ['_old_input' => [
+                    'tipo' => 'pagar',
+                    'categoria_filtro' => '1',
+                    'categoria' => 'Compra de embalagens',
+                ]]
+            ))
+            ->get('/financeiro/novo');
+
+        $response->assertOk()
+            ->assertSee('value="Compra de embalagens"', false);
     }
 
     public function test_client_detail_shows_financeiro_history_with_permission(): void

@@ -8,6 +8,7 @@ use App\Models\FinanceiroConta;
 use App\Models\FinanceiroContaDefault;
 use App\Models\FinanceiroFormaPagamento;
 use App\Models\Sale;
+use App\Support\VisibilidadeCusto;
 use App\Models\TeamMember;
 use App\Models\User;
 use App\Services\Auth\AdminCredentialVerifier;
@@ -151,8 +152,19 @@ class SaleController extends BaseApiController
 
         $term = (string) $request->query('search', $request->query('q', ''));
 
+        // A visibilidade do CHAMADOR decide o que sai no payload: o semaforo
+        // vale para todos, o custo em reais so para quem tem permissao
+        // financeira (specs/037). Redigido no DTO PrecoQuote.
+        $visibilidade = VisibilidadeCusto::paraUsuario($user);
+
         return $this->success(
-            ['itens' => $this->saleWorkflowService->searchItems($term)],
+            [
+                'itens' => $this->saleWorkflowService->searchItems($term, visibilidade: $visibilidade),
+                'visibilidade_custo' => $visibilidade,
+                // Limites vao ao cliente para o repintar local do PDV usar os
+                // MESMOS numeros do servidor.
+                'limites_semaforo' => $this->saleWorkflowService->limitesSemaforoPublicos(),
+            ],
             request: $request
         );
     }

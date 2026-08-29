@@ -3,13 +3,16 @@
 namespace App\Services\Sales;
 
 use App\Models\Client;
+use App\Models\Configuration;
 use App\Models\Peca;
 use App\Models\Sale;
 use App\Models\SaleItem;
 use App\Models\Servico;
 use App\Models\User;
 use App\Services\Caixa\CaixaSessionService;
+use App\Services\Financeiro\PrecoQuote;
 use App\Support\CommercialAdjustment;
+use App\Support\FaixaMargem;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
@@ -233,7 +236,18 @@ class SaleWorkflowService
      *
      * @return array<int, array<string, mixed>>
      */
-    public function searchItems(string $term, int $limit = 20): array
+    /** @var array{0: float, 1: float}|null */
+    private ?array $limitesSemaforo = null;
+
+    /**
+     * Catalogo do PDV.
+     *
+     * Devolve, junto de cada item, a cotacao ja REDIGIDA pela visibilidade de
+     * quem pediu (specs/037): o semaforo e o piso valem para todos, o custo em
+     * reais so para quem tem permissao financeira. A redacao acontece no DTO
+     * PrecoQuote, nao na view — chave ausente do JSON nao chega ao devtools.
+     */
+    public function searchItems(string $term, int $limit = 20, ?string $visibilidade = null): array
     {
         $term = trim($term);
 
@@ -270,6 +284,8 @@ class SaleWorkflowService
             $sale = (float) ($part->preco_venda ?? 0);
             $cost = (float) ($part->preco_custo ?? 0);
 
+            $preco = $sale > 0 ? $sale : $cost;
+
             $results[] = [
                 'tipo_item' => SaleItem::TYPE_PART,
                 'referencia_id' => (int) $part->id,
@@ -278,15 +294,22 @@ class SaleWorkflowService
                 'descricao' => (string) ($part->nome ?? ''),
                 'categoria' => (string) ($part->categoria ?? ''),
                 'unidade' => (string) ($part->unidade ?? 'UN'),
-                'valor_unitario' => $sale > 0 ? $sale : $cost,
-                'custo_unitario' => $cost,
+                'valor_unitario' => $preco,
                 // float: saldo 1,25 aparecia como 1 na busca do PDV.
-            'saldo' => (float) ($part->quantidade_atual ?? 0),
+                'saldo' => (float) ($part->quantidade_atual ?? 0),
                 'controla_estoque' => true,
-            ];
+            ] + $this->cotacaoDoCatalogo($preco, $cost, $visibilidade);
         }
 
         foreach ($services as $service) {
+            $precoServico = (float) ($service->valor ?? 0);
+            // Fase 1 usa apenas o custo direto informado. A mao de obra
+            // (tempo x custo-hora) entra na Fase 3, quando o custo-hora passa a
+            // ser calculado dos custos fixos reais — ate la, somar um custo-hora
+            // digitado sem lastro seria trocar um numero incompleto por um
+            // numero errado.
+            $custoServico = (float) ($service->custo_direto_padrao ?? 0);
+
             $results[] = [
                 'tipo_item' => SaleItem::TYPE_SERVICE,
                 'referencia_id' => (int) $service->id,
@@ -295,14 +318,80 @@ class SaleWorkflowService
                 'descricao' => (string) ($service->nome ?? ''),
                 'categoria' => 'Serviço',
                 'unidade' => 'UN',
-                'valor_unitario' => (float) ($service->valor ?? 0),
-                'custo_unitario' => (float) ($service->custo_direto_padrao ?? 0),
+                'valor_unitario' => $precoServico,
                 'saldo' => null,
                 'controla_estoque' => false,
-            ];
+            ] + $this->cotacaoDoCatalogo($precoServico, $custoServico, $visibilidade);
         }
 
         return $results;
+    }
+
+    /**
+     * Cotacao de um item de catalogo para o PDV.
+     *
+     * O piso aqui e o CUSTO — abaixo dele a venda sai no prejuizo. Nao e o
+     * preco minimo do motor de precificacao (custo + encargos + margem), que
+     * entra no cadastro e no orcamento: no balcao, o que o operador precisa
+     * saber na hora do desconto e onde comeca o prejuizo, nao onde comeca a
+     * margem-alvo.
+     *
+     * Custo zerado vira `null` de proposito: sem custo cadastrado nao ha
+     * margem a calcular, e FaixaMargem devolve INDEFINIDO (cinza) em vez de
+     * verde. Ver FaixaMargem::INDEFINIDO.
+     *
+     * @return array<string, mixed>
+     */
+    private function cotacaoDoCatalogo(float $preco, float $custo, ?string $visibilidade): array
+    {
+        [$verde, $amarelo] = $this->limitesSemaforo();
+
+        return PrecoQuote::criar(
+            valorRecomendado: $preco,
+            precoMinimo: $custo,
+            custoUnitario: $custo > 0 ? $custo : null,
+            valorCobrado: $preco,
+            limiteVerde: $verde,
+            limiteAmarelo: $amarelo,
+        )->toArray($visibilidade);
+    }
+
+    /**
+     * Limites do semaforo, memoizados por request.
+     *
+     * Enviados ao cliente no payload para que o repintar local do PDV use os
+     * MESMOS numeros do servidor — semaforo que discorda entre tela e banco e
+     * pior que semaforo nenhum.
+     *
+     * @return array{verde: float, amarelo: float}
+     */
+    public function limitesSemaforoPublicos(): array
+    {
+        [$verde, $amarelo] = $this->limitesSemaforo();
+
+        return ['verde' => $verde, 'amarelo' => $amarelo];
+    }
+
+    /**
+     * @return array{0: float, 1: float}
+     */
+    private function limitesSemaforo(): array
+    {
+        if ($this->limitesSemaforo !== null) {
+            return $this->limitesSemaforo;
+        }
+
+        $config = Configuration::query()
+            ->whereIn('chave', [
+                'precificacao_semaforo_verde_percentual',
+                'precificacao_semaforo_amarelo_percentual',
+            ])
+            ->pluck('valor', 'chave');
+
+        return $this->limitesSemaforo = [
+            (float) ($config['precificacao_semaforo_verde_percentual'] ?? FaixaMargem::VERDE_PADRAO),
+            (float) ($config['precificacao_semaforo_amarelo_percentual'] ?? FaixaMargem::AMARELO_PADRAO),
+        ];
     }
 
     /**
@@ -715,7 +804,21 @@ class SaleWorkflowService
                 ? CommercialAdjustment::money($item['valor_unitario'])
                 : (float) ($reference['valor_unitario'] ?? 0);
 
-            $unitCost = array_key_exists('custo_unitario', $item) && $item['custo_unitario'] !== null && $item['custo_unitario'] !== ''
+            // Item de catálogo tem custo próprio: o do cadastro, sempre. O
+            // valor enviado pelo cliente é ignorado — mesma postura que a
+            // linha logo abaixo já aplica a `baixa_estoque`.
+            //
+            // Sem esta guarda, um POST com `custo_unitario: 0` numa peça
+            // cadastrada zera `vendas.custo_total` e faz a margem gravada
+            // marcar 100%. Era inócuo enquanto o desktop não enviava o campo;
+            // deixa de ser no instante em que o PDV passa a exibir custo
+            // (specs/037), porque aí o campo passa a existir no payload.
+            $temReferencia = $referenceId > 0 && $reference !== [];
+            $custoInformado = array_key_exists('custo_unitario', $item)
+                && $item['custo_unitario'] !== null
+                && $item['custo_unitario'] !== '';
+
+            $unitCost = ($custoInformado && ! $temReferencia)
                 ? CommercialAdjustment::money($item['custo_unitario'])
                 : (float) ($reference['custo_unitario'] ?? 0);
 

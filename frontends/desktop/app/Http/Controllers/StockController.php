@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
+use App\Services\FinanceiroPrecificacaoService;
 use App\Services\StockService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -17,7 +18,8 @@ use Throwable;
 class StockController extends DesktopController
 {
     public function __construct(
-        private readonly StockService $stockService
+        private readonly StockService $stockService,
+        private readonly FinanceiroPrecificacaoService $financeiroPrecificacaoService
     ) {
     }
 
@@ -174,6 +176,45 @@ class StockController extends DesktopController
         return redirect()
             ->route('estoque.index', ['search' => trim((string) ($part['nome'] ?? ''))])
             ->with('success', 'Peça cadastrada com sucesso.');
+    }
+
+    /**
+     * Preço sugerido para o cadastro de peça (specs/037).
+     *
+     * Delega ao mesmo endpoint que a tela de precificação usa — criar rota
+     * própria no backend duplicaria o simulador. A resposta já vem redigida
+     * pela permissão de quem pediu: o estoquista recebe o valor sugerido e o
+     * semáforo, não a composição de custo.
+     */
+    public function suggestPrice(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'peca_id' => ['nullable', 'integer', 'min:1'],
+            'preco_custo' => ['nullable', 'numeric', 'min:0'],
+            'preco_venda' => ['nullable', 'numeric', 'min:0'],
+            'categoria' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        try {
+            $simulacao = $this->financeiroPrecificacaoService->simulatePeca(
+                $this->normalizeMoneyPayload($validated, ['preco_custo', 'preco_venda'])
+            );
+        } catch (ApiAuthenticationException $exception) {
+            return $this->jsonFailure($exception->getMessage() ?: 'Sua sessão expirou. Faça login novamente.', 401);
+        } catch (ApiAuthorizationException $exception) {
+            return $this->jsonFailure($exception->getMessage() ?: 'Sem permissão para simular preços.', 403);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            // Sugestão é conveniência, não requisito: falhar aqui não pode
+            // impedir o cadastro da peça. O JS trata 5xx escondendo a dica.
+            return $this->jsonFailure('Não foi possível calcular a sugestão agora.', 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'simulation' => $simulacao,
+        ]);
     }
 
     public function quickStore(Request $request): JsonResponse

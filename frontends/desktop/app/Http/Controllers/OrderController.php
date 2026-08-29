@@ -916,6 +916,12 @@ class OrderController extends DesktopController
         if (! $idempotentReplay && (bool) ($openingDelivery['requested'] ?? false)) {
             if ((bool) ($openingDelivery['sent'] ?? false)) {
                 $successMessage .= ' Documento enviado ao cliente.';
+            } elseif ((bool) ($openingDelivery['queued'] ?? false)) {
+                // Caminho normal desde que a geracao do PDF e o envio saíram da
+                // requisicao para a fila: nao e' aviso de problema, e' o estado
+                // esperado. So' vira warning se o enfileiramento em si falhar,
+                // e nesse caso o backend manda queued=false com a mensagem.
+                $successMessage .= ' O PDF de abertura será enviado ao cliente em instantes.';
             } elseif (trim((string) ($openingDelivery['message'] ?? '')) !== '') {
                 $warnings[] = (string) $openingDelivery['message'];
             }
@@ -1525,6 +1531,62 @@ class OrderController extends DesktopController
             'pageTitle' => 'Pré-visualização da OS',
             'order' => $this->orderService->find($order),
         ]);
+    }
+
+    /**
+     * Peças do orçamento aprovado para o modal de aplicação (specs/038).
+     */
+    public function stockContext(int $order): JsonResponse
+    {
+        try {
+            $estoque = $this->orderService->stockContext($order);
+        } catch (ApiAuthenticationException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 401);
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json(['error' => 'Não foi possível carregar as peças da OS.'], 500);
+        }
+
+        return response()->json($estoque);
+    }
+
+    /**
+     * Aplica as peças, gerando as saídas de estoque da OS.
+     */
+    public function applyStock(Request $request, int $order): JsonResponse
+    {
+        $validated = $request->validate([
+            'itens' => ['required', 'array', 'min:1'],
+            'itens.*.peca_id' => ['required', 'integer', 'min:1'],
+            'itens.*.quantidade' => ['required', 'numeric', 'min:0.0001'],
+            'confirmar_estoque_insuficiente' => ['nullable', 'boolean'],
+        ]);
+
+        try {
+            $resultado = $this->orderService->applyStock(
+                $order,
+                $validated['itens'],
+                filter_var($validated['confirmar_estoque_insuficiente'] ?? false, FILTER_VALIDATE_BOOL)
+            );
+        } catch (ApiAuthenticationException $exception) {
+            return response()->json(['error' => $exception->getMessage()], 401);
+        } catch (ApiRequestException $exception) {
+            // Saldo insuficiente devolve os ofensores para o modal destacar a
+            // linha exata, em vez de um erro genérico.
+            return response()->json([
+                'error' => $exception->getMessage(),
+                'details' => $exception->details(),
+            ], $exception->statusCode() > 0 ? $exception->statusCode() : 422);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return response()->json(['error' => 'Não foi possível aplicar as peças agora.'], 500);
+        }
+
+        return response()->json(['success' => true] + $resultado);
     }
 
     public function statusContext(int $order): JsonResponse

@@ -513,6 +513,13 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/os/{order}/baixa/cancelar', [OrderController::class, 'closureCancel'])
         ->middleware('desktop.permission:os,visualizar')
         ->name('orders.closure.cancel');
+    // Aplicacao de peca na OS (specs/038): o caminho que faz o CMV existir.
+    Route::get('/os/{order}/estoque', [OrderController::class, 'stockContext'])
+        ->middleware('desktop.permission:estoque,visualizar')
+        ->name('orders.estoque.context');
+    Route::post('/os/{order}/estoque/aplicar', [OrderController::class, 'applyStock'])
+        ->middleware('desktop.permission:estoque,editar')
+        ->name('orders.estoque.apply');
     Route::get('/os/{order}/status-context', [OrderController::class, 'statusContext'])
         ->middleware('desktop.permission:os,visualizar')
         ->name('orders.status.context');
@@ -652,6 +659,11 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/financeiro/fornecedores/buscar', [FinanceiroController::class, 'searchSuppliers'])
         ->middleware('desktop.permission:financeiro,criar|editar')
         ->name('financeiro.suppliers.search');
+    // Peças da entrada de estoque no lançamento (specs/039). Gate é de estoque,
+    // não de financeiro: quem não pode ver o estoque não pode listá-lo por aqui.
+    Route::get('/financeiro/pecas/buscar', [FinanceiroController::class, 'searchParts'])
+        ->middleware('desktop.permission:estoque,visualizar')
+        ->name('financeiro.parts.search');
     Route::get('/financeiro/novo', [FinanceiroController::class, 'create'])
         ->middleware('desktop.permission:financeiro,criar')
         ->name('financeiro.create');
@@ -1068,6 +1080,10 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/servicos', [ServicoController::class, 'store'])
         ->middleware('desktop.permission:servicos,criar')
         ->name('servicos.store');
+    // Preço sugerido do cadastro de serviço (specs/037).
+    Route::post('/servicos/sugerir-preco', [ServicoController::class, 'suggestPrice'])
+        ->middleware('desktop.permission:servicos,criar|editar')
+        ->name('servicos.suggest-price');
     Route::post('/servicos/rapido', [ServicoController::class, 'quickStore'])
         ->middleware('desktop.permission:servicos,criar')
         ->name('servicos.quick.store');
@@ -1108,6 +1124,12 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/estoque/rapido', [StockController::class, 'quickStore'])
         ->middleware('desktop.permission:estoque,criar')
         ->name('estoque.quick.store');
+    // Preço sugerido do cadastro de peça (specs/037). Aceita `criar|editar`
+    // porque a sugestão vale tanto na peça nova quanto na revisão de preço de
+    // uma existente.
+    Route::post('/estoque/sugerir-preco', [StockController::class, 'suggestPrice'])
+        ->middleware('desktop.permission:estoque,criar|editar')
+        ->name('estoque.suggest-price');
     Route::get('/estoque/exportar-csv', [StockController::class, 'exportCsv'])
         ->middleware('desktop.permission:estoque,exportar')
         ->name('estoque.export.csv');

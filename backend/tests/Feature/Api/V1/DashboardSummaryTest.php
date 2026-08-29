@@ -3,6 +3,7 @@
 namespace Tests\Feature\Api\V1;
 
 use App\Models\Financeiro;
+use App\Models\FinanceiroMovimento;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -607,6 +608,104 @@ class DashboardSummaryTest extends TestCase
                 ->assertJsonPath('data.recent_orders.0.dias_sem_movimento', 30)
                 // O alerta agregado usa o mesmo limiar de 15 dias.
                 ->assertJsonPath('data.alerts.os_paradas', 1);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_stats_expose_paid_expenses_by_cash_movement_not_by_title_value(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-03-15 10:00:00'));
+
+        try {
+            // Título A: baixa total em março (mês atual).
+            $tituloA = Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_PAGAR,
+                'avulso' => true,
+                'categoria' => 'Fornecedor',
+                'descricao' => 'Peças - nota 1',
+                'valor' => 500.00,
+                'status' => Financeiro::STATUS_PAGO,
+                'data_vencimento' => '2026-03-05',
+            ])->id;
+            FinanceiroMovimento::query()->create([
+                'financeiro_id' => $tituloA,
+                'tipo_movimento' => FinanceiroMovimento::TIPO_SAIDA,
+                'data_movimento' => '2026-03-05',
+                'valor_movimento' => 500.00,
+            ]);
+
+            // Título B: só baixa PARCIAL em março — regime de caixa precisa
+            // contar os 120 pagos, não os 300 do título nem os 180 em aberto.
+            $tituloB = Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_PAGAR,
+                'avulso' => true,
+                'categoria' => 'Fornecedor',
+                'descricao' => 'Peças - nota 2',
+                'valor' => 300.00,
+                'status' => Financeiro::STATUS_PARCIAL,
+                'data_vencimento' => '2026-03-10',
+            ])->id;
+            FinanceiroMovimento::query()->create([
+                'financeiro_id' => $tituloB,
+                'tipo_movimento' => FinanceiroMovimento::TIPO_SAIDA,
+                'data_movimento' => '2026-03-10',
+                'valor_movimento' => 120.00,
+            ]);
+
+            // Título C: pago em fevereiro (mês anterior) — não pode contar em
+            // março.
+            $tituloC = Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_PAGAR,
+                'avulso' => true,
+                'categoria' => 'Fornecedor',
+                'descricao' => 'Peças - nota 3',
+                'valor' => 200.00,
+                'status' => Financeiro::STATUS_PAGO,
+                'data_vencimento' => '2026-02-10',
+            ])->id;
+            FinanceiroMovimento::query()->create([
+                'financeiro_id' => $tituloC,
+                'tipo_movimento' => FinanceiroMovimento::TIPO_SAIDA,
+                'data_movimento' => '2026-02-10',
+                'valor_movimento' => 200.00,
+            ]);
+
+            // Recebimento em março — não é despesa, e um filtro por tipo
+            // errado inflaria o número.
+            $tituloD = Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_RECEBER,
+                'avulso' => true,
+                'categoria' => 'Serviço',
+                'descricao' => 'Recebimento cliente',
+                'valor' => 1000.00,
+                'status' => Financeiro::STATUS_PAGO,
+                'data_vencimento' => '2026-03-08',
+            ])->id;
+            FinanceiroMovimento::query()->create([
+                'financeiro_id' => $tituloD,
+                'tipo_movimento' => FinanceiroMovimento::TIPO_ENTRADA,
+                'data_movimento' => '2026-03-08',
+                'valor_movimento' => 1000.00,
+            ]);
+
+            $user = $this->createUserRecord([
+                'nome' => 'Gerente Financeiro',
+                'email' => 'gerente.despesas@example.com',
+                'perfil' => 'gerente',
+                'grupo_id' => 3,
+            ]);
+
+            Sanctum::actingAs($user, ['*']);
+
+            $this->getJson('/api/v1/dashboard/summary')
+                ->assertOk()
+                ->assertJsonPath('data.stats.despesas_pagas_mes', 620.0)
+                ->assertJsonPath('data.stats.despesas_pagas_mes_anterior', 200.0)
+                // Pendentes soma o valor bruto do título parcial (B), não o
+                // saldo em aberto — mesma regra já coberta em
+                // data.charts.financial.pendentes, só espelhada em stats.
+                ->assertJsonPath('data.stats.despesas_pendentes', 300.0);
         } finally {
             Carbon::setTestNow();
         }

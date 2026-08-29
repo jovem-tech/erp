@@ -9827,3 +9827,80 @@ a.dashboard-status-legend-item:hover {
         font-size: 1.5rem;
     }
 }
+
+/* ============================================================
+   Ajuda de campo — o "?" ao lado do rotulo
+   ------------------------------------------------------------
+   O balao explica PARA QUE serve o campo e COMO preencher bem.
+   E um <button>, nao um <i>, porque assim recebe foco por Tab e
+   responde a toque no celular — onde nao existe "repousar o mouse".
+   ============================================================ */
+.campo-label-ajuda {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+}
+
+.campo-ajuda {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.05rem;
+    height: 1.05rem;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--bs-secondary-color, #6c757d);
+    font-size: .82rem;
+    line-height: 1;
+    cursor: help;
+    opacity: .65;
+    transition: opacity .15s ease, color .15s ease, background-color .15s ease;
+}
+
+.campo-ajuda:hover,
+.campo-ajuda:focus-visible {
+    opacity: 1;
+    color: var(--bs-primary, #0d6efd);
+    background-color: rgba(13, 110, 253, .1);
+}
+
+.campo-ajuda:focus-visible {
+    outline: 2px solid var(--bs-primary, #0d6efd);
+    outline-offset: 1px;
+}
+
+/* O texto de ajuda e uma frase inteira, nao um rotulo curto: o padrao
+   de 200px do Bootstrap quebraria em 6 linhas estreitas. */
+.campo-ajuda-tip {
+    --bs-tooltip-max-width: 22rem;
+    --bs-tooltip-opacity: 1;
+    --bs-tooltip-padding-x: .75rem;
+    --bs-tooltip-padding-y: .55rem;
+    --bs-tooltip-font-size: .8125rem;
+}
+
+.campo-ajuda-tip .tooltip-inner {
+    text-align: left;
+    line-height: 1.45;
+}
+
+.campo-ajuda-tip .tooltip-inner strong {
+    font-weight: 600;
+}
+
+.campo-ajuda-tip .tooltip-inner .tip-exemplo {
+    display: block;
+    margin-top: .4rem;
+    padding-top: .4rem;
+    border-top: 1px solid rgba(255, 255, 255, .22);
+    font-variant-numeric: tabular-nums;
+    opacity: .9;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .campo-ajuda {
+        transition: none;
+    }
+}

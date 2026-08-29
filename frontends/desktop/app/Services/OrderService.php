@@ -223,6 +223,32 @@ class OrderService
     }
 
     /**
+     * Peças do orçamento aprovado, o que já baixou e o que falta (specs/038).
+     *
+     * @return array<string, mixed>
+     */
+    public function stockContext(int $id): array
+    {
+        $response = $this->apiClient->get('/orders/'.$id.'/estoque');
+
+        return $response['data']['estoque'] ?? [];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $itens
+     * @return array<string, mixed>
+     */
+    public function applyStock(int $id, array $itens, bool $confirmarInsuficiente = false): array
+    {
+        $response = $this->apiClient->post('/orders/'.$id.'/estoque/aplicar', [
+            'itens' => array_values($itens),
+            'confirmar_estoque_insuficiente' => $confirmarInsuficiente,
+        ]);
+
+        return $response['data'] ?? [];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function addProcedure(int $id, string $descricao): array

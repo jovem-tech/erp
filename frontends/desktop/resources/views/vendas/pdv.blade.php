@@ -576,7 +576,18 @@
                         <dd class="col-6 text-end mb-1" id="pdvDesconto">R$ 0,00</dd>
                         <dt class="col-6 fs-5 fw-semibold mb-0">Total</dt>
                         <dd class="col-6 text-end fs-5 fw-semibold mb-0" id="pdvTotal">R$ 0,00</dd>
+                        {{-- Só para quem tem permissão financeira: o backend nem envia
+                             o custo para os demais (specs/037). --}}
+                        <dt class="col-6 text-secondary fw-normal d-none" id="pdvCustoLabel">Custo</dt>
+                        <dd class="col-6 text-end mb-0 d-none" id="pdvCustoTotal">R$ 0,00</dd>
+                        <dt class="col-6 text-secondary fw-normal d-none" id="pdvMargemLabel">Margem</dt>
+                        <dd class="col-6 text-end mb-0 d-none" id="pdvMargemTotal">R$ 0,00</dd>
                     </dl>
+
+                    {{-- Aviso de piso: aparece quando o desconto empurra alguma linha
+                         abaixo do custo. NUNCA bloqueia a venda — PDV que se recusa a
+                         vender vira recibo manual. --}}
+                    <div class="alert alert-warning py-2 px-3 mt-2 mb-0 d-none" id="pdvAvisoPiso"></div>
                 </section>
 
                 <section class="surface-card pdv-bloco-fechar">
@@ -689,7 +700,12 @@
                 <td data-label="Desconto">
                     <input type="text" class="form-control form-control-sm text-end" data-campo="desconto" value="0,00" inputmode="decimal">
                 </td>
-                <td data-label="Total" class="text-end fw-semibold pdv-item-total">R$ 0,00</td>
+                <td data-label="Total" class="text-end fw-semibold">
+                    <span class="pdv-item-total">R$ 0,00</span>
+                    {{-- Margem da linha: entra DENTRO da celula de total, nao como
+                         coluna nova — o PDV roda em tela cheia e sete colunas nao cabem. --}}
+                    <small class="d-block fw-normal pdv-item-margem"></small>
+                </td>
                 <td class="text-end">
                     <button type="button" class="btn btn-sm btn-outline-danger pdv-remover-item" aria-label="Remover item">
                         <i class="bi bi-trash"></i>
