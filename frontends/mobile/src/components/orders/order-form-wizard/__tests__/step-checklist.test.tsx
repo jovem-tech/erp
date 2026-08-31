@@ -32,7 +32,7 @@ describe('StepChecklist', () => {
       />
     );
 
-    expect(screen.queryByPlaceholderText('Descreva a discrepância *')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Descreva a discrepância/)).not.toBeInTheDocument();
 
     const [telaSelect] = screen.getAllByRole('combobox');
     await user.selectOptions(telaSelect, 'discrepancia');
@@ -52,7 +52,8 @@ describe('StepChecklist', () => {
       />
     );
 
-    expect(screen.getByPlaceholderText('Descreva a discrepância *')).toHaveValue('Risco na tela');
+    expect(screen.getByText('Descreva a discrepância')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: /Descreva a discrepância/ })).toHaveValue('Risco na tela');
   });
 
   it('"Marcar tudo OK" dispara o callback correspondente', async () => {

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { compressImageFile } from '@/lib/photo-compression';
+import { FieldLabel } from '@/components/ui/field-label';
 
 type PhotoPickerProps = {
   label: string;
@@ -10,9 +11,18 @@ type PhotoPickerProps = {
   maxFiles: number;
   disabled?: boolean;
   helpText?: string;
+  required?: boolean;
 };
 
-export function PhotoPicker({ label, value, onChange, maxFiles, disabled = false, helpText }: PhotoPickerProps) {
+export function PhotoPicker({
+  label,
+  value,
+  onChange,
+  maxFiles,
+  disabled = false,
+  helpText,
+  required = false,
+}: PhotoPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,7 +68,7 @@ export function PhotoPicker({ label, value, onChange, maxFiles, disabled = false
 
   return (
     <div className="field">
-      <span className="field__label">{label}</span>
+      <FieldLabel required={required}>{label}</FieldLabel>
 
       <div className="photo-grid">
         {value.map((file, index) => (

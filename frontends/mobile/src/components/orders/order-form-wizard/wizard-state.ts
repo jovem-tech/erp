@@ -34,6 +34,8 @@ export interface WizardFormState {
   pendingNewEquipment: NovoEquipamentoPayload | null;
   pendingEquipmentUpdate: EquipmentUpdatePayload | null;
   pendingNewEquipmentPhotos: File[];
+  /** Rótulos resolvidos de tipo/marca/modelo do equipamento novo, para exibir na Revisão sem precisar recarregar o catálogo. */
+  pendingNewEquipmentLabels: { tipo: string; marca: string; modelo: string } | null;
 
   checklistModel: EntryChecklistModel | null;
   checklistAnswers: Record<number, ChecklistAnswerState>;
@@ -64,6 +66,7 @@ export function createInitialWizardState(): WizardFormState {
     pendingNewEquipment: null,
     pendingEquipmentUpdate: null,
     pendingNewEquipmentPhotos: [],
+    pendingNewEquipmentLabels: null,
     checklistModel: null,
     checklistAnswers: {},
     checklistObservacoesEstado: '',
@@ -160,6 +163,7 @@ export function selectClientForWizard(
     pendingNewEquipment: null,
     pendingEquipmentUpdate: null,
     pendingNewEquipmentPhotos: [],
+    pendingNewEquipmentLabels: null,
     checklistModel: null,
     checklistAnswers: {},
     orcamentoVinculado: null,
@@ -250,12 +254,17 @@ export function isWizardEquipmentComplete(
     pendingNewEquipment?.tipo_id &&
       pendingNewEquipment?.marca_id &&
       pendingNewEquipment?.modelo_id &&
+      pendingNewEquipment?.cor?.trim() &&
       pendingNewEquipmentPhotos.length >= 1
   );
 }
 
-export function isWizardDetailsComplete(relatoCliente: string): boolean {
-  return relatoCliente.trim().length >= 5;
+export function isWizardDetailsComplete(
+  relatoCliente: string,
+  acessorios: string,
+  requireAcessorios = true
+): boolean {
+  return relatoCliente.trim().length >= 5 && (!requireAcessorios || acessorios.trim().length > 0);
 }
 
 export function isWizardOperationsComplete(
@@ -275,7 +284,8 @@ export function areWizardRequiredFieldsComplete(state: WizardFormState): boolean
       Boolean(
         state.pendingEquipmentUpdate.tipo_id &&
         state.pendingEquipmentUpdate.marca_id &&
-        state.pendingEquipmentUpdate.modelo_id
+        state.pendingEquipmentUpdate.modelo_id &&
+        state.pendingEquipmentUpdate.cor?.trim()
       )) &&
     isWizardEquipmentComplete(
       state.equipamento,
@@ -283,7 +293,7 @@ export function areWizardRequiredFieldsComplete(state: WizardFormState): boolean
       state.pendingNewEquipmentPhotos
     ) &&
     isChecklistComplete(state) &&
-    isWizardDetailsComplete(state.relatoCliente) &&
+    isWizardDetailsComplete(state.relatoCliente, state.acessorios) &&
     isWizardOperationsComplete(state.tecnicoId, state.prazoEntregaDias, state.dataPrevisao)
   );
 }

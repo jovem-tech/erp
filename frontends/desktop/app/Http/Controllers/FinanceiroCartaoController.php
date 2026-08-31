@@ -258,13 +258,15 @@ class FinanceiroCartaoController extends DesktopController
      */
     private function validateTaxa(Request $request): array
     {
-        return $request->validate([
+        $validated = $request->validate([
             'id' => ['nullable', 'integer', 'min:1'],
             'operadora_id' => ['required', 'integer', 'min:1'],
             'bandeira_id' => ['nullable', 'integer', 'min:1'],
             'modalidade' => ['required', 'string', 'in:credito,debito'],
             'parcelas_inicial' => ['required', 'integer', 'min:1', 'max:24'],
-            'parcelas_final' => ['required', 'integer', 'min:1', 'max:24'],
+            // A mensagem abaixo já existia, mas a regra `gte` não — dava pra
+            // salvar faixa invertida (de 12 até 3) aqui e só o backend barrava.
+            'parcelas_final' => ['required', 'integer', 'min:1', 'max:24', 'gte:parcelas_inicial'],
             'taxa_percentual' => ['required', 'numeric', 'min:0'],
             'taxa_fixa' => ['required', 'numeric', 'min:0'],
             'prazo_recebimento_dias' => ['required', 'integer', 'min:0'],
@@ -273,6 +275,15 @@ class FinanceiroCartaoController extends DesktopController
         ], [
             'parcelas_final.gte' => 'A parcela final deve ser maior ou igual à parcela inicial.',
         ]);
+
+        // Débito não parcela: o form esconde os campos de parcela e manda 1x,
+        // mas normalizamos aqui pra qualquer POST direto cair na mesma faixa.
+        if (($validated['modalidade'] ?? '') === 'debito') {
+            $validated['parcelas_inicial'] = 1;
+            $validated['parcelas_final'] = 1;
+        }
+
+        return $validated;
     }
 
     /**

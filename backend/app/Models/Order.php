@@ -30,9 +30,42 @@ class Order extends Model
         'updated_at' => 'datetime',
     ];
 
+    /**
+     * Data em que a OS reconhece receita: a entrega, caindo para a conclusao
+     * quando a entrega nao foi registrada.
+     *
+     * O COALESCE nao e defensivo a toa — ha 16 OS fechadas com receita e sem
+     * `data_entrega` no banco. Filtrar so por `data_entrega`, como o DRE fazia,
+     * some com elas do relatorio.
+     */
+    public const REVENUE_DATE_SQL = 'COALESCE(os.data_entrega, os.data_conclusao)';
+
     public function scopeAssignedToTechnician(Builder $query, int $technicianId): Builder
     {
         return $query->where('os.tecnico_id', $technicianId);
+    }
+
+    /**
+     * OS cujo fechamento gera receita.
+     *
+     * Cobre os DOIS caminhos de "entregue e cobravel": o status atual e, para a
+     * OS entregue com pendencia financeira, o status final ja definido em
+     * `status_final_pendente_pagamento`. Uma OS entregue que o cliente ainda nao
+     * pagou e faturamento do mes da entrega — o que falta nela e caixa, nao
+     * receita.
+     *
+     * Definicao unica compartilhada com o painel, que aplica a mesma regra sobre
+     * query builder em DashboardSummaryService::applyRevenueDeliveryScope().
+     * Enquanto o DRE olhava so `status`, os dois relatorios discordavam sobre o
+     * faturamento do mesmo mes.
+     */
+    public function scopeReceitaReconhecida(Builder $query): Builder
+    {
+        return $query->where(static function (Builder $scope): void {
+            $scope
+                ->where('os.status', OrderStatus::REVENUE_CLOSURE_CODE)
+                ->orWhere('os.status_final_pendente_pagamento', OrderStatus::REVENUE_CLOSURE_CODE);
+        });
     }
 
     public function client(): BelongsTo

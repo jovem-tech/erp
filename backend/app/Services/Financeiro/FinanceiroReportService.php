@@ -6,6 +6,8 @@ use App\Models\Financeiro;
 use App\Models\FinanceiroMovimento;
 use App\Models\FinanceiroMovimentoCartao;
 use App\Models\Order;
+use App\Models\Sale;
+use App\Models\SaleReturn;
 use App\Models\OrderStatus;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
@@ -34,30 +36,65 @@ class FinanceiroReportService
         // apenas para OrderStatus::REVENUE_CLOSURE_CODE — ver skill
         // sistema-erp-os-fluxo-fechamento.
         $os = Order::query()
-            ->where('os.status', OrderStatus::REVENUE_CLOSURE_CODE)
-            ->whereBetween('os.data_entrega', [$inicio->startOfDay(), $fim->endOfDay()])
+            ->receitaReconhecida()
+            ->whereRaw(Order::REVENUE_DATE_SQL . ' BETWEEN ? AND ?', [$inicio->startOfDay(), $fim->endOfDay()])
             ->selectRaw('COUNT(*) as total_os, COALESCE(SUM(os.valor_total), 0) as receita_bruta, COALESCE(SUM(os.desconto), 0) as descontos, COALESCE(SUM(os.valor_final), 0) as receita_liquida')
             ->first();
 
-        $receitaOs = [
-            'receita_bruta' => round((float) ($os->receita_bruta ?? 0), 2),
-            'descontos' => round((float) ($os->descontos ?? 0), 2),
-            'receita_liquida' => round((float) ($os->receita_liquida ?? 0), 2),
-            'total_os' => (int) ($os->total_os ?? 0),
-        ];
+        // Faturamento nao-OS: venda de balcao e o que mais for RECEITA
+        // OPERACIONAL sem os_id. Fica acima da linha, junto com a OS — e
+        // faturamento igual, e paga o mesmo custo fixo.
+        $vendas = $this->groupByCompetencia(
+            Financeiro::TIPO_RECEBER,
+            Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL,
+            $inicio,
+            $fim,
+            excludeOs: true,
+            incluirVendas: true
+        );
 
-        $custosDiretos = $this->groupByCompetencia(Financeiro::TIPO_PAGAR, 'Custo Direto (OS)', $inicio, $fim);
-        $outrasReceitas = $this->groupByCompetencia(Financeiro::TIPO_RECEBER, null, $inicio, $fim, excludeOs: true);
-        $despesasOperacionais = $this->groupByCompetencia(Financeiro::TIPO_PAGAR, 'Despesas Operacionais', $inicio, $fim, incluirFixoVariavel: true);
+        $devolucoes = $this->groupByCompetencia(
+            Financeiro::TIPO_PAGAR,
+            null,
+            $inicio,
+            $fim,
+            origemTipo: Financeiro::ORIGEM_TIPO_VENDA_DEVOLUCAO
+        );
+
+        $receita = $this->buildReceitaBlock($os, $vendas, $devolucoes);
+
+        $custosDiretos = $this->groupByCompetencia(Financeiro::TIPO_PAGAR, Financeiro::GRUPO_DRE_CUSTO_DIRETO_OS, $inicio, $fim);
+
+        // Tudo que sobra do lado de receber: avulsas e lancamentos sem grupo.
+        $outrasReceitas = $this->groupByCompetencia(
+            Financeiro::TIPO_RECEBER,
+            null,
+            $inicio,
+            $fim,
+            excludeOs: true,
+            excluirGrupoDre: Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL
+        );
+
+        // A devolucao ja abateu a receita bruta acima; deixa-la tambem aqui
+        // subtrairia o mesmo valor duas vezes do resultado.
+        $despesasOperacionais = $this->groupByCompetencia(
+            Financeiro::TIPO_PAGAR,
+            Financeiro::GRUPO_DRE_DESPESAS_OPERACIONAIS,
+            $inicio,
+            $fim,
+            incluirFixoVariavel: true,
+            excluirOrigemTipo: Financeiro::ORIGEM_TIPO_VENDA_DEVOLUCAO
+        );
 
         return $this->buildSummary(
             $label,
             'competencia',
-            $receitaOs,
+            $receita,
             $custosDiretos,
             $outrasReceitas,
             $despesasOperacionais,
-            $this->osMargemService->totaisPorPeriodo($inicio, $fim)
+            $this->osMargemService->totaisPorPeriodo($inicio, $fim),
+            $this->cmvVendas($inicio, $fim)
         );
     }
 
@@ -73,17 +110,56 @@ class FinanceiroReportService
     {
         [$inicio, $fim, $label] = $this->resolveMonthRange($mes);
 
-        $receitaOs = $this->sumMovimentosResumo(Financeiro::TIPO_RECEBER, $inicio, $fim, onlyOs: true);
-        $custosDiretos = $this->groupByMovimento(Financeiro::TIPO_PAGAR, 'Custo Direto (OS)', $inicio, $fim);
-        $outrasReceitas = $this->groupByMovimento(Financeiro::TIPO_RECEBER, null, $inicio, $fim, excludeOs: true);
-        $despesasOperacionais = $this->groupByMovimento(Financeiro::TIPO_PAGAR, 'Despesas Operacionais', $inicio, $fim, incluirFixoVariavel: true);
+        // Receita realizada = tudo que e RECEITA OPERACIONAL e teve baixa no
+        // periodo: cobrancas de OS e vendas de balcao. Antes so OS entrava aqui
+        // (onlyOs) e a venda caia em "outras receitas", fora do faturamento.
+        $receitaRealizada = $this->sumMovimentosResumo(
+            Financeiro::TIPO_RECEBER,
+            $inicio,
+            $fim,
+            onlyOperacional: true
+        );
+
+        $devolucoes = $this->groupByMovimento(
+            Financeiro::TIPO_PAGAR,
+            null,
+            $inicio,
+            $fim,
+            origemTipo: Financeiro::ORIGEM_TIPO_VENDA_DEVOLUCAO
+        );
+
+        // Quebra OS x balcao tambem no caixa: sem ela o relatorio anunciaria
+        // como "OS recebida" um valor que inclui venda de balcao.
+        $receitaOsCaixa = $this->sumMovimentosResumo(Financeiro::TIPO_RECEBER, $inicio, $fim, onlyOs: true);
+
+        $receita = $this->buildReceitaCaixaBlock($receitaRealizada, $receitaOsCaixa, $devolucoes);
+
+        $custosDiretos = $this->groupByMovimento(Financeiro::TIPO_PAGAR, Financeiro::GRUPO_DRE_CUSTO_DIRETO_OS, $inicio, $fim);
+
+        $outrasReceitas = $this->groupByMovimento(
+            Financeiro::TIPO_RECEBER,
+            null,
+            $inicio,
+            $fim,
+            excludeOs: true,
+            excluirGrupoDre: Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL
+        );
+
+        $despesasOperacionais = $this->groupByMovimento(
+            Financeiro::TIPO_PAGAR,
+            Financeiro::GRUPO_DRE_DESPESAS_OPERACIONAIS,
+            $inicio,
+            $fim,
+            incluirFixoVariavel: true,
+            excluirOrigemTipo: Financeiro::ORIGEM_TIPO_VENDA_DEVOLUCAO
+        );
 
         // Sem bloco de margem de contribuição no regime de caixa: o custo das
         // peças é reconhecido pelo consumo na OS (competência da entrega), e
         // confrontá-lo com um recebimento que pode ter caído em outro mês
         // produziria uma MC que não corresponde a período nenhum. MC é um
         // conceito de confrontação — ver buildSummary().
-        return $this->buildSummary($label, 'caixa', $receitaOs, $custosDiretos, $outrasReceitas, $despesasOperacionais, null);
+        return $this->buildSummary($label, 'caixa', $receita, $custosDiretos, $outrasReceitas, $despesasOperacionais, null, 0.0);
     }
 
     /**
@@ -185,30 +261,193 @@ class FinanceiroReportService
     }
 
     /**
+     * Bloco de receita por COMPETENCIA, no formato que o DRE publica.
+     *
+     * Faturamento bruto = OS entregues no mes + receita operacional sem OS
+     * (venda de balcao). Dele saem descontos e devolucoes, e o que resta e a
+     * receita liquida — a definicao do estudo: faturamento e o que se vendeu,
+     * receita e o que sobra depois das deducoes. Nao e o mesmo que caixa: uma
+     * OS entregue e nao paga ja e faturamento E receita do mes da entrega.
+     *
+     * @param array<string, mixed> $vendas
+     * @param array<string, mixed> $devolucoes
      * @return array<string, mixed>
      */
-    private function groupByCompetencia(string $tipo, ?string $grupoDre, CarbonImmutable $inicio, CarbonImmutable $fim, bool $excludeOs = false, bool $incluirFixoVariavel = false): array
+    private function buildReceitaBlock(?object $os, array $vendas, array $devolucoes): array
     {
+        $osBruto = round((float) ($os->receita_bruta ?? 0), 2);
+        $osDescontos = round((float) ($os->descontos ?? 0), 2);
+        $vendasTotal = round((float) ($vendas['total'] ?? 0), 2);
+        $devolucoesTotal = round((float) ($devolucoes['total'] ?? 0), 2);
+
+        $bruta = round($osBruto + $vendasTotal, 2);
+
+        $qtdOs = (int) ($os->total_os ?? 0);
+        $qtdVendas = (int) ($vendas['quantidade'] ?? 0);
+        $volumeTotal = $qtdOs + $qtdVendas;
+
+        return [
+            'receita_bruta' => $bruta,
+            'descontos' => $osDescontos,
+            'devolucoes' => $devolucoesTotal,
+            'receita_liquida' => round($bruta - $osDescontos - $devolucoesTotal, 2),
+            'os_bruto' => $osBruto,
+            'operacional_nao_os' => $vendasTotal,
+            'total_os' => $qtdOs,
+            'volume' => [
+                'total' => $volumeTotal,
+                'os' => $qtdOs,
+                'nao_os' => $qtdVendas,
+            ],
+            // Ticket medio sobre o faturamento BRUTO, nao sobre a receita
+            // liquida: o indicador mede a decisao de compra do cliente — quanto
+            // ele resolveu gastar —, nao o que sobrou depois de desconto e
+            // devolucao. Mesma convencao da tela de Vendas
+            // (SaleWorkflowService::summarize()).
+            //
+            // A quebra OS x balcao existe porque sao negocios diferentes: um
+            // reparo e uma venda de acessorio tem tickets que nao se parecem, e
+            // o numero combinado sozinho esconde qual dos dois puxou o mes.
+            //
+            // null, e nao 0.0, quando nao houve volume: zero se leria como
+            // "o ticket caiu para zero", afirmacao bem diferente de "nao houve
+            // venda". A view esconde a linha.
+            'ticket_medio' => [
+                'geral' => $volumeTotal > 0 ? round($bruta / $volumeTotal, 2) : null,
+                'os' => $qtdOs > 0 ? round($osBruto / $qtdOs, 2) : null,
+                'nao_os' => $qtdVendas > 0 ? round($vendasTotal / $qtdVendas, 2) : null,
+            ],
+            'por_subgrupo' => array_merge(
+                ['Servicos e pecas de OS' => $osBruto],
+                $vendas['por_subgrupo'] ?? []
+            ),
+        ];
+    }
+
+    /**
+     * Mesmo bloco no regime de CAIXA: nao ha desconto a deduzir (o valor que
+     * entrou ja e liquido dele), so devolucoes efetivamente reembolsadas.
+     *
+     * SEM ticket medio, de proposito. Aqui o que se conta sao movimentos de
+     * baixa, nao transacoes: um pagamento parcial e um movimento, e uma venda
+     * parcelada em tres vezes viraria "tres compras". Dividir faturamento por
+     * movimentos devolveria um numero que nao corresponde a compra nenhuma —
+     * ticket medio so faz sentido por competencia, onde uma venda e uma linha.
+     *
+     * @param array<string, mixed> $realizada
+     * @param array<string, mixed> $devolucoes
+     * @return array<string, mixed>
+     */
+    private function buildReceitaCaixaBlock(array $realizada, array $os, array $devolucoes): array
+    {
+        $bruta = round((float) ($realizada['receita_bruta'] ?? 0), 2);
+        $osBruto = round((float) ($os['receita_bruta'] ?? 0), 2);
+        $devolucoesTotal = round((float) ($devolucoes['total'] ?? 0), 2);
+
+        return [
+            'receita_bruta' => $bruta,
+            'descontos' => 0.0,
+            'devolucoes' => $devolucoesTotal,
+            'receita_liquida' => round($bruta - $devolucoesTotal, 2),
+            'os_bruto' => $osBruto,
+            'operacional_nao_os' => round($bruta - $osBruto, 2),
+            'total_os' => (int) ($os['total_os'] ?? 0),
+            'volume' => ['total' => 0, 'os' => 0, 'nao_os' => 0],
+            'ticket_medio' => ['geral' => null, 'os' => null, 'nao_os' => null],
+            'por_subgrupo' => [],
+        ];
+    }
+
+    /**
+     * CMV do balcao no periodo, liquido de devolucoes.
+     *
+     * Entra na margem de contribuicao junto com o CMV de pecas de OS: agora que
+     * a venda soma no faturamento, o custo do que foi vendido tem de somar do
+     * outro lado, ou a margem sairia inflada.
+     *
+     * `data_venda` e a data certa porque e ela que o sistema ja grava em
+     * `financeiro.data_competencia` do titulo da venda — receita e custo caem
+     * no mesmo mes.
+     */
+    private function cmvVendas(CarbonImmutable $inicio, CarbonImmutable $fim): float
+    {
+        $custo = (float) Sale::query()
+            ->completed()
+            ->whereBetween('data_venda', [$inicio->toDateString(), $fim->toDateString()])
+            ->sum('custo_total');
+
+        $devolvido = (float) SaleReturn::query()
+            ->where('status', SaleReturn::STATUS_CONCLUIDA)
+            ->whereBetween('data_devolucao', [$inicio->toDateString(), $fim->toDateString()])
+            ->sum('custo_devolvido');
+
+        return round($custo - $devolvido, 2);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function groupByCompetencia(
+        string $tipo,
+        ?string $grupoDre,
+        CarbonImmutable $inicio,
+        CarbonImmutable $fim,
+        bool $excludeOs = false,
+        bool $incluirFixoVariavel = false,
+        ?string $excluirGrupoDre = null,
+        ?string $excluirOrigemTipo = null,
+        ?string $origemTipo = null,
+        bool $incluirVendas = false
+    ): array {
         $query = Financeiro::query()
             ->where('tipo', $tipo)
             ->where('status', '!=', Financeiro::STATUS_CANCELADO)
             ->where('impacta_dre', true);
 
+        if ($origemTipo !== null) {
+            $query->where('origem_tipo', $origemTipo);
+        }
+
         if ($grupoDre !== null) {
             $query->where('grupo_dre', $grupoDre);
         }
 
-        if ($excludeOs) {
-            $query->whereNull('os_id');
+        // Negacao explicita em vez de filtrar pelo grupo desejado: "outras
+        // receitas" precisa continuar sendo CATCH-ALL. Ha titulo no banco com
+        // grupo_dre nulo (lancamento incompleto), e trocar isto por
+        // where('grupo_dre', 'Outras Receitas') o faria sumir do relatorio,
+        // mudando o resultado do mes sem ninguem pedir.
+        if ($excluirGrupoDre !== null) {
+            $query->where(function ($q) use ($excluirGrupoDre): void {
+                $q->whereNull('grupo_dre')
+                    ->orWhere('grupo_dre', '!=', $excluirGrupoDre);
+            });
         }
 
-        $dentroDoPeriodo = (clone $query)->where(function ($q) use ($inicio, $fim): void {
-            $q->whereBetween('data_competencia', [$inicio->toDateString(), $fim->toDateString()])
-                ->orWhere(function ($inner) use ($inicio, $fim): void {
-                    $inner->whereNull('data_competencia')
-                        ->whereBetween('data_vencimento', [$inicio->toDateString(), $fim->toDateString()]);
-                });
-        });
+        if ($excluirOrigemTipo !== null) {
+            $query->where(function ($q) use ($excluirOrigemTipo): void {
+                $q->whereNull('origem_tipo')
+                    ->orWhere('origem_tipo', '!=', $excluirOrigemTipo);
+            });
+        }
+
+        if ($excludeOs) {
+            // A venda vinculada a uma OS recebe os_id no titulo
+            // (SalePaymentService), e um whereNull('os_id') seco a excluiria —
+            // sem que ela aparecesse do outro lado, ja que a receita de OS vem
+            // de os.valor_final e nao do titulo. Ela sumiria do faturamento.
+            // Por isso venda entra sempre que $incluirVendas.
+            $query->where(function ($q) use ($incluirVendas): void {
+                $q->whereNull('os_id');
+
+                if ($incluirVendas) {
+                    $q->orWhereNotNull('venda_id');
+                }
+            });
+        }
+
+        $dentroDoPeriodo = (clone $query)
+            ->competenciaEntre($inicio->toDateString(), $fim->toDateString());
 
         $fixosMensais = (clone $query)
             ->where('dre_fixo_mensal', true)
@@ -224,16 +463,44 @@ class FinanceiroReportService
     /**
      * @return array<string, mixed>
      */
-    private function groupByMovimento(string $tipo, ?string $grupoDre, CarbonImmutable $inicio, CarbonImmutable $fim, bool $excludeOs = false, bool $incluirFixoVariavel = false): array
-    {
+    private function groupByMovimento(
+        string $tipo,
+        ?string $grupoDre,
+        CarbonImmutable $inicio,
+        CarbonImmutable $fim,
+        bool $excludeOs = false,
+        bool $incluirFixoVariavel = false,
+        ?string $excluirGrupoDre = null,
+        ?string $excluirOrigemTipo = null,
+        ?string $origemTipo = null
+    ): array {
         $query = FinanceiroMovimento::query()
             ->join('financeiro', 'financeiro.id', '=', 'financeiro_movimentos.financeiro_id')
             ->where('financeiro.tipo', $tipo)
             ->where('financeiro.impacta_dre', true)
             ->whereBetween('financeiro_movimentos.data_movimento', [$inicio->toDateString(), $fim->toDateString()]);
 
+        if ($origemTipo !== null) {
+            $query->where('financeiro.origem_tipo', $origemTipo);
+        }
+
         if ($grupoDre !== null) {
             $query->where('financeiro.grupo_dre', $grupoDre);
+        }
+
+        // Ver groupByCompetencia(): negacao para preservar o catch-all.
+        if ($excluirGrupoDre !== null) {
+            $query->where(function ($q) use ($excluirGrupoDre): void {
+                $q->whereNull('financeiro.grupo_dre')
+                    ->orWhere('financeiro.grupo_dre', '!=', $excluirGrupoDre);
+            });
+        }
+
+        if ($excluirOrigemTipo !== null) {
+            $query->where(function ($q) use ($excluirOrigemTipo): void {
+                $q->whereNull('financeiro.origem_tipo')
+                    ->orWhere('financeiro.origem_tipo', '!=', $excluirOrigemTipo);
+            });
         }
 
         if ($excludeOs) {
@@ -257,13 +524,23 @@ class FinanceiroReportService
     /**
      * @return array<string, mixed>
      */
-    private function sumMovimentosResumo(string $tipo, CarbonImmutable $inicio, CarbonImmutable $fim, bool $onlyOs = false): array
+    private function sumMovimentosResumo(string $tipo, CarbonImmutable $inicio, CarbonImmutable $fim, bool $onlyOperacional = false, bool $onlyOs = false): array
     {
         $query = FinanceiroMovimento::query()
             ->join('financeiro', 'financeiro.id', '=', 'financeiro_movimentos.financeiro_id')
             ->where('financeiro.tipo', $tipo)
             ->where('financeiro.impacta_dre', true)
             ->whereBetween('financeiro_movimentos.data_movimento', [$inicio->toDateString(), $fim->toDateString()]);
+
+        // Faturamento realizado: OS (que sempre tem os_id) e todo lancamento
+        // marcado como RECEITA OPERACIONAL — a venda de balcao. O que sobra e
+        // receita nao operacional e vai para "outras receitas".
+        if ($onlyOperacional) {
+            $query->where(function ($q): void {
+                $q->whereNotNull('financeiro.os_id')
+                    ->orWhere('financeiro.grupo_dre', Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL);
+            });
+        }
 
         if ($onlyOs) {
             $query->whereNotNull('financeiro.os_id');
@@ -303,6 +580,12 @@ class FinanceiroReportService
 
         $resultado = [
             'total' => round($total, 2),
+            // Volume de lancamentos do grupo. Para venda de balcao equivale ao
+            // numero de vendas: SalePaymentService cria UM titulo por venda,
+            // com o total dela, e o parcelamento vira baixa em
+            // financeiro_movimentos — nunca titulo extra. E o denominador do
+            // ticket medio.
+            'quantidade' => $rows->count(),
             'por_subgrupo' => $porSubgrupo,
         ];
 
@@ -320,24 +603,30 @@ class FinanceiroReportService
     private function buildSummary(
         string $label,
         string $modo,
-        array $receitaOs,
+        array $receita,
         array $custosDiretos,
         array $outrasReceitas,
         array $despesasOperacionais,
-        ?array $margemOs
+        ?array $margemOs,
+        float $cmvVendas = 0.0
     ): array {
         $custosDiretosTotal = (float) ($custosDiretos['total'] ?? 0);
         $outrasReceitasTotal = (float) ($outrasReceitas['total'] ?? 0);
         $despesasOperacionaisTotal = (float) ($despesasOperacionais['total'] ?? 0);
 
-        $receitaLiquidaOs = (float) $receitaOs['receita_liquida'];
-        $lucroBruto = round($receitaLiquidaOs - $custosDiretosTotal, 2);
+        // Receita liquida do FATURAMENTO INTEIRO (OS + venda de balcao, menos
+        // descontos e devolucoes) — nao mais so de OS. Todas as metricas
+        // gerenciais abaixo passam a ter essa base, inclusive o ponto de
+        // equilibrio, que antes respondia "quanto preciso faturar em OS" como
+        // se o balcao nao ajudasse a pagar o custo fixo.
+        $receitaLiquida = (float) $receita['receita_liquida'];
+        $lucroBruto = round($receitaLiquida - $custosDiretosTotal, 2);
         $resultadoLiquido = round($lucroBruto + $outrasReceitasTotal - $despesasOperacionaisTotal, 2);
 
         return [
             'periodo_label' => $label,
             'modo' => $modo,
-            'receita' => $receitaOs,
+            'receita' => $receita,
             'custos_diretos' => $custosDiretos,
             'outras_receitas' => $outrasReceitas,
             'despesas_operacionais' => $despesasOperacionais,
@@ -348,11 +637,12 @@ class FinanceiroReportService
             'lucro_bruto' => $lucroBruto,
             'resultado_liquido' => $resultadoLiquido,
             'gerencial' => $this->buildManagerialSummary(
-                $receitaLiquidaOs,
+                $receitaLiquida,
                 $custosDiretosTotal,
                 $outrasReceitasTotal,
                 $despesasOperacionais,
-                $margemOs
+                $margemOs,
+                $cmvVendas
             ),
         ];
     }
@@ -381,11 +671,12 @@ class FinanceiroReportService
      * @return array<string, mixed>
      */
     private function buildManagerialSummary(
-        float $receitaLiquidaOs,
+        float $receitaLiquida,
         float $custosDiretosTotal,
         float $outrasReceitasTotal,
         array $despesasOperacionais,
-        ?array $margemOs
+        ?array $margemOs,
+        float $cmvVendas = 0.0
     ): array {
         $fixoVariavel = $despesasOperacionais['por_fixo_variavel'] ?? [];
         $despesasVariaveis = round((float) ($fixoVariavel['variaveis'] ?? 0), 2);
@@ -405,23 +696,27 @@ class FinanceiroReportService
         $cmv = round((float) ($margemOs['pecas'] ?? 0), 2);
         $comissoes = round((float) ($margemOs['comissao'] ?? 0), 2);
 
-        $custosVariaveisTotal = round($cmv + $comissoes + $despesasVariaveis + $custosDiretosTotal, 2);
-        $margemContribuicao = round($receitaLiquidaOs - $custosVariaveisTotal, 2);
+        // O CMV do balcão entra junto com o das peças de OS: a venda agora soma
+        // no faturamento, então o custo do que foi vendido tem de somar do
+        // outro lado — senão a margem sai inflada.
+        $custosVariaveisTotal = round($cmv + $cmvVendas + $comissoes + $despesasVariaveis + $custosDiretosTotal, 2);
+        $margemContribuicao = round($receitaLiquida - $custosVariaveisTotal, 2);
 
         // Índice de contribuição (RCM): quanto de cada real de receita sobra
         // para pagar o fixo. É ele, não a margem em reais, que permite
         // comparar meses de faturamento diferente.
-        $indiceContribuicao = $receitaLiquidaOs > 0
-            ? round(($margemContribuicao / $receitaLiquidaOs) * 100, 2)
+        $indiceContribuicao = $receitaLiquida > 0
+            ? round(($margemContribuicao / $receitaLiquida) * 100, 2)
             : 0.0;
 
         $resultadoOperacional = round($margemContribuicao - $custosFixos + $outrasReceitasTotal, 2);
 
         return [
             'disponivel' => true,
-            'receita_liquida' => round($receitaLiquidaOs, 2),
+            'receita_liquida' => round($receitaLiquida, 2),
             'custos_variaveis' => [
                 'cmv_pecas' => $cmv,
+                'cmv_vendas' => $cmvVendas,
                 'comissoes' => $comissoes,
                 'despesas_variaveis' => $despesasVariaveis,
                 'custos_diretos_os' => round($custosDiretosTotal, 2),
@@ -433,7 +728,7 @@ class FinanceiroReportService
             'outras_receitas' => round($outrasReceitasTotal, 2),
             'resultado_operacional' => $resultadoOperacional,
             'analise_cvp' => $this->buildCvpAnalysis(
-                $receitaLiquidaOs,
+                $receitaLiquida,
                 $margemContribuicao,
                 $indiceContribuicao,
                 $custosFixos,

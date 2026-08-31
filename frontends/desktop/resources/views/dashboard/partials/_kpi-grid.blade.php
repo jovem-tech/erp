@@ -16,7 +16,11 @@
         {{-- Só o faturamento ganha comparação: é a única métrica com mês
              anterior real no payload (stats.faturamento_mes_anterior). Inventar
              uma variação para OS abertas ou resultado de caixa seria fabricar
-             número em cima de dado que o backend não calcula. --}}
+             número em cima de dado que o backend não calcula.
+
+             O valor é faturamento por competência (OS entregues + vendas +
+             serviços), não o caixa do mês: a legenda logo abaixo mostra quanto
+             disso já foi recebido, e os dois divergirem é o esperado. --}}
         <p class="dashboard-kpi-trend" data-dashboard-hero-trend hidden></p>
         <p class="dashboard-kpi-copy" data-dashboard-hero-meta>{{ $heroCard['meta'] ?? 'Visão rápida do status atual do painel.' }}</p>
         <a

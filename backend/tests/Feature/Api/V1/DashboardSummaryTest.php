@@ -230,6 +230,151 @@ class DashboardSummaryTest extends TestCase
         }
     }
 
+    /**
+     * Faturamento e caixa medem coisas diferentes e o painel precisa manter os
+     * dois separados: faturamento e o que a assistencia vendeu no mes
+     * (competencia), recebido e o dinheiro que entrou na conta (caixa).
+     *
+     * O bug que este teste tranca: o card lia so a tabela `os`, entao uma
+     * venda de balcao ou um servico avulso simplesmente nao existiam como
+     * faturamento.
+     */
+    public function test_faturamento_soma_vendas_e_servicos_por_competencia_sem_confundir_com_caixa(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-05-20 10:00:00'));
+
+        try {
+            // A) Venda de balcao faturada E recebida no mes: conta nos dois.
+            $venda = Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_RECEBER,
+                'avulso' => true,
+                'categoria' => 'Venda de balcão',
+                'descricao' => 'Venda VD-2605-000001',
+                'valor' => 500.00,
+                'status' => Financeiro::STATUS_PAGO,
+                'data_competencia' => '2026-05-10',
+                'data_vencimento' => '2026-05-10',
+                'grupo_dre' => Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL,
+            ])->id;
+            FinanceiroMovimento::query()->create([
+                'financeiro_id' => $venda,
+                'tipo_movimento' => FinanceiroMovimento::TIPO_ENTRADA,
+                'data_movimento' => '2026-05-10',
+                'valor_movimento' => 500.00,
+            ]);
+
+            // B) Venda faturada no mes e AINDA NAO recebida: e faturamento,
+            // nao e caixa. E a diferenca que o card precisa mostrar.
+            Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_RECEBER,
+                'avulso' => true,
+                'categoria' => 'Venda de balcão',
+                'descricao' => 'Venda VD-2605-000002 a prazo',
+                'valor' => 300.00,
+                'status' => Financeiro::STATUS_PENDENTE,
+                'data_competencia' => '2026-05-15',
+                'data_vencimento' => '2026-05-15',
+                'grupo_dre' => Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL,
+            ]);
+
+            // B2) Receita avulsa: NAO e faturamento da assistencia — e receita
+            // nao operacional, e o DRE a mantem abaixo da linha. Aqui prova que
+            // o card usa a mesma regra do relatorio.
+            Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_RECEBER,
+                'avulso' => true,
+                'categoria' => 'Receita avulsa',
+                'descricao' => 'Reembolso avulso',
+                'valor' => 90.00,
+                'status' => Financeiro::STATUS_PENDENTE,
+                'data_competencia' => '2026-05-16',
+                'data_vencimento' => '2026-05-16',
+                'grupo_dre' => Financeiro::GRUPO_DRE_OUTRAS_RECEITAS,
+            ]);
+
+            // C) Cobranca de OS: a receita de OS ja entra pela tabela `os`, e
+            // contar o titulo tambem dobraria o faturamento. No caixa conta,
+            // porque ai a fonte e o movimento, nao a OS.
+            $cobrancaOs = Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_RECEBER,
+                'os_id' => 4242,
+                'categoria' => 'Serviço',
+                'descricao' => 'Cobrança da OS OS26050001',
+                'valor' => 700.00,
+                'status' => Financeiro::STATUS_PAGO,
+                'data_competencia' => '2026-05-12',
+                'data_vencimento' => '2026-05-12',
+                'grupo_dre' => Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL,
+            ])->id;
+            FinanceiroMovimento::query()->create([
+                'financeiro_id' => $cobrancaOs,
+                'tipo_movimento' => FinanceiroMovimento::TIPO_ENTRADA,
+                'data_movimento' => '2026-05-12',
+                'valor_movimento' => 700.00,
+            ]);
+
+            // D) Titulo cancelado nao e faturamento.
+            Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_RECEBER,
+                'avulso' => true,
+                'categoria' => 'Venda de balcão',
+                'descricao' => 'Venda cancelada',
+                'valor' => 900.00,
+                'status' => Financeiro::STATUS_CANCELADO,
+                'data_competencia' => '2026-05-08',
+                'data_vencimento' => '2026-05-08',
+                'grupo_dre' => Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL,
+            ]);
+
+            // E) Faturado em ABRIL, recebido em MAIO: entra no faturamento do
+            // mes anterior e no caixa deste mes. E o descolamento normal entre
+            // vender e receber — nunca deve ser "corrigido" para bater.
+            $atrasado = Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_RECEBER,
+                'avulso' => true,
+                'categoria' => 'Venda de balcão',
+                'descricao' => 'Venda de abril, paga em maio',
+                'valor' => 400.00,
+                'status' => Financeiro::STATUS_PAGO,
+                'data_competencia' => '2026-04-10',
+                'data_vencimento' => '2026-04-10',
+                'grupo_dre' => Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL,
+            ])->id;
+            FinanceiroMovimento::query()->create([
+                'financeiro_id' => $atrasado,
+                'tipo_movimento' => FinanceiroMovimento::TIPO_ENTRADA,
+                'data_movimento' => '2026-05-05',
+                'valor_movimento' => 400.00,
+            ]);
+
+            $user = $this->createUserRecord([
+                'nome' => 'Gerente Faturamento',
+                'email' => 'gerente.faturamento@example.com',
+                'perfil' => 'gerente',
+                'grupo_id' => 3,
+            ]);
+
+            Sanctum::actingAs($user, ['*']);
+
+            $this->getJson('/api/v1/dashboard/summary')
+                ->assertOk()
+                // A + B. C fica de fora (os_id), D fica de fora (cancelado),
+                // B2 fica de fora (nao operacional), E pertence a abril.
+                ->assertJsonPath('data.stats.faturamento_mes', 800.0)
+                ->assertJsonPath('data.stats.faturamento_mes_anterior', 400.0)
+                // A + C + E: tudo que teve baixa em maio.
+                ->assertJsonPath('data.stats.recebido_mes', 1600.0)
+                // O card mostra o faturado; a legenda, o recebido.
+                ->assertJsonPath('data.hero_card.value', 800.0)
+                ->assertJsonPath(
+                    'data.hero_card.meta',
+                    'OS entregues e vendas do mês. R$ 1.600,00 já recebidos no caixa.'
+                );
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
     public function test_pendentes_sums_pending_expenses_due_up_to_current_month_but_excludes_future_and_paid(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-01-20 10:00:00'));
@@ -702,10 +847,20 @@ class DashboardSummaryTest extends TestCase
                 ->assertOk()
                 ->assertJsonPath('data.stats.despesas_pagas_mes', 620.0)
                 ->assertJsonPath('data.stats.despesas_pagas_mes_anterior', 200.0)
-                // Pendentes soma o valor bruto do título parcial (B), não o
-                // saldo em aberto — mesma regra já coberta em
-                // data.charts.financial.pendentes, só espelhada em stats.
-                ->assertJsonPath('data.stats.despesas_pendentes', 300.0);
+                // Pendentes soma o SALDO EM ABERTO: o título parcial (B) vale
+                // 300, já teve 120 baixados, então ainda pesa 180 no caixa. O
+                // valor bruto contaria de novo dinheiro que já saiu.
+                ->assertJsonPath('data.stats.despesas_pendentes', 180.0)
+                // O recebimento D (1000, baixado em março) é o outro lado do
+                // caixa e alimenta o "Recebido" do resumo financeiro.
+                ->assertJsonPath('data.stats.recebido_mes', 1000.0)
+                ->assertJsonPath('data.stats.recebido_mes_anterior', 0.0)
+                // Resultado de caixa é recebido menos pago, numa base só:
+                // 1000 recebidos − 620 pagos. Antes misturava receita de OS
+                // com custo estimado de OS aberta e não era regime nenhum.
+                ->assertJsonPath('data.charts.financial.resultado_caixa', 380.0)
+                ->assertJsonPath('data.context_card.chart.values.0', 1000.0)
+                ->assertJsonPath('data.context_card.chart.values.1', 620.0);
         } finally {
             Carbon::setTestNow();
         }

@@ -93,7 +93,7 @@ describe('StepClient', () => {
 
     expect(onSelectCliente).toHaveBeenCalledWith(null);
     expect(onChangePendingNewClient).toHaveBeenCalledWith({ nome_razao: '', telefone1: '' });
-    expect(screen.getByText('Nome / razão social *')).toBeInTheDocument();
+    expect(screen.getByText('Nome / razão social')).toBeInTheDocument();
   });
 
   it('no modo edição não oferece a opção de cliente novo', () => {

@@ -21,6 +21,7 @@ import {
   type WizardMode,
 } from '@/components/orders/order-form-wizard/wizard-state';
 import { SearchSelect } from '@/components/orders/order-form-wizard/search-select';
+import { FieldLabel } from '@/components/ui/field-label';
 
 type StepClientProps = {
   mode: WizardMode;
@@ -385,12 +386,13 @@ export function StepClient({
           ) : null}
 
           <label className="field">
-            <span className="field__label">Nome / razão social *</span>
+            <FieldLabel required>Nome / razão social</FieldLabel>
             <input
               className="input"
               value={activePayload?.nome_razao ?? ''}
               onChange={(event) => updateIdentityField('nome_razao', event.target.value)}
               disabled={disabled}
+              aria-required="true"
             />
           </label>
 
@@ -469,7 +471,7 @@ export function StepClient({
           ) : null}
 
           <label className="field">
-            <span className="field__label">Telefone *</span>
+            <FieldLabel required>Telefone</FieldLabel>
             <input
               className="input"
               type="tel"
@@ -478,6 +480,7 @@ export function StepClient({
               value={activePayload?.telefone1 ?? ''}
               onChange={(event) => updateIdentityField('telefone1', formatPhone(event.target.value))}
               disabled={disabled}
+              aria-required="true"
             />
           </label>
 

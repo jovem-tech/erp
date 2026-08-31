@@ -174,6 +174,337 @@ class FinanceiroReportTest extends TestCase
             ->assertJsonPath('data.dre.resultado_liquido', 350.0);
     }
 
+    /**
+     * Uma OS entregue que o cliente ainda nao pagou JA E faturamento e receita
+     * do mes da entrega — o que falta nela e caixa. O DRE por competencia
+     * filtrava so `status`, entao a OS entregue com pendencia financeira (cujo
+     * encerramento final ja esta em status_final_pendente_pagamento) sumia do
+     * relatorio: no banco real isso escondia R$ 586,00 de julho/2026.
+     */
+    public function test_dre_competencia_reconhece_os_entregue_com_pagamento_pendente(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        $clienteId = $this->createClientRecord();
+        $equipamentoId = $this->createEquipmentRecord($clienteId);
+        Sanctum::actingAs($admin, ['*']);
+
+        $this->createOrderRecord([
+            'cliente_id' => $clienteId,
+            'equipamento_id' => $equipamentoId,
+            'status' => 'entregue_pagamento_pendente',
+            'status_final_pendente_pagamento' => 'entregue_reparado_pago',
+            'data_entrega' => now()->startOfMonth()->addDays(3),
+            'valor_total' => 586,
+            'desconto' => 0,
+            'valor_final' => 586,
+        ]);
+
+        $this->getJson('/api/v1/financeiro/relatorios/dre?mes=' . now()->format('Y-m'))
+            ->assertOk()
+            ->assertJsonPath('data.dre.receita.receita_bruta', 586.0)
+            ->assertJsonPath('data.dre.receita.receita_liquida', 586.0)
+            ->assertJsonPath('data.dre.receita.total_os', 1);
+    }
+
+    /**
+     * OS fechada com receita mas sem `data_entrega` registrada: o recorte cai
+     * para `data_conclusao` (Order::REVENUE_DATE_SQL). Filtrar so por
+     * data_entrega escondia 16 OS reais, R$ 1.540,00.
+     */
+    public function test_dre_competencia_reconhece_os_sem_data_entrega_pela_conclusao(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        $clienteId = $this->createClientRecord();
+        $equipamentoId = $this->createEquipmentRecord($clienteId);
+        Sanctum::actingAs($admin, ['*']);
+
+        $this->createOrderRecord([
+            'cliente_id' => $clienteId,
+            'equipamento_id' => $equipamentoId,
+            'status' => 'entregue_reparado_pago',
+            'data_entrega' => null,
+            'data_conclusao' => now()->startOfMonth()->addDays(4),
+            'valor_total' => 300,
+            'desconto' => 0,
+            'valor_final' => 300,
+        ]);
+
+        $this->getJson('/api/v1/financeiro/relatorios/dre?mes=' . now()->format('Y-m'))
+            ->assertOk()
+            ->assertJsonPath('data.dre.receita.receita_bruta', 300.0)
+            ->assertJsonPath('data.dre.receita.total_os', 1);
+    }
+
+    /**
+     * Venda de balcao e faturamento igual a OS: entra na receita bruta e na base
+     * da margem de contribuicao, nao em "outras receitas". Antes ela caia abaixo
+     * da linha e ficava fora do indice de contribuicao e do ponto de
+     * equilibrio, como se o balcao nao ajudasse a pagar o custo fixo.
+     *
+     * Receita avulsa, essa sim nao operacional, continua abaixo da linha — e o
+     * titulo sem grupo_dre precisa continuar caindo la tambem (catch-all), ou
+     * sumiria do resultado sem ninguem pedir.
+     */
+    public function test_dre_competencia_separa_faturamento_operacional_de_outras_receitas(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        Financeiro::create([
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'avulso' => true,
+            'categoria' => 'Venda de balcão',
+            'descricao' => 'Venda VD-0001',
+            'valor' => 100,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->startOfMonth()->addDays(2),
+            'data_competencia' => now()->startOfMonth()->addDays(2),
+            'origem_tipo' => 'venda',
+            'grupo_dre' => Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL,
+            'subgrupo_dre' => 'Venda de balcão',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+        ]);
+
+        Financeiro::create([
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'avulso' => true,
+            'categoria' => 'Receita avulsa',
+            'descricao' => 'Reembolso avulso',
+            'valor' => 40,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->startOfMonth()->addDays(3),
+            'data_competencia' => now()->startOfMonth()->addDays(3),
+            'grupo_dre' => Financeiro::GRUPO_DRE_OUTRAS_RECEITAS,
+            'subgrupo_dre' => 'Receita avulsa',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+        ]);
+
+        // Lançamento incompleto, sem grupo_dre: o catch-all de outras receitas
+        // tem de continuar pegando ele.
+        Financeiro::create([
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'avulso' => true,
+            'categoria' => 'Sem classificação',
+            'descricao' => 'Título sem grupo',
+            'valor' => 25,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->startOfMonth()->addDays(4),
+            'data_competencia' => now()->startOfMonth()->addDays(4),
+            'grupo_dre' => null,
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+        ]);
+
+        $this->getJson('/api/v1/financeiro/relatorios/dre?mes=' . now()->format('Y-m'))
+            ->assertOk()
+            // A venda entra no faturamento...
+            ->assertJsonPath('data.dre.receita.receita_bruta', 100.0)
+            ->assertJsonPath('data.dre.receita.operacional_nao_os', 100.0)
+            ->assertJsonPath('data.dre.receita.os_bruto', 0.0)
+            // ...e as outras duas ficam abaixo da linha, somadas.
+            ->assertJsonPath('data.dre.outras_receitas.total', 65.0)
+            ->assertJsonPath('data.dre.resultado_liquido', 165.0);
+    }
+
+    /**
+     * Devolucao e deducao da receita, nao despesa: o dinheiro nunca foi da
+     * empresa. Precisa aparecer em `receita.devolucoes` E sumir de despesas
+     * operacionais — nos dois lugares abateria o mesmo valor duas vezes.
+     */
+    public function test_dre_competencia_trata_devolucao_como_deducao_e_nao_como_despesa(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        Financeiro::create([
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'avulso' => true,
+            'categoria' => 'Venda de balcão',
+            'descricao' => 'Venda VD-0002',
+            'valor' => 200,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->startOfMonth()->addDays(2),
+            'data_competencia' => now()->startOfMonth()->addDays(2),
+            'origem_tipo' => 'venda',
+            'grupo_dre' => Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL,
+            'subgrupo_dre' => 'Venda de balcão',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+        ]);
+
+        Financeiro::create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'avulso' => true,
+            'categoria' => 'Devolução de venda',
+            'descricao' => 'Devolução DV-0001 da venda VD-0002',
+            'valor' => 80,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->startOfMonth()->addDays(5),
+            'data_competencia' => now()->startOfMonth()->addDays(5),
+            'origem_tipo' => Financeiro::ORIGEM_TIPO_VENDA_DEVOLUCAO,
+            'grupo_dre' => Financeiro::GRUPO_DRE_DESPESAS_OPERACIONAIS,
+            'subgrupo_dre' => 'Devolução de venda',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+        ]);
+
+        $this->getJson('/api/v1/financeiro/relatorios/dre?mes=' . now()->format('Y-m'))
+            ->assertOk()
+            ->assertJsonPath('data.dre.receita.receita_bruta', 200.0)
+            ->assertJsonPath('data.dre.receita.devolucoes', 80.0)
+            ->assertJsonPath('data.dre.receita.receita_liquida', 120.0)
+            // Saiu de despesas operacionais — senão os 80 seriam abatidos duas vezes.
+            ->assertJsonPath('data.dre.despesas_operacionais.total', 0.0)
+            ->assertJsonPath('data.dre.resultado_liquido', 120.0);
+    }
+
+    /**
+     * Ticket medio = faturamento bruto / numero de vendas, com quebra por
+     * origem. Reproduz agosto/2026 do banco real: 2 OS de R$ 210 e 2 vendas de
+     * R$ 100 dao R$ 77,50 no geral, mas R$ 105,00 em OS contra R$ 50,00 no
+     * balcao — a quebra existe porque o numero combinado esconde isso.
+     */
+    public function test_dre_competencia_calcula_ticket_medio_com_quebra_por_origem(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        $clienteId = $this->createClientRecord();
+        $equipamentoId = $this->createEquipmentRecord($clienteId);
+        Sanctum::actingAs($admin, ['*']);
+
+        foreach ([80, 130] as $valor) {
+            $this->createOrderRecord([
+                'cliente_id' => $clienteId,
+                'equipamento_id' => $equipamentoId,
+                'status' => 'entregue_reparado_pago',
+                'data_entrega' => now()->startOfMonth()->addDays(2),
+                'valor_total' => $valor,
+                'desconto' => 0,
+                'valor_final' => $valor,
+            ]);
+        }
+
+        foreach (['VD-0001', 'VD-0002'] as $numero) {
+            Financeiro::create([
+                'tipo' => Financeiro::TIPO_RECEBER,
+                'avulso' => true,
+                'categoria' => 'Venda de balcão',
+                'descricao' => 'Venda ' . $numero,
+                'valor' => 50,
+                'status' => Financeiro::STATUS_PAGO,
+                'data_vencimento' => now()->startOfMonth()->addDays(3),
+                'data_competencia' => now()->startOfMonth()->addDays(3),
+                'origem_tipo' => 'venda',
+                'grupo_dre' => Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL,
+                'subgrupo_dre' => 'Venda de balcão',
+                'impacta_dre' => true,
+                'impacta_fluxo_caixa' => true,
+            ]);
+        }
+
+        $this->getJson('/api/v1/financeiro/relatorios/dre?mes=' . now()->format('Y-m'))
+            ->assertOk()
+            ->assertJsonPath('data.dre.receita.receita_bruta', 310.0)
+            ->assertJsonPath('data.dre.receita.volume.total', 4)
+            ->assertJsonPath('data.dre.receita.volume.os', 2)
+            ->assertJsonPath('data.dre.receita.volume.nao_os', 2)
+            // 310 / 4 — e a conta fecha: ticket x volume == faturamento.
+            ->assertJsonPath('data.dre.receita.ticket_medio.geral', 77.5)
+            ->assertJsonPath('data.dre.receita.ticket_medio.os', 105.0)
+            ->assertJsonPath('data.dre.receita.ticket_medio.nao_os', 50.0);
+    }
+
+    /**
+     * Sem venda de balcao no mes o ticket daquela origem e null, nao 0.0: zero
+     * se leria como "o ticket caiu para zero", que e afirmacao diferente de
+     * "nao houve venda". A view esconde a linha quando e null.
+     */
+    public function test_dre_competencia_devolve_ticket_medio_nulo_sem_volume(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        $clienteId = $this->createClientRecord();
+        $equipamentoId = $this->createEquipmentRecord($clienteId);
+        Sanctum::actingAs($admin, ['*']);
+
+        $this->createOrderRecord([
+            'cliente_id' => $clienteId,
+            'equipamento_id' => $equipamentoId,
+            'status' => 'entregue_reparado_pago',
+            'data_entrega' => now()->startOfMonth()->addDays(2),
+            'valor_total' => 200,
+            'desconto' => 0,
+            'valor_final' => 200,
+        ]);
+
+        $response = $this->getJson('/api/v1/financeiro/relatorios/dre?mes=' . now()->format('Y-m'))->assertOk();
+
+        $response
+            ->assertJsonPath('data.dre.receita.ticket_medio.geral', 200.0)
+            ->assertJsonPath('data.dre.receita.ticket_medio.os', 200.0)
+            ->assertJsonPath('data.dre.receita.volume.nao_os', 0);
+
+        $this->assertNull($response->json('data.dre.receita.ticket_medio.nao_os'));
+    }
+
+    /**
+     * Venda parcelada e UMA compra, nao tres. O parcelamento vira baixa em
+     * financeiro_movimentos e o titulo continua unico — este teste trava isso,
+     * que hoje e verdade por construcao de SalePaymentService mas ninguem
+     * garantia.
+     */
+    public function test_dre_competencia_conta_venda_parcelada_como_uma_transacao(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $titulo = Financeiro::create([
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'avulso' => true,
+            'categoria' => 'Venda de balcão',
+            'descricao' => 'Venda VD-0003 em 3x',
+            'valor' => 300,
+            'status' => Financeiro::STATUS_PARCIAL,
+            'data_vencimento' => now()->startOfMonth()->addDays(2),
+            'data_competencia' => now()->startOfMonth()->addDays(2),
+            'origem_tipo' => 'venda',
+            'grupo_dre' => Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL,
+            'subgrupo_dre' => 'Venda de balcão',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+        ]);
+
+        foreach ([0, 1, 2] as $parcela) {
+            FinanceiroMovimento::create([
+                'financeiro_id' => $titulo->id,
+                'tipo_movimento' => FinanceiroMovimento::TIPO_ENTRADA,
+                'data_movimento' => now()->startOfMonth()->addDays(2 + $parcela)->toDateString(),
+                'valor_movimento' => 100,
+            ]);
+        }
+
+        $this->getJson('/api/v1/financeiro/relatorios/dre?mes=' . now()->format('Y-m'))
+            ->assertOk()
+            ->assertJsonPath('data.dre.receita.volume.nao_os', 1)
+            ->assertJsonPath('data.dre.receita.ticket_medio.nao_os', 300.0);
+    }
+
+    /**
+     * O DRE de caixa nao expoe ticket medio: la o denominador seriam baixas, e
+     * a mesma venda em 3x apareceria como tres compras.
+     */
+    public function test_dre_caixa_nao_expoe_ticket_medio(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $response = $this->getJson('/api/v1/financeiro/relatorios/dre-caixa?mes=' . now()->format('Y-m'))->assertOk();
+
+        $this->assertNull($response->json('data.dre.receita.ticket_medio.geral'));
+        $this->assertNull($response->json('data.dre.receita.ticket_medio.os'));
+        $response->assertJsonPath('data.dre.receita.volume.total', 0);
+    }
+
     public function test_dre_competencia_ignora_lancamento_cancelado(): void
     {
         $admin = $this->createUserRecord(['grupo_id' => 1]);
@@ -1191,6 +1522,81 @@ class FinanceiroReportTest extends TestCase
         // O lucro bruto legado continua ignorando o CMV — por isso ele nao
         // pode ser lido como "quanto sobrou".
         $response->assertJsonPath('data.dre.lucro_bruto', 10000.0);
+    }
+
+    /**
+     * Agora que a venda de balcao soma no faturamento, o custo do que foi
+     * vendido tem de somar do outro lado — senao a margem sai inflada. O CMV
+     * do balcao entra liquido de devolucoes, pela mesma razao que a receita:
+     * mercadoria devolvida nao foi vendida nem consumida.
+     */
+    public function test_dre_gerencial_soma_cmv_de_vendas_na_margem_de_contribuicao(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $vendaId = $this->createSaleRecord([
+            'numero' => 'VD-0001',
+            'data_venda' => now()->startOfMonth()->addDays(2)->toDateString(),
+            'total' => 400.00,
+            'custo_total' => 150.00,
+        ]);
+
+        $this->createSaleReturnRecord([
+            'numero' => 'DV-0001',
+            'venda_id' => $vendaId,
+            'data_devolucao' => now()->startOfMonth()->addDays(6)->toDateString(),
+            'valor_devolvido' => 100.00,
+            'valor_reembolsado' => 100.00,
+            'custo_devolvido' => 30.00,
+        ]);
+
+        // Título da venda: é ele que leva a receita ao DRE.
+        Financeiro::create([
+            'tipo' => Financeiro::TIPO_RECEBER,
+            'venda_id' => $vendaId,
+            'categoria' => 'Venda de balcão',
+            'descricao' => 'Venda VD-0001',
+            'valor' => 400,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->startOfMonth()->addDays(2),
+            'data_competencia' => now()->startOfMonth()->addDays(2),
+            'origem_tipo' => 'venda',
+            'grupo_dre' => Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL,
+            'subgrupo_dre' => 'Venda de balcão',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+        ]);
+
+        // Título da devolução: dedução da receita.
+        Financeiro::create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'venda_id' => $vendaId,
+            'categoria' => 'Devolução de venda',
+            'descricao' => 'Devolução DV-0001',
+            'valor' => 100,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->startOfMonth()->addDays(6),
+            'data_competencia' => now()->startOfMonth()->addDays(6),
+            'origem_tipo' => Financeiro::ORIGEM_TIPO_VENDA_DEVOLUCAO,
+            'grupo_dre' => Financeiro::GRUPO_DRE_DESPESAS_OPERACIONAIS,
+            'subgrupo_dre' => 'Devolução de venda',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+        ]);
+
+        $this->getJson('/api/v1/financeiro/relatorios/dre?mes=' . now()->format('Y-m'))
+            ->assertOk()
+            // Receita: 400 faturados − 100 devolvidos.
+            ->assertJsonPath('data.dre.receita.receita_bruta', 400.0)
+            ->assertJsonPath('data.dre.receita.devolucoes', 100.0)
+            ->assertJsonPath('data.dre.receita.receita_liquida', 300.0)
+            // CMV: 150 de custo − 30 do que voltou.
+            ->assertJsonPath('data.dre.gerencial.custos_variaveis.cmv_vendas', 120.0)
+            ->assertJsonPath('data.dre.gerencial.custos_variaveis.total', 120.0)
+            // MC sobre o faturamento, não só sobre OS: 300 − 120.
+            ->assertJsonPath('data.dre.gerencial.margem_contribuicao', 180.0)
+            ->assertJsonPath('data.dre.gerencial.indice_contribuicao_percentual', 60.0);
     }
 
     /**

@@ -5,6 +5,7 @@ import {
   createInitialWizardState,
   isChecklistComplete,
   isWizardDirty,
+  isWizardEquipmentComplete,
   selectClientForWizard,
   selectEquipmentForWizard,
 } from '@/components/orders/order-form-wizard/wizard-state';
@@ -188,6 +189,23 @@ describe('buildOrderPayload', () => {
       ],
     });
   });
+
+  it('preserva cor no equipamento novo e acessórios na OS', () => {
+    const state = {
+      ...createInitialWizardState(),
+      pendingNewClient: { nome_razao: 'Maria Souza', telefone1: '11988887777' },
+      pendingNewEquipment: { tipo_id: 3, marca_id: 5, modelo_id: 8, cor: 'Preto' },
+      relatoCliente: 'Não liga',
+      acessorios: 'Carregador, Capa',
+      prazoEntregaDias: 3 as const,
+      dataPrevisao: '2026-07-29',
+    };
+
+    const payload = buildOrderPayload(state, 'create', 'uuid-999');
+
+    expect(payload.novo_equipamento).toMatchObject({ cor: 'Preto' });
+    expect(payload.acessorios).toBe('Carregador, Capa');
+  });
 });
 
 describe('isChecklistComplete', () => {
@@ -226,6 +244,53 @@ describe('isChecklistComplete', () => {
       },
     };
     expect(isChecklistComplete(state)).toBe(true);
+  });
+});
+
+describe('isWizardEquipmentComplete', () => {
+  it('equipamento já existente é sempre completo, sem checar cor', () => {
+    expect(isWizardEquipmentComplete(buildEquipment(), null, [])).toBe(true);
+  });
+
+  it('equipamento novo sem cor é incompleto mesmo com tipo/marca/modelo/foto', () => {
+    const file = new File(['x'], 'foto.jpg', { type: 'image/jpeg' });
+    expect(isWizardEquipmentComplete(null, { tipo_id: 1, marca_id: 1, modelo_id: 1 }, [file])).toBe(false);
+  });
+
+  it('equipamento novo com cor preenchida e ao menos 1 foto é completo', () => {
+    const file = new File(['x'], 'foto.jpg', { type: 'image/jpeg' });
+    expect(
+      isWizardEquipmentComplete(null, { tipo_id: 1, marca_id: 1, modelo_id: 1, cor: 'Preto' }, [file])
+    ).toBe(true);
+  });
+
+  it('cor só com espaços em branco não conta como preenchida', () => {
+    const file = new File(['x'], 'foto.jpg', { type: 'image/jpeg' });
+    expect(
+      isWizardEquipmentComplete(null, { tipo_id: 1, marca_id: 1, modelo_id: 1, cor: '   ' }, [file])
+    ).toBe(false);
+  });
+});
+
+describe('areWizardRequiredFieldsComplete — edição local de equipamento existente', () => {
+  it('bloqueia o salvamento quando pendingEquipmentUpdate não tem cor', () => {
+    const state = {
+      ...createInitialWizardState(),
+      cliente: buildClient(),
+      equipamento: buildEquipment(),
+      pendingEquipmentUpdate: { tipo_id: 3, marca_id: 5, modelo_id: 8 },
+      relatoCliente: 'Tela quebrada',
+      acessorios: 'Carregador',
+      tecnicoId: 7,
+      prazoEntregaDias: 3 as const,
+      dataPrevisao: '2026-07-29',
+    };
+
+    expect(areWizardRequiredFieldsComplete(state)).toBe(false);
+    expect(areWizardRequiredFieldsComplete({
+      ...state,
+      pendingEquipmentUpdate: { ...state.pendingEquipmentUpdate, cor: 'Preto' },
+    })).toBe(true);
   });
 });
 
@@ -277,12 +342,14 @@ describe('estado do player de criação', () => {
       cliente: buildClient(),
       equipamento: buildEquipment(),
       relatoCliente: 'Tela quebrada',
+      acessorios: 'Carregador',
       tecnicoId: 7,
       prazoEntregaDias: 3 as const,
       dataPrevisao: '2026-07-29',
     };
 
     expect(areWizardRequiredFieldsComplete(complete)).toBe(true);
+    expect(areWizardRequiredFieldsComplete({ ...complete, acessorios: '' })).toBe(false);
   });
 
   it('detecta dados preenchidos para proteger o cancelamento', () => {

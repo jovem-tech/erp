@@ -1,9 +1,18 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { searchReportedDefects } from '@/lib/orders';
 import type { ReportedDefect } from '@/lib/types';
 import { isWizardDetailsComplete } from '@/components/orders/order-form-wizard/wizard-state';
+import { FieldLabel } from '@/components/ui/field-label';
+import {
+  ACCESSORY_CHIPS,
+  NO_ACCESSORIES_LABEL,
+  isAccessoryChipActive,
+  isNoAccessoriesActive,
+  toggleAccessoryChip,
+  toggleNoAccessories,
+} from '@/lib/order-accessories';
 
 type StepDetailsProps = {
   tipoEquipamentoId: number | null;
@@ -11,6 +20,8 @@ type StepDetailsProps = {
   acessorios: string;
   onChangeRelatoCliente: (value: string) => void;
   onChangeAcessorios: (value: string) => void;
+  /** Só a criação de OS exige acessórios preenchidos — OS antigas em edição podem ter vindo vazias. */
+  requireAcessorios?: boolean;
   disabled?: boolean;
 };
 
@@ -20,8 +31,10 @@ export function StepDetails({
   acessorios,
   onChangeRelatoCliente,
   onChangeAcessorios,
+  requireAcessorios = true,
   disabled = false,
 }: StepDetailsProps) {
+  const acessoriosLabelId = useId();
   const [defects, setDefects] = useState<ReportedDefect[]>([]);
 
   useEffect(() => {
@@ -71,13 +84,14 @@ export function StepDetails({
 
       <div className="form">
         <label className="field">
-          <span className="field__label">Relato do cliente *</span>
+          <FieldLabel required>Relato do cliente</FieldLabel>
           <textarea
             className="textarea"
             value={relatoCliente}
             onChange={(event) => onChangeRelatoCliente(event.target.value)}
             placeholder="Descreva o que o cliente relatou sobre o problema"
             disabled={disabled}
+            aria-required="true"
           />
         </label>
 
@@ -107,21 +121,54 @@ export function StepDetails({
           </div>
         ) : null}
 
-        <label className="field">
-          <span className="field__label">Acessórios entregues junto com o equipamento</span>
+        <div className="field">
+          <FieldLabel required={requireAcessorios} id={acessoriosLabelId}>
+            Acessórios entregues junto com o equipamento
+          </FieldLabel>
+          <div className="toolbar toolbar--compact-spaced">
+            <div className="toolbar__group">
+              {ACCESSORY_CHIPS.map((chip) => (
+                <button
+                  key={chip}
+                  type="button"
+                  className={
+                    isAccessoryChipActive(acessorios, chip) ? 'chip chip--suggestion chip--selected' : 'chip chip--suggestion'
+                  }
+                  aria-pressed={isAccessoryChipActive(acessorios, chip)}
+                  onClick={() => onChangeAcessorios(toggleAccessoryChip(acessorios, chip))}
+                  disabled={disabled}
+                >
+                  {chip}
+                </button>
+              ))}
+              <button
+                type="button"
+                className={
+                  isNoAccessoriesActive(acessorios) ? 'chip chip--suggestion chip--selected' : 'chip chip--suggestion'
+                }
+                aria-pressed={isNoAccessoriesActive(acessorios)}
+                onClick={() => onChangeAcessorios(toggleNoAccessories(acessorios))}
+                disabled={disabled}
+              >
+                {NO_ACCESSORIES_LABEL}
+              </button>
+            </div>
+          </div>
           <textarea
             className="textarea"
             value={acessorios}
             onChange={(event) => onChangeAcessorios(event.target.value)}
             placeholder="Ex.: carregador, capa, fone de ouvido"
             disabled={disabled}
+            aria-required={requireAcessorios}
+            aria-labelledby={acessoriosLabelId}
           />
-        </label>
+        </div>
       </div>
     </section>
   );
 }
 
-export function isStepDetailsValid(relatoCliente: string): boolean {
-  return isWizardDetailsComplete(relatoCliente);
+export function isStepDetailsValid(relatoCliente: string, acessorios: string, requireAcessorios = true): boolean {
+  return isWizardDetailsComplete(relatoCliente, acessorios, requireAcessorios);
 }

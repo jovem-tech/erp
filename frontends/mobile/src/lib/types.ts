@@ -242,11 +242,17 @@ export interface PasswordModeOption {
   label: string;
 }
 
+export interface EquipmentCatalogRelation {
+  tipo_id: number;
+  marca_id: number;
+  modelo_id: number;
+}
+
 export interface EquipmentFormData {
   types: EquipmentTypeCatalogItem[];
   brands: EquipmentBrandCatalogItem[];
   models: EquipmentModelCatalogItem[];
-  catalog_relations?: unknown;
+  catalog_relations?: EquipmentCatalogRelation[];
   desktop_defaults: { marca_id: number; modelo_id: number } | null;
   password_modes: PasswordModeOption[];
   max_photos: number;

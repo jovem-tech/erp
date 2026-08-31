@@ -217,6 +217,104 @@ class FinanceiroCartoesTest extends TestCase
             ->assertJsonPath('simulation.modalidade_label', 'Cartão de crédito');
     }
 
+    public function test_taxa_debito_is_saved_as_avista_ignoring_parcelas(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/financeiro/cartoes/taxas' => Http::response([
+                'status' => 'success',
+                'data' => ['taxa' => ['id' => 7]],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+        ]);
+
+        $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'editar']]))
+            ->from('/financeiro/cartoes?tab=taxas')
+            ->post('/financeiro/cartoes/taxas', [
+                'operadora_id' => 1,
+                'bandeira_id' => 1,
+                'modalidade' => 'debito',
+                'parcelas_inicial' => 6,
+                'parcelas_final' => 12,
+                'taxa_percentual' => 1.69,
+                'taxa_fixa' => 0,
+                'prazo_recebimento_dias' => 1,
+                'ativo' => '1',
+            ])
+            ->assertRedirect('/financeiro/cartoes?tab=taxas')
+            ->assertSessionHas('success');
+
+        Http::assertSent(static fn ($request): bool => $request->url() === 'http://127.0.0.1:8000/api/v1/financeiro/cartoes/taxas'
+            && $request->method() === 'POST'
+            && $request['modalidade'] === 'debito'
+            && $request['parcelas_inicial'] === 1
+            && $request['parcelas_final'] === 1);
+    }
+
+    public function test_taxa_form_marks_parcelas_fields_and_lists_debito_as_avista(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->notificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/cartoes' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'cartoes' => [
+                        'summary' => [],
+                        'operadoras' => [
+                            ['id' => 1, 'nome' => 'Ton', 'ativo' => true],
+                        ],
+                        'bandeiras' => [
+                            ['id' => 1, 'nome' => 'master / visa', 'ativo' => true],
+                        ],
+                        'taxas' => [
+                            [
+                                'id' => 1,
+                                'operadora_id' => 1,
+                                'operadora_nome' => 'Ton',
+                                'bandeira_id' => 1,
+                                'bandeira_nome' => 'master / visa',
+                                'modalidade' => 'debito',
+                                'parcelas_inicial' => 1,
+                                'parcelas_final' => 1,
+                                'taxa_percentual' => 1.69,
+                                'taxa_fixa' => 0,
+                                'prazo_recebimento_dias' => 1,
+                                'ativo' => true,
+                            ],
+                        ],
+                        'simulador_catalogo' => [],
+                    ],
+                    'gateway' => [
+                        'gateway_catalog' => [],
+                        'gateway_taxas' => [],
+                        'gateway_summary' => [],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'editar']]))
+            ->get('/financeiro/cartoes?tab=taxas');
+
+        $response
+            ->assertOk()
+            // Os campos de parcela precisam ser localizáveis pelo JS que os
+            // esconde (e fixa em 1x) quando a modalidade é débito.
+            ->assertSee('data-cartoes-parcelas-field="taxa"', false)
+            ->assertSee('data-cartoes-parcelas-note="taxa"', false)
+            ->assertSee('data-cartoes-parcelas-field="simulador"', false);
+
+        // A faixa "1x a 1x" não diz nada no débito.
+        $this->assertMatchesRegularExpression(
+            '/<td data-label="Faixa">\s*À vista\s*<\/td>/u',
+            (string) $response->getContent()
+        );
+    }
+
     /**
      * @param array<string, array<int, string>> $permissions
      * @return array<string, mixed>

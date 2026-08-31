@@ -11,6 +11,8 @@
         $temGerencial = (bool) ($gerencial['disponivel'] ?? false);
         $variaveis = $gerencial['custos_variaveis'] ?? [];
         $cvp = $gerencial['analise_cvp'] ?? [];
+        $ticket = $receita['ticket_medio'] ?? [];
+        $volume = $receita['volume'] ?? ['total' => 0, 'os' => 0, 'nao_os' => 0];
         $fmt = static fn ($valor) => 'R$ ' . number_format((float) ($valor ?? 0), 2, ',', '.');
         $pct = static fn ($valor) => number_format((float) ($valor ?? 0), 2, ',', '.') . '%';
     @endphp
@@ -23,7 +25,7 @@
                 @if ($caixa)
                     Reconhece receitas e despesas apenas quando o dinheiro entra ou sai de fato (baixa registrada), referência: {{ $dre['periodo_label'] ?? '' }}.
                 @else
-                    Reconhece a receita de OS pela data de entrega e as demais entradas/saídas pela data de competência, referência: {{ $dre['periodo_label'] ?? '' }}.
+                    Reconhece o faturamento — OS entregues e vendas de balcão — no mês em que foi gerado, e as demais entradas/saídas pela data de competência, referência: {{ $dre['periodo_label'] ?? '' }}.
                 @endif
             </p>
         </div>
@@ -56,10 +58,21 @@
     </section>
 
     @if ($temGerencial)
-        <div class="desktop-grid desktop-grid-three mb-4">
+        <div class="desktop-grid desktop-grid-four mb-4">
             <div class="desktop-form-card text-center">
                 <p class="surface-subtitle mb-1">Receita líquida</p>
                 <h3 class="surface-title mb-0">{{ $fmt($gerencial['receita_liquida'] ?? 0) }}</h3>
+            </div>
+            {{-- Ticket médio: faturamento bruto dividido pelo número de vendas
+                 (OS entregues + vendas de balcão). Só aparece por competência —
+                 no caixa o que se conta são baixas, e uma venda parcelada
+                 viraria "três compras". --}}
+            <div class="desktop-form-card text-center">
+                <p class="surface-subtitle mb-1">Ticket médio</p>
+                <h3 class="surface-title mb-0">{{ ($ticket['geral'] ?? null) !== null ? $fmt($ticket['geral']) : '—' }}</h3>
+                <p class="surface-subtitle mb-0 small">
+                    {{ (int) $volume['total'] }} {{ (int) $volume['total'] === 1 ? 'venda no mês' : 'vendas no mês' }}
+                </p>
             </div>
             <div class="desktop-form-card text-center">
                 <p class="surface-subtitle mb-1">Margem de contribuição</p>
@@ -108,7 +121,7 @@
                 <table class="table table-stack align-middle">
                     <tbody>
                     <tr>
-                        <td class="fw-semibold">Receita líquida (OS entregue)</td>
+                        <td class="fw-semibold">Receita líquida (faturamento)</td>
                         <td class="text-end fw-semibold">{{ $fmt($gerencial['receita_liquida'] ?? 0) }}</td>
                     </tr>
                     <tr>
@@ -119,6 +132,12 @@
                         <td class="ps-4">Peças aplicadas (custo de estoque)</td>
                         <td class="text-end">{{ $fmt($variaveis['cmv_pecas'] ?? 0) }}</td>
                     </tr>
+                    @if ((float) ($variaveis['cmv_vendas'] ?? 0) != 0)
+                        <tr class="text-secondary small">
+                            <td class="ps-4">Mercadoria vendida no balcão (custo de estoque)</td>
+                            <td class="text-end">{{ $fmt($variaveis['cmv_vendas']) }}</td>
+                        </tr>
+                    @endif
                     <tr class="text-secondary small">
                         <td class="ps-4">Comissões de técnicos</td>
                         <td class="text-end">{{ $fmt($variaveis['comissoes'] ?? 0) }}</td>
@@ -252,12 +271,41 @@
             <table class="table table-stack align-middle">
                 <tbody>
                 <tr>
-                    <td class="fw-semibold">Receita bruta {{ $caixa ? '(OS recebida)' : '(OS entregue)' }}</td>
+                    <td class="fw-semibold">Receita bruta (faturamento)</td>
                     <td class="text-end">{{ $fmt($receita['receita_bruta'] ?? 0) }}</td>
                 </tr>
+                <tr class="text-secondary small">
+                    <td class="ps-4">
+                        {{ $caixa ? 'OS recebidas' : 'OS entregues' }}
+                        @if (($ticket['os'] ?? null) !== null)
+                            <span class="text-secondary">— {{ (int) $volume['os'] }} × {{ $fmt($ticket['os']) }} de ticket médio</span>
+                        @endif
+                    </td>
+                    <td class="text-end">{{ $fmt($receita['os_bruto'] ?? 0) }}</td>
+                </tr>
+                @if ((float) ($receita['operacional_nao_os'] ?? 0) != 0)
+                    <tr class="text-secondary small">
+                        <td class="ps-4">
+                            Vendas de balcão
+                            @if (($ticket['nao_os'] ?? null) !== null)
+                                <span class="text-secondary">— {{ (int) $volume['nao_os'] }} × {{ $fmt($ticket['nao_os']) }} de ticket médio</span>
+                            @endif
+                        </td>
+                        <td class="text-end">{{ $fmt($receita['operacional_nao_os']) }}</td>
+                    </tr>
+                @endif
                 <tr>
                     <td>(-) Descontos</td>
                     <td class="text-end">{{ $fmt($receita['descontos'] ?? 0) }}</td>
+                </tr>
+                {{-- Devolução é dedução da receita, não despesa: o dinheiro
+                     nunca foi da empresa. Por isso ela some de Despesas
+                     Operacionais quando aparece aqui — ver
+                     FinanceiroReportService, que exclui origem_tipo
+                     venda_devolucao daquele grupo. --}}
+                <tr>
+                    <td>(-) Devoluções</td>
+                    <td class="text-end">{{ $fmt($receita['devolucoes'] ?? 0) }}</td>
                 </tr>
                 <tr class="table-light">
                     <td class="fw-semibold">(=) Receita líquida</td>

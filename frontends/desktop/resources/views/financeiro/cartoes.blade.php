@@ -544,10 +544,14 @@
                                     <td data-label="Bandeira">{{ $taxa['bandeira_nome'] ?? 'Todas' }}</td>
                                     <td data-label="Modalidade">{{ ucfirst((string) ($taxa['modalidade'] ?? '-')) }}</td>
                                     <td data-label="Faixa">
-                                        {{ number_format((int) ($taxa['parcelas_inicial'] ?? 0), 0, ',', '.') }}
-                                        x a
-                                        {{ number_format((int) ($taxa['parcelas_final'] ?? 0), 0, ',', '.') }}
-                                        x
+                                        @if (($taxa['modalidade'] ?? '') === 'debito')
+                                            À vista
+                                        @else
+                                            {{ number_format((int) ($taxa['parcelas_inicial'] ?? 0), 0, ',', '.') }}
+                                            x a
+                                            {{ number_format((int) ($taxa['parcelas_final'] ?? 0), 0, ',', '.') }}
+                                            x
+                                        @endif
                                     </td>
                                     <td data-label="Taxa">
                                         {{ number_format((float) ($taxa['taxa_percentual'] ?? 0), 4, ',', '.') }}%
@@ -667,9 +671,13 @@
                             <option value="debito" @selected($firstSimuladorModalidade === 'debito')>Débito</option>
                         </select>
                     </div>
-                    <div>
+                    <div data-cartoes-parcelas-field="simulador">
                         <label for="simParcelas">Parcelas</label>
-                        <input type="number" name="parcelas" id="simParcelas" class="form-control" min="1" max="24" step="1" value="{{ old('parcelas', 1) }}" required>
+                        <input type="number" name="parcelas" id="simParcelas" class="form-control" min="1" max="24" step="1" data-cartoes-default="1" value="{{ old('parcelas', 1) }}" required>
+                    </div>
+
+                    <div class="d-flex align-items-end d-none" data-cartoes-parcelas-note="simulador">
+                        <p class="surface-subtitle mb-2">No débito a venda é sempre à vista (1x).</p>
                     </div>
                     <div class="field-actions">
                         <button type="submit" class="btn btn-primary">
@@ -918,7 +926,7 @@
                             </select>
                         </div>
 
-                        <div>
+                        <div data-cartoes-parcelas-field="taxa">
                             <label for="cartaoTaxaParcelaInicial">Parcelas de</label>
                             <input
                                 type="number"
@@ -929,12 +937,13 @@
                                 max="24"
                                 step="1"
                                 data-cartoes-field="parcelas_inicial"
+                                data-cartoes-default="1"
                                 value="{{ old('parcelas_inicial', 1) }}"
                                 required
                             >
                         </div>
 
-                        <div>
+                        <div data-cartoes-parcelas-field="taxa">
                             <label for="cartaoTaxaParcelaFinal">Até</label>
                             <input
                                 type="number"
@@ -945,9 +954,16 @@
                                 max="24"
                                 step="1"
                                 data-cartoes-field="parcelas_final"
+                                data-cartoes-default="1"
                                 value="{{ old('parcelas_final', 1) }}"
                                 required
                             >
+                        </div>
+
+                        <div class="field-span-2 d-none" data-cartoes-parcelas-note="taxa">
+                            <p class="surface-subtitle mb-0">
+                                Débito não tem parcelamento: esta taxa vale para a cobrança à vista (1x).
+                            </p>
                         </div>
 
                         <div>
@@ -975,6 +991,7 @@
                                 min="0"
                                 step="0.01"
                                 data-cartoes-field="taxa_fixa"
+                                data-cartoes-default="0"
                                 value="{{ old('taxa_fixa', 0) }}"
                                 required
                             >
@@ -990,6 +1007,7 @@
                                 min="0"
                                 step="1"
                                 data-cartoes-field="prazo_recebimento_dias"
+                                data-cartoes-default="30"
                                 value="{{ old('prazo_recebimento_dias', 30) }}"
                                 required
                             >

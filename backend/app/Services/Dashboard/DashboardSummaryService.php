@@ -6,6 +6,7 @@ use App\Models\Client;
 use App\Models\Equipment;
 use App\Models\Financeiro;
 use App\Models\FinanceiroMovimento;
+use App\Models\Order;
 use App\Models\OrderStatus;
 use App\Models\Peca;
 use App\Models\User;
@@ -69,7 +70,7 @@ class DashboardSummaryService
      * status_atualizado_em/updated_at/created_at: esses campos refletem
      * importacoes ou edicoes em lote e distorcem o grafico mensal de entregas.
      */
-    private const REPAIRED_DELIVERY_DATE_SQL = 'COALESCE(os.data_entrega, os.data_conclusao)';
+    private const REPAIRED_DELIVERY_DATE_SQL = Order::REVENUE_DATE_SQL;
 
     /**
      * Expressão SQL para a data de referência usada no alerta de "OS parada".
@@ -305,6 +306,12 @@ class DashboardSummaryService
         return $query;
     }
 
+    /**
+     * Versao query-builder de Order::scopeReceitaReconhecida(). A regra vive no
+     * model; aqui ela e reaplicada porque o painel monta as consultas em
+     * DB::table('os') por performance, e um scope Eloquent nao alcanca isso.
+     * Mudou uma, muda a outra.
+     */
     private function applyRevenueDeliveryScope(Builder $query): void
     {
         $query->where(static function (Builder $scopeQuery): void {
@@ -508,6 +515,8 @@ class DashboardSummaryService
             'faturamento_mes_anterior' => $financialSummary['previous_month_revenue'] ?? 0.0,
             'despesas_pagas_mes' => $financialSummary['despesas_pagas'] ?? 0.0,
             'despesas_pagas_mes_anterior' => $financialSummary['despesas_pagas_mes_anterior'] ?? 0.0,
+            'recebido_mes' => $financialSummary['recebido_mes'] ?? 0.0,
+            'recebido_mes_anterior' => $financialSummary['recebido_mes_anterior'] ?? 0.0,
             'despesas_pendentes' => $financialSummary['pendentes'] ?? 0.0,
             'comissao_acumulada' => $technicianSummary['commission_total'] ?? 0.0,
             'low_stock_total' => $lowStockTotal,
@@ -525,7 +534,11 @@ class DashboardSummaryService
                 'label' => 'Faturamento mês',
                 'value' => $financialSummary['receitas'] ?? 0.0,
                 'value_type' => 'money',
-                'meta' => 'Baseado na movimentação operacional do mês.',
+                // Faturamento e caixa sao pilares diferentes: faturar muito e
+                // receber pouco e exatamente o quadro que quebra empresa. O
+                // card mostra o faturado e diz, na legenda, quanto virou
+                // dinheiro — o gap fica visivel sem abrir relatorio nenhum.
+                'meta' => $this->heroFinancialMeta($financialSummary),
                 'icon' => 'bi-currency-dollar',
                 'accent' => '#16a34a',
                 'action_label' => 'Ajuda do painel',
@@ -561,27 +574,46 @@ class DashboardSummaryService
     }
 
     /**
+     * Legenda do card de faturamento: diz a base (competencia, e o que ela
+     * inclui) e quanto do mes ja virou caixa.
+     *
+     * @param array<string, mixed> $financialSummary
+     */
+    private function heroFinancialMeta(array $financialSummary): string
+    {
+        $recebido = (float) ($financialSummary['recebido_mes'] ?? 0);
+
+        return 'OS entregues e vendas do mês. '
+            . 'R$ ' . number_format($recebido, 2, ',', '.') . ' já recebidos no caixa.';
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function buildContextCard(array $access, array $financialSummary, array $technicianSummary): array
     {
         if ($access['has_financial_access']) {
+            // Painel de CAIXA, deliberadamente numa base so: antes misturava
+            // receita operacional de OS com custo estimado de OS aberta e
+            // chamava a diferenca de "resultado caixa", que nao correspondia a
+            // regime nenhum. Aqui tudo vem de movimento realizado, o que o
+            // deixa distinto do card de faturamento (competencia) acima.
             return [
                 'type' => 'financial',
                 'title' => 'Resumo financeiro',
-                'subtitle' => 'Comparativo operacional do mês corrente.',
+                'subtitle' => 'Entradas e saídas de caixa do mês corrente.',
                 'chart' => [
-                    'labels' => ['Receitas', 'Despesas', 'Resultado caixa', 'Pendentes'],
+                    'labels' => ['Recebido', 'Despesas pagas', 'Resultado caixa', 'Pendentes'],
                     'values' => [
-                        (float) ($financialSummary['receitas'] ?? 0),
-                        (float) ($financialSummary['despesas'] ?? 0),
+                        (float) ($financialSummary['recebido_mes'] ?? 0),
+                        (float) ($financialSummary['despesas_pagas'] ?? 0),
                         (float) ($financialSummary['resultado_caixa'] ?? 0),
                         (float) ($financialSummary['pendentes'] ?? 0),
                     ],
                 ],
                 'legend' => [
-                    ['label' => 'Receitas', 'color' => '#16a34a'],
-                    ['label' => 'Despesas', 'color' => '#ef4444'],
+                    ['label' => 'Recebido', 'color' => '#16a34a'],
+                    ['label' => 'Despesas pagas', 'color' => '#ef4444'],
                     ['label' => 'Resultado caixa', 'color' => '#6366f1'],
                     ['label' => 'Pendentes', 'color' => '#f59e0b'],
                 ],
@@ -956,18 +988,33 @@ class DashboardSummaryService
             ->whereRaw(self::OPEN_DATE_SQL . ' >= ? AND ' . self::OPEN_DATE_SQL . ' < ?', [$currentPeriodStart, $currentPeriodEnd])
             ->first();
 
-        // Pendentes = despesas (contas a pagar) ainda pendentes/parciais com
+        // Pendentes = quanto ainda falta SAIR do caixa em contas a pagar com
         // vencimento até o fim do mês atual — mês corrente + atrasadas de
         // meses anteriores. Nunca inclui vencimento em mês futuro (ex.:
         // parcelas geradas por repetição), mesmo que já estejam pendentes.
-        $pendentesRow = Financeiro::query()
+        //
+        // Soma o saldo em aberto, não o valor bruto: num título "parcial" a
+        // parte já baixada saiu do caixa e contá-la de novo aqui inflaria a
+        // dívida. A janela é mais larga que a das "Saídas previstas" do Fluxo
+        // de Caixa de propósito — lá é só o mês, aqui as atrasadas entram, que
+        // é o que o card promete e o relatório não mostra.
+        $pendentesTitulos = Financeiro::query()
             ->where('tipo', Financeiro::TIPO_PAGAR)
             ->whereIn('status', [Financeiro::STATUS_PENDENTE, Financeiro::STATUS_PARCIAL])
+            ->where('impacta_fluxo_caixa', true)
             ->where('data_vencimento', '<', $currentPeriodEnd)
-            ->selectRaw('COALESCE(SUM(valor), 0) as total')
-            ->first();
+            ->get(['id', 'valor']);
 
-        $receitas = (float) ($currentMonthRow->total ?? 0);
+        $pendentes = $this->openAmountSum($pendentesTitulos);
+
+        // Faturamento = tudo que a assistencia gerou no mes, nao so OS: soma a
+        // receita das OS entregues com as vendas de balcao e os servicos
+        // avulsos, que vivem em `financeiro` sem os_id. Antes o card lia so a
+        // tabela `os` e uma venda de balcao simplesmente nao existia para ele.
+        $receitas = (float) ($currentMonthRow->total ?? 0)
+            + $this->faturamentoNaoOs($currentPeriodStart, $currentPeriodEnd);
+        $receitasAnterior = (float) ($previousMonthRow->total ?? 0)
+            + $this->faturamentoNaoOs($previousPeriodStart, $previousPeriodEnd);
         $despesas = (float) ($despesasRow->total ?? 0);
 
         // Pago de fato (regime de caixa), diferente de `despesas` acima: soma
@@ -977,16 +1024,26 @@ class DashboardSummaryService
         $despesasPagasAtual = $this->paidPagarTotal($currentPeriodStart, $currentPeriodEnd);
         $despesasPagasAnterior = $this->paidPagarTotal($previousPeriodStart, $previousPeriodEnd);
 
+        // Recebido != faturado, e a diferenca e informacao, nao divergencia:
+        // faturamento e o que foi vendido no mes (competencia), recebido e o
+        // dinheiro que entrou na conta (caixa). Uma cobranca faturada em
+        // agosto e paga em setembro aparece em meses diferentes nos dois — por
+        // isso o card mostra os dois numeros lado a lado.
+        $recebidoAtual = $this->paidReceberTotal($currentPeriodStart, $currentPeriodEnd);
+        $recebidoAnterior = $this->paidReceberTotal($previousPeriodStart, $previousPeriodEnd);
+
         return [
             'receitas' => $receitas,
             'despesas' => $despesas,
             'despesas_pagas' => $despesasPagasAtual,
             'despesas_pagas_mes_anterior' => $despesasPagasAnterior,
-            'resultado_caixa' => $receitas - $despesas,
-            'pendentes' => (float) ($pendentesRow->total ?? 0),
+            'recebido_mes' => $recebidoAtual,
+            'recebido_mes_anterior' => $recebidoAnterior,
+            'resultado_caixa' => round($recebidoAtual - $despesasPagasAtual, 2),
+            'pendentes' => $pendentes,
             'month' => $currentMonth,
             'year' => $currentYear,
-            'previous_month_revenue' => (float) ($previousMonthRow->total ?? 0),
+            'previous_month_revenue' => $receitasAnterior,
             'delivered_current_month_count' => (int) ($currentMonthRow->cnt ?? 0),
             'delivered_operational_current_month_count' => $deliveredOperationalCurrentMonth,
             'has_access' => (bool) $access['has_financial_access'],
@@ -1010,6 +1067,98 @@ class DashboardSummaryService
     }
 
     /**
+     * Espelho de paidPagarTotal() do lado da receita: quanto entrou no caixa
+     * no periodo. Mesma fonte e mesmo filtro que o Fluxo de Caixa usa em
+     * FinanceiroReportService::netMovimentos(), entao o valor bate com
+     * "Entradas realizadas" por construcao, e nao por coincidencia.
+     */
+    private function paidReceberTotal(string $start, string $end): float
+    {
+        return (float) FinanceiroMovimento::query()
+            ->join('financeiro', 'financeiro.id', '=', 'financeiro_movimentos.financeiro_id')
+            ->where('financeiro.tipo', Financeiro::TIPO_RECEBER)
+            ->where('financeiro.impacta_fluxo_caixa', true)
+            ->whereRaw('financeiro_movimentos.data_movimento >= ? AND financeiro_movimentos.data_movimento < ?', [$start, $end])
+            ->sum('financeiro_movimentos.valor_movimento');
+    }
+
+    /**
+     * Faturamento do periodo que NAO vem de OS — na pratica, a venda de balcao.
+     *
+     * Dois filtros carregam a regra, e nenhum e opcional:
+     *
+     *  - `whereNull('os_id')` impede contar duas vezes: a receita de OS ja entra
+     *    pela tabela `os` (revenueDeliveredOrdersQuery), e todo titulo de
+     *    cobranca de OS carrega o os_id.
+     *  - `grupo_dre = Receita Operacional` mantem fora o que nao e faturamento:
+     *    receita avulsa (nao recorrente) e lancamento incompleto, sem grupo.
+     *    Sem ele, uma despesa digitada por engano como "a receber" viraria
+     *    faturamento da assistencia.
+     *
+     * Mesma definicao que o DRE por competencia usa em
+     * FinanceiroReportService::dreReport(), para o card e o relatorio nunca
+     * anunciarem faturamentos diferentes para o mesmo mes.
+     *
+     * Por competencia, nao por caixa: uma venda entra no faturamento do mes em
+     * que foi feita, mesmo que o dinheiro so caia depois.
+     */
+    private function faturamentoNaoOs(string $start, string $end): float
+    {
+        // periodBounds() devolve [inicio, fim) com fim no dia 1 do mes
+        // seguinte; o scope de competencia trabalha com intervalo fechado.
+        $inicioDia = Carbon::parse($start)->toDateString();
+        $fimDia = Carbon::parse($end)->subDay()->toDateString();
+
+        return (float) Financeiro::query()
+            ->where('tipo', Financeiro::TIPO_RECEBER)
+            ->where('status', '!=', Financeiro::STATUS_CANCELADO)
+            ->where('impacta_dre', true)
+            ->where('grupo_dre', Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL)
+            // Venda vinculada a OS carrega os_id no titulo; sem o orWhere ela
+            // sumiria do faturamento, porque a receita de OS vem de
+            // os.valor_final e nao do titulo. Mesmo predicado do DRE.
+            ->where(static function ($q): void {
+                $q->whereNull('os_id')->orWhereNotNull('venda_id');
+            })
+            ->competenciaEntre($inicioDia, $fimDia)
+            ->sum('valor');
+    }
+
+    /**
+     * Soma o saldo EM ABERTO de uma colecao de titulos (valor menos o que ja
+     * foi baixado), nunca negativo. Mesma conta de
+     * FinanceiroReportService::openAmountsByTitle(), para o painel e o Fluxo
+     * de Caixa concordarem sobre quanto ainda falta pagar.
+     *
+     * Feito em PHP, e nao com GREATEST() no SQL, porque os testes rodam em
+     * SQLite, que nao tem essa funcao.
+     *
+     * @param \Illuminate\Support\Collection<int, Financeiro> $titulos
+     */
+    private function openAmountSum($titulos): float
+    {
+        $ids = $titulos->pluck('id')->all();
+
+        if ($ids === []) {
+            return 0.0;
+        }
+
+        $movimentado = FinanceiroMovimento::query()
+            ->whereIn('financeiro_id', $ids)
+            ->selectRaw('financeiro_id, COALESCE(SUM(valor_movimento), 0) as total')
+            ->groupBy('financeiro_id')
+            ->pluck('total', 'financeiro_id');
+
+        $total = 0.0;
+
+        foreach ($titulos as $titulo) {
+            $total += max(0, round((float) $titulo->valor - (float) ($movimentado[$titulo->id] ?? 0), 2));
+        }
+
+        return round($total, 2);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function emptyFinancialSummary(array $access): array
@@ -1019,6 +1168,8 @@ class DashboardSummaryService
             'despesas' => 0.0,
             'despesas_pagas' => 0.0,
             'despesas_pagas_mes_anterior' => 0.0,
+            'recebido_mes' => 0.0,
+            'recebido_mes_anterior' => 0.0,
             'resultado_caixa' => 0.0,
             'pendentes' => 0.0,
             'month' => (int) now()->month,

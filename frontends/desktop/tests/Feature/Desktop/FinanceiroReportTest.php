@@ -48,6 +48,62 @@ class FinanceiroReportTest extends TestCase
     }
 
     /**
+     * Ticket medio no card e a quebra por origem junto de cada linha da
+     * receita: reparo e balcao tem tickets que nao se parecem (aqui R$ 400,00
+     * contra R$ 50,00) e o numero combinado sozinho esconde qual dos dois
+     * puxou o mes.
+     */
+    public function test_dre_page_renders_ticket_medio_com_quebra_por_origem(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/relatorios/dre*' => Http::response([
+                'status' => 'success',
+                'data' => ['dre' => $this->fakeDrePayload('competencia')],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar']]))
+            ->get('/financeiro/relatorios/dre?mes=2026-06');
+
+        $response->assertOk()
+            ->assertSee('Ticket médio')
+            ->assertSee('R$ 166,67')
+            ->assertSee('3 vendas no mês')
+            // A quebra, ao lado de cada linha da receita bruta.
+            ->assertSee('1 × R$ 400,00 de ticket médio')
+            ->assertSee('2 × R$ 50,00 de ticket médio');
+    }
+
+    /**
+     * No DRE de caixa o card nao mostra valor: o denominador la seriam baixas,
+     * e uma venda em 3x apareceria como tres compras.
+     */
+    public function test_dre_caixa_nao_mostra_ticket_medio(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/relatorios/dre-caixa*' => Http::response([
+                'status' => 'success',
+                'data' => ['dre' => $this->fakeDrePayload('caixa')],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar']]))
+            ->get('/financeiro/relatorios/dre-caixa?mes=2026-06');
+
+        $response->assertOk()
+            ->assertDontSee('Ticket médio')
+            ->assertDontSee('de ticket médio');
+    }
+
+    /**
      * A leitura gerencial e a que responde "quanto sobra de cada real vendido
      * para pagar o fixo". Precisa aparecer com a linha de margem de
      * contribuicao e a decomposicao dos custos variaveis — inclusive o CMV,
@@ -242,7 +298,24 @@ class FinanceiroReportTest extends TestCase
         return [
             'periodo_label' => '06/2026',
             'modo' => $modo,
-            'receita' => ['receita_bruta' => 500, 'descontos' => 50, 'receita_liquida' => 450, 'total_os' => 1],
+            'receita' => [
+                'receita_bruta' => 500,
+                'descontos' => 50,
+                'devolucoes' => 0,
+                'receita_liquida' => 450,
+                'os_bruto' => 400,
+                'operacional_nao_os' => 100,
+                'total_os' => 1,
+                // Ticket médio só existe por competência: no caixa o
+                // denominador seriam baixas, não compras.
+                'volume' => $modo === 'caixa'
+                    ? ['total' => 0, 'os' => 0, 'nao_os' => 0]
+                    : ['total' => 3, 'os' => 1, 'nao_os' => 2],
+                'ticket_medio' => $modo === 'caixa'
+                    ? ['geral' => null, 'os' => null, 'nao_os' => null]
+                    : ['geral' => 166.67, 'os' => 400, 'nao_os' => 50],
+                'por_subgrupo' => [],
+            ],
             'custos_diretos' => ['total' => 0, 'por_subgrupo' => []],
             'outras_receitas' => ['total' => 0, 'por_subgrupo' => []],
             'despesas_operacionais' => ['total' => 100, 'por_subgrupo' => ['Aluguel' => 100]],
