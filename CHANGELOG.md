@@ -1,5 +1,10 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.69.3.0 — 2026-08-30 23:19
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Cadastro de taxas: modalidade débito deixa de exigir parcelas (fixa 1x) no desktop
+
 ## v5.69.2.1 — 2026-08-29 03:13
 - **Tier:** hotfix
 - **Autor/Agente:** Codex

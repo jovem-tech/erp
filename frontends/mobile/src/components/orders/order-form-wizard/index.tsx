@@ -180,6 +180,7 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
   const canLinkBudget = hasPermission(session?.user, 'orcamentos', 'converter_os');
   const canEditClient = hasPermission(session?.user, 'clientes', 'editar');
   const canEditEquipment = hasPermission(session?.user, 'equipamentos', 'editar');
+  const canCreateCatalog = hasPermission(session?.user, 'equipamentos', 'criar');
   const equipmentTypeId = resolveEquipmentTypeId(state);
 
   useEffect(() => {
@@ -271,13 +272,13 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
       case 'checklist':
         return isChecklistComplete(state);
       case 'detalhes':
-        return isStepDetailsValid(state.relatoCliente);
+        return isStepDetailsValid(state.relatoCliente, state.acessorios, mode === 'create');
       case 'atendimento':
         return isStepOperationsValid(state.tecnicoId, state.prazoEntregaDias, state.dataPrevisao);
       default:
         return true;
     }
-  }, [currentStepKey, state]);
+  }, [currentStepKey, mode, state]);
 
   const goNext = useCallback((): void => {
     const nextIndex = Math.min(currentIndex + 1, steps.length - 1);
@@ -492,6 +493,7 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
           }
           onChangePendingNewEquipmentPhotos={(pendingNewEquipmentPhotos) => setState((prev) => ({ ...prev, pendingNewEquipmentPhotos }))}
           canEditExisting={canEditEquipment}
+          canCreateCatalog={canCreateCatalog}
           disabled={busy}
         />
       ) : null}
@@ -533,6 +535,7 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
           acessorios={state.acessorios}
           onChangeRelatoCliente={(value) => setState((prev) => ({ ...prev, relatoCliente: value }))}
           onChangeAcessorios={(value) => setState((prev) => ({ ...prev, acessorios: value }))}
+          requireAcessorios={mode === 'create'}
           disabled={busy}
         />
       ) : null}

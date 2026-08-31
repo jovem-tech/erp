@@ -2,6 +2,7 @@
 
 import type { EntryChecklistModel, EntryChecklistResponseStatus } from '@/lib/types';
 import type { ChecklistAnswerState } from '@/components/orders/order-form-wizard/wizard-state';
+import { FieldLabel } from '@/components/ui/field-label';
 
 const STATUS_OPTIONS: Array<{ value: EntryChecklistResponseStatus; label: string }> = [
   { value: 'nao_verificado', label: 'Não verificado' },
@@ -80,13 +81,20 @@ export function StepChecklist({
               </div>
 
               {status === 'discrepancia' ? (
-                <input
-                  className="input"
-                  placeholder="Descreva a discrepância *"
-                  value={answer?.observacao ?? ''}
-                  onChange={(event) => onChangeAnswer(item.id, { status, observacao: event.target.value })}
-                  disabled={disabled}
-                />
+                <div className="field">
+                  <FieldLabel required id={`discrepancia-label-${item.id}`}>
+                    Descreva a discrepância
+                  </FieldLabel>
+                  <input
+                    className="input"
+                    aria-labelledby={`discrepancia-label-${item.id}`}
+                    placeholder="Ex.: tela trincada, botão não funciona"
+                    value={answer?.observacao ?? ''}
+                    onChange={(event) => onChangeAnswer(item.id, { status, observacao: event.target.value })}
+                    disabled={disabled}
+                    aria-required="true"
+                  />
+                </div>
               ) : null}
             </div>
           );

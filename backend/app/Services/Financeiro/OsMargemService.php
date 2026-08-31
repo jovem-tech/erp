@@ -443,7 +443,11 @@ class OsMargemService
     {
         $row = OsMargem::query()
             ->join('os', 'os.id', '=', 'os_margem.os_id')
-            ->whereBetween('os.data_entrega', [$inicio->toDateString(), $fim->toDateString()])
+            // Mesmo recorte de data que o DRE usa para reconhecer receita
+            // (Order::REVENUE_DATE_SQL): filtrar so por data_entrega deixava de
+            // fora as OS fechadas sem entrega registrada, e a margem cobriria um
+            // conjunto de OS diferente do faturamento com que e confrontada.
+            ->whereRaw(Order::REVENUE_DATE_SQL . ' BETWEEN ? AND ?', [$inicio->toDateString(), $fim->toDateString()])
             ->selectRaw(
                 'COUNT(*) as total_os,'
                 . ' COALESCE(SUM(os_margem.receita_liquida), 0) as receita,'

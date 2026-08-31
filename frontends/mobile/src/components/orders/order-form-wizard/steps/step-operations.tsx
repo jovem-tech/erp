@@ -10,6 +10,7 @@ import type {
 } from '@/lib/types';
 import { isWizardOperationsComplete } from '@/components/orders/order-form-wizard/wizard-state';
 import { SearchSelect } from '@/components/orders/order-form-wizard/search-select';
+import { FieldLabel } from '@/components/ui/field-label';
 
 const PRIORITY_OPTIONS: Array<{ value: OrderPriority; label: string }> = [
   { value: 'baixa', label: 'Baixa' },
@@ -97,7 +98,7 @@ export function StepOperations({
         </label>
 
         <label className="field">
-          <span className="field__label">Prazo de entrega (dias corridos) *</span>
+          <FieldLabel required>Prazo de entrega (dias corridos)</FieldLabel>
           <select
             className="select"
             value={prazoEntregaDias ?? ''}
@@ -111,6 +112,7 @@ export function StepOperations({
               onChangePrazoEntrega(days, calculateDeliveryDate(days));
             }}
             disabled={disabled}
+            aria-required="true"
           >
             <option value="">Selecione...</option>
             {DELIVERY_LEAD_OPTIONS.map((days) => (
@@ -122,7 +124,7 @@ export function StepOperations({
         </label>
 
         <label className="field">
-          <span className="field__label">Previsão de entrega *</span>
+          <FieldLabel required>Previsão de entrega</FieldLabel>
           <input
             className="input"
             type="date"
@@ -135,7 +137,7 @@ export function StepOperations({
         </label>
 
         <label className="field">
-          <span className="field__label">Técnico responsável *</span>
+          <FieldLabel required>Técnico responsável</FieldLabel>
           <select
             className="select"
             value={tecnicoId ?? ''}
@@ -145,6 +147,7 @@ export function StepOperations({
               onChangeTecnico(value, label);
             }}
             disabled={disabled || loading}
+            aria-required="true"
           >
             <option value="">Selecione...</option>
             {technicians.map((technician) => (

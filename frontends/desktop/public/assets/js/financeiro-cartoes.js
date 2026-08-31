@@ -8,6 +8,8 @@
     const simulatorResults = document.querySelector('[data-financeiro-cartoes-simulation-results]');
     const gatewayProviderSelect = document.getElementById('gatewayProvider');
     const gatewayModeSelect = document.getElementById('gatewayMode');
+    const taxaModalidadeSelect = document.getElementById('cartaoTaxaModalidade');
+    const simuladorModalidadeSelect = document.getElementById('simModalidade');
 
     const formatMoney = (value) => {
         const number = Number(value ?? 0);
@@ -84,12 +86,20 @@
             }
 
             if (field.type !== 'hidden') {
-                field.value = '';
+                // Zerar tudo deixava "Parcelas de", "Até", "Taxa fixa" e
+                // "Recebimento" vazios num form todo `required` — o navegador
+                // barrava o submit com "Preencha este campo" logo ao abrir
+                // "Nova taxa". Campos com default declarado voltam pra ele.
+                field.value = field.dataset.cartoesDefault ?? '';
             }
         });
 
         if (formName === 'gateway') {
             syncGatewayModes();
+        }
+
+        if (formName === 'taxa') {
+            syncTaxaParcelas();
         }
 
         refreshSelect2(form);
@@ -130,6 +140,10 @@
         if (!MODAL_FORMS.includes(formName)) {
             form.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
+
+        if (formName === 'taxa') {
+            syncTaxaParcelas();
+        }
     };
 
     const MODAL_FORMS = ['taxa', 'gateway'];
@@ -158,6 +172,64 @@
         if (modal.el instanceof HTMLElement && window.bootstrap?.Modal) {
             window.bootstrap.Modal.getOrCreateInstance(modal.el).show();
         }
+    };
+
+    // Débito não tem parcelamento: os campos de parcela viram ruído e, como
+    // são `required`, travavam o submit ("Preencha este campo") num dado que
+    // nem se aplica. No débito eles somem e vão fixos em 1x.
+    const syncParcelaFields = (scopeName, select) => {
+        if (!(select instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        const isDebito = select.value === 'debito';
+
+        document.querySelectorAll(`[data-cartoes-parcelas-field="${scopeName}"]`).forEach((wrapper) => {
+            wrapper.classList.toggle('d-none', isDebito);
+
+            wrapper.querySelectorAll('input').forEach((input) => {
+                if (isDebito) {
+                    // Continua sendo enviado no POST — um campo `disabled`
+                    // ficaria de fora e cairia na validação do servidor.
+                    input.value = '1';
+                } else if (input.value === '') {
+                    input.value = input.dataset.cartoesDefault ?? '';
+                }
+
+                input.readOnly = isDebito;
+            });
+        });
+
+        document.querySelectorAll(`[data-cartoes-parcelas-note="${scopeName}"]`).forEach((note) => {
+            note.classList.toggle('d-none', !isDebito);
+        });
+    };
+
+    const syncTaxaParcelas = () => syncParcelaFields('taxa', taxaModalidadeSelect);
+    const syncSimuladorParcelas = () => syncParcelaFields('simulador', simuladorModalidadeSelect);
+
+    const onSelectChange = (select, handler) => {
+        if (!(select instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        select.addEventListener('change', handler);
+
+        // O select2 troca o valor via jQuery ($el.trigger('change')), que não
+        // chega em listener nativo — sem isto, escolher "Débito" no dropdown
+        // estilizado não sincronizava nada. O handler é idempotente, então
+        // disparar duas vezes (nativo + jQuery) não incomoda.
+        if (typeof window.jQuery === 'function') {
+            window.jQuery(select).on('change', handler);
+        }
+    };
+
+    const initModalidadeParcelas = () => {
+        onSelectChange(taxaModalidadeSelect, syncTaxaParcelas);
+        onSelectChange(simuladorModalidadeSelect, syncSimuladorParcelas);
+
+        syncTaxaParcelas();
+        syncSimuladorParcelas();
     };
 
     const syncGatewayModes = () => {
@@ -452,6 +524,7 @@
         bindRowFilters();
         bindSimulator();
         initGatewaySelect();
+        initModalidadeParcelas();
 
         const initialTab = config.activeTab || 'operadoras';
         setActiveTab(initialTab, false);

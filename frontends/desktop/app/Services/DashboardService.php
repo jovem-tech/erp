@@ -258,6 +258,10 @@ class DashboardService
      * para resultado de caixa. Devolve null quando o mês anterior foi zero —
      * qualquer valor sobre zero renderiza um "+∞%" sem significado.
      *
+     * Compara faturamento com faturamento (competência: OS entregues, vendas e
+     * serviços). Não confundir com o recebido no caixa, que o backend manda em
+     * stats.recebido_mes e aparece só na legenda do card.
+     *
      * @param array<string, mixed> $stats
      * @return array<string, mixed>|null
      */

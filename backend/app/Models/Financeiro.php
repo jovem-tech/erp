@@ -27,6 +27,33 @@ class Financeiro extends Model
     public const ORIGEM_TIPO_FATURA_CARTAO_CREDITO = 'fatura_cartao_credito';
 
     /**
+     * origem_tipo do lancamento a pagar que SaleReturnService cria ao concluir
+     * uma devolucao de venda.
+     *
+     * No DRE ele NAO e despesa operacional: e deducao da receita bruta
+     * (faturamento menos devolucoes = receita liquida). Por isso
+     * FinanceiroReportService o exclui do grupo de despesas e o soma como
+     * deducao — contar nos dois lugares abateria o mesmo valor duas vezes.
+     */
+    public const ORIGEM_TIPO_VENDA_DEVOLUCAO = 'venda_devolucao';
+
+    /**
+     * Rotulos de `grupo_dre`, exatamente como a migration
+     * 2026_06_27_000001_create_financeiro_module_tables semeia em
+     * `financeiro_categorias`.
+     *
+     * Viraram constantes porque a separacao entre RECEITA OPERACIONAL (OS e
+     * venda de balcao — faturamento, base da margem de contribuicao) e OUTRAS
+     * RECEITAS (avulsas, abaixo da linha) passou a valer dinheiro no relatorio:
+     * um literal digitado errado num filtro joga silenciosamente uma venda
+     * para fora do faturamento.
+     */
+    public const GRUPO_DRE_RECEITA_OPERACIONAL = 'Receita Operacional';
+    public const GRUPO_DRE_OUTRAS_RECEITAS = 'Outras Receitas';
+    public const GRUPO_DRE_DESPESAS_OPERACIONAIS = 'Despesas Operacionais';
+    public const GRUPO_DRE_CUSTO_DIRETO_OS = 'Custo Direto (OS)';
+
+    /**
      * Lista histórica das formas de pagamento. Desde o catálogo gerenciável
      * (`financeiro_formas_pagamento`) esta constante serve apenas como semente
      * da migration e fallback quando a tabela ainda não existe. Para validar ou
@@ -103,6 +130,31 @@ class Financeiro extends Model
             ->where('status', '!=', self::STATUS_CANCELADO)
             ->where('impacta_dre', true)
             ->where('dre_fixo_mensal', true);
+    }
+
+    /**
+     * Janela de COMPETENCIA de um lancamento: `data_competencia` dentro do
+     * periodo e, quando ela e nula, `data_vencimento` como substituta.
+     *
+     * Vive no model porque dois consumidores precisam concordar sobre o que e
+     * "competencia": o DRE (FinanceiroReportService::groupByCompetencia) e o
+     * faturamento do painel (DashboardSummaryService::faturamentoNaoOs). Se
+     * cada um escrevesse o proprio COALESCE, o card e o relatorio acabariam
+     * reconhecendo receita em meses diferentes para o mesmo titulo.
+     *
+     * O fallback nao e detalhe: titulos criados antes do campo existir, e os
+     * que a UI grava sem competencia, so tem vencimento — sem ele sumiriam de
+     * qualquer recorte por competencia.
+     */
+    public function scopeCompetenciaEntre(Builder $query, string $inicio, string $fim): Builder
+    {
+        return $query->where(function (Builder $q) use ($inicio, $fim): void {
+            $q->whereBetween('data_competencia', [$inicio, $fim])
+                ->orWhere(function (Builder $inner) use ($inicio, $fim): void {
+                    $inner->whereNull('data_competencia')
+                        ->whereBetween('data_vencimento', [$inicio, $fim]);
+                });
+        });
     }
 
     public function scopeWithFilters(Builder $query, array $filters): Builder

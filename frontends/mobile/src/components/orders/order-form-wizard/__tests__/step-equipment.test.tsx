@@ -9,8 +9,17 @@ const formData: EquipmentFormData = {
     { id: 1, nome: 'Desktop', slug: 'desktop', family: 'desktop' },
     { id: 2, nome: 'Notebook', slug: 'notebook', family: 'notebook' },
   ],
-  brands: [{ id: 10, nome: 'Samsung' }],
+  brands: [
+    { id: 10, nome: 'Samsung' },
+    // Sem relação de catálogo com nenhum tipo — representa uma marca
+    // legada vinculada a um equipamento antigo (ver teste "includeIds").
+    { id: 11, nome: 'LG' },
+  ],
   models: [{ id: 100, marca_id: 10, nome: 'A015' }],
+  catalog_relations: [
+    { tipo_id: 1, marca_id: 10, modelo_id: 100 },
+    { tipo_id: 2, marca_id: 10, modelo_id: 100 },
+  ],
   desktop_defaults: null,
   password_modes: [
     { value: 'desenho', label: 'Desenho' },
@@ -140,7 +149,7 @@ describe('StepEquipment', () => {
       /Nenhum equipamento cadastrado para este cliente\. Prossiga com o novo cadastro/
     )).toBeInTheDocument());
     expect(onChangePendingNewEquipment).toHaveBeenCalledWith({ tipo_id: 0, marca_id: 0, modelo_id: 0 });
-    await waitFor(() => expect(screen.getByText('Tipo de equipamento *')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Tipo de equipamento')).toBeInTheDocument());
   });
 
   it('carrega a foto privada da opção pelo cliente autenticado da API', async () => {
@@ -205,7 +214,7 @@ describe('StepEquipment', () => {
     expect(screen.getByText('Equipamento já cadastrado')).toBeDisabled();
     expect(screen.getByText(/Como o cliente também é novo/)).toBeInTheDocument();
     expect(searchEquipments).not.toHaveBeenCalled();
-    await waitFor(() => expect(screen.getByText('Tipo de equipamento *')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Tipo de equipamento')).toBeInTheDocument());
   });
 
   it('pré-preenche por correspondência exata os dados do equipamento do orçamento vinculado', async () => {
@@ -245,6 +254,44 @@ describe('StepEquipment', () => {
     }));
   });
 
+  it('sem relação de catálogo para o tipo do orçamento, só o tipo é pré-preenchido', async () => {
+    const { getEquipmentFormData } = await import('@/lib/orders');
+    vi.mocked(getEquipmentFormData).mockResolvedValue({ ...formData, catalog_relations: [] });
+    const onChangePendingNewEquipment = vi.fn();
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={null}
+        equipamento={null}
+        pendingNewEquipment={null}
+        pendingNewEquipmentPhotos={[]}
+        linkedBudget={{
+          id: 78,
+          numero: 'ORC-0078',
+          status: 'aguardando_resposta',
+          equipamento_resumo: 'Notebook Samsung A015',
+          equipamento_tipo_avulso: 'Notebook',
+          equipamento_marca_avulso: 'Samsung',
+          equipamento_modelo_avulso: 'A015',
+          equipamento_cor: 'Cinza',
+        }}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={onChangePendingNewEquipment}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByText(/Equipamento informado no orçamento ORC-0078/)).toBeInTheDocument();
+    await waitFor(() => expect(onChangePendingNewEquipment).toHaveBeenCalledWith({
+      tipo_id: 2,
+      marca_id: 0,
+      modelo_id: 0,
+      cor: 'Cinza',
+    }));
+    expect(screen.getByText(/reconhecida no catálogo/)).toBeInTheDocument();
+  });
+
   it('mostra o bloco de hardware só para tipo "desktop" em modalidade "montado"', async () => {
     const { getEquipmentFormData } = await import('@/lib/orders');
     vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
@@ -266,10 +313,11 @@ describe('StepEquipment', () => {
     );
 
     await user.click(screen.getByText('Equipamento novo'));
-    await waitFor(() => expect(screen.getByText('Tipo de equipamento *')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Tipo de equipamento')).toBeInTheDocument());
 
     // seleciona tipo "Desktop"
-    await user.selectOptions(screen.getByLabelText('Tipo de equipamento *'), '1');
+    await user.click(screen.getByRole('combobox', { name: /Tipo de equipamento/ }));
+    await user.click(screen.getByRole('option', { name: 'Desktop' }));
     expect(onChangePendingNewEquipment).toHaveBeenCalledWith(expect.objectContaining({ tipo_id: 1 }));
 
     rerender(
@@ -312,12 +360,103 @@ describe('StepEquipment', () => {
     const user = userEvent.setup();
     await user.click(screen.getByText('Equipamento novo'));
 
-    await waitFor(() => expect(screen.getByText('Tipo de equipamento *')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Tipo de equipamento')).toBeInTheDocument());
     expect(screen.queryByText('Modalidade')).not.toBeInTheDocument();
   });
 
-  it('não grava marca ou modelo no backend durante o rascunho da OS', async () => {
-    const { getEquipmentFormData, createEquipmentBrand } = await import('@/lib/orders');
+  it('reseta marca e modelo ao trocar o tipo de equipamento', async () => {
+    const { getEquipmentFormData } = await import('@/lib/orders');
+    vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
+    const onChangePendingNewEquipment = vi.fn();
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={null}
+        equipamento={null}
+        pendingNewEquipment={{ tipo_id: 1, marca_id: 10, modelo_id: 100 }}
+        pendingNewEquipmentPhotos={[]}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={onChangePendingNewEquipment}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('Tipo de equipamento')).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    const combobox = screen.getByRole('combobox', { name: /Tipo de equipamento/ });
+    await user.click(combobox);
+    await user.clear(combobox);
+    await user.type(combobox, 'Notebook');
+    await user.click(screen.getByRole('option', { name: 'Notebook' }));
+
+    expect(onChangePendingNewEquipment).toHaveBeenCalledWith({ tipo_id: 2, marca_id: 0, modelo_id: 0 });
+  });
+
+  it('limpa os campos de hardware ao trocar de um tipo desktop para um que não é desktop', async () => {
+    const { getEquipmentFormData } = await import('@/lib/orders');
+    vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
+    const onChangePendingNewEquipment = vi.fn();
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={null}
+        equipamento={null}
+        pendingNewEquipment={{
+          tipo_id: 1,
+          marca_id: 10,
+          modelo_id: 100,
+          desktop_modalidade: 'montado',
+          placa_mae: 'Asus Prime',
+        }}
+        pendingNewEquipmentPhotos={[]}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={onChangePendingNewEquipment}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('Tipo de equipamento')).toBeInTheDocument());
+
+    const user = userEvent.setup();
+    const combobox = screen.getByRole('combobox', { name: /Tipo de equipamento/ });
+    await user.click(combobox);
+    await user.clear(combobox);
+    await user.type(combobox, 'Notebook');
+    await user.click(screen.getByRole('option', { name: 'Notebook' }));
+
+    const [call] = onChangePendingNewEquipment.mock.calls;
+    expect(call[0]).not.toHaveProperty('desktop_modalidade');
+    expect(call[0]).not.toHaveProperty('placa_mae');
+  });
+
+  it('mantém visível o vínculo atual fora do catálogo ao editar equipamento legado', async () => {
+    const { getEquipmentFormData } = await import('@/lib/orders');
+    vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={null}
+        equipamento={null}
+        // LG (id 11) não tem relação de catálogo com nenhum tipo — cenário
+        // de equipamento legado cujo vínculo precede o catálogo estrito.
+        pendingNewEquipment={{ tipo_id: 1, marca_id: 11, modelo_id: 0 }}
+        pendingNewEquipmentPhotos={[]}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={vi.fn()}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: /Marca/ })).toHaveValue('LG'));
+    expect(screen.getByText('Vínculo atual fora do catálogo deste tipo.')).toBeInTheDocument();
+  });
+
+  it('não grava nada no catálogo enquanto o usuário apenas seleciona itens existentes', async () => {
+    const { getEquipmentFormData, createEquipmentBrand, createEquipmentModel } = await import('@/lib/orders');
     vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
 
     const user = userEvent.setup();
@@ -332,15 +471,93 @@ describe('StepEquipment', () => {
         onSelectEquipamento={vi.fn()}
         onChangePendingNewEquipment={vi.fn()}
         onChangePendingNewEquipmentPhotos={vi.fn()}
+        canCreateCatalog
       />
     );
 
     await user.click(screen.getByText('Equipamento novo'));
-    await waitFor(() => expect(screen.getByText('Marca *')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Marca')).toBeInTheDocument());
 
-    expect(screen.queryByText('+ Nova marca')).not.toBeInTheDocument();
-    expect(screen.queryByText('+ Novo modelo')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('combobox', { name: /Marca/ }));
+    await user.click(screen.getByRole('option', { name: 'Samsung' }));
+
     expect(createEquipmentBrand).not.toHaveBeenCalled();
+    expect(createEquipmentModel).not.toHaveBeenCalled();
+  });
+
+  it('grava a marca nova no catálogo imediatamente e a seleciona', async () => {
+    const { getEquipmentFormData, createEquipmentBrand } = await import('@/lib/orders');
+    vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
+    vi.mocked(createEquipmentBrand).mockResolvedValue({ id: 20, nome: 'Xiaomi', tipo_id: 1 });
+    const onChangePendingNewEquipment = vi.fn();
+
+    const user = userEvent.setup();
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={null}
+        equipamento={null}
+        pendingNewEquipment={{ tipo_id: 1, marca_id: 0, modelo_id: 0 }}
+        pendingNewEquipmentPhotos={[]}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={onChangePendingNewEquipment}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+        canCreateCatalog
+      />
+    );
+
+    await user.click(screen.getByText('Equipamento novo'));
+    await waitFor(() => expect(screen.getByText('Marca')).toBeInTheDocument());
+
+    const combobox = screen.getByRole('combobox', { name: /Marca/ });
+    await user.click(combobox);
+    await user.type(combobox, 'Xiaomi');
+    await user.click(screen.getByRole('button', { name: '+ Nova marca "Xiaomi"' }));
+
+    const nameInput = screen.getByRole('textbox', { name: 'Nome' });
+    expect(nameInput).toHaveValue('Xiaomi');
+    await user.click(screen.getByRole('button', { name: 'Salvar' }));
+
+    await waitFor(() => expect(createEquipmentBrand).toHaveBeenCalledWith('Xiaomi', 1));
+    await waitFor(() =>
+      expect(onChangePendingNewEquipment).toHaveBeenCalledWith(
+        expect.objectContaining({ marca_id: 20, modelo_id: 0 })
+      )
+    );
+    expect(screen.queryByRole('textbox', { name: 'Nome' })).not.toBeInTheDocument();
+  });
+
+  it('desabilita o cadastro de marca sem a permissão equipamentos:criar', async () => {
+    const { getEquipmentFormData } = await import('@/lib/orders');
+    vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
+
+    const user = userEvent.setup();
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={null}
+        equipamento={null}
+        pendingNewEquipment={{ tipo_id: 1, marca_id: 0, modelo_id: 0 }}
+        pendingNewEquipmentPhotos={[]}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={vi.fn()}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+        canCreateCatalog={false}
+      />
+    );
+
+    await user.click(screen.getByText('Equipamento novo'));
+    await waitFor(() => expect(screen.getByText('Marca')).toBeInTheDocument());
+
+    const combobox = screen.getByRole('combobox', { name: /Marca/ });
+    await user.click(combobox);
+    await user.type(combobox, 'Xiaomi');
+
+    const createButton = screen.getByRole('button', { name: '+ Nova marca "Xiaomi"' });
+    expect(createButton).toBeDisabled();
+    expect(createButton).toHaveAttribute('title', 'Sem permissão para cadastrar marcas.');
   });
 
   it('carrega a edição local do equipamento selecionado ao lado de Trocar', async () => {
@@ -376,6 +593,37 @@ describe('StepEquipment', () => {
       })
     );
   });
+
+  it('clicar num chip de cor grava cor, cor_hex e cor_rgb juntos', async () => {
+    const { getEquipmentFormData } = await import('@/lib/orders');
+    vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
+    const onChangePendingNewEquipment = vi.fn();
+
+    const user = userEvent.setup();
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={null}
+        equipamento={null}
+        pendingNewEquipment={{ tipo_id: 1, marca_id: 10, modelo_id: 100 }}
+        pendingNewEquipmentPhotos={[]}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={onChangePendingNewEquipment}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(screen.getByText('Cor')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Preto' }));
+
+    // Uma única chamada com os três campos juntos — não duas chamadas
+    // sucessivas que se sobrescreveriam a partir do mesmo estado-base.
+    expect(onChangePendingNewEquipment).toHaveBeenCalledTimes(1);
+    expect(onChangePendingNewEquipment).toHaveBeenCalledWith(
+      expect.objectContaining({ tipo_id: 1, marca_id: 10, modelo_id: 100, cor: 'Preto', cor_hex: '#1A1A1A', cor_rgb: '26, 26, 26' })
+    );
+  });
 });
 
 describe('isStepEquipmentValid', () => {
@@ -384,11 +632,16 @@ describe('isStepEquipmentValid', () => {
   });
 
   it('é inválido para equipamento novo sem foto', () => {
-    expect(isStepEquipmentValid(null, { tipo_id: 1, marca_id: 1, modelo_id: 1 }, [])).toBe(false);
+    expect(isStepEquipmentValid(null, { tipo_id: 1, marca_id: 1, modelo_id: 1, cor: 'Preto' }, [])).toBe(false);
   });
 
-  it('é válido para equipamento novo com tipo/marca/modelo e ao menos 1 foto', () => {
+  it('é inválido para equipamento novo sem cor', () => {
     const file = new File(['x'], 'foto.jpg', { type: 'image/jpeg' });
-    expect(isStepEquipmentValid(null, { tipo_id: 1, marca_id: 1, modelo_id: 1 }, [file])).toBe(true);
+    expect(isStepEquipmentValid(null, { tipo_id: 1, marca_id: 1, modelo_id: 1 }, [file])).toBe(false);
+  });
+
+  it('é válido para equipamento novo com tipo/marca/modelo/cor e ao menos 1 foto', () => {
+    const file = new File(['x'], 'foto.jpg', { type: 'image/jpeg' });
+    expect(isStepEquipmentValid(null, { tipo_id: 1, marca_id: 1, modelo_id: 1, cor: 'Preto' }, [file])).toBe(true);
   });
 });
