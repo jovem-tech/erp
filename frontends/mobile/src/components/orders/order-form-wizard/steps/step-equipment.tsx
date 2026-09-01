@@ -418,6 +418,7 @@ export function StepEquipment({
     setNewEquipmentReason(null);
     onChangePendingNewEquipment(null);
     onChangePendingNewEquipmentPhotos([]);
+    onChangePendingNewEquipmentLabels(null);
   };
 
   const switchToNew = (reason: 'new-client' | 'empty-client' | null = null): void => {
@@ -427,6 +428,7 @@ export function StepEquipment({
     onSelectEquipamento(null);
     if (!pendingNewEquipment) {
       onChangePendingNewEquipment(EMPTY_NEW_EQUIPMENT);
+      onChangePendingNewEquipmentLabels(null);
     }
   };
 
@@ -502,6 +504,18 @@ export function StepEquipment({
 
     const base = pendingNewEquipment ?? EMPTY_NEW_EQUIPMENT;
     onChangePendingNewEquipment({ ...base, cor, cor_hex: hex, cor_rgb: rgb });
+  };
+
+  /**
+   * Os rótulos alimentam só o card de Revisão do EQUIPAMENTO NOVO. Editar
+   * localmente um equipamento já cadastrado segue outro caminho na
+   * revisão, então ali não há nada a emitir.
+   */
+  const emitNewEquipmentLabels = (labels: { tipo: string; marca: string; modelo: string } | null): void => {
+    if (editingExisting) {
+      return;
+    }
+    onChangePendingNewEquipmentLabels(labels);
   };
 
   const activeEquipmentPayload = editingExisting ? pendingEquipmentUpdate : pendingNewEquipment;
@@ -618,6 +632,11 @@ export function StepEquipment({
       setFormData((prev) => (prev ? upsertModel(prev, model) : prev));
       setExtraRelations((prev) => [...prev, { tipo_id: tipoId, marca_id: marcaId, modelo_id: model.id }]);
       updateField('modelo_id', model.id);
+      emitNewEquipmentLabels(
+        selectedType && selectedBrand
+          ? { tipo: selectedType.nome, marca: selectedBrand.nome, modelo: model.nome }
+          : null
+      );
       closeQuickCreate();
     } catch (error) {
       if (creatingCancelRef.current) {
@@ -786,7 +805,7 @@ export function StepEquipment({
                 value={selectedType}
                 onSelect={(type) => {
                   updateField('tipo_id', type ? type.id : 0);
-                  onChangePendingNewEquipmentLabels(null);
+                  emitNewEquipmentLabels(null);
                 }}
                 getOptionKey={(type) => type.id}
                 getOptionLabel={(type) => type.nome}
@@ -801,7 +820,7 @@ export function StepEquipment({
                 value={selectedBrand}
                 onSelect={(brand) => {
                   updateField('marca_id', brand ? brand.id : 0);
-                  onChangePendingNewEquipmentLabels(null);
+                  emitNewEquipmentLabels(null);
                 }}
                 getOptionKey={(brand) => brand.id}
                 getOptionLabel={(brand) => brand.nome}
@@ -846,7 +865,7 @@ export function StepEquipment({
                 value={selectedModel}
                 onSelect={(model) => {
                   updateField('modelo_id', model ? model.id : 0);
-                  onChangePendingNewEquipmentLabels(
+                  emitNewEquipmentLabels(
                     model && selectedType && selectedBrand
                       ? { tipo: selectedType.nome, marca: selectedBrand.nome, modelo: model.nome }
                       : null

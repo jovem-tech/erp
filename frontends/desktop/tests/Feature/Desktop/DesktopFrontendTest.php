@@ -3921,7 +3921,7 @@ class DesktopFrontendTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('Ajuda do dashboard')
-            ->assertSee('OS abertas x entregues reparadas por mês')
+            ->assertSee('Operação e resultado financeiro')
             ->assertSee('OS por status')
             ->assertSee('Tipos de Equipamento')
             ->assertSee('Últimas Ordens de Serviço')

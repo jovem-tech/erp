@@ -375,6 +375,149 @@ class DashboardSummaryTest extends TestCase
         }
     }
 
+    /**
+     * O grafico de evolucao financeira nao pode ser uma terceira verdade sobre
+     * o mes: o lucro por competencia tem de reproduzir o resultado_liquido do
+     * DRE, e o de caixa, o resultado_caixa do painel.
+     *
+     * Cenario: venda de 400 faturada e recebida, devolucao de 100 (deducao, nao
+     * despesa), aluguel fixo de 300 lancado e nao pago, taxa variavel de 20
+     * paga.
+     */
+    public function test_financial_monthly_chart_reconcilia_lucro_nos_dois_regimes(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-05-20 10:00:00'));
+
+        try {
+            $venda = Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_RECEBER,
+                'avulso' => true,
+                'categoria' => 'Venda de balcão',
+                'descricao' => 'Venda VD-0001',
+                'valor' => 400.00,
+                'status' => Financeiro::STATUS_PAGO,
+                'data_competencia' => '2026-05-10',
+                'data_vencimento' => '2026-05-10',
+                'grupo_dre' => Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL,
+            ])->id;
+            FinanceiroMovimento::query()->create([
+                'financeiro_id' => $venda,
+                'tipo_movimento' => FinanceiroMovimento::TIPO_ENTRADA,
+                'data_movimento' => '2026-05-10',
+                'valor_movimento' => 400.00,
+            ]);
+
+            // Devolucao: deducao da receita. NAO pode virar barra de despesa.
+            Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_PAGAR,
+                'avulso' => true,
+                'categoria' => 'Devolução de venda',
+                'descricao' => 'Devolução DV-0001',
+                'valor' => 100.00,
+                'status' => Financeiro::STATUS_PENDENTE,
+                'data_competencia' => '2026-05-12',
+                'data_vencimento' => '2026-05-12',
+                'origem_tipo' => Financeiro::ORIGEM_TIPO_VENDA_DEVOLUCAO,
+                'grupo_dre' => Financeiro::GRUPO_DRE_DESPESAS_OPERACIONAIS,
+            ]);
+
+            // Fixa lancada e NAO paga: aparece em competencia, nao em caixa.
+            Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_PAGAR,
+                'avulso' => true,
+                'categoria' => 'Aluguel',
+                'descricao' => 'Aluguel de maio',
+                'valor' => 300.00,
+                'status' => Financeiro::STATUS_PENDENTE,
+                'data_competencia' => '2026-05-05',
+                'data_vencimento' => '2026-05-05',
+                'grupo_dre' => Financeiro::GRUPO_DRE_DESPESAS_OPERACIONAIS,
+                'dre_fixo_mensal' => true,
+            ]);
+
+            // Variavel paga: aparece nos dois.
+            $taxa = Financeiro::query()->create([
+                'tipo' => Financeiro::TIPO_PAGAR,
+                'avulso' => true,
+                'categoria' => 'Taxas e impostos',
+                'descricao' => 'Taxa de cartão',
+                'valor' => 20.00,
+                'status' => Financeiro::STATUS_PAGO,
+                'data_competencia' => '2026-05-15',
+                'data_vencimento' => '2026-05-15',
+                'grupo_dre' => Financeiro::GRUPO_DRE_DESPESAS_OPERACIONAIS,
+                'dre_fixo_mensal' => false,
+            ])->id;
+            FinanceiroMovimento::query()->create([
+                'financeiro_id' => $taxa,
+                'tipo_movimento' => FinanceiroMovimento::TIPO_SAIDA,
+                'data_movimento' => '2026-05-15',
+                'valor_movimento' => 20.00,
+            ]);
+
+            $user = $this->createUserRecord([
+                'nome' => 'Gerente Gráfico',
+                'email' => 'gerente.grafico@example.com',
+                'perfil' => 'gerente',
+                'grupo_id' => 3,
+            ]);
+
+            Sanctum::actingAs($user, ['*']);
+
+            $response = $this->getJson('/api/v1/dashboard/summary?ano=2026')->assertOk();
+
+            $maio = 4; // índice zero-based de Maio
+
+            $comp = $response->json('data.charts.financial_monthly.regimes.competencia');
+            $caixa = $response->json('data.charts.financial_monthly.regimes.caixa');
+
+            $this->assertSame(400.0, $comp['faturamento'][$maio]);
+            $this->assertSame(100.0, $comp['deducoes'][$maio]);
+            $this->assertSame(300.0, $comp['despesa_fixa'][$maio]);
+            // A devolução NÃO entrou aqui: só a taxa de 20.
+            $this->assertSame(20.0, $comp['despesa_variavel'][$maio]);
+            // 400 − 100 − 300 − 20 = mesma conta do resultado_liquido do DRE.
+            $this->assertSame(-20.0, $comp['lucro'][$maio]);
+
+            // Caixa: recebeu 400, pagou só a taxa de 20. O aluguel não saiu.
+            $this->assertSame(400.0, $caixa['recebido'][$maio]);
+            $this->assertSame(0.0, $caixa['despesa_fixa'][$maio]);
+            $this->assertSame(20.0, $caixa['despesa_variavel'][$maio]);
+            $this->assertSame(380.0, $caixa['lucro'][$maio]);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    /**
+     * Sem financeiro:visualizar o bloco sai vazio — a evolucao financeira segue
+     * o mesmo gate do hero card e do resumo financeiro.
+     */
+    public function test_financial_monthly_chart_fica_vazio_sem_acesso_financeiro(): void
+    {
+        $user = $this->createUserRecord([
+            'nome' => 'Tecnico Sem Financeiro',
+            'email' => 'tecnico.gráfico@example.com',
+            'perfil' => 'tecnico',
+            'grupo_id' => 2,
+        ]);
+
+        Sanctum::actingAs($user, ['*']);
+
+        $response = $this->getJson('/api/v1/dashboard/summary')->assertOk();
+
+        $this->assertSame([], $response->json('data.charts.financial_monthly.legend'));
+
+        // Todos os doze meses zerados nos dois regimes. array_filter em vez de
+        // comparar com array_fill: o JSON devolve 0.0 float e um assertSame
+        // contra int 0 quebraria por tipo, não por valor.
+        foreach (['competencia', 'caixa'] as $regime) {
+            $lucro = $response->json("data.charts.financial_monthly.regimes.{$regime}.lucro");
+            $this->assertCount(12, $lucro);
+            $this->assertEmpty(array_filter($lucro));
+        }
+    }
+
     public function test_pendentes_sums_pending_expenses_due_up_to_current_month_but_excludes_future_and_paid(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-01-20 10:00:00'));

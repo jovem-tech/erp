@@ -21,6 +21,12 @@
         yearFilter: el('[data-dashboard-year-filter]'),
         equipmentYearFilter: el('[data-dashboard-equipment-year-filter]'),
         monthlyLegend: el('[data-dashboard-monthly-legend]'),
+        financialCanvas: document.getElementById('dashboardFinancialChart'),
+        financialGranularidadeButtons: Array.from(document.querySelectorAll('[data-dashboard-financial-granularidade]')),
+        financialPanel: el('[data-dashboard-financial-panel]'),
+        financialLegend: el('[data-dashboard-financial-legend]'),
+        financialSubtitle: el('[data-dashboard-financial-subtitle]'),
+        financialRegimeButtons: Array.from(document.querySelectorAll('[data-dashboard-financial-regime]')),
         statusLegend: el('[data-dashboard-status-legend]'),
         statusTotal: el('[data-dashboard-status-total]'),
         equipmentLegend: el('[data-dashboard-equipment-legend]'),
@@ -433,17 +439,218 @@
     // Legendas
     // ------------------------------------------------------------------
 
+    /**
+     * Regime escolhido no alternador. Guardado aqui, e não relido do DOM a cada
+     * render, para o gráfico manter a escolha do usuário quando o painel
+     * recarrega por troca de ano.
+     */
+    let financialRegime = 'competencia';
+
+    /**
+     * Mensal ou trimestral. Como o regime, é preferência de leitura e não estado
+     * do dado: sobrevive à troca de ano e de regime.
+     */
+    let financialGranularidade = 'mensal';
+
+    const REGIME_SUBTITLES = {
+        competencia: 'Competência: reconhece no mês em que foi faturado ou a despesa venceu, tenha o dinheiro entrado ou não.',
+        caixa: 'Caixa: só o que entrou e saiu de fato, pela data da baixa.',
+    };
+
+    let lastFinancialPayload = null;
+
+    const renderFinancialLegend = (payload) => {
+        if (!nodes.financialLegend) {
+            return;
+        }
+
+        const items = Array.isArray(payload?.legend) ? payload.legend : [];
+
+        // Botão, não span: a legenda deste gráfico alterna a série. Há meses em
+        // que duas séries valem o mesmo e uma some sob a outra — poder esconder
+        // a de cima é o que devolve a leitura da de baixo.
+        nodes.financialLegend.innerHTML = items.map((item) => {
+            // A série de lucro troca de cor conforme o sinal do mês. Uma bolinha
+            // verde sozinha faria a legenda prometer "verde = lucro líquido" e
+            // deixar o vermelho da tela sem explicação — daí o ponto partido.
+            const diverging = item.type === 'diverging';
+            const color = diverging
+                ? 'linear-gradient(90deg, #16a34a 0 50%, #dc2626 50% 100%)'
+                : escapeHtml(item.color || '#6f5afc');
+            const key = String(item.key || '');
+            const oculta = charts.isFinancialSeriesHidden?.(key) ?? false;
+            // O marcador imita a forma real da série: quadrado para barra,
+            // traço para linha, traço interrompido para a linha tracejada.
+            // Cinco pontos redondos iguais não diziam qual era qual.
+            const forma = {
+                bar: 'dashboard-chart-legend-bar',
+                line: 'dashboard-chart-legend-line',
+                dashed: 'dashboard-chart-legend-dashed',
+                diverging: 'dashboard-chart-legend-diverging',
+            }[item.type] || '';
+            const classes = [
+                'dashboard-chart-legend',
+                'dashboard-chart-legend-toggle',
+                forma,
+                oculta ? 'is-off' : '',
+            ].filter(Boolean).join(' ');
+
+            return `
+            <button type="button" class="${classes}" style="--legend-color: ${color};"
+                    data-dashboard-financial-serie="${escapeHtml(key)}"
+                    aria-pressed="${oculta ? 'false' : 'true'}">
+                ${escapeHtml(item.label || 'Série')}
+            </button>
+        `;
+        }).join('');
+
+        nodes.financialLegend.querySelectorAll('[data-dashboard-financial-serie]').forEach((button) => {
+            button.addEventListener('click', () => {
+                const key = button.getAttribute('data-dashboard-financial-serie');
+
+                if (!key) {
+                    return;
+                }
+
+                const visivel = charts.toggleFinancialSeries?.(key) ?? true;
+                button.classList.toggle('is-off', !visivel);
+                button.setAttribute('aria-pressed', visivel ? 'true' : 'false');
+            });
+        });
+    };
+
+    const renderFinancialChart = (payload) => {
+        lastFinancialPayload = payload || null;
+
+        const temDados = Boolean(payload && Array.isArray(payload.labels) && payload.labels.length);
+
+        if (nodes.financialPanel) {
+            // Sem permissão financeira o backend manda o bloco vazio: o painel
+            // inteiro some, em vez de exibir um gráfico zerado.
+            nodes.financialPanel.hidden = !temDados;
+        }
+
+        if (!nodes.financialCanvas) {
+            return;
+        }
+
+        if (!temDados) {
+            return;
+        }
+
+        setText(nodes.financialSubtitle, REGIME_SUBTITLES[financialRegime] || '');
+        renderFinancialLegend(payload);
+        charts.createFinancialChart?.(
+            nodes.financialCanvas,
+            payload,
+            financialRegime,
+            financialGranularidade
+        );
+    };
+
+    /**
+     * Fiação comum aos dois alternadores do gráfico financeiro: marca o botão
+     * escolhido, guarda a escolha e redesenha a partir do payload que já está em
+     * memória — nenhum dos dois precisa de ida ao servidor.
+     */
+    const wireFinancialSwitch = (buttons, attribute, aplicar) => {
+        buttons.forEach((button) => {
+            button.addEventListener('click', () => {
+                const valor = button.getAttribute(attribute);
+
+                if (!valor || !aplicar(valor)) {
+                    return;
+                }
+
+                buttons.forEach((other) => {
+                    const ativo = other === button;
+                    other.classList.toggle('is-active', ativo);
+                    other.setAttribute('aria-pressed', ativo ? 'true' : 'false');
+                });
+
+                renderFinancialChart(lastFinancialPayload);
+            });
+        });
+    };
+
+    wireFinancialSwitch(nodes.financialRegimeButtons, 'data-dashboard-financial-regime', (regime) => {
+        if (regime === financialRegime) {
+            return false;
+        }
+
+        financialRegime = regime;
+
+        return true;
+    });
+
+    wireFinancialSwitch(nodes.financialGranularidadeButtons, 'data-dashboard-financial-granularidade', (granularidade) => {
+        if (granularidade === financialGranularidade) {
+            return false;
+        }
+
+        financialGranularidade = granularidade;
+
+        return true;
+    });
+
+    /**
+     * Junta o dinheiro do mês ao gráfico operacional de OS.
+     *
+     * Vem do payload financeiro que já está em memória — nenhuma consulta nova.
+     * Usa sempre o regime de COMPETÊNCIA porque é o que casa com o eixo do
+     * gráfico: "OS entregues reparadas" conta pela data de entrega, e o
+     * faturamento por competência reconhece a receita nessa mesma data.
+     *
+     * Sem acesso financeiro o backend manda o bloco vazio e o gráfico continua
+     * sendo só as duas linhas de OS.
+     */
+    const withMonthlyMoney = (summary) => {
+        const monthly = summary?.charts?.monthly;
+        const competencia = summary?.charts?.financialMonthly?.regimes?.competencia;
+
+        if (!monthly || !Array.isArray(competencia?.faturamento)) {
+            return monthly;
+        }
+
+        return {
+            ...monthly,
+            money: {
+                faturamento: competencia.faturamento,
+                lucro: competencia.lucro,
+            },
+            series: [
+                ...(Array.isArray(monthly.series) ? monthly.series : []),
+                // Âmbar: o roxo já é a linha "OS abertas" neste gráfico.
+                { key: 'faturamento', label: 'Faturamento', color: '#f59e0b', type: 'bar' },
+                { key: 'lucro', label: 'Lucro líquido', color: '#16a34a', type: 'diverging' },
+            ],
+        };
+    };
+
     const renderMonthlyLegend = (monthly) => {
         if (!nodes.monthlyLegend) {
             return;
         }
 
         const series = Array.isArray(monthly?.series) ? monthly.series : [];
-        nodes.monthlyLegend.innerHTML = series.map((item) => `
-            <span class="dashboard-chart-legend" style="--legend-color: ${escapeHtml(item.color || '#6f5afc')};">
+        nodes.monthlyLegend.innerHTML = series.map((item) => {
+            // As séries de dinheiro entram como barra e como faixa divergente;
+            // as de OS continuam sendo linha. O marcador segue a forma real.
+            const diverging = item.type === 'diverging';
+            const color = diverging
+                ? 'linear-gradient(90deg, #16a34a 0 50%, #dc2626 50% 100%)'
+                : escapeHtml(item.color || '#6f5afc');
+            const forma = {
+                bar: 'dashboard-chart-legend-bar',
+                diverging: 'dashboard-chart-legend-diverging',
+            }[item.type] || 'dashboard-chart-legend-line';
+
+            return `
+            <span class="dashboard-chart-legend ${forma}" style="--legend-color: ${color};">
                 ${escapeHtml(item.label || 'Série')}
             </span>
-        `).join('');
+        `;
+        }).join('');
     };
 
     /**
@@ -559,9 +766,12 @@
         renderOrders(summary);
         renderLowStock(summary);
 
-        charts.createLineChart?.(nodes.monthlyCanvas, summary?.charts?.monthly);
+        const monthlyComDinheiro = withMonthlyMoney(summary);
+
+        charts.createLineChart?.(nodes.monthlyCanvas, monthlyComDinheiro);
         charts.createDoughnutChart?.(nodes.statusCanvas, summary?.charts?.status?.groups);
         charts.createStackedBarChart?.(nodes.equipmentCanvas, summary?.charts?.equipmentTypes);
+        renderFinancialChart(summary?.charts?.financialMonthly);
 
         const contextLegendItems = Array.isArray(summary?.contextCard?.legend) ? summary.contextCard.legend : [];
         const isFinancial = summary?.contextCard?.type === 'financial';
@@ -581,7 +791,7 @@
             `).join('');
         }
 
-        renderMonthlyLegend(summary?.charts?.monthly);
+        renderMonthlyLegend(monthlyComDinheiro);
         renderStatusLegend(summary?.charts?.status);
         renderEquipmentLegend(summary?.charts?.equipmentTypes);
         setMonthlyLoadingState(false);

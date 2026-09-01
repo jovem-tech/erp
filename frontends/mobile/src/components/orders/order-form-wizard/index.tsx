@@ -40,7 +40,7 @@ type OrderFormWizardProps = {
   idempotencyKey?: string;
 };
 
-function buildReviewSections(
+export function buildReviewSections(
   state: WizardFormState,
   steps: WizardStepInfo[],
   mode: WizardMode,
@@ -84,14 +84,25 @@ function buildReviewSections(
             label: 'Equipamento editado',
             value: state.equipamento?.resumo_tecnico || state.equipamento?.tipo_nome || 'Equipamento selecionado',
           },
+          { label: 'Cor', value: state.pendingEquipmentUpdate.cor ?? '' },
           { label: 'Número de série', value: state.pendingEquipmentUpdate.numero_serie ?? '' },
           { label: 'IMEI', value: state.pendingEquipmentUpdate.imei ?? '' },
+          ...(state.pendingEquipmentUpdate.senha_tipo === 'desenho'
+            ? [{ label: 'Senha (desenho)', value: state.pendingEquipmentUpdate.senha_desenho ?? '' }]
+            : []),
         ]
       : state.equipamento
       ? [{ label: 'Equipamento', value: state.equipamento.resumo_tecnico || `${state.equipamento.marca_nome} ${state.equipamento.modelo_nome}` }]
       : state.pendingNewEquipment
         ? [
             { label: 'Equipamento', value: 'Cadastro novo' },
+            { label: 'Tipo', value: state.pendingNewEquipmentLabels?.tipo ?? '' },
+            { label: 'Marca', value: state.pendingNewEquipmentLabels?.marca ?? '' },
+            { label: 'Modelo', value: state.pendingNewEquipmentLabels?.modelo ?? '' },
+            { label: 'Cor', value: state.pendingNewEquipment.cor ?? '' },
+            ...(state.pendingNewEquipment.senha_tipo === 'desenho'
+              ? [{ label: 'Senha (desenho)', value: state.pendingNewEquipment.senha_desenho ?? '' }]
+              : []),
             { label: 'Fotos anexadas', value: String(state.pendingNewEquipmentPhotos.length) },
           ]
         : [],
@@ -492,6 +503,9 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
             setState((prev) => ({ ...prev, pendingEquipmentUpdate }))
           }
           onChangePendingNewEquipmentPhotos={(pendingNewEquipmentPhotos) => setState((prev) => ({ ...prev, pendingNewEquipmentPhotos }))}
+          onChangePendingNewEquipmentLabels={(pendingNewEquipmentLabels) =>
+            setState((prev) => ({ ...prev, pendingNewEquipmentLabels }))
+          }
           canEditExisting={canEditEquipment}
           canCreateCatalog={canCreateCatalog}
           disabled={busy}
