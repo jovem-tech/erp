@@ -39,6 +39,14 @@ class DashboardPanelTest extends TestCase
         // ignorar aquela região da tela.
         $this->assertFalse($byKey->has('orcamentos_pendentes'));
 
+        // Fora do painel de propósito, mesmo com dado real disponível: cada um
+        // já aparece em outro lugar da tela (card "OS abertas", lista de
+        // estoque baixo, grupo "Concluído" do gráfico de status) — repetir o
+        // número aqui era ruído, não uma segunda prioridade.
+        $this->assertFalse($byKey->has('os_abertas'));
+        $this->assertFalse($byKey->has('estoque_baixo'));
+        $this->assertFalse($byKey->has('prontos_retirada'));
+
         $this->assertSame('27', $byKey['agenda_atrasados']['value']);
         $this->assertSame(route('agenda.index', ['view' => 'lista']), $byKey['agenda_atrasados']['url']);
 
@@ -47,11 +55,6 @@ class DashboardPanelTest extends TestCase
             route('orders.index', ['status_scope' => 'open', 'sem_movimento_dias' => 15]),
             $byKey['os_paradas']['url']
         );
-        $this->assertSame(
-            route('orders.index', ['status_scope' => 'open', 'pronto_retirada' => 1]),
-            $byKey['prontos_retirada']['url']
-        );
-        $this->assertSame(route('estoque.index', ['estoque_baixo' => 1]), $byKey['estoque_baixo']['url']);
 
         // "Pendentes" é contas a pagar — o rótulo não pode prometer recebimento.
         $this->assertSame('R$ 678,92', $byKey['financeiro_pendente']['value']);
@@ -218,6 +221,98 @@ class DashboardPanelTest extends TestCase
     /**
      * @param array<string, mixed> $overrides
      */
+    /**
+     * A partial do grafico financeiro tem de chegar na pagina com o canvas, a
+     * legenda e o alternador — o backend pode mandar o payload perfeito e o
+     * grafico nao aparecer se o include cair fora.
+     */
+    public function test_dashboard_page_renders_financial_chart_panel(): void
+    {
+        // Cache em memória: renderizar a página inteira aciona o
+        // CompanyProfileService, que grava no cache de arquivo — diretório do
+        // www-data, onde o usuário que roda a suíte não escreve.
+        config(['cache.default' => 'array']);
+
+        $permissions = ['dashboard' => ['visualizar'], 'financeiro' => ['visualizar']];
+
+        $response = $this
+            ->withSession([
+                'desktop_auth' => [
+                    'token' => 'desktop-session-token',
+                    'synced_at' => time(),
+                    'user' => [
+                        'id' => 99,
+                        'nome' => 'Gerente',
+                        'email' => 'gerente@example.com',
+                        'perfil' => 'gerente',
+                        'ativo' => true,
+                        'modules' => array_keys($permissions),
+                        'permissions' => $permissions,
+                    ],
+                ],
+            ])
+            ->get('/dashboard');
+
+        $response->assertOk()
+            ->assertSee('Evolução financeira')
+            ->assertSee('data-dashboard-financial-legend', false)
+            // UM canvas: as cinco séries são um combo só, no mesmo eixo.
+            ->assertSee('dashboardFinancialChart', false)
+            ->assertDontSee('dashboardFinancialRevenueChart', false)
+            ->assertDontSee('dashboardFinancialExpenseChart', false)
+            ->assertDontSee('dashboardFinancialProfitChart', false)
+            // O alternador de regime, com os dois estados.
+            ->assertSee('data-dashboard-financial-regime="competencia"', false)
+            ->assertSee('data-dashboard-financial-regime="caixa"', false)
+            // E o de granularidade.
+            ->assertSee('data-dashboard-financial-granularidade="mensal"', false)
+            ->assertSee('data-dashboard-financial-granularidade="trimestral"', false);
+    }
+
+    /**
+     * O bloco do grafico financeiro precisa atravessar o DashboardService
+     * intacto: e o front que escolhe o regime, entao os dois vem juntos.
+     */
+    public function test_financial_monthly_chart_atravessa_o_servico_com_os_dois_regimes(): void
+    {
+        $this->fakeBackend([
+            'charts' => [
+                'financial_monthly' => [
+                    'year' => 2026,
+                    'labels' => ['Jan', 'Fev'],
+                    'mes_atual' => 9,
+                    'ano_corrente' => 2026,
+                    'regimes' => [
+                        'competencia' => ['lucro' => [100.0, -50.0]],
+                        'caixa' => ['lucro' => [80.0, -20.0]],
+                    ],
+                    'legend' => [['key' => 'lucro', 'label' => 'Lucro líquido', 'color' => '#16a34a']],
+                ],
+            ],
+        ]);
+
+        $chart = $this->dashboardData()['charts']['financialMonthly'];
+
+        $this->assertSame(2026, $chart['year']);
+        // assertEquals, não assertSame: o payload cruza uma serialização JSON
+        // no caminho e 100.0 volta como int 100. O que importa é o valor
+        // chegar íntegro, não o tipo numérico sobreviver ao round-trip.
+        $this->assertEquals([100.0, -50.0], $chart['regimes']['competencia']['lucro']);
+        $this->assertEquals([80.0, -20.0], $chart['regimes']['caixa']['lucro']);
+        $this->assertSame('Lucro líquido', $chart['legend'][0]['label']);
+    }
+
+    /**
+     * Sem o bloco no payload (usuario sem acesso financeiro), o servico devolve
+     * array vazio e a partial se esconde sozinha — nunca um grafico zerado.
+     */
+    public function test_financial_monthly_chart_fica_vazio_quando_o_backend_nao_manda(): void
+    {
+        $this->fakeBackend();
+
+        $this->assertSame([], $this->dashboardData()['charts']['financialMonthly']);
+    }
+
     private function fakeBackend(array $overrides = []): void
     {
         // O ApiClient lê o token da sessão do desktop; sem ele a chamada morre

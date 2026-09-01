@@ -84,7 +84,7 @@ class DashboardService
             'access' => $access,
             'stats' => $stats,
             'alerts' => $alerts,
-            'attention' => $this->buildAttentionItems($access, $stats, $alerts, $financial, $agenda),
+            'attention' => $this->buildAttentionItems($access, $alerts, $financial, $agenda),
             'revenueTrend' => $this->buildRevenueTrend($stats),
             'heroCard' => $heroCard,
             'secondaryCard' => $this->buildSecondaryCard($access, $stats),
@@ -93,6 +93,7 @@ class DashboardService
                 'monthly' => $this->arrayValue($data['charts']['monthly'] ?? []),
                 'status' => $this->groupStatusChart($this->arrayValue($data['charts']['status'] ?? []), $access),
                 'equipmentTypes' => $this->arrayValue($data['charts']['equipment_types'] ?? []),
+                'financialMonthly' => $this->arrayValue($data['charts']['financial_monthly'] ?? []),
                 'financial' => $financial,
                 'technician' => $this->arrayValue($data['charts']['technician'] ?? []),
             ],
@@ -122,12 +123,17 @@ class DashboardService
      * preencher (quem trata disso é o estado "Tudo certo por aqui" na view).
      *
      * Toda URL aqui aponta para um filtro que a tela de destino realmente
-     * aplica; os três alertas operacionais usam os mesmos predicados que o
-     * backend contou (OrderWorkflowService::{STALE_REFERENCE,PENDING_BUDGET,
-     * READY_PICKUP}_SQL), então o número do chip se reproduz na listagem.
+     * aplica; os dois alertas operacionais usam os mesmos predicados que o
+     * backend contou (OrderWorkflowService::{STALE_REFERENCE,PENDING_BUDGET}
+     * _SQL), então o número do chip se reproduz na listagem.
+     *
+     * Deliberadamente fora daqui: "OS em andamento" (já é o card "OS abertas"
+     * do grid principal), estoque baixo (já tem lista própria no painel de
+     * estoque) e "OS prontas para retirada" (já aparece no grupo "Concluído"
+     * do gráfico de status). Um painel de prioridades que repete número que
+     * já está em outro lugar da tela vira ruído, não alerta.
      *
      * @param array<string, mixed> $access
-     * @param array<string, mixed> $stats
      * @param array<string, mixed> $alerts
      * @param array<string, mixed> $financial
      * @param array<string, mixed> $agenda
@@ -135,7 +141,6 @@ class DashboardService
      */
     private function buildAttentionItems(
         array $access,
-        array $stats,
         array $alerts,
         array $financial,
         array $agenda
@@ -188,32 +193,6 @@ class DashboardService
             ];
         }
 
-        $abertas = (int) ($stats['orders'] ?? 0);
-        if ($canViewOrders && $abertas > 0) {
-            $items[] = [
-                'key' => 'os_abertas',
-                'tone' => 'attention',
-                'value' => $this->formatCount($abertas),
-                'raw' => $abertas,
-                'label' => 'OS em andamento',
-                'action_label' => 'Ver OS',
-                'url' => route('orders.index', ['status_scope' => 'open']),
-            ];
-        }
-
-        $lowStock = (int) ($stats['low_stock_total'] ?? 0);
-        if (($access['can_view_stock'] ?? false) && $lowStock > 0) {
-            $items[] = [
-                'key' => 'estoque_baixo',
-                'tone' => 'attention',
-                'value' => $this->formatCount($lowStock),
-                'raw' => $lowStock,
-                'label' => $lowStock === 1 ? 'item abaixo do estoque mínimo' : 'itens abaixo do estoque mínimo',
-                'action_label' => 'Ver estoque',
-                'url' => route('estoque.index', ['estoque_baixo' => 1]),
-            ];
-        }
-
         // "Pendentes" do resumo financeiro é contas a PAGAR pendentes/parciais
         // com vencimento até o fim do mês corrente — não valor a receber. O
         // rótulo diz isso explicitamente para o chip não prometer entrada de
@@ -228,22 +207,6 @@ class DashboardService
                 'label' => 'pendentes a pagar',
                 'action_label' => 'Ver financeiro',
                 'url' => route('financeiro.index', ['tipo' => 'pagar', 'status' => 'pendente']),
-            ];
-        }
-
-        $prontos = (int) ($alerts['prontos_retirada'] ?? 0);
-        if ($canViewOrders && $prontos > 0) {
-            $items[] = [
-                'key' => 'prontos_retirada',
-                'tone' => 'success',
-                'value' => $this->formatCount($prontos),
-                'raw' => $prontos,
-                'label' => $prontos === 1 ? 'OS pronta para retirada' : 'OS prontas para retirada',
-                'action_label' => 'Ver prontas',
-                'url' => route('orders.index', [
-                    'status_scope' => 'open',
-                    'pronto_retirada' => 1,
-                ]),
             ];
         }
 

@@ -12,6 +12,7 @@ use App\Models\Peca;
 use App\Models\User;
 use App\Services\Auth\RbacAuthorizationService;
 use App\Services\Orders\OrderWorkflowService;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
@@ -213,6 +214,13 @@ class DashboardSummaryService
             : $this->emptyTechnicianSummary();
         $lowStock = $this->buildLowStock($access);
 
+        // Gate proprio: a evolucao financeira anual e leitura de dinheiro, e
+        // segue o mesmo criterio do hero card e do resumo financeiro. Sem
+        // financeiro:visualizar o payload sai zerado e a secao nao renderiza.
+        $financialMonthlyChart = $access['has_financial_access']
+            ? $this->buildFinancialMonthlyChart($selectedYear)
+            : $this->emptyFinancialMonthlyChart($selectedYear);
+
         return [
             'access' => $access,
             'stats' => $this->buildStats($user, $access, $financialSummary, $technicianSummary, $lowStock['total']),
@@ -220,6 +228,7 @@ class DashboardSummaryService
             'context_card' => $this->buildContextCard($access, $financialSummary, $technicianSummary),
             'charts' => [
                 'monthly' => $monthlyChart,
+                'financial_monthly' => $financialMonthlyChart,
                 'status' => $statusChart,
                 'equipment_types' => $equipmentTypesChart,
                 'financial' => $financialSummary,
@@ -675,6 +684,269 @@ class DashboardSummaryService
      * @param array<int, array<string, mixed>> $points
      * @return array<string, mixed>
      */
+    /**
+     * Evolucao financeira mes a mes do ano: faturamento, recebido, despesa fixa
+     * e variavel, e o lucro liquido — a serie que responde "estou dando lucro
+     * ou prejuizo".
+     *
+     * Devolve os DOIS regimes no mesmo payload, porque nenhum sozinho conta a
+     * verdade nesta base: hoje so uma fracao do custo lancado tem baixa
+     * registrada, entao um grafico so de caixa mostraria a assistencia
+     * lucrativa; e um so de competencia esconderia que o dinheiro nao entrou. O
+     * alternador da tela troca de serie sem refetch.
+     *
+     * Segue o padrao de performance de buildMonthlyChart(): uma passada
+     * agregada por serie, resolvida no banco com GROUP BY mes, nunca laco em
+     * PHP sobre linhas cruas.
+     *
+     * @return array<string, mixed>
+     */
+    /**
+     * Base dos titulos a RECEBER sem OS, por competencia — o mesmo recorte que
+     * faturamentoNaoOs() usa para o card, para o grafico e o cartao nunca
+     * anunciarem faturamentos diferentes.
+     */
+    private function competenciaReceberQuery(): EloquentBuilder
+    {
+        return Financeiro::query()
+            ->where('financeiro.tipo', Financeiro::TIPO_RECEBER)
+            ->where('financeiro.status', '!=', Financeiro::STATUS_CANCELADO)
+            ->where('financeiro.impacta_dre', true)
+            ->where(static function (EloquentBuilder $q): void {
+                $q->whereNull('financeiro.os_id')->orWhereNotNull('financeiro.venda_id');
+            });
+    }
+
+    /**
+     * Base dos titulos a PAGAR que entram no DRE, por competencia.
+     */
+    private function competenciaPagarQuery(): EloquentBuilder
+    {
+        return Financeiro::query()
+            ->where('financeiro.tipo', Financeiro::TIPO_PAGAR)
+            ->where('financeiro.status', '!=', Financeiro::STATUS_CANCELADO)
+            ->where('financeiro.impacta_dre', true);
+    }
+
+    /**
+     * Base das BAIXAS de um tipo de titulo — mesma fonte e mesmo filtro
+     * (`impacta_fluxo_caixa`) de paidPagarTotal()/paidReceberTotal() e do Fluxo
+     * de Caixa, para os tres concordarem sobre o que saiu e entrou.
+     */
+    private function movimentoQuery(string $tipo): EloquentBuilder
+    {
+        return FinanceiroMovimento::query()
+            ->join('financeiro', 'financeiro.id', '=', 'financeiro_movimentos.financeiro_id')
+            ->where('financeiro.tipo', $tipo)
+            ->where('financeiro.impacta_fluxo_caixa', true);
+    }
+
+    /**
+     * Monta os 12 meses e as duas leituras de lucro.
+     *
+     * Competencia: receita liquida + outras receitas - despesas. E exatamente a
+     * formula do resultado_liquido do DRE, para o grafico nao virar uma
+     * terceira verdade sobre o mesmo mes.
+     *
+     * Caixa: recebido - despesas pagas, identico ao resultado_caixa do painel.
+     *
+     * @param \Illuminate\Support\Collection<int|string, mixed> $faturamentoOs
+     * @param \Illuminate\Support\Collection<int|string, mixed> $descontosOs
+     * @param \Illuminate\Support\Collection<int|string, mixed> $receitasNaoOs
+     * @param \Illuminate\Support\Collection<int|string, mixed> $devolucoes
+     * @param \Illuminate\Support\Collection<int|string, mixed> $despesasCompetencia
+     * @param \Illuminate\Support\Collection<int|string, mixed> $recebido
+     * @param \Illuminate\Support\Collection<int|string, mixed> $despesasCaixa
+     * @return array<string, mixed>
+     */
+    private function financialMonthlyPayload(
+        int $year,
+        $faturamentoOs,
+        $descontosOs,
+        $receitasNaoOs,
+        $devolucoes,
+        $despesasCompetencia,
+        $recebido,
+        $despesasCaixa
+    ): array {
+        $competencia = [
+            'faturamento' => [], 'recebido' => [], 'deducoes' => [], 'outras_receitas' => [],
+            'despesa_fixa' => [], 'despesa_variavel' => [], 'lucro' => [],
+        ];
+        $caixa = $competencia;
+
+        for ($mes = 1; $mes <= 12; $mes++) {
+            $naoOs = $receitasNaoOs[$mes] ?? null;
+            $despC = $despesasCompetencia[$mes] ?? null;
+            $despX = $despesasCaixa[$mes] ?? null;
+
+            $faturamento = round((float) ($faturamentoOs[$mes] ?? 0) + (float) ($naoOs->operacional ?? 0), 2);
+            $deducoes = round((float) ($descontosOs[$mes] ?? 0) + (float) ($devolucoes[$mes] ?? 0), 2);
+            $outras = round((float) ($naoOs->outras ?? 0), 2);
+            $fixaC = round((float) ($despC->fixa ?? 0), 2);
+            $variavelC = round((float) ($despC->variavel ?? 0), 2);
+
+            $recebidoMes = round((float) ($recebido[$mes] ?? 0), 2);
+            $fixaX = round((float) ($despX->fixa ?? 0), 2);
+            $variavelX = round((float) ($despX->variavel ?? 0), 2);
+
+            $competencia['faturamento'][] = $faturamento;
+            $competencia['recebido'][] = $recebidoMes;
+            $competencia['deducoes'][] = $deducoes;
+            $competencia['outras_receitas'][] = $outras;
+            $competencia['despesa_fixa'][] = $fixaC;
+            $competencia['despesa_variavel'][] = $variavelC;
+            $competencia['lucro'][] = round($faturamento - $deducoes + $outras - $fixaC - $variavelC, 2);
+
+            $caixa['faturamento'][] = $faturamento;
+            $caixa['recebido'][] = $recebidoMes;
+            $caixa['deducoes'][] = 0.0;
+            $caixa['outras_receitas'][] = 0.0;
+            $caixa['despesa_fixa'][] = $fixaX;
+            $caixa['despesa_variavel'][] = $variavelX;
+            $caixa['lucro'][] = round($recebidoMes - $fixaX - $variavelX, 2);
+        }
+
+        return [
+            'year' => $year,
+            'labels' => array_values(self::MONTH_LABELS),
+            // Ate onde o ano ja aconteceu. A tela tracaja o que vem depois, para
+            // custo fixo ja lancado em mes futuro nao se passar por realizado.
+            'mes_atual' => (int) now()->month,
+            'ano_corrente' => (int) now()->year,
+            'regimes' => [
+                'competencia' => $competencia,
+                'caixa' => $caixa,
+            ],
+            'legend' => [
+                ['key' => 'despesa_fixa', 'label' => 'Despesa fixa', 'color' => '#94a3b8', 'type' => 'bar'],
+                ['key' => 'despesa_variavel', 'label' => 'Despesa variável', 'color' => '#f59e0b', 'type' => 'bar'],
+                ['key' => 'faturamento', 'label' => 'Faturamento', 'color' => '#6f5afc', 'type' => 'line'],
+                ['key' => 'recebido', 'label' => 'Recebido', 'color' => '#0ea5e9', 'type' => 'dashed'],
+                ['key' => 'lucro', 'label' => 'Lucro líquido', 'color' => '#16a34a', 'type' => 'diverging'],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function emptyFinancialMonthlyChart(int $year): array
+    {
+        $zeros = array_fill(0, 12, 0.0);
+        $serie = [
+            'faturamento' => $zeros, 'recebido' => $zeros, 'deducoes' => $zeros,
+            'outras_receitas' => $zeros, 'despesa_fixa' => $zeros,
+            'despesa_variavel' => $zeros, 'lucro' => $zeros,
+        ];
+
+        return [
+            'year' => $year,
+            'labels' => array_values(self::MONTH_LABELS),
+            'mes_atual' => (int) now()->month,
+            'ano_corrente' => (int) now()->year,
+            'regimes' => ['competencia' => $serie, 'caixa' => $serie],
+            'legend' => [],
+        ];
+    }
+
+    private function buildFinancialMonthlyChart(int $year): array
+    {
+        [$yearStart, $yearEnd] = $this->periodBounds($year);
+        $inicioDia = Carbon::parse($yearStart)->toDateString();
+        $fimDia = Carbon::parse($yearEnd)->subDay()->toDateString();
+
+        $mesEntrega = $this->datePartExpression(Order::REVENUE_DATE_SQL, 'month');
+        $mesCompetencia = $this->datePartExpression('COALESCE(financeiro.data_competencia, financeiro.data_vencimento)', 'month');
+        $mesMovimento = $this->datePartExpression('financeiro_movimentos.data_movimento', 'month');
+
+        // --- Competencia -----------------------------------------------
+        $faturamentoOs = Order::query()
+            ->receitaReconhecida()
+            ->selectRaw($mesEntrega . ' as mes, COALESCE(SUM(os.valor_total), 0) as total')
+            ->whereRaw(Order::REVENUE_DATE_SQL . ' >= ? AND ' . Order::REVENUE_DATE_SQL . ' < ?', [$yearStart, $yearEnd])
+            ->groupByRaw($mesEntrega)
+            ->pluck('total', 'mes');
+
+        $descontosOs = Order::query()
+            ->receitaReconhecida()
+            ->selectRaw($mesEntrega . ' as mes, COALESCE(SUM(os.desconto), 0) as total')
+            ->whereRaw(Order::REVENUE_DATE_SQL . ' >= ? AND ' . Order::REVENUE_DATE_SQL . ' < ?', [$yearStart, $yearEnd])
+            ->groupByRaw($mesEntrega)
+            ->pluck('total', 'mes');
+
+        // Receita operacional sem OS (venda de balcao) e "outras receitas"
+        // (avulsas, lancamento sem grupo) numa consulta so, separadas por CASE.
+        $receitasNaoOs = $this->competenciaReceberQuery()
+            ->selectRaw(
+                $mesCompetencia . ' as mes,'
+                . ' COALESCE(SUM(CASE WHEN financeiro.grupo_dre = ? THEN financeiro.valor ELSE 0 END), 0) as operacional,'
+                . ' COALESCE(SUM(CASE WHEN financeiro.grupo_dre IS NULL OR financeiro.grupo_dre <> ? THEN financeiro.valor ELSE 0 END), 0) as outras',
+                [Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL, Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL]
+            )
+            ->whereBetween(DB::raw('COALESCE(financeiro.data_competencia, financeiro.data_vencimento)'), [$inicioDia, $fimDia])
+            ->groupByRaw($mesCompetencia)
+            ->get()
+            ->keyBy('mes');
+
+        $devolucoes = $this->competenciaPagarQuery()
+            ->where('financeiro.origem_tipo', Financeiro::ORIGEM_TIPO_VENDA_DEVOLUCAO)
+            ->selectRaw($mesCompetencia . ' as mes, COALESCE(SUM(financeiro.valor), 0) as total')
+            ->whereBetween(DB::raw('COALESCE(financeiro.data_competencia, financeiro.data_vencimento)'), [$inicioDia, $fimDia])
+            ->groupByRaw($mesCompetencia)
+            ->pluck('total', 'mes');
+
+        // Despesas por competencia, fixa x variavel numa consulta so.
+        //
+        // Deliberadamente SEM a heuristica de "fixo mensal reaparece em meses
+        // futuros" que FinanceiroReportService::groupByCompetencia() aplica:
+        // ela existe para o recorte de UM mes. Repetida mes a mes num grafico
+        // anual, dezembro carregaria o aluguel do ano inteiro.
+        $despesasCompetencia = $this->competenciaPagarQuery()
+            ->where(function ($q): void {
+                $q->whereNull('financeiro.origem_tipo')
+                    ->orWhere('financeiro.origem_tipo', '<>', Financeiro::ORIGEM_TIPO_VENDA_DEVOLUCAO);
+            })
+            ->selectRaw(
+                $mesCompetencia . ' as mes,'
+                . ' COALESCE(SUM(CASE WHEN financeiro.dre_fixo_mensal = 1 THEN financeiro.valor ELSE 0 END), 0) as fixa,'
+                . ' COALESCE(SUM(CASE WHEN financeiro.dre_fixo_mensal = 1 THEN 0 ELSE financeiro.valor END), 0) as variavel'
+            )
+            ->whereBetween(DB::raw('COALESCE(financeiro.data_competencia, financeiro.data_vencimento)'), [$inicioDia, $fimDia])
+            ->groupByRaw($mesCompetencia)
+            ->get()
+            ->keyBy('mes');
+
+        // --- Caixa -------------------------------------------------------
+        $recebido = $this->movimentoQuery(Financeiro::TIPO_RECEBER)
+            ->selectRaw($mesMovimento . ' as mes, COALESCE(SUM(financeiro_movimentos.valor_movimento), 0) as total')
+            ->whereBetween('financeiro_movimentos.data_movimento', [$inicioDia, $fimDia])
+            ->groupByRaw($mesMovimento)
+            ->pluck('total', 'mes');
+
+        $despesasCaixa = $this->movimentoQuery(Financeiro::TIPO_PAGAR)
+            ->selectRaw(
+                $mesMovimento . ' as mes,'
+                . ' COALESCE(SUM(CASE WHEN financeiro.dre_fixo_mensal = 1 THEN financeiro_movimentos.valor_movimento ELSE 0 END), 0) as fixa,'
+                . ' COALESCE(SUM(CASE WHEN financeiro.dre_fixo_mensal = 1 THEN 0 ELSE financeiro_movimentos.valor_movimento END), 0) as variavel'
+            )
+            ->whereBetween('financeiro_movimentos.data_movimento', [$inicioDia, $fimDia])
+            ->groupByRaw($mesMovimento)
+            ->get()
+            ->keyBy('mes');
+
+        return $this->financialMonthlyPayload(
+            $year,
+            $faturamentoOs,
+            $descontosOs,
+            $receitasNaoOs,
+            $devolucoes,
+            $despesasCompetencia,
+            $recebido,
+            $despesasCaixa
+        );
+    }
+
     private function monthlyChartPayload(int $year, array $points): array
     {
         return [

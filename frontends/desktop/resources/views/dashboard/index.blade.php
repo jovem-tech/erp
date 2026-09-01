@@ -33,6 +33,13 @@
         @include('dashboard.partials._equipment-chart')
     </section>
 
+    {{-- Largura cheia, logo abaixo da linha dos dois gráficos operacionais: a
+         leitura financeira do ano precisa de eixo horizontal longo para os 12
+         meses caberem sem apertar as barras. --}}
+    <section class="mb-4">
+        @include('dashboard.partials._financial-monthly-chart')
+    </section>
+
     <section class="dashboard-secondary-grid mb-4">
         @include('dashboard.partials._status-overview')
         @include('dashboard.partials._financial-summary')
@@ -56,9 +63,12 @@
 @endsection
 
 @section('scripts')
+    {{-- ?v=filemtime: mesmo cache-busting que o layout já aplica ao
+         desktop.css. Sem ele o navegador servia o JS antigo indefinidamente, e
+         mudança de gráfico só aparecia depois de recarga forçada. --}}
     <script src="{{ asset('assets/libs/chartjs/chart.umd.min.js') }}"></script>
-    <script src="{{ asset('assets/js/dashboard-charts.js') }}"></script>
-    <script src="{{ asset('assets/js/dashboard.js') }}"></script>
+    <script src="{{ asset('assets/js/dashboard-charts.js') }}?v={{ filemtime(public_path('assets/js/dashboard-charts.js')) }}"></script>
+    <script src="{{ asset('assets/js/dashboard.js') }}?v={{ filemtime(public_path('assets/js/dashboard.js')) }}"></script>
 @endsection
 
 @push('modals')
