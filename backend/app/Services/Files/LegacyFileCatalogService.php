@@ -297,9 +297,16 @@ class LegacyFileCatalogService
             'order_photos' => in_array($extension, self::IMAGE_EXTENSIONS, true)
                 ? FileCategory::OrderPhoto
                 : null,
-            'order_files' => $extension === 'pdf'
-                ? FileCategory::OrderPdf
-                : (in_array($extension, self::IMAGE_EXTENSIONS, true) ? FileCategory::OrderPhoto : null),
+            // XML sob a arvore da OS e' documento fiscal, nao anexo generico:
+            // os XML e PDF da NFS-e vivem em `os_documentos/{os}/fiscal/`.
+            'order_files' => match (true) {
+                $extension === 'xml' => FileCategory::FiscalDocument,
+                $extension === 'pdf' => str_contains($storagePath, '/fiscal/')
+                    ? FileCategory::FiscalDocument
+                    : FileCategory::OrderPdf,
+                in_array($extension, self::IMAGE_EXTENSIONS, true) => FileCategory::OrderPhoto,
+                default => null,
+            },
             'legacy_order_anomalies',
             'legacy_order_state',
             'legacy_order_accessories',
@@ -309,6 +316,9 @@ class LegacyFileCatalogService
             'legacy_order_documents' => $extension === 'pdf' ? FileCategory::OrderPdf : null,
             'budget_documents', 'legacy_budgets' => $extension === 'pdf' ? FileCategory::BudgetPdf : null,
             'signatures' => FileCategory::UserSignature,
+            'fiscal_documents' => in_array($extension, ['xml', 'pdf'], true)
+                ? FileCategory::FiscalDocument
+                : null,
             'legacy_users' => in_array($extension, self::IMAGE_EXTENSIONS, true)
                 ? FileCategory::UserProfilePhoto
                 : null,

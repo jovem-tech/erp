@@ -1535,6 +1535,15 @@ class IntegrationSettingsService
                 return $message;
             }
 
+            // A Evolution poe o motivo REAL em `response.message` e deixa no
+            // `error` so' o nome do status ("Bad Request"). Ler o `error`
+            // primeiro devolvia ao operador uma frase que nao diz nada — foi
+            // assim que "numero sem WhatsApp" chegou na tela como "Bad Request".
+            $detalhe = $this->extractGatewayDetail(data_get($payload, 'response.message'));
+            if ($detalhe !== '') {
+                return $detalhe;
+            }
+
             $error = trim((string) data_get($payload, 'error', ''));
             if ($error !== '') {
                 return $error;
@@ -1542,5 +1551,64 @@ class IntegrationSettingsService
         }
 
         return 'Falha na resposta do gateway (HTTP ' . $statusCode . ').';
+    }
+
+    /**
+     * Traduz o detalhe que a Evolution devolve em `response.message`.
+     *
+     * Vem em três formas: string, lista de strings de validação, ou lista de
+     * objetos da checagem de número — e é esta última que aparece no dia a dia,
+     * quando o telefone do cadastro simplesmente não tem WhatsApp.
+     */
+    private function extractGatewayDetail(mixed $detalhe): string
+    {
+        if (is_string($detalhe)) {
+            return trim($detalhe);
+        }
+
+        if (! is_array($detalhe)) {
+            return '';
+        }
+
+        $partes = [];
+
+        foreach ($detalhe as $item) {
+            if (is_string($item) && trim($item) !== '') {
+                $partes[] = trim($item);
+
+                continue;
+            }
+
+            if (is_array($item) && array_key_exists('exists', $item) && ! $item['exists']) {
+                $partes[] = sprintf(
+                    'O número %s não tem WhatsApp.',
+                    $this->formatPhoneForHumans((string) ($item['number'] ?? ''))
+                );
+
+                continue;
+            }
+
+            if (is_array($item) && trim((string) ($item['message'] ?? '')) !== '') {
+                $partes[] = trim((string) $item['message']);
+            }
+        }
+
+        return implode(' ', array_unique($partes));
+    }
+
+    /**
+     * "5522992741004" -> "(22) 99274-1004". O operador reconhece o telefone do
+     * cliente; a versão com DDI colada, não.
+     */
+    private function formatPhoneForHumans(string $numero): string
+    {
+        $digitos = (string) preg_replace('/\D+/', '', $numero);
+        $digitos = str_starts_with($digitos, '55') ? substr($digitos, 2) : $digitos;
+
+        return match (strlen($digitos)) {
+            11 => sprintf('(%s) %s-%s', substr($digitos, 0, 2), substr($digitos, 2, 5), substr($digitos, 7)),
+            10 => sprintf('(%s) %s-%s', substr($digitos, 0, 2), substr($digitos, 2, 4), substr($digitos, 6)),
+            default => $numero,
+        };
     }
 }

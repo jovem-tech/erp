@@ -346,6 +346,68 @@
                                 <input type="text" class="form-control" id="empresa_endereco" name="empresa_endereco" maxlength="255" value="{{ old('empresa_endereco', $companySettings['empresa_endereco'] ?? '') }}">
                             </div>
                         </div>
+
+                        {{-- Dados fiscais: fechado por padrao, como a aba fiscal
+                             da peca na 027. Sao campos que se preenchem uma vez
+                             e nao pertencem ao uso diario. --}}
+                        <details class="mt-3">
+                            <summary class="fw-semibold" style="cursor: pointer;">
+                                Dados fiscais (necessarios para emitir nota)
+                            </summary>
+
+                            <p class="surface-subtitle small mt-2 mb-3">
+                                A NFS-e exige o endereço em campos separados e o código IBGE do município —
+                                o campo "Endereço" acima continua valendo para os PDFs. O sistema ainda não
+                                emite nota; estes campos preparam a emissão.
+                            </p>
+
+                            <div class="row g-3">
+                                <div class="col-6 col-md-3">
+                                    <label class="form-label" for="empresa_cep">CEP</label>
+                                    <input type="text" class="form-control" id="empresa_cep" name="empresa_cep" maxlength="10" value="{{ old('empresa_cep', $companySettings['empresa_cep'] ?? '') }}">
+                                </div>
+                                <div class="col-12 col-md-6">
+                                    <label class="form-label" for="empresa_logradouro">Logradouro</label>
+                                    <input type="text" class="form-control" id="empresa_logradouro" name="empresa_logradouro" maxlength="255" value="{{ old('empresa_logradouro', $companySettings['empresa_logradouro'] ?? '') }}">
+                                </div>
+                                <div class="col-6 col-md-3">
+                                    <label class="form-label" for="empresa_numero">Número</label>
+                                    <input type="text" class="form-control" id="empresa_numero" name="empresa_numero" maxlength="20" value="{{ old('empresa_numero', $companySettings['empresa_numero'] ?? '') }}">
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label" for="empresa_complemento">Complemento</label>
+                                    <input type="text" class="form-control" id="empresa_complemento" name="empresa_complemento" maxlength="60" value="{{ old('empresa_complemento', $companySettings['empresa_complemento'] ?? '') }}">
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label" for="empresa_bairro">Bairro</label>
+                                    <input type="text" class="form-control" id="empresa_bairro" name="empresa_bairro" maxlength="60" value="{{ old('empresa_bairro', $companySettings['empresa_bairro'] ?? '') }}">
+                                </div>
+                                <div class="col-8 col-md-3">
+                                    <label class="form-label" for="empresa_cidade">Cidade</label>
+                                    <input type="text" class="form-control" id="empresa_cidade" name="empresa_cidade" maxlength="60" value="{{ old('empresa_cidade', $companySettings['empresa_cidade'] ?? '') }}">
+                                </div>
+                                <div class="col-4 col-md-1">
+                                    <label class="form-label" for="empresa_uf">UF</label>
+                                    <input type="text" class="form-control" id="empresa_uf" name="empresa_uf" maxlength="2" value="{{ old('empresa_uf', $companySettings['empresa_uf'] ?? '') }}">
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label" for="empresa_codigo_ibge">Código IBGE do município</label>
+                                    <input type="text" class="form-control" id="empresa_codigo_ibge" name="empresa_codigo_ibge" maxlength="7" inputmode="numeric" value="{{ old('empresa_codigo_ibge', $companySettings['empresa_codigo_ibge'] ?? '') }}">
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label" for="empresa_inscricao_municipal">Inscrição municipal</label>
+                                    <input type="text" class="form-control" id="empresa_inscricao_municipal" name="empresa_inscricao_municipal" maxlength="32" value="{{ old('empresa_inscricao_municipal', $companySettings['empresa_inscricao_municipal'] ?? '') }}">
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <label class="form-label" for="empresa_cnae">CNAE</label>
+                                    <input type="text" class="form-control" id="empresa_cnae" name="empresa_cnae" maxlength="16" value="{{ old('empresa_cnae', $companySettings['empresa_cnae'] ?? '') }}">
+                                </div>
+                                <div class="col-6 col-md-2">
+                                    <label class="form-label" for="empresa_codigo_tributacao_nacional">Código de tributação</label>
+                                    <input type="text" class="form-control" id="empresa_codigo_tributacao_nacional" name="empresa_codigo_tributacao_nacional" maxlength="20" value="{{ old('empresa_codigo_tributacao_nacional', $companySettings['empresa_codigo_tributacao_nacional'] ?? '') }}">
+                                </div>
+                            </div>
+                        </details>
                     </div>
 
                     <div class="desktop-form-card mt-3 mb-0">

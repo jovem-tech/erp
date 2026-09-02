@@ -44,6 +44,15 @@
                         <div class="quick-client-avulso-suggestions d-none" data-avulso-suggestions="telefone"></div>
                     </div>
 
+                    {{-- Subiu para ca' na 041: e' o dado que a NFS-e exige do
+                         tomador e a base tinha 1.323 de 1.323 clientes sem ele.
+                         Continua OPCIONAL de proposito — exigir empurraria o
+                         operador para fora do sistema e a OS nao existiria. --}}
+                    <div>
+                        <label for="quickClientCpfCnpj">CPF / CNPJ</label>
+                        <input type="text" id="quickClientCpfCnpj" name="cpf_cnpj" class="form-control" data-documento autocomplete="off">
+                    </div>
+
                     <div class="desktop-grid-span-2 d-none" data-avulso-budget-callout>
                         <div class="alert alert-info d-flex align-items-center justify-content-between gap-3 mb-0">
                             <span data-avulso-budget-callout-text></span>
@@ -61,11 +70,6 @@
                     <div>
                         <label for="quickClientEmail">E-mail</label>
                         <input type="email" id="quickClientEmail" name="email" class="form-control" autocomplete="off">
-                    </div>
-
-                    <div>
-                        <label for="quickClientCpfCnpj">CPF / CNPJ</label>
-                        <input type="text" id="quickClientCpfCnpj" name="cpf_cnpj" class="form-control" autocomplete="off">
                     </div>
 
                     <div>

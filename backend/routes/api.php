@@ -12,6 +12,8 @@ use App\Http\Controllers\Api\V1\Chat\ConversationController;
 use App\Http\Controllers\Api\V1\Chat\MessageController;
 use App\Http\Controllers\Api\V1\ChecklistModeloController;
 use App\Http\Controllers\Api\V1\ClientController;
+use App\Http\Controllers\Api\V1\DocumentoFiscalController;
+use App\Http\Controllers\Api\V1\FiscalController;
 use App\Http\Controllers\Api\V1\ConfigurationController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DefeitoRelatadoController;
@@ -485,6 +487,25 @@ Route::prefix('v1')->group(function (): void {
         Route::post('clients', [ClientController::class, 'store'])->name('api.v1.clients.store');
         Route::get('clients/{client}', [ClientController::class, 'show'])->name('api.v1.clients.show');
         Route::match(['put', 'patch'], 'clients/{client}', [ClientController::class, 'update'])->name('api.v1.clients.update');
+
+        // Preparacao fiscal (spec 041). A emissao em si e' das fases 042-044.
+        Route::get('fiscal/prontidao', [FiscalController::class, 'prontidao'])->name('api.v1.fiscal.prontidao');
+        Route::post('fiscal/certificado', [FiscalController::class, 'instalarCertificado'])->name('api.v1.fiscal.certificado.store');
+        Route::delete('fiscal/certificado', [FiscalController::class, 'removerCertificado'])->name('api.v1.fiscal.certificado.destroy');
+        Route::get('fiscal/documentos', [DocumentoFiscalController::class, 'index'])->name('api.v1.fiscal.documentos.index');
+        Route::get('fiscal/pendentes', [DocumentoFiscalController::class, 'pendentes'])->name('api.v1.fiscal.pendentes');
+        Route::post('orders/{order}/documento-fiscal', [DocumentoFiscalController::class, 'rascunhoDeOrdem'])->name('api.v1.fiscal.documentos.rascunho');
+        // Rota propria, e nao um parametro da de cima: abrir nota nova depois de
+        // cancelar tem de ser ato explicito, nao efeito de abrir a tela.
+        Route::post('orders/{order}/documento-fiscal/novo', [DocumentoFiscalController::class, 'novoDocumento'])->name('api.v1.fiscal.documentos.novo');
+        Route::post('fiscal/documentos/{documento}/envio', [DocumentoFiscalController::class, 'enviar'])->name('api.v1.fiscal.documentos.envio');
+        Route::post('fiscal/documentos/{documento}/emissao', [DocumentoFiscalController::class, 'registrarEmissao'])->name('api.v1.fiscal.documentos.emissao');
+        Route::post('fiscal/documentos/{documento}/importar-xml', [DocumentoFiscalController::class, 'importarXml'])->name('api.v1.fiscal.documentos.importar_xml');
+        Route::post('fiscal/documentos/{documento}/rejeicao', [DocumentoFiscalController::class, 'registrarRejeicao'])->name('api.v1.fiscal.documentos.rejeicao');
+        Route::post('fiscal/documentos/{documento}/cancelamento', [DocumentoFiscalController::class, 'cancelar'])->name('api.v1.fiscal.documentos.cancelamento');
+        Route::post('fiscal/documentos/{documento}/arquivo', [DocumentoFiscalController::class, 'anexarArquivo'])->name('api.v1.fiscal.documentos.arquivo');
+        Route::get('fiscal/documentos/{documento}/arquivo/{formato}', [DocumentoFiscalController::class, 'baixarArquivo'])->name('api.v1.fiscal.documentos.arquivo.download');
+        Route::get('fiscal/documentos/{documento}/danfse', [DocumentoFiscalController::class, 'danfse'])->name('api.v1.fiscal.documentos.danfse');
 
         Route::get('servicos/form-data', [ServicoController::class, 'formData'])->name('api.v1.servicos.form_data');
         Route::get('servicos/exportar-csv', [ServicoController::class, 'exportCsv'])->name('api.v1.servicos.export_csv');

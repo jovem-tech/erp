@@ -6,6 +6,7 @@ use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
 use App\Services\ClientService;
+use App\Services\DocumentoFiscalService;
 use App\Services\DesktopOrderStatusFlowService;
 use App\Services\EquipmentService;
 use App\Services\OrcamentoService;
@@ -33,7 +34,8 @@ class OrderController extends DesktopController
         private readonly TeamMemberService $teamMemberService,
         private readonly UserService $userService,
         private readonly DesktopOrderStatusFlowService $statusFlowService,
-        private readonly OrcamentoService $orcamentoService
+        private readonly OrcamentoService $orcamentoService,
+        private readonly DocumentoFiscalService $documentoFiscalService
     ) {}
 
     public function index(Request $request): View|JsonResponse
@@ -1288,6 +1290,8 @@ class OrderController extends DesktopController
             'garantia_dias' => ['nullable', 'integer', 'in:90,180,365,730'],
             'tempo_tecnico_horas' => ['nullable', 'numeric', 'min:0', 'max:999'],
             'notificar_cliente' => ['nullable', 'boolean'],
+            'emitir_nota_fiscal' => ['nullable', 'boolean'],
+            'nota_fiscal_xml' => ['nullable', 'file', 'mimes:xml,txt', 'max:10240'],
             'agendar_retorno' => ['nullable', 'boolean'],
             'retorno_data' => ['nullable', 'date'],
             'recebimentos' => [$isBaixa ? 'nullable' : 'required', 'array', $isBaixa ? 'sometimes' : 'min:1'],
@@ -1334,6 +1338,42 @@ class OrderController extends DesktopController
         $message = $isBaixa ? 'OS encerrada com sucesso.' : 'Valor registrado com sucesso.';
         if (($result['notificacao_enviada'] ?? null) === false) {
             $message .= ' O cliente não pôde ser notificado por WhatsApp agora.';
+        }
+
+        // Nota fiscal: registrada DEPOIS de encerrar, porque a nota referencia
+        // uma OS fechada. Só faz sentido em baixa que encerra como "Entregue -
+        // Reparado e Pago" — adiantamento não fecha nada, e devolução/descarte
+        // não geram nota.
+        $encerrouEntregue = $isBaixa
+            && ($validated['encerrar_como'] ?? '') === 'entregue_reparado_pago';
+
+        if ($encerrouEntregue && $request->hasFile('nota_fiscal_xml')) {
+            // A OS JÁ FOI ENCERRADA neste ponto. Se o XML estiver errado, isso
+            // não pode virar falha da baixa: seria dizer que o encerramento não
+            // aconteceu quando aconteceu, e o operador tentaria de novo numa OS
+            // já fechada. O erro vira aviso, e a baixa segue válida.
+            try {
+                $documento = $this->documentoFiscalService->rascunhoDeOrdem($order);
+                $this->documentoFiscalService->importarXml(
+                    (int) ($documento['id'] ?? 0),
+                    $request->file('nota_fiscal_xml')
+                );
+
+                return redirect()
+                    ->route('fiscal.nota', $order)
+                    ->with('success', $message.' Nota fiscal registrada a partir do XML.');
+            } catch (Throwable $excecao) {
+                return redirect()
+                    ->route('fiscal.nota', $order)
+                    ->with('error', 'A OS foi encerrada, mas o XML não pôde ser registrado: '
+                        .$excecao->getMessage().' Importe o XML novamente aqui.');
+            }
+        }
+
+        if ($encerrouEntregue && $request->boolean('emitir_nota_fiscal')) {
+            return redirect()
+                ->route('fiscal.nota', $order)
+                ->with('success', $message.' Agora emita a nota fiscal.');
         }
 
         return redirect()

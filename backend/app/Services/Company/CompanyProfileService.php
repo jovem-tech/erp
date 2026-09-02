@@ -81,6 +81,20 @@ class CompanyProfileService
         'empresa_telefone' => '',
         'empresa_email' => '',
         'empresa_endereco' => '',
+        // Fiscais (spec 041). `empresa_endereco` continua existindo porque os
+        // PDFs ja' emitidos o usam; a NFS-e e' que exige endereco separado em
+        // campos, e nao uma linha unica de texto.
+        'empresa_logradouro' => '',
+        'empresa_numero' => '',
+        'empresa_complemento' => '',
+        'empresa_bairro' => '',
+        'empresa_cidade' => '',
+        'empresa_uf' => '',
+        'empresa_cep' => '',
+        'empresa_codigo_ibge' => '',
+        'empresa_inscricao_municipal' => '',
+        'empresa_cnae' => '',
+        'empresa_codigo_tributacao_nacional' => '',
     ];
 
     /**

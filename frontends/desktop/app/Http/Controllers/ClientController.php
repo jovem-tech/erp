@@ -340,6 +340,10 @@ class ClientController extends DesktopController
     private function validatedClientPayload(Request $request): array
     {
         $validated = $request->validate([
+            // `codigo_ibge_municipio` so' no formulario completo: o modal
+            // rapido existe para nao travar o atendimento, e codigo de
+            // municipio nao e' dado que se pergunta no balcao.
+            'codigo_ibge_municipio' => ['nullable', 'string', 'size:7'],
             'tipo_pessoa' => ['required', 'string', 'max:20'],
             'nome_razao' => ['required', 'string', 'max:100'],
             'cpf_cnpj' => ['nullable', 'string', 'max:20'],
@@ -475,6 +479,10 @@ class ClientController extends DesktopController
     private function validatedQuickClientEditPayload(Request $request, array $existing): array
     {
         $validated = $request->validate([
+            // Fiscal: a NFS-e identifica municipio pelo codigo IBGE. Entra aqui
+            // tambem porque o modal rapido e' o caminho usado quando falta dado
+            // do tomador na hora de emitir.
+            'codigo_ibge_municipio' => ['nullable', 'string', 'size:7'],
             'nome_razao' => ['required', 'string', 'max:100'],
             'telefone1' => ['required', 'string', 'max:20'],
             'email' => ['nullable', 'email', 'max:100'],

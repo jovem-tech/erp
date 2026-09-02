@@ -33,7 +33,7 @@
 
             <div>
                 <label for="cpfCnpj">CPF / CNPJ</label>
-                <input type="text" id="cpfCnpj" name="cpf_cnpj" class="form-control" value="{{ old('cpf_cnpj', $client['cpf_cnpj'] ?? '') }}">
+                <input type="text" id="cpfCnpj" name="cpf_cnpj" class="form-control" data-documento value="{{ old('cpf_cnpj', $client['cpf_cnpj'] ?? '') }}">
             </div>
 
             <div>
@@ -135,6 +135,13 @@
                 <div>
                     <label for="uf">UF</label>
                     <input type="text" id="uf" name="uf" class="form-control" maxlength="2" value="{{ old('uf', $client['uf'] ?? '') }}">
+                </div>
+
+                {{-- Codigo IBGE (041): a NFS-e identifica municipio por ele, nao
+                     pelo nome digitado em "cidade". Opcional, como o CPF. --}}
+                <div>
+                    <label for="codigoIbgeMunicipio">Código IBGE do município</label>
+                    <input type="text" id="codigoIbgeMunicipio" name="codigo_ibge_municipio" class="form-control" maxlength="7" inputmode="numeric" value="{{ old('codigo_ibge_municipio', $client['codigo_ibge_municipio'] ?? '') }}">
                 </div>
 
                 <div>

@@ -34,6 +34,12 @@
         <env name="DESKTOP_API_BASE_URL" value="http://127.0.0.1:8000/api/v1"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
+        <!-- Cache de views proprio da suite. Sem isto os testes compilam
+             o Blade dentro de storage/framework/views como o usuario de
+             desenvolvimento, e o www-data passa a falhar com
+             "touch(): Utime failed" — 500 no site inteiro. Mesma linha que
+             o backend/phpunit.xml ja tinha. -->
+        <env name="VIEW_COMPILED_PATH" value="./.phpunit-storage/framework/views"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>

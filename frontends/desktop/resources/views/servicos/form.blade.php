@@ -108,6 +108,49 @@
                 @error('status')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
 
+            {{-- Dados fiscais: mesmo formato da aba fiscal da peca (027), fechado
+                 por padrao. Aberto pesaria o cadastro do dia a dia sem motivo,
+                 porque sao campos que se preenchem uma vez. --}}
+            <div class="col-span-full">
+                <details class="border rounded p-3">
+                    <summary class="fw-semibold" style="cursor: pointer;">
+                        Dados fiscais (opcional)
+                    </summary>
+
+                    <p class="text-secondary small mt-2 mb-3">
+                        A NFS-e deste serviço já pode ser emitida pelo sistema em
+                        <a href="{{ route('fiscal.pendentes') }}">Fiscal &rsaquo; Notas pendentes</a>,
+                        no modo assistido: o sistema monta a nota, você emite no portal do
+                        gov.br e registra o retorno. Estes campos ainda não são usados —
+                        eles preparam a integração automática, e o código de tributação
+                        precisa de confirmação do contador.
+                    </p>
+
+                    <div class="row g-3">
+                        <div class="col-12 col-md-4">
+                            <label for="codigo_tributacao_nacional">Código de tributação nacional</label>
+                            <input type="text" id="codigo_tributacao_nacional" name="codigo_tributacao_nacional" class="form-control @error('codigo_tributacao_nacional') is-invalid @enderror" value="{{ old('codigo_tributacao_nacional', $service['codigo_tributacao_nacional'] ?? '') }}" maxlength="20">
+                            @error('codigo_tributacao_nacional')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label for="item_lc116">Item da LC 116</label>
+                            <input type="text" id="item_lc116" name="item_lc116" class="form-control @error('item_lc116') is-invalid @enderror" value="{{ old('item_lc116', $service['item_lc116'] ?? '') }}" maxlength="10">
+                            @error('item_lc116')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <label for="aliquota_iss">Alíquota de ISS (%)</label>
+                            <input type="number" id="aliquota_iss" name="aliquota_iss" class="form-control @error('aliquota_iss') is-invalid @enderror" value="{{ old('aliquota_iss', $service['aliquota_iss'] ?? '') }}" min="0" max="100" step="0.01" placeholder="deixe vazio se não souber">
+                            @error('aliquota_iss')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                        </div>
+                        <div class="col-6 col-md-2">
+                            <label for="unidade">Unidade</label>
+                            <input type="text" id="unidade" name="unidade" class="form-control @error('unidade') is-invalid @enderror" value="{{ old('unidade', $service['unidade'] ?? '') }}" maxlength="6" placeholder="UN">
+                            @error('unidade')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                        </div>
+                    </div>
+                </details>
+            </div>
+
             <div class="field-actions col-span-full">
                 <button type="submit" class="btn btn-primary flex-fill">
                     <i class="bi bi-save me-2"></i>

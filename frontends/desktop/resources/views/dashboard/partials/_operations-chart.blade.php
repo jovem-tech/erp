@@ -23,11 +23,14 @@
         </div>
     </div>
 
+    {{-- Legenda antes do canvas, mesmo lugar do gráfico "Evolução financeira"
+         logo abaixo: com 4 séries em dois eixos, o leitor precisa saber o que
+         está vendo ANTES de encarar o gráfico, não depois de rolar a tela. --}}
+    <div class="dashboard-chart-legend-row" data-dashboard-monthly-legend></div>
+
     <div class="dashboard-chart-wrap dashboard-chart-wrap-lg" data-dashboard-monthly-chart-wrap>
         <canvas id="dashboardMonthlyChart"
                 aria-label="OS abertas e entregues reparadas, faturamento e lucro líquido por mês"
                 role="img"></canvas>
     </div>
-
-    <div class="dashboard-chart-legend-row" data-dashboard-monthly-legend></div>
 </article>

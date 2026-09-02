@@ -13,4 +13,7 @@ enum FileCategory: string
     case UserSignature = 'user_signature';
     case UserProfilePhoto = 'user_profile_photo';
     case ChatAttachment = 'chat_attachment';
+    // XML e DANFSe baixados do portal (spec 041, fase 042). O XML e' o que a
+    // lei manda guardar por 5 anos.
+    case FiscalDocument = 'fiscal_document';
 }

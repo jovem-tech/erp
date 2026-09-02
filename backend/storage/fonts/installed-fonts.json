@@ -1,0 +1,10 @@
+{
+    "danfse titulo": {
+        "normal": "\/var\/www\/sistema-erp\/backend\/storage\/fonts\/danfse_titulo_normal_64232cc5eb9138e505b9127eacc7ad7d",
+        "bold": "danfse_titulo_bold_b32e74cbba9b822cb6fa6023b0a4d533"
+    },
+    "danfse conteudo": {
+        "normal": "\/var\/www\/sistema-erp\/backend\/storage\/fonts\/danfse_conteudo_normal_64232cc5eb9138e505b9127eacc7ad7d",
+        "bold": "danfse_conteudo_bold_b32e74cbba9b822cb6fa6023b0a4d533"
+    }
+}

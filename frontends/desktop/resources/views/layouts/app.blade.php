@@ -329,6 +329,10 @@
     <script src="{{ asset('assets/libs/sweetalert2/sweetalert2.all.min.js') }}"></script>
     <script src="{{ asset('assets/libs/pusher-js/pusher.min.js') }}"></script>
     <script src="{{ asset('assets/js/desktop.js') }}?v={{ filemtime(public_path('assets/js/desktop.js')) }}"></script>
+    {{-- Global porque o campo de CPF aparece no cadastro de cliente E no modal
+         rapido, que e' incluido por 5 telas (OS, PDV, financeiro, equipamentos,
+         orcamento). Carregar por tela deixaria alguma de fora. --}}
+    <script src="{{ asset('assets/js/documento.js') }}?v={{ filemtime(public_path('assets/js/documento.js')) }}"></script>
     @yield('scripts')
 </body>
 </html>

@@ -54,6 +54,18 @@ class CompanyContextProvider
             'telefone' => trim((string) ($settings['empresa_telefone'] ?? '')),
             'email' => trim((string) ($settings['empresa_email'] ?? '')),
             'endereco' => trim((string) ($settings['empresa_endereco'] ?? '')),
+            // Endereco estruturado (041). Aditivo: os templates ja' publicados
+            // continuam lendo `endereco`, que nao mudou.
+            'logradouro' => trim((string) ($settings['empresa_logradouro'] ?? '')),
+            'numero' => trim((string) ($settings['empresa_numero'] ?? '')),
+            'complemento' => trim((string) ($settings['empresa_complemento'] ?? '')),
+            'bairro' => trim((string) ($settings['empresa_bairro'] ?? '')),
+            'cidade' => trim((string) ($settings['empresa_cidade'] ?? '')),
+            'uf' => trim((string) ($settings['empresa_uf'] ?? '')),
+            'cep' => trim((string) ($settings['empresa_cep'] ?? '')),
+            'codigo_ibge' => trim((string) ($settings['empresa_codigo_ibge'] ?? '')),
+            'inscricao_municipal' => trim((string) ($settings['empresa_inscricao_municipal'] ?? '')),
+            'cnae' => trim((string) ($settings['empresa_cnae'] ?? '')),
             'logo_base64' => $this->logoBase64(),
         ];
     }

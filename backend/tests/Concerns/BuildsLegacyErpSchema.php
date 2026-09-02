@@ -159,6 +159,9 @@ trait BuildsLegacyErpSchema
             ['id' => 16, 'nome' => 'Vendas', 'slug' => 'vendas', 'icone' => 'bi-cart-check', 'ordem_menu' => 15, 'ativo' => 1],
             ['id' => 17, 'nome' => 'Caixa', 'slug' => 'caixa', 'icone' => 'bi-cash-stack', 'ordem_menu' => 16, 'ativo' => 1],
             ['id' => 18, 'nome' => 'Agenda', 'slug' => 'agenda', 'icone' => 'bi-calendar-week', 'ordem_menu' => 5, 'ativo' => 1],
+            // Fiscal e' modulo proprio, e nao acao de OS: cancelar nota fiscal
+            // e' ato com peso legal e precisa poder ser tirado de quem edita OS.
+            ['id' => 19, 'nome' => 'Fiscal', 'slug' => 'fiscal', 'icone' => 'bi-receipt-cutoff', 'ordem_menu' => 48, 'ativo' => 1],
         ]);
 
         DB::table('permissoes')->insert([
@@ -973,6 +976,10 @@ trait BuildsLegacyErpSchema
             $table->string('google_id', 255)->nullable();
             $table->text('foto_perfil')->nullable();
             $table->string('status_cadastro', 20)->default('completo');
+            // Espelha 2026_09_01_000001_add_fiscal_fields_to_clientes_and_servicos:
+            // este trait recria a tabela do zero DEPOIS das migrations, entao
+            // coluna nova que nao for repetida aqui some nos testes sem erro.
+            $table->string('codigo_ibge_municipio', 7)->nullable();
         });
     }
 
@@ -1016,6 +1023,12 @@ trait BuildsLegacyErpSchema
             $table->string('tipo_equipamento', 120)->nullable();
             $table->dateTime('created_at')->nullable();
             $table->dateTime('updated_at')->nullable();
+            // Espelham 2026_09_01_000001_add_fiscal_fields_to_clientes_and_servicos
+            // — mesmo motivo do espelho em `pecas` logo abaixo.
+            $table->string('codigo_tributacao_nacional', 20)->nullable();
+            $table->string('item_lc116', 10)->nullable();
+            $table->decimal('aliquota_iss', 5, 2)->nullable();
+            $table->string('unidade', 6)->nullable();
         });
     }
 
@@ -2076,6 +2089,7 @@ trait BuildsLegacyErpSchema
             $table->foreign('usuario_id')->references('id')->on('usuarios')->nullOnDelete();
         });
     }
+
 
     private function seedEquipmentCatalog(): void
     {

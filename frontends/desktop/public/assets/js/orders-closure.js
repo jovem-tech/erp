@@ -173,7 +173,14 @@
         const currentStepInput = document.getElementById('closureCurrentStepInput');
         const stepErrorBox = document.getElementById('closureStepError');
         const financeiroTabIndicator = document.querySelector('[data-step-indicator="2"]');
-        const confirmacaoTabIndicator = document.querySelector('[data-step-indicator="3"]');
+        const fiscalTabIndicator = document.querySelector('[data-step-indicator="3"]');
+        const confirmacaoTabIndicator = document.querySelector('[data-step-indicator="4"]');
+
+        // Confirmação é sempre a última etapa. Era 3 e virou 4 quando a etapa
+        // Fiscal entrou; a constante existe para o número não voltar a ficar
+        // espalhado pelo arquivo.
+        const LAST_STEP = 4;
+        const FISCAL_STEP = 3;
 
         if (!(form instanceof HTMLFormElement) || !(receiptsList instanceof HTMLElement) || !(receiptTemplate instanceof HTMLTemplateElement)) {
             return;
@@ -197,6 +204,12 @@
         const clearStepError = () => showStepError([]);
 
         const isNoRepairClosure = () => noRepairStatuses.includes(encerrarComoSelect?.value || '');
+
+        // Etapa Fiscal: só faz sentido quando a ação encerra a OS de verdade
+        // como "Entregue - Reparado e Pago". Adiantamento não fecha nada;
+        // devolução e descarte não geram nota.
+        const isFiscalStepApplicable = () => (classificacaoBaixaSelect?.value || 'baixa') === 'baixa'
+            && (encerrarComoSelect?.value || '') === (config.deliveredStatusCode || 'entregue_reparado_pago');
 
         // "Entregue - Reparado e Pago" com orçamento vinculado ainda não
         // aprovado: bloqueia ANTES de avançar de etapa (não só no submit final)
@@ -232,6 +245,41 @@
                     : (disableForNoRepair ? 'Não aplicável para devolução sem reparo ou descarte.' : '');
             }
 
+            // Aba Fiscal: desabilitada quando a acao nao encerra como
+            // "Entregue - Reparado e Pago". Nao basta esconder — a navegacao
+            // por clique tambem precisa recusar.
+            if (fiscalTabIndicator instanceof HTMLButtonElement) {
+                const fiscalIndisponivel = !isFiscalStepApplicable() || disableForBudget;
+                fiscalTabIndicator.disabled = fiscalIndisponivel;
+                fiscalTabIndicator.classList.toggle('is-disabled', fiscalIndisponivel);
+                fiscalTabIndicator.title = fiscalIndisponivel && !disableForBudget
+                    ? 'A nota fiscal só se aplica a encerramento como Entregue - Reparado e Pago.'
+                    : (disableForBudget ? budgetTitle : '');
+
+                const xmlInput = document.getElementById('closureNotaXml');
+                if (fiscalIndisponivel && xmlInput instanceof HTMLInputElement) {
+                    // Sem isto, trocar para devolucao depois de escolher o XML
+                    // enviaria o arquivo numa baixa que nao gera nota.
+                    xmlInput.value = '';
+                }
+
+                const emitirCheckbox = document.getElementById('emitirNotaFiscal');
+                if (fiscalIndisponivel && emitirCheckbox instanceof HTMLInputElement) {
+                    emitirCheckbox.checked = false;
+                }
+
+                // Aviso de cliente sem CPF/CNPJ (so' existe no HTML quando o
+                // cadastro esta' mesmo sem documento). Segue a aba Fiscal: se o
+                // encerramento nao gera nota, o documento nao faz falta e o
+                // aviso viraria ruido. Fica no topo do formulario, entao aparece
+                // ja' na etapa 1 — antes de encerrar, que e' quando ainda da'
+                // pra pedir o CPF ao cliente.
+                const semDocumentoAlert = document.getElementById('closureSemDocumentoAlert');
+                if (semDocumentoAlert instanceof HTMLElement) {
+                    semDocumentoAlert.classList.toggle('d-none', fiscalIndisponivel);
+                }
+            }
+
             if (confirmacaoTabIndicator instanceof HTMLButtonElement) {
                 confirmacaoTabIndicator.disabled = disableForBudget;
                 confirmacaoTabIndicator.classList.toggle('is-disabled', disableForBudget);
@@ -239,7 +287,7 @@
             }
 
             if (footerNextBtn instanceof HTMLButtonElement) {
-                footerNextBtn.disabled = currentStep < 3 && disableForBudget;
+                footerNextBtn.disabled = currentStep < LAST_STEP && disableForBudget;
                 footerNextBtn.title = footerNextBtn.disabled ? budgetTitle : '';
             }
         };
@@ -679,15 +727,15 @@
 
             // Botões do rodapé
             if (footerPrevBtn) footerPrevBtn.classList.toggle('d-none', step <= 1);
-            if (footerNextBtn) footerNextBtn.classList.toggle('d-none', step >= 3);
+            if (footerNextBtn) footerNextBtn.classList.toggle('d-none', step >= LAST_STEP);
 
             // Botão de submissão visível apenas na etapa 3
-            if (submitButton) submitButton.classList.toggle('d-none', step !== 3);
+            if (submitButton) submitButton.classList.toggle('d-none', step !== LAST_STEP);
 
             updateFinanceiroTabAvailability();
 
             if (step === 2) updateFinancialSummary();
-            if (step === 3) updateConfirmStep();
+            if (step === LAST_STEP) updateConfirmStep();
         };
 
         // Valida as etapas entre a atual e o destino antes de trocar (usado pelo
@@ -697,7 +745,14 @@
             // independentemente de quem pediu a navegação (rodapé, aba ou
             // redirecionamento de erro de validação).
             if (targetStep === 2 && isNoRepairClosure()) {
-                targetStep = targetStep > currentStep ? 3 : 1;
+                targetStep = targetStep > currentStep ? FISCAL_STEP : 1;
+            }
+
+            // Etapa Fiscal pulada quando nao se aplica — mesmo tratamento da
+            // Financeiro, e valendo para rodape, clique na aba e redirecionamento
+            // por erro de validacao.
+            if (targetStep === FISCAL_STEP && !isFiscalStepApplicable()) {
+                targetStep = targetStep > currentStep ? LAST_STEP : (isNoRepairClosure() ? 1 : 2);
             }
 
             if (targetStep === currentStep) return;
@@ -732,9 +787,37 @@
             goToStep(targetStep);
         };
 
+        // Emissor Nacional em JANELA, nao iframe: o portal responde
+        // `X-Frame-Options: SAMEORIGIN` e `frame-ancestors 'none'`, entao o
+        // navegador recusa embutir. Janela separada mantem a baixa aberta
+        // atras, que e' o mais perto de "nao sair do sistema" que da' para
+        // fazer sem o portal cooperar.
+        document.querySelector('[data-abrir-emissor]')?.addEventListener('click', () => {
+            window.open(
+                'https://www.nfse.gov.br/EmissorNacional',
+                'emissorNacional',
+                'noopener,noreferrer,width=1200,height=860'
+            );
+        });
+
+        document.querySelector('[data-copiar-discriminacao-baixa]')?.addEventListener('click', function () {
+            const campo = document.getElementById('closureDiscriminacao');
+            if (!(campo instanceof HTMLTextAreaElement)) return;
+
+            campo.select();
+            try {
+                navigator.clipboard.writeText(campo.value);
+            } catch (erro) {
+                // `navigator.clipboard` exige contexto seguro; a oficina acessa
+                // por IP em rede local, onde ele nem sempre existe.
+                document.execCommand('copy');
+            }
+            this.innerHTML = '<i class="bi bi-check2 me-1"></i>Copiado';
+        });
+
         // Navegação pelo rodapé
         footerNextBtn?.addEventListener('click', () => {
-            if (currentStep < 3) attemptGoToStep(currentStep + 1);
+            if (currentStep < LAST_STEP) attemptGoToStep(currentStep + 1);
         });
 
         footerPrevBtn?.addEventListener('click', () => {
