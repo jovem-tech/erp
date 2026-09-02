@@ -46,6 +46,7 @@ class RbacAuthorizationService
         'arquivos',
         'backups',
         'agenda',
+        'fiscal',
     ];
 
     /**

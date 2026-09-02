@@ -495,6 +495,15 @@
         $valorMovimentado = (float) ($financeiro['valor_movimentado'] ?? 0);
         $clienteTelefone = trim((string) ($closure['cliente_telefone'] ?? ''));
         $clienteEmail = trim((string) ($closure['cliente_email'] ?? ($order['cliente_email'] ?? '')));
+        // Documento do tomador: a NFS-e nao sai sem ele, e a hora de descobrir
+        // isso e' antes de encerrar, nao na tela de emissao.
+        $clienteDocumento = trim((string) ($closure['cliente_documento']
+            ?? ($order['cliente_cpf_cnpj'] ?? ($order['cliente']['cpf_cnpj'] ?? ''))));
+        // O aviso de documento faltando leva ao conserto (mesmo padrão de
+        // fiscal/nota e fiscal/pendentes): sem o link o operador teria de sair
+        // da baixa e caçar o cliente na listagem.
+        $clienteId = (int) ($order['cliente_id'] ?? ($order['cliente']['id'] ?? 0));
+        $podeEditarCliente = \App\Support\DesktopSession::can('clientes', 'editar');
         $retornoPadrao = (string) ($closure['retorno_padrao'] ?? now()->addDays(180)->toDateString());
         // "status_sem_reparo" = encerramentos SEM cobrança (o backend hoje inclui
         // devolvido/descartado + reparo entregue sem custo/garantia). A chave
@@ -682,8 +691,13 @@
                     </button>
                 </li>
                 <li>
-                    <button type="button" class="closure-tab-btn" data-step-indicator="3">
+                    <button type="button" class="closure-tab-btn" data-step-indicator="3" data-step-fiscal>
                         <span class="closure-tab-step">3</span>
+                        <i class="bi bi-receipt"></i>
+                        <span>Fiscal</span>
+                    </button>
+                    <button type="button" class="closure-tab-btn" data-step-indicator="4">
+                        <span class="closure-tab-step">4</span>
                         <i class="bi bi-shield-check"></i>
                         <span>Confirmação</span>
                     </button>
@@ -691,11 +705,42 @@
             </ul>
         </div>
 
-        <form method="post" action="{{ route('orders.closure.store', $orderId) }}" id="closureForm" novalidate>
+        {{-- `multipart`: o XML da nota viaja junto com a baixa, para a OS
+             encerrar e a nota ser registrada na MESMA operacao. --}}
+        <form method="post" action="{{ route('orders.closure.store', $orderId) }}" id="closureForm" enctype="multipart/form-data" novalidate>
             @csrf
             <input type="hidden" name="current_step" id="closureCurrentStepInput" value="{{ old('current_step', 1) }}">
 
             <div id="closureStepError" class="alert alert-danger d-none mb-3"></div>
+
+            {{-- Cliente sem CPF/CNPJ: a NFS-e nao sai sem o tomador
+                 identificado. O aviso vive aqui, FORA das etapas, para o
+                 operador ver ainda na etapa 1 — descobrir isso so' na etapa
+                 Fiscal (ou pior, na tela de emissao, com a OS ja' encerrada)
+                 e' tarde: a essa altura ele ja' entregou o equipamento e o
+                 cliente foi embora. orders-closure.js liga/desliga o aviso
+                 junto com a aba Fiscal, porque so' o encerramento como
+                 "Entregue - Reparado e Pago" gera nota. --}}
+            @if ($clienteDocumento === '')
+                <div id="closureSemDocumentoAlert" role="alert"
+                     class="alert alert-warning d-none d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+                    <span>
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        <strong>Este cliente não tem CPF/CNPJ cadastrado.</strong>
+                        A NFS-e exige identificar o tomador — dá para encerrar a OS assim mesmo,
+                        mas a nota só sai depois de completar o cadastro.
+                    </span>
+                    @if ($clienteId > 0 && $podeEditarCliente)
+                        {{-- Outra aba de proposito: a baixa e' um formulario
+                             longo e sair dele aqui jogaria fora o que ja' foi
+                             preenchido. --}}
+                        <a href="{{ route('clients.edit', $clienteId) }}" target="_blank" rel="noreferrer"
+                           class="btn btn-sm btn-warning text-nowrap">
+                            <i class="bi bi-pencil me-1"></i>Preencher CPF/CNPJ
+                        </a>
+                    @endif
+                </div>
+            @endif
 
             {{-- Etapa 1: Encerramento operacional --}}
             <div class="closure-step-panel" data-step-panel="1">
@@ -942,7 +987,110 @@
             </div>
 
             {{-- Etapa 3: Confirmação --}}
+            {{-- Etapa 3: Fiscal. Aparece so' quando a baixa encerra como
+                 "Entregue - Reparado e Pago" — adiantamento nao fecha nada e
+                 devolucao/descarte nao geram nota.
+
+                 O XML escolhido aqui viaja junto com o envio da baixa: a OS
+                 encerra e a nota e' registrada na MESMA operacao, para nao
+                 existir nota apontando para OS que nao fechou. --}}
             <div class="closure-step-panel d-none" data-step-panel="3">
+                <div class="row g-3">
+                    <div class="col-12 col-lg-7">
+                        <div class="closure-pdv-panel">
+                            <div class="closure-panel-title">Nota fiscal de serviço</div>
+
+                            <p class="closure-confirm-intro">
+                                A partir de 1º de janeiro de 2027 a NFS-e é obrigatória em toda
+                                operação. Emita no portal e traga o XML de volta — ou pule e emita
+                                depois, pela tela de notas pendentes.
+                            </p>
+
+                            <ol class="closure-confirm-intro ps-3 mb-3">
+                                <li>Abra o Emissor Nacional no botão abaixo e emita a NFS-e.</li>
+                                <li>Baixe o <strong>XML</strong> da nota no portal.</li>
+                                <li>Escolha o arquivo aqui. Ele é registrado junto com a baixa.</li>
+                            </ol>
+
+                            <div class="d-flex flex-wrap gap-2 mb-3">
+                                {{-- Janela separada, e nao iframe: o Emissor Nacional responde
+                                     `X-Frame-Options: SAMEORIGIN` e `frame-ancestors 'none'`,
+                                     entao o navegador recusa embutir. Verificado no portal. --}}
+                                <button type="button" class="btn btn-primary btn-sm" data-abrir-emissor>
+                                    <i class="bi bi-box-arrow-up-right me-1"></i>Abrir Emissor Nacional
+                                </button>
+                                <button type="button" class="btn btn-soft btn-sm" data-copiar-discriminacao-baixa>
+                                    <i class="bi bi-clipboard me-1"></i>Copiar discriminação
+                                </button>
+                            </div>
+
+                            <label class="form-label" for="closureNotaXml">XML da nota (opcional)</label>
+                            <input type="file" id="closureNotaXml" name="nota_fiscal_xml"
+                                   class="form-control @error('nota_fiscal_xml') is-invalid @enderror"
+                                   accept=".xml,text/xml,application/xml">
+                            <div class="form-text">
+                                Deixe em branco para encerrar agora e emitir depois. A OS aparece em
+                                <strong>Fiscal &rsaquo; Notas pendentes</strong> até a nota existir.
+                            </div>
+                            @error('nota_fiscal_xml')<div class="invalid-feedback d-block">{{ $message }}</div>@enderror
+                        </div>
+                    </div>
+
+                    <div class="col-12 col-lg-5">
+                        <div class="closure-pdv-panel">
+                            <div class="closure-panel-title">Dados para o portal</div>
+
+                            <div class="closure-confirm-card mb-2">
+                                <span class="closure-confirm-label">Tomador</span>
+                                <strong>{{ $order['cliente_nome'] ?? '—' }}</strong>
+                                <small>{{ $clienteDocumento !== '' ? $clienteDocumento : 'sem CPF/CNPJ' }}</small>
+                                @if ($clienteId > 0 && \App\Support\DesktopSession::can('clientes', 'editar'))
+                                    {{-- Corrigir o cadastro sem sair da baixa: o dado
+                                         fiscal costuma faltar exatamente aqui, e mandar
+                                         o operador embora no meio do encerramento
+                                         significa que ele nao volta. --}}
+                                    <button type="button" class="btn btn-soft btn-sm mt-2"
+                                            data-editar-cliente
+                                            data-show-url="{{ route('clients.quick.show', $clienteId) }}"
+                                            data-update-url="{{ route('clients.quick.update', $clienteId) }}"
+                                            data-full-url="{{ route('clients.edit', $clienteId) }}">
+                                        <i class="bi bi-pencil me-1"></i>Completar cadastro do cliente
+                                    </button>
+                                @endif
+                            </div>
+
+                            <label class="form-label" for="closureDiscriminacao">Discriminação dos serviços</label>
+                            <textarea id="closureDiscriminacao" class="form-control" rows="4" readonly>Ordem de servico {{ $order['numero_os'] ?? $orderId }}
+Servicos de assistencia tecnica.</textarea>
+
+                            <div class="form-check mt-3">
+                                <input type="checkbox" class="form-check-input" id="emitirNotaFiscal"
+                                       name="emitir_nota_fiscal" value="1" @checked(old('emitir_nota_fiscal', true))>
+                                <label class="form-check-label" for="emitirNotaFiscal">
+                                    Ir para a tela da nota ao concluir
+                                </label>
+                                <div class="form-text">
+                                    Útil quando você não trouxe o XML agora: leva direto para onde
+                                    registrar a nota e enviar ao cliente.
+                                </div>
+                            </div>
+
+                            <div class="form-check mt-2">
+                                <input type="checkbox" class="form-check-input" disabled>
+                                <label class="form-check-label text-secondary">
+                                    Emitir automaticamente com o certificado A1
+                                </label>
+                                <div class="form-text">
+                                    Ainda não disponível: depende da transmissão ao Ambiente
+                                    Nacional, que não está implementada.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="closure-step-panel d-none" data-step-panel="4">
                 <div class="row g-3">
                     <div class="col-12 col-lg-7">
                         <div class="closure-pdv-panel">
@@ -1161,7 +1309,12 @@
     @include('orders._cancel_closure_modal')
 @endpush
 
+@if ($clienteId > 0 && \App\Support\DesktopSession::can('clientes', 'editar'))
+    @include('clients.quick-edit-modal')
+@endif
+
 @section('scripts')
+    <script src="{{ asset('assets/js/cliente-quick-edit.js') }}?v={{ filemtime(public_path('assets/js/cliente-quick-edit.js')) }}"></script>
     <script>
         window.__DESKTOP_ORDER_CLOSURE = {!! \Illuminate\Support\Js::from([
             'orderId' => $orderId,

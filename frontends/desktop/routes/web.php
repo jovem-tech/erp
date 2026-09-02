@@ -8,6 +8,8 @@ use App\Http\Controllers\BroadcastAuthController;
 use App\Http\Controllers\CaixaController;
 use App\Http\Controllers\ChecklistController;
 use App\Http\Controllers\ClientController;
+use App\Http\Controllers\DocumentoFiscalController;
+use App\Http\Controllers\ProntidaoFiscalController;
 use App\Http\Controllers\ConfigurationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DefectController;
@@ -584,6 +586,60 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/os/{order}/documentos/{document}', [OrderController::class, 'document'])
         ->middleware('desktop.permission:os,visualizar')
         ->name('orders.documents.show');
+
+    // Prontidao fiscal (spec 041). Fica sob `clientes` porque nesta fatia so'
+    // mede cliente, e quem preenche o cadastro e' quem precisa ver o que falta.
+    Route::get('/fiscal/prontidao', [ProntidaoFiscalController::class, 'index'])
+        ->middleware('desktop.permission:clientes,visualizar')
+        ->name('fiscal.prontidao');
+
+    // Emissao assistida (042). Autoriza por `os`: nesta fase emitir e' passo do
+    // fechamento da OS, e quem fecha a OS e' quem emite.
+    Route::post('/fiscal/certificado', [ConfigurationController::class, 'instalarCertificadoFiscal'])
+        ->middleware('desktop.permission:configuracoes,editar')
+        ->name('fiscal.certificado.store');
+    Route::delete('/fiscal/certificado', [ConfigurationController::class, 'removerCertificadoFiscal'])
+        ->middleware('desktop.permission:configuracoes,editar')
+        ->name('fiscal.certificado.destroy');
+    Route::get('/fiscal/certificado/status', [ConfigurationController::class, 'certificadoFiscalStatus'])
+        ->middleware('desktop.permission:configuracoes,visualizar')
+        ->name('fiscal.certificado.status');
+    Route::get('/fiscal/pendentes', [DocumentoFiscalController::class, 'pendentes'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('fiscal.pendentes');
+    Route::get('/fiscal/notas', [DocumentoFiscalController::class, 'emitidas'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('fiscal.emitidas');
+    Route::get('/fiscal/os/{order}/nota', [DocumentoFiscalController::class, 'nota'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('fiscal.nota');
+    Route::post('/fiscal/documentos/{documento}/emissao', [DocumentoFiscalController::class, 'registrarEmissao'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('fiscal.documentos.emissao');
+    Route::post('/fiscal/documentos/{documento}/rejeicao', [DocumentoFiscalController::class, 'registrarRejeicao'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('fiscal.documentos.rejeicao');
+    Route::post('/fiscal/documentos/{documento}/cancelamento', [DocumentoFiscalController::class, 'cancelar'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('fiscal.documentos.cancelamento');
+    Route::post('/fiscal/documentos/{documento}/arquivo', [DocumentoFiscalController::class, 'anexarArquivo'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('fiscal.documentos.arquivo');
+    Route::post('/fiscal/documentos/{documento}/importar-xml', [DocumentoFiscalController::class, 'importarXml'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('fiscal.documentos.importar-xml');
+    Route::post('/fiscal/os/{order}/documento-fiscal/novo', [DocumentoFiscalController::class, 'novoDocumento'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('fiscal.documentos.novo');
+    Route::post('/fiscal/documentos/{documento}/envio', [DocumentoFiscalController::class, 'enviar'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('fiscal.documentos.envio');
+    Route::get('/fiscal/documentos/{documento}/danfse', [DocumentoFiscalController::class, 'danfse'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('fiscal.documentos.danfse');
+    Route::get('/fiscal/documentos/{documento}/arquivo/{formato}', [DocumentoFiscalController::class, 'baixarArquivo'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('fiscal.documentos.arquivo.download');
 
     Route::get('/clientes', [ClientController::class, 'index'])
         ->middleware('desktop.permission:clientes,visualizar')

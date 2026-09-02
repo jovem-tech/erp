@@ -559,9 +559,18 @@
             <article class="surface-card mb-4">
                 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
                     <h3 class="os-info-card-title mb-0"><span><i class="bi bi-file-earmark-text me-1"></i>Documentos</span></h3>
-                    <a href="{{ route('orders.documents.center', $order['id']) }}" class="btn btn-soft btn-sm">
-                        <i class="bi bi-folder-symlink me-2"></i>Abrir central de documentos
-                    </a>
+                    <div class="d-flex flex-wrap gap-2">
+                        @if ($canEditOrder)
+                            {{-- Emissao assistida (041/042): o sistema monta a nota, o
+                                 operador emite no portal e volta para registrar. --}}
+                            <a href="{{ route('fiscal.nota', $order['id']) }}" class="btn btn-soft btn-sm">
+                                <i class="bi bi-receipt me-2"></i>Emitir nota fiscal
+                            </a>
+                        @endif
+                        <a href="{{ route('orders.documents.center', $order['id']) }}" class="btn btn-soft btn-sm">
+                            <i class="bi bi-folder-symlink me-2"></i>Abrir central de documentos
+                        </a>
+                    </div>
                 </div>
 
                 @if ($documents !== [])

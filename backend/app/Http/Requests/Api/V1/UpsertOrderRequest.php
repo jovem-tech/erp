@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1;
 
 use App\Models\OrderStatus;
+use App\Support\Documento;
 use Illuminate\Validation\Rule;
 
 class UpsertOrderRequest extends BaseApiFormRequest
@@ -36,6 +37,11 @@ class UpsertOrderRequest extends BaseApiFormRequest
             'novo_cliente.nome_razao' => ['nullable', 'required_with:novo_cliente', 'string', 'max:100'],
             'novo_cliente.telefone1' => ['nullable', 'required_with:novo_cliente', 'string', 'max:20'],
             'novo_cliente.email' => ['nullable', 'email', 'max:100'],
+            // Sem regra ate aqui: `OrderController` le `novo_cliente` cru com
+            // `input()`, fora do `validated()`, entao a chave passava sem
+            // conferencia. Sem `unique` de proposito -- recusar a criacao da OS
+            // porque o CPF ja existe e mudanca de fluxo, nao de validacao.
+            'novo_cliente.cpf_cnpj' => ['nullable', 'string', 'max:20', Documento::regra()],
             'cliente_atualizacao' => [$createOnlyArray, 'array', $requiresSelectedClient],
             'cliente_atualizacao.tipo_pessoa' => ['required_with:cliente_atualizacao', 'string', 'max:20'],
             'cliente_atualizacao.nome_razao' => ['required_with:cliente_atualizacao', 'string', 'max:100'],
@@ -43,6 +49,7 @@ class UpsertOrderRequest extends BaseApiFormRequest
                 'nullable',
                 'string',
                 'max:20',
+                Documento::regra(),
                 Rule::unique('clientes', 'cpf_cnpj')->ignore((int) $this->input('cliente_id', 0)),
             ],
             'cliente_atualizacao.rg_ie' => ['nullable', 'string', 'max:20'],
@@ -168,8 +175,9 @@ class UpsertOrderRequest extends BaseApiFormRequest
                 continue;
             }
 
-            $digits = preg_replace('/\D+/', '', (string) ($payload['cpf_cnpj'] ?? ''));
-            $payload['cpf_cnpj'] = $digits === '' ? null : $digits;
+            // Nao usar `preg_replace('/\D+/')`: apagaria as letras de um CNPJ
+            // alfanumerico, formato em producao desde 06/07/2026.
+            $payload['cpf_cnpj'] = Documento::normalizar((string) ($payload['cpf_cnpj'] ?? ''));
             $updates[$key] = $payload;
         }
 

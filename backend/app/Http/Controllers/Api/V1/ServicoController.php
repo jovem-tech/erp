@@ -263,6 +263,12 @@ class ServicoController extends BaseApiController
             'tempo_padrao_horas' => ['nullable', 'numeric', 'min:0'],
             'custo_direto_padrao' => ['nullable', 'numeric', 'min:0'],
             'status' => ['nullable', 'string', 'max:30'],
+            // Fiscais: nascem sem uso, como os de `pecas` na 027. O servico e'
+            // 79% do faturamento e foi o lado que ficou de fora naquela entrega.
+            'codigo_tributacao_nacional' => ['nullable', 'string', 'max:20'],
+            'item_lc116' => ['nullable', 'string', 'max:10'],
+            'aliquota_iss' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'unidade' => ['nullable', 'string', 'max:6'],
         ]);
 
         return [
@@ -273,6 +279,14 @@ class ServicoController extends BaseApiController
             'tempo_padrao_horas' => $this->normalizeDecimal($validated['tempo_padrao_horas'] ?? 0),
             'custo_direto_padrao' => $this->normalizeDecimal($validated['custo_direto_padrao'] ?? 0),
             'status' => $this->normalizeStatus($validated['status'] ?? null),
+            'codigo_tributacao_nacional' => $this->normalizeText($validated['codigo_tributacao_nacional'] ?? null),
+            'item_lc116' => $this->normalizeText($validated['item_lc116'] ?? null),
+            // Alíquota fica NULL quando nao informada, e nao 0: "nao cadastrado"
+            // e "isento" sao coisas diferentes, e 0 mentiria na hora de emitir.
+            'aliquota_iss' => isset($validated['aliquota_iss']) && $validated['aliquota_iss'] !== ''
+                ? $this->normalizeDecimal($validated['aliquota_iss'])
+                : null,
+            'unidade' => $this->normalizeText($validated['unidade'] ?? null),
         ];
     }
 
@@ -340,6 +354,10 @@ class ServicoController extends BaseApiController
             'tempo_padrao_horas' => (float) ($servico->tempo_padrao_horas ?? 0),
             'custo_direto_padrao' => (float) ($servico->custo_direto_padrao ?? 0),
             'status' => (string) ($servico->status ?? 'ativo'),
+            'codigo_tributacao_nacional' => (string) ($servico->codigo_tributacao_nacional ?? ''),
+            'item_lc116' => (string) ($servico->item_lc116 ?? ''),
+            'aliquota_iss' => $servico->aliquota_iss !== null ? (float) $servico->aliquota_iss : null,
+            'unidade' => (string) ($servico->unidade ?? ''),
             'encerrado_em' => $this->formatDateTime($servico->encerrado_em),
             'created_at' => $this->formatDateTime($servico->created_at),
             'updated_at' => $this->formatDateTime($servico->updated_at),

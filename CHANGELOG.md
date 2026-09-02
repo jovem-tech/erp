@@ -1,5 +1,53 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.71.3.0 — 2026-09-02 09:57
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Mensagem padrao do envio da nota passa a identificar o aparelho (tipo, marca, modelo e numero de serie ou IMEI), cada parte so quando existe
+- **Arquivos:** backend/app/Services/Fiscal/NotaFiscalEnvioService.php,backend/tests/Feature/Api/V1/DocumentoFiscalTest.php
+
+## v5.71.2.0 — 2026-09-02 09:44
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Envio da nota: DANFSe vai antes do XML e cada anexo leva legenda propria; XML passa a acompanhar so nota de tomador com CNPJ, e a mensagem padrao encurta
+- **Arquivos:** backend/app/Services/Fiscal/NotaFiscalEnvioService.php,backend/tests/Feature/Api/V1/DocumentoFiscalTest.php,frontends/desktop/resources/views/fiscal/nota.blade.php,frontends/desktop/tests/Feature/Desktop/DocumentoFiscalTest.php
+
+## v5.71.1.0 — 2026-09-02 09:28
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Envio por WhatsApp: erro da Evolution deixa de chegar na tela como 'Bad Request' e passa a dizer o motivo real (numero sem WhatsApp, erro de validacao), lendo response.message em vez do status do topo
+- **Arquivos:** backend/app/Services/Integrations/IntegrationSettingsService.php,backend/tests/Feature/Integrations/EvolutionErrorMessageTest.php
+
+## v5.71.0.0 — 2026-09-02 09:21
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Nota fiscal: envio ao cliente por e-mail ou WhatsApp com XML e DANFSe anexados (destino do cadastro, editavel), botao Emitir nova nota depois de cancelar e menu Mais acoes com baixar/imprimir/copiar chave/consultar no portal
+- **Arquivos:** backend/app/Services/Fiscal/NotaFiscalEnvioService.php,backend/app/Services/Fiscal/DocumentoFiscalService.php,backend/app/Http/Controllers/Api/V1/DocumentoFiscalController.php,backend/routes/api.php,backend/tests/Feature/Api/V1/DocumentoFiscalTest.php,frontends/desktop/resources/views/fiscal/nota.blade.php,frontends/desktop/app/Http/Controllers/DocumentoFiscalController.php,frontends/desktop/app/Services/DocumentoFiscalService.php,frontends/desktop/routes/web.php,frontends/desktop/tests/Feature/Desktop/DocumentoFiscalTest.php
+
+## v5.70.3.0 — 2026-09-02 08:48
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** DANFSe: fontes embutidas com metrica da Arial (Liberation Sans, com precedencia para as fontes da Microsoft quando licenciadas), margem da folha corrigida para 0,20cm conforme o item 2.2.2, e calculo de espaco calibrado no PDF renderizado
+- **Arquivos:** backend/resources/views/pdf/nfse-danfse.blade.php,backend/app/Services/Fiscal/DanfseLayout.php,backend/app/Services/Pdf/NfseDanfseRenderer.php,backend/resources/fonts/danfse,backend/tests/Feature/Fiscal/DanfseNt008Test.php
+
+## v5.70.2.0 — 2026-09-02 08:27
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Tela da nota fiscal reorganizada em duas colunas com papeis distintos: a esquerda opera a nota (dados para o portal, nota registrada, guarda de arquivos, cancelamento) e a direita e o visor do DANFSe, em proporcao A4
+- **Arquivos:** frontends/desktop/resources/views/fiscal/nota.blade.php,frontends/desktop/tests/Feature/Desktop/DocumentoFiscalTest.php
+
+## v5.70.1.0 — 2026-09-02 07:57
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Suite do desktop deixa de envenenar o cache de views do site (VIEW_COMPILED_PATH proprio, como o backend ja tinha) e DocumentoFiscalTest concede as permissoes do modulo RBAC fiscal
+- **Arquivos:** frontends/desktop/phpunit.xml,frontends/desktop/.gitignore,backend/tests/Feature/Api/V1/DocumentoFiscalTest.php,frontends/desktop/tests/Feature/Desktop/DocumentoFiscalTest.php
+
+## v5.70.0.0 — 2026-09-02 07:52
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** DANFSe reconstruido conforme a Nota Tecnica no 008 (SE/CGNFS-e): 13 blocos do Anexo I, QR Code da consulta publica, logomarca oficial, traducao dos codigos do leiaute, supressao de blocos e pagina unica
+- **Arquivos:** backend/resources/views/pdf/nfse-danfse.blade.php,backend/resources/views/pdf/partials/danfse-pessoa.blade.php,backend/app/Services/Fiscal/DanfseLayout.php,backend/app/Services/Fiscal/DanfseCodigos.php,backend/app/Services/Fiscal/NfseXmlImporter.php,backend/app/Services/Pdf/NfseDanfseRenderer.php,backend/app/Support/QrCodePng.php,backend/app/Support/MunicipioIbge.php,backend/app/Console/Commands/Fiscal/AtualizarMunicipiosIbge.php,backend/resources/data/municipios-ibge.php,backend/tests/Feature/Fiscal/DanfseNt008Test.php,frontends/desktop/resources/views/fiscal/nota.blade.php
+
 ## v5.69.3.0 — 2026-08-30 23:19
 - **Tier:** patch
 - **Autor/Agente:** Codex

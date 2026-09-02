@@ -366,7 +366,12 @@ class ApiClient
             $request = $this->baseMultipartRequest()->withToken($token);
 
             foreach ($files as $field => $items) {
-                foreach ($items as $file) {
+                // Aceita `['campo' => [$arquivo]]` (convencao do resto do sistema) e
+                // tambem `['campo' => $arquivo]`. Sem normalizar, passar o objeto
+                // solto fazia o foreach iterar as PROPRIEDADES do UploadedFile, nao
+                // achar nenhum, e descartar o arquivo SEM ERRO — a requisicao seguia
+                // sem anexo e o backend recusava por campo ausente.
+                foreach ((is_array($items) ? $items : [$items]) as $file) {
                     if (! $file instanceof UploadedFile) {
                         continue;
                     }
@@ -391,7 +396,12 @@ class ApiClient
                         $retryRequest = $this->baseMultipartRequest()->withToken($newToken);
 
                         foreach ($files as $field => $items) {
-                            foreach ($items as $file) {
+                            // Aceita `['campo' => [$arquivo]]` (convencao do resto do sistema) e
+                            // tambem `['campo' => $arquivo]`. Sem normalizar, passar o objeto
+                            // solto fazia o foreach iterar as PROPRIEDADES do UploadedFile, nao
+                            // achar nenhum, e descartar o arquivo SEM ERRO — a requisicao seguia
+                            // sem anexo e o backend recusava por campo ausente.
+                            foreach ((is_array($items) ? $items : [$items]) as $file) {
                                 if (! $file instanceof UploadedFile) {
                                     continue;
                                 }

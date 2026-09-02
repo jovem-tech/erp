@@ -18,6 +18,8 @@ class Servico extends Model
         'valor' => 'decimal:2',
         'tempo_padrao_horas' => 'decimal:2',
         'custo_direto_padrao' => 'decimal:2',
+        // Nullable de proposito: "nao cadastrado" nao e' "isento".
+        'aliquota_iss' => 'decimal:2',
         'encerrado_em' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',

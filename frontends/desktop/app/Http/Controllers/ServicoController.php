@@ -366,6 +366,11 @@ class ServicoController extends DesktopController
             'tempo_padrao_horas' => 0,
             'custo_direto_padrao' => 0,
             'status' => 'ativo',
+            // Fiscais (041): nascem vazios e sem uso, como os de `pecas` na 027.
+            'codigo_tributacao_nacional' => '',
+            'item_lc116' => '',
+            'aliquota_iss' => '',
+            'unidade' => '',
         ];
     }
 
@@ -387,6 +392,10 @@ class ServicoController extends DesktopController
             'tempo_padrao_horas' => ['nullable', 'numeric', 'min:0'],
             'custo_direto_padrao' => ['nullable', 'numeric', 'min:0'],
             'status' => ['nullable', 'string', 'in:ativo,encerrado,inativo'],
+            'codigo_tributacao_nacional' => ['nullable', 'string', 'max:20'],
+            'item_lc116' => ['nullable', 'string', 'max:10'],
+            'aliquota_iss' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'unidade' => ['nullable', 'string', 'max:6'],
         ]);
 
         return [
@@ -397,6 +406,12 @@ class ServicoController extends DesktopController
             'tempo_padrao_horas' => (float) ($validated['tempo_padrao_horas'] ?? 0),
             'custo_direto_padrao' => (float) ($validated['custo_direto_padrao'] ?? 0),
             'status' => trim((string) ($validated['status'] ?? 'ativo')),
+            'codigo_tributacao_nacional' => trim((string) ($validated['codigo_tributacao_nacional'] ?? '')),
+            'item_lc116' => trim((string) ($validated['item_lc116'] ?? '')),
+            // String vazia vira null: "nao cadastrado" nao e' "isento", e 0
+            // mentiria na hora de emitir.
+            'aliquota_iss' => ($validated['aliquota_iss'] ?? '') === '' ? null : (float) $validated['aliquota_iss'],
+            'unidade' => trim((string) ($validated['unidade'] ?? '')),
         ];
     }
 

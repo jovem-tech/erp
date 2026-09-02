@@ -263,6 +263,35 @@ class DesktopNavigation
                     ],
                 ],
             ],
+            // Fiscal entre Cadastros e Financeiro. NAO pode vir antes de
+            // Cadastros: `firstAllowedRouteName()` percorre esta lista em
+            // ordem, e "Prontidão fiscal" (modulo `clientes`) roubaria de
+            // `clients.index` o papel de destino de fallback — um usuario so'
+            // com `clientes` cairia num relatorio ao esbarrar num
+            // redirecionamento de permissao. specs/041-emissao-fiscal-nfse.
+            [
+                'label' => 'Fiscal',
+                'items' => [
+                    [
+                        'label' => 'Notas pendentes',
+                        'route' => 'fiscal.pendentes',
+                        'module' => 'os',
+                        'icon' => 'bi-receipt',
+                    ],
+                    [
+                        'label' => 'Notas emitidas',
+                        'route' => 'fiscal.emitidas',
+                        'module' => 'os',
+                        'icon' => 'bi-receipt-cutoff',
+                    ],
+                    [
+                        'label' => 'Prontidão fiscal',
+                        'route' => 'fiscal.prontidao',
+                        'module' => 'clientes',
+                        'icon' => 'bi-clipboard-check',
+                    ],
+                ],
+            ],
             [
                 'label' => 'Financeiro',
                 'items' => [

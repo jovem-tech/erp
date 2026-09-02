@@ -171,6 +171,13 @@
                     <button type="button" class="config-subtab" data-config-subtab="google" aria-pressed="false">
                         <i class="bi bi-google me-1"></i>Portal do Cliente
                     </button>
+                    <button type="button" class="config-subtab" data-config-subtab="fiscal" aria-pressed="false" id="fiscal">
+                        <i class="bi bi-patch-check me-1"></i>Certificado A1
+                        {{-- Sem estado no render: o badge e o painel sao
+                             preenchidos quando a sub-aba abre. --}}
+                        <span class="badge rounded-pill text-bg-light border text-secondary ms-1"
+                              style="font-size:.65rem;" data-certificado-badge>—</span>
+                    </button>
                     <button type="button" class="config-subtab" data-config-subtab="agenda-google" aria-pressed="false" id="agenda-google">
                         <i class="bi bi-calendar-week me-1"></i>Google Agenda
                         <span class="badge rounded-pill {{ $agendaGoogleConnected ? 'text-bg-success' : 'text-bg-light border text-secondary' }} ms-1" style="font-size:.65rem;">
@@ -979,6 +986,105 @@
                     </div>
                 </div>
 
+                {{-- Certificado A1 (spec 041, fase 043).
+                     NAO tem upload de proposito: o caminho e a senha ficam no
+                     .env e o conteudo nunca vai para o banco — mesma decisao
+                     de `config/inter.php`, porque o dump diario e' gzip sem
+                     cifra e o backup de configuracao carrega o APP_KEY, entao
+                     chave e segredo cairiam no mesmo pacote. Este painel existe
+                     porque a tela e' onde as pessoas procuram: mostra o estado
+                     e diz o que fazer. --}}
+                <div class="config-subpanel" data-config-subpanel="fiscal">
+                    <div class="surface-card-header">
+                        <div>
+                            <h3 class="surface-title mb-1">Certificado digital A1</h3>
+                            <p class="surface-subtitle mb-0">
+                                Necessário para emitir direto do sistema e obrigatório para nota de peça.
+                                A nota de <strong>serviço</strong> continua saindo sem ele, pelo modo assistido.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="alert alert-secondary" data-certificado-estado>
+                        Consultando o certificado…
+                    </div>
+
+                    @php $podeEditarCertificado = \App\Support\DesktopSession::can('configuracoes', 'editar'); @endphp
+
+                    @if ($podeEditarCertificado)
+                        <div class="surface-card p-3 mb-3">
+                            <h4 class="surface-title fs-6 mb-1">Enviar certificado</h4>
+                            <p class="surface-subtitle small mb-3">
+                                Arquivo <code>.pfx</code> ou <code>.p12</code> entregue pela Autoridade
+                                Certificadora. O sistema confere a senha <strong>antes</strong> de guardar —
+                                se não abrir, nada é alterado.
+                            </p>
+
+                            <div class="row g-2 align-items-end">
+                                <div class="col-12 col-md-5">
+                                    <label class="form-label" for="certificado_arquivo">Arquivo do certificado</label>
+                                    <input type="file" class="form-control @error('certificado_arquivo') is-invalid @enderror"
+                                           id="certificado_arquivo" name="certificado_arquivo"
+                                           accept=".pfx,.p12" form="certificadoUploadForm" required>
+                                    @error('certificado_arquivo')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                                </div>
+                                <div class="col-12 col-md-4">
+                                    <label class="form-label" for="certificado_senha">Senha do certificado</label>
+                                    <input type="password" class="form-control @error('certificado_senha') is-invalid @enderror"
+                                           id="certificado_senha" name="certificado_senha"
+                                           autocomplete="new-password" form="certificadoUploadForm" required>
+                                    @error('certificado_senha')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                                </div>
+                                <div class="col-12 col-md-3 d-flex gap-2">
+                                    <button type="submit" class="btn btn-primary flex-fill" form="certificadoUploadForm">
+                                        <i class="bi bi-upload me-1"></i>Instalar
+                                    </button>
+                                    <button type="submit" class="btn btn-outline-danger" form="certificadoRemoverForm"
+                                            onclick="return confirm('Remover o certificado instalado? A emissão direta para de funcionar.');">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <p class="surface-subtitle small mt-3 mb-0">
+                                A senha fica cifrada em repouso e nunca volta para esta tela. O arquivo é
+                                gravado fora do banco de dados — chave privada não entra em dump.
+                            </p>
+                        </div>
+                    @endif
+
+                    <details class="border rounded p-3">
+                        <summary class="fw-semibold" style="cursor: pointer;">Instalar pelo servidor (alternativa)</summary>
+
+                        <p class="surface-subtitle small mt-2">
+                            O arquivo <code>.pfx</code> fica no servidor, não no banco de dados. É uma decisão
+                            de segurança: o backup de configuração carrega a chave da aplicação, e guardar a
+                            chave privada junto colocaria os dois no mesmo pacote. Por isso a troca de
+                            certificado exige acesso ao servidor.
+                        </p>
+
+                        <ol class="surface-subtitle small mb-0">
+                            <li class="mb-2">
+                                Copie o <code>.pfx</code> para o servidor:
+                                <pre class="bg-body-secondary p-2 rounded mt-1 mb-0" style="white-space:pre-wrap;"><code>sudo -u www-data mkdir -p /var/www/sistema-erp/backend/storage/app/private/integracoes/fiscal
+sudo cp SEU_ARQUIVO.pfx /var/www/sistema-erp/backend/storage/app/private/integracoes/fiscal/certificado.pfx
+sudo chown www-data:www-data /var/www/sistema-erp/backend/storage/app/private/integracoes/fiscal/certificado.pfx
+sudo chmod 600 /var/www/sistema-erp/backend/storage/app/private/integracoes/fiscal/certificado.pfx</code></pre>
+                            </li>
+                            <li class="mb-2">
+                                No <code>.env</code> do backend:
+                                <pre class="bg-body-secondary p-2 rounded mt-1 mb-0" style="white-space:pre-wrap;"><code>FISCAL_CERT_PFX_PATH=storage/app/private/integracoes/fiscal/certificado.pfx
+FISCAL_CERT_SENHA=a-senha-do-arquivo</code></pre>
+                            </li>
+                            <li>
+                                Limpe o cache e confira:
+                                <pre class="bg-body-secondary p-2 rounded mt-1 mb-0" style="white-space:pre-wrap;"><code>php artisan config:clear
+php artisan fiscal:verificar-certificado</code></pre>
+                            </li>
+                        </ol>
+                    </details>
+                </div>
+
                 <div class="desktop-config-footer">
                     <div class="text-muted small">
                         As alterações de todas as sub-abas são salvas juntas.
@@ -995,6 +1101,12 @@
             {{-- Ações do Google Agenda. Ficam fora do formulário principal
                  porque HTML não permite <form> aninhado; os controles do painel
                  as alcançam pelo atributo `form=`. --}}
+            {{-- Certificado A1: fora do formulario principal pelo mesmo motivo
+                 dos formularios do Google Agenda — HTML nao permite <form>
+                 aninhado, e os controles do painel os alcancam por `form=`. --}}
+            <form method="post" id="certificadoUploadForm" action="{{ route('fiscal.certificado.store') }}" enctype="multipart/form-data" class="d-none" data-no-page-loader="true">@csrf</form>
+            <form method="post" id="certificadoRemoverForm" action="{{ route('fiscal.certificado.destroy') }}" class="d-none">@csrf @method('DELETE')</form>
+
             <form method="post" id="agendaGoogleCredentialsForm" action="{{ route('configurations.integrations.agenda-google.credentials') }}" class="d-none">@csrf</form>
             <form method="post" id="agendaGoogleManualForm" action="{{ route('configurations.integrations.agenda-google.connect-manual') }}" class="d-none">@csrf</form>
             <form method="post" id="agendaGoogleDisconnectForm" action="{{ route('configurations.integrations.agenda-google.disconnect') }}" class="d-none">@csrf</form>
@@ -1092,4 +1204,54 @@
 
 @section('scripts')
     <script src="{{ asset('assets/js/configurations-integrations.js') }}?v={{ filemtime(public_path('assets/js/configurations-integrations.js')) }}"></script>
+    <script>
+        // Estado do certificado A1 sob demanda: so' consulta quando a sub-aba
+        // e' aberta, e uma vez por visita. A pagina de integracoes e' aberta o
+        // tempo todo; a sub-aba do certificado, quase nunca.
+        (function () {
+            const aba = document.getElementById('fiscal');
+            if (!aba) { return; }
+
+            let carregado = false;
+
+            aba.addEventListener('click', function () {
+                if (carregado) { return; }
+                carregado = true;
+
+                const badge = aba.querySelector('[data-certificado-badge]');
+                const estado = document.querySelector('[data-certificado-estado]');
+
+                fetch(@json(route('fiscal.certificado.status')), { headers: { 'Accept': 'application/json' } })
+                    .then((r) => r.json())
+                    .then(function (dados) {
+                        if (!dados.success) { throw new Error(dados.message || 'falhou'); }
+
+                        const c = dados.certificado || {};
+                        if (c.usavel) {
+                            badge.className = 'badge rounded-pill text-bg-success ms-1';
+                            badge.textContent = 'Válido';
+                            estado.className = 'alert alert-success';
+                            estado.textContent = (c.titular || '') + ' — ' + (c.documento_titular || '')
+                                + '. Vence em ' + (c.expira_em || '?') + ' (' + (c.dias_ate_vencimento ?? '?') + ' dias).';
+                        } else if (c.instalado) {
+                            badge.className = 'badge rounded-pill text-bg-danger ms-1';
+                            badge.textContent = 'Problema';
+                            estado.className = 'alert alert-danger';
+                            estado.textContent = 'Certificado instalado, mas não utilizável: ' + (c.problemas || []).join(' ');
+                        } else {
+                            badge.className = 'badge rounded-pill text-bg-light border text-secondary ms-1';
+                            badge.textContent = 'Off';
+                            estado.className = 'alert alert-secondary';
+                            estado.textContent = 'Nenhum certificado instalado. Siga o passo a passo abaixo.';
+                        }
+                    })
+                    .catch(function () {
+                        // Falhar em silencio esconderia um certificado vencido.
+                        estado.className = 'alert alert-warning';
+                        estado.textContent = 'Não foi possível consultar o certificado agora.';
+                        carregado = false;
+                    });
+            });
+        })();
+    </script>
 @endsection

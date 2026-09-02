@@ -83,6 +83,7 @@ return [
             'budget_documents' => ['disk' => 'local', 'path' => 'private/orcamentos'],
             'signatures' => ['disk' => 'local', 'path' => 'private/assinaturas'],
             'user_profile_photos' => ['disk' => 'local', 'path' => 'private/usuarios'],
+            'fiscal_documents' => ['disk' => 'local', 'path' => 'private/fiscal'],
             'chat' => ['disk' => 'local', 'path' => 'chat-media'],
             'legacy_equipment_profiles' => ['disk' => 'legacy_public', 'path' => 'uploads/equipamentos_perfil'],
             'legacy_equipment_files' => ['disk' => 'legacy_public', 'path' => 'uploads/equipamentos'],
@@ -163,6 +164,16 @@ return [
         'budget_pdf' => [
             'max_bytes' => 50 * 1024 * 1024,
             'mime_extensions' => ['application/pdf' => ['pdf']],
+            'inline_mime_types' => ['application/pdf'],
+        ],
+        'fiscal_document' => [
+            'max_bytes' => 20 * 1024 * 1024,
+            'mime_extensions' => [
+                'application/pdf' => ['pdf'],
+                'application/xml' => ['xml'],
+                'text/xml' => ['xml'],
+            ],
+            // XML nao e' para abrir no navegador: baixa.
             'inline_mime_types' => ['application/pdf'],
         ],
         'user_signature' => [

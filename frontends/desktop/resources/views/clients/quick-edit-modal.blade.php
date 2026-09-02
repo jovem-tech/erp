@@ -80,6 +80,14 @@
                         <input type="text" id="quickEditClientUf" name="uf" class="form-control" maxlength="2" autocomplete="off">
                     </div>
 
+                    <div>
+                        {{-- Codigo IBGE: a NFS-e identifica municipio por ele, nao
+                             pelo nome digitado em "cidade". Opcional, como o CPF. --}}
+                        <label for="quickEditClientCodigoIbge">Código IBGE do município</label>
+                        <input type="text" id="quickEditClientCodigoIbge" name="codigo_ibge_municipio"
+                               class="form-control" maxlength="7" inputmode="numeric" autocomplete="off">
+                    </div>
+
                     <div class="desktop-grid-span-2">
                         <div id="quickEditClientErrors" class="alert alert-danger d-none mb-0"></div>
                     </div>

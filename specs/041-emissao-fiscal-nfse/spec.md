@@ -81,20 +81,25 @@ depende de certificado, de contador e de regra municipal ainda não confirmados.
   e PDF, que ficam anexados à OS. Isso cumpre 2027 sem certificado, sem contrato
   com gateway e sem depender da regra municipal de material — e é o degrau que a
   integração reusa, não trabalho jogado fora.
-- **Uma normalização de CPF/CNPJ só, e ela já existe.**
-  `UpsertOrderRequest::prepareForValidation()` já reduz `cpf_cnpj` a dígitos para
-  `novo_cliente` e `cliente_atualizacao`, e já aplica `Rule::unique`. O CRUD de
-  cliente (`ClientController`, `'cpf_cnpj' => ['nullable','string','max:20']`)
-  **não** normaliza nada. Hoje o mesmo documento entra como `123.456.789-00` por
-  uma porta e `12345678900` pela outra — e o `unique` não vê a duplicata, porque
-  as strings diferem. A regra passa a morar em `App\Support\Documento`, no
-  backend, e as duas portas do backend chamam a mesma coisa.
-  **O desktop não recebe cópia.** Backend e desktop são dois apps Laravel com
-  autoloads separados (`shared/` tem só `version.php`), e nenhuma classe de
-  domínio do backend está duplicada lá. O desktop é BFF: encaminha e deixa o
-  backend recusar. O feedback instantâneo do formulário é JavaScript — UX, não
-  autoridade —, porque uma segunda cópia da regra em PHP divergiria da primeira
-  com o tempo.
+- **A validação de documento não existe hoje — a normalização, sim.**
+  Registro de correção: uma leitura anterior desta spec afirmava que o CRUD de
+  cliente gravava CPF sem normalizar. É falso. `ClientController` normaliza em
+  `validatedClientPayload()` (depois da validação) e ainda faz checagem manual de
+  unicidade, porque `clientes.cpf_cnpj` tem índice `UNIQUE` de verdade e a
+  violação estouraria como 500. `UpsertOrderRequest` faz o mesmo em
+  `prepareForValidation()`. As duas gravam dígitos de forma consistente; **não há
+  duplicata por máscara**.
+  O que falta é o **dígito verificador**: nenhuma das portas confere, e qualquer
+  sequência de 11 dígitos entra como CPF. É isso que `App\Support\Documento`
+  resolve, e é por isso que as duas portas passam a chamá-lo em vez de repetir
+  `preg_replace`.
+- **`novo_cliente.cpf_cnpj` não tem regra nenhuma.** `OrderController` lê
+  `novo_cliente` cru com `$request->input()`, fora do `validated()`, e a chave
+  não aparece em `rules()`. A normalização a alcança (o `prepareForValidation`
+  faz `merge` antes), mas nem validação nem unicidade. Ganha a regra de dígito
+  verificador nesta entrega. **Não** ganha `unique`: isso passaria a recusar a
+  criação de OS para um CPF já cadastrado, que é mudança de fluxo e merece
+  decisão própria.
 - **Campos fiscais de `servicos` espelham os de `pecas`.** Mesma decisão da `027`,
   mesmo formato: nullable, numa aba "Fiscal", sem uso imediato. O serviço é 79%
   do faturamento e foi o lado que ficou de fora naquela entrega.
@@ -163,10 +168,10 @@ achar as 2.187 OS com CMV zerado.
   cache e nos logs. Mais um motivo para a guarda passar pelo `022`.
 - **A suíte de desktop é instável.** Tirar baseline com `git stash` antes de
   atribuir falha à entrega.
-- **Pode haver duplicata latente de CPF entre as duas portas.** A base está
-  vazia hoje, então o risco é de frente, não de trás: se o CRUD começar a
-  normalizar antes do wizard, ou vice-versa, nasce a divergência que a decisão
-  acima existe para impedir. As duas portas mudam na mesma entrega.
+- **As duas normalizações existentes corrompem CNPJ alfanumérico.** Ambas usam
+  `preg_replace('/\D+/')`, que apaga as letras e grava o resto como se fosse
+  documento. É defeito ativo desde 06/07/2026, não risco futuro: trocar as duas
+  por `Documento::normalizar()` faz parte da entrega, não é refatoração opcional.
 - **Validar CPF com dígito verificador vai reprovar dado que hoje entra.** Como
   a base está 100% vazia, não há retrabalho de migração — mas o cadastro rápido
   precisa da mensagem certa, ou o operador contorna digitando qualquer coisa.

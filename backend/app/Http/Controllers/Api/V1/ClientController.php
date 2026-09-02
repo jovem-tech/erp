@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Models\Client;
+use App\Support\Documento;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -157,6 +158,7 @@ class ClientController extends BaseApiController
             'telefone_contato' => (string) ($client->telefone_contato ?? ''),
             'cidade' => (string) ($client->cidade ?? ''),
             'uf' => (string) ($client->uf ?? ''),
+            'codigo_ibge_municipio' => (string) ($client->codigo_ibge_municipio ?? ''),
             'status_cadastro' => (string) ($client->status_cadastro ?? ''),
         ];
     }
@@ -185,6 +187,7 @@ class ClientController extends BaseApiController
             'bairro' => (string) ($client->bairro ?? ''),
             'cidade' => (string) ($client->cidade ?? ''),
             'uf' => (string) ($client->uf ?? ''),
+            'codigo_ibge_municipio' => (string) ($client->codigo_ibge_municipio ?? ''),
             'observacoes' => (string) ($client->observacoes ?? ''),
             'status_cadastro' => (string) ($client->status_cadastro ?? ''),
             'preferencia_contato' => (string) ($client->preferencia_contato ?? ''),
@@ -198,10 +201,18 @@ class ClientController extends BaseApiController
      */
     private function validatedClientPayload(Request $request, ?int $ignoreId = null): array
     {
+        // Normaliza ANTES de validar: a regra de digito verificador precisa ver
+        // a forma canonica, e a mensagem de erro precisa apontar o campo que o
+        // usuario preencheu. Normalizar depois (como era feito) deixava o DV sem
+        // conferencia nenhuma.
+        if ($request->has('cpf_cnpj')) {
+            $request->merge(['cpf_cnpj' => Documento::normalizar((string) $request->input('cpf_cnpj'))]);
+        }
+
         $validated = $request->validate([
             'tipo_pessoa' => ['required', 'string', 'max:20'],
             'nome_razao' => ['required', 'string', 'max:100'],
-            'cpf_cnpj' => ['nullable', 'string', 'max:20'],
+            'cpf_cnpj' => ['nullable', 'string', 'max:20', Documento::regra()],
             'rg_ie' => ['nullable', 'string', 'max:20'],
             'email' => ['nullable', 'email', 'max:100'],
             'telefone1' => ['required', 'string', 'max:20'],
@@ -216,6 +227,9 @@ class ClientController extends BaseApiController
             'bairro' => ['nullable', 'string', 'max:50'],
             'cidade' => ['nullable', 'string', 'max:50'],
             'uf' => ['nullable', 'string', 'max:2'],
+            // Codigo IBGE do municipio: a NFS-e identifica cidade por ele, nao
+            // pelo nome digitado em `cidade`.
+            'codigo_ibge_municipio' => ['nullable', 'string', 'size:7'],
             'observacoes' => ['nullable', 'string'],
             'status_cadastro' => ['required', 'string', 'max:20'],
             'preferencia_contato' => ['nullable', 'string', 'max:50'],
@@ -237,6 +251,7 @@ class ClientController extends BaseApiController
             'bairro' => 'bairro',
             'cidade' => 'cidade',
             'uf' => 'UF',
+            'codigo_ibge_municipio' => 'código IBGE do município',
             'observacoes' => 'observações',
             'status_cadastro' => 'situação cadastral',
             'preferencia_contato' => 'preferência de contato',
@@ -255,11 +270,13 @@ class ClientController extends BaseApiController
             ? $payload['status_cadastro']
             : 'completo';
 
-        // Armazena CPF/CNPJ apenas com digitos para manter consistencia com a
-        // coluna unica e evitar duplicidade por conta da mascara.
+        // CPF/CNPJ ja chegou normalizado (Documento::normalizar, acima da
+        // validacao) para manter consistencia com o indice unico da coluna e
+        // evitar duplicidade por conta da mascara. O `preg_replace('/\D+/')`
+        // que ficava aqui apagava as letras de um CNPJ alfanumerico -- formato
+        // em producao desde 06/07/2026 -- e gravava o resto como se valesse.
         if (array_key_exists('cpf_cnpj', $payload) && $payload['cpf_cnpj'] !== null) {
-            $digits = preg_replace('/\D+/', '', (string) $payload['cpf_cnpj']);
-            $payload['cpf_cnpj'] = $digits === '' ? null : $digits;
+            $payload['cpf_cnpj'] = Documento::normalizar((string) $payload['cpf_cnpj']);
         }
 
         // Uniqueness manual: a coluna cpf_cnpj possui indice unico. Sem esta

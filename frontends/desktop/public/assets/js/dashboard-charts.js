@@ -107,14 +107,19 @@
 
         const { osMin, osMax, moneyMin, moneyMax } = limites();
 
-        const linhas = series.map((item) => ({
+        // Só a primeira linha (OS abertas) preenche a área — é o pano de fundo
+        // contra o qual a segunda linha é lida. Preencher as duas faz as áreas
+        // se sobreporem numa mancha só, sem dar pra distinguir de qual série é
+        // qual pedaço. tension 0 (reta, não curva) evita o efeito "balão" que
+        // uma curva suave faz quando dois meses distantes se conectam.
+        const linhas = series.map((item, index) => ({
             type: 'line',
             label: item.label || '',
             data: Array.isArray(item.data) ? item.data : [],
             borderColor: item.color || '#6f5afc',
             backgroundColor: item.backgroundColor || 'rgba(111, 90, 252, 0.18)',
-            tension: 0.38,
-            fill: true,
+            tension: 0,
+            fill: index === 0,
             pointRadius: 3,
             pointHoverRadius: 5,
             pointBackgroundColor: item.color || '#6f5afc',

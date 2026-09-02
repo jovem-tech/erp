@@ -185,8 +185,11 @@
                     </summary>
 
                     <p class="text-secondary small mt-2 mb-3">
-                        O sistema ainda não emite nota fiscal. Estes campos ficam guardados
-                        para quando a emissão for implementada.
+                        Peça é mercadoria: sai por NF-e ou NFC-e pela SEFAZ do estado, e
+                        <strong>isso o sistema ainda não emite</strong> — exige certificado
+                        digital A1, sem versão gratuita. (A nota de <em>serviço</em>, essa
+                        sim, já é emitida em Fiscal &rsaquo; Notas pendentes.) Estes campos
+                        ficam guardados para quando a emissão de mercadoria for implementada.
                     </p>
 
                     <div class="row g-3">

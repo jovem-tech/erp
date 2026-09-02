@@ -11,6 +11,7 @@ use App\Services\CompanyProfileService;
 use App\Services\ConfigurationService;
 use App\Services\DocumentationService;
 use App\Services\GroupService;
+use App\Services\ProntidaoFiscalService;
 use App\Services\UserService;
 use App\Support\DesktopPreferences;
 use App\Support\DesktopSession;
@@ -31,7 +32,8 @@ class ConfigurationController extends DesktopController
         private readonly DocumentationService $documentationService,
         private readonly UserService $userService,
         private readonly GroupService $groupService,
-        private readonly AgendaService $agendaService
+        private readonly AgendaService $agendaService,
+        private readonly ProntidaoFiscalService $prontidaoFiscalService
     ) {
     }
 
@@ -51,6 +53,79 @@ class ConfigurationController extends DesktopController
             'integration' => $this->configurationService->integrations(),
             'agendaGoogle' => $agendaGoogle,
         ]);
+    }
+
+    /**
+     * Estado do certificado A1, sob demanda.
+     *
+     * Fora do render de propósito: a página de integrações é aberta o tempo
+     * todo e a sub-aba do certificado quase nunca. Buscar no render faria toda
+     * visita pagar uma ida ao backend por um dado que ninguém olhou.
+     */
+    public function certificadoFiscalStatus(): JsonResponse
+    {
+        try {
+            return response()->json([
+                'success' => true,
+                'certificado' => $this->prontidaoFiscalService->verificar()['areas']['certificado'] ?? [],
+            ]);
+        } catch (Throwable $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Não foi possível consultar o certificado agora.',
+            ], 200);
+        }
+    }
+
+    /**
+     * Instala o certificado A1 enviado pela tela.
+     *
+     * A senha nao volta para a tela em nenhuma hipotese: o backend so' devolve
+     * o estado (titular, validade, problemas).
+     */
+    public function instalarCertificadoFiscal(Request $request): RedirectResponse
+    {
+        $request->validate([
+            'certificado_arquivo' => ['required', 'file', 'max:10240'],
+            'certificado_senha' => ['required', 'string', 'max:255'],
+        ], [], [
+            'certificado_arquivo' => 'arquivo do certificado',
+            'certificado_senha' => 'senha do certificado',
+        ]);
+
+        try {
+            $estado = $this->prontidaoFiscalService->instalarCertificado(
+                $request->file('certificado_arquivo'),
+                (string) $request->input('certificado_senha')
+            );
+        } catch (ApiRequestException $excecao) {
+            return redirect()
+                ->route('configurations.integrations.index')
+                ->with('error', $excecao->getMessage() ?: 'Não foi possível instalar o certificado.');
+        }
+
+        return redirect()
+            ->route('configurations.integrations.index')
+            ->with('success', sprintf(
+                'Certificado instalado: %s, válido até %s.',
+                $estado['titular'] ?? '—',
+                isset($estado['expira_em']) ? date('d/m/Y', strtotime((string) $estado['expira_em'])) : '—'
+            ));
+    }
+
+    public function removerCertificadoFiscal(): RedirectResponse
+    {
+        try {
+            $this->prontidaoFiscalService->removerCertificado();
+        } catch (ApiRequestException $excecao) {
+            return redirect()
+                ->route('configurations.integrations.index')
+                ->with('error', $excecao->getMessage() ?: 'Não foi possível remover o certificado.');
+        }
+
+        return redirect()
+            ->route('configurations.integrations.index')
+            ->with('success', 'Certificado removido.');
     }
 
     // -----------------------------------------------------------------
@@ -268,6 +343,19 @@ class ConfigurationController extends DesktopController
             'empresa_telefone' => trim((string) $request->input('empresa_telefone', '')),
             'empresa_email' => trim((string) $request->input('empresa_email', '')),
             'empresa_endereco' => trim((string) $request->input('empresa_endereco', '')),
+            // Fiscais (041): a NFS-e exige endereco em campos separados, e nao
+            // a linha unica que `empresa_endereco` guarda para os PDFs.
+            'empresa_logradouro' => trim((string) $request->input('empresa_logradouro', '')),
+            'empresa_numero' => trim((string) $request->input('empresa_numero', '')),
+            'empresa_complemento' => trim((string) $request->input('empresa_complemento', '')),
+            'empresa_bairro' => trim((string) $request->input('empresa_bairro', '')),
+            'empresa_cidade' => trim((string) $request->input('empresa_cidade', '')),
+            'empresa_uf' => strtoupper(trim((string) $request->input('empresa_uf', ''))),
+            'empresa_cep' => trim((string) $request->input('empresa_cep', '')),
+            'empresa_codigo_ibge' => trim((string) $request->input('empresa_codigo_ibge', '')),
+            'empresa_inscricao_municipal' => trim((string) $request->input('empresa_inscricao_municipal', '')),
+            'empresa_cnae' => trim((string) $request->input('empresa_cnae', '')),
+            'empresa_codigo_tributacao_nacional' => trim((string) $request->input('empresa_codigo_tributacao_nacional', '')),
         ];
 
         $logo = $request->file('empresa_logo');
