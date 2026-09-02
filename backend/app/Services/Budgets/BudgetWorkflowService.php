@@ -151,15 +151,28 @@ class BudgetWorkflowService
     /**
      * Catálogo mínimo e paginado usado exclusivamente na abertura de OS.
      *
+     * `cliente_id` e `somente_aprovados` atendem a abertura de OS a partir de
+     * um orçamento já aprovado: escolhido o cliente, o técnico vê apenas os
+     * orçamentos dele que o cliente autorizou — e a OS nasce em
+     * "Aguardando Reparo" (ver OrderWorkflowService::pendingOrderStatusForBudgetLink).
+     *
      * @return array{paginator: LengthAwarePaginator}
      */
     public function paginateLinkableForOrder(array $filters = []): array
     {
         $search = trim((string) ($filters['q'] ?? $filters['search'] ?? ''));
+        $clientId = (int) ($filters['cliente_id'] ?? 0);
+        $onlyApproved = filter_var($filters['somente_aprovados'] ?? false, FILTER_VALIDATE_BOOLEAN);
         $perPage = max(1, min(30, (int) ($filters['per_page'] ?? 15)));
         $page = max(1, (int) ($filters['page'] ?? 1));
 
         $query = $this->linkableForOrderQuery();
+        if ($clientId > 0) {
+            $query->where('orcamentos.cliente_id', $clientId);
+        }
+        if ($onlyApproved) {
+            $query->whereIn('orcamentos.status', Budget::approvedForOrderLinkStatuses());
+        }
         if ($search !== '') {
             // Trata curingas como texto do usuário. Isso evita que entradas
             // como "%" ampliem a busca para todo o catálogo e elevem o custo
@@ -1006,7 +1019,12 @@ class BudgetWorkflowService
         return [
             'id' => (int) $budget->id,
             'numero' => (string) ($budget->numero ?? ('ORC-'.(int) $budget->id)),
+            'cliente_id' => (int) ($budget->cliente_id ?? 0) ?: null,
             'cliente_nome' => $clientName,
+            // O equipamento do orçamento é obrigatório na OS gerada a partir
+            // dele (validateBudgetForOrderLink); o cliente precisa dele para
+            // já selecionar o mesmo equipamento no formulário.
+            'equipamento_id' => (int) ($budget->equipamento_id ?? 0) ?: null,
             'equipamento_resumo' => $equipmentLabel,
             'total' => round((float) ($budget->total ?? 0), 2),
             'total_formatado' => number_format((float) ($budget->total ?? 0), 2, ',', '.'),

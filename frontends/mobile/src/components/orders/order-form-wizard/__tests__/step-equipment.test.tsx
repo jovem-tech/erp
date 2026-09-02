@@ -254,6 +254,64 @@ describe('StepEquipment', () => {
     }));
   });
 
+  it('seleciona sozinho o equipamento cadastrado do orçamento vinculado', async () => {
+    const { getEquipmentDetail } = await import('@/lib/orders');
+    const onSelectEquipamento = vi.fn();
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={1}
+        equipamento={null}
+        pendingNewEquipment={null}
+        pendingNewEquipmentPhotos={[]}
+        linkedBudget={{
+          id: 91,
+          numero: 'ORC-0091',
+          status: 'aprovado',
+          cliente_id: 1,
+          equipamento_id: 1,
+          equipamento_resumo: 'Samsung A015',
+        }}
+        onSelectEquipamento={onSelectEquipamento}
+        onChangePendingNewEquipment={vi.fn()}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(getEquipmentDetail).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(onSelectEquipamento).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 1, cliente_id: 1, resumo_tecnico: 'Samsung A015', tipo_id: 1 })
+    ));
+  });
+
+  it('avisa quando o equipamento escolhido não é o do orçamento vinculado', async () => {
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={1}
+        equipamento={buildEquipment()}
+        pendingNewEquipment={null}
+        pendingNewEquipmentPhotos={[]}
+        linkedBudget={{
+          id: 91,
+          numero: 'ORC-0091',
+          status: 'aprovado',
+          cliente_id: 1,
+          equipamento_id: 99,
+          equipamento_resumo: 'Notebook do orçamento',
+        }}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={vi.fn()}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    expect(
+      await screen.findByText(/O orçamento ORC-0091 é de outro equipamento deste cliente/)
+    ).toBeInTheDocument();
+  });
+
   it('sem relação de catálogo para o tipo do orçamento, só o tipo é pré-preenchido', async () => {
     const { getEquipmentFormData } = await import('@/lib/orders');
     vi.mocked(getEquipmentFormData).mockResolvedValue({ ...formData, catalog_relations: [] });

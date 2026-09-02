@@ -9,6 +9,7 @@ use App\Models\OrderItem;
 use App\Support\Documento;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
@@ -38,61 +39,103 @@ class DocumentoFiscalService
      */
     public function rascunhoDeOrdem(Order $order, ?int $usuarioId = null): DocumentoFiscal
     {
-        // Nota JA' EMITIDA vence tudo: e' o documento que existe no fisco.
-        // Antes esta busca so' olhava rascunho/rejeitado, entao cada visita a
-        // tela depois de emitir criava um rascunho NOVO — a pagina dizia
-        // "Rascunho" para uma OS que ja' tinha nota, e reimportar o mesmo XML
-        // batia na trava de numero duplicado sem explicar o porque.
-        $emitido = DocumentoFiscal::query()
-            ->where('os_id', $order->id)
-            ->where('tipo', DocumentoFiscal::TIPO_NFSE)
-            ->whereIn('status', [DocumentoFiscal::STATUS_EMITIDO, DocumentoFiscal::STATUS_CANCELADO])
-            ->orderByDesc('id')
-            ->first();
+        // Sem trava, este metodo lia em DUAS consultas separadas ("ja' existe
+        // emitido?", depois "ja' existe rascunho?") sem transacao nem lock.
+        // Se um `registrarEmissao()` concorrente comitava ENTRE as duas
+        // consultas, a linha "sumia" das duas buscas ao mesmo tempo — nem
+        // emitido (ainda nao tinha sido visto assim), nem rascunho (ja' nao
+        // era mais) — e o metodo criava um documento NOVO por cima do que
+        // acabara de ser emitido. Foi assim que uma unica OS acumulou tres
+        // documentos fiscais no mesmo dia, dois deles emitidos.
+        //
+        // A janela era real, nao teorica: a tela de nota chama este metodo a
+        // cada carregamento (`DocumentoFiscalController::nota`), e a baixa da
+        // OS o chama e, na sequencia, redireciona para essa mesma tela — duas
+        // chamadas para a mesma OS em rapida sucessao sempre que a baixa
+        // registra o XML na hora. Um clique duplo no botao, uma aba extra
+        // aberta na mesma OS, ou uma requisicao lenta que o navegador tenta de
+        // novo bastam para abrir a janela.
+        //
+        // O fechamento tem duas partes, porque sao duas corridas diferentes:
+        //
+        //  - `Cache::lock` (mesmo padrao de `FileManagerFacade::store()`)
+        //    serializa chamadas CONCORRENTES a este proprio metodo para a
+        //    MESMA OS — fecha a corrida de "duas chamadas simultaneas, OS
+        //    ainda sem documento nenhum, as duas criam".
+        //  - `lockForUpdate()` numa UNICA consulta (nao duas) serializa contra
+        //    `registrarEmissao()`/`cancelar()`, que mudam o status de uma
+        //    linha ja' existente: UPDATE toma lock de linha mesmo sem pedir
+        //    explicitamente, entao o SELECT ... FOR UPDATE daqui espera o
+        //    commit deles antes de ler — e' o que fecha a corrida que
+        //    realmente aconteceu.
+        $chave = 'fiscal:rascunho-os:'.$order->id;
 
-        if ($emitido instanceof DocumentoFiscal) {
-            // Devolvido como esta': reescrever tomador ou valores de um
-            // documento ja' declarado ao fisco seria falsear o registro.
-            return $emitido;
-        }
+        return Cache::lock($chave, 10)->block(5, function () use ($order, $usuarioId): DocumentoFiscal {
+            return DB::transaction(function () use ($order, $usuarioId): DocumentoFiscal {
+                $documentos = DocumentoFiscal::query()
+                    ->where('os_id', $order->id)
+                    ->where('tipo', DocumentoFiscal::TIPO_NFSE)
+                    ->orderByDesc('id')
+                    ->lockForUpdate()
+                    ->get();
 
-        $existente = DocumentoFiscal::query()
-            ->where('os_id', $order->id)
-            ->where('tipo', DocumentoFiscal::TIPO_NFSE)
-            ->whereIn('status', [DocumentoFiscal::STATUS_RASCUNHO, DocumentoFiscal::STATUS_REJEITADO])
-            ->orderByDesc('id')
-            ->first();
+                // Nota JA' EMITIDA vence tudo: e' o documento que existe no
+                // fisco. Devolvido como esta' — reescrever tomador ou valores
+                // de um documento ja' declarado ao fisco seria falsear o
+                // registro.
+                $emitido = $documentos->first(
+                    static fn (DocumentoFiscal $d): bool => in_array(
+                        $d->status,
+                        [DocumentoFiscal::STATUS_EMITIDO, DocumentoFiscal::STATUS_CANCELADO],
+                        true
+                    )
+                );
 
-        $cliente = $order->cliente_id !== null
-            ? Client::query()->find($order->cliente_id)
-            : null;
+                if ($emitido !== null) {
+                    return $emitido;
+                }
 
-        $valores = $this->valoresLiquidos($order);
+                $existente = $documentos->first(
+                    static fn (DocumentoFiscal $d): bool => in_array(
+                        $d->status,
+                        [DocumentoFiscal::STATUS_RASCUNHO, DocumentoFiscal::STATUS_REJEITADO],
+                        true
+                    )
+                );
 
-        $dados = [
-            'cliente_id' => $order->cliente_id,
-            'tomador_nome' => $cliente?->nome_razao,
-            'tomador_documento' => Documento::normalizar((string) ($cliente?->cpf_cnpj ?? '')),
-            'discriminacao' => $this->discriminacao($order),
-            'valor_servicos' => $valores['servicos'],
-            'valor_pecas' => $valores['pecas'],
-            // `valor_final` é o que o cliente pagou (já com desconto), e é ele
-            // que vai na nota — não `valor_total`, que ignora o ajuste.
-            'valor_total' => $valores['total'],
-        ];
+                $cliente = $order->cliente_id !== null
+                    ? Client::query()->find($order->cliente_id)
+                    : null;
 
-        if ($existente !== null) {
-            $existente->fill($dados)->save();
+                $valores = $this->valoresLiquidos($order);
 
-            return $existente->refresh();
-        }
+                $dados = [
+                    'cliente_id' => $order->cliente_id,
+                    'tomador_nome' => $cliente?->nome_razao,
+                    'tomador_documento' => Documento::normalizar((string) ($cliente?->cpf_cnpj ?? '')),
+                    'discriminacao' => $this->discriminacao($order),
+                    'valor_servicos' => $valores['servicos'],
+                    'valor_pecas' => $valores['pecas'],
+                    // `valor_final` é o que o cliente pagou (já com desconto),
+                    // e é ele que vai na nota — não `valor_total`, que ignora
+                    // o ajuste.
+                    'valor_total' => $valores['total'],
+                ];
 
-        return DocumentoFiscal::query()->create($dados + [
-            'tipo' => DocumentoFiscal::TIPO_NFSE,
-            'status' => DocumentoFiscal::STATUS_RASCUNHO,
-            'os_id' => $order->id,
-            'criado_por' => $usuarioId,
-        ]);
+                if ($existente !== null) {
+                    $existente->fill($dados)->save();
+
+                    return $existente->refresh();
+                }
+
+                return DocumentoFiscal::query()->create($dados + [
+                    'tipo' => DocumentoFiscal::TIPO_NFSE,
+                    'status' => DocumentoFiscal::STATUS_RASCUNHO,
+                    'os_id' => $order->id,
+                    'criado_por' => $usuarioId,
+                ]);
+            });
+        });
     }
 
     /**
@@ -114,28 +157,54 @@ class DocumentoFiscalService
      */
     public function novoRascunhoAposCancelamento(Order $order, ?int $usuarioId = null): DocumentoFiscal
     {
-        $ultimo = DocumentoFiscal::query()
-            ->where('os_id', $order->id)
-            ->where('tipo', DocumentoFiscal::TIPO_NFSE)
-            ->orderByDesc('id')
-            ->first();
+        // Mesma trava de `rascunhoDeOrdem()`, e pela mesma razao: entre ler
+        // `$ultimo` e criar o documento novo, um `cancelar()` ou
+        // `registrarEmissao()` concorrente podia mudar o status por baixo —
+        // aqui o risco e' menor (acao exige clique explicito, nao roda a cada
+        // carregamento de tela), mas e' a mesma classe de corrida, e a chave
+        // e' a mesma porque as duas mexem no mesmo recurso: "quantos
+        // documentos nfse esta OS tem agora".
+        return Cache::lock('fiscal:rascunho-os:'.$order->id, 10)->block(5, function () use ($order, $usuarioId): DocumentoFiscal {
+            return DB::transaction(function () use ($order, $usuarioId): DocumentoFiscal {
+                $ultimo = DocumentoFiscal::query()
+                    ->where('os_id', $order->id)
+                    ->where('tipo', DocumentoFiscal::TIPO_NFSE)
+                    ->orderByDesc('id')
+                    ->lockForUpdate()
+                    ->first();
 
-        if ($ultimo === null) {
-            // Nunca houve documento: o fluxo normal resolve.
-            return $this->rascunhoDeOrdem($order, $usuarioId);
-        }
+                if ($ultimo === null) {
+                    // Nunca houve documento: o fluxo normal resolve. Chamado
+                    // de DENTRO da mesma trava e transacao — nao reabre a
+                    // janela que acabou de ser fechada.
+                    return $this->criarRascunho($order, $usuarioId);
+                }
 
-        if ((string) $ultimo->status === DocumentoFiscal::STATUS_EMITIDO) {
-            throw ValidationException::withMessages([
-                'documento' => 'Esta OS já tem nota emitida. Cancele-a antes de emitir outra.',
-            ]);
-        }
+                if ((string) $ultimo->status === DocumentoFiscal::STATUS_EMITIDO) {
+                    throw ValidationException::withMessages([
+                        'documento' => 'Esta OS já tem nota emitida. Cancele-a antes de emitir outra.',
+                    ]);
+                }
 
-        if ((string) $ultimo->status !== DocumentoFiscal::STATUS_CANCELADO) {
-            // Rascunho ou rejeitado: ja' da' para emitir, nao ha o que abrir.
-            return $ultimo;
-        }
+                if ((string) $ultimo->status !== DocumentoFiscal::STATUS_CANCELADO) {
+                    // Rascunho ou rejeitado: ja' da' para emitir, nao ha o que abrir.
+                    return $ultimo;
+                }
 
+                return $this->criarRascunho($order, $usuarioId);
+            });
+        });
+    }
+
+    /**
+     * Monta os dados de um rascunho novo a partir da OS e grava.
+     *
+     * Extraido para nao duplicar a montagem de `$dados` entre
+     * `rascunhoDeOrdem()` e `novoRascunhoAposCancelamento()` — os dois
+     * criam o mesmo tipo de linha, so' o "quando" e' diferente.
+     */
+    private function criarRascunho(Order $order, ?int $usuarioId): DocumentoFiscal
+    {
         $cliente = $order->cliente_id !== null
             ? Client::query()->find($order->cliente_id)
             : null;
@@ -551,8 +620,12 @@ class DocumentoFiscalService
      * O XML é o que a lei manda guardar por 5 anos; o PDF é o que se manda ao
      * cliente.
      */
-    public function anexarArquivo(DocumentoFiscal $documento, UploadedFile $arquivo, string $formato): DocumentoFiscal
-    {
+    public function anexarArquivo(
+        DocumentoFiscal $documento,
+        UploadedFile $arquivo,
+        string $formato,
+        ?NfseXmlImporter $importador = null
+    ): DocumentoFiscal {
         $formato = strtolower(trim($formato));
 
         if (! in_array($formato, ['xml', 'pdf'], true)) {
@@ -571,6 +644,19 @@ class DocumentoFiscalService
         }
 
         $conteudo = (string) file_get_contents($arquivo->getRealPath());
+
+        // O XML e' conferido; o PDF, nao — nao ha' como ler tomador nem chave
+        // de um PDF neste sistema, entao a garantia para PDF continua sendo o
+        // operador olhar o que baixou. Para XML ha' como conferir de verdade,
+        // e antes este caminho ("Guardar arquivos do portal", usado depois da
+        // emissao manual) nao conferia nada — so' `registrarPorXml()` (o
+        // caminho "Importar o XML da nota", antes de emitir) checava. Um XML
+        // de OUTRO cliente, ou da nota ERRADA do mesmo cliente, passava aqui
+        // sem aviso nenhum e ficava marcado com o "XML" verde na listagem como
+        // se provasse a nota.
+        if ($formato === 'xml' && $importador !== null) {
+            $this->conferirXmlAnexado($documento, $importador, $conteudo);
+        }
 
         $identificador = $documento->numero !== null && $documento->numero !== ''
             ? preg_replace('/[^A-Za-z0-9_-]/', '', (string) $documento->numero)
@@ -600,6 +686,43 @@ class DocumentoFiscalService
         ])->save();
 
         return $documento->refresh();
+    }
+
+    /**
+     * Confere se o XML anexado é mesmo desta nota, antes de guardá-lo.
+     *
+     * Duas checagens, na ordem do que é mais preciso:
+     *
+     *  1. **Chave**: se o documento já tem uma chave registrada (manual ou de
+     *     importação anterior), o XML anexado tem de ser dela — é a conferência
+     *     mais forte, porque pega até o caso "XML certo, mas da nota errada do
+     *     MESMO cliente" que uma checagem só de tomador deixaria passar.
+     *  2. **Tomador**: reusa `conferirTomador()`, a mesma regra que
+     *     `registrarPorXml()` já aplica antes de emitir.
+     *
+     * Falha ao LER o arquivo (não é XML, não é NFS-e) também rejeita — um
+     * `.xml` de outra coisa qualquer não pode ficar marcado como o XML desta
+     * nota.
+     */
+    private function conferirXmlAnexado(DocumentoFiscal $documento, NfseXmlImporter $importador, string $conteudo): void
+    {
+        $lido = $importador->ler($conteudo);
+
+        $chaveDoDocumento = strtoupper(trim((string) ($documento->chave ?? '')));
+        $chaveDoArquivo = strtoupper(trim((string) ($lido['chave'] ?? '')));
+
+        if ($chaveDoDocumento !== '' && $chaveDoArquivo !== '' && $chaveDoDocumento !== $chaveDoArquivo) {
+            throw ValidationException::withMessages([
+                'arquivo' => sprintf(
+                    'Este XML é de outra nota: a chave dele (%s) não é a chave registrada nesta (%s). '
+                        .'Confira se não trocou o arquivo com outra OS.',
+                    $chaveDoArquivo,
+                    $chaveDoDocumento
+                ),
+            ]);
+        }
+
+        $this->conferirTomador($documento, $lido);
     }
 
     /**

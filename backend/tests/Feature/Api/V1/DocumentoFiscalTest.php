@@ -271,13 +271,25 @@ class DocumentoFiscalTest extends TestCase
     {
         Storage::fake('local');
 
-        $documento = $this->rascunho();
-        $this->comToken()->postJson('/api/v1/fiscal/documentos/' . $documento . '/emissao', ['numero' => '000123'])->assertOk();
+        // Tomador e chave batendo com a fixture real: "Registrar a mao" com o
+        // numero/chave certos, depois "Guardar arquivos do portal" com o XML
+        // certo — as duas conferencias (chave e tomador) tem de deixar passar
+        // um arquivo que realmente e' o desta nota.
+        $documento = $this->rascunho($this->criarOrdem('OS2609040', '72063654001309'));
+        $this->comToken()
+            ->postJson('/api/v1/fiscal/documentos/' . $documento . '/emissao', [
+                'numero' => '2',
+                'serie' => '70000',
+                'chave' => '33052082234129526000198000000000000226086919348703',
+            ])
+            ->assertOk();
 
         $this->comToken()
             ->post('/api/v1/fiscal/documentos/' . $documento . '/arquivo', [
                 'formato' => 'xml',
-                'arquivo' => UploadedFile::fake()->createWithContent('nfse.xml', '<?xml version="1.0"?><NFSe/>'),
+                'arquivo' => new UploadedFile(
+                    base_path('tests/Fixtures/nfse/nfse-real-mei.xml'), 'nfse.xml', 'application/xml', null, true
+                ),
             ])
             ->assertOk()
             ->assertJsonPath('data.documento.tem_xml', true);
@@ -293,6 +305,67 @@ class DocumentoFiscalTest extends TestCase
         $this->assertStringStartsWith(
             'private/os_documentos/'.$registro->os_id.'/fiscal/',
             (string) $registro->xml_arquivo
+        );
+    }
+
+    /**
+     * O achado que gerou esta correção: uma OS de um cliente ficou com o XML
+     * de outro anexado — "Guardar arquivos do portal" (usado depois da emissão
+     * manual) não conferia nada do conteúdo, ao contrário de "Importar o XML
+     * da nota" (antes de emitir), que já checava o tomador.
+     */
+    public function test_recusa_anexar_xml_de_outro_cliente(): void
+    {
+        Storage::fake('local');
+
+        // OS de um CPF; o XML anexado e' o da fixture, cujo tomador e' outro
+        // CNPJ inteiramente — o caso real que apareceu na tela.
+        $documento = $this->rascunho($this->criarOrdem('OS2609041', '52998224725'));
+        $this->comToken()
+            ->postJson('/api/v1/fiscal/documentos/' . $documento . '/emissao', ['numero' => '999'])
+            ->assertOk();
+
+        $this->comToken()
+            ->post('/api/v1/fiscal/documentos/' . $documento . '/arquivo', [
+                'formato' => 'xml',
+                'arquivo' => new UploadedFile(
+                    base_path('tests/Fixtures/nfse/nfse-real-mei.xml'), 'nfse.xml', 'application/xml', null, true
+                ),
+            ])
+            ->assertStatus(422);
+
+        $this->assertNull(DocumentoFiscal::query()->findOrFail($documento)->xml_arquivo);
+    }
+
+    /**
+     * Mesmo cliente, nota errada: a checagem de tomador sozinha deixaria isto
+     * passar, porque o CPF/CNPJ bate. A chave é a conferência que pega o caso
+     * "XML certo, nota errada".
+     */
+    public function test_recusa_anexar_xml_de_chave_diferente_da_registrada(): void
+    {
+        Storage::fake('local');
+
+        $documento = $this->rascunho($this->criarOrdem('OS2609042', '72063654001309'));
+        $this->comToken()
+            ->postJson('/api/v1/fiscal/documentos/' . $documento . '/emissao', [
+                'numero' => '2',
+                'chave' => str_repeat('9', 50),
+            ])
+            ->assertOk();
+
+        $resposta = $this->comToken()
+            ->post('/api/v1/fiscal/documentos/' . $documento . '/arquivo', [
+                'formato' => 'xml',
+                'arquivo' => new UploadedFile(
+                    base_path('tests/Fixtures/nfse/nfse-real-mei.xml'), 'nfse.xml', 'application/xml', null, true
+                ),
+            ]);
+
+        $resposta->assertStatus(422);
+        $this->assertStringContainsString(
+            'de outra nota',
+            (string) ($resposta->json('error.details.arquivo.0') ?? $resposta->json('error.message'))
         );
     }
 
@@ -521,6 +594,34 @@ class DocumentoFiscalTest extends TestCase
     }
 
     /**
+     * OS que nunca teve documento fiscal nenhum: o "novo" cai no fluxo normal.
+     *
+     * Prende a refatoração que fechou a corrida em `rascunhoDeOrdem()`: o ramo
+     * "nunca houve documento" de `novoRascunhoAposCancelamento()` passou a
+     * chamar `criarRascunho()` (que NÃO tenta a trava de novo) em vez de
+     * `rascunhoDeOrdem()` — chamar o método que já tenta a MESMA trava de
+     * dentro dela mesma travaria a requisição até o timeout de 5 segundos.
+     */
+    public function test_novo_documento_em_os_sem_documento_nenhum_nao_trava(): void
+    {
+        $os = $this->criarOrdem();
+
+        $inicio = microtime(true);
+
+        $novo = (int) $this->comToken()
+            ->postJson('/api/v1/orders/' . $os . '/documento-fiscal/novo')
+            ->assertOk()
+            ->assertJsonPath('data.documento.status', 'rascunho')
+            ->json('data.documento.id');
+
+        // Bem abaixo do timeout de 5s da trava: se tivesse travado nela mesma,
+        // a resposta so' viria depois de estourar o bloqueio.
+        $this->assertLessThan(2.0, microtime(true) - $inicio);
+        $this->assertSame(1, DocumentoFiscal::query()->where('os_id', $os)->count());
+        $this->assertGreaterThan(0, $novo);
+    }
+
+    /**
      * Com nota emitida e válida, abrir outra ao lado produziria duas notas vivas
      * para o mesmo serviço — que é o erro caro deste fluxo.
      */
@@ -711,10 +812,86 @@ class DocumentoFiscalTest extends TestCase
     }
 
     /**
-     * Sem item de serviço lançado, a solução aplicada pelo técnico entra no
-     * lugar — é a segunda fonte que a oficina preenche.
+     * Sem item na OS, mas com orçamento aprovado, o serviço vem de lá — é o
+     * caso comum de quem nasceu de orçamento formal: de 32 orçamentos
+     * aprovados com OS vinculada, só 1 também tinha item lançado na própria OS.
      */
-    public function test_sem_item_de_servico_usa_a_solucao_aplicada(): void
+    public function test_sem_item_na_os_usa_o_orcamento_aprovado(): void
+    {
+        Mail::fake();
+
+        $documento = $this->emitidaComXml();
+        $osId = (int) DocumentoFiscal::query()->whereKey($documento)->value('os_id');
+
+        DB::table('os_itens')->where('os_id', $osId)->where('tipo', 'servico')->delete();
+
+        $orcamentoId = DB::table('orcamentos')->insertGetId([
+            'numero' => 'ORC-TEST-001', 'versao' => 1, 'status' => 'aprovado',
+            'os_id' => $osId, 'subtotal' => 130, 'total' => 130, 'validade_dias' => 7,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('orcamento_itens')->insert([
+            'orcamento_id' => $orcamentoId, 'tipo_item' => 'servico',
+            'descricao' => 'Formatação e configuração do sistema operacional',
+            'quantidade' => 1, 'valor_unitario' => 130, 'total' => 130, 'ordem' => 1,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $mensagem = (string) $this->comToken()
+            ->postJson('/api/v1/fiscal/documentos/' . $documento . '/envio', [
+                'canal' => 'email',
+                'destino' => 'cliente@exemplo.com',
+            ])
+            ->assertOk()
+            ->json('data.envio.mensagem');
+
+        $this->assertStringContainsString(
+            "Serviço executado:\nFormatação e configuração do sistema operacional",
+            $mensagem
+        );
+    }
+
+    /**
+     * Orçamento rascunho ou rejeitado não descreve o que foi feito — descreve o
+     * que foi proposto e não vingou. Não pode entrar na mensagem.
+     */
+    public function test_orcamento_nao_aprovado_nao_entra_na_mensagem(): void
+    {
+        Mail::fake();
+
+        $documento = $this->emitidaComXml();
+        $osId = (int) DocumentoFiscal::query()->whereKey($documento)->value('os_id');
+
+        DB::table('os_itens')->where('os_id', $osId)->where('tipo', 'servico')->delete();
+
+        $orcamentoId = DB::table('orcamentos')->insertGetId([
+            'numero' => 'ORC-TEST-002', 'versao' => 1, 'status' => 'rejeitado',
+            'os_id' => $osId, 'subtotal' => 900, 'total' => 900, 'validade_dias' => 7,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+        DB::table('orcamento_itens')->insert([
+            'orcamento_id' => $orcamentoId, 'tipo_item' => 'servico',
+            'descricao' => 'Troca de placa-mãe completa', 'quantidade' => 1,
+            'valor_unitario' => 900, 'total' => 900, 'ordem' => 1,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        $mensagem = (string) $this->comToken()
+            ->postJson('/api/v1/fiscal/documentos/' . $documento . '/envio', [
+                'canal' => 'email',
+                'destino' => 'cliente@exemplo.com',
+            ])
+            ->assertOk()
+            ->json('data.envio.mensagem');
+
+        $this->assertStringNotContainsString('Troca de placa-mãe completa', $mensagem);
+    }
+
+    /**
+     * Sem item na OS nem orçamento, a solução aplicada pelo técnico entra no
+     * lugar — é o último recurso.
+     */
+    public function test_sem_os_e_sem_orcamento_usa_a_solucao_aplicada(): void
     {
         Mail::fake();
 

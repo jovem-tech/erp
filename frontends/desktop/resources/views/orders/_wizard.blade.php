@@ -97,9 +97,20 @@
     $submitLabel = $isEditing ? 'Salvar alteracoes' : 'Criar OS';
     $submitIcon = $isEditing ? 'bi-check2-circle' : 'bi-clipboard-plus';
     $cancelUrl = $isEditing ? route('orders.show', $orderId) : route('orders.index');
+    // Com orcamento vinculado, o status inicial da OS acompanha o do orcamento
+    // (regra do backend em OrderWorkflowService::pendingOrderStatusForBudgetLink):
+    // aprovado ja entra na fila de execucao, os demais aguardam orcamento ou
+    // autorizacao. Sem orcamento vinculado, a OS nasce em triagem.
+    $linkedBudgetStatus = trim((string) data_get($linkedBudget, 'status', ''));
+    $initialStatusLabel = match ($linkedBudgetStatus) {
+        '' => 'Triagem',
+        'aprovado', 'pendente_abertura_os' => 'Aguardando Reparo',
+        'rascunho', 'pendente_envio', 'pendente', 'reenviar_orcamento', 'vencido' => 'Aguardando Orcamento',
+        default => 'Aguardando Autorizacao',
+    };
     $statusLabel = $isEditing
         ? (trim((string) data_get($order, 'status_nome', '')) !== '' ? trim((string) data_get($order, 'status_nome', '')) : 'Status atual')
-        : 'Triagem ao salvar';
+        : $initialStatusLabel . ' ao salvar';
     $entradaLabel = $isEditing
         ? (trim((string) data_get($order, 'data_entrada', '')) !== '' ? trim((string) data_get($order, 'data_entrada', '')) : 'Nao informada')
         : now()->format('d/m/Y, H:i');
@@ -765,7 +776,11 @@
                     @else
                         <div class="order-create-panel-note">
                             <strong>Fluxo inicial</strong>
-                            <p>A OS entra em triagem no backend central. O tecnico pode ser atribuido antes da abertura para agilizar a fila de atendimento.</p>
+                            @if ($linkedBudgetStatus !== '')
+                                <p>Com o orcamento vinculado, a OS entra em {{ $initialStatusLabel }} no backend central. O tecnico pode ser atribuido antes da abertura para agilizar a fila de atendimento.</p>
+                            @else
+                                <p>A OS entra em triagem no backend central. O tecnico pode ser atribuido antes da abertura para agilizar a fila de atendimento.</p>
+                            @endif
                         </div>
                     @endif
                 </div>

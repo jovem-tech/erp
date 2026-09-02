@@ -2,8 +2,10 @@
 
 namespace App\Services\Fiscal;
 
+use App\Models\Budget;
 use App\Models\DocumentoFiscal;
 use App\Models\OrderEvent;
+use App\Models\Order;
 use App\Models\OrderItem;
 use App\Services\Integrations\IntegrationSettingsService;
 use App\Services\Orders\OrderEventService;
@@ -306,19 +308,28 @@ class NotaFiscalEnvioService
     }
 
     /**
-     * O que foi executado, lido da OS.
+     * O que foi executado, em ordem de fonte.
      *
-     * A fonte é o item de serviço da OS (`os_itens`, tipo `servico`) — é o que
-     * o cliente contratou e pagou, e é o campo que a oficina realmente preenche:
-     * 2.257 OS têm item de serviço, contra 69 com `solucao_aplicada`. Quando não
-     * há item, a solução aplicada entra como reserva.
+     * As três fontes cobrem casos praticamente disjuntos, e não uma
+     * substituindo a outra — por isso a cadeia, e não uma escolha fixa:
+     *
+     *  1. **Item de serviço da OS** (`os_itens`, tipo `servico`) — o que a
+     *     oficina mais preenche (2.257 OS têm item de serviço). É o texto do
+     *     que o cliente pagou.
+     *  2. **Itens do orçamento aprovado** (`orcamento_itens`, tipo `servico`) —
+     *     cobre a OS que nasceu de orçamento formal e nunca teve `os_itens`
+     *     lançado, que não é caso raro: de 32 orçamentos aprovados com OS
+     *     vinculada, só 1 também tinha item na OS. As duas tabelas atendem
+     *     fluxos diferentes da oficina, não uma a outra.
+     *  3. **Solução aplicada** pelo técnico — último recurso, quando nem OS nem
+     *     orçamento têm item nenhum.
      *
      * **O que NÃO entra:** `procedimentos_executados` é diário do técnico, com
      * nome e horário de cada tentativa — registro interno, não descrição para o
      * cliente. E `relato_cliente` é o problema relatado, não o serviço feito:
      * sairia sob um rótulo que mente.
      *
-     * Sem nenhuma das duas fontes o bloco some. Preencher com genérico
+     * Sem nenhuma das três fontes o bloco some. Preencher com genérico
      * ("serviços de assistência técnica") ocuparia linha sem dizer nada.
      */
     private function servicoExecutado(DocumentoFiscal $documento): string
@@ -329,19 +340,8 @@ class NotaFiscalEnvioService
             return '';
         }
 
-        $linhas = [];
-
-        foreach (OrderItem::query()->where('os_id', $order->id)->where('tipo', 'servico')->orderBy('id')->get() as $item) {
-            $descricao = trim((string) ($item->descricao ?? ''));
-
-            if ($descricao === '') {
-                continue;
-            }
-
-            $quantidade = (int) (float) ($item->quantidade ?? 1);
-
-            $linhas[] = $quantidade > 1 ? sprintf('%s (%dx)', $descricao, $quantidade) : $descricao;
-        }
+        $linhas = $this->linhasDosItensDaOs($order)
+            ?: $this->linhasDoOrcamentoAprovado($order);
 
         if ($linhas === []) {
             $solucao = trim((string) ($order->solucao_aplicada ?? ''));
@@ -368,6 +368,64 @@ class NotaFiscalEnvioService
     }
 
     /**
+     * @return array<int, string>
+     */
+    private function linhasDosItensDaOs(Order $order): array
+    {
+        $linhas = [];
+
+        foreach (OrderItem::query()->where('os_id', $order->id)->where('tipo', 'servico')->orderBy('id')->get() as $item) {
+            $descricao = trim((string) ($item->descricao ?? ''));
+
+            if ($descricao === '') {
+                continue;
+            }
+
+            $quantidade = (int) (float) ($item->quantidade ?? 1);
+
+            $linhas[] = $quantidade > 1 ? sprintf('%s (%dx)', $descricao, $quantidade) : $descricao;
+        }
+
+        return $linhas;
+    }
+
+    /**
+     * O orçamento **aprovado** mais recente da OS. Rascunho ou rejeitado não
+     * descreve o que foi feito — descreve o que foi proposto e não vingou.
+     *
+     * @return array<int, string>
+     */
+    private function linhasDoOrcamentoAprovado(Order $order): array
+    {
+        $orcamento = Budget::query()
+            ->where('os_id', $order->id)
+            ->where('status', Budget::STATUS_APPROVED)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($orcamento === null) {
+            return [];
+        }
+
+        $linhas = [];
+
+        foreach ($orcamento->items()->where('tipo_item', 'servico')->orderBy('ordem')->get() as $item) {
+            $descricao = trim((string) ($item->descricao ?? ''));
+
+            if ($descricao === '') {
+                continue;
+            }
+
+            $quantidade = (int) (float) ($item->quantidade ?? 1);
+
+            $linhas[] = $quantidade > 1 ? sprintf('%s (%dx)', $descricao, $quantidade) : $descricao;
+        }
+
+        return $linhas;
+    }
+
+    /**
+     * "Equipamento: ..." e o número de série    /**
      * "Equipamento: ..." e o número de série, quando a OS tem essa informação.
      *
      * Serve para o cliente reconhecer a que atendimento a nota se refere sem

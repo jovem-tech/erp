@@ -534,7 +534,12 @@ export async function apiEntryChecklistModel(tipoEquipamentoId: number): Promise
   return requestJson<{ modelo: EntryChecklistModel | null }>(`/orders/checklists/entrada/modelos/${tipoEquipamentoId}`);
 }
 
-export async function apiSearchLinkableBudgets(params: { q?: string; per_page?: number } = {}): Promise<{
+export async function apiSearchLinkableBudgets(params: {
+  q?: string;
+  per_page?: number;
+  cliente_id?: number;
+  somente_aprovados?: boolean;
+} = {}): Promise<{
   budgets: LinkableBudget[];
 }> {
   const query = new URLSearchParams();
@@ -545,6 +550,14 @@ export async function apiSearchLinkableBudgets(params: { q?: string; per_page?: 
 
   if (params.per_page) {
     query.set('per_page', String(params.per_page));
+  }
+
+  if (params.cliente_id) {
+    query.set('cliente_id', String(params.cliente_id));
+  }
+
+  if (params.somente_aprovados) {
+    query.set('somente_aprovados', '1');
   }
 
   const queryString = query.toString();

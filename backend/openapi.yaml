@@ -1221,8 +1221,21 @@ components:
           minimum: 1
         numero:
           type: string
+        cliente_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: Cliente cadastrado do orçamento; nulo em orçamento avulso.
         cliente_nome:
           type: string
+        equipamento_id:
+          type: integer
+          nullable: true
+          minimum: 1
+          description: |
+            Equipamento cadastrado do orçamento; nulo quando o orçamento é
+            avulso ou não envolve equipamento. Quando presente, a OS gerada
+            precisa usar exatamente este equipamento.
         equipamento_resumo:
           type: string
         total:
@@ -2018,6 +2031,11 @@ components:
             vinculada e fora dos estados `cancelado`, `rejeitado` e
             `convertido` é aceito. Orçamentos ainda não aprovados permanecem
             abertos após o vínculo.
+
+            O status inicial da OS acompanha o do orçamento e ignora o campo
+            `status` da requisição: aprovado (`aprovado` ou
+            `pendente_abertura_os`) abre em `aguardando_reparo`, os demais em
+            `aguardando_orcamento` ou `aguardando_autorizacao`.
         cliente_id:
           type: integer
           minimum: 1
@@ -7031,6 +7049,11 @@ paths:
         `orcamentos:converter_os` em conjunto com `os:criar`. Retorna
         orçamentos do tipo `previo` em todos os status, exceto `cancelado`,
         `rejeitado` e `convertido`, sempre sem `os_id`.
+
+        Com `cliente_id` e `somente_aprovados=1` atende a abertura de OS a
+        partir de um orçamento aprovado: escolhido o cliente, lista apenas os
+        orçamentos dele que já foram autorizados. A OS criada com um desses
+        orçamentos nasce em `aguardando_reparo`.
       parameters:
         - $ref: "#/components/parameters/PageParam"
         - name: per_page
@@ -7042,6 +7065,20 @@ paths:
             maximum: 30
             default: 15
         - $ref: "#/components/parameters/QParam"
+        - name: cliente_id
+          in: query
+          description: Restringe aos orçamentos de um cliente cadastrado.
+          schema:
+            type: integer
+            minimum: 1
+        - name: somente_aprovados
+          in: query
+          description: |
+            Quando verdadeiro, retorna apenas orçamentos aprovados
+            (`aprovado` e `pendente_abertura_os`).
+          schema:
+            type: boolean
+            default: false
       responses:
         "200":
           description: Lista paginada de candidatos canônicos.

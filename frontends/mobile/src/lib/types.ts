@@ -288,7 +288,9 @@ export interface EntryChecklistModel {
 export interface LinkableBudget {
   id: number;
   numero: string;
+  cliente_id?: number | null;
   cliente_nome?: string;
+  equipamento_id?: number | null;
   cliente_nome_avulso?: string;
   telefone_contato?: string;
   email_contato?: string;
@@ -300,6 +302,7 @@ export interface LinkableBudget {
   valor_total?: number;
   total?: number;
   total_formatado?: string;
+  aprovado_em?: string | null;
   status: string;
   status_label?: string;
   linkable?: boolean;

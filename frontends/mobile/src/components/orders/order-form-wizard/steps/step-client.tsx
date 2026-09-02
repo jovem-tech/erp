@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '@/lib/api';
 import {
   getClientDetail,
+  isApprovedBudget,
+  listApprovedBudgetsForClient,
   lookupCepAddress,
   searchAvulsoBudgetContacts,
   searchClients,
@@ -88,6 +90,9 @@ export function StepClient({
   const [dismissedBudgetId, setDismissedBudgetId] = useState<number | null>(null);
   const [budgetLoading, setBudgetLoading] = useState(false);
   const [budgetError, setBudgetError] = useState<string | null>(null);
+  const [approvedBudgets, setApprovedBudgets] = useState<LinkableBudget[]>([]);
+  const [approvedBudgetsLoading, setApprovedBudgetsLoading] = useState(false);
+  const [approvedBudgetsError, setApprovedBudgetsError] = useState<string | null>(null);
   const [cepLoading, setCepLoading] = useState(false);
   const [cepMessage, setCepMessage] = useState<string | null>(null);
   const [cepError, setCepError] = useState<string | null>(null);
@@ -163,6 +168,49 @@ export function StepClient({
     pendingNewClient?.telefone1,
     view,
   ]);
+
+  // Cliente cadastrado escolhido: busca os orçamentos dele que já foram
+  // aprovados e ainda não viraram OS. É o caminho de "abrir a OS a partir de
+  // um orçamento aprovado" — o técnico só precisa escolher qual.
+  const clienteId = cliente?.id ?? null;
+  useEffect(() => {
+    if (mode !== 'create' || !canLinkBudget || clienteId === null) {
+      setApprovedBudgets([]);
+      setApprovedBudgetsError(null);
+      setApprovedBudgetsLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setApprovedBudgetsLoading(true);
+    setApprovedBudgetsError(null);
+
+    listApprovedBudgetsForClient(clienteId)
+      .then((budgets) => {
+        if (!cancelled) {
+          setApprovedBudgets(budgets);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setApprovedBudgets([]);
+          setApprovedBudgetsError(
+            error instanceof ApiError
+              ? error.message
+              : 'Não foi possível consultar os orçamentos aprovados deste cliente.'
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setApprovedBudgetsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [canLinkBudget, clienteId, mode]);
 
   const switchToSearch = (): void => {
     setView('buscar');
@@ -364,6 +412,69 @@ export function StepClient({
             <div className="notice notice--danger">
               <span>{existingError}</span>
             </div>
+          ) : null}
+
+          {mode === 'create' && canLinkBudget && cliente ? (
+            <>
+              {approvedBudgetsLoading ? (
+                <span className="muted" role="status">Consultando orçamentos aprovados deste cliente...</span>
+              ) : null}
+              {approvedBudgetsError ? (
+                <div className="notice notice--danger" role="alert">
+                  <span>{approvedBudgetsError}</span>
+                </div>
+              ) : null}
+              {linkedBudget ? (
+                <div className="notice">
+                  <div>
+                    <strong>OS a partir do orçamento {linkedBudget.numero}</strong>
+                    <div>{linkedBudget.equipamento_resumo || 'Equipamento não informado'}</div>
+                    {linkedBudget.total_formatado ? (
+                      <div className="muted">Total: R$ {linkedBudget.total_formatado}</div>
+                    ) : null}
+                    {isApprovedBudget(linkedBudget) ? (
+                      <div className="muted">
+                        Orçamento já aprovado: a OS será aberta em Aguardando Reparo.
+                      </div>
+                    ) : null}
+                    <div className="toolbar__group toolbar__group--offset">
+                      <button
+                        type="button"
+                        className="button button--soft button-small"
+                        onClick={() => onChangeLinkedBudget(null)}
+                        disabled={disabled}
+                      >
+                        Desvincular
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : approvedBudgets.length > 0 ? (
+                <div className="notice">
+                  <div>
+                    <strong>Orçamentos aprovados deste cliente</strong>
+                    <div className="muted">
+                      Abra a OS a partir de um deles: os valores vêm do orçamento e a OS já entra em
+                      Aguardando Reparo.
+                    </div>
+                    <div className="toolbar__group toolbar__group--offset">
+                      {approvedBudgets.map((budget) => (
+                        <button
+                          key={budget.id}
+                          type="button"
+                          className="button button--soft button-small"
+                          onClick={() => onChangeLinkedBudget(budget)}
+                          disabled={disabled}
+                        >
+                          {budget.numero} · {budget.equipamento_resumo || 'Equipamento não informado'}
+                          {budget.total_formatado ? ` · R$ ${budget.total_formatado}` : ''}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </>
           ) : null}
         </>
       ) : (

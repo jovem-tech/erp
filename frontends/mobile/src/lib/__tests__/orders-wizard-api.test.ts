@@ -7,6 +7,7 @@ import {
   apiSearchAvulsoBudgetContacts,
   apiSearchClients,
   apiSearchEquipments,
+  apiSearchLinkableBudgets,
   apiSearchReportedDefects,
   apiTechnicians,
   apiUpdateOrder,
@@ -73,6 +74,18 @@ describe('funções auxiliares do wizard de OS', () => {
 
     const [url] = fetchMock.mock.calls[0];
     expect(String(url)).toContain('/orcamentos/contatos-avulsos?q=M%C3%A1rcia+Souza&per_page=8');
+  });
+
+  it('apiSearchLinkableBudgets filtra por cliente e por orçamentos aprovados', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({ status: 'success', data: { budgets: [] }, error: null })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiSearchLinkableBudgets({ cliente_id: 42, somente_aprovados: true, per_page: 10 });
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/orcamentos/vinculaveis-os?per_page=10&cliente_id=42&somente_aprovados=1');
   });
 
   it('apiLookupCep envia somente os oito dígitos normalizados', async () => {

@@ -8,6 +8,9 @@ import type { ClientSearchResult, LinkableBudget, NovoClientePayload } from '@/l
 vi.mock('@/lib/orders', () => ({
   searchClients: vi.fn().mockResolvedValue([]),
   searchAvulsoBudgetContacts: vi.fn().mockResolvedValue([]),
+  listApprovedBudgetsForClient: vi.fn().mockResolvedValue([]),
+  isApprovedBudget: (budget: { status?: string } | null | undefined) =>
+    Boolean(budget && ['aprovado', 'pendente_abertura_os'].includes(budget.status ?? '')),
   lookupCepAddress: vi.fn().mockResolvedValue({
     cep: '01001-000',
     endereco: 'Praça da Sé',
@@ -211,6 +214,93 @@ describe('StepClient', () => {
 
     await user.click(screen.getByRole('button', { name: 'Vincular à OS' }));
     expect(await screen.findByText('Orçamento vinculado à OS')).toBeInTheDocument();
+  });
+
+  it('lista os orçamentos aprovados do cliente selecionado e vincula o escolhido', async () => {
+    const { listApprovedBudgetsForClient } = await import('@/lib/orders');
+    const approvedBudget: LinkableBudget = {
+      id: 91,
+      numero: 'ORC-0091',
+      cliente_id: 1,
+      cliente_nome: 'João Silva',
+      equipamento_id: 45,
+      equipamento_resumo: 'Notebook Acer Aspire',
+      total_formatado: '480,00',
+      status: 'aprovado',
+      status_label: 'Aprovado',
+    };
+    vi.mocked(listApprovedBudgetsForClient).mockResolvedValue([approvedBudget]);
+    const onChangeLinkedBudget = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <StepClient
+        mode="create"
+        cliente={buildClient()}
+        pendingNewClient={null}
+        onSelectCliente={vi.fn()}
+        onChangePendingNewClient={vi.fn()}
+        linkedBudget={null}
+        onChangeLinkedBudget={onChangeLinkedBudget}
+        canLinkBudget
+      />
+    );
+
+    await waitFor(() => expect(listApprovedBudgetsForClient).toHaveBeenCalledWith(1));
+    expect(await screen.findByText('Orçamentos aprovados deste cliente')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', {
+      name: 'ORC-0091 · Notebook Acer Aspire · R$ 480,00',
+    }));
+
+    expect(onChangeLinkedBudget).toHaveBeenCalledWith(approvedBudget);
+  });
+
+  it('avisa que a OS nascerá em Aguardando Reparo quando o orçamento vinculado está aprovado', async () => {
+    const { listApprovedBudgetsForClient } = await import('@/lib/orders');
+    vi.mocked(listApprovedBudgetsForClient).mockResolvedValue([]);
+
+    render(
+      <StepClient
+        mode="create"
+        cliente={buildClient()}
+        pendingNewClient={null}
+        onSelectCliente={vi.fn()}
+        onChangePendingNewClient={vi.fn()}
+        linkedBudget={{
+          id: 91,
+          numero: 'ORC-0091',
+          cliente_id: 1,
+          equipamento_id: 45,
+          equipamento_resumo: 'Notebook Acer Aspire',
+          status: 'aprovado',
+        }}
+        onChangeLinkedBudget={vi.fn()}
+        canLinkBudget
+      />
+    );
+
+    expect(await screen.findByText('OS a partir do orçamento ORC-0091')).toBeInTheDocument();
+    expect(
+      screen.getByText('Orçamento já aprovado: a OS será aberta em Aguardando Reparo.')
+    ).toBeInTheDocument();
+  });
+
+  it('não consulta orçamentos aprovados sem permissão de conversão', async () => {
+    const { listApprovedBudgetsForClient } = await import('@/lib/orders');
+
+    render(
+      <StepClient
+        mode="create"
+        cliente={buildClient()}
+        pendingNewClient={null}
+        onSelectCliente={vi.fn()}
+        onChangePendingNewClient={vi.fn()}
+      />
+    );
+
+    await waitFor(() => expect(listApprovedBudgetsForClient).not.toHaveBeenCalled());
+    expect(screen.queryByText('Orçamentos aprovados deste cliente')).not.toBeInTheDocument();
   });
 });
 

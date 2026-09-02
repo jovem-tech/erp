@@ -227,7 +227,8 @@ class DocumentoFiscalController extends BaseApiController
         $registro = $this->documentos->anexarArquivo(
             DocumentoFiscal::query()->findOrFail($documento),
             $request->file('arquivo'),
-            (string) $validated['formato']
+            (string) $validated['formato'],
+            $this->importador
         );
 
         return $this->success(['documento' => $this->mapear($registro)], request: $request);

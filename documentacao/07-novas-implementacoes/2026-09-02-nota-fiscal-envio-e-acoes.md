@@ -164,7 +164,22 @@ O que mudou:
   parecidas, e o número da OS sozinho não diz qual é qual — sem isso o cliente
   teria de abrir o anexo para descobrir. IMEI entra como reserva quando não há
   número de série, e rotulado como IMEI: chamá-lo de "número de série" confunde
-  quem vai conferir contra o aparelho.
+  quem vai conferir contra o aparelho;
+- **e o que foi feito**, numa cadeia de três fontes, porque elas cobrem casos
+  praticamente disjuntos — não uma substituindo a outra:
+
+  1. **Item de serviço da OS** (`os_itens`, tipo `servico`) — a fonte mais
+     preenchida (2.257 OS têm item de serviço);
+  2. **Itens do orçamento aprovado** — cobre a OS que nasceu de orçamento
+     formal e nunca teve item lançado na própria OS, que não é caso raro: de
+     32 orçamentos aprovados com OS vinculada, só 1 também tinha item na OS.
+     A tela de teste (OS26090002) é exatamente esse caso: orçamento aprovado
+     de R$ 130,00, zero itens em `os_itens` — sem esta fonte a mensagem saía
+     sem o serviço;
+  3. **Solução aplicada** pelo técnico — último recurso.
+
+  Orçamento rascunho ou rejeitado não entra: descreve o que foi *proposto*, não
+  o que foi feito.
 
 Coberto por dois testes que verificam as requisições que saem de fato: a ordem e
 as legendas no caso CNPJ, e o anexo único no caso CPF.
