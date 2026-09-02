@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.72.1.0 — 2026-09-02 19:20
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** deploy-completo.sh: recusa commitar artefato de runtime (foi assim que backend/storage/fonts entrou e travou a promocao para main), separa 'merge recusado antes de comecar' de conflito real com receita de saida, e nao deixa mais a bancada parada em main
+- **Arquivos:** scripts/bash/deploy-completo.sh,.gitignore,documentacao/10-deploy/workflow-git-multiambiente.md
+
 ## v5.72.0.0 — 2026-09-02 14:43
 - **Tier:** minor
 - **Autor/Agente:** Codex
