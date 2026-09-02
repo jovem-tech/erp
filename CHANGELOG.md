@@ -1,5 +1,29 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.72.0.0 — 2026-09-02 14:43
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Mobile: abrir OS a partir de um orcamento aprovado do cliente selecionado (lista na etapa Cliente, equipamento do orcamento ja selecionado) e OS com orcamento aprovado passa a nascer em Aguardando Reparo
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/BudgetController.php,backend/app/Services/Budgets/BudgetWorkflowService.php,backend/app/Services/Budgets/BudgetOrderSyncService.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/openapi.yaml,backend/tests/Feature/Api/V1/BudgetAvulsoFlowTest.php,frontends/mobile/src/lib/api.ts,frontends/mobile/src/lib/orders.ts,frontends/mobile/src/lib/types.ts,frontends/mobile/src/components/orders/order-form-wizard/index.tsx,frontends/mobile/src/components/orders/order-form-wizard/steps/step-client.tsx,frontends/mobile/src/components/orders/order-form-wizard/steps/step-equipment.tsx,frontends/desktop/resources/views/orders/_wizard.blade.php,documentacao/03-arquitetura-tecnica/contrato-api-backend-central.md,documentacao/07-novas-implementacoes/2026-09-02-os-a-partir-de-orcamento-aprovado-mobile.md
+
+## v5.71.6.0 — 2026-09-02 13:40
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** anexarArquivo() passa a conferir tomador e chave do XML antes de aceita-lo, fechando a brecha que deixou o XML de um cliente ficar anexado na OS de outro no caminho de emissao manual
+- **Arquivos:** backend/app/Services/Fiscal/DocumentoFiscalService.php,backend/app/Http/Controllers/Api/V1/DocumentoFiscalController.php,backend/tests/Feature/Api/V1/DocumentoFiscalTest.php
+
+## v5.71.5.0 — 2026-09-02 13:16
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Corrige corrida em rascunhoDeOrdem() que deixava uma OS acumular documento fiscal duplicado (emitido + rascunho orfao) quando a baixa com XML embutido rodava; trava com Cache::lock + SELECT FOR UPDATE, provada com teste real de duas conexoes MySQL
+- **Arquivos:** backend/app/Services/Fiscal/DocumentoFiscalService.php,backend/tests/Integration/FiscalRascunhoConcorrenciaMysqlTest.php,backend/tests/Feature/Api/V1/DocumentoFiscalTest.php
+
+## v5.71.4.0 — 2026-09-02 12:55
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Mensagem padrao do envio passa a descrever o servico executado numa cadeia de tres fontes (item da OS, itens do orcamento aprovado, solucao aplicada), porque as duas primeiras cobrem OS quase disjuntas
+- **Arquivos:** backend/app/Services/Fiscal/NotaFiscalEnvioService.php,backend/tests/Feature/Api/V1/DocumentoFiscalTest.php
+
 ## v5.71.3.0 — 2026-09-02 09:57
 - **Tier:** patch
 - **Autor/Agente:** Codex

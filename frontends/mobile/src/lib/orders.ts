@@ -137,6 +137,30 @@ export async function searchLinkableBudgets(q: string): Promise<LinkableBudget[]
   return budgets;
 }
 
+/**
+ * Status em que o cliente já autorizou o orçamento — espelha
+ * `Budget::approvedForOrderLinkStatuses()` no backend. A OS aberta a partir
+ * de um orçamento nesses status nasce em "Aguardando Reparo".
+ */
+const APPROVED_BUDGET_STATUSES = ['aprovado', 'pendente_abertura_os'];
+
+export function isApprovedBudget(budget: LinkableBudget | null | undefined): boolean {
+  return budget ? APPROVED_BUDGET_STATUSES.includes(budget.status) : false;
+}
+
+/**
+ * Orçamentos aprovados do cliente selecionado que ainda não geraram OS —
+ * base da abertura de OS a partir de um orçamento já aprovado.
+ */
+export async function listApprovedBudgetsForClient(clienteId: number): Promise<LinkableBudget[]> {
+  const { budgets } = await apiSearchLinkableBudgets({
+    cliente_id: clienteId,
+    somente_aprovados: true,
+    per_page: 10,
+  });
+  return budgets;
+}
+
 export async function lookupCepAddress(cep: string): Promise<CepAddress> {
   const { address } = await apiLookupCep(cep);
   return address;

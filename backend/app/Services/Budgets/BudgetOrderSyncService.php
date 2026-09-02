@@ -152,9 +152,9 @@ class BudgetOrderSyncService
 
     /**
      * Propaga apenas os valores do orçamento para a OS, sem alterar o status da
-     * OS. Usado na geração de OS a partir de um orçamento avulso aprovado
-     * (OrderWorkflowService::createOrder), onde o técnico define o status da OS
-     * e queremos preservar essa escolha.
+     * OS. Usado na geração de OS a partir de um orçamento
+     * (OrderWorkflowService::createOrder), que já definiu o status inicial a
+     * partir do status do orçamento — ressincronizar aqui seria redundante.
      */
     public function syncFinancialsFromBudget(Budget $budget, int $orderId): void
     {

@@ -1236,4 +1236,126 @@ class BudgetAvulsoFlowTest extends TestCase
             $this->assertDatabaseHas('orcamentos', ['id' => $budgetId, 'status' => $status, 'os_id' => null]);
         }
     }
+
+    public function test_linkable_budget_catalog_filters_by_client_and_approved_status(): void
+    {
+        $admin = $this->admin();
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente com orçamento aprovado']);
+        $equipmentId = $this->createEquipmentRecord($clientId, ['resumo_tecnico' => 'Notebook aprovado']);
+        $otherClientId = $this->createClientRecord([
+            'nome_razao' => 'Outro cliente',
+            'cpf_cnpj' => '55.444.333/0001-22',
+        ]);
+
+        $approvedIds = [];
+        foreach (Budget::approvedForOrderLinkStatuses() as $index => $status) {
+            $approvedIds[] = $this->createBudgetRecord([
+                'numero' => sprintf('ORC-APROVADO-%02d', $index + 1),
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'tipo_orcamento' => 'previo',
+                'status' => $status,
+                'os_id' => null,
+                'aprovado_em' => now(),
+                'total' => 199.90,
+            ]);
+        }
+
+        // Mesmo cliente, mas ainda sem aprovação: fica fora do filtro.
+        $this->createBudgetRecord([
+            'numero' => 'ORC-SEM-APROVACAO',
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'tipo_orcamento' => 'previo',
+            'status' => Budget::STATUS_SENT,
+            'os_id' => null,
+        ]);
+
+        // Aprovado, porém de outro cliente: não pode aparecer para este.
+        $this->createBudgetRecord([
+            'numero' => 'ORC-OUTRO-CLIENTE',
+            'cliente_id' => $otherClientId,
+            'tipo_orcamento' => 'previo',
+            'status' => Budget::STATUS_APPROVED,
+            'os_id' => null,
+        ]);
+
+        $token = $this->loginAndGetToken($admin->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson(sprintf('/api/v1/orcamentos/vinculaveis-os?cliente_id=%d&somente_aprovados=1', $clientId))
+            ->assertOk()
+            ->assertJsonCount(count($approvedIds), 'data.budgets');
+
+        $this->assertEqualsCanonicalizing(
+            $approvedIds,
+            array_map('intval', (array) $response->json('data.budgets.*.id'))
+        );
+
+        // O app precisa do equipamento do orçamento para já selecioná-lo na OS.
+        $response->assertJsonFragment([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'equipamento_resumo' => 'Notebook aprovado',
+        ]);
+
+        // Sem o filtro de aprovação, o orçamento apenas enviado volta à lista.
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson(sprintf('/api/v1/orcamentos/vinculaveis-os?cliente_id=%d', $clientId))
+            ->assertOk()
+            ->assertJsonCount(count($approvedIds) + 1, 'data.budgets');
+    }
+
+    public function test_generate_os_from_approved_budget_opens_in_awaiting_repair(): void
+    {
+        $admin = $this->admin();
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente reparo autorizado']);
+        $equipmentId = $this->createEquipmentRecord($clientId, ['resumo_tecnico' => 'Celular autorizado']);
+        $budgetId = $this->createBudgetRecord([
+            'numero' => 'ORC-APROVADO-PARA-OS',
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'tipo_orcamento' => 'previo',
+            'status' => Budget::STATUS_APPROVED,
+            'os_id' => null,
+            'aprovado_em' => now(),
+            'subtotal' => 320.00,
+            'total' => 320.00,
+        ]);
+        $this->createBudgetItemRecord($budgetId, [
+            'tipo_item' => 'servico',
+            'descricao' => 'Troca de tela',
+            'valor_unitario' => 320,
+            'total' => 320,
+        ]);
+
+        $token = $this->loginAndGetToken($admin->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'orcamento_id' => $budgetId,
+                // O status pedido é ignorado: quem manda é o orçamento aprovado.
+                'status' => 'triagem',
+                'relato_cliente' => 'Cliente já aprovou o orçamento e trouxe o aparelho.',
+            ]);
+
+        $response->assertCreated();
+        $orderId = (int) $response->json('data.order.id');
+
+        $this->assertDatabaseHas('os', [
+            'id' => $orderId,
+            'status' => 'aguardando_reparo',
+            'estado_fluxo' => 'em_execucao',
+            'valor_final' => 320.00,
+        ]);
+        $this->assertDatabaseHas('orcamentos', [
+            'id' => $budgetId,
+            'os_id' => $orderId,
+            'status' => 'convertido',
+            'convertido_tipo' => 'os',
+            'convertido_id' => $orderId,
+        ]);
+    }
 }

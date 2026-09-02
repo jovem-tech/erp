@@ -17,7 +17,30 @@ readonly REPO_ROOT="/var/www/sistema-erp"
 readonly MOBILE_DIR="${REPO_ROOT}/frontends/mobile"
 readonly PNPM_VERSION="10.15.0"
 
+# Caminhos que o proprio sistema regera em runtime. Nunca podem ser
+# versionados: o `git add -A` da etapa 2 pega tudo que nao esta no .gitignore,
+# e o estrago so aparece na etapa 5 — o arquivo volta a existir no disco (dono
+# www-data) e o git recusa a promocao com "untracked working tree files would
+# be overwritten by merge".
+readonly RUNTIME_ARTIFACT_PATTERNS='^backend/storage/fonts/|^backend/storage/framework/|^backend/bootstrap/cache/|^frontends/[^/]+/\.next/|\.tsbuildinfo$'
+
 MOBILE_VALIDATED=0
+# A bancada nunca pode ficar parada em main: o proximo dia de trabalho
+# commitaria no lugar errado. ON_MAIN liga entre o checkout de main e a volta
+# para develop; KEEP_ON_MAIN so liga quando ha merge em andamento para
+# resolver, unico caso em que ficar em main e' correto.
+ON_MAIN=0
+KEEP_ON_MAIN=0
+
+voltar_para_develop_se_preciso() {
+  [[ "$ON_MAIN" -eq 1 ]] || return 0
+  [[ "$KEEP_ON_MAIN" -eq 0 ]] || return 0
+
+  printf '\n>>> Devolvendo a bancada para develop\n' >&2
+  git checkout develop >&2 || printf 'AVISO: nao foi possivel voltar para develop.\n' >&2
+}
+
+trap voltar_para_develop_se_preciso EXIT
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || {

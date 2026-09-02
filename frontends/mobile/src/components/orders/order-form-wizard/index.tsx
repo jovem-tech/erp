@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ApiError } from '@/lib/api';
-import { createOrder, getEntryChecklistModel, updateOrder } from '@/lib/orders';
+import { createOrder, getEntryChecklistModel, isApprovedBudget, updateOrder } from '@/lib/orders';
 import { hasPermission } from '@/lib/permissions';
 import { useSession } from '@/components/session-provider';
 import type { OrderDetail } from '@/lib/types';
@@ -165,6 +165,12 @@ export function buildReviewSections(
       verified: verifiedSections.extras === true,
       rows: [
         { label: 'Orçamento vinculado', value: state.orcamentoVinculado?.numero ?? 'Nenhum' },
+        // O status inicial da OS vem do orçamento (backend:
+        // OrderWorkflowService::pendingOrderStatusForBudgetLink) — o técnico
+        // confere aqui antes de salvar que a OS já entra na fila de reparo.
+        ...(isApprovedBudget(state.orcamentoVinculado)
+          ? [{ label: 'Status inicial da OS', value: 'Aguardando Reparo (orçamento aprovado)' }]
+          : []),
       ],
     });
   }

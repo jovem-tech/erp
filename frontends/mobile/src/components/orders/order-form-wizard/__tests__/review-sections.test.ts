@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildReviewSections } from '@/components/orders/order-form-wizard';
 import { createInitialWizardState } from '@/components/orders/order-form-wizard/wizard-state';
 import type { WizardStepInfo } from '@/components/orders/order-form-wizard/wizard-stepper';
-import type { EquipmentSearchResult } from '@/lib/types';
+import type { EquipmentSearchResult, LinkableBudget } from '@/lib/types';
 
 const steps: WizardStepInfo[] = [
   { key: 'cliente', label: 'Cliente' },
@@ -100,5 +100,38 @@ describe('buildReviewSections — card de equipamento', () => {
 
     expect(section?.rows).toHaveLength(1);
     expect(rowValue(section, 'Equipamento')).toBe('Samsung A015');
+  });
+});
+
+describe('buildReviewSections — card de extras', () => {
+  function extrasSection(state: Parameters<typeof buildReviewSections>[0]) {
+    return buildReviewSections(state, steps, 'create', {}).find((section) => section.key === 'extras');
+  }
+
+  function budget(status: string): LinkableBudget {
+    return { id: 91, numero: 'ORC-0091', status, equipamento_resumo: 'Samsung A015' };
+  }
+
+  it('anuncia o status inicial quando o orçamento vinculado já está aprovado', () => {
+    const section = extrasSection({ ...createInitialWizardState(), orcamentoVinculado: budget('aprovado') });
+
+    expect(rowValue(section, 'Orçamento vinculado')).toBe('ORC-0091');
+    expect(rowValue(section, 'Status inicial da OS')).toBe('Aguardando Reparo (orçamento aprovado)');
+  });
+
+  it('omite o status inicial quando o orçamento ainda não foi aprovado', () => {
+    const section = extrasSection({
+      ...createInitialWizardState(),
+      orcamentoVinculado: budget('aguardando_resposta'),
+    });
+
+    expect(rowValue(section, 'Status inicial da OS')).toBeUndefined();
+  });
+
+  it('sem orçamento vinculado, o card informa que nenhum foi escolhido', () => {
+    const section = extrasSection(createInitialWizardState());
+
+    expect(rowValue(section, 'Orçamento vinculado')).toBe('Nenhum');
+    expect(rowValue(section, 'Status inicial da OS')).toBeUndefined();
   });
 });

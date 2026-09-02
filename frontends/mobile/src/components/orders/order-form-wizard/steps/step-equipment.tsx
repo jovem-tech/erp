@@ -134,6 +134,31 @@ function equipmentDetailToUpdate(detail: EquipmentDetail): EquipmentUpdatePayloa
   };
 }
 
+/**
+ * Equipamento cadastrado no orçamento vinculado. O detalhe traz tudo que a
+ * busca exibe (rótulo, tipo, série e foto principal); os campos que só a
+ * listagem calcula ficam neutros, porque a OS só envia o id ao salvar.
+ */
+function equipmentDetailToSearchResult(detail: EquipmentDetail): EquipmentSearchResult {
+  return {
+    id: detail.id,
+    cliente_id: detail.cliente_id,
+    cliente_nome: '',
+    tipo_id: detail.tipo_id,
+    tipo_nome: detail.tipo_nome,
+    marca_nome: detail.marca_nome,
+    modelo_nome: detail.modelo_nome,
+    resumo_tecnico: detail.resumo_tecnico,
+    numero_serie: detail.numero_serie ?? '',
+    imei: detail.imei ?? '',
+    desktop_modalidade: detail.desktop_modalidade ?? '',
+    status_operacional: detail.status_operacional ?? '',
+    orders_count: 0,
+    primary_photo_id: detail.primary_photo_id,
+    primary_photo_url: detail.primary_photo_url,
+  };
+}
+
 function equipmentLabel(equipment: EquipmentSearchResult): string {
   return equipment.resumo_tecnico.trim()
     || [equipment.marca_nome, equipment.modelo_nome].filter(Boolean).join(' ')
@@ -259,7 +284,10 @@ export function StepEquipment({
   const [loadingFormData, setLoadingFormData] = useState(false);
   const [formDataError, setFormDataError] = useState<string | null>(null);
   const [budgetPrefillPartial, setBudgetPrefillPartial] = useState(false);
+  const [budgetEquipmentError, setBudgetEquipmentError] = useState<string | null>(null);
   const appliedBudgetIdRef = useRef<number | null>(null);
+  const appliedBudgetEquipmentRef = useRef<number | null>(null);
+  const budgetEquipmentId = linkedBudget?.equipamento_id ?? null;
 
   // Relações criadas nesta sessão do wizard (marca/modelo cadastrados via
   // "+ Nova marca"/"+ Novo modelo") que ainda não vieram de volta em
@@ -441,6 +469,53 @@ export function StepEquipment({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- callbacks do formulário são estáveis durante a etapa
     [clienteId, mode, pendingNewEquipment]
   );
+
+  // Orçamento vinculado a um equipamento já cadastrado: a OS gerada precisa
+  // usar exatamente esse equipamento (o backend recusa outro), então ele já
+  // vem selecionado — o técnico não precisa procurá-lo na lista.
+  useEffect(() => {
+    if (
+      mode !== 'create'
+      || !clienteId
+      || !budgetEquipmentId
+      || equipamento?.id === budgetEquipmentId
+      || appliedBudgetEquipmentRef.current === budgetEquipmentId
+    ) {
+      return;
+    }
+
+    appliedBudgetEquipmentRef.current = budgetEquipmentId;
+    let cancelled = false;
+    setBudgetEquipmentError(null);
+
+    getEquipmentDetail(budgetEquipmentId)
+      .then((detail) => {
+        if (cancelled) {
+          return;
+        }
+
+        closeQuickCreate();
+        setEditingExisting(false);
+        setNewEquipmentReason(null);
+        setView('buscar');
+        onChangePendingNewEquipment(null);
+        onChangePendingNewEquipmentPhotos([]);
+        onChangePendingNewEquipmentLabels(null);
+        onSelectEquipamento(equipmentDetailToSearchResult(detail));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setBudgetEquipmentError(
+            'Não foi possível carregar o equipamento do orçamento vinculado. Selecione-o manualmente.'
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- callbacks do formulário são estáveis durante a etapa
+  }, [budgetEquipmentId, clienteId, equipamento?.id, mode]);
 
   const updateField = (
     field: keyof NovoEquipamentoPayload | keyof EquipmentUpdatePayload,
@@ -746,6 +821,19 @@ export function StepEquipment({
           {existingError ? (
             <div className="notice notice--danger">
               <span>{existingError}</span>
+            </div>
+          ) : null}
+          {budgetEquipmentError ? (
+            <div className="notice notice--danger" role="alert">
+              <span>{budgetEquipmentError}</span>
+            </div>
+          ) : null}
+          {mode === 'create' && budgetEquipmentId && equipamento && equipamento.id !== budgetEquipmentId ? (
+            <div className="notice notice--warning" role="alert">
+              <span>
+                O orçamento {linkedBudget?.numero} é de outro equipamento deste cliente. Selecione o
+                equipamento do orçamento ou desvincule o orçamento na etapa Cliente.
+              </span>
             </div>
           ) : null}
         </>

@@ -1489,13 +1489,16 @@ class OrderWorkflowService
     }
 
     /**
-     * Status inicial seguro para uma OS vinculada a orçamento ainda não
-     * aprovado. O mapeamento acompanha BudgetOrderSyncService.
+     * Status inicial de uma OS aberta já vinculada a um orçamento. O
+     * mapeamento acompanha BudgetOrderSyncService::targetOrderStatus(): o
+     * orçamento aprovado é a autorização do cliente, então a OS entra direto
+     * na fila de execução ("Aguardando Reparo") em vez de nascer em triagem
+     * e repetir diagnóstico/orçamento que o cliente já aprovou.
      */
     private function pendingOrderStatusForBudgetLink(string $budgetStatus): ?string
     {
         if (in_array($budgetStatus, Budget::approvedForOrderLinkStatuses(), true)) {
-            return null;
+            return 'aguardando_reparo';
         }
 
         return match ($budgetStatus) {
@@ -1744,8 +1747,9 @@ class OrderWorkflowService
         // "convertido"; os demais seguem abertos até a decisão do cliente.
         $linkBudgetId = (int) ($attributes['orcamento_id'] ?? 0);
 
-        // Para orçamento ainda não aprovado, a OS nasce no estágio compatível
-        // com o orçamento. Esta leitura só escolhe o status inicial; a
+        // A OS nasce no estágio compatível com o orçamento vinculado: aprovado
+        // vira "aguardando_reparo" (cliente já autorizou), os demais esperam
+        // orçamento/autorização. Esta leitura só escolhe o status inicial; a
         // validação autoritativa ocorre sob lock dentro da transação.
         $forcedStatusCode = null;
         if ($linkBudgetId > 0) {

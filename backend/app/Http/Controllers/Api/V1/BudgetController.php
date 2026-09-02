@@ -131,6 +131,8 @@ class BudgetController extends BaseApiController
         $filters = $request->validate([
             'q' => ['nullable', 'string', 'max:120'],
             'search' => ['nullable', 'string', 'max:120'],
+            'cliente_id' => ['nullable', 'integer', 'min:1'],
+            'somente_aprovados' => ['nullable', 'boolean'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:30'],
         ]);

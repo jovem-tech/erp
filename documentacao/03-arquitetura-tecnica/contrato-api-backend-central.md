@@ -580,13 +580,26 @@ ORDER_IDEMPOTENCY_CONFLICT`. Falhas posteriores ao commit são retornadas em
   respostas sem limite;
 - `GET /orcamentos/vinculaveis-os` pesquisa candidatos canônicos com paginação
   máxima de 30 registros;
+- `cliente_id` restringe a lista aos orçamentos de um cliente cadastrado e
+  `somente_aprovados=1` aos que o cliente já autorizou (`aprovado` e
+  `pendente_abertura_os`) — combinação usada pelo mobile para abrir a OS a
+  partir de um orçamento aprovado do cliente escolhido;
+- cada item traz `cliente_id` e `equipamento_id` (nulos em orçamento avulso ou
+  sem equipamento) para o frontend já selecionar o mesmo equipamento na OS;
 - `GET /orcamentos/vinculaveis-os/{budget}` retorna o contexto mínimo de um
   candidato para pré-preenchimento;
 - ambos exigem `orcamentos:converter_os` e `os:criar`;
 - `POST /orders` com `orcamento_id` exige `os:criar` e
   `orcamentos:converter_os`;
-- somente orçamento `previo`, em `pendente_abertura_os`, sem OS e compatível
-  com cliente/equipamento pode ser consumido;
+- somente orçamento `previo`, sem OS vinculada e fora dos estados `cancelado`,
+  `rejeitado` e `convertido`, compatível com cliente/equipamento, pode ser
+  consumido;
+- o status inicial da OS vem do orçamento e ignora o `status` enviado na
+  requisição: aprovado (`aprovado` ou `pendente_abertura_os`) abre em
+  `aguardando_reparo` — o cliente já autorizou o serviço, então a OS entra
+  direto na fila de execução —, `rascunho`/`pendente_envio`/`pendente`/
+  `reenviar_orcamento`/`vencido` abrem em `aguardando_orcamento` e os demais em
+  `aguardando_autorizacao`;
 - criação da OS e conversão do orçamento acontecem na mesma transação, com
   bloqueio pessimista do orçamento;
 - orçamento inexistente retorna `404`, conflito de estado ou conversão repetida
