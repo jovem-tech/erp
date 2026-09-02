@@ -40,6 +40,18 @@ backend/storage/app/private/*
 backend/storage/logs/*
 !backend/storage/logs/.gitignore
 
+# Cache de fontes do dompdf (DANFSe). E gerado em runtime pelo www-data --
+# NfseDanfseRenderer::prepararCacheDeFontes() cria o diretorio e o dompdf
+# escreve as metricas .ufm/.ufm.json na primeira emissao. As fontes de origem
+# ficam versionadas em backend/resources/fonts/. Versionar o cache alem de
+# inchar o repositorio quebra a promocao develop -> main (os arquivos voltam a
+# existir no disco e o git recusa sobrescrever arquivo nao rastreado) e deixa
+# o cache com dono errado (administrador em vez de www-data).
+backend/storage/fonts/
+
+# Cache incremental do tsc -- regerado a cada type-check, so gera ruido no diff
+*.tsbuildinfo
+
 # Backups de banco (podem conter dados reais de clientes - nunca versionar)
 backend/storage/backups/
 /backend/storage/backups/*.sql
