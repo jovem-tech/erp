@@ -37,7 +37,13 @@ voltar_para_develop_se_preciso() {
   [[ "$KEEP_ON_MAIN" -eq 0 ]] || return 0
 
   printf '\n>>> Devolvendo a bancada para develop\n' >&2
-  git checkout develop >&2 || printf 'AVISO: nao foi possivel voltar para develop.\n' >&2
+  git checkout develop >&2 && return 0
+
+  # O mesmo arquivo nao rastreado que barra o merge barra o checkout. Nao cabe
+  # a um script de deploy apagar arquivo do disco por conta propria, entao aqui
+  # so' avisa — o que nao pode e' a bancada ficar em main sem o usuario saber.
+  printf 'AVISO: a bancada ficou em MAIN — resolva o que o git apontou acima e\n' >&2
+  printf 'rode: git checkout develop\n' >&2
 }
 
 trap voltar_para_develop_se_preciso EXIT
@@ -200,6 +206,23 @@ if [[ -n "$(git status --porcelain)" ]]; then
     exit 1
   fi
 
+  # So arquivos NOVOS (nao rastreados): o que ja esta versionado foi decisao de
+  # alguem e nao cabe a este script desfazer no meio de um deploy.
+  ARTIFACTS="$(
+    git status --porcelain \
+      | sed -n 's/^?? //p' \
+      | grep -E "$RUNTIME_ARTIFACT_PATTERNS" \
+      || true
+  )"
+
+  if [[ -n "$ARTIFACTS" ]]; then
+    printf '\nERRO: artefatos gerados em runtime apareceram como arquivos novos:\n' >&2
+    printf '%s\n' "$ARTIFACTS" >&2
+    printf 'Eles nao podem ser versionados. Acrescente ao .gitignore e, se ja\n' >&2
+    printf 'estiverem no indice, rode git rm -r --cached <caminho>. Depois repita.\n' >&2
+    exit 1
+  fi
+
   TOP_BLOCK="$(awk '/^## v/{n++} n==1' CHANGELOG.md 2>/dev/null || true)"
   TOP_VERSION="$(
     printf '%s\n' "$TOP_BLOCK" \
@@ -280,14 +303,21 @@ git push origin develop
 printf '>>> [5/7] Promovendo develop para main\n'
 
 MERGE_VERSION="$(git show develop:VERSION 2>/dev/null || true)"
-MERGE_DESC="$(
+MERGE_TOP_BLOCK="$(
   git show develop:CHANGELOG.md 2>/dev/null \
     | awk '/^## v/{n++} n==1' \
-    | grep -m1 -oP '(?<=\*\*Descrição:\*\* ).*' \
+    || true
+)"
+# Mesma tolerancia de acento da mensagem de commit: changelog antigo escreve
+# "Descrição", o bump-version.sh atual escreve "Descricao".
+MERGE_DESC="$(
+  printf '%s\n' "$MERGE_TOP_BLOCK" \
+    | grep -m1 -oP '(?<=\*\*Descri(c|ç)(a|ã)o:\*\* ).*' \
     || true
 )"
 
 git checkout main
+ON_MAIN=1
 git pull --ff-only origin main
 
 MERGE_MSG="merge: promove develop para main"
@@ -296,8 +326,30 @@ if [[ -n "$MERGE_VERSION" ]]; then
 fi
 
 if ! git merge --no-ff develop -m "$MERGE_MSG"; then
-  printf '\nERRO: conflito ao promover develop para main.\n' >&2
-  printf 'Resolva e conclua com git commit, ou use git merge --abort.\n' >&2
+  # Duas falhas bem diferentes caem aqui. Com MERGE_HEAD existe merge em
+  # andamento (conflito de conteudo) e a bancada precisa continuar em main ate
+  # o usuario resolver. Sem MERGE_HEAD o merge foi recusado antes de comecar —
+  # tipicamente porque um arquivo gerado em runtime existe no disco e foi
+  # versionado em develop — e nada foi alterado: "git merge --abort" nem
+  # funciona, e deixar a bancada em main so cria o proximo problema.
+  if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+    KEEP_ON_MAIN=1
+    printf '\nERRO: conflito de conteudo ao promover develop para main.\n' >&2
+    printf 'Resolva os arquivos e conclua com git commit, ou desfaca com\n' >&2
+    printf 'git merge --abort. A bancada ficou em main: volte para develop\n' >&2
+    printf 'com git checkout develop quando terminar.\n' >&2
+    exit 1
+  fi
+
+  printf '\nERRO: o merge nao chegou a comecar — main continua intacta.\n' >&2
+  printf 'Causa tipica (veja a mensagem do git acima): o arquivo apontado e gerado\n' >&2
+  printf 'em runtime, existe no disco e foi versionado em develop por engano.\n' >&2
+  printf 'Receita, com CAMINHO = o arquivo/pasta que o git apontou:\n' >&2
+  printf '  1. mv CAMINHO CAMINHO.tmp        (.tmp ja e ignorado pelo .gitignore)\n' >&2
+  printf '  2. git checkout develop\n' >&2
+  printf '  3. echo CAMINHO/ >> .gitignore && git rm -r --cached CAMINHO\n' >&2
+  printf '  4. rm -rf CAMINHO && mv CAMINHO.tmp CAMINHO   (devolve o dono original)\n' >&2
+  printf '  5. rode este script de novo\n' >&2
   exit 1
 fi
 
@@ -306,6 +358,7 @@ git push origin main
 
 printf '>>> [7/7] Voltando para develop\n'
 git checkout develop
+ON_MAIN=0
 
 printf '\nDEPLOY_COMPLETO_OK (main em %s, v%s)\n' \
   "$(git rev-parse --short main)" \

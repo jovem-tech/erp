@@ -99,6 +99,36 @@ Se `develop` e `main` divergiram de um jeito que gera conflito de verdade (main 
 hotfix direto tocando as mesmas linhas), o `git merge` para sozinho — resolver o conflito
 localmente ou via PR antes de continuar, nunca com `git push --force` em `main`.
 
+#### "untracked working tree files would be overwritten by merge" (2026-09-02)
+
+Falha diferente de conflito, e o remédio é outro: o `git merge` **nem começa**, `main`
+fica intacta e não há nada para `git merge --abort`. Acontece quando um arquivo que o
+sistema **gera em runtime** foi versionado em `develop` por engano: ele volta a existir
+no disco (escrito pelo `www-data`) e o git se recusa a sobrescrever arquivo não
+rastreado. O mesmo arquivo também barra o `git checkout develop`, então a bancada fica
+presa em `main` — e o próximo dia de trabalho commita na branch errada.
+
+Foi o que aconteceu com `backend/storage/fonts/` (cache de métricas do dompdf usado no
+DANFSe): o `git add -A` do script varreu o diretório para dentro do commit. Receita, com
+`CAMINHO` = o que o git apontou:
+
+```bash
+mv CAMINHO CAMINHO.tmp                  # .tmp já é ignorado pelo .gitignore
+git checkout develop
+echo 'CAMINHO/' >> .gitignore
+git rm -r --cached CAMINHO
+rm -rf CAMINHO && mv CAMINHO.tmp CAMINHO   # devolve o arquivo com o dono original
+./scripts/bash/deploy-completo.sh
+```
+
+O passo 5 (`rm -rf` + `mv`) não é firula: se você deixar a cópia que o `git checkout`
+criou, ela fica com dono `administrador` num diretório que o `www-data` precisa
+reescrever, e a próxima emissão de DANFSe falha por permissão.
+
+Desde a v5.72.1.0 o script previne o caso na origem — recusa o commit quando um artefato
+de runtime aparece como arquivo novo (`RUNTIME_ARTIFACT_PATTERNS`) — e, quando o merge é
+recusado, imprime essa receita e devolve a bancada para `develop` sempre que consegue.
+
 ### 3. Atualizar a VPS (produção)
 
 Executado **na própria VPS**, nunca da máquina do desenvolvedor:
