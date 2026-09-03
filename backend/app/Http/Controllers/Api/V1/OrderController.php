@@ -1068,6 +1068,7 @@ class OrderController extends BaseApiController
                     'opcoes_encerramento' => $result['opcoes_encerramento'] ?? [],
                     'financeiro' => $result['financeiro'] ?? null,
                     'custo_summary' => $result['custo_summary'] ?? null,
+                    'materiais_aplicados' => $result['materiais_aplicados'] ?? [],
                     'retorno_padrao' => $result['retorno_padrao'] ?? null,
                     'cartao' => $result['cartao'] ?? null,
                     'contas_financeiras' => $result['contas_financeiras'] ?? null,
