@@ -521,8 +521,38 @@
         $equipamentoSerie = trim((string) ($order['equipamento_numero_serie'] ?? ($order['equipamento']['numero_serie'] ?? '')));
         $equipamentoMarca = trim((string) ($order['equipamento']['marca_nome'] ?? ''));
         $equipamentoModelo = trim((string) ($order['equipamento']['modelo_nome'] ?? ''));
+        $equipamentoCor = trim((string) ($order['equipamento']['cor'] ?? ''));
+        $equipamentoImei = trim((string) ($order['equipamento']['imei'] ?? ($order['equipamento_imei'] ?? '')));
         $equipamentoFoto = $order['equipamento_foto'] ?? null;
         $photoViewerGroup = 'order-closure-' . $orderId . '-photos';
+
+        // Discriminação padrão colada na NFS-e: numero da OS + o equipamento
+        // reparado, com o que estiver cadastrado (tipo, marca, modelo, cor e
+        // numero de serie ou IMEI — o que faltar simplesmente nao entra).
+        $equipamentoDescritores = array_values(array_filter([
+            $equipamentoTipo,
+            $equipamentoMarca,
+            $equipamentoModelo,
+            $equipamentoCor !== '' ? 'cor ' . $equipamentoCor : '',
+            $equipamentoSerie !== '' ? 'N° de série ' . $equipamentoSerie : '',
+            $equipamentoImei !== '' ? 'IMEI ' . $equipamentoImei : '',
+        ], static fn (string $parte): bool => trim($parte) !== ''));
+
+        $closureDiscriminacaoServico = $equipamentoDescritores === []
+            ? 'Servicos de assistencia tecnica.'
+            : 'Servicos de assistencia tecnica. Reparo de ' . implode(', ', $equipamentoDescritores) . '.';
+
+        // Nome da(s) peça(s) trocada(s) (sem valor — o valor continua fora da
+        // NFS-e, ver DocumentoFiscalService::discriminacao()), exigência do
+        // CDC de descrever ao cliente o que foi feito no aparelho.
+        $materiaisAplicados = array_values(array_filter(
+            array_map(static fn ($nome): string => trim((string) $nome), $closure['materiais_aplicados'] ?? []),
+            static fn (string $nome): bool => $nome !== ''
+        ));
+
+        if ($materiaisAplicados !== []) {
+            $closureDiscriminacaoServico .= ' Material aplicado: ' . implode(', ', $materiaisAplicados) . '.';
+        }
 
         // Mesmas condições de orders/show.blade.php para o dropdown "Mais ações"
         // (o item "Baixa/Adiantamento" fica de fora aqui pois já estamos nessa página).
@@ -1061,7 +1091,7 @@
 
                             <label class="form-label" for="closureDiscriminacao">Discriminação dos serviços</label>
                             <textarea id="closureDiscriminacao" class="form-control" rows="4" readonly>Ordem de servico {{ $order['numero_os'] ?? $orderId }}
-Servicos de assistencia tecnica.</textarea>
+{{ $closureDiscriminacaoServico }}</textarea>
 
                             <div class="form-check mt-3">
                                 <input type="checkbox" class="form-check-input" id="emitirNotaFiscal"

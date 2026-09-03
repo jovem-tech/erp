@@ -105,6 +105,11 @@ class OrderClosureService
             'opcoes_encerramento' => $this->closureOptions(),
             'financeiro' => $this->financialSummary($order),
             'custo_summary' => $this->buildCostSummary((int) $order->id),
+            // Nomes das pecas lancadas na OS (os_itens.tipo = 'peca'), sem
+            // valor: a tela de baixa usa isso so' pra completar o texto da
+            // NFS-e com o que foi trocado — o VALOR da peca continua fora da
+            // discriminacao (ver DocumentoFiscalService::discriminacao()).
+            'materiais_aplicados' => $this->materiaisAplicados((int) $order->id),
             'retorno_padrao' => Carbon::now()->addDays(self::RETURN_FOLLOWUP_DEFAULT_DAYS)->toDateString(),
             'cartao' => $this->financeiroCartaoService->buildActiveDataset(),
             'contas_financeiras' => $this->financeiroContaService->options(),
@@ -2047,6 +2052,23 @@ class OrderClosureService
             'servicos' => $servicos,
             'total' => round($pecas + $servicos, 2),
         ];
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function materiaisAplicados(int $orderId): array
+    {
+        return OrderItem::query()
+            ->where('os_id', $orderId)
+            ->where('tipo', 'peca')
+            ->orderBy('id')
+            ->pluck('descricao')
+            ->map(static fn ($descricao): string => trim((string) $descricao))
+            ->filter(static fn (string $descricao): bool => $descricao !== '')
+            ->unique()
+            ->values()
+            ->all();
     }
 
     /**

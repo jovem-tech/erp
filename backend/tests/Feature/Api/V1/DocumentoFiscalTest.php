@@ -75,9 +75,12 @@ class DocumentoFiscalTest extends TestCase
 
         $this->assertStringContainsString('OS2609001', $discriminacao);
         $this->assertStringContainsString('Troca de tela', $discriminacao);
-        // Peca NAO entra na discriminacao da NFS-e: e' mercadoria, sai por
-        // NF-e/NFC-e na SEFAZ estadual.
-        $this->assertStringNotContainsString('Tela LCD', $discriminacao);
+        // O NOME da peca entra como texto informativo (exigencia do CDC de
+        // descrever o servico prestado), mas sem preco: o VALOR continua de
+        // fora da soma tributada — valor_servicos/valor_pecas acima seguem
+        // separados, e e' so' isso que importa pro ISS x ICMS/Anexo do Simples.
+        $this->assertStringContainsString('Tela LCD', $discriminacao);
+        $this->assertStringNotContainsString('120', $discriminacao);
     }
 
     public function test_rascunho_e_idempotente(): void
