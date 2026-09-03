@@ -800,6 +800,25 @@
             );
         });
 
+        // A garantia so' e' conhecida depois que o operador escolhe no campo
+        // da etapa 1 — a textarea nasce com a sugestão (ver closure.blade.php),
+        // mas precisa reagir se o operador trocar o prazo antes de copiar.
+        const atualizarGarantiaNaDiscriminacao = () => {
+            const campo = document.getElementById('closureDiscriminacao');
+            const selectGarantia = document.getElementById('garantiaDias');
+            if (!(campo instanceof HTMLTextAreaElement) || !(selectGarantia instanceof HTMLSelectElement)) return;
+
+            const base = campo.dataset.discriminacaoBase ?? campo.value;
+            const opcaoSelecionada = selectGarantia.options[selectGarantia.selectedIndex] ?? null;
+            const rotulo = opcaoSelecionada && opcaoSelecionada.value !== '' ? opcaoSelecionada.text.trim() : '';
+
+            campo.value = rotulo !== ''
+                ? `${base} Período de garantia do serviço e insumos: ${rotulo}.`
+                : base;
+        };
+
+        document.getElementById('garantiaDias')?.addEventListener('change', atualizarGarantiaNaDiscriminacao);
+
         document.querySelector('[data-copiar-discriminacao-baixa]')?.addEventListener('click', function () {
             const campo = document.getElementById('closureDiscriminacao');
             if (!(campo instanceof HTMLTextAreaElement)) return;
