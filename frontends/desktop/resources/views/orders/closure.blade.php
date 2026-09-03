@@ -538,10 +538,6 @@
             $equipamentoImei !== '' ? 'IMEI ' . $equipamentoImei : '',
         ], static fn (string $parte): bool => trim($parte) !== ''));
 
-        $closureDiscriminacaoServico = $equipamentoDescritores === []
-            ? 'Servicos de assistencia tecnica.'
-            : 'Servicos de assistencia tecnica. Reparo de ' . implode(', ', $equipamentoDescritores) . '.';
-
         // Nome da(s) peça(s) trocada(s) (sem valor — o valor continua fora da
         // NFS-e, ver DocumentoFiscalService::discriminacao()), exigência do
         // CDC de descrever ao cliente o que foi feito no aparelho.
@@ -550,9 +546,15 @@
             static fn (string $nome): bool => $nome !== ''
         ));
 
-        if ($materiaisAplicados !== []) {
-            $closureDiscriminacaoServico .= ' Material aplicado: ' . implode(', ', $materiaisAplicados) . '.';
-        }
+        // Corpo do texto (sem a garantia, que so' e' conhecida depois que o
+        // operador escolhe na etapa 1 — ver bloco perto da textarea, onde o
+        // JS recalcula a frase final a cada troca do campo "Garantia").
+        $closureDiscriminacaoCorpo = 'Prestação de serviço de assistência técnica'
+            . ($equipamentoDescritores !== [] ? ' em aparelho ' . implode(', ', $equipamentoDescritores) : '');
+
+        $closureDiscriminacaoCorpo .= $materiaisAplicados !== []
+            ? ', com a substituição e instalação de ' . implode(', ', $materiaisAplicados) . ', incluindo o fornecimento dos materiais aplicados.'
+            : '.';
 
         // Mesmas condições de orders/show.blade.php para o dropdown "Mais ações"
         // (o item "Baixa/Adiantamento" fica de fora aqui pois já estamos nessa página).
@@ -1089,9 +1091,27 @@
                                 @endif
                             </div>
 
+                            @php
+                                // Garantia so' e' conhecida de verdade depois que o operador
+                                // escolhe na etapa 1 (campo "Garantia" acima) — o valor inicial
+                                // aqui e' so' o sugerido, pra textarea nao nascer vazia; o JS
+                                // (orders-closure.js) recalcula a frase a cada troca do select.
+                                $closureDiscriminacaoBase = 'Ordem de servico ' . ($order['numero_os'] ?? $orderId) . "\n" . $closureDiscriminacaoCorpo;
+
+                                $garantiaLabelInicial = '';
+                                foreach ($garantiaOpcoes as $opcao) {
+                                    if ((string) ($opcao['value'] ?? '') === $garantiaSugerida && $garantiaSugerida !== '') {
+                                        $garantiaLabelInicial = (string) ($opcao['label'] ?? '');
+                                        break;
+                                    }
+                                }
+
+                                $closureDiscriminacaoServico = $closureDiscriminacaoBase
+                                    . ($garantiaLabelInicial !== '' ? ' Período de garantia do serviço e insumos: ' . $garantiaLabelInicial . '.' : '');
+                            @endphp
                             <label class="form-label" for="closureDiscriminacao">Discriminação dos serviços</label>
-                            <textarea id="closureDiscriminacao" class="form-control" rows="4" readonly>Ordem de servico {{ $order['numero_os'] ?? $orderId }}
-{{ $closureDiscriminacaoServico }}</textarea>
+                            <textarea id="closureDiscriminacao" class="form-control" rows="4" readonly
+                                data-discriminacao-base="{{ $closureDiscriminacaoBase }}">{{ $closureDiscriminacaoServico }}</textarea>
 
                             <div class="form-check mt-3">
                                 <input type="checkbox" class="form-check-input" id="emitirNotaFiscal"
