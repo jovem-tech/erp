@@ -1736,6 +1736,19 @@ class OrderWorkflowService
         // A checagem equipamento×cliente só se aplica quando ambos já são
         // registros existentes; se algum será criado agora, o equipamento é
         // criado para o cliente da própria OS.
+        // Equipamento orcado antes de vir a assistencia fica com cadastro_pendente:
+        // o orcamento registra tipo/marca/modelo, mas a foto de perfil so' existe
+        // com o aparelho no balcao. A OS desse equipamento so' nasce depois de
+        // completar. Fotos enviadas nesta mesma requisicao completam o cadastro
+        // dentro da transacao, entao nao barram aqui.
+        if ($equipmentId > 0 && $equipmentPhotos === [] && $this->equipmentRegistrationPending($equipmentId)) {
+            return [
+                'result' => 'equipment_registration_pending',
+                'message' => 'O cadastro deste equipamento ficou incompleto no orcamento. Anexe a foto do aparelho para completar antes de salvar a OS.',
+                'equipamento_id' => $equipmentId,
+            ];
+        }
+
         if ($equipmentId > 0 && $clientId > 0 && ! $this->equipmentBelongsToClient($equipmentId, $clientId)) {
             return [
                 'result' => 'equipment_client_mismatch',
@@ -1849,6 +1862,17 @@ class OrderWorkflowService
                             array_merge($equipamentoAtualizacao, ['cliente_id' => $clientId]),
                             []
                         );
+                    }
+
+                    if ((bool) ($existingEquipment->cadastro_pendente ?? false)) {
+                        // Sem foto aqui dentro so' acontece por corrida (a marca
+                        // entrou depois da checagem la' de cima): recusa, e o
+                        // rollback garante que nada da OS ficou pela metade.
+                        if ($equipmentPhotos === []) {
+                            throw new \RuntimeException('O cadastro deste equipamento ficou incompleto no orcamento. Anexe a foto do aparelho para completar antes de salvar a OS.');
+                        }
+
+                        $this->equipmentWorkflowService->completePendingRegistration($equipmentId, $equipmentPhotos);
                     }
                 }
 
@@ -4891,6 +4915,18 @@ class OrderWorkflowService
     private function isTechnicianScoped(User $actor): bool
     {
         return mb_strtolower(trim((string) ($actor->perfil ?? ''))) === 'tecnico';
+    }
+
+    private function equipmentRegistrationPending(int $equipmentId): bool
+    {
+        if ($equipmentId <= 0) {
+            return false;
+        }
+
+        return Equipment::query()
+            ->whereKey($equipmentId)
+            ->where('cadastro_pendente', true)
+            ->exists();
     }
 
     private function equipmentBelongsToClient(int $equipmentId, int $clientId): bool

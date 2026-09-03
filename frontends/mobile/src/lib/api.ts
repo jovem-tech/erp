@@ -575,6 +575,16 @@ export async function apiSearchAvulsoBudgetContacts(params: { q: string; per_pag
   return requestJson<{ budgets: LinkableBudget[] }>(`/orcamentos/contatos-avulsos?${query.toString()}`);
 }
 
+/**
+ * A listagem de orçamentos vinculáveis (`apiSearchLinkableBudgets`) devolve um
+ * resumo sem os campos `equipamento_*_avulso`/`equipamento_cor` — eles só vêm
+ * neste detalhe. A etapa Equipamento da Nova OS depende deles para
+ * pré-preencher tipo/marca/modelo/cor a partir do orçamento vinculado.
+ */
+export async function apiShowLinkableBudget(budgetId: number): Promise<{ budget: LinkableBudget }> {
+  return requestJson<{ budget: LinkableBudget }>(`/orcamentos/vinculaveis-os/${budgetId}`);
+}
+
 export async function apiLookupCep(cep: string): Promise<{ address: CepAddress }> {
   const digits = cep.replace(/\D+/g, '').slice(0, 8);
   return requestJson<{ address: CepAddress }>(`/clients/cep/${digits}`);

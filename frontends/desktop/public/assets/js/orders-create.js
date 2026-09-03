@@ -115,6 +115,9 @@
         pendingEquipmentPhotos: [],
         pendingEquipmentPhotoUrls: [],
         pendingEquipmentPrimaryPhotoUrl: '',
+        // 'create' abre o cadastro novo; 'complete' reabre um equipamento orcado
+        // (cadastro_pendente) em edicao para anexar a foto que faltava.
+        equipmentModalMode: 'create',
     };
 
     const select2Language = {
@@ -468,6 +471,7 @@
             clientName: normalizeText(option.dataset.clientName || ''),
             tipoId: Number(option.dataset.equipmentTipoId || 0) || 0,
             tipoName: normalizeText(option.dataset.equipmentTipoName || ''),
+            cadastroPendente: option.dataset.equipmentCadastroPendente === '1',
         };
     };
 
@@ -489,6 +493,9 @@
             clientName: normalizeText(equipment?.clientName || equipment?.cliente_nome || ''),
             tipoId: Number(equipment?.tipoId ?? equipment?.tipo_id ?? 0) || 0,
             tipoName: normalizeText(equipment?.tipoName || equipment?.tipo_nome || ''),
+            // Equipamento orcado sem foto: a OS nao pode ser salva antes de
+            // completar o cadastro (o backend recusa em OrderWorkflowService).
+            cadastroPendente: Boolean(equipment?.cadastroPendente ?? equipment?.cadastro_pendente ?? false),
         };
 
         state.equipmentCache.set(equipmentId, record);
@@ -551,6 +558,7 @@
             clientName: normalizeText(optionRecord?.clientName || cachedRecord?.clientName || ''),
             tipoId: Number(optionRecord?.tipoId || cachedRecord?.tipoId || 0) || 0,
             tipoName: normalizeText(optionRecord?.tipoName || cachedRecord?.tipoName || ''),
+            cadastroPendente: Boolean(optionRecord?.cadastroPendente || cachedRecord?.cadastroPendente || false),
         };
         const name = normalizeText(buildEquipmentLabel({
             ...record,
@@ -568,6 +576,7 @@
             modelName: normalizeText(record?.modelName || ''),
             tipoId: Number(record?.tipoId || 0) || 0,
             tipoName: normalizeText(record?.tipoName || ''),
+            cadastroPendente: Boolean(record?.cadastroPendente),
         };
     };
 
@@ -938,12 +947,33 @@
         return url.toString();
     };
 
+    // Equipamento orcado sem foto: reabre o proprio cadastro em edicao dentro do
+    // modal, para o operador anexar a foto sem sair do wizard da OS. Salvar ali
+    // persiste na hora e o backend derruba a pendencia (refreshPendingRegistration).
+    const getEquipmentCompleteUrl = () => {
+        const template = els.equipmentEditButton instanceof HTMLAnchorElement
+            ? String(els.equipmentEditButton.dataset.equipmentEditUrlTemplate || '').trim()
+            : '';
+        const equipmentId = Number(getEquipmentData().id || 0) || 0;
+
+        if (template === '' || equipmentId <= 0) {
+            return '';
+        }
+
+        const url = new URL(template.replace('__EQUIPMENT_ID__', String(equipmentId)), window.location.origin);
+        url.searchParams.set('embedded', '1');
+
+        return url.toString();
+    };
+
     const syncEquipmentCreateFrame = () => {
         if (!(els.quickEquipmentFrame instanceof HTMLIFrameElement)) {
             return;
         }
 
-        const url = getEquipmentCreateUrl();
+        const url = state.equipmentModalMode === 'complete'
+            ? getEquipmentCompleteUrl()
+            : getEquipmentCreateUrl();
         els.quickEquipmentFrame.src = url !== '' ? url : 'about:blank';
     };
 
@@ -1388,6 +1418,15 @@
                 return;
             }
 
+            // Equipamento orçado antes de vir à assistência: o cadastro ficou sem
+            // foto e o backend recusa a OS. Trava aqui e abre a edição do próprio
+            // equipamento no modal, para completar sem perder o wizard.
+            if (selectedEquipmentRegistrationPending()) {
+                event.preventDefault();
+                openEquipmentCompletion();
+                return;
+            }
+
             const requiredFields = Array.from(form.querySelectorAll('[required]'));
             const invalidField = requiredFields.find((field) => typeof field.checkValidity === 'function' && !field.checkValidity());
 
@@ -1716,6 +1755,30 @@
         showToast('success', toastMessage);
     };
 
+    const selectedEquipmentRegistrationPending = () => {
+        const equipment = getEquipmentData();
+
+        return Number(equipment?.id || 0) > 0 && Boolean(equipment?.cadastroPendente);
+    };
+
+    const openEquipmentCompletion = () => {
+        if (!(els.quickEquipmentModal instanceof HTMLElement)) {
+            return false;
+        }
+
+        state.equipmentModalMode = 'complete';
+
+        showAlert(
+            'warning',
+            'Cadastro do equipamento incompleto',
+            'Este aparelho foi cadastrado durante o orçamento, quando ainda estava com o cliente. Anexe a foto do equipamento para completar o cadastro — a OS só pode ser salva depois disso.'
+        );
+
+        getModal(els.quickEquipmentModal)?.show();
+
+        return true;
+    };
+
     const clearEquipmentSelection = () => {
         if (!(els.equipmentSelect instanceof HTMLSelectElement)) {
             return;
@@ -1824,6 +1887,7 @@
                             clientName: item?.client_name || '',
                             tipoId: item?.tipo_id || 0,
                             tipoName: item?.tipo_name || '',
+                            cadastroPendente: Boolean(item?.cadastro_pendente),
                         }) || null;
 
                         return {
@@ -1839,6 +1903,7 @@
                             clientName: normalizeText(item?.client_name || record?.clientName || ''),
                             tipoId: Number(item?.tipo_id || record?.tipoId || 0) || 0,
                             tipoName: normalizeText(item?.tipo_name || record?.tipoName || ''),
+                            cadastroPendente: Boolean(item?.cadastro_pendente ?? record?.cadastroPendente ?? false),
                         };
                     });
 
@@ -2659,6 +2724,9 @@
         els.quickEquipmentModal.addEventListener('hidden.bs.modal', () => {
             resetEquipmentCreateFrame();
             handleQuickEquipmentModalDismissed();
+            // Volta ao padrao: o proximo "cadastrar equipamento" nao pode herdar
+            // a edicao de um equipamento pendente aberta antes.
+            state.equipmentModalMode = 'create';
         });
         window.addEventListener('message', handleEmbeddedEquipmentCreated);
         window.addEventListener('message', handleEmbeddedEquipmentCaptured);

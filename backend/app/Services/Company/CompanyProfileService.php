@@ -95,6 +95,13 @@ class CompanyProfileService
         'empresa_inscricao_municipal' => '',
         'empresa_cnae' => '',
         'empresa_codigo_tributacao_nacional' => '',
+        // Data de inicio de atividade. Usada pelo Anexo X (relatorio mensal de
+        // receitas brutas do MEI) para proporcionalizar o limite de R$ 81.000
+        // no ano de abertura: quem abriu em setembro nao tem direito ao teto
+        // cheio, e sim a 4/12 dele. Em branco, o Anexo X aplica o limite
+        // integral — errar para o lado permissivo e' melhor que acusar
+        // estouro de limite que nao existe.
+        'empresa_data_abertura' => '',
     ];
 
     /**

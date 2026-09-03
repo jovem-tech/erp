@@ -1,8 +1,8 @@
 {
-    "generated_at": "2026-08-23T17:26:28-03:00",
+    "generated_at": "2026-09-03T09:36:48-03:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "5.49.1",
+        "app_version": "5.79.1",
         "api_version": "1.6.1",
         "production_target": "Ubuntu VPS",
         "development_target": "Ubuntu Server LAN - BANCADA-02 (192.168.1.100)"
@@ -626,6 +626,90 @@
                     "title": "Sidebar mais enxuta: equipamentos e ferramentas financeiras viram atalho de listagem"
                 },
                 {
+                    "file": "documentacao/07-novas-implementacoes/2026-08-26-margem-de-contribuicao-e-dre-gerencial.md",
+                    "title": "Margem de contribuição e DRE gerencial (2026-08-26)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-08-27-baixa-peca-na-os-cmv.md",
+                    "title": "Baixa de peça na OS: o CMV deixa de ser zero (2026-08-27)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-08-27-estoque-correcao-truncamento-quantidade.md",
+                    "title": "Estoque: fechamento da janela de corrupção e fim dos truncamentos (2026-08-27)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-08-27-estoque-quantidades-decimais.md",
+                    "title": "Estoque: quantidades decimais (2026-08-27)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-08-27-gargalos-travamento-operacao-intensa.md",
+                    "title": "Gargalos e travamentos sob operação intensa (2026-08-27)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-08-27-precificacao-ciclo-fechado-os.md",
+                    "title": "Fechando o ciclo com a OS: o fim do \"R$ 0,00\" (2026-08-27)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-08-27-precificacao-custo-hora-calculado.md",
+                    "title": "Custo-hora calculado e cadeia de custo do serviço (2026-08-27)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-08-27-precificacao-integrada-pdv.md",
+                    "title": "Precificação integrada: fundação e margem no PDV (2026-08-27)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-08-27-precificacao-orcamento-custo-margem.md",
+                    "title": "Orçamento com custo e margem por linha (2026-08-27)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-08-27-precificacao-preco-sugerido-peca.md",
+                    "title": "Preço sugerido no cadastro de peça (2026-08-27)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-08-28-entrada-estoque-no-lancamento.md",
+                    "title": "Entrada de estoque no lançamento financeiro (2026-08-28)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-08-29-lancamento-revelacao-progressiva.md",
+                    "title": "Formulário de lançamento: revelação progressiva (2026-08-29)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-02-anexar-arquivo-nao-conferia-xml.md",
+                    "title": "\"Guardar arquivos do portal\" aceitava XML de outro cliente (2026-09-02)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-02-botao-anexar-arquivo-fiscal-explicito.md",
+                    "title": "\"Guardar arquivos do portal\": o botão de confirmar deixa de ser implícito (2026-09-02)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-02-corrida-rascunho-fiscal-duplicava-nota.md",
+                    "title": "Corrida em `rascunhoDeOrdem()` deixava uma OS acumular nota fiscal duplicada (2026-09-02)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-02-danfse-nt008-layout-oficial.md",
+                    "title": "DANFSe conforme a NT-008: o documento passa a ser o documento (2026-09-02)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-02-nota-fiscal-envio-e-acoes.md",
+                    "title": "Nota fiscal: envio ao cliente, nova nota e \"Mais ações\" (2026-09-02)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-02-os-a-partir-de-orcamento-aprovado-mobile.md",
+                    "title": "Abrir OS a partir de um orçamento aprovado do cliente (mobile) (2026-09-02)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-02-reconstroi-conferencia-de-assinatura-xml.md",
+                    "title": "Verificação de assinatura do XML reconstruída (2026-09-02)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-03-anexo-x-relatorio-mensal-receitas-brutas.md",
+                    "title": "Anexo X — Relatório Mensal das Receitas Brutas do MEI (2026-09-03)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-03-anexo-x-tela-do-ano-e-ajustes-auditados.md",
+                    "title": "Anexo X: tela do ano, gráfico dos dois regimes e ajustes auditados (2026-09-03)"
+                },
+                {
                     "file": "documentacao/07-novas-implementacoes/historico-de-versoes.md",
                     "title": "Historico de versoes"
                 },
@@ -1145,6 +1229,156 @@
             "artifacts": {
                 "spec": true,
                 "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/033-navegacao-preferencia-favoritos-desktop",
+            "title": "Navegação por preferência do usuário + Favoritos na navbar",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/034-atalhos-teclado-novo-desktop",
+            "title": "Atalhos de teclado para o botão \"+ Novo\"",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/035-trabalho-nao-salvo-desktop",
+            "title": "Proteção de trabalho não salvo",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/036-estoque-nucleo-razao",
+            "title": "Estoque: núcleo, razão e custo médio",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/037-precificacao-integrada-ao-fluxo",
+            "title": "Precificação integrada ao fluxo",
+            "artifacts": {
+                "spec": true,
+                "plan": false,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/038-baixa-peca-na-os",
+            "title": "Baixa de peça na OS",
+            "artifacts": {
+                "spec": true,
+                "plan": false,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/039-entrada-estoque-no-lancamento",
+            "title": "Entrada de estoque no lançamento financeiro",
+            "artifacts": {
+                "spec": true,
+                "plan": false,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/041-emissao-fiscal-nfse",
+            "title": "Emissão fiscal — NFS-e e prontidão de dados",
+            "artifacts": {
+                "spec": true,
+                "plan": false,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/042-anexo-x-receitas-brutas-mei",
+            "title": "Anexo X — Relatório Mensal das Receitas Brutas do MEI",
+            "artifacts": {
+                "spec": true,
+                "plan": false,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/043-anexo-x-tela-do-ano-e-ajustes",
+            "title": "Anexo X — tela do ano e ajustes auditados",
+            "artifacts": {
+                "spec": true,
+                "plan": false,
                 "tasks": true,
                 "research": false,
                 "quickstart": false,

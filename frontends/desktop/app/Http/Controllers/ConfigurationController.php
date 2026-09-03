@@ -356,6 +356,8 @@ class ConfigurationController extends DesktopController
             'empresa_inscricao_municipal' => trim((string) $request->input('empresa_inscricao_municipal', '')),
             'empresa_cnae' => trim((string) $request->input('empresa_cnae', '')),
             'empresa_codigo_tributacao_nacional' => trim((string) $request->input('empresa_codigo_tributacao_nacional', '')),
+            // Anexo X: proporcionaliza o limite do MEI no ano de abertura.
+            'empresa_data_abertura' => trim((string) $request->input('empresa_data_abertura', '')),
         ];
 
         $logo = $request->file('empresa_logo');

@@ -265,17 +265,33 @@
                         O XML é o que a lei manda guardar por 5 anos. O PDF é o que se manda ao cliente.
                     </p>
                     @foreach (['xml' => 'XML', 'pdf' => 'PDF (DANFSe)'] as $formato => $legenda)
-                        <form method="POST" action="{{ route('fiscal.documentos.arquivo', $documentoId) }}" enctype="multipart/form-data" class="d-flex gap-2 align-items-center mb-2" data-no-page-loader="true">
+                        @php $jaGuardado = $documento['tem_' . $formato] ?? false; @endphp
+                        <form method="POST" action="{{ route('fiscal.documentos.arquivo', $documentoId) }}"
+                              enctype="multipart/form-data" class="mb-2" data-no-page-loader="true"
+                              data-form-arquivo-fiscal>
                             @csrf
                             <input type="hidden" name="os_id" value="{{ $osId }}">
                             <input type="hidden" name="formato" value="{{ $formato }}">
-                            <input type="file" name="arquivo" class="form-control form-control-sm" accept=".{{ $formato }}" required>
-                            <button type="submit" class="btn btn-soft btn-sm text-nowrap">
-                                @if ($documento['tem_' . $formato] ?? false)
-                                    <i class="bi bi-check-circle text-success me-1"></i>
-                                @endif
-                                {{ $legenda }}
-                            </button>
+
+                            @if ($jaGuardado)
+                                <span class="small text-success d-block mb-1">
+                                    <i class="bi bi-check-circle me-1"></i>{{ $legenda }} já guardado —
+                                    escolha um arquivo abaixo só para substituir.
+                                </span>
+                            @endif
+
+                            <div class="d-flex gap-2 align-items-center">
+                                <input type="file" name="arquivo" class="form-control form-control-sm"
+                                       accept=".{{ $formato }}" required data-input-arquivo-fiscal>
+                                {{-- Comeca desabilitado: so' vira uma acao clicavel depois que o
+                                     operador escolhe o arquivo. Antes disto, o unico jeito de saber
+                                     que "XML" era o botao de confirmar era o proprio rotulo do campo —
+                                     nada aqui dizia "clique para enviar". --}}
+                                <button type="submit" class="btn btn-outline-primary btn-sm text-nowrap" disabled
+                                        data-botao-arquivo-fiscal>
+                                    <i class="bi bi-upload me-1"></i>Enviar {{ $formato === 'xml' ? 'XML' : 'PDF' }}
+                                </button>
+                            </div>
                         </form>
                     @endforeach
                 </div>
@@ -515,6 +531,18 @@
         }
 
         window.open(this.dataset.url, '_blank', 'noreferrer');
+    });
+
+    // O botao de anexar XML/PDF so' vira acao clicavel depois que um arquivo
+    // e' escolhido — antes disto o unico sinal de que "XML" era o botao de
+    // confirmar era o proprio rotulo do campo de arquivo.
+    document.querySelectorAll('[data-form-arquivo-fiscal]').forEach((form) => {
+        const campo = form.querySelector('[data-input-arquivo-fiscal]');
+        const botao = form.querySelector('[data-botao-arquivo-fiscal]');
+
+        campo?.addEventListener('change', function () {
+            botao.disabled = this.files.length === 0;
+        });
     });
 
     // O destino acompanha o canal escolhido — mas so' enquanto o operador nao

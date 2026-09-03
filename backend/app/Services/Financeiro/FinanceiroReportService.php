@@ -5,17 +5,19 @@ namespace App\Services\Financeiro;
 use App\Models\Financeiro;
 use App\Models\FinanceiroMovimento;
 use App\Models\FinanceiroMovimentoCartao;
-use App\Models\Order;
 use App\Models\Sale;
 use App\Models\SaleReturn;
 use App\Models\OrderStatus;
+use App\Support\PeriodoMensal;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
 class FinanceiroReportService
 {
-    public function __construct(private readonly OsMargemService $osMargemService)
-    {
+    public function __construct(
+        private readonly OsMargemService $osMargemService,
+        private readonly ReceitaBrutaSource $receitaBrutaSource
+    ) {
     }
 
     /**
@@ -35,9 +37,8 @@ class FinanceiroReportService
         // etapas intermediarias do sub-fluxo de reparo. Reconhece receita
         // apenas para OrderStatus::REVENUE_CLOSURE_CODE — ver skill
         // sistema-erp-os-fluxo-fechamento.
-        $os = Order::query()
-            ->receitaReconhecida()
-            ->whereRaw(Order::REVENUE_DATE_SQL . ' BETWEEN ? AND ?', [$inicio->startOfDay(), $fim->endOfDay()])
+        $os = $this->receitaBrutaSource
+            ->queryOrdensReconhecidas($inicio, $fim)
             ->selectRaw('COUNT(*) as total_os, COALESCE(SUM(os.valor_total), 0) as receita_bruta, COALESCE(SUM(os.desconto), 0) as descontos, COALESCE(SUM(os.valor_final), 0) as receita_liquida')
             ->first();
 
@@ -253,11 +254,7 @@ class FinanceiroReportService
      */
     private function resolveMonthRange(string $mes): array
     {
-        $mes = preg_match('/^\d{4}-\d{2}$/', $mes) === 1 ? $mes : now()->format('Y-m');
-        $inicio = CarbonImmutable::createFromFormat('Y-m-d', $mes . '-01')->startOfMonth();
-        $fim = $inicio->endOfMonth();
-
-        return [$inicio, $fim, $inicio->format('m/Y')];
+        return PeriodoMensal::resolver($mes);
     }
 
     /**
@@ -399,63 +396,17 @@ class FinanceiroReportService
         ?string $origemTipo = null,
         bool $incluirVendas = false
     ): array {
-        $query = Financeiro::query()
-            ->where('tipo', $tipo)
-            ->where('status', '!=', Financeiro::STATUS_CANCELADO)
-            ->where('impacta_dre', true);
-
-        if ($origemTipo !== null) {
-            $query->where('origem_tipo', $origemTipo);
-        }
-
-        if ($grupoDre !== null) {
-            $query->where('grupo_dre', $grupoDre);
-        }
-
-        // Negacao explicita em vez de filtrar pelo grupo desejado: "outras
-        // receitas" precisa continuar sendo CATCH-ALL. Ha titulo no banco com
-        // grupo_dre nulo (lancamento incompleto), e trocar isto por
-        // where('grupo_dre', 'Outras Receitas') o faria sumir do relatorio,
-        // mudando o resultado do mes sem ninguem pedir.
-        if ($excluirGrupoDre !== null) {
-            $query->where(function ($q) use ($excluirGrupoDre): void {
-                $q->whereNull('grupo_dre')
-                    ->orWhere('grupo_dre', '!=', $excluirGrupoDre);
-            });
-        }
-
-        if ($excluirOrigemTipo !== null) {
-            $query->where(function ($q) use ($excluirOrigemTipo): void {
-                $q->whereNull('origem_tipo')
-                    ->orWhere('origem_tipo', '!=', $excluirOrigemTipo);
-            });
-        }
-
-        if ($excludeOs) {
-            // A venda vinculada a uma OS recebe os_id no titulo
-            // (SalePaymentService), e um whereNull('os_id') seco a excluiria —
-            // sem que ela aparecesse do outro lado, ja que a receita de OS vem
-            // de os.valor_final e nao do titulo. Ela sumiria do faturamento.
-            // Por isso venda entra sempre que $incluirVendas.
-            $query->where(function ($q) use ($incluirVendas): void {
-                $q->whereNull('os_id');
-
-                if ($incluirVendas) {
-                    $q->orWhereNotNull('venda_id');
-                }
-            });
-        }
-
-        $dentroDoPeriodo = (clone $query)
-            ->competenciaEntre($inicio->toDateString(), $fim->toDateString());
-
-        $fixosMensais = (clone $query)
-            ->where('dre_fixo_mensal', true)
-            ->where('data_vencimento', '<=', $fim->toDateString());
-
-        $rows = $dentroDoPeriodo->get()
-            ->merge($fixosMensais->get())
-            ->unique('id');
+        $rows = $this->receitaBrutaSource->linhasPorCompetencia(
+            $tipo,
+            $grupoDre,
+            $inicio,
+            $fim,
+            excludeOs: $excludeOs,
+            excluirGrupoDre: $excluirGrupoDre,
+            excluirOrigemTipo: $excluirOrigemTipo,
+            origemTipo: $origemTipo,
+            incluirVendas: $incluirVendas
+        );
 
         return $this->summarizeRows($rows, 'valor', $incluirFixoVariavel);
     }
@@ -474,49 +425,17 @@ class FinanceiroReportService
         ?string $excluirOrigemTipo = null,
         ?string $origemTipo = null
     ): array {
-        $query = FinanceiroMovimento::query()
-            ->join('financeiro', 'financeiro.id', '=', 'financeiro_movimentos.financeiro_id')
-            ->where('financeiro.tipo', $tipo)
-            ->where('financeiro.impacta_dre', true)
-            ->whereBetween('financeiro_movimentos.data_movimento', [$inicio->toDateString(), $fim->toDateString()]);
-
-        if ($origemTipo !== null) {
-            $query->where('financeiro.origem_tipo', $origemTipo);
-        }
-
-        if ($grupoDre !== null) {
-            $query->where('financeiro.grupo_dre', $grupoDre);
-        }
-
-        // Ver groupByCompetencia(): negacao para preservar o catch-all.
-        if ($excluirGrupoDre !== null) {
-            $query->where(function ($q) use ($excluirGrupoDre): void {
-                $q->whereNull('financeiro.grupo_dre')
-                    ->orWhere('financeiro.grupo_dre', '!=', $excluirGrupoDre);
-            });
-        }
-
-        if ($excluirOrigemTipo !== null) {
-            $query->where(function ($q) use ($excluirOrigemTipo): void {
-                $q->whereNull('financeiro.origem_tipo')
-                    ->orWhere('financeiro.origem_tipo', '!=', $excluirOrigemTipo);
-            });
-        }
-
-        if ($excludeOs) {
-            $query->whereNull('financeiro.os_id');
-        }
-
-        $columns = [
-            'financeiro_movimentos.valor_movimento as valor',
-            'financeiro.subgrupo_dre as subgrupo_dre',
-        ];
-
-        if ($incluirFixoVariavel) {
-            $columns[] = 'financeiro.dre_fixo_mensal as dre_fixo_mensal';
-        }
-
-        $rows = $query->get($columns);
+        $rows = $this->receitaBrutaSource->linhasPorMovimento(
+            $tipo,
+            $grupoDre,
+            $inicio,
+            $fim,
+            excludeOs: $excludeOs,
+            incluirFixoVariavel: $incluirFixoVariavel,
+            excluirGrupoDre: $excluirGrupoDre,
+            excluirOrigemTipo: $excluirOrigemTipo,
+            origemTipo: $origemTipo
+        );
 
         return $this->summarizeRows($rows, 'valor', $incluirFixoVariavel);
     }
@@ -526,27 +445,9 @@ class FinanceiroReportService
      */
     private function sumMovimentosResumo(string $tipo, CarbonImmutable $inicio, CarbonImmutable $fim, bool $onlyOperacional = false, bool $onlyOs = false): array
     {
-        $query = FinanceiroMovimento::query()
-            ->join('financeiro', 'financeiro.id', '=', 'financeiro_movimentos.financeiro_id')
-            ->where('financeiro.tipo', $tipo)
-            ->where('financeiro.impacta_dre', true)
-            ->whereBetween('financeiro_movimentos.data_movimento', [$inicio->toDateString(), $fim->toDateString()]);
+        $query = $this->receitaBrutaSource->queryMovimentos($tipo, $inicio, $fim, $onlyOperacional, $onlyOs);
 
-        // Faturamento realizado: OS (que sempre tem os_id) e todo lancamento
-        // marcado como RECEITA OPERACIONAL — a venda de balcao. O que sobra e
-        // receita nao operacional e vai para "outras receitas".
-        if ($onlyOperacional) {
-            $query->where(function ($q): void {
-                $q->whereNotNull('financeiro.os_id')
-                    ->orWhere('financeiro.grupo_dre', Financeiro::GRUPO_DRE_RECEITA_OPERACIONAL);
-            });
-        }
-
-        if ($onlyOs) {
-            $query->whereNotNull('financeiro.os_id');
-        }
-
-        $total = (float) $query->sum('financeiro_movimentos.valor_movimento');
+        $total = (float) (clone $query)->sum('financeiro_movimentos.valor_movimento');
 
         return [
             'receita_bruta' => round($total, 2),

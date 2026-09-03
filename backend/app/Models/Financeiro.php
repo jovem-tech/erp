@@ -137,7 +137,7 @@ class Financeiro extends Model
      * periodo e, quando ela e nula, `data_vencimento` como substituta.
      *
      * Vive no model porque dois consumidores precisam concordar sobre o que e
-     * "competencia": o DRE (FinanceiroReportService::groupByCompetencia) e o
+     * "competencia": o DRE (ReceitaBrutaSource::linhasPorCompetencia) e o
      * faturamento do painel (DashboardSummaryService::faturamentoNaoOs). Se
      * cada um escrevesse o proprio COALESCE, o card e o relatorio acabariam
      * reconhecendo receita em meses diferentes para o mesmo titulo.
@@ -196,7 +196,7 @@ class Financeiro extends Model
         // Filtro de período simples por data_vencimento — deliberadamente
         // diferente do mecanismo de "fixo mensal reaparece em meses
         // futuros" usado só pelo DRE por Competência (ver
-        // FinanceiroReportService::groupByCompetencia()), que é específico
+        // ReceitaBrutaSource::linhasPorCompetencia()), que é específico
         // daquele relatório.
         $mes = trim((string) ($filters['mes'] ?? ''));
         if (preg_match('/^\d{4}-\d{2}$/', $mes) === 1) {

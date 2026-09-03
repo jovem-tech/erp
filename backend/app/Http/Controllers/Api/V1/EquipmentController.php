@@ -510,6 +510,9 @@ class EquipmentController extends BaseApiController
             'imei' => (string) ($equipment->imei ?? ''),
             'desktop_modalidade' => (string) ($equipment->desktop_modalidade ?? ''),
             'status_operacional' => (string) ($equipment->status_operacional ?? ''),
+            // Cadastro nascido de orcamento, ainda sem foto: quem lista precisa
+            // saber para nao oferecer o equipamento como pronto para a OS.
+            'cadastro_pendente' => (bool) ($equipment->cadastro_pendente ?? false),
             'orders_count' => (int) ($equipment->orders_count ?? 0),
             'primary_photo_id' => $primaryPhoto?->id !== null ? (int) $primaryPhoto->id : null,
             'primary_photo_url' => $primaryPhoto instanceof EquipmentPhoto
@@ -567,6 +570,7 @@ class EquipmentController extends BaseApiController
             'resumo_tecnico' => (string) ($equipment->resumo_tecnico ?? ''),
             'status_operacional' => (string) ($equipment->status_operacional ?? ''),
             'status' => (string) ($equipment->status ?? ''),
+            'cadastro_pendente' => (bool) ($equipment->cadastro_pendente ?? false),
             'orders_count' => (int) ($equipment->orders_count ?? 0),
             'primary_photo_id' => $primaryPhoto?->id !== null ? (int) $primaryPhoto->id : null,
             'primary_photo_url' => $primaryPhoto instanceof EquipmentPhoto

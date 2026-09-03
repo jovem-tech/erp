@@ -559,6 +559,9 @@ class OrderController extends DesktopController
                 'photo_url' => trim((string) ($equipment['primary_photo_url'] ?? $equipment['photo_url'] ?? '')),
                 'tipo_id' => (int) ($equipment['tipo_id'] ?? 0),
                 'tipo_name' => trim((string) ($equipment['tipo_nome'] ?? '')),
+                // Equipamento orçado sem foto: a OS não pode ser salva antes de
+                // completar o cadastro (OrderWorkflowService recusa).
+                'cadastro_pendente' => (bool) ($equipment['cadastro_pendente'] ?? false),
             ];
         }, $result['items']);
 

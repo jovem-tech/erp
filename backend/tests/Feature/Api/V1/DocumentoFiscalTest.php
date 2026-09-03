@@ -34,6 +34,13 @@ class DocumentoFiscalTest extends TestCase
         // final: sem o catalogo semeado o join nao casa e a lista sai vazia.
         $this->seedOrderCatalog();
 
+        // Este arquivo testa o FLUXO do documento fiscal, nao a conferencia de
+        // assinatura em si (isso e' NfseXmlImporterTest) — a fixture usada
+        // aqui teve a assinatura removida antes de ser versionada (ver
+        // tests/Fixtures/nfse/ORIGEM.md), entao exigi-la aqui so' obrigaria
+        // assinar a fixture em toda importacao sem testar nada a mais.
+        config()->set('fiscal.nfse.exigir_assinatura_xml', false);
+
         // O fiscal e' modulo proprio de RBAC. As permissoes aqui espelham o
         // que a migration `create_fiscal_rbac_module` semeia em producao:
         // `fiscal:criar` e `fiscal:excluir` nascem de quem tem `os:editar`.

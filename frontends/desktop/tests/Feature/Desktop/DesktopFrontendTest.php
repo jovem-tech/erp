@@ -2172,6 +2172,28 @@ class DesktopFrontendTest extends TestCase
         $this->assertStringContainsString('rememberClientOption(option, restoredClient || {})', $script);
     }
 
+    public function test_orcamentos_quick_client_creation_selects_new_client_and_details_validation_failures(): void
+    {
+        $script = file_get_contents(public_path('assets/js/orcamentos-form.js'));
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('const quickClientStoreUrl =', $script);
+        $this->assertStringContainsString('const applyQuickClientSelection = (client) =>', $script);
+        // Cliente novo não está em nenhuma página do Select2 remoto: a opção é
+        // criada na mão e o 'change' (não 'change.select2') dispara os handlers
+        // que recarregam OS/equipamentos do cliente.
+        $this->assertStringContainsString("$(clientSelect).val(value).trigger('change')", $script);
+        $this->assertStringContainsString('clientFallbackInput.value = \'\';', $script);
+
+        // Motivo da recusa precisa chegar ao usuário: rótulo do campo + mensagem
+        // no alerta, campo marcado e trazido para a tela.
+        $this->assertStringContainsString('const describeQuickClientErrors = (details) =>', $script);
+        $this->assertStringContainsString('const markQuickClientInvalidFields = (details) =>', $script);
+        $this->assertStringContainsString('const quickClientFieldLabel = (field) =>', $script);
+        $this->assertStringContainsString("focusTarget.scrollIntoView({ block: 'center', behavior: 'smooth' })", $script);
+        $this->assertStringContainsString('reasons.length > 0', $script);
+    }
+
     public function test_orcamentos_create_primary_action_guides_pending_fields_and_only_submits_when_ready(): void
     {
         $script = file_get_contents(public_path('assets/js/orcamentos-form.js'));
@@ -2418,6 +2440,392 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('id="orcamentoQuickItemForm"', false)
             ->assertSee(route('servicos.quick.store'), false)
             ->assertSee(route('estoque.quick.store'), false);
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_create_page_renders_quick_client_modal_when_client_create_permission_exists(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/configuracoes/empresa*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'settings' => [
+                        'empresa_nome_fantasia' => 'Sistema ERP',
+                    ],
+                    'logo' => [
+                        'exists' => false,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orcamentos/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'clients' => [],
+                        'equipments' => [],
+                        'orders' => [],
+                        'services' => [],
+                        'parts' => [],
+                        'status_options' => [
+                            ['value' => 'rascunho', 'label' => 'Rascunho'],
+                        ],
+                        'default_validity_days' => 10,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'orcamentos' => ['visualizar', 'criar'],
+                    'clientes' => ['visualizar', 'criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/orcamentos/novo');
+
+        $response
+            ->assertOk()
+            ->assertSee('id="orcamentoQuickClientButton"', false)
+            ->assertSee('id="quickClientModal"', false)
+            ->assertSee('id="quickClientForm"', false)
+            ->assertSee(route('clients.quick.store'), false)
+            ->assertSee('cadastrá-lo sem sair do orçamento', false);
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_create_page_offers_equipment_registration_with_pending_mode(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/configuracoes/empresa*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'settings' => ['empresa_nome_fantasia' => 'Sistema ERP'],
+                    'logo' => ['exists' => false],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orcamentos/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'clients' => [],
+                        'equipments' => [],
+                        'orders' => [],
+                        'services' => [],
+                        'parts' => [],
+                        'status_options' => [['value' => 'rascunho', 'label' => 'Rascunho']],
+                        'default_validity_days' => 10,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'orcamentos' => ['visualizar', 'criar'],
+                    'equipamentos' => ['visualizar', 'criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/orcamentos/novo');
+
+        // `pendente=1` é o que torna a foto opcional e marca o cadastro como
+        // incompleto — sem ele o formulário embutido exigiria a foto.
+        $response
+            ->assertOk()
+            ->assertSee('id="orcamentoQuickEquipmentButton"', false)
+            ->assertSee('id="orcamentoEquipmentModal"', false)
+            ->assertSee('data-budget-equipment-frame', false)
+            // `e()` porque o Blade escapa o `&` da query no atributo data-*.
+            ->assertSee(e(route('equipments.create', ['embedded' => 1, 'pendente' => 1])), false);
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_create_page_offers_catalog_select_for_eventual_brand_and_model(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/configuracoes/empresa*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'settings' => ['empresa_nome_fantasia' => 'Sistema ERP'],
+                    'logo' => ['exists' => false],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orcamentos/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'clients' => [],
+                        'equipments' => [],
+                        'orders' => [],
+                        'services' => [],
+                        'parts' => [],
+                        'tipos_equipamento' => ['Smartphone'],
+                        'status_options' => [['value' => 'rascunho', 'label' => 'Rascunho']],
+                        'default_validity_days' => 10,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            // Catálogo tipo/marca/modelo (o mesmo do cadastro de equipamento):
+            // marca/modelo do "equipamento eventual" passam a listar isto em
+            // vez de aceitar só texto livre.
+            'http://127.0.0.1:8000/api/v1/equipments/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'types' => [
+                            ['id' => 1, 'nome' => 'Smartphone', 'family' => 'mobile'],
+                        ],
+                        'brands' => [
+                            ['id' => 2, 'nome' => 'Apple'],
+                        ],
+                        'models' => [
+                            ['id' => 3, 'nome' => 'iPhone 16', 'marca_id' => 2],
+                        ],
+                        'catalog_relations' => [
+                            ['tipo_id' => 1, 'marca_id' => 2, 'modelo_id' => 3],
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'orcamentos' => ['visualizar', 'criar'],
+                    'equipamentos' => ['visualizar', 'criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/orcamentos/novo');
+
+        $response->assertOk();
+
+        // Marca/modelo viraram <select> catálogo-backed (não mais <input type="text">).
+        $response
+            ->assertSee('id="orcamentoEquipMarcaAvulso" name="equipamento_marca_avulso" class="form-select"', false)
+            ->assertSee('id="orcamentoEquipModeloAvulso" name="equipamento_modelo_avulso" class="form-select"', false)
+            ->assertDontSee('id="orcamentoEquipMarcaAvulso" name="equipamento_marca_avulso" class="form-control"', false)
+            ->assertDontSee('id="orcamentoEquipModeloAvulso" name="equipamento_modelo_avulso" class="form-control"', false);
+
+        // O catálogo real (tipo/marca/modelo do equipamento) chega ao JS, junto
+        // com as URLs de cadastro rápido de marca/modelo — sem elas, digitar um
+        // valor novo não persiste no catálogo.
+        $response
+            ->assertSee('\\u0022equipmentTypes\\u0022', false)
+            ->assertSee('\\u0022Smartphone\\u0022', false)
+            ->assertSee('\\u0022Apple\\u0022', false)
+            ->assertSee('\\u0022iPhone 16\\u0022', false)
+            // Js::from() escapa "/" como "\\\/" (barra invertida tripla + barra)
+            // ao embutir no <script> — não é o \/ padrão do json_encode simples.
+            ->assertSee(str_replace('/', '\\\\\\/', route('equipments.brands.quick.store')), false)
+            ->assertSee(str_replace('/', '\\\\\\/', route('equipments.models.quick.store')), false);
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_create_page_hides_equipment_registration_without_permission(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/configuracoes/empresa*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'settings' => ['empresa_nome_fantasia' => 'Sistema ERP'],
+                    'logo' => ['exists' => false],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orcamentos/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'clients' => [],
+                        'equipments' => [],
+                        'orders' => [],
+                        'services' => [],
+                        'parts' => [],
+                        'status_options' => [['value' => 'rascunho', 'label' => 'Rascunho']],
+                        'default_validity_days' => 10,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'orcamentos' => ['visualizar', 'criar'],
+                    'equipamentos' => ['visualizar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/orcamentos/novo');
+
+        $response
+            ->assertOk()
+            ->assertDontSee('id="orcamentoQuickEquipmentButton"', false)
+            ->assertDontSee('id="orcamentoEquipmentModal"', false);
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_budget_equipment_registration_and_order_gate_are_wired_in_scripts(): void
+    {
+        $budgetScript = file_get_contents(public_path('assets/js/orcamentos-form.js'));
+        $equipmentScript = file_get_contents(public_path('assets/js/equipments-create.js'));
+        $orderScript = file_get_contents(public_path('assets/js/orders-create.js'));
+
+        $this->assertIsString($budgetScript);
+        $this->assertStringContainsString('const initBudgetEquipmentCreate = () =>', $budgetScript);
+        $this->assertStringContainsString("url.searchParams.set('pendente', '1')", $budgetScript);
+        $this->assertStringContainsString("payload.type !== 'equipment-created'", $budgetScript);
+
+        // Foto opcional só no modo pendente; a marca só é declarada quando de
+        // fato não há foto anexada.
+        $this->assertIsString($equipmentScript);
+        $this->assertStringContainsString('const isPendingRegistrationMode = isEmbeddedMode', $equipmentScript);
+        $this->assertStringContainsString('state.photos.length === 0 && ! isPendingRegistrationMode', $equipmentScript);
+        $this->assertStringContainsString("body.set('cadastro_pendente', '1')", $equipmentScript);
+
+        // Wizard da OS trava o salvar e reabre o cadastro para completar.
+        $this->assertIsString($orderScript);
+        $this->assertStringContainsString('const selectedEquipmentRegistrationPending = () =>', $orderScript);
+        $this->assertStringContainsString('const openEquipmentCompletion = () =>', $orderScript);
+        $this->assertStringContainsString("state.equipmentModalMode === 'complete'", $orderScript);
+    }
+
+    public function test_budget_eventual_brand_and_model_use_real_catalog_with_quick_creation(): void
+    {
+        $budgetScript = file_get_contents(public_path('assets/js/orcamentos-form.js'));
+
+        $this->assertIsString($budgetScript);
+
+        // Cascata tipo -> marca -> modelo lida do catálogo real (mesmas tabelas
+        // do cadastro de equipamento), preservando o valor já digitado.
+        $this->assertStringContainsString('const equipmentBrandsForType = (typeId) =>', $budgetScript);
+        $this->assertStringContainsString('const equipmentModelsForBrand = (typeId, brandId) =>', $budgetScript);
+        $this->assertStringContainsString('const rebuildCatalogOptions = (select, items, currentValue) =>', $budgetScript);
+        $this->assertStringContainsString('const syncEquipmentBrandOptions = () =>', $budgetScript);
+        $this->assertStringContainsString('const syncEquipmentModelOptions = () =>', $budgetScript);
+
+        // Marca/modelo digitados fora do catálogo são cadastrados de verdade
+        // (não ficam só como tag local) quando dá pra vincular corretamente —
+        // é isso que "melhora a base de dados" em vez de só aceitar texto solto.
+        $this->assertStringContainsString('const persistEquipmentBrand = async (name, typeId) =>', $budgetScript);
+        $this->assertStringContainsString('const persistEquipmentModel = async (name, typeId, brandId) =>', $budgetScript);
+        $this->assertStringContainsString('if (equipmentBrandQuickStoreUrl === \'\' || typeId <= 0)', $budgetScript);
+        $this->assertStringContainsString('if (equipmentModelQuickStoreUrl === \'\' || typeId <= 0 || brandId <= 0)', $budgetScript);
+
+        // A criação no catálogo só acontece ao SALVAR o orçamento, nunca ao
+        // digitar: select2:select só marca a opção como pendente, e o gate no
+        // 'submit' do form é quem chama persistEquipmentBrand/Model de verdade.
+        $this->assertStringContainsString('const markPendingCatalogOption = (select, data) =>', $budgetScript);
+        $this->assertStringContainsString("option.dataset.pendingCatalogCreate = '1'", $budgetScript);
+        $this->assertStringContainsString('const resolvePendingCatalogEntries = async () =>', $budgetScript);
+        $this->assertStringContainsString("brandOption.dataset.pendingCatalogCreate === '1'", $budgetScript);
+        $this->assertStringContainsString("modelOption.dataset.pendingCatalogCreate === '1'", $budgetScript);
+        $this->assertStringContainsString('if (!state.catalogEntriesResolved) {', $budgetScript);
+        $this->assertStringContainsString('resolvePendingCatalogEntries().finally(() => {', $budgetScript);
+        $this->assertStringContainsString('state.catalogEntriesResolved = true;', $budgetScript);
+
+        // Select2 com tags (igual ao campo Tipo já fazia): dá pra digitar e
+        // criar quando o desejado não está na lista — e a sugestão "criar" fica
+        // destacada (cor + ícone) para não parecer só mais um item da lista.
+        $this->assertStringContainsString('const initCatalogTagSelect = (select, { placeholder, noResultsText } = {}) =>', $budgetScript);
+        $this->assertStringContainsString('tags: true,', $budgetScript);
+        $this->assertStringContainsString('templateResult: (data) => {', $budgetScript);
+        $this->assertStringContainsString("class: 'd-flex align-items-center gap-2 text-primary fw-semibold'", $budgetScript);
+        $this->assertStringContainsString("class: 'bi bi-plus-circle-fill'", $budgetScript);
+    }
+
+    public function test_orcamentos_create_page_hides_quick_client_modal_without_client_create_permission(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/configuracoes/empresa*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'settings' => [
+                        'empresa_nome_fantasia' => 'Sistema ERP',
+                    ],
+                    'logo' => [
+                        'exists' => false,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orcamentos/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'clients' => [],
+                        'equipments' => [],
+                        'orders' => [],
+                        'services' => [],
+                        'parts' => [],
+                        'status_options' => [
+                            ['value' => 'rascunho', 'label' => 'Rascunho'],
+                        ],
+                        'default_validity_days' => 10,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'dashboard' => ['visualizar'],
+                    'orcamentos' => ['visualizar', 'criar'],
+                    'clientes' => ['visualizar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/orcamentos/novo');
+
+        $response
+            ->assertOk()
+            ->assertDontSee('id="orcamentoQuickClientButton"', false)
+            ->assertDontSee('id="quickClientModal"', false);
 
         Http::allowStrayRequests();
     }
@@ -3091,6 +3499,218 @@ class DesktopFrontendTest extends TestCase
         Http::allowStrayRequests();
     }
 
+    /**
+     * @param  array<string, mixed>  $overrides
+     * @return array<string, mixed>
+     */
+    private function orcamentoShowFixture(array $overrides = []): array
+    {
+        return array_merge([
+            'id' => 991,
+            'numero' => 'ORC-2609-000004',
+            'versao' => 1,
+            'tipo_orcamento' => 'previo',
+            'tipo_label' => 'Orçamento prévio',
+            'status' => 'pendente_envio',
+            'status_label' => 'Pendente de envio',
+            'status_color' => '#f59e0b',
+            'origem' => 'manual',
+            'origem_label' => 'Manual',
+            'titulo' => '',
+            'cliente_nome_avulso' => '',
+            'telefone_contato' => '(22) 99274-1003',
+            'email_contato' => 'antigo@example.com',
+            'validade_dias' => 10,
+            'validade_data' => '13/09/2026',
+            'numero_os' => '',
+            'prazo_execucao' => '',
+            'observacoes' => '',
+            'condicoes' => '',
+            'subtotal' => 230.0,
+            'total' => 230.0,
+            'total_formatado' => '230,00',
+            'cliente' => ['id' => 5, 'nome_razao' => 'Cliente Cadastrado', 'cpf_cnpj' => ''],
+            'equipamento' => null,
+            'os' => null,
+            'responsavel' => ['id' => 1, 'nome' => 'Assistência Técnica'],
+            'itens' => [],
+            'historico' => [],
+            'envios' => [],
+            'aprovacoes' => [],
+            'can_edit' => true,
+            'can_delete' => false,
+            'can_send_approval' => true,
+            'link_publico' => '',
+            'created_at' => '02/09/2026 16:13',
+            'updated_at' => '02/09/2026 16:13',
+        ], $overrides);
+    }
+
+    public function test_orcamentos_show_page_offers_client_sync_when_budget_has_registered_client(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orcamentos/991' => Http::response([
+                'status' => 'success',
+                'data' => ['budget' => $this->orcamentoShowFixture()],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/orcamentos/991');
+
+        $response
+            ->assertOk()
+            ->assertSee(route('orcamentos.sync_client', 991), false)
+            ->assertSee('Sincronizar dados do cliente')
+            ->assertDontSee('Cliente eventual, sem cadastro.');
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_show_page_warns_eventual_client_blocks_order_and_links_to_edit(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orcamentos/992' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'budget' => $this->orcamentoShowFixture([
+                        'id' => 992,
+                        'cliente' => null,
+                        'cliente_id' => 0,
+                        'cliente_nome_avulso' => 'Maria Eventual',
+                    ]),
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/orcamentos/992');
+
+        $response
+            ->assertOk()
+            ->assertSee('Cliente eventual, sem cadastro.')
+            ->assertSee('A OS só nasce com cliente cadastrado.')
+            ->assertSee(route('orcamentos.edit', 992), false)
+            ->assertDontSee('Sincronizar dados do cliente');
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_sync_client_forwards_current_registration_contact_to_backend(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orcamentos/991' => Http::response([
+                'status' => 'success',
+                'data' => ['budget' => $this->orcamentoShowFixture()],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/clients/5' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'client' => [
+                        'id' => 5,
+                        'nome_razao' => 'Cliente Cadastrado',
+                        'telefone1' => '(22) 98888-1234',
+                        'email' => 'novo@example.com',
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->post('/orcamentos/991/sincronizar-cliente');
+
+        $response
+            ->assertRedirect(route('orcamentos.show', 991))
+            ->assertSessionHas('success');
+
+        Http::assertSent(static function ($request): bool {
+            if ($request->method() !== 'PATCH' || ! str_ends_with($request->url(), '/api/v1/orcamentos/991')) {
+                return false;
+            }
+
+            $body = $request->data();
+
+            // Payload parcial de propósito: sincronizar contato não pode
+            // arrastar itens/condições comerciais do orçamento junto.
+            return $body === [
+                'telefone_contato' => '(22) 98888-1234',
+                'email_contato' => 'novo@example.com',
+            ];
+        });
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_sync_client_refuses_budget_without_registered_client(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orcamentos/992' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'budget' => $this->orcamentoShowFixture([
+                        'id' => 992,
+                        'cliente' => null,
+                        'cliente_id' => 0,
+                        'cliente_nome_avulso' => 'Maria Eventual',
+                    ]),
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'editar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->post('/orcamentos/992/sincronizar-cliente');
+
+        $response
+            ->assertRedirect(route('orcamentos.show', 992))
+            ->assertSessionHas('error');
+
+        Http::assertNotSent(static fn ($request): bool => $request->method() === 'PATCH');
+
+        Http::allowStrayRequests();
+    }
+
     public function test_orcamentos_edit_page_converts_brazilian_validity_date_for_date_input(): void
     {
         Http::preventStrayRequests();
@@ -3182,6 +3802,261 @@ class DesktopFrontendTest extends TestCase
             ->assertOk()
             ->assertSee('id="orcamentoValidadeData"', false)
             ->assertSee('value="2026-07-13"', false);
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_edit_page_preserves_eventual_brand_not_found_in_catalog(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orcamentos/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'clients' => [],
+                        'equipments' => [],
+                        'orders' => [],
+                        'services' => [],
+                        'parts' => [],
+                        'tipos_equipamento' => ['Smartphone'],
+                        'status_options' => [['value' => 'rascunho', 'label' => 'Rascunho']],
+                        'default_validity_days' => 10,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/equipments/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'types' => [['id' => 1, 'nome' => 'Smartphone', 'family' => 'mobile']],
+                        'brands' => [['id' => 2, 'nome' => 'Apple']],
+                        'models' => [['id' => 3, 'nome' => 'iPhone 16', 'marca_id' => 2]],
+                        'catalog_relations' => [['tipo_id' => 1, 'marca_id' => 2, 'modelo_id' => 3]],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orcamentos/991' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'budget' => [
+                        'id' => 991,
+                        'numero' => 'ORC-2607-000002',
+                        'versao' => 1,
+                        'tipo_orcamento' => 'previo',
+                        'tipo_label' => 'Orçamento prévio',
+                        'status' => 'rascunho',
+                        'status_label' => 'Rascunho',
+                        'status_color' => '#94a3b8',
+                        'origem' => 'manual',
+                        'origem_label' => 'Manual',
+                        'titulo' => '',
+                        'cliente_nome_avulso' => 'Cliente Eventual Teste',
+                        'telefone_contato' => '22992741003',
+                        'email_contato' => '',
+                        'validade_dias' => 10,
+                        'validade_data' => '13/07/2026',
+                        'numero_os' => '',
+                        'prazo_execucao' => '',
+                        'observacoes' => '',
+                        'condicoes' => '',
+                        'subtotal' => 0.0,
+                        'desconto' => 0.0,
+                        'desconto_tipo' => 'valor',
+                        'desconto_percentual' => null,
+                        'acrescimo' => 0.0,
+                        'acrescimo_tipo' => 'valor',
+                        'acrescimo_percentual' => null,
+                        'total' => 0.0,
+                        'total_formatado' => '0,00',
+                        'cliente' => null,
+                        // Equipamento eventual: marca cadastrada antes de o catálogo
+                        // existir (ou digitada com grafia diferente) — não pode
+                        // sumir do formulário só porque não bate com o catálogo.
+                        'equipamento_tipo_avulso' => 'Smartphone',
+                        'equipamento_marca_avulso' => 'MarcaAntigaSemCatalogo',
+                        'equipamento_modelo_avulso' => 'iPhone 16',
+                        'equipamento_cor' => 'Preto',
+                        'envolve_equipamento' => true,
+                        'equipamento' => null,
+                        'os' => null,
+                        'responsavel' => ['id' => 1, 'nome' => 'Assistência Técnica'],
+                        'itens' => [],
+                        'historico' => [],
+                        'envios' => [],
+                        'aprovacoes' => [],
+                        'can_edit' => true,
+                        'can_delete' => false,
+                        'can_send_approval' => true,
+                        'link_publico' => 'http://127.0.0.1:8000/orcamento/token-def',
+                        'created_at' => '03/07/2026 16:13',
+                        'updated_at' => '03/07/2026 16:13',
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'criar', 'editar'],
+                    'equipamentos' => ['visualizar', 'criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/orcamentos/991/editar');
+
+        $response->assertOk();
+
+        // Marca fora do catálogo continua selecionada — não se perde.
+        $response->assertSee('<option value="MarcaAntigaSemCatalogo" selected>MarcaAntigaSemCatalogo</option>', false);
+
+        // Modelo também não pôde ser filtrado pelo catálogo (a marca não bateu,
+        // então não há marca_id para restringir os modelos) — preservado como
+        // opção custom, igual à marca, em vez de sumir do formulário.
+        $response->assertSee('<option value="iPhone 16" selected>iPhone 16</option>', false);
+
+        Http::allowStrayRequests();
+    }
+
+    public function test_orcamentos_edit_page_preselects_eventual_brand_and_model_found_in_catalog(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orcamentos/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'clients' => [],
+                        'equipments' => [],
+                        'orders' => [],
+                        'services' => [],
+                        'parts' => [],
+                        'tipos_equipamento' => ['Smartphone', 'Notebook'],
+                        'status_options' => [['value' => 'rascunho', 'label' => 'Rascunho']],
+                        'default_validity_days' => 10,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/equipments/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'form' => [
+                        'types' => [
+                            ['id' => 1, 'nome' => 'Smartphone', 'family' => 'mobile'],
+                            ['id' => 4, 'nome' => 'Notebook', 'family' => 'notebook'],
+                        ],
+                        'brands' => [
+                            ['id' => 2, 'nome' => 'Apple'],
+                            // Marca só de Notebook: não deve aparecer na lista
+                            // filtrada para o tipo "Smartphone" do orçamento.
+                            ['id' => 5, 'nome' => 'Dell'],
+                        ],
+                        'models' => [
+                            ['id' => 3, 'nome' => 'iPhone 16', 'marca_id' => 2],
+                            ['id' => 6, 'nome' => 'Inspiron 15', 'marca_id' => 5],
+                        ],
+                        'catalog_relations' => [
+                            ['tipo_id' => 1, 'marca_id' => 2, 'modelo_id' => 3],
+                            ['tipo_id' => 4, 'marca_id' => 5, 'modelo_id' => 6],
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orcamentos/992' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'budget' => [
+                        'id' => 992,
+                        'numero' => 'ORC-2607-000003',
+                        'versao' => 1,
+                        'tipo_orcamento' => 'previo',
+                        'tipo_label' => 'Orçamento prévio',
+                        'status' => 'rascunho',
+                        'status_label' => 'Rascunho',
+                        'status_color' => '#94a3b8',
+                        'origem' => 'manual',
+                        'origem_label' => 'Manual',
+                        'titulo' => '',
+                        'cliente_nome_avulso' => 'Cliente Eventual Teste',
+                        'telefone_contato' => '22992741003',
+                        'email_contato' => '',
+                        'validade_dias' => 10,
+                        'validade_data' => '13/07/2026',
+                        'numero_os' => '',
+                        'prazo_execucao' => '',
+                        'observacoes' => '',
+                        'condicoes' => '',
+                        'subtotal' => 0.0,
+                        'desconto' => 0.0,
+                        'desconto_tipo' => 'valor',
+                        'desconto_percentual' => null,
+                        'acrescimo' => 0.0,
+                        'acrescimo_tipo' => 'valor',
+                        'acrescimo_percentual' => null,
+                        'total' => 0.0,
+                        'total_formatado' => '0,00',
+                        'cliente' => null,
+                        'equipamento_tipo_avulso' => 'Smartphone',
+                        'equipamento_marca_avulso' => 'Apple',
+                        'equipamento_modelo_avulso' => 'iPhone 16',
+                        'equipamento_cor' => 'Preto',
+                        'envolve_equipamento' => true,
+                        'equipamento' => null,
+                        'os' => null,
+                        'responsavel' => ['id' => 1, 'nome' => 'Assistência Técnica'],
+                        'itens' => [],
+                        'historico' => [],
+                        'envios' => [],
+                        'aprovacoes' => [],
+                        'can_edit' => true,
+                        'can_delete' => false,
+                        'can_send_approval' => true,
+                        'link_publico' => 'http://127.0.0.1:8000/orcamento/token-ghi',
+                        'created_at' => '03/07/2026 16:13',
+                        'updated_at' => '03/07/2026 16:13',
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession([
+                    'orcamentos' => ['visualizar', 'criar', 'editar'],
+                    'equipamentos' => ['visualizar', 'criar'],
+                ]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/orcamentos/992/editar');
+
+        $response->assertOk();
+
+        // Marca/modelo batem com o catálogo real do tipo "Smartphone": vêm
+        // marcados como opção de catálogo (data-brand-id/data-model-id), não
+        // como tag custom.
+        $response->assertSee('<option value="Apple" data-brand-id="2" selected>Apple</option>', false);
+        $response->assertSee('<option value="iPhone 16" data-model-id="3" selected>iPhone 16</option>', false);
+
+        // Marca/modelo de outro tipo (Notebook/Dell) não entram na lista
+        // filtrada para "Smartphone" — prova que a filtragem em cascata está
+        // de fato acontecendo, não um dump plano do catálogo inteiro.
+        $response->assertDontSee('data-brand-id="5"', false);
+        $response->assertDontSee('data-model-id="6"', false);
 
         Http::allowStrayRequests();
     }
@@ -7991,6 +8866,61 @@ class DesktopFrontendTest extends TestCase
             ->assertSessionHasErrors(['fotos']);
 
         Http::assertNothingSent();
+    }
+
+    public function test_equipment_create_submission_accepts_pending_registration_without_photo(): void
+    {
+        Http::preventStrayRequests();
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/equipments' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'equipment' => [
+                        'id' => 909,
+                        'cliente_id' => 201,
+                        'tipo_id' => 1,
+                        'tipo_nome' => 'Smartphone',
+                        'marca_nome' => 'Apple',
+                        'modelo_nome' => 'iPhone 16',
+                        'numero_serie' => 'SN-ORCADO-001',
+                        'cadastro_pendente' => true,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+        ]));
+
+        // Orçamento com o aparelho ainda em casa: sem foto, mas o cadastro
+        // precisa existir para a OS futura poder se vincular a ele.
+        $response = $this
+            ->withSession($this->desktopSession([
+                'equipamentos' => ['visualizar', 'criar'],
+                'clientes' => ['visualizar', 'criar'],
+            ]))
+            ->postJson('/equipamentos', [
+                'cliente_id' => 201,
+                'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
+                'numero_serie_visual' => 'SN-ORCADO-001',
+                'cadastro_pendente' => '1',
+            ]);
+
+        $response->assertCreated();
+
+        // Sem arquivo anexado o ApiClient posta JSON (o multipart só entra quando
+        // há foto) — o backend lê '1' com $request->boolean() dos dois jeitos.
+        Http::assertSent(static function ($request): bool {
+            $data = $request->data();
+
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/equipments'
+                && ($data['cadastro_pendente'] ?? null) === '1'
+                && ! array_key_exists('fotos', $data);
+        });
+
+        Http::allowStrayRequests();
     }
 
     public function test_equipment_create_submission_requires_brand_and_model_before_calling_backend(): void

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\V1\AnexoXController;
 use App\Http\Controllers\Api\V1\AgendaController;
 use App\Http\Controllers\Api\V1\AgendaGoogleController;
 use App\Http\Controllers\Api\V1\AuthController;
@@ -506,6 +507,22 @@ Route::prefix('v1')->group(function (): void {
         Route::post('fiscal/documentos/{documento}/arquivo', [DocumentoFiscalController::class, 'anexarArquivo'])->name('api.v1.fiscal.documentos.arquivo');
         Route::get('fiscal/documentos/{documento}/arquivo/{formato}', [DocumentoFiscalController::class, 'baixarArquivo'])->name('api.v1.fiscal.documentos.arquivo.download');
         Route::get('fiscal/documentos/{documento}/danfse', [DocumentoFiscalController::class, 'danfse'])->name('api.v1.fiscal.documentos.danfse');
+
+        // Anexo X — relatorio mensal das receitas brutas do MEI (Res. CGSN
+        // 140/2018, art. 106). Dois PDFs separados de proposito: o formulario
+        // e' padrao da Receita e nao recebe secao nenhuma a mais, entao a
+        // relacao de documentos que ele manda anexar tem rota propria.
+        // Rotas ESTATICAS antes da paramétrica de cancelamento e antes da
+        // rota-raiz do anexo-x.
+        Route::get('fiscal/anexo-x/resumo', [AnexoXController::class, 'resumo'])->name('api.v1.fiscal.anexo_x.resumo');
+        Route::get('fiscal/anexo-x/ajustes', [AnexoXController::class, 'ajustes'])->name('api.v1.fiscal.anexo_x.ajustes');
+        Route::post('fiscal/anexo-x/ajustes', [AnexoXController::class, 'lancarAjuste'])->name('api.v1.fiscal.anexo_x.ajustes.store');
+        Route::post('fiscal/anexo-x/ajustes/{ajuste}/cancelamento', [AnexoXController::class, 'cancelarAjuste'])->name('api.v1.fiscal.anexo_x.ajustes.cancelar');
+        Route::get('fiscal/anexo-x', [AnexoXController::class, 'show'])->name('api.v1.fiscal.anexo_x.show');
+        Route::get('fiscal/anexo-x/pdf', [AnexoXController::class, 'pdf'])->name('api.v1.fiscal.anexo_x.pdf');
+        Route::get('fiscal/anexo-x/documentos/pdf', [AnexoXController::class, 'documentosPdf'])->name('api.v1.fiscal.anexo_x.documentos_pdf');
+        Route::post('fiscal/anexo-x/fechamento', [AnexoXController::class, 'fechar'])->name('api.v1.fiscal.anexo_x.fechar');
+        Route::post('fiscal/anexo-x/fechamento/reabertura', [AnexoXController::class, 'reabrir'])->name('api.v1.fiscal.anexo_x.reabrir');
 
         Route::get('servicos/form-data', [ServicoController::class, 'formData'])->name('api.v1.servicos.form_data');
         Route::get('servicos/exportar-csv', [ServicoController::class, 'exportCsv'])->name('api.v1.servicos.export_csv');

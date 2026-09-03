@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
+use App\Services\ClientService;
+use App\Services\EquipmentService;
 use App\Services\OrcamentoService;
 use App\Support\DesktopSession;
 use Illuminate\Http\JsonResponse;
@@ -18,7 +20,9 @@ use Throwable;
 class OrcamentoController extends DesktopController
 {
     public function __construct(
-        private readonly OrcamentoService $orcamentoService
+        private readonly OrcamentoService $orcamentoService,
+        private readonly ClientService $clientService,
+        private readonly EquipmentService $equipmentService
     ) {}
 
     public function index(Request $request): View
@@ -78,6 +82,9 @@ class OrcamentoController extends DesktopController
             'budget' => [],
             'form' => $form,
             'quickCatalogs' => $this->quickCatalogConfig(),
+            'canQuickClient' => DesktopSession::can('clientes', 'criar'),
+            'canCreateEquipment' => DesktopSession::can('equipamentos', 'criar'),
+            'equipmentCatalog' => $this->equipmentCatalogForForm(),
             'isEditMode' => false,
         ]);
     }
@@ -289,6 +296,88 @@ class OrcamentoController extends DesktopController
         ]);
     }
 
+    /**
+     * Reaplica no orçamento os dados de contato do cliente cadastrado.
+     *
+     * O orçamento guarda telefone/e-mail como snapshot do momento em que foi
+     * montado — se o cadastro do cliente mudar depois, a proposta continua
+     * mostrando o contato velho. Este botão traz a atualização sem obrigar a
+     * reabrir o formulário inteiro (o backend aceita payload parcial em
+     * BudgetWorkflowService::updateBudget()).
+     *
+     * Não serve para orçamento com cliente eventual: sem cliente_id não há
+     * cadastro de onde sincronizar — nesse caso o caminho é vincular um cliente
+     * pela edição do orçamento, que é também o que a OS vai exigir.
+     */
+    public function syncClient(int $orcamento): RedirectResponse
+    {
+        try {
+            $budget = $this->orcamentoService->find($orcamento);
+
+            if ($budget === []) {
+                abort(404);
+            }
+
+            $clientId = (int) ($budget['cliente']['id'] ?? $budget['cliente_id'] ?? 0);
+
+            if ($clientId <= 0) {
+                return redirect()
+                    ->route('orcamentos.show', $orcamento)
+                    ->with('error', 'Este orçamento usa cliente eventual. Vincule um cliente cadastrado na edição antes de sincronizar os dados.');
+            }
+
+            $client = $this->clientService->find($clientId);
+
+            if ($client === []) {
+                return redirect()
+                    ->route('orcamentos.show', $orcamento)
+                    ->with('error', 'O cliente vinculado a este orçamento não foi encontrado no cadastro.');
+            }
+
+            // Campo vazio no cadastro não apaga o que já existe no orçamento:
+            // sincronizar é trazer atualização, não zerar contato válido.
+            $payload = [];
+            $phone = trim((string) ($client['telefone1'] ?? ''));
+            $email = trim((string) ($client['email'] ?? ''));
+
+            if ($phone !== '' && $phone !== trim((string) ($budget['telefone_contato'] ?? ''))) {
+                $payload['telefone_contato'] = $phone;
+            }
+
+            if ($email !== '' && $email !== trim((string) ($budget['email_contato'] ?? ''))) {
+                $payload['email_contato'] = $email;
+            }
+
+            if ($payload === []) {
+                return redirect()
+                    ->route('orcamentos.show', $orcamento)
+                    ->with('info', 'Os dados de contato do orçamento já estão iguais aos do cadastro do cliente.');
+            }
+
+            $this->orcamentoService->update($orcamento, $payload);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException $exception) {
+            return redirect()->route('orcamentos.show', $orcamento)->with('error', $exception->getMessage());
+        } catch (ApiRequestException $exception) {
+            if ($exception->statusCode() === 404) {
+                abort(404);
+            }
+
+            return redirect()->route('orcamentos.show', $orcamento)->with('error', $exception->getMessage());
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return redirect()
+                ->route('orcamentos.show', $orcamento)
+                ->with('error', 'Não foi possível sincronizar os dados do cliente agora.');
+        }
+
+        return redirect()
+            ->route('orcamentos.show', $orcamento)
+            ->with('success', 'Dados de contato atualizados a partir do cadastro do cliente.');
+    }
+
     public function edit(int $orcamento): View|RedirectResponse
     {
         try {
@@ -325,6 +414,9 @@ class OrcamentoController extends DesktopController
             'budget' => $budget,
             'form' => $form,
             'quickCatalogs' => $this->quickCatalogConfig(),
+            'canQuickClient' => DesktopSession::can('clientes', 'criar'),
+            'canCreateEquipment' => DesktopSession::can('equipamentos', 'criar'),
+            'equipmentCatalog' => $this->equipmentCatalogForForm(),
             'isEditMode' => true,
         ]);
     }
@@ -879,6 +971,38 @@ class OrcamentoController extends DesktopController
     /**
      * @return array<string, array<string, mixed>>
      */
+    /**
+     * Catálogo de tipo/marca/modelo (o mesmo usado na abertura de OS e no
+     * cadastro de equipamento) para o Select2 de "Equipamento eventual": marca
+     * e modelo digitados aqui são casados contra o catálogo real em vez de
+     * texto solto, e o operador pode cadastrar marca/modelo novos direto no
+     * catálogo (equipments.brands.quick.store / equipments.models.quick.store)
+     * quando o desejado não existir — melhorando a base para todo o sistema.
+     *
+     * Falha ao buscar não deve impedir a página de orçamento de carregar: o
+     * catálogo é uma melhoria de UX sobre os campos de texto, não um
+     * pré-requisito. Em falha, os campos voltam a aceitar texto livre.
+     *
+     * @return array<string, mixed>
+     */
+    private function equipmentCatalogForForm(): array
+    {
+        try {
+            $form = $this->equipmentService->formData();
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return ['types' => [], 'brands' => [], 'models' => [], 'catalog_relations' => []];
+        }
+
+        return [
+            'types' => $form['types'] ?? [],
+            'brands' => $form['brands'] ?? [],
+            'models' => $form['models'] ?? [],
+            'catalog_relations' => $form['catalog_relations'] ?? [],
+        ];
+    }
+
     private function quickCatalogConfig(): array
     {
         return [

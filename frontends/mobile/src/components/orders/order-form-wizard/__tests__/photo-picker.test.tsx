@@ -53,6 +53,14 @@ describe('PhotoPicker', () => {
     expect(screen.queryByText('+ Adicionar foto')).not.toBeInTheDocument();
   });
 
+  it('não força a câmera: o input de arquivo aceita galeria/arquivos também', () => {
+    render(<PhotoPicker label="Fotos" value={[]} onChange={vi.fn()} maxFiles={4} />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+    expect(input.getAttribute('capture')).toBeNull();
+  });
+
   it('remove um arquivo pelo índice', async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

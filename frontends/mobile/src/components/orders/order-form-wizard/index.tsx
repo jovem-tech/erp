@@ -14,6 +14,7 @@ import {
   createWizardStateFromOrder,
   isChecklistComplete,
   isWizardDirty,
+  requiresBudgetEquipmentConfirmation,
   resolveEquipmentTypeId,
   selectClientForWizard,
   selectEquipmentForWizard,
@@ -95,7 +96,16 @@ export function buildReviewSections(
       ? [{ label: 'Equipamento', value: state.equipamento.resumo_tecnico || `${state.equipamento.marca_nome} ${state.equipamento.modelo_nome}` }]
       : state.pendingNewEquipment
         ? [
-            { label: 'Equipamento', value: 'Cadastro novo' },
+            {
+              label: 'Equipamento',
+              value: requiresBudgetEquipmentConfirmation(
+                state.equipamento,
+                state.pendingNewEquipment,
+                state.orcamentoVinculado
+              )
+                ? `Do orçamento ${state.orcamentoVinculado?.numero ?? ''}`.trim()
+                : 'Cadastro novo',
+            },
             { label: 'Tipo', value: state.pendingNewEquipmentLabels?.tipo ?? '' },
             { label: 'Marca', value: state.pendingNewEquipmentLabels?.marca ?? '' },
             { label: 'Modelo', value: state.pendingNewEquipmentLabels?.modelo ?? '' },
@@ -284,7 +294,9 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
           state.equipamento,
           state.pendingNewEquipment,
           state.pendingNewEquipmentPhotos,
-          state.pendingEquipmentUpdate
+          state.pendingEquipmentUpdate,
+          state.orcamentoVinculado,
+          state.equipamentoOrcamentoConfirmado
         );
       case 'checklist':
         return isChecklistComplete(state);
@@ -503,6 +515,10 @@ export function OrderFormWizard({ mode, order, idempotencyKey }: OrderFormWizard
           pendingEquipmentUpdate={state.pendingEquipmentUpdate}
           pendingNewEquipmentPhotos={state.pendingNewEquipmentPhotos}
           linkedBudget={state.orcamentoVinculado}
+          budgetEquipmentConfirmed={state.equipamentoOrcamentoConfirmado}
+          onChangeBudgetEquipmentConfirmed={(equipamentoOrcamentoConfirmado) =>
+            setState((prev) => ({ ...prev, equipamentoOrcamentoConfirmado }))
+          }
           onSelectEquipamento={(equipamento) => setState((prev) => selectEquipmentForWizard(prev, equipamento))}
           onChangePendingNewEquipment={(pendingNewEquipment) => setState((prev) => ({ ...prev, pendingNewEquipment }))}
           onChangePendingEquipmentUpdate={(pendingEquipmentUpdate) =>

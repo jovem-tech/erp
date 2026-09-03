@@ -36,6 +36,14 @@
 
         $orderId = (int) ($order['id'] ?? ($budget['os_id'] ?? 0));
 
+        // Cliente eventual (cliente_nome_avulso sem cliente_id): o orçamento existe,
+        // mas nenhuma OS pode nascer dele sem um cliente na tabela de clientes —
+        // OrderWorkflowService exige cliente cadastrado e o orçamento o adota no
+        // vínculo. Aqui o estado fica visível antes de o operador esbarrar na regra.
+        $budgetClientId = (int) ($client['id'] ?? ($budget['cliente_id'] ?? 0));
+        $budgetHasEventualClient = $budgetClientId <= 0;
+        $canEditBudget = ! empty($budget['can_edit']);
+
         // Marca + modelo do equipamento — registrado (da OS/cadastro) ou eventual.
         $equipmentBrandModel = trim(implode(' ', array_filter([
             trim((string) ($equipment['marca_nome'] ?? '')),
@@ -210,6 +218,29 @@
                 <div class="detail-item"><strong>OS vinculada</strong><span>{{ $numeroOs !== '' ? $numeroOs : 'Sem OS' }}</span></div>
                 <div class="detail-item"><strong>Responsável</strong><span>{{ $budget['responsavel']['nome'] ?? 'Não informado' }}</span></div>
             </div>
+
+            @if ($canEditBudget && $budgetHasEventualClient)
+                <div class="alert alert-warning d-flex flex-wrap align-items-center justify-content-between gap-3 mt-3 mb-0">
+                    <div>
+                        <strong>Cliente eventual, sem cadastro.</strong>
+                        <span class="d-block">A OS só nasce com cliente cadastrado. Vincule um cadastro a este orçamento — na edição dá para escolher um cliente existente ou cadastrar na hora.</span>
+                    </div>
+                    <a href="{{ route('orcamentos.edit', $budgetId) }}" class="btn btn-sm btn-primary flex-shrink-0">
+                        <i class="bi bi-person-check me-2"></i>Vincular cliente cadastrado
+                    </a>
+                </div>
+            @elseif ($canEditBudget)
+                <form method="post" action="{{ route('orcamentos.sync_client', $budgetId) }}" class="mt-3">
+                    @csrf
+                    <button type="submit" class="btn btn-sm btn-soft">
+                        <i class="bi bi-arrow-repeat me-2"></i>Sincronizar dados do cliente
+                    </button>
+                    <small class="text-secondary d-block mt-2">
+                        Telefone e e-mail deste orçamento são uma foto do momento em que ele foi montado.
+                        Use isto para trazer o que mudou desde então no cadastro do cliente.
+                    </small>
+                </form>
+            @endif
         </article>
 
         <article class="surface-card">

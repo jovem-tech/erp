@@ -20,10 +20,27 @@ use Illuminate\Validation\ValidationException;
  * Existe para acabar com a redigitação: o operador emite no portal, baixa o
  * XML, e o sistema tira dali número, série e chave em vez de pedir que ele copie
  * do PDF — que é onde o erro acontece.
+ *
+ * **A assinatura é conferida de verdade.** Sem isto, um XML montado à mão —
+ * com o CNPJ do prestador certo, tomador certo, tudo bem-formado — entrava
+ * como nota emitida e virava a prova guardada por cinco anos: nada aqui
+ * provava que o arquivo tinha vindo do Ambiente Nacional. `AssinaturaXml`
+ * (que o `DpsXmlBuilder` já usa para ASSINAR a DPS) faz a conta de conferir;
+ * este importador só decide o que fazer com o veredito, via
+ * `fiscal.nfse.exigir_assinatura_xml` — desligado, é para trabalhar com
+ * amostra sem assinatura; ligado (o padrão), XML sem assinatura ou adulterado
+ * é recusado antes de qualquer dado dele virar registro.
  */
 class NfseXmlImporter
 {
     private const NS = 'http://www.sped.fazenda.gov.br/nfse';
+
+    /**
+     * Tamanho máximo aceito, em bytes. Uma NFS-e real fica na casa de
+     * dezenas de KB; um arquivo de megabytes não é nota fiscal, é ataque de
+     * negação de serviço via upload.
+     */
+    private const TAMANHO_MAXIMO = 10 * 1024 * 1024;
 
     public function __construct(private readonly CompanyProfileService $empresa) {}
 
@@ -32,16 +49,21 @@ class NfseXmlImporter
      */
     public function ler(string $conteudo): array
     {
-        $conteudo = $this->normalizarAcentuacao($conteudo);
-
-        $dom = new DOMDocument();
-        $dom->preserveWhiteSpace = false;
-
-        if (! @$dom->loadXML($conteudo)) {
+        if (strlen($conteudo) > self::TAMANHO_MAXIMO) {
             throw ValidationException::withMessages([
-                'arquivo' => 'O arquivo não é um XML válido.',
+                'arquivo' => 'Arquivo grande demais para ser uma NFS-e (máximo 10 MB).',
             ]);
         }
+
+        // A assinatura foi feita sobre os bytes ORIGINAIS. Normalizar a
+        // acentuação antes de conferir invalidaria a assinatura de uma nota
+        // legítima que veio com o defeito de dupla-codificação do portal —
+        // por isso a conferência usa `$original`, e só a extração de dados
+        // usa o texto normalizado.
+        $original = $conteudo;
+        $conteudo = $this->normalizarAcentuacao($conteudo);
+
+        $dom = $this->carregar($conteudo);
 
         $xpath = new DOMXPath($dom);
         $xpath->registerNamespace('n', self::NS);
@@ -57,6 +79,10 @@ class NfseXmlImporter
 
         // A chave vem do atributo Id, prefixado com "NFS".
         $chave = preg_replace('/^NFS/', '', (string) $inf->getAttribute('Id'));
+
+        $this->conferirChave($chave);
+
+        $assinatura = $this->conferirAssinatura($original);
 
         $prestador = Documento::normalizar($this->texto($xpath, '//n:infNFSe/n:emit/n:CNPJ')
             ?: $this->texto($xpath, '//n:infNFSe/n:emit/n:CPF'));
@@ -91,6 +117,9 @@ class NfseXmlImporter
             'descricao_tributacao' => $this->texto($xpath, '//n:infNFSe/n:xTribNac'),
             'municipio' => $this->texto($xpath, '//n:infNFSe/n:xLocEmi'),
             'valor' => $valor !== null ? (float) $valor : 0.0,
+
+            'assinatura_conferida' => $assinatura['conferida'],
+            'assinatura_motivo' => $assinatura['motivo'],
 
             // ---- Nota Tecnica no 008 (DANFSe) ----
             // O DANFSe nao pode conter nada que nao esteja no XML (item 2.1),
@@ -332,6 +361,105 @@ class NfseXmlImporter
      * ninguém percebe — o número e a chave parecem legítimos porque são. Num
      * sistema que vai ser vendido e operado por terceiros, isso acontece.
      */
+    /**
+     * Carrega o XML sem dar ao arquivo poderes que ele não precisa ter.
+     *
+     * `LIBXML_NONET` corta qualquer tentativa de buscar recurso externo
+     * (DTD, entidade); DOCTYPE é recusado antes mesmo de chegar ao parser — é
+     * por ele que passam tanto a leitura de arquivo do servidor (XXE) quanto
+     * a expansão de entidade que trava o processo, e uma NFS-e nacional não
+     * tem DTD nenhum legítimo para declarar.
+     */
+    private function carregar(string $conteudo): DOMDocument
+    {
+        if (preg_match('/<!DOCTYPE/i', $conteudo) === 1) {
+            throw ValidationException::withMessages([
+                'arquivo' => 'O XML tem DOCTYPE, que uma NFS-e não usa. Baixe o arquivo de novo no Emissor Nacional.',
+            ]);
+        }
+
+        $dom = new DOMDocument();
+        $dom->preserveWhiteSpace = false;
+
+        $anterior = libxml_use_internal_errors(true);
+
+        try {
+            $carregado = @$dom->loadXML($conteudo, LIBXML_NONET);
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($anterior);
+        }
+
+        if (! $carregado) {
+            throw ValidationException::withMessages([
+                'arquivo' => 'O arquivo não é um XML válido.',
+            ]);
+        }
+
+        return $dom;
+    }
+
+    /**
+     * A chave de acesso tem 50 dígitos (NT-008, item 2.1.1) — nada além disso
+     * é chave de NFS-e nacional. Não decodifica o conteúdo dela: o layout
+     * exato de cada faixa de dígitos não está documentado o bastante para
+     * apostar numa checagem campo a campo, e recusar uma nota real por um
+     * decodificador errado é pior do que não ter o decodificador.
+     */
+    private function conferirChave(string $chave): void
+    {
+        if (preg_match('/^\d{50}$/', $chave) !== 1) {
+            throw ValidationException::withMessages([
+                'arquivo' => sprintf(
+                    'A chave de acesso deveria ter 50 dígitos e tem %d ("%s"). '
+                        .'O arquivo pode estar corrompido ou não ser uma NFS-e.',
+                    strlen($chave),
+                    $chave
+                ),
+            ]);
+        }
+    }
+
+    /**
+     * Confere a assinatura digital contra o que o próprio XML declarou —
+     * `AssinaturaXml` faz a conta (canonicaliza, confere digest, confere RSA
+     * contra o certificado embutido); aqui só se decide o que fazer com o
+     * veredito.
+     *
+     * `exigir_assinatura_xml` desligado é para trabalhar com amostra sem
+     * assinatura (documentação, XML de exemplo). Ligado — o padrão — é a
+     * postura de produção: sem assinatura conferida, o arquivo não vira
+     * registro.
+     *
+     * @return array{conferida: bool, motivo: ?string}
+     */
+    private function conferirAssinatura(string $original): array
+    {
+        $dom = new DOMDocument();
+        $dom->preserveWhiteSpace = false;
+
+        $anterior = libxml_use_internal_errors(true);
+
+        try {
+            $carregado = @$dom->loadXML($original, LIBXML_NONET);
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($anterior);
+        }
+
+        $veredito = $carregado
+            ? AssinaturaXml::conferir($dom)
+            : ['assinado' => false, 'conferida' => false, 'motivo' => 'Não foi possível reler o arquivo original para conferir a assinatura.'];
+
+        if ((bool) config('fiscal.nfse.exigir_assinatura_xml', true) && ! $veredito['conferida']) {
+            throw ValidationException::withMessages([
+                'arquivo' => (string) ($veredito['motivo'] ?? 'A assinatura do XML não pôde ser conferida.'),
+            ]);
+        }
+
+        return ['conferida' => $veredito['conferida'], 'motivo' => $veredito['motivo']];
+    }
+
     private function conferirPrestador(?string $prestador): void
     {
         $cadastrado = Documento::normalizar(

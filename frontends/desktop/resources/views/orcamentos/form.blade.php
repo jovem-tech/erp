@@ -171,6 +171,15 @@
             }
         }
     }
+    // Cadastro rapido de cliente: so faz sentido quando o operador pode criar
+    // clientes E o cliente ainda nao esta travado por uma OS de origem.
+    $canQuickClient = ($canQuickClient ?? false) && ! $clientLocked;
+
+    // Cadastro do equipamento do orcamento: usa o MESMO formulario embutido da
+    // abertura de OS (tipo -> marca -> modelo, com criacao inline de cada nivel).
+    // Precisa de um cliente cadastrado — equipamento pertence a um cliente.
+    $canCreateEquipment = ($canCreateEquipment ?? false);
+
     $globalDiscountType = $resolveAdjustmentType(old('desconto_tipo', $budget['desconto_tipo'] ?? 'valor'));
     $globalDiscountAmount = old('desconto', $budget['desconto'] ?? 0);
     $globalDiscountPercent = old('desconto_percentual', $budget['desconto_percentual'] ?? 0);
@@ -200,6 +209,51 @@
     $equipCorAvulso = trim((string) old('equipamento_cor', $budget['equipamento_cor'] ?? ''));
     $hasEventualEquipment = ($equipTipoAvulso . $equipMarcaAvulso . $equipModeloAvulso . $equipCorAvulso) !== '';
     $hasEventualClient = $clienteAvulsoValue !== '' && $selectedClientId <= 0;
+
+    // Marca/modelo do equipamento eventual: tipo/marca/modelo são catálogo do
+    // ERP (EquipmentType/EquipmentBrand/EquipmentModel), não vinculados a
+    // cliente algum — servem só de consulta. Os selects abaixo listam o
+    // catálogo real (filtrado em cascata: tipo -> marca -> modelo, igual ao
+    // cadastro de equipamento) para o operador escolher em vez de digitar
+    // texto solto; o valor continua sendo o NOME (equipamento eventual não tem
+    // FK), mas marca/modelo novos digitados são gravados no catálogo de
+    // verdade pelo orcamentos-form.js (equipments.brands/models.quick.store).
+    $equipmentCatalog = is_array($equipmentCatalog ?? null) ? $equipmentCatalog : [];
+    $catalogTypes = is_array($equipmentCatalog['types'] ?? null) ? $equipmentCatalog['types'] : [];
+    $catalogBrands = is_array($equipmentCatalog['brands'] ?? null) ? $equipmentCatalog['brands'] : [];
+    $catalogModels = is_array($equipmentCatalog['models'] ?? null) ? $equipmentCatalog['models'] : [];
+    $catalogRelations = is_array($equipmentCatalog['catalog_relations'] ?? null) ? $equipmentCatalog['catalog_relations'] : [];
+
+    $equipTipoAvulsoId = (int) (collect($catalogTypes)
+        ->first(fn (array $type): bool => mb_strtolower(trim((string) ($type['nome'] ?? ''))) === mb_strtolower($equipTipoAvulso))['id'] ?? 0);
+
+    $filteredBrandsAvulso = $equipTipoAvulsoId > 0
+        ? collect($catalogRelations)
+            ->filter(fn (array $relation): bool => (int) ($relation['tipo_id'] ?? 0) === $equipTipoAvulsoId)
+            ->pluck('marca_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->flatMap(fn (int $marcaId) => collect($catalogBrands)->where('id', $marcaId))
+            ->sortBy('nome')
+            ->values()
+            ->all()
+        : [];
+
+    $equipMarcaAvulsoId = (int) (collect($catalogBrands)
+        ->first(fn (array $brand): bool => mb_strtolower(trim((string) ($brand['nome'] ?? ''))) === mb_strtolower($equipMarcaAvulso))['id'] ?? 0);
+
+    $filteredModelsAvulso = ($equipTipoAvulsoId > 0 && $equipMarcaAvulsoId > 0)
+        ? collect($catalogRelations)
+            ->filter(fn (array $relation): bool => (int) ($relation['tipo_id'] ?? 0) === $equipTipoAvulsoId
+                && (int) ($relation['marca_id'] ?? 0) === $equipMarcaAvulsoId)
+            ->pluck('modelo_id')
+            ->map(fn ($id): int => (int) $id)
+            ->unique()
+            ->flatMap(fn (int $modeloId) => collect($catalogModels)->where('id', $modeloId))
+            ->sortBy('nome')
+            ->values()
+            ->all()
+        : [];
 @endphp
 
 <section class="desktop-form-card">
@@ -290,27 +344,42 @@
             <div class="desktop-grid desktop-grid-two">
                 <div>
                     <label for="orcamentoClienteId">Cliente cadastrado <span class="text-danger" aria-hidden="true">*</span></label>
-                    <select id="orcamentoClienteId" name="{{ $clientLocked ? '' : 'cliente_id' }}" class="form-select" data-select2-placeholder="Selecione um cliente..." data-select2-allow-clear="true" data-budget-client-select @disabled($clientLocked)>
-                        <option value=""></option>
-                        @foreach ($clients as $client)
-                            @php
-                                $clientId = (int) ($client['id'] ?? 0);
-                                $clientName = trim((string) ($client['nome_razao'] ?? ''));
-                                $clientDocument = trim((string) ($client['cpf_cnpj'] ?? ''));
-                                $clientPhone = trim((string) ($client['telefone1'] ?? ''));
-                                $clientLabel = implode(' - ', array_values(array_filter([$clientName, $clientDocument, $clientPhone])));
-                            @endphp
-                            <option
-                                value="{{ $clientId }}"
-                                data-client-name="{{ $clientName }}"
-                                data-client-phone="{{ $clientPhone }}"
-                                data-client-email="{{ trim((string) ($client['email'] ?? '')) }}"
-                                @selected($selectedClientId === $clientId)
-                            >{{ $clientLabel !== '' ? $clientLabel : 'Cliente' }}</option>
-                        @endforeach
-                    </select>
+                    <div class="d-flex gap-2 align-items-start">
+                        <select id="orcamentoClienteId" name="{{ $clientLocked ? '' : 'cliente_id' }}" class="form-select" data-select2-placeholder="Selecione um cliente..." data-select2-allow-clear="true" data-budget-client-select @disabled($clientLocked)>
+                            <option value=""></option>
+                            @foreach ($clients as $client)
+                                @php
+                                    $clientId = (int) ($client['id'] ?? 0);
+                                    $clientName = trim((string) ($client['nome_razao'] ?? ''));
+                                    $clientDocument = trim((string) ($client['cpf_cnpj'] ?? ''));
+                                    $clientPhone = trim((string) ($client['telefone1'] ?? ''));
+                                    $clientLabel = implode(' - ', array_values(array_filter([$clientName, $clientDocument, $clientPhone])));
+                                @endphp
+                                <option
+                                    value="{{ $clientId }}"
+                                    data-client-name="{{ $clientName }}"
+                                    data-client-phone="{{ $clientPhone }}"
+                                    data-client-email="{{ trim((string) ($client['email'] ?? '')) }}"
+                                    @selected($selectedClientId === $clientId)
+                                >{{ $clientLabel !== '' ? $clientLabel : 'Cliente' }}</option>
+                            @endforeach
+                        </select>
+                        @if ($canQuickClient)
+                            <button
+                                type="button"
+                                id="orcamentoQuickClientButton"
+                                class="btn btn-soft flex-shrink-0"
+                                title="Cadastrar novo cliente"
+                                aria-label="Cadastrar novo cliente"
+                            >
+                                <i class="bi bi-person-plus"></i>
+                            </button>
+                        @endif
+                    </div>
                     @if ($clientLocked)
                         <input type="hidden" name="cliente_id" value="{{ $selectedClientId }}">
+                    @elseif ($canQuickClient)
+                        <small class="text-secondary d-block mt-2">Se o cliente ainda não existir, use o botão <i class="bi bi-person-plus"></i> para cadastrá-lo sem sair do orçamento.</small>
                     @else
                         <small class="text-secondary d-block mt-2">Se o cliente ainda não existir, preencha os dados avulsos abaixo.</small>
                     @endif
@@ -374,30 +443,50 @@
                          genérico do desktop.js não o reinicializar. As opções são
                          recarregadas via AJAX ao trocar o cliente (apenas
                          equipamentos do cliente escolhido). --}}
-                    <select id="orcamentoEquipamentoId" name="equipamento_id" class="form-select" data-select2-placeholder="Selecione um equipamento..." data-select2-allow-clear="true" data-budget-equipment-select>
-                        <option value=""></option>
-                        @foreach ($equipments as $equipment)
-                            @php
-                                $equipmentId = (int) ($equipment['id'] ?? 0);
-                                $equipmentClienteId = (int) ($equipment['cliente_id'] ?? 0);
-                                $equipmentTipoNome = trim((string) ($equipment['tipo_nome'] ?? ''));
-                                $equipmentMarcaNome = trim((string) ($equipment['marca_nome'] ?? ''));
-                                $equipmentModeloNome = trim((string) ($equipment['modelo_nome'] ?? ''));
-                                $equipmentMarcaModelo = trim(implode(' ', array_filter([$equipmentMarcaNome, $equipmentModeloNome])));
-                                $equipmentLabel = trim(implode(' - ', array_filter([$equipmentTipoNome, $equipmentMarcaModelo])));
-                                if ($equipmentLabel === '') {
-                                    $equipmentLabel = trim((string) ($equipment['resumo_tecnico'] ?? ''));
-                                }
-                                $serial = trim((string) ($equipment['numero_serie'] ?? ''));
-                                $clientName = trim((string) ($equipment['cliente_nome'] ?? ''));
-                                $equipmentFotoId = (int) ($equipment['foto_principal_id'] ?? 0);
-                                $equipmentFotoUrl = $equipmentFotoId > 0 && $equipmentId > 0
-                                    ? route('equipments.photos.show', [$equipmentId, $equipmentFotoId])
-                                    : '';
-                            @endphp
-                            <option value="{{ $equipmentId }}" data-cliente-id="{{ $equipmentClienteId }}" data-foto-url="{{ $equipmentFotoUrl }}" @selected($selectedEquipmentId === $equipmentId)>{{ $equipmentLabel !== '' ? $equipmentLabel : 'Equipamento #' . $equipmentId }}{{ $serial !== '' ? ' · S/N ' . $serial : '' }}{{ $clientName !== '' ? ' · ' . $clientName : '' }}</option>
-                        @endforeach
-                    </select>
+                    <div class="d-flex gap-2 align-items-start">
+                        <select id="orcamentoEquipamentoId" name="equipamento_id" class="form-select" data-select2-placeholder="Selecione um equipamento..." data-select2-allow-clear="true" data-budget-equipment-select>
+                            <option value=""></option>
+                            @foreach ($equipments as $equipment)
+                                @php
+                                    $equipmentId = (int) ($equipment['id'] ?? 0);
+                                    $equipmentClienteId = (int) ($equipment['cliente_id'] ?? 0);
+                                    $equipmentTipoNome = trim((string) ($equipment['tipo_nome'] ?? ''));
+                                    $equipmentMarcaNome = trim((string) ($equipment['marca_nome'] ?? ''));
+                                    $equipmentModeloNome = trim((string) ($equipment['modelo_nome'] ?? ''));
+                                    $equipmentMarcaModelo = trim(implode(' ', array_filter([$equipmentMarcaNome, $equipmentModeloNome])));
+                                    $equipmentLabel = trim(implode(' - ', array_filter([$equipmentTipoNome, $equipmentMarcaModelo])));
+                                    if ($equipmentLabel === '') {
+                                        $equipmentLabel = trim((string) ($equipment['resumo_tecnico'] ?? ''));
+                                    }
+                                    $serial = trim((string) ($equipment['numero_serie'] ?? ''));
+                                    $clientName = trim((string) ($equipment['cliente_nome'] ?? ''));
+                                    $equipmentFotoId = (int) ($equipment['foto_principal_id'] ?? 0);
+                                    $equipmentFotoUrl = $equipmentFotoId > 0 && $equipmentId > 0
+                                        ? route('equipments.photos.show', [$equipmentId, $equipmentFotoId])
+                                        : '';
+                                @endphp
+                                <option value="{{ $equipmentId }}" data-cliente-id="{{ $equipmentClienteId }}" data-foto-url="{{ $equipmentFotoUrl }}" @selected($selectedEquipmentId === $equipmentId)>{{ $equipmentLabel !== '' ? $equipmentLabel : 'Equipamento #' . $equipmentId }}{{ $serial !== '' ? ' · S/N ' . $serial : '' }}{{ $clientName !== '' ? ' · ' . $clientName : '' }}</option>
+                            @endforeach
+                        </select>
+                        @if ($canCreateEquipment)
+                            <button
+                                type="button"
+                                id="orcamentoQuickEquipmentButton"
+                                class="btn btn-soft flex-shrink-0"
+                                title="Cadastrar equipamento do cliente"
+                                aria-label="Cadastrar equipamento do cliente"
+                            >
+                                <i class="bi bi-plus-lg"></i>
+                            </button>
+                        @endif
+                    </div>
+                    @if ($canCreateEquipment)
+                        <small class="text-secondary d-block mt-2" data-budget-equipment-create-hint>
+                            Cliente novo, aparelho ainda em casa? Selecione o cliente e use o botão
+                            <i class="bi bi-plus-lg"></i> para cadastrar o equipamento agora — a foto fica
+                            para quando ele trouxer o aparelho.
+                        </small>
+                    @endif
                 </div>
 
                 <div class="desktop-grid-span-2" data-budget-equipment-field data-budget-eventual-equipment>
@@ -424,11 +513,35 @@
                             </div>
                             <div>
                                 <label for="orcamentoEquipMarcaAvulso">Marca <span class="text-danger" aria-hidden="true">*</span></label>
-                                <input type="text" id="orcamentoEquipMarcaAvulso" name="equipamento_marca_avulso" class="form-control" value="{{ $equipMarcaAvulso }}" placeholder="Ex.: Apple" data-budget-eventual-input maxlength="120">
+                                @php
+                                    // Marca digitada antes e que não bateu com o catálogo por nome:
+                                    // preserva como opção para não perder a seleção salva.
+                                    $marcaAvulsoIsCustom = $equipMarcaAvulso !== '' && $equipMarcaAvulsoId === 0;
+                                @endphp
+                                <select id="orcamentoEquipMarcaAvulso" name="equipamento_marca_avulso" class="form-select" data-native-select="true" data-select2-placeholder="Selecione ou digite a marca..." data-budget-eventual-input data-budget-equip-brand-select>
+                                    <option value=""></option>
+                                    @foreach ($filteredBrandsAvulso as $brand)
+                                        <option value="{{ $brand['nome'] }}" data-brand-id="{{ $brand['id'] }}" @selected($equipMarcaAvulso === $brand['nome'])>{{ $brand['nome'] }}</option>
+                                    @endforeach
+                                    @if ($marcaAvulsoIsCustom)
+                                        <option value="{{ $equipMarcaAvulso }}" selected>{{ $equipMarcaAvulso }}</option>
+                                    @endif
+                                </select>
                             </div>
                             <div>
                                 <label for="orcamentoEquipModeloAvulso">Modelo <span class="text-danger" aria-hidden="true">*</span></label>
-                                <input type="text" id="orcamentoEquipModeloAvulso" name="equipamento_modelo_avulso" class="form-control" value="{{ $equipModeloAvulso }}" placeholder="Ex.: iPhone 16" data-budget-eventual-input maxlength="120">
+                                @php
+                                    $modeloAvulsoIsCustom = $equipModeloAvulso !== '' && ! collect($filteredModelsAvulso)->contains(fn (array $model): bool => mb_strtolower(trim((string) ($model['nome'] ?? ''))) === mb_strtolower($equipModeloAvulso));
+                                @endphp
+                                <select id="orcamentoEquipModeloAvulso" name="equipamento_modelo_avulso" class="form-select" data-native-select="true" data-select2-placeholder="Selecione ou digite o modelo..." data-budget-eventual-input data-budget-equip-model-select>
+                                    <option value=""></option>
+                                    @foreach ($filteredModelsAvulso as $model)
+                                        <option value="{{ $model['nome'] }}" data-model-id="{{ $model['id'] }}" @selected($equipModeloAvulso === $model['nome'])>{{ $model['nome'] }}</option>
+                                    @endforeach
+                                    @if ($modeloAvulsoIsCustom)
+                                        <option value="{{ $equipModeloAvulso }}" selected>{{ $equipModeloAvulso }}</option>
+                                    @endif
+                                </select>
                             </div>
                             <div>
                                 <label for="orcamentoEquipCorAvulso">Cor <span class="text-danger" aria-hidden="true">*</span></label>
@@ -836,6 +949,48 @@
 @push('modals')
     @if ($osIsEncerrada)
         @include('orcamentos._admin_confirm_modal')
+    @endif
+
+    @if ($canCreateEquipment)
+        {{-- Mesmo formulario embutido usado pelo wizard da OS: tipo -> marca ->
+             modelo com criacao inline de cada nivel. `pendente=1` faz a foto
+             virar opcional e marca o cadastro como incompleto. --}}
+        <div
+            class="modal fade"
+            id="orcamentoEquipmentModal"
+            tabindex="-1"
+            aria-hidden="true"
+            data-bs-backdrop="static"
+            data-bs-keyboard="false"
+            data-budget-equipment-create-url="{{ route('equipments.create', ['embedded' => 1, 'pendente' => 1]) }}"
+        >
+            <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+                <div class="modal-content modal-shell">
+                    <div class="modal-header">
+                        <div>
+                            <p class="desktop-eyebrow mb-1">Equipamentos</p>
+                            <h5 class="modal-title mb-0">Cadastrar equipamento do cliente</h5>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                    </div>
+                    <div class="modal-body p-0">
+                        <iframe
+                            title="Cadastro de equipamento"
+                            class="w-100 border-0"
+                            style="height: 72vh;"
+                            data-budget-equipment-frame
+                        ></iframe>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    @if ($canQuickClient)
+        @include('clients.quick-modal', [
+            'fullCreateUrl' => route('clients.create'),
+            'quickStoreUrl' => route('clients.quick.store'),
+        ])
     @endif
 
     @if ($canQuickCatalog)

@@ -634,7 +634,7 @@ class FinanceiroService
      * que o valor pare de contar no fluxo de caixa realizado e no DRE de
      * caixa — ambos calculados a partir de financeiro_movimentos. O DRE por
      * competência é filtrado por status=cancelado diretamente em
-     * FinanceiroReportService::groupByCompetencia().
+     * ReceitaBrutaSource::linhasPorCompetencia().
      *
      * Se algum dos movimentos deste título gerou uma despesa de taxa de
      * cartão (ver registerCardFeeExpense()), essa despesa é cancelada junto —

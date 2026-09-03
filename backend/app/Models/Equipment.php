@@ -23,6 +23,7 @@ class Equipment extends Model
         'tipo_id' => 'integer',
         'marca_id' => 'integer',
         'modelo_id' => 'integer',
+        'cadastro_pendente' => 'boolean',
         // Senha/padrao de desbloqueio do aparelho do cliente: cifrada em repouso
         // (ver migration 2026_08_21_000001). O cast decifra de forma transparente
         // na leitura, entao quem consome o atributo nao muda.

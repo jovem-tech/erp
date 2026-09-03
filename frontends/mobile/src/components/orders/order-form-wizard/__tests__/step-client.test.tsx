@@ -9,6 +9,7 @@ vi.mock('@/lib/orders', () => ({
   searchClients: vi.fn().mockResolvedValue([]),
   searchAvulsoBudgetContacts: vi.fn().mockResolvedValue([]),
   listApprovedBudgetsForClient: vi.fn().mockResolvedValue([]),
+  getLinkableBudgetDetail: vi.fn().mockResolvedValue({}),
   isApprovedBudget: (budget: { status?: string } | null | undefined) =>
     Boolean(budget && ['aprovado', 'pendente_abertura_os'].includes(budget.status ?? '')),
   lookupCepAddress: vi.fn().mockResolvedValue({
@@ -253,7 +254,62 @@ describe('StepClient', () => {
       name: 'ORC-0091 · Notebook Acer Aspire · R$ 480,00',
     }));
 
-    expect(onChangeLinkedBudget).toHaveBeenCalledWith(approvedBudget);
+    await waitFor(() => expect(onChangeLinkedBudget).toHaveBeenCalledWith(approvedBudget));
+  });
+
+  it('busca o detalhe do orçamento ao vincular, para trazer os campos usados no pré-preenchimento do equipamento', async () => {
+    const { listApprovedBudgetsForClient, getLinkableBudgetDetail } = await import('@/lib/orders');
+    const approvedBudget: LinkableBudget = {
+      id: 91,
+      numero: 'ORC-0091',
+      cliente_id: 1,
+      cliente_nome: 'João Silva',
+      equipamento_id: null,
+      equipamento_resumo: 'Smartphone marca teste 1 modelo teste 1',
+      total_formatado: '480,00',
+      status: 'aprovado',
+      status_label: 'Aprovado',
+    };
+    vi.mocked(listApprovedBudgetsForClient).mockResolvedValue([approvedBudget]);
+    vi.mocked(getLinkableBudgetDetail).mockResolvedValue({
+      ...approvedBudget,
+      equipamento_tipo_avulso: 'Smartphone',
+      equipamento_marca_avulso: 'marca teste 1',
+      equipamento_modelo_avulso: 'modelo teste 1',
+      equipamento_cor: 'teste 1',
+    });
+    const onChangeLinkedBudget = vi.fn();
+    const user = userEvent.setup();
+
+    render(
+      <StepClient
+        mode="create"
+        cliente={buildClient()}
+        pendingNewClient={null}
+        onSelectCliente={vi.fn()}
+        onChangePendingNewClient={vi.fn()}
+        linkedBudget={null}
+        onChangeLinkedBudget={onChangeLinkedBudget}
+        canLinkBudget
+      />
+    );
+
+    await screen.findByText('Orçamentos aprovados deste cliente');
+    await user.click(screen.getByRole('button', {
+      name: 'ORC-0091 · Smartphone marca teste 1 modelo teste 1 · R$ 480,00',
+    }));
+
+    expect(getLinkableBudgetDetail).toHaveBeenCalledWith(91);
+    await waitFor(() =>
+      expect(onChangeLinkedBudget).toHaveBeenCalledWith(
+        expect.objectContaining({
+          equipamento_tipo_avulso: 'Smartphone',
+          equipamento_marca_avulso: 'marca teste 1',
+          equipamento_modelo_avulso: 'modelo teste 1',
+          equipamento_cor: 'teste 1',
+        })
+      )
+    );
   });
 
   it('avisa que a OS nascerá em Aguardando Reparo quando o orçamento vinculado está aprovado', async () => {

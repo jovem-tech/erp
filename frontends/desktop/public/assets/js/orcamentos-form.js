@@ -24,6 +24,21 @@
         },
     };
 
+    // Catálogo tipo/marca/modelo (EquipmentType/Brand/Model) para o Select2 de
+    // marca/modelo do "equipamento eventual": tipo/marca/modelo não são
+    // vinculados a cliente algum, são consulta pura — listamos o catálogo real
+    // em vez de deixar o operador digitar texto solto. Mutável: cresce quando
+    // uma marca/modelo nova é cadastrada de verdade (ver persistEquipmentBrand
+    // / persistEquipmentModel), sem precisar recarregar a página.
+    const equipmentCatalogConfig = {
+        types: Array.isArray(config.equipmentTypes) ? [...config.equipmentTypes] : [],
+        brands: Array.isArray(config.equipmentBrands) ? [...config.equipmentBrands] : [],
+        models: Array.isArray(config.equipmentModels) ? [...config.equipmentModels] : [],
+        relations: Array.isArray(config.equipmentCatalogRelations) ? [...config.equipmentCatalogRelations] : [],
+    };
+    const equipmentBrandQuickStoreUrl = String(config.equipmentBrandQuickStoreUrl || '').trim();
+    const equipmentModelQuickStoreUrl = String(config.equipmentModelQuickStoreUrl || '').trim();
+
     const draftKey = String(config.draftKey || 'orcamentos:create');
     const isEditMode = Boolean(config.isEditMode);
     const budgetId = Number(config.budgetId || 0) || 0;
@@ -31,6 +46,9 @@
     // Endpoint que devolve as OS abertas e os equipamentos do cliente escolhido,
     // para filtrar "OS vinculada" e "Equipamento cadastrado" conforme o cliente.
     const clientContextUrl = String(config.clientContextUrl || '').trim();
+    // Cadastro rápido de cliente (mesmo endpoint do modal reaproveitado da OS e
+    // do financeiro). Vazio = operador sem permissão de criar clientes.
+    const quickClientStoreUrl = String(config.quickClientStoreUrl || '').trim();
 
     const moneyFormatter = new Intl.NumberFormat('pt-BR', {
         minimumFractionDigits: 2,
@@ -162,12 +180,14 @@
         });
     };
 
-    const showAlert = (icon, title, text = '') => {
+    const showAlert = (icon, title, text = '', html = '') => {
         if (typeof window.Swal === 'undefined') {
             return;
         }
 
-        window.Swal.fire({ icon, title, text });
+        // `html` existe para quando a falha tem varios motivos: `text` colapsa as
+        // quebras de linha e o usuario so' veria os motivos emendados.
+        window.Swal.fire(html !== '' ? { icon, title, html } : { icon, title, text });
     };
 
     const requestJson = async (url, { method = 'GET', body = null } = {}) => {
@@ -288,6 +308,197 @@
             },
             language: {
                 noResults: () => 'Nenhum tipo de equipamento. Pressione Enter para criar.',
+                searching: () => 'Buscando...',
+            },
+        });
+    };
+
+    // --- Catálogo tipo -> marca -> modelo (equipamento eventual) --------------
+    const resolveEquipmentTypeId = (name) => {
+        const normalized = normalizeText(name).toLowerCase();
+        if (normalized === '') {
+            return 0;
+        }
+        const match = equipmentCatalogConfig.types.find((type) => normalizeText(type.nome).toLowerCase() === normalized);
+        return match ? Number(match.id) || 0 : 0;
+    };
+
+    const resolveEquipmentBrandId = (name) => {
+        const normalized = normalizeText(name).toLowerCase();
+        if (normalized === '') {
+            return 0;
+        }
+        const match = equipmentCatalogConfig.brands.find((brand) => normalizeText(brand.nome).toLowerCase() === normalized);
+        return match ? Number(match.id) || 0 : 0;
+    };
+
+    const sortByNome = (items) => items
+        .slice()
+        .sort((a, b) => normalizeText(a.nome).localeCompare(normalizeText(b.nome), 'pt-BR'));
+
+    const equipmentBrandsForType = (typeId) => {
+        if (!typeId) {
+            return [];
+        }
+        const allowedIds = new Set(
+            equipmentCatalogConfig.relations
+                .filter((relation) => Number(relation.tipo_id) === typeId)
+                .map((relation) => Number(relation.marca_id))
+        );
+        return sortByNome(equipmentCatalogConfig.brands.filter((brand) => allowedIds.has(Number(brand.id))));
+    };
+
+    const equipmentModelsForBrand = (typeId, brandId) => {
+        if (!typeId || !brandId) {
+            return [];
+        }
+        const allowedIds = new Set(
+            equipmentCatalogConfig.relations
+                .filter((relation) => Number(relation.tipo_id) === typeId && Number(relation.marca_id) === brandId)
+                .map((relation) => Number(relation.modelo_id))
+        );
+        return sortByNome(equipmentCatalogConfig.models.filter((model) => Number(model.marca_id) === brandId
+            && allowedIds.has(Number(model.id))));
+    };
+
+    // Reconstrói as <option> de um select de catálogo preservando o valor atual
+    // (mesmo que ele não pertença mais à lista filtrada — o campo continua
+    // sendo texto livre por baixo, só a lista de sugestões muda).
+    const rebuildCatalogOptions = (select, items, currentValue) => {
+        if (!(select instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        const normalizedCurrent = normalizeText(currentValue);
+
+        select.innerHTML = '';
+        select.appendChild(new Option('', ''));
+        items.forEach((item) => {
+            const option = new Option(item.nome, item.nome);
+            option.dataset.catalogId = String(item.id);
+            select.appendChild(option);
+        });
+
+        if (normalizedCurrent !== '' && !items.some((item) => normalizeText(item.nome).toLowerCase() === normalizedCurrent.toLowerCase())) {
+            select.appendChild(new Option(normalizedCurrent, normalizedCurrent, true, true));
+        }
+
+        select.value = normalizedCurrent;
+
+        const $ = typeof window.jQuery !== 'undefined' ? window.jQuery : null;
+        if ($ && $(select).data('select2')) {
+            $(select).trigger('change.select2');
+        }
+    };
+
+    // Marca/modelo digitados que não existem no catálogo são cadastrados de
+    // verdade (não ficam só como tag local) — assim a base de equipamentos
+    // melhora com o uso do orçamento, igual pediu o time de atendimento. Exige
+    // o tipo (e, para modelo, a marca) já resolvidos para um id do catálogo:
+    // sem isso não há como vincular corretamente, e o campo permanece texto
+    // livre local, como sempre foi.
+    const persistEquipmentBrand = async (name, typeId) => {
+        if (equipmentBrandQuickStoreUrl === '' || typeId <= 0) {
+            return;
+        }
+
+        try {
+            const response = await requestJson(equipmentBrandQuickStoreUrl, {
+                method: 'POST',
+                body: { tipo_id: typeId, nome: name },
+            });
+            const brand = response.brand || {};
+            const id = Number(brand.id || 0) || 0;
+            const nome = normalizeText(brand.nome || name);
+
+            if (id > 0) {
+                equipmentCatalogConfig.brands.push({ id, nome });
+                equipmentCatalogConfig.relations.push({ tipo_id: typeId, marca_id: id, modelo_id: 0 });
+                showToast('success', `Marca "${nome}" cadastrada no catálogo.`);
+            }
+        } catch (error) {
+            // Falha silenciosa: o texto digitado continua válido no orçamento
+            // (comportamento pré-existente); só a melhoria do catálogo não
+            // aconteceu desta vez.
+            console.error('[OrcamentosForm] Falha ao cadastrar marca no catálogo.', error);
+        }
+    };
+
+    const persistEquipmentModel = async (name, typeId, brandId) => {
+        if (equipmentModelQuickStoreUrl === '' || typeId <= 0 || brandId <= 0) {
+            return;
+        }
+
+        try {
+            const response = await requestJson(equipmentModelQuickStoreUrl, {
+                method: 'POST',
+                body: { tipo_id: typeId, marca_id: brandId, nome: name },
+            });
+            const model = response.model || {};
+            const id = Number(model.id || 0) || 0;
+            const nome = normalizeText(model.nome || name);
+
+            if (id > 0) {
+                equipmentCatalogConfig.models.push({ id, nome, marca_id: brandId });
+                equipmentCatalogConfig.relations.push({ tipo_id: typeId, marca_id: brandId, modelo_id: id });
+                showToast('success', `Modelo "${nome}" cadastrado no catálogo.`);
+            }
+        } catch (error) {
+            console.error('[OrcamentosForm] Falha ao cadastrar modelo no catálogo.', error);
+        }
+    };
+
+    const initCatalogTagSelect = (select, { placeholder, noResultsText } = {}) => {
+        if (!(select instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        if (typeof window.jQuery === 'undefined' || !window.jQuery.fn || typeof window.jQuery.fn.select2 !== 'function') {
+            return;
+        }
+
+        const $ = window.jQuery;
+        if ($(select).data('select2')) {
+            return;
+        }
+
+        const modal = select.closest('.modal');
+        const dropdownParent = modal ? $(modal) : $(document.body);
+
+        $(select).select2({
+            theme: 'bootstrap-5',
+            width: '100%',
+            placeholder: select.dataset.select2Placeholder || placeholder || 'Selecione ou digite...',
+            allowClear: true,
+            dropdownParent,
+            tags: true,
+            createTag: (params) => {
+                const term = normalizeText(params.term);
+                if (term === '' || term.length > 120) {
+                    return null;
+                }
+
+                return { id: term, text: term, newTag: true };
+            },
+            // A sugestão "criar X" do select2 é, por padrão, uma linha igual às
+            // demais — o operador não percebe que clicar ali cadastra algo novo
+            // no catálogo (só ao salvar o orçamento, não na hora do clique).
+            // Destaca com cor + ícone de inclusão para deixar isso óbvio.
+            templateResult: (data) => {
+                if (data.loading) {
+                    return data.text;
+                }
+
+                if (data.newTag) {
+                    return $('<span>', { class: 'd-flex align-items-center gap-2 text-primary fw-semibold' })
+                        .append($('<i>', { class: 'bi bi-plus-circle-fill', 'aria-hidden': 'true' }))
+                        .append($('<span>').text(`Cadastrar "${data.text}" no catálogo`));
+                }
+
+                return data.text;
+            },
+            language: {
+                noResults: () => noResultsText || 'Nenhum resultado no catálogo. Pressione Enter para criar.',
                 searching: () => 'Buscando...',
             },
         });
@@ -422,6 +633,8 @@
         // Campo "Tipo" do equipamento eventual: agora é um Select2 com os tipos do
         // banco (EquipmentType), com tags para permitir digitar um novo.
         const equipTypeSelect = document.querySelector('[data-budget-equip-type-select]');
+        const equipBrandSelect = document.querySelector('[data-budget-equip-brand-select]');
+        const equipModelSelect = document.querySelector('[data-budget-equip-model-select]');
         const equipmentFieldWraps = Array.from(document.querySelectorAll('[data-budget-equipment-field]'));
         const registeredOnlyWraps = Array.from(document.querySelectorAll('[data-budget-registered-only]'));
         const eventualWrap = document.querySelector('[data-budget-eventual-equipment]');
@@ -939,6 +1152,460 @@
             setOrderOptions([]);
             setEquipmentOptions([]);
         };
+
+        // --- Cadastro rápido de cliente ---------------------------------------
+        // Alternativa ao cliente eventual: cria o cliente de verdade (POST em
+        // clients.quick.store) sem sair do orçamento e já o seleciona, para o
+        // orçamento nascer vinculado a um cadastro.
+        const quickClientButton = document.getElementById('orcamentoQuickClientButton');
+        const quickClientModal = document.getElementById('quickClientModal');
+        const quickClientForm = document.getElementById('quickClientForm');
+        const quickClientSubmit = document.getElementById('quickClientSubmit');
+        const quickClientErrors = document.getElementById('quickClientErrors');
+
+        const clearQuickClientErrors = () => {
+            if (quickClientForm instanceof HTMLFormElement) {
+                quickClientForm.querySelectorAll('.is-invalid').forEach((control) => {
+                    control.classList.remove('is-invalid');
+                });
+            }
+
+            if (!(quickClientErrors instanceof HTMLElement)) {
+                return;
+            }
+
+            quickClientErrors.classList.add('d-none');
+            quickClientErrors.innerHTML = '';
+        };
+
+        const quickClientControl = (field) => {
+            if (!(quickClientForm instanceof HTMLFormElement)) {
+                return null;
+            }
+
+            return quickClientForm.querySelector(`[name="${cssAttrEscape(field)}"]`);
+        };
+
+        // Rótulo lido do próprio formulário: o nome do campo que o backend
+        // devolve ("nome_razao", "cpf_cnpj") não diz nada para quem preencheu.
+        const quickClientFieldLabel = (field) => {
+            const control = quickClientControl(field);
+            const id = control instanceof HTMLElement ? String(control.id || '') : '';
+            const label = id !== '' ? document.querySelector(`label[for="${cssAttrEscape(id)}"]`) : null;
+
+            return label instanceof HTMLElement
+                ? normalizeText(label.textContent).replace(/\s*\*$/, '')
+                : '';
+        };
+
+        // O backend responde {campo: [mensagens]} em error.details. Sem prefixar
+        // o rótulo, mensagens genéricas ("é obrigatório") não dizem QUAL campo.
+        const describeQuickClientErrors = (details) => {
+            if (!details || typeof details !== 'object' || Array.isArray(details)) {
+                return extractErrorMessages(details);
+            }
+
+            const lines = [];
+
+            Object.entries(details).forEach(([field, messages]) => {
+                const label = quickClientFieldLabel(field);
+
+                (Array.isArray(messages) ? messages : [messages]).forEach((message) => {
+                    const text = normalizeText(message);
+
+                    if (text === '') {
+                        return;
+                    }
+
+                    // O backend já cita o campo em algumas mensagens ("O campo
+                    // CPF/CNPJ não é..."); prefixar de novo ficaria repetitivo.
+                    lines.push(label !== '' && ! text.toLowerCase().includes(label.toLowerCase())
+                        ? `${label}: ${text}`
+                        : text);
+                });
+            });
+
+            return lines;
+        };
+
+        const markQuickClientInvalidFields = (details) => {
+            if (!details || typeof details !== 'object' || Array.isArray(details)) {
+                return null;
+            }
+
+            let firstInvalid = null;
+
+            Object.keys(details).forEach((field) => {
+                const control = quickClientControl(field);
+
+                if (control instanceof HTMLElement) {
+                    control.classList.add('is-invalid');
+                    firstInvalid = firstInvalid ?? control;
+                }
+            });
+
+            return firstInvalid;
+        };
+
+        const renderQuickClientErrors = (messages, fallbackMessage = '') => {
+            if (!(quickClientErrors instanceof HTMLElement)) {
+                return;
+            }
+
+            const items = Array.isArray(messages) ? messages.filter(Boolean) : [];
+            quickClientErrors.innerHTML = items.length > 0
+                ? `<ul class="mb-0 ps-3">${items.map((message) => `<li>${escapeHtml(message)}</li>`).join('')}</ul>`
+                : escapeHtml(fallbackMessage || 'Não foi possível cadastrar o cliente.');
+            quickClientErrors.classList.remove('d-none');
+        };
+
+        const updateQuickClientSubmitState = (loading) => {
+            if (!(quickClientSubmit instanceof HTMLButtonElement)) {
+                return;
+            }
+
+            quickClientSubmit.disabled = loading;
+            quickClientSubmit.innerHTML = loading
+                ? '<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Salvando...'
+                : '<i class="bi bi-person-plus me-2"></i>Cadastrar cliente';
+        };
+
+        const applyQuickClientSelection = (client) => {
+            const clientId = Number(client?.id || 0) || 0;
+
+            if (clientId <= 0 || !(clientSelect instanceof HTMLSelectElement)) {
+                return false;
+            }
+
+            const value = String(clientId);
+            const clientName = normalizeText(client?.nome_razao || client?.name);
+            const clientPhone = normalizeText(client?.telefone1 || client?.phone);
+            const clientEmail = normalizeText(client?.email);
+            const label = [clientName !== '' ? clientName : `Cliente #${value}`, clientPhone]
+                .filter(Boolean)
+                .join(' - ');
+
+            // O select do cliente é alimentado por Select2 remoto: o cliente novo
+            // ainda não está em nenhuma página do resultado, então a opção precisa
+            // ser criada na mão antes de selecionar.
+            let option = Array.from(clientSelect.options).find((item) => item.value === value) || null;
+
+            if (!(option instanceof HTMLOptionElement)) {
+                option = document.createElement('option');
+                option.value = value;
+                clientSelect.appendChild(option);
+            }
+
+            option.textContent = label;
+            rememberClientOption(option, { name: clientName, phone: clientPhone, email: clientEmail });
+
+            // Cliente cadastrado × nome eventual são mutuamente exclusivos: zerar o
+            // eventual antes evita que syncClientExclusivity() desabilite o select
+            // (e limpe o valor) logo depois da seleção.
+            if (clientFallbackInput instanceof HTMLInputElement) {
+                clientFallbackInput.value = '';
+            }
+
+            setControlDisabled(clientSelect, false);
+
+            const $ = jq();
+            if ($ && $(clientSelect).data('select2')) {
+                // 'change' (e não 'change.select2') para que os handlers do
+                // formulário — syncEventualFields e handleClientChange, que
+                // recarrega OS/equipamentos do cliente — também rodem.
+                $(clientSelect).val(value).trigger('change');
+            } else {
+                clientSelect.value = value;
+                clientSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            if (clientPhone !== '' && phoneInput instanceof HTMLInputElement) {
+                phoneInput.value = clientPhone;
+            }
+            if (clientEmail !== '' && emailInput instanceof HTMLInputElement) {
+                emailInput.value = clientEmail;
+            }
+
+            syncEventualFields();
+            updateSummary();
+
+            return true;
+        };
+
+        const handleQuickClientSubmit = async (event) => {
+            event.preventDefault();
+
+            if (!(quickClientForm instanceof HTMLFormElement) || quickClientStoreUrl === '') {
+                return;
+            }
+
+            clearQuickClientErrors();
+
+            if (!quickClientForm.reportValidity()) {
+                renderQuickClientErrors([], 'Informe nome/razão social e telefone principal antes de salvar.');
+                return;
+            }
+
+            updateQuickClientSubmitState(true);
+
+            try {
+                const payload = Object.fromEntries(new FormData(quickClientForm).entries());
+                const response = await requestJson(quickClientStoreUrl, {
+                    method: 'POST',
+                    body: payload,
+                });
+
+                if (!applyQuickClientSelection(response.client || {})) {
+                    throw new Error('O cadastro foi concluído, mas a resposta não trouxe um cliente válido.');
+                }
+
+                getModal(quickClientModal)?.hide();
+                showToast('success', 'Cliente cadastrado e selecionado.');
+            } catch (error) {
+                const reasons = describeQuickClientErrors(error?.details);
+                renderQuickClientErrors(reasons, error.message);
+
+                // A caixa de erro fica no rodapé de um modal rolável: sem trazer o
+                // campo recusado para a tela, o usuário fecha o alerta e não vê
+                // motivo nenhum — foi exatamente o que acontecia antes.
+                const firstInvalid = markQuickClientInvalidFields(error?.details);
+                const focusTarget = firstInvalid ?? quickClientErrors;
+
+                if (focusTarget instanceof HTMLElement) {
+                    focusTarget.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                }
+
+                if (firstInvalid instanceof HTMLElement && typeof firstInvalid.focus === 'function') {
+                    firstInvalid.focus({ preventScroll: true });
+                }
+
+                showAlert(
+                    'error',
+                    'Falha ao cadastrar cliente',
+                    reasons.length > 0 ? '' : error.message,
+                    reasons.length > 0
+                        ? `<p class="mb-2">${escapeHtml(error.message)}</p><ul class="text-start mb-0 ps-4">${reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join('')}</ul>`
+                        : ''
+                );
+            } finally {
+                updateQuickClientSubmitState(false);
+            }
+        };
+
+        const initQuickClient = () => {
+            if (quickClientStoreUrl === '' || !(quickClientForm instanceof HTMLFormElement)) {
+                return;
+            }
+
+            quickClientButton?.addEventListener('click', () => {
+                clearQuickClientErrors();
+                // Nome já digitado no campo de cliente eventual vira o ponto de
+                // partida do cadastro — não obriga a redigitar para migrar.
+                const nameField = quickClientForm.querySelector('[name="nome_razao"]');
+                const pendingName = normalizeText(clientFallbackInput?.value);
+                if (pendingName !== '' && nameField instanceof HTMLInputElement && nameField.value.trim() === '') {
+                    nameField.value = pendingName;
+                }
+
+                const phoneField = quickClientForm.querySelector('[name="telefone1"]');
+                const pendingPhone = normalizeText(phoneInput?.value);
+                if (pendingPhone !== '' && phoneField instanceof HTMLInputElement && phoneField.value.trim() === '') {
+                    phoneField.value = pendingPhone;
+                }
+
+                getModal(quickClientModal)?.show();
+            });
+
+            quickClientSubmit?.addEventListener('click', () => {
+                if (typeof quickClientForm.requestSubmit === 'function') {
+                    quickClientForm.requestSubmit();
+                    return;
+                }
+
+                quickClientForm.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+            });
+
+            quickClientForm.addEventListener('submit', handleQuickClientSubmit);
+
+            // Corrigir o campo apaga a marcação: manter a borda vermelha depois
+            // de o usuário reescrever o valor faz o formulário parecer travado.
+            quickClientForm.addEventListener('input', (event) => {
+                if (event.target instanceof HTMLElement) {
+                    event.target.classList.remove('is-invalid');
+                }
+            });
+
+            quickClientModal?.addEventListener('hidden.bs.modal', () => {
+                quickClientForm.reset();
+                clearQuickClientErrors();
+                updateQuickClientSubmitState(false);
+            });
+        };
+
+        // --- Cadastro do equipamento do orçamento -----------------------------
+        // Reaproveita o MESMO formulário embutido da abertura de OS (iframe
+        // equipments/create?embedded=1), com `pendente=1`: tipo → marca → modelo
+        // com criação inline de cada nível, foto opcional, cadastro marcado como
+        // incompleto. A OS desse aparelho fica travada até a foto chegar.
+        const equipmentModal = document.getElementById('orcamentoEquipmentModal');
+        const equipmentModalFrame = document.querySelector('[data-budget-equipment-frame]');
+        const equipmentCreateButton = document.getElementById('orcamentoQuickEquipmentButton');
+
+        const buildEquipmentCreateUrl = () => {
+            const baseUrl = equipmentModal instanceof HTMLElement
+                ? normalizeText(equipmentModal.dataset.budgetEquipmentCreateUrl)
+                : '';
+
+            if (baseUrl === '') {
+                return '';
+            }
+
+            const url = new URL(baseUrl, window.location.origin);
+            url.searchParams.set('embedded', '1');
+            url.searchParams.set('pendente', '1');
+
+            const clientId = clientSelect instanceof HTMLSelectElement
+                ? String(clientSelect.value || '').trim()
+                : '';
+            const clientName = getSelectedOptionLabel(clientSelect);
+
+            if (clientId !== '') {
+                url.searchParams.set('cliente_id', clientId);
+            }
+            if (clientName !== '') {
+                url.searchParams.set('cliente_busca_label', clientName);
+                url.searchParams.set('cliente_nome', clientName);
+            }
+
+            // O que o operador já digitou no equipamento eventual vira
+            // pré-preenchimento do cadastro (casado com o catálogo por nome no
+            // EquipmentController::applyEventualEquipmentPrefill).
+            const eventualParams = {
+                equip_tipo: getSelectedOptionLabel(equipTypeSelect) || equipTypeSelect?.value,
+                equip_marca: document.getElementById('orcamentoEquipMarcaAvulso')?.value,
+                equip_modelo: document.getElementById('orcamentoEquipModeloAvulso')?.value,
+                equip_cor: document.getElementById('orcamentoEquipCorAvulso')?.value,
+            };
+
+            Object.entries(eventualParams).forEach(([param, raw]) => {
+                const value = normalizeText(raw);
+                if (value !== '') {
+                    url.searchParams.set(param, value);
+                }
+            });
+
+            return url.toString();
+        };
+
+        const applyCreatedEquipment = (equipment) => {
+            const equipmentId = Number(equipment?.id || 0) || 0;
+
+            if (equipmentId <= 0 || !(equipmentSelect instanceof HTMLSelectElement)) {
+                return false;
+            }
+
+            const value = String(equipmentId);
+            const label = [
+                normalizeText(equipment?.tipo_nome),
+                [normalizeText(equipment?.marca_nome), normalizeText(equipment?.modelo_nome)]
+                    .filter(Boolean)
+                    .join(' '),
+            ].filter(Boolean).join(' - ') || `Equipamento #${value}`;
+            const serial = normalizeText(equipment?.numero_serie || equipment?.imei);
+
+            let option = Array.from(equipmentSelect.options).find((item) => item.value === value) || null;
+
+            if (!(option instanceof HTMLOptionElement)) {
+                option = document.createElement('option');
+                option.value = value;
+                equipmentSelect.appendChild(option);
+            }
+
+            option.textContent = serial !== '' ? `${label} · S/N ${serial}` : label;
+            option.dataset.clienteId = String(Number(equipment?.cliente_id || 0) || 0);
+
+            // Equipamento cadastrado e equipamento eventual são mutuamente
+            // exclusivos: limpar o eventual antes evita que syncEquipmentMode()
+            // desabilite o select recém-preenchido. Tipo/marca/modelo agora são
+            // selects (catálogo) — precisam do helper genérico, não de .value.
+            eventualInputs.forEach((input) => {
+                if (input instanceof HTMLInputElement || input instanceof HTMLTextAreaElement) {
+                    input.value = '';
+                } else if (input instanceof HTMLSelectElement) {
+                    setEquipmentTypeValue(input, '');
+                }
+            });
+            syncEquipmentBrandOptions();
+            syncEquipmentModelOptions();
+            setControlDisabled(equipmentSelect, false);
+
+            const $ = jq();
+            if ($ && $(equipmentSelect).data('select2')) {
+                $(equipmentSelect).val(value).trigger('change');
+            } else {
+                equipmentSelect.value = value;
+                equipmentSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+
+            syncEquipmentMode();
+            updateSummary();
+
+            return true;
+        };
+
+        const initBudgetEquipmentCreate = () => {
+            if (!(equipmentModal instanceof HTMLElement) || !(equipmentModalFrame instanceof HTMLIFrameElement)) {
+                return;
+            }
+
+            equipmentCreateButton?.addEventListener('click', () => {
+                // Equipamento pertence a um cliente: sem cliente cadastrado não
+                // há a quem vincular (o eventual continua sendo a saída).
+                if (!filledSelect(clientSelect)) {
+                    showAlert(
+                        'warning',
+                        'Selecione o cliente primeiro',
+                        'O equipamento é cadastrado no nome do cliente. Escolha um cliente cadastrado (ou cadastre-o pelo botão ao lado do campo) antes de cadastrar o aparelho.'
+                    );
+                    return;
+                }
+
+                getModal(equipmentModal)?.show();
+            });
+
+            equipmentModal.addEventListener('show.bs.modal', () => {
+                const url = buildEquipmentCreateUrl();
+                equipmentModalFrame.src = url !== '' ? url : 'about:blank';
+            });
+
+            // about:blank ao fechar: sem isso o formulário do iframe fica vivo
+            // com o estado da abertura anterior (cliente antigo, fotos na fila).
+            equipmentModal.addEventListener('hidden.bs.modal', () => {
+                equipmentModalFrame.src = 'about:blank';
+            });
+
+            window.addEventListener('message', (event) => {
+                if (event.origin !== window.location.origin
+                    || event.source !== equipmentModalFrame.contentWindow) {
+                    return;
+                }
+
+                const payload = event.data;
+
+                if (!payload || payload.type !== 'equipment-created') {
+                    return;
+                }
+
+                if (applyCreatedEquipment(payload.equipment || {})) {
+                    showToast('success', 'Equipamento cadastrado e selecionado.');
+                } else {
+                    showAlert('error', 'Falha ao aplicar o equipamento', 'O cadastro foi concluído, mas a resposta não trouxe um equipamento válido.');
+                }
+
+                getModal(equipmentModal)?.hide();
+            });
+        };
+
         const executionDeadlineInput = document.getElementById('orcamentoPrazoExecucao');
         const observationsInput = document.getElementById('orcamentoObservacoes');
         const conditionsInput = document.getElementById('orcamentoCondicoes');
@@ -984,6 +1651,11 @@
             quickItemSubmitting: false,
             reviewConfirmed: false,
             adminConfirmed: false,
+            // Marca/modelo digitados que ainda não existem no catálogo só são
+            // cadastrados de verdade no instante de salvar — ver
+            // resolvePendingCatalogEntries. false até a primeira passada pelo
+            // gate de submit resolver (ou constatar que não há nada pendente).
+            catalogEntriesResolved: false,
         };
 
         // OS encerrada (skill sistema-erp-os-fluxo-fechamento): salvar exige
@@ -2629,7 +3301,7 @@
                     ].forEach(([id, message]) => {
                         const field = document.getElementById(id);
 
-                        // Tipo virou Select2 (HTMLSelectElement); os demais seguem inputs.
+                        // Tipo/marca/modelo são Select2 (HTMLSelectElement) sobre o catálogo; cor segue input de texto.
                         if (!(field instanceof HTMLElement) || !filledControl(field)) {
                             pendencies.push({ tab: 'equipamento', field: field instanceof HTMLElement ? field : null, message });
                         }
@@ -2905,6 +3577,24 @@
                     return;
                 }
 
+                // Marca/modelo novos (fora do catálogo) só são cadastrados agora,
+                // no instante de salvar — nunca enquanto o operador só digitava.
+                // Segura o envio nativo até a chamada terminar, e reenvia sozinho
+                // depois (state.catalogEntriesResolved corta a recursão).
+                if (!state.catalogEntriesResolved) {
+                    event.preventDefault();
+                    resolvePendingCatalogEntries().finally(() => {
+                        state.catalogEntriesResolved = true;
+
+                        if (typeof form.requestSubmit === 'function') {
+                            form.requestSubmit();
+                        } else {
+                            form.submit();
+                        }
+                    });
+                    return;
+                }
+
                 removeEmptyRows();
                 updateSummary();
                 // Reabilita os campos de exclusividade (já com valor limpo quando
@@ -3121,10 +3811,59 @@
         clientFallbackInput?.addEventListener('input', syncEventualFields);
         envolveCheckbox?.addEventListener('change', syncEquipmentMode);
         eventualInputs.forEach((input) => input.addEventListener('input', syncEquipmentMode));
+        // Reconstrói as opções de marca/modelo a partir do catálogo real,
+        // filtradas em cascata (tipo -> marca -> modelo), sem apagar o valor já
+        // digitado — só a lista de sugestões muda.
+        const syncEquipmentBrandOptions = () => {
+            const typeId = resolveEquipmentTypeId(equipTypeSelect?.value);
+            rebuildCatalogOptions(equipBrandSelect, equipmentBrandsForType(typeId), equipBrandSelect?.value);
+        };
+        const syncEquipmentModelOptions = () => {
+            const typeId = resolveEquipmentTypeId(equipTypeSelect?.value);
+            const brandId = resolveEquipmentBrandId(equipBrandSelect?.value);
+            rebuildCatalogOptions(equipModelSelect, equipmentModelsForBrand(typeId, brandId), equipModelSelect?.value);
+        };
+
+        // Cadastra no catálogo (de verdade) a marca/modelo que o operador
+        // digitou e ainda não existiam — chamado só no instante de salvar o
+        // orçamento (ver o gate no listener de 'submit' do form), nunca ao
+        // digitar. Idempotente: opção já resolvida (ou nunca pendente) é
+        // ignorada, então repetir a chamada em reenvios não duplica nada.
+        const resolvePendingCatalogEntries = async () => {
+            const typeId = resolveEquipmentTypeId(equipTypeSelect?.value);
+            const brandOption = equipBrandSelect instanceof HTMLSelectElement
+                ? equipBrandSelect.options[equipBrandSelect.selectedIndex] || null
+                : null;
+
+            if (brandOption instanceof HTMLOptionElement
+                && brandOption.dataset.pendingCatalogCreate === '1'
+                && typeId > 0) {
+                await persistEquipmentBrand(normalizeText(brandOption.value), typeId);
+                delete brandOption.dataset.pendingCatalogCreate;
+            }
+
+            // A marca pode ter acabado de ganhar um id de catálogo de verdade
+            // (linha acima) — resolve de novo antes de decidir o modelo.
+            const brandId = resolveEquipmentBrandId(equipBrandSelect?.value);
+            const modelOption = equipModelSelect instanceof HTMLSelectElement
+                ? equipModelSelect.options[equipModelSelect.selectedIndex] || null
+                : null;
+
+            if (modelOption instanceof HTMLOptionElement
+                && modelOption.dataset.pendingCatalogCreate === '1'
+                && typeId > 0
+                && brandId > 0) {
+                await persistEquipmentModel(normalizeText(modelOption.value), typeId, brandId);
+                delete modelOption.dataset.pendingCatalogCreate;
+            }
+        };
+
         // O Select2 do "Tipo" dispara 'change' só via jQuery — não cai no listener
         // nativo de 'input' do form. Ligamos explicitamente para reavaliar as
         // pendências (rótulo do botão) e a exclusividade registrado × eventual.
         const handleEquipTypeChange = () => {
+            syncEquipmentBrandOptions();
+            syncEquipmentModelOptions();
             syncEquipmentMode();
             updateSummary();
         };
@@ -3132,9 +3871,61 @@
         onSelectEvent(equipTypeSelect, 'select2:select', handleEquipTypeChange);
         onSelectEvent(equipTypeSelect, 'select2:clear', handleEquipTypeChange);
 
+        const handleEquipBrandChange = () => {
+            syncEquipmentModelOptions();
+            syncEquipmentMode();
+            updateSummary();
+        };
+        onSelectEvent(equipBrandSelect, 'change', handleEquipBrandChange);
+        onSelectEvent(equipBrandSelect, 'select2:select', handleEquipBrandChange);
+        onSelectEvent(equipBrandSelect, 'select2:clear', handleEquipBrandChange);
+
+        // Marca/modelo digitados que não batem com o catálogo só são cadastrados
+        // de verdade ao SALVAR o orçamento (ver resolvePendingCatalogEntries no
+        // submit) — nada é gravado no catálogo enquanto o operador só está
+        // digitando/testando. Aqui só marcamos a opção recém-criada pelo
+        // select2 como pendente, para o submit encontrá-la depois.
+        const markPendingCatalogOption = (select, data) => {
+            if (!(select instanceof HTMLSelectElement) || !data || !data.newTag) {
+                return;
+            }
+            const option = Array.from(select.options).find((item) => item.value === data.id);
+            if (option instanceof HTMLOptionElement) {
+                option.dataset.pendingCatalogCreate = '1';
+            }
+            // Um novo pendente invalida uma resolução anterior (ex.: usuário já
+            // tinha salvo, o form recarregou por erro de validação e ele digitou
+            // outra marca) — o próximo submit precisa resolver de novo.
+            state.catalogEntriesResolved = false;
+        };
+        onSelectEvent(equipBrandSelect, 'select2:select', (event) => {
+            markPendingCatalogOption(equipBrandSelect, event?.params?.data);
+        });
+        onSelectEvent(equipModelSelect, 'select2:select', (event) => {
+            markPendingCatalogOption(equipModelSelect, event?.params?.data);
+        });
+        onSelectEvent(equipModelSelect, 'change', () => { syncEquipmentMode(); updateSummary(); });
+        onSelectEvent(equipModelSelect, 'select2:clear', () => { syncEquipmentMode(); updateSummary(); });
+
         initClientSelect();
+        initQuickClient();
         initEquipmentSelect();
+        initBudgetEquipmentCreate();
         initEquipmentTypeSelect(equipTypeSelect);
+        initCatalogTagSelect(equipBrandSelect, {
+            placeholder: 'Selecione ou digite a marca...',
+            noResultsText: 'Nenhuma marca para este tipo. Pressione Enter para cadastrar.',
+        });
+        initCatalogTagSelect(equipModelSelect, {
+            placeholder: 'Selecione ou digite o modelo...',
+            noResultsText: 'Nenhum modelo para esta marca. Pressione Enter para cadastrar.',
+        });
+        // Ao carregar a edição de um orçamento já com tipo/marca preenchidos, as
+        // opções de marca/modelo do Blade já vêm filtradas (calculado no PHP) —
+        // isto só garante que ficam em dia se o campo Tipo tiver sido alterado
+        // via draft restaurado antes deste ponto.
+        syncEquipmentBrandOptions();
+        syncEquipmentModelOptions();
         initClientDependentFields();
         loadDraft();
         syncEventualFields();

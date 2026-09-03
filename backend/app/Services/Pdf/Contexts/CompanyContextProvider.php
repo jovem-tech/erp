@@ -66,6 +66,9 @@ class CompanyContextProvider
             'codigo_ibge' => trim((string) ($settings['empresa_codigo_ibge'] ?? '')),
             'inscricao_municipal' => trim((string) ($settings['empresa_inscricao_municipal'] ?? '')),
             'cnae' => trim((string) ($settings['empresa_cnae'] ?? '')),
+            // Aditivo (Anexo X): proporcionaliza o limite do MEI no ano de
+            // abertura. Templates ja' publicados nao veem diferenca.
+            'data_abertura' => trim((string) ($settings['empresa_data_abertura'] ?? '')),
             'logo_base64' => $this->logoBase64(),
         ];
     }

@@ -899,7 +899,7 @@ class DashboardSummaryService
         // Despesas por competencia, fixa x variavel numa consulta so.
         //
         // Deliberadamente SEM a heuristica de "fixo mensal reaparece em meses
-        // futuros" que FinanceiroReportService::groupByCompetencia() aplica:
+        // futuros" que ReceitaBrutaSource::linhasPorCompetencia() aplica:
         // ela existe para o recorte de UM mes. Repetida mes a mes num grafico
         // anual, dezembro carregaria o aluguel do ano inteiro.
         $despesasCompetencia = $this->competenciaPagarQuery()
