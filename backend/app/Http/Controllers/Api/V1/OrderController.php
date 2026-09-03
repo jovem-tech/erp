@@ -243,6 +243,15 @@ class OrderController extends BaseApiController
                 null,
                 request: $request
             ),
+            // Código próprio (e não um 422 genérico) porque o desktop reage a ele
+            // reabrindo o cadastro do equipamento para completar a foto.
+            'equipment_registration_pending' => $this->error(
+                (string) ($result['message'] ?? 'O cadastro deste equipamento está incompleto. Complete-o antes de salvar a OS.'),
+                422,
+                'ORDER_EQUIPMENT_REGISTRATION_PENDING',
+                ['equipamento_id' => (int) ($result['equipamento_id'] ?? 0)],
+                request: $request
+            ),
             'budget_link_invalid' => $this->error(
                 (string) ($result['message'] ?? 'O orçamento informado não pode ser convertido nesta OS.'),
                 422,

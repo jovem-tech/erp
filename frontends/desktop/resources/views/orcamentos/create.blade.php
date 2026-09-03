@@ -110,7 +110,34 @@
             'budgetId' => 0,
             'clientSearchUrl' => route('orcamentos.clients.search'),
             'clientContextUrl' => route('orcamentos.client_context'),
+            'quickClientStoreUrl' => ($canQuickClient ?? false) ? route('clients.quick.store') : '',
             'quickCatalogs' => $quickCatalogs ?? [],
+            // Catálogo tipo/marca/modelo (EquipmentType/Brand/Model), o mesmo
+            // usado no cadastro de equipamento — para o Select2 de marca/modelo
+            // do "equipamento eventual" e para cadastrar marca/modelo novos
+            // direto no catálogo quando o desejado não existir.
+            'equipmentTypes' => collect($equipmentCatalog['types'] ?? [])->map(static function (array $type): array {
+                return ['id' => (int) ($type['id'] ?? 0), 'nome' => trim((string) ($type['nome'] ?? ''))];
+            })->values(),
+            'equipmentBrands' => collect($equipmentCatalog['brands'] ?? [])->map(static function (array $brand): array {
+                return ['id' => (int) ($brand['id'] ?? 0), 'nome' => trim((string) ($brand['nome'] ?? ''))];
+            })->values(),
+            'equipmentModels' => collect($equipmentCatalog['models'] ?? [])->map(static function (array $model): array {
+                return [
+                    'id' => (int) ($model['id'] ?? 0),
+                    'nome' => trim((string) ($model['nome'] ?? '')),
+                    'marca_id' => (int) ($model['marca_id'] ?? 0),
+                ];
+            })->values(),
+            'equipmentCatalogRelations' => collect($equipmentCatalog['catalog_relations'] ?? [])->map(static function (array $relation): array {
+                return [
+                    'tipo_id' => (int) ($relation['tipo_id'] ?? 0),
+                    'marca_id' => (int) ($relation['marca_id'] ?? 0),
+                    'modelo_id' => (int) ($relation['modelo_id'] ?? 0),
+                ];
+            })->values(),
+            'equipmentBrandQuickStoreUrl' => ($canCreateEquipment ?? false) ? route('equipments.brands.quick.store') : '',
+            'equipmentModelQuickStoreUrl' => ($canCreateEquipment ?? false) ? route('equipments.models.quick.store') : '',
             'catalogs' => [
                 'services' => collect($form['services'] ?? [])->map(static function (array $service): array {
                     return [
@@ -135,4 +162,10 @@
          1s e pode colidir quando o arquivo é reescrito duas vezes no mesmo
          segundo, fazendo o navegador reusar o JS antigo em cache. --}}
     <script src="{{ asset('assets/js/orcamentos-form.js') }}?v={{ filemtime(public_path('assets/js/orcamentos-form.js')) }}-{{ filesize(public_path('assets/js/orcamentos-form.js')) }}"></script>
+    {{-- Máscaras (telefone, CPF/CNPJ) e autopreenchimento de CEP do modal de
+         cadastro rápido de cliente. Os seletores são guardados por id: sem o
+         modal na página, o arquivo não faz nada. --}}
+    @if ($canQuickClient ?? false)
+        <script src="{{ asset('assets/js/clients-form.js') }}?v={{ filemtime(public_path('assets/js/clients-form.js')) }}"></script>
+    @endif
 @endsection

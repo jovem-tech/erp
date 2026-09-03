@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AnexoXController;
 use App\Http\Controllers\AgendaController;
 use App\Http\Controllers\AssistanceModelController;
 use App\Http\Controllers\AuthController;
@@ -337,6 +338,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::match(['put', 'patch'], '/orcamentos/{orcamento}', [OrcamentoController::class, 'update'])
         ->middleware('desktop.permission:orcamentos,editar')
         ->name('orcamentos.update');
+    Route::post('/orcamentos/{orcamento}/sincronizar-cliente', [OrcamentoController::class, 'syncClient'])
+        ->middleware('desktop.permission:orcamentos,editar')
+        ->name('orcamentos.sync_client');
     Route::post('/orcamentos/{orcamento}/enviar-aprovacao', [OrcamentoController::class, 'sendApproval'])
         ->middleware('desktop.permission:orcamentos,editar')
         ->name('orcamentos.send_approval');
@@ -613,6 +617,43 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/fiscal/os/{order}/nota', [DocumentoFiscalController::class, 'nota'])
         ->middleware('desktop.permission:os,editar')
         ->name('fiscal.nota');
+
+    // Anexo X — relatorio mensal das receitas brutas do MEI (Res. CGSN
+    // 140/2018, art. 106). A rota estatica /ajuda vem ANTES das demais do
+    // mesmo prefixo: sem isso ela seria capturada por uma rota com parametro.
+    Route::get('/fiscal/anexo-x/ajuda', [AnexoXController::class, 'help'])
+        ->middleware('desktop.permission:fiscal,visualizar')
+        ->name('fiscal.anexo-x.ajuda');
+    Route::get('/fiscal/anexo-x/pdf', [AnexoXController::class, 'pdf'])
+        ->middleware('desktop.permission:fiscal,visualizar')
+        ->name('fiscal.anexo-x.pdf');
+    // Download proprio: a relacao de documentos e' ANEXA ao formulario, nunca
+    // embutida nele.
+    Route::get('/fiscal/anexo-x/documentos/pdf', [AnexoXController::class, 'documentosPdf'])
+        ->middleware('desktop.permission:fiscal,visualizar')
+        ->name('fiscal.anexo-x.documentos-pdf');
+    Route::post('/fiscal/anexo-x/fechamento', [AnexoXController::class, 'fechar'])
+        ->middleware('desktop.permission:fiscal,encerrar')
+        ->name('fiscal.anexo-x.fechar');
+    Route::post('/fiscal/anexo-x/fechamento/reabertura', [AnexoXController::class, 'reabrir'])
+        ->middleware('desktop.permission:fiscal,encerrar')
+        ->name('fiscal.anexo-x.reabrir');
+    // Rotas JSON dos modais — ANTES da rota-raiz do anexo-x.
+    Route::get('/fiscal/anexo-x/operacoes', [AnexoXController::class, 'operacoesJson'])
+        ->middleware('desktop.permission:fiscal,visualizar')
+        ->name('fiscal.anexo-x.operacoes');
+    Route::get('/fiscal/anexo-x/ajustes', [AnexoXController::class, 'ajustesJson'])
+        ->middleware('desktop.permission:fiscal,visualizar')
+        ->name('fiscal.anexo-x.ajustes');
+    Route::post('/fiscal/anexo-x/ajustes', [AnexoXController::class, 'lancarAjuste'])
+        ->middleware('desktop.permission:fiscal,editar')
+        ->name('fiscal.anexo-x.ajustes.store');
+    Route::post('/fiscal/anexo-x/ajustes/{ajuste}/cancelamento', [AnexoXController::class, 'cancelarAjuste'])
+        ->middleware('desktop.permission:fiscal,editar')
+        ->name('fiscal.anexo-x.ajustes.cancelar');
+    Route::get('/fiscal/anexo-x', [AnexoXController::class, 'index'])
+        ->middleware('desktop.permission:fiscal,visualizar')
+        ->name('fiscal.anexo-x');
     Route::post('/fiscal/documentos/{documento}/emissao', [DocumentoFiscalController::class, 'registrarEmissao'])
         ->middleware('desktop.permission:os,editar')
         ->name('fiscal.documentos.emissao');

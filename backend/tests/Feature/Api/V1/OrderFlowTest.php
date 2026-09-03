@@ -412,6 +412,58 @@ class OrderFlowTest extends TestCase
         ]);
     }
 
+    public function test_create_order_is_refused_while_budgeted_equipment_registration_is_pending(): void
+    {
+        [$manager, , , $clientId, , $equipmentId] = $this->seedAdminOrderActors();
+        $token = $this->loginAndGetToken($manager->email);
+
+        // Equipamento nascido de um orcamento: registrado sem foto porque o
+        // aparelho ainda estava com o cliente.
+        DB::table('equipamentos')->where('id', $equipmentId)->update(['cadastro_pendente' => 1]);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'relato_cliente' => 'Cliente trouxe o aparelho orcado.',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'ORDER_EQUIPMENT_REGISTRATION_PENDING')
+            ->assertJsonPath('error.details.equipamento_id', $equipmentId);
+
+        $this->assertDatabaseMissing('os', ['equipamento_id' => $equipmentId]);
+    }
+
+    public function test_create_order_completes_pending_equipment_registration_when_photo_comes_with_it(): void
+    {
+        Storage::fake('local');
+
+        [$manager, , , $clientId, , $equipmentId] = $this->seedAdminOrderActors();
+        $token = $this->loginAndGetToken($manager->email);
+
+        DB::table('equipamentos')->where('id', $equipmentId)->update(['cadastro_pendente' => 1]);
+
+        // Cliente chegou com o aparelho: a foto tirada no balcao viaja junto com
+        // a OS e completa o cadastro dentro da mesma transacao.
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->withHeader('Accept', 'application/json')
+            ->post('/api/v1/orders', [
+                'cliente_id' => $clientId,
+                'equipamento_id' => $equipmentId,
+                'relato_cliente' => 'Cliente trouxe o aparelho orcado.',
+                'novo_equipamento_fotos' => [UploadedFile::fake()->image('chegou.jpg')],
+            ]);
+
+        $response->assertCreated();
+
+        $this->assertDatabaseHas('equipamentos', [
+            'id' => $equipmentId,
+            'cadastro_pendente' => 0,
+        ]);
+        $this->assertDatabaseHas('equipamentos_fotos', ['equipamento_id' => $equipmentId]);
+    }
+
     public function test_create_order_requires_every_checklist_item_and_discrepancy_observation(): void
     {
         [$manager, , , $clientId, , $equipmentId] = $this->seedAdminOrderActors();

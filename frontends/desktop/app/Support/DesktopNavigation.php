@@ -290,6 +290,19 @@ class DesktopNavigation
                         'module' => 'clientes',
                         'icon' => 'bi-clipboard-check',
                     ],
+                    // POR ULTIMO na secao, e nao por ordem de importancia:
+                    // `firstAllowedRouteName()` percorre esta lista em ordem e
+                    // usa o primeiro item permitido como destino de fallback
+                    // quando um redirecionamento de permissao precisa de
+                    // algum lugar para ir. Um relatorio mensal e' pessimo
+                    // destino de fallback — mesma armadilha que o comentario
+                    // acima documenta para "Prontidão fiscal".
+                    [
+                        'label' => 'Anexo X (MEI)',
+                        'route' => 'fiscal.anexo-x',
+                        'module' => 'fiscal',
+                        'icon' => 'bi-journal-text',
+                    ],
                 ],
             ],
             [

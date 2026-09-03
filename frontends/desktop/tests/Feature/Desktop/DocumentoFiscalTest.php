@@ -726,6 +726,34 @@ class DocumentoFiscalTest extends TestCase
      * @param  array<string, mixed>  $sobrescreve
      * @return array<string, mixed>
      */
+    /**
+     * O botão de anexar XML/PDF era um rótulo com o nome do formato — a
+     * confirmação de envio ficava implícita nele, sem nenhum sinal de "clique
+     * aqui para enviar". Agora tem verbo, ícone e começa desabilitado até um
+     * arquivo ser escolhido, o que só um script no navegador liga de volta.
+     */
+    public function test_botao_de_anexar_arquivo_comeca_desabilitado_e_tem_verbo(): void
+    {
+        $this->fakeApi([
+            'orders/10/documento-fiscal' => ['documento' => $this->documento([
+                'status' => 'emitido', 'numero' => '2', 'tem_xml' => false, 'tem_pdf' => false,
+            ])],
+        ]);
+
+        $html = (string) $this->withSession($this->desktopSession(['os' => ['visualizar', 'editar']]))
+            ->get('/fiscal/os/10/nota')
+            ->assertOk()
+            ->assertSee('Enviar XML')
+            ->assertSee('Enviar PDF')
+            ->getContent();
+
+        $this->assertMatchesRegularExpression(
+            '/data-input-arquivo-fiscal>\s*<button type="submit"[^>]*\bdisabled\b[^>]*data-botao-arquivo-fiscal/s',
+            $html,
+            'o botao de enviar XML/PDF deveria comecar desabilitado, ate' . " o operador escolher um arquivo"
+        );
+    }
+
     private function documento(array $sobrescreve = []): array
     {
         return array_replace([

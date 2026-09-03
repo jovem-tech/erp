@@ -29,6 +29,7 @@ import {
 } from '@/lib/equipment-catalog';
 import {
   isWizardEquipmentComplete,
+  requiresBudgetEquipmentConfirmation,
   type WizardMode,
 } from '@/components/orders/order-form-wizard/wizard-state';
 import { SearchSelect } from '@/components/orders/order-form-wizard/search-select';
@@ -47,6 +48,9 @@ type StepEquipmentProps = {
   pendingEquipmentUpdate?: EquipmentUpdatePayload | null;
   pendingNewEquipmentPhotos: File[];
   linkedBudget?: LinkableBudget | null;
+  /** Tipo/marca/modelo pré-preenchidos pelo orçamento já foram confirmados pelo técnico. */
+  budgetEquipmentConfirmed?: boolean;
+  onChangeBudgetEquipmentConfirmed?: (confirmed: boolean) => void;
   onSelectEquipamento: (equipamento: EquipmentSearchResult | null) => void;
   onChangePendingNewEquipment: (payload: NovoEquipamentoPayload | null) => void;
   onChangePendingEquipmentUpdate?: (payload: EquipmentUpdatePayload | null) => void;
@@ -261,6 +265,8 @@ export function StepEquipment({
   pendingEquipmentUpdate = null,
   pendingNewEquipmentPhotos,
   linkedBudget = null,
+  budgetEquipmentConfirmed = false,
+  onChangeBudgetEquipmentConfirmed = () => undefined,
   onSelectEquipamento,
   onChangePendingNewEquipment,
   onChangePendingEquipmentUpdate = () => undefined,
@@ -447,6 +453,7 @@ export function StepEquipment({
     onChangePendingNewEquipment(null);
     onChangePendingNewEquipmentPhotos([]);
     onChangePendingNewEquipmentLabels(null);
+    onChangeBudgetEquipmentConfirmed(false);
   };
 
   const switchToNew = (reason: 'new-client' | 'empty-client' | null = null): void => {
@@ -454,6 +461,7 @@ export function StepEquipment({
     setEditingExisting(false);
     setNewEquipmentReason(reason);
     onSelectEquipamento(null);
+    onChangeBudgetEquipmentConfirmed(false);
     if (!pendingNewEquipment) {
       onChangePendingNewEquipment(EMPTY_NEW_EQUIPMENT);
       onChangePendingNewEquipmentLabels(null);
@@ -521,6 +529,12 @@ export function StepEquipment({
     field: keyof NovoEquipamentoPayload | keyof EquipmentUpdatePayload,
     value: NovoEquipamentoPayload[keyof NovoEquipamentoPayload] | EquipmentUpdatePayload[keyof EquipmentUpdatePayload]
   ): void => {
+    // Confirmação vale para o trio que estava na tela quando o técnico
+    // confirmou: mexer em qualquer um deles exige confirmar de novo.
+    if (budgetEquipmentConfirmed && (field === 'tipo_id' || field === 'marca_id' || field === 'modelo_id')) {
+      onChangeBudgetEquipmentConfirmed(false);
+    }
+
     if (editingExisting && equipamento) {
       const base = pendingEquipmentUpdate ?? {
         tipo_id: equipamento.tipo_id,
@@ -594,6 +608,21 @@ export function StepEquipment({
   };
 
   const activeEquipmentPayload = editingExisting ? pendingEquipmentUpdate : pendingNewEquipment;
+
+  /**
+   * O cadastro em tela é o equipamento descrito no orçamento (texto avulso),
+   * não um cadastro que o técnico começou do zero. Quando o orçamento aponta
+   * para um equipamento JÁ cadastrado, a etapa seleciona aquele equipamento e
+   * este caminho não se aplica.
+   */
+  const isBudgetEquipment = mode === 'create'
+    && !editingExisting
+    && !budgetEquipmentId
+    && requiresBudgetEquipmentConfirmation(null, pendingNewEquipment ?? EMPTY_NEW_EQUIPMENT, linkedBudget);
+  const canConfirmBudgetEquipment = Boolean(
+    pendingNewEquipment?.tipo_id && pendingNewEquipment?.marca_id && pendingNewEquipment?.modelo_id
+  );
+
   const selectedType = formData?.types.find((type) => type.id === activeEquipmentPayload?.tipo_id) ?? null;
   const family = selectedType?.family ?? '';
   const isDesktopFamily = family === 'desktop';
@@ -774,7 +803,7 @@ export function StepEquipment({
               onClick={() => switchToNew(null)}
               disabled={disabled}
             >
-              Equipamento novo
+              {isBudgetEquipment ? 'Equipamento do orçamento' : 'Equipamento novo'}
             </button>
           </div>
         </div>
@@ -995,6 +1024,40 @@ export function StepEquipment({
                 />
               ) : null}
 
+              {isBudgetEquipment ? (
+                <div className={budgetEquipmentConfirmed ? 'notice' : 'notice notice--warning'}>
+                  <div>
+                    <strong>
+                      {budgetEquipmentConfirmed
+                        ? 'Tipo, marca e modelo confirmados'
+                        : 'Confirme tipo, marca e modelo'}
+                    </strong>
+                    <div className="muted">
+                      {budgetEquipmentConfirmed
+                        ? 'Se você alterar um dos três, será preciso confirmar novamente.'
+                        : canConfirmBudgetEquipment
+                          ? 'Os dados vieram do orçamento. Corrija o que estiver errado e confirme para liberar o Próximo.'
+                          : 'Preencha tipo, marca e modelo para poder confirmar.'}
+                    </div>
+                    <div className="toolbar__group toolbar__group--offset">
+                      <button
+                        type="button"
+                        className={
+                          budgetEquipmentConfirmed
+                            ? 'button button--success button-small'
+                            : 'button button--primary button-small'
+                        }
+                        onClick={() => onChangeBudgetEquipmentConfirmed(true)}
+                        disabled={disabled || budgetEquipmentConfirmed || !canConfirmBudgetEquipment}
+                        aria-pressed={budgetEquipmentConfirmed}
+                      >
+                        {budgetEquipmentConfirmed ? 'Confirmado' : 'Confirmar tipo, marca e modelo'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="field">
                 <FieldLabel required>Cor</FieldLabel>
                 <div className="toolbar toolbar--compact-spaced">
@@ -1210,11 +1273,18 @@ export function StepEquipment({
               ) : null}
 
               <div className="notice notice--warning">
-                <span>
-                  {editingExisting
-                    ? 'Nenhuma alteração será gravada antes do salvamento final da OS.'
-                    : 'Este equipamento será cadastrado somente ao criar a OS. Marcas e modelos novos, porém, são gravados no catálogo assim que você confirma o cadastro.'}
-                </span>
+                <div>
+                  <strong>
+                    {[selectedType?.nome, selectedBrand?.nome, selectedModel?.nome].filter(Boolean).join(' ')
+                      || 'Complete tipo, marca e modelo do equipamento'}
+                    {activeEquipmentPayload?.cor?.trim() ? ` · ${activeEquipmentPayload.cor.trim()}` : ''}
+                  </strong>
+                  <div className="muted">
+                    {editingExisting
+                      ? 'Nenhuma alteração será gravada antes do salvamento final da OS.'
+                      : 'Este equipamento será cadastrado somente ao criar a OS. Marcas e modelos novos, porém, são gravados no catálogo assim que você confirma o cadastro.'}
+                  </div>
+                </div>
               </div>
             </>
           ) : null}
@@ -1228,7 +1298,9 @@ export function isStepEquipmentValid(
   equipamento: EquipmentSearchResult | null,
   pendingNewEquipment: NovoEquipamentoPayload | null,
   pendingNewEquipmentPhotos: File[],
-  pendingEquipmentUpdate: EquipmentUpdatePayload | null = null
+  pendingEquipmentUpdate: EquipmentUpdatePayload | null = null,
+  linkedBudget: LinkableBudget | null = null,
+  budgetEquipmentConfirmed = false
 ): boolean {
   if (pendingEquipmentUpdate) {
     return Boolean(
@@ -1237,6 +1309,13 @@ export function isStepEquipmentValid(
       pendingEquipmentUpdate.modelo_id &&
       pendingEquipmentUpdate.cor?.trim()
     );
+  }
+
+  if (
+    requiresBudgetEquipmentConfirmation(equipamento, pendingNewEquipment, linkedBudget)
+    && !budgetEquipmentConfirmed
+  ) {
+    return false;
   }
 
   return isWizardEquipmentComplete(equipamento, pendingNewEquipment, pendingNewEquipmentPhotos);

@@ -7,6 +7,7 @@ use App\Models\DocumentoFiscal;
 use App\Models\Order;
 use App\Models\OrderItem;
 use App\Support\Documento;
+use App\Support\RateioAtividade;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
@@ -749,20 +750,23 @@ class DocumentoFiscalService
     {
         $servicos = (float) ($order->valor_mao_obra ?? 0);
         $pecas = (float) ($order->valor_pecas ?? 0);
-        $bruto = $servicos + $pecas;
         $total = (float) ($order->valor_final ?? $order->valor_total ?? 0);
 
         // Sem parcela para ratear (OS sem itens, ou valor final ausente) não há
         // rateio a fazer: devolver o que veio é melhor que dividir por zero.
-        if ($bruto <= 0.0 || $total <= 0.0) {
+        if ($servicos + $pecas <= 0.0 || $total <= 0.0) {
             return ['servicos' => $servicos, 'pecas' => $pecas, 'total' => $total];
         }
 
-        $pecasLiquido = round($pecas * $total / $bruto, 2);
+        // A mesma conta que o Anexo X usa para separar "revenda de mercadorias"
+        // de "prestação de serviços" (App\Support\RateioAtividade). Tem que ser
+        // a MESMA, senão o documento fiscal e o relatório mensal de receitas
+        // brutas declaram repartições diferentes da mesma OS.
+        $rateio = RateioAtividade::dividir($pecas, $servicos, $total);
 
         return [
-            'servicos' => round($total - $pecasLiquido, 2),
-            'pecas' => $pecasLiquido,
+            'servicos' => $rateio['servico'],
+            'pecas' => $rateio['mercadoria'],
             'total' => round($total, 2),
         ];
     }

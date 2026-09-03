@@ -10081,3 +10081,34 @@ a.dashboard-status-legend-item:hover {
         transition: none;
     }
 }
+
+/* Anexo X — tela do ano.
+   Mês que ainda não aconteceu aparece na grade (a tabela é de doze linhas
+   fixas) mas esmaecido, para não ser lido como resultado fechado. */
+.anexo-x-linha-futura {
+    opacity: .55;
+}
+
+.anexo-x-chart-wrap {
+    position: relative;
+    min-height: 200px;
+}
+
+.anexo-x-topo .desktop-form-card {
+    height: 100%;
+}
+
+.anexo-x-operacao-toggle i {
+    transition: transform .15s ease;
+}
+
+.anexo-x-operacao-toggle[aria-expanded="true"] i {
+    transform: rotate(180deg);
+}
+
+.anexo-x-operacao-detalhes {
+    padding: 1rem;
+    border: 1px solid var(--desktop-border);
+    border-radius: var(--desktop-radius-md);
+    background: var(--desktop-surface-soft);
+}

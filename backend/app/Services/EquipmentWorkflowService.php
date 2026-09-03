@@ -578,6 +578,11 @@ class EquipmentWorkflowService
         unset($normalizedPayload['foto_principal_index']);
         unset($normalizedPayload['senha_tipo'], $normalizedPayload['senha_desenho']);
         $normalizedPayload['resumo_tecnico'] = $this->buildTechnicalSummary($normalizedPayload);
+        // Pendente so' faz sentido enquanto falta foto: se o cadastro ja' nasce
+        // com uma, a marca nao entra nem que o cliente peca (evita equipamento
+        // completo travando a OS para sempre).
+        $normalizedPayload['cadastro_pendente'] = (bool) ($payload['cadastro_pendente'] ?? false)
+            && $uploadedFiles === [];
         $normalizedPayload['created_at'] = now();
         $normalizedPayload['updated_at'] = now();
 
@@ -648,6 +653,11 @@ class EquipmentWorkflowService
 
         $this->syncEquipmentPhotos($equipment, $payload, $uploadedFiles);
 
+        // A pendencia e' derivada, nunca ditada pelo payload: ela cai sozinha
+        // quando a foto chega e volta se todas forem removidas. Assim ninguem
+        // consegue "completar" um cadastro so' desmarcando a flag.
+        $this->refreshPendingRegistration($equipment);
+
         if ($pairing instanceof EquipmentCollectorPairing) {
             $pairing->consumed_at = now();
             $pairing->updated_at = now();
@@ -661,6 +671,59 @@ class EquipmentWorkflowService
             ->findOrFail($equipment->id);
 
         return $fresh;
+    }
+
+    /**
+     * Completa o cadastro de um equipamento orcado: anexa as fotos tiradas
+     * quando o cliente finalmente traz o aparelho e derruba a pendencia.
+     *
+     * Deliberadamente NAO passa por updateEquipment(): aquele caminho recalcula
+     * `resumo_tecnico` a partir do payload recebido, e aqui o payload e' so' de
+     * fotos — reaproveita-lo apagaria a ficha tecnica ja' registrada.
+     *
+     * @param  array<int, UploadedFile>  $uploadedFiles
+     */
+    public function completePendingRegistration(int $equipmentId, array $uploadedFiles, ?int $primaryPhotoIndex = 0): Equipment
+    {
+        $equipment = Equipment::query()->with('photos')->find($equipmentId);
+
+        if (! $equipment instanceof Equipment) {
+            throw new RuntimeException('Equipamento nao encontrado.');
+        }
+
+        $this->storePhotos($equipment, $uploadedFiles, $primaryPhotoIndex);
+
+        $equipment->load('photos');
+        $this->refreshPendingRegistration($equipment);
+
+        /** @var Equipment $fresh */
+        $fresh = Equipment::query()
+            ->with(['client', 'type', 'brand', 'model', 'photos'])
+            ->withCount('orders')
+            ->findOrFail($equipment->id);
+
+        return $fresh;
+    }
+
+    /**
+     * Equipamento so' continua pendente enquanto nao tiver nenhuma foto — a
+     * unica exigencia do cadastro de balcao que o orcamento nao consegue
+     * cumprir com o aparelho na casa do cliente.
+     */
+    private function refreshPendingRegistration(Equipment $equipment): void
+    {
+        if (! (bool) ($equipment->cadastro_pendente ?? false)) {
+            return;
+        }
+
+        if ($equipment->photos()->count() === 0) {
+            return;
+        }
+
+        $equipment->forceFill([
+            'cadastro_pendente' => false,
+            'updated_at' => now(),
+        ])->save();
     }
 
     /**

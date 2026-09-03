@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-08-23T17:26:28-03:00`
-- Versao do sistema: `5.49.1`
+- Gerado em: `2026-09-03T09:36:48-03:00`
+- Versao do sistema: `5.79.1`
 - Versao da API: `1.6.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -199,6 +199,27 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-08-23-cobranca-indevida-em-encerramento-sem-cobranca.md` - Cobrança indevida em encerramento sem cobrança (2026-08-23)
 - `documentacao/07-novas-implementacoes/2026-08-23-modelo-assistencia-real-e-fim-da-matriz-de-transicoes.md` - Modelo da Assistência passa a refletir o sistema; matriz de transições sai da tela
 - `documentacao/07-novas-implementacoes/2026-08-23-sidebar-enxuta-atalhos-clientes-equipamentos.md` - Sidebar mais enxuta: equipamentos e ferramentas financeiras viram atalho de listagem
+- `documentacao/07-novas-implementacoes/2026-08-26-margem-de-contribuicao-e-dre-gerencial.md` - Margem de contribuição e DRE gerencial (2026-08-26)
+- `documentacao/07-novas-implementacoes/2026-08-27-baixa-peca-na-os-cmv.md` - Baixa de peça na OS: o CMV deixa de ser zero (2026-08-27)
+- `documentacao/07-novas-implementacoes/2026-08-27-estoque-correcao-truncamento-quantidade.md` - Estoque: fechamento da janela de corrupção e fim dos truncamentos (2026-08-27)
+- `documentacao/07-novas-implementacoes/2026-08-27-estoque-quantidades-decimais.md` - Estoque: quantidades decimais (2026-08-27)
+- `documentacao/07-novas-implementacoes/2026-08-27-gargalos-travamento-operacao-intensa.md` - Gargalos e travamentos sob operação intensa (2026-08-27)
+- `documentacao/07-novas-implementacoes/2026-08-27-precificacao-ciclo-fechado-os.md` - Fechando o ciclo com a OS: o fim do "R$ 0,00" (2026-08-27)
+- `documentacao/07-novas-implementacoes/2026-08-27-precificacao-custo-hora-calculado.md` - Custo-hora calculado e cadeia de custo do serviço (2026-08-27)
+- `documentacao/07-novas-implementacoes/2026-08-27-precificacao-integrada-pdv.md` - Precificação integrada: fundação e margem no PDV (2026-08-27)
+- `documentacao/07-novas-implementacoes/2026-08-27-precificacao-orcamento-custo-margem.md` - Orçamento com custo e margem por linha (2026-08-27)
+- `documentacao/07-novas-implementacoes/2026-08-27-precificacao-preco-sugerido-peca.md` - Preço sugerido no cadastro de peça (2026-08-27)
+- `documentacao/07-novas-implementacoes/2026-08-28-entrada-estoque-no-lancamento.md` - Entrada de estoque no lançamento financeiro (2026-08-28)
+- `documentacao/07-novas-implementacoes/2026-08-29-lancamento-revelacao-progressiva.md` - Formulário de lançamento: revelação progressiva (2026-08-29)
+- `documentacao/07-novas-implementacoes/2026-09-02-anexar-arquivo-nao-conferia-xml.md` - "Guardar arquivos do portal" aceitava XML de outro cliente (2026-09-02)
+- `documentacao/07-novas-implementacoes/2026-09-02-botao-anexar-arquivo-fiscal-explicito.md` - "Guardar arquivos do portal": o botão de confirmar deixa de ser implícito (2026-09-02)
+- `documentacao/07-novas-implementacoes/2026-09-02-corrida-rascunho-fiscal-duplicava-nota.md` - Corrida em `rascunhoDeOrdem()` deixava uma OS acumular nota fiscal duplicada (2026-09-02)
+- `documentacao/07-novas-implementacoes/2026-09-02-danfse-nt008-layout-oficial.md` - DANFSe conforme a NT-008: o documento passa a ser o documento (2026-09-02)
+- `documentacao/07-novas-implementacoes/2026-09-02-nota-fiscal-envio-e-acoes.md` - Nota fiscal: envio ao cliente, nova nota e "Mais ações" (2026-09-02)
+- `documentacao/07-novas-implementacoes/2026-09-02-os-a-partir-de-orcamento-aprovado-mobile.md` - Abrir OS a partir de um orçamento aprovado do cliente (mobile) (2026-09-02)
+- `documentacao/07-novas-implementacoes/2026-09-02-reconstroi-conferencia-de-assinatura-xml.md` - Verificação de assinatura do XML reconstruída (2026-09-02)
+- `documentacao/07-novas-implementacoes/2026-09-03-anexo-x-relatorio-mensal-receitas-brutas.md` - Anexo X — Relatório Mensal das Receitas Brutas do MEI (2026-09-03)
+- `documentacao/07-novas-implementacoes/2026-09-03-anexo-x-tela-do-ano-e-ajustes-auditados.md` - Anexo X: tela do ano, gráfico dos dois regimes e ajustes auditados (2026-09-03)
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 - `documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md` - Revisão de segurança — Fluxo de orçamento na assistência (com OS)
 
@@ -247,4 +268,14 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/030-cartoes-credito-assistencia` - Cartões de crédito da assistência | artefatos: spec
 - `specs/031-backup-restauracao-sistema` - Backup e restauração do sistema | artefatos: spec, plan, tasks
 - `specs/032-agenda-compromissos-google-calendar` - Agenda de compromissos com sincronização Google | artefatos: spec, plan, tasks
+- `specs/033-navegacao-preferencia-favoritos-desktop` - Navegação por preferência do usuário + Favoritos na navbar | artefatos: spec, plan, tasks
+- `specs/034-atalhos-teclado-novo-desktop` - Atalhos de teclado para o botão "+ Novo" | artefatos: spec, plan, tasks
+- `specs/035-trabalho-nao-salvo-desktop` - Proteção de trabalho não salvo | artefatos: spec, plan, tasks
+- `specs/036-estoque-nucleo-razao` - Estoque: núcleo, razão e custo médio | artefatos: spec, plan, tasks
+- `specs/037-precificacao-integrada-ao-fluxo` - Precificação integrada ao fluxo | artefatos: spec, tasks
+- `specs/038-baixa-peca-na-os` - Baixa de peça na OS | artefatos: spec, tasks
+- `specs/039-entrada-estoque-no-lancamento` - Entrada de estoque no lançamento financeiro | artefatos: spec, tasks
+- `specs/041-emissao-fiscal-nfse` - Emissão fiscal — NFS-e e prontidão de dados | artefatos: spec, tasks
+- `specs/042-anexo-x-receitas-brutas-mei` - Anexo X — Relatório Mensal das Receitas Brutas do MEI | artefatos: spec, tasks
+- `specs/043-anexo-x-tela-do-ano-e-ajustes` - Anexo X — tela do ano e ajustes auditados | artefatos: spec, tasks
 

@@ -37,6 +37,7 @@ import {
   apiSearchEquipments,
   apiSearchLinkableBudgets,
   apiSearchReportedDefects,
+  apiShowLinkableBudget,
   apiTechnicians,
   apiUpdateOrder,
   apiUpdateOrderStatus,
@@ -135,6 +136,17 @@ export async function getEntryChecklistModel(tipoEquipamentoId: number): Promise
 export async function searchLinkableBudgets(q: string): Promise<LinkableBudget[]> {
   const { budgets } = await apiSearchLinkableBudgets({ q });
   return budgets;
+}
+
+/**
+ * Detalhe completo do orçamento a vincular à Nova OS, incluindo os campos
+ * `equipamento_*_avulso`/`equipamento_cor` que a listagem omite. Buscado no
+ * momento em que o técnico efetivamente vincula o orçamento, para que a
+ * etapa Equipamento consiga casar tipo/marca/modelo contra o catálogo.
+ */
+export async function getLinkableBudgetDetail(budgetId: number): Promise<LinkableBudget> {
+  const { budget } = await apiShowLinkableBudget(budgetId);
+  return budget;
 }
 
 /**

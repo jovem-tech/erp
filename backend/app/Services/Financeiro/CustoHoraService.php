@@ -141,7 +141,7 @@ class CustoHoraService
      * inclui-lo faria o custo-hora despencar no dia 3 e dobrar no dia 28,
      * conforme aluguel e folha vao caindo.
      *
-     * Diferente do DRE, aqui a janela tem limite INFERIOR. `groupByCompetencia`
+     * Diferente do DRE, aqui a janela tem limite INFERIOR. `linhasPorCompetencia`
      * soma todo fixo com vencimento ate o fim do periodo — heuristica de
      * "recorrente ainda vigente" que, nesta conta, somaria anos de aluguel num
      * mes so.

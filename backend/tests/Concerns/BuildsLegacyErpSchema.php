@@ -610,6 +610,47 @@ trait BuildsLegacyErpSchema
     }
 
     /**
+     * Fechamento mensal do Anexo X — Res. CGSN 140/2018, art. 106.
+     *
+     * `anexo_x_fechamentos` vem da migration (não é recriada por este trait).
+     *
+     * @param  array<string, mixed>  $overrides
+     */
+    protected function createAnexoXFechamentoRecord(array $overrides = []): int
+    {
+        $payload = $overrides['payload_json'] ?? json_encode(['linhas' => []]);
+        unset($overrides['payload_json']);
+
+        return (int) DB::table('anexo_x_fechamentos')->insertGetId(array_merge([
+            'competencia' => now()->format('Y-m'),
+            'regime' => 'competencia',
+            'versao' => 1,
+            'status' => 'fechado',
+            'linha_i' => 0,
+            'linha_ii' => 0,
+            'linha_iii' => 0,
+            'linha_iv' => 0,
+            'linha_v' => 0,
+            'linha_vi' => 0,
+            'linha_vii' => 0,
+            'linha_viii' => 0,
+            'linha_ix' => 0,
+            'linha_x' => 0,
+            'deducao_descontos' => 0,
+            'deducao_devolucoes' => 0,
+            'acumulado_ano' => 0,
+            'limite_aplicado' => 81000.00,
+            'payload_json' => $payload,
+            'payload_hash_sha256' => str_repeat('0', 64),
+            'app_versao' => null,
+            'fechado_em' => now(),
+            'fechado_por' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ], $overrides));
+    }
+
+    /**
      * Devolução de venda — specs/029-devolucao-troca.
      *
      * `venda_devolucoes` vem da migration (não é recriada por este trait).
@@ -1262,6 +1303,9 @@ trait BuildsLegacyErpSchema
             $table->string('legacy_id', 100)->nullable();
             $table->string('status_operacional', 20)->default('ativo');
             $table->string('status', 20)->default('ativo');
+            // Espelha 2026_09_03_000010: equipamento orcado antes de chegar a
+            // assistencia nasce sem foto e fica pendente ate alguem completar.
+            $table->boolean('cadastro_pendente')->default(false);
             $table->dateTime('encerrado_em')->nullable();
             $table->string('motivo_encerramento', 60)->nullable();
             $table->text('observacao_encerramento')->nullable();

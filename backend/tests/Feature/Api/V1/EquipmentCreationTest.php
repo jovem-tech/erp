@@ -312,6 +312,139 @@ class EquipmentCreationTest extends TestCase
         $this->assertDatabaseMissing('equipamentos', ['numero_serie' => 'SN-ACESSORIO-OS-001']);
     }
 
+    public function test_store_accepts_pending_registration_without_photo_and_flags_it(): void
+    {
+        Storage::fake('local');
+
+        $clientId = $this->createClientRecord([
+            'nome_razao' => 'Cliente Orcamento Previo',
+            'telefone1' => '(21) 98888-3200',
+        ]);
+
+        Sanctum::actingAs($this->makeEquipmentManager(), ['*']);
+
+        // Orcamento pedido com o aparelho ainda em casa: da' para registrar
+        // tipo/marca/modelo, mas nao a foto de perfil.
+        $response = $this
+            ->withHeader('Accept', 'application/json')
+            ->post('/api/v1/equipments', [
+                'cliente_id' => $clientId,
+                'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
+                'numero_serie' => 'SN-ORCADO-001',
+                'cadastro_pendente' => '1',
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.equipment.cadastro_pendente', true);
+
+        $this->assertDatabaseHas('equipamentos', [
+            'numero_serie' => 'SN-ORCADO-001',
+            'cadastro_pendente' => 1,
+        ]);
+    }
+
+    public function test_store_still_requires_photo_when_registration_is_not_pending(): void
+    {
+        Storage::fake('local');
+
+        $clientId = $this->createClientRecord([
+            'nome_razao' => 'Cliente Balcao',
+            'telefone1' => '(21) 98888-3201',
+        ]);
+
+        Sanctum::actingAs($this->makeEquipmentManager(), ['*']);
+
+        $response = $this
+            ->withHeader('Accept', 'application/json')
+            ->post('/api/v1/equipments', [
+                'cliente_id' => $clientId,
+                'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
+                'numero_serie' => 'SN-SEM-FOTO-001',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error.code', 'VALIDATION_ERROR')
+            ->assertJsonPath('error.details.fotos.0', 'Envie ao menos uma foto do equipamento.');
+        $this->assertDatabaseMissing('equipamentos', ['numero_serie' => 'SN-SEM-FOTO-001']);
+    }
+
+    public function test_store_ignores_pending_flag_when_photo_comes_together(): void
+    {
+        Storage::fake('local');
+
+        $clientId = $this->createClientRecord([
+            'nome_razao' => 'Cliente Foto Junto',
+            'telefone1' => '(21) 98888-3202',
+        ]);
+
+        Sanctum::actingAs($this->makeEquipmentManager(), ['*']);
+
+        // Pendente so' descreve "falta a foto": com foto no mesmo cadastro, a
+        // marca nao pode entrar — senao o equipamento nasceria travando a OS.
+        $response = $this
+            ->withHeader('Accept', 'application/json')
+            ->post('/api/v1/equipments', [
+                'cliente_id' => $clientId,
+                'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
+                'numero_serie' => 'SN-ORCADO-COM-FOTO',
+                'cadastro_pendente' => '1',
+                'fotos' => [UploadedFile::fake()->image('equipamento.jpg')],
+            ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.equipment.cadastro_pendente', false);
+    }
+
+    public function test_update_with_photo_clears_pending_registration(): void
+    {
+        Storage::fake('local');
+
+        $clientId = $this->createClientRecord([
+            'nome_razao' => 'Cliente Completa Depois',
+            'telefone1' => '(21) 98888-3203',
+        ]);
+
+        Sanctum::actingAs($this->makeEquipmentManager(), ['*']);
+
+        $created = $this
+            ->withHeader('Accept', 'application/json')
+            ->post('/api/v1/equipments', [
+                'cliente_id' => $clientId,
+                'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
+                'cadastro_pendente' => '1',
+            ]);
+
+        $created->assertCreated();
+        $equipmentId = (int) $created->json('data.equipment.id');
+
+        $response = $this
+            ->withHeader('Accept', 'application/json')
+            ->post('/api/v1/equipments/'.$equipmentId, [
+                '_method' => 'PATCH',
+                'cliente_id' => $clientId,
+                'tipo_id' => 1,
+                'marca_id' => 2,
+                'modelo_id' => 2,
+                'fotos' => [UploadedFile::fake()->image('chegou.jpg')],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.equipment.cadastro_pendente', false);
+
+        $this->assertDatabaseHas('equipamentos', [
+            'id' => $equipmentId,
+            'cadastro_pendente' => 0,
+        ]);
+    }
+
     public function test_update_keeps_existing_photo_as_primary_and_replaces_removed_files(): void
     {
         Storage::fake('local');

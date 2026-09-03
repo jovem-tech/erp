@@ -1,5 +1,59 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.79.1.0 — 2026-09-03 09:36
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Melhora a UX do Select2 de marca/modelo do equipamento eventual: a sugestao 'criar novo' ganha cor de destaque + icone de inclusao (antes era uma linha igual as demais, sem indicar que o clique cadastra algo no catalogo) — e a criacao de marca/modelo novos deixa de acontecer no instante do clique/digitacao e passa a ser adiada para o clique em Salvar orcamento (gate no submit do form: resolve os pendentes, so entao deixa o POST/PATCH nativo seguir)
+- **Arquivos:** frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v5.79.0.0 — 2026-09-03 08:51
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Equipamento eventual do orcamento (sem cadastro) passa a listar marca e modelo do catalogo real (EquipmentBrand/EquipmentModel), filtrado em cascata pelo tipo, em vez de aceitar so texto solto: Select2 com o mesmo padrao do campo Tipo, e marca/modelo digitados que nao existirem no catalogo sao cadastrados de verdade (equipments.brands/models.quick.store), vinculados corretamente ao tipo/marca — melhorando a base de equipamentos em vez de so gravar texto no orcamento
+- **Arquivos:** frontends/desktop/app/Http/Controllers/OrcamentoController.php,frontends/desktop/resources/views/orcamentos/form.blade.php,frontends/desktop/resources/views/orcamentos/create.blade.php,frontends/desktop/resources/views/orcamentos/edit.blade.php,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v5.78.0.0 — 2026-09-03 07:56
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Anexo X: tela passa a ser do ano-calendario com tabela de doze meses, grafico dos dois regimes lado a lado e acumulado acima; cinco acoes por mes em modais; ajustes manuais auditados por linha (motivo obrigatorio, imutaveis, permissao fiscal:editar, bloqueados com a competencia encerrada) que declaram receita bruta fora do ERP sem quebrar a igualdade do valor apurado com o DRE
+- **Arquivos:** backend/app/Services/Fiscal/AnexoXService.php,backend/app/Services/Fiscal/AnexoXAjusteService.php,backend/app/Services/Fiscal/AnexoXFechamentoService.php,backend/app/Services/Fiscal/AnexoXLayout.php,backend/app/Models/AnexoXAjuste.php,backend/app/Http/Controllers/Api/V1/AnexoXController.php,backend/database/migrations/2026_09_03_000003_create_anexo_x_ajustes_table.php,backend/database/migrations/2026_09_03_000004_add_ajuste_totais_to_anexo_x_fechamentos.php,backend/database/migrations/2026_09_03_000005_seed_fiscal_editar_permission.php,backend/routes/api.php,backend/openapi.yaml,frontends/desktop/app/Http/Controllers/AnexoXController.php,frontends/desktop/app/Services/AnexoXService.php,frontends/desktop/resources/views/fiscal/anexo-x.blade.php,frontends/desktop/resources/views/fiscal/partials/_anexo-x-tabela.blade.php,frontends/desktop/resources/views/fiscal/partials/_anexo-x-grafico.blade.php,frontends/desktop/resources/views/fiscal/partials/_anexo-x-acumulado.blade.php,frontends/desktop/resources/views/fiscal/partials/_anexo-x-modais.blade.php,frontends/desktop/public/assets/js/anexo-x.js,frontends/desktop/public/assets/js/anexo-x-chart.js,frontends/desktop/routes/web.php
+
+## v5.77.0.0 — 2026-09-03 07:50
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Orcamento sem OS pode cadastrar o equipamento do cliente no mesmo padrao da abertura de OS (formulario embutido, tipo -> marca -> modelo com criacao inline), com a foto de perfil opcional porque o aparelho ainda esta com o cliente: o equipamento nasce com cadastro_pendente, e a OS desse aparelho e' recusada (ORDER_EQUIPMENT_REGISTRATION_PENDING) ate a foto ser anexada — o wizard da OS trava o salvar e reabre o cadastro no proprio modal para completar
+- **Arquivos:** backend/database/migrations/2026_09_03_000010_add_cadastro_pendente_to_equipamentos_table.php,backend/app/Models/Equipment.php,backend/app/Http/Requests/Api/V1/StoreEquipmentRequest.php,backend/app/Services/EquipmentWorkflowService.php,backend/app/Http/Controllers/Api/V1/EquipmentController.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/app/Http/Controllers/Api/V1/OrderController.php,backend/openapi.yaml,backend/tests/Concerns/BuildsLegacyErpSchema.php,backend/tests/Feature/Api/V1/EquipmentCreationTest.php,backend/tests/Feature/Api/V1/OrderFlowTest.php,frontends/desktop/app/Http/Controllers/EquipmentController.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/app/Http/Controllers/OrcamentoController.php,frontends/desktop/resources/views/orcamentos/form.blade.php,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/public/assets/js/equipments-create.js,frontends/desktop/public/assets/js/orders-create.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v5.76.0.0 — 2026-09-03 01:02
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Anexo X: acoes da tela reunidas num menu Mais acoes (baixar PDF, relacao de documentos, ajuda) e download do formulario passa a aceitar o ano inteiro num PDF so, com uma folha por mes reusando o mesmo partial do formulario mensal e aviso de rodape nas competencias em curso ou futuras
+- **Arquivos:** backend/app/Services/Fiscal/AnexoXService.php,backend/app/Services/Fiscal/AnexoXLayout.php,backend/app/Services/Pdf/AnexoXRenderer.php,backend/app/Http/Controllers/Api/V1/AnexoXController.php,backend/resources/views/pdf/anexo-x.blade.php,backend/resources/views/pdf/anexo-x-anual.blade.php,backend/resources/views/pdf/partials/anexo-x-formulario.blade.php,backend/resources/views/pdf/partials/anexo-x-estilo.blade.php,backend/openapi.yaml,frontends/desktop/app/Http/Controllers/AnexoXController.php,frontends/desktop/app/Services/AnexoXService.php,frontends/desktop/resources/views/fiscal/anexo-x.blade.php,frontends/desktop/public/assets/js/anexo-x.js
+
+## v5.75.0.0 — 2026-09-02 20:39
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Anexo X (Res. CGSN 140/2018, art. 106): relatorio mensal das receitas brutas do MEI com segregacao por atividade e por documento fiscal, nos regimes de competencia e caixa, PDF do formulario oficial mais PDF separado da relacao de documentos emitidos, e fechamento mensal que congela os valores declarados
+- **Arquivos:** backend/app/Services/Fiscal/AnexoXService.php,backend/app/Services/Fiscal/AnexoXFechamentoService.php,backend/app/Services/Fiscal/AnexoXLayout.php,backend/app/Services/Pdf/AnexoXRenderer.php,backend/app/Services/Financeiro/ReceitaBrutaSource.php,backend/app/Support/PeriodoMensal.php,backend/app/Support/RateioAtividade.php,backend/app/Models/AnexoXFechamento.php,backend/app/Http/Controllers/Api/V1/AnexoXController.php,backend/resources/views/pdf/anexo-x.blade.php,backend/resources/views/pdf/anexo-x-documentos.blade.php,backend/database/migrations/2026_09_03_000001_create_anexo_x_fechamentos_table.php,backend/database/migrations/2026_09_03_000002_seed_fiscal_encerrar_permission.php,backend/routes/api.php,backend/openapi.yaml,frontends/desktop/app/Http/Controllers/AnexoXController.php,frontends/desktop/app/Services/AnexoXService.php,frontends/desktop/resources/views/fiscal/anexo-x.blade.php,frontends/desktop/resources/views/fiscal/anexo-x-help.blade.php,frontends/desktop/app/Support/DesktopNavigation.php,frontends/desktop/routes/web.php
+
+## v5.74.0.0 — 2026-09-02 20:35
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Novo orcamento: botao de cadastro rapido de cliente ao lado do select (reaproveita clients.quick-modal e clients.quick.store) para o orcamento nascer ligado a um cadastro em vez de depender do cliente eventual; a tela do orcamento passa a avisar que orcamento com cliente eventual nao gera OS enquanto nao houver cadastro, e ganha "Sincronizar dados do cliente" (POST orcamentos/{id}/sincronizar-cliente) para trazer telefone/e-mail atualizados do cadastro; a recusa do cadastro rapido passa a dizer o motivo (rotulo do campo + mensagem do backend no alerta, campo marcado e trazido para a tela) em vez de so "Falha na validacao dos dados enviados"
+- **Arquivos:** frontends/desktop/app/Http/Controllers/OrcamentoController.php,frontends/desktop/routes/web.php,frontends/desktop/resources/views/orcamentos/form.blade.php,frontends/desktop/resources/views/orcamentos/create.blade.php,frontends/desktop/resources/views/orcamentos/edit.blade.php,frontends/desktop/resources/views/orcamentos/show.blade.php,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
+## v5.73.1.0 — 2026-09-02 20:07
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Botao de anexar XML/PDF na tela da nota fiscal ganha verbo (Enviar XML/PDF) e comeca desabilitado ate um arquivo ser escolhido, em vez de a confirmacao ficar implicita no rotulo do formato
+- **Arquivos:** frontends/desktop/resources/views/fiscal/nota.blade.php,frontends/desktop/tests/Feature/Desktop/DocumentoFiscalTest.php
+
+## v5.73.0.0 — 2026-09-02 19:50
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Reconstroi a conferencia de assinatura digital do XML da NFS-e (perdida em git reset --hard de outra sessao): NfseXmlImporter volta a chamar AssinaturaXml::conferir(), com DOCTYPE/XXE hardening e checagem de tamanho de chave; fiscal.nfse.exigir_assinatura_xml continua controlando se bloqueia ou so registra
+- **Arquivos:** backend/app/Services/Fiscal/NfseXmlImporter.php,backend/tests/Feature/Fiscal/NfseXmlImporterTest.php,backend/tests/Feature/Api/V1/DocumentoFiscalTest.php
+
 ## v5.72.1.0 — 2026-09-02 19:20
 - **Tier:** patch
 - **Autor/Agente:** Codex

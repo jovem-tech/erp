@@ -350,6 +350,163 @@ describe('StepEquipment', () => {
     expect(screen.getByText(/reconhecida no catálogo/)).toBeInTheDocument();
   });
 
+  it('rotula a aba como "Equipamento do orçamento" quando o cadastro veio do orçamento', async () => {
+    const { getEquipmentFormData } = await import('@/lib/orders');
+    vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={1}
+        equipamento={null}
+        pendingNewEquipment={{ tipo_id: 2, marca_id: 10, modelo_id: 100, cor: 'Cinza' }}
+        pendingNewEquipmentPhotos={[]}
+        linkedBudget={{
+          id: 77,
+          numero: 'ORC-0077',
+          status: 'aprovado',
+          equipamento_resumo: 'Notebook Samsung A015',
+          equipamento_tipo_avulso: 'Notebook',
+          equipamento_marca_avulso: 'Samsung',
+          equipamento_modelo_avulso: 'A015',
+        }}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={vi.fn()}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByRole('button', { name: 'Equipamento do orçamento' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Equipamento novo' })).not.toBeInTheDocument();
+  });
+
+  it('mantém "Equipamento novo" quando não há equipamento vindo do orçamento', async () => {
+    const { getEquipmentFormData } = await import('@/lib/orders');
+    vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={1}
+        equipamento={null}
+        pendingNewEquipment={{ tipo_id: 2, marca_id: 10, modelo_id: 100, cor: 'Cinza' }}
+        pendingNewEquipmentPhotos={[]}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={vi.fn()}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByRole('button', { name: 'Equipamento novo' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Equipamento do orçamento' })).not.toBeInTheDocument();
+  });
+
+  it('confirma tipo/marca/modelo do orçamento e volta a exigir confirmação se um deles mudar', async () => {
+    const { getEquipmentFormData } = await import('@/lib/orders');
+    vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
+    const onChangeBudgetEquipmentConfirmed = vi.fn();
+    const user = userEvent.setup();
+
+    const linkedBudget = {
+      id: 77,
+      numero: 'ORC-0077',
+      status: 'aprovado',
+      equipamento_resumo: 'Notebook Samsung A015',
+      equipamento_tipo_avulso: 'Notebook',
+      equipamento_marca_avulso: 'Samsung',
+      equipamento_modelo_avulso: 'A015',
+    };
+
+    const { rerender } = render(
+      <StepEquipment
+        mode="create"
+        clienteId={1}
+        equipamento={null}
+        pendingNewEquipment={{ tipo_id: 2, marca_id: 10, modelo_id: 100, cor: 'Cinza' }}
+        pendingNewEquipmentPhotos={[]}
+        linkedBudget={linkedBudget}
+        budgetEquipmentConfirmed={false}
+        onChangeBudgetEquipmentConfirmed={onChangeBudgetEquipmentConfirmed}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={vi.fn()}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Confirmar tipo, marca e modelo' }));
+    expect(onChangeBudgetEquipmentConfirmed).toHaveBeenCalledWith(true);
+
+    rerender(
+      <StepEquipment
+        mode="create"
+        clienteId={1}
+        equipamento={null}
+        pendingNewEquipment={{ tipo_id: 2, marca_id: 10, modelo_id: 100, cor: 'Cinza' }}
+        pendingNewEquipmentPhotos={[]}
+        linkedBudget={linkedBudget}
+        budgetEquipmentConfirmed
+        onChangeBudgetEquipmentConfirmed={onChangeBudgetEquipmentConfirmed}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={vi.fn()}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByRole('button', { name: 'Confirmado' })).toBeDisabled();
+
+    // Trocar o tipo depois de confirmado invalida a confirmação.
+    onChangeBudgetEquipmentConfirmed.mockClear();
+    const combobox = screen.getByRole('combobox', { name: /Tipo de equipamento/ });
+    await user.click(combobox);
+    await user.clear(combobox);
+    await user.type(combobox, 'Desktop');
+    await user.click(screen.getByRole('option', { name: 'Desktop' }));
+
+    expect(onChangeBudgetEquipmentConfirmed).toHaveBeenCalledWith(false);
+  });
+
+  it('resume tipo, marca, modelo e cor do equipamento que será cadastrado', async () => {
+    const { getEquipmentFormData } = await import('@/lib/orders');
+    vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={1}
+        equipamento={null}
+        pendingNewEquipment={{ tipo_id: 2, marca_id: 10, modelo_id: 100, cor: 'Cinza' }}
+        pendingNewEquipmentPhotos={[]}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={vi.fn()}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    expect(await screen.findByText('Notebook Samsung A015 · Cinza')).toBeInTheDocument();
+  });
+
+  it('pede para completar tipo/marca/modelo quando o equipamento novo ainda está incompleto', async () => {
+    const { getEquipmentFormData } = await import('@/lib/orders');
+    vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
+
+    render(
+      <StepEquipment
+        mode="create"
+        clienteId={1}
+        equipamento={null}
+        pendingNewEquipment={null}
+        pendingNewEquipmentPhotos={[]}
+        onSelectEquipamento={vi.fn()}
+        onChangePendingNewEquipment={vi.fn()}
+        onChangePendingNewEquipmentPhotos={vi.fn()}
+      />
+    );
+
+    await userEvent.click(screen.getByText('Equipamento novo'));
+
+    expect(await screen.findByText('Complete tipo, marca e modelo do equipamento')).toBeInTheDocument();
+  });
+
   it('mostra o bloco de hardware só para tipo "desktop" em modalidade "montado"', async () => {
     const { getEquipmentFormData } = await import('@/lib/orders');
     vi.mocked(getEquipmentFormData).mockResolvedValue(formData);
@@ -701,5 +858,31 @@ describe('isStepEquipmentValid', () => {
   it('é válido para equipamento novo com tipo/marca/modelo/cor e ao menos 1 foto', () => {
     const file = new File(['x'], 'foto.jpg', { type: 'image/jpeg' });
     expect(isStepEquipmentValid(null, { tipo_id: 1, marca_id: 1, modelo_id: 1, cor: 'Preto' }, [file])).toBe(true);
+  });
+
+  it('trava o avanço enquanto o equipamento pré-preenchido pelo orçamento não for confirmado', () => {
+    const file = new File(['x'], 'foto.jpg', { type: 'image/jpeg' });
+    const pendingNewEquipment = { tipo_id: 1, marca_id: 1, modelo_id: 1, cor: 'Preto' };
+    const linkedBudget = {
+      id: 77,
+      numero: 'ORC-0077',
+      status: 'aprovado',
+      equipamento_marca_avulso: 'Samsung',
+    };
+
+    expect(isStepEquipmentValid(null, pendingNewEquipment, [file], null, linkedBudget, false)).toBe(false);
+    expect(isStepEquipmentValid(null, pendingNewEquipment, [file], null, linkedBudget, true)).toBe(true);
+  });
+
+  it('não exige confirmação quando o orçamento aponta para um equipamento já cadastrado', () => {
+    const linkedBudget = {
+      id: 91,
+      numero: 'ORC-0091',
+      status: 'aprovado',
+      equipamento_id: 1,
+      equipamento_marca_avulso: '',
+    };
+
+    expect(isStepEquipmentValid(buildEquipment(), null, [], null, linkedBudget, false)).toBe(true);
   });
 });

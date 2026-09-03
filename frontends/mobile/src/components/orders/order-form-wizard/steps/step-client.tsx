@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '@/lib/api';
 import {
   getClientDetail,
+  getLinkableBudgetDetail,
   isApprovedBudget,
   listApprovedBudgetsForClient,
   lookupCepAddress,
@@ -93,6 +94,7 @@ export function StepClient({
   const [approvedBudgets, setApprovedBudgets] = useState<LinkableBudget[]>([]);
   const [approvedBudgetsLoading, setApprovedBudgetsLoading] = useState(false);
   const [approvedBudgetsError, setApprovedBudgetsError] = useState<string | null>(null);
+  const [linkingBudgetId, setLinkingBudgetId] = useState<number | null>(null);
   const [cepLoading, setCepLoading] = useState(false);
   const [cepMessage, setCepMessage] = useState<string | null>(null);
   const [cepError, setCepError] = useState<string | null>(null);
@@ -280,6 +282,22 @@ export function StepClient({
     });
   };
 
+  /**
+   * A listagem usada em `budgetMatches`/`approvedBudgets` não traz
+   * `equipamento_*_avulso`/`equipamento_cor` (só o detalhe traz). Sem eles, a
+   * etapa Equipamento não tem como casar tipo/marca/modelo do orçamento
+   * contra o catálogo para pré-preencher os campos. Busca o detalhe completo
+   * antes de vincular; se falhar, vincula com o resumo mesmo assim — o
+   * técnico ainda preenche o equipamento manualmente.
+   */
+  const linkBudget = (budget: LinkableBudget): void => {
+    setLinkingBudgetId(budget.id);
+    getLinkableBudgetDetail(budget.id)
+      .then((detail) => onChangeLinkedBudget({ ...budget, ...detail }))
+      .catch(() => onChangeLinkedBudget(budget))
+      .finally(() => setLinkingBudgetId(null));
+  };
+
   const handleCepChange = (value: string): void => {
     const cep = formatCep(value);
     const requestId = ++cepRequestId.current;
@@ -463,11 +481,12 @@ export function StepClient({
                           key={budget.id}
                           type="button"
                           className="button button--soft button-small"
-                          onClick={() => onChangeLinkedBudget(budget)}
-                          disabled={disabled}
+                          onClick={() => linkBudget(budget)}
+                          disabled={disabled || linkingBudgetId === budget.id}
                         >
-                          {budget.numero} · {budget.equipamento_resumo || 'Equipamento não informado'}
-                          {budget.total_formatado ? ` · R$ ${budget.total_formatado}` : ''}
+                          {linkingBudgetId === budget.id
+                            ? 'Vinculando...'
+                            : `${budget.numero} · ${budget.equipamento_resumo || 'Equipamento não informado'}${budget.total_formatado ? ` · R$ ${budget.total_formatado}` : ''}`}
                         </button>
                       ))}
                     </div>
@@ -557,10 +576,10 @@ export function StepClient({
                     <button
                       type="button"
                       className="button button--primary button-small"
-                      onClick={() => onChangeLinkedBudget(budgetCandidate)}
-                      disabled={disabled}
+                      onClick={() => linkBudget(budgetCandidate)}
+                      disabled={disabled || linkingBudgetId === budgetCandidate.id}
                     >
-                      Vincular à OS
+                      {linkingBudgetId === budgetCandidate.id ? 'Vinculando...' : 'Vincular à OS'}
                     </button>
                   ) : null}
                   <button

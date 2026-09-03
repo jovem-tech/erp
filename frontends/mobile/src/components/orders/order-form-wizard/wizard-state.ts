@@ -36,6 +36,13 @@ export interface WizardFormState {
   pendingNewEquipmentPhotos: File[];
   /** Rótulos resolvidos de tipo/marca/modelo do equipamento novo, para exibir na Revisão sem precisar recarregar o catálogo. */
   pendingNewEquipmentLabels: { tipo: string; marca: string; modelo: string } | null;
+  /**
+   * O técnico confirmou tipo/marca/modelo que vieram pré-preenchidos do
+   * orçamento vinculado. Sem isso a etapa Equipamento não libera o Próximo:
+   * o texto avulso do orçamento pode ter sido digitado errado e casar com um
+   * item do catálogo que não é o equipamento real do cliente.
+   */
+  equipamentoOrcamentoConfirmado: boolean;
 
   checklistModel: EntryChecklistModel | null;
   checklistAnswers: Record<number, ChecklistAnswerState>;
@@ -67,6 +74,7 @@ export function createInitialWizardState(): WizardFormState {
     pendingEquipmentUpdate: null,
     pendingNewEquipmentPhotos: [],
     pendingNewEquipmentLabels: null,
+    equipamentoOrcamentoConfirmado: false,
     checklistModel: null,
     checklistAnswers: {},
     checklistObservacoesEstado: '',
@@ -164,6 +172,7 @@ export function selectClientForWizard(
     pendingEquipmentUpdate: null,
     pendingNewEquipmentPhotos: [],
     pendingNewEquipmentLabels: null,
+    equipamentoOrcamentoConfirmado: false,
     checklistModel: null,
     checklistAnswers: {},
     orcamentoVinculado: null,
@@ -241,6 +250,29 @@ export function isWizardClientComplete(
   );
 }
 
+/**
+ * O equipamento em cadastro nasceu dos campos avulsos do orçamento vinculado
+ * (`equipamento_*_avulso`), e não da digitação do técnico. Nesse caso
+ * tipo/marca/modelo chegam pré-preenchidos e precisam de uma confirmação
+ * explícita antes de avançar. Não se aplica quando o orçamento aponta para um
+ * equipamento já cadastrado (aí a etapa seleciona aquele equipamento).
+ */
+export function requiresBudgetEquipmentConfirmation(
+  equipamento: EquipmentSearchResult | null,
+  pendingNewEquipment: NovoEquipamentoPayload | null,
+  orcamentoVinculado: LinkableBudget | null
+): boolean {
+  if (equipamento || !pendingNewEquipment || !orcamentoVinculado) {
+    return false;
+  }
+
+  return Boolean(
+    orcamentoVinculado.equipamento_tipo_avulso?.trim()
+    || orcamentoVinculado.equipamento_marca_avulso?.trim()
+    || orcamentoVinculado.equipamento_modelo_avulso?.trim()
+  );
+}
+
 export function isWizardEquipmentComplete(
   equipamento: EquipmentSearchResult | null,
   pendingNewEquipment: NovoEquipamentoPayload | null,
@@ -292,6 +324,11 @@ export function areWizardRequiredFieldsComplete(state: WizardFormState): boolean
       state.pendingNewEquipment,
       state.pendingNewEquipmentPhotos
     ) &&
+    (!requiresBudgetEquipmentConfirmation(
+      state.equipamento,
+      state.pendingNewEquipment,
+      state.orcamentoVinculado
+    ) || state.equipamentoOrcamentoConfirmado) &&
     isChecklistComplete(state) &&
     isWizardDetailsComplete(state.relatoCliente, state.acessorios) &&
     isWizardOperationsComplete(state.tecnicoId, state.prazoEntregaDias, state.dataPrevisao)

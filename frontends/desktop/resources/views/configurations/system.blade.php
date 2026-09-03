@@ -406,6 +406,11 @@
                                     <label class="form-label" for="empresa_codigo_tributacao_nacional">Código de tributação</label>
                                     <input type="text" class="form-control" id="empresa_codigo_tributacao_nacional" name="empresa_codigo_tributacao_nacional" maxlength="20" value="{{ old('empresa_codigo_tributacao_nacional', $companySettings['empresa_codigo_tributacao_nacional'] ?? '') }}">
                                 </div>
+                                <div class="col-12 col-md-3">
+                                    <label class="form-label" for="empresa_data_abertura">Data de abertura</label>
+                                    <input type="date" class="form-control" id="empresa_data_abertura" name="empresa_data_abertura" max="{{ now()->toDateString() }}" value="{{ old('empresa_data_abertura', $companySettings['empresa_data_abertura'] ?? '') }}">
+                                    <div class="form-text">Proporcionaliza o limite do MEI no ano de abertura, no Anexo X. Em branco, o relatório usa o limite integral de R$ 81.000,00.</div>
+                                </div>
                             </div>
                         </details>
                     </div>

@@ -1618,6 +1618,39 @@
     const isDeferMode = isEmbeddedMode
         && new URLSearchParams(window.location.search).get('defer') === '1';
 
+    // Cadastro disparado de um orçamento: o aparelho ainda está com o cliente,
+    // então a foto de perfil não existe. O equipamento é criado de verdade (a OS
+    // futura precisa dele no catálogo), mas nasce marcado como pendente e trava
+    // a OS até alguém anexar a foto — ver EquipmentWorkflowService.
+    const isPendingRegistrationMode = isEmbeddedMode
+        && new URLSearchParams(window.location.search).get('pendente') === '1';
+
+    // O modo vem da URL, não do Blade: o aviso é montado aqui para a tela dizer
+    // por que a foto ficou opcional e o que isso custa depois.
+    const renderPendingRegistrationNotice = () => {
+        if (! isPendingRegistrationMode) {
+            return;
+        }
+
+        const panel = document.querySelector('[data-equipment-panel="fotos"]');
+        const host = document.getElementById('equipmentCreateForm');
+
+        const notice = document.createElement('div');
+        notice.className = 'alert alert-info';
+        notice.innerHTML = '<strong>Equipamento ainda com o cliente.</strong>'
+            + ' A foto pode ficar para depois: o cadastro fica marcado como incompleto'
+            + ' e a OS deste aparelho só poderá ser salva quando a foto for anexada,'
+            + ' na chegada dele à assistência.';
+
+        if (panel instanceof HTMLElement) {
+            panel.insertBefore(notice.cloneNode(true), panel.firstChild);
+        }
+
+        if (host instanceof HTMLElement) {
+            host.insertBefore(notice, host.firstChild);
+        }
+    };
+
     const captureAndPostEquipment = () => {
         const fd = new FormData(form);
         const equipment = {};
@@ -1678,7 +1711,7 @@
                 return { tab: 'informacoes', el: cliente };
             }
         }
-        if (state.photos.length === 0) {
+        if (state.photos.length === 0 && ! isPendingRegistrationMode) {
             return { tab: 'fotos', el: els.photoGalleryButton };
         }
         return null;
@@ -1767,9 +1800,18 @@
 
             (async () => {
                 try {
+                    const body = new FormData(form);
+
+                    // Declara a pendência só quando de fato não há foto: se o
+                    // operador conseguiu anexar uma, o cadastro já nasce completo
+                    // e não deve travar a OS depois.
+                    if (isPendingRegistrationMode && state.photos.length === 0) {
+                        body.set('cadastro_pendente', '1');
+                    }
+
                     const response = await requestMultipart(form.action, {
                         method: form.method || 'POST',
-                        body: new FormData(form),
+                        body,
                     });
 
                     const equipment = response.equipment || {};
@@ -2197,6 +2239,7 @@
     initPassword();
     initColors();
     initPhotos();
+    renderPendingRegistrationNotice();
     initFormSubmission();
     initQuickAdd();
     initEmbeddedCancel();

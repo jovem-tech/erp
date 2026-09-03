@@ -8,6 +8,11 @@ class StoreEquipmentRequest extends BaseApiFormRequest
 {
     public function rules(): array
     {
+        // `boolean()` (e nao `required_unless`) porque o cadastro chega como
+        // multipart do desktop e como JSON de outros clientes: "1", "true", 1 e
+        // true precisam valer igual.
+        $pendingRegistration = $this->boolean('cadastro_pendente');
+
         return [
             'cliente_id' => ['required', 'integer', 'min:1', Rule::exists('clientes', 'id')],
             'tipo_id' => ['required', 'integer', 'min:1', Rule::exists('equipamentos_tipos', 'id')],
@@ -39,7 +44,15 @@ class StoreEquipmentRequest extends BaseApiFormRequest
             'status' => ['nullable', 'string', 'max:20'],
             'foto_principal_index' => ['nullable', 'integer', 'min:0', 'max:3'],
             'collector_pairing_code' => ['nullable', 'string', 'max:32'],
-            'fotos' => ['required', 'array', 'min:1', 'max:4'],
+            // Equipamento orcado com o aparelho ainda em casa: a foto de perfil
+            // e' a unica exigencia do balcao que nao da para cumprir. O cadastro
+            // entra marcado como pendente e a OS desse equipamento fica travada
+            // ate a foto chegar (EquipmentWorkflowService reavalia a marca a
+            // cada atualizacao).
+            'cadastro_pendente' => ['nullable', 'boolean'],
+            'fotos' => $pendingRegistration
+                ? ['nullable', 'array', 'max:4']
+                : ['required', 'array', 'min:1', 'max:4'],
             'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
         ];
     }
@@ -48,6 +61,7 @@ class StoreEquipmentRequest extends BaseApiFormRequest
     {
         return [
             'acessorios.prohibited' => 'Registre os acessórios recebidos na ordem de serviço, não no equipamento.',
+            'fotos.required' => 'Envie ao menos uma foto do equipamento.',
             'marca_id.required' => 'Selecione uma marca para o equipamento.',
             'modelo_id.required' => 'Selecione um modelo para o equipamento.',
         ];

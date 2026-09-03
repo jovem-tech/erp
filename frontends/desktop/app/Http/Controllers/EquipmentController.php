@@ -155,7 +155,7 @@ class EquipmentController extends DesktopController
         }
     }
 
-    public function edit(int $equipment): View|RedirectResponse
+    public function edit(Request $request, int $equipment): View|RedirectResponse
     {
         try {
             $form = $this->equipmentService->formData();
@@ -185,7 +185,11 @@ class EquipmentController extends DesktopController
             DesktopSession::can('equipamentos', 'visualizar')
                 ? route('equipments.show', $equipment)
                 : route('equipments.index'),
-            true
+            true,
+            // Modo embutido também na edição: o wizard da OS abre este formulário
+            // dentro do modal para completar um cadastro que veio de orçamento
+            // (a foto que faltava) sem tirar o operador do fluxo da OS.
+            $request->boolean('embedded')
         );
     }
 
@@ -609,6 +613,11 @@ class EquipmentController extends DesktopController
      */
     private function validatedEquipmentPayload(Request $request, bool $isUpdate = false): array
     {
+        // Cadastro nascido de um orçamento: o aparelho ainda está com o cliente,
+        // então a foto de perfil não existe. O registro entra marcado como
+        // pendente e a OS desse equipamento fica travada até a foto chegar.
+        $pendingRegistration = ! $isUpdate && $request->boolean('cadastro_pendente');
+
         $validated = $request->validate([
             'cliente_id' => ['required', 'integer', 'min:1'],
             'cliente_busca_label' => ['nullable', 'string', 'max:160'],
@@ -641,7 +650,10 @@ class EquipmentController extends DesktopController
             'existing_photo_sync' => ['nullable', 'boolean'],
             'existing_photo_ids' => ['nullable', 'array'],
             'existing_photo_ids.*' => ['integer', 'min:1'],
-            'fotos' => $isUpdate ? ['nullable', 'array', 'max:4'] : ['required', 'array', 'min:1', 'max:4'],
+            'cadastro_pendente' => ['nullable', 'boolean'],
+            'fotos' => $isUpdate || $pendingRegistration
+                ? ['nullable', 'array', 'max:4']
+                : ['required', 'array', 'min:1', 'max:4'],
             'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
         ], [
             'marca_id.required' => 'Selecione uma marca para o equipamento.',
@@ -716,6 +728,13 @@ class EquipmentController extends DesktopController
         $payload['numero_serie'] = $this->normalizeValue($validated['numero_serie_visual'] ?? null);
         $payload['status_operacional'] = 'ativo';
         $payload['status'] = 'ativo';
+
+        if ($pendingRegistration) {
+            // String '1', não booleano: o payload sobe como multipart, e o
+            // Guzzle exige conteúdo escalar em cada parte. `$request->boolean()`
+            // do backend lê '1' como true do mesmo jeito.
+            $payload['cadastro_pendente'] = '1';
+        }
 
         return $payload;
     }
@@ -863,6 +882,10 @@ class EquipmentController extends DesktopController
             'tipo_id' => $tipoId,
             'tipoName' => $tipoName,
             'tipo_nome' => $tipoName,
+            // Cadastro nascido de orçamento, ainda sem foto: o wizard da OS
+            // trava o salvar e oferece completar antes de deixar abrir a OS.
+            'cadastroPendente' => (bool) ($decoratedEquipment['cadastro_pendente'] ?? false),
+            'cadastro_pendente' => (bool) ($decoratedEquipment['cadastro_pendente'] ?? false),
         ];
     }
 
