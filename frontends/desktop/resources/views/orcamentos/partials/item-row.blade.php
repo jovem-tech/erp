@@ -80,6 +80,7 @@
     $additionPercent = $field('acrescimo_percentual', 0);
     $additionDisplay = $additionType === 'percentual' ? $formatPercentDisplay($additionPercent) : $formatMoney($additionAmount);
     $additionPreviewVisible = $additionType === 'percentual';
+    $lockedForConvertedEdit = (bool) ($lockedForConvertedEdit ?? false);
 @endphp
 <tr data-budget-item-row data-index="{{ $indexKey }}">
     <td colspan="8" class="budget-item-card-cell">
@@ -87,11 +88,11 @@
             <div class="budget-item-line budget-item-line-primary">
                 <div class="budget-item-field budget-item-field-type">
                     <label for="{{ $typeId }}" class="budget-item-field-label">Tipo</label>
-                    <select id="{{ $typeId }}" name="itens[{{ $indexKey }}][tipo_item]" class="form-select" data-budget-item-type>
+                    <select id="{{ $typeId }}" name="itens[{{ $indexKey }}][tipo_item]" class="form-select" data-budget-item-type @disabled($lockedForConvertedEdit)>
                         <option value="servico" @selected((string) $field('tipo_item', 'servico') === 'servico')>Serviço</option>
                         <option value="peca" @selected((string) $field('tipo_item') === 'peca')>Peça</option>
                     </select>
-                    <input type="hidden" name="itens[{{ $indexKey }}][modo_precificacao]" value="{{ $field('modo_precificacao', 'manual') }}" data-budget-item-mode>
+                    <input type="hidden" name="itens[{{ $indexKey }}][modo_precificacao]" value="{{ $field('modo_precificacao', 'manual') }}" data-budget-item-mode @disabled($lockedForConvertedEdit)>
                 </div>
 
                 <div class="budget-item-field budget-item-field-reference">
@@ -102,6 +103,7 @@
                         class="form-select"
                         data-budget-item-reference
                         data-selected-reference="{{ $field('referencia_id') }}"
+                        @disabled($lockedForConvertedEdit)
                     >
                         <option value="">Selecione</option>
                     </select>
@@ -118,6 +120,7 @@
                         placeholder="Descrição do item"
                         data-budget-item-description
                         @if (! ($isEditMode ?? false)) required aria-required="true" @endif
+                        @disabled($lockedForConvertedEdit)
                     >
                 </div>
             </div>
@@ -135,6 +138,7 @@
                         value="{{ $field('quantidade', 1) }}"
                         data-budget-item-quantity
                         @if (! ($isEditMode ?? false)) required aria-required="true" @endif
+                        @disabled($lockedForConvertedEdit)
                     >
                 </div>
 
@@ -150,6 +154,7 @@
                         data-budget-item-unit-price
                         data-budget-money
                         @if (! ($isEditMode ?? false)) required aria-required="true" @endif
+                        @disabled($lockedForConvertedEdit)
                     >
                 </div>
 
@@ -164,6 +169,7 @@
                             value="{{ $discountDisplay }}"
                             autocomplete="off"
                             data-budget-item-discount-display
+                            @disabled($lockedForConvertedEdit)
                         >
                         <div class="budget-adjustment-toggle" role="group" aria-label="Modo do desconto">
                             <button
@@ -171,12 +177,14 @@
                                 class="budget-adjustment-toggle-btn {{ $discountType === 'valor' ? 'is-active' : '' }}"
                                 data-budget-adjustment-option="valor"
                                 aria-pressed="{{ $discountType === 'valor' ? 'true' : 'false' }}"
+                                @disabled($lockedForConvertedEdit)
                             >R$</button>
                             <button
                                 type="button"
                                 class="budget-adjustment-toggle-btn {{ $discountType === 'percentual' ? 'is-active' : '' }}"
                                 data-budget-adjustment-option="percentual"
                                 aria-pressed="{{ $discountType === 'percentual' ? 'true' : 'false' }}"
+                                @disabled($lockedForConvertedEdit)
                             >%</button>
                         </div>
                     </div>
@@ -192,9 +200,9 @@
                             data-budget-item-discount-preview
                         >
                     </div>
-                    <input type="hidden" id="{{ $discountTypeId }}" name="itens[{{ $indexKey }}][desconto_tipo]" value="{{ $discountType }}" data-budget-item-discount-type>
-                    <input type="hidden" name="itens[{{ $indexKey }}][desconto]" value="{{ $formatDecimalValue($discountAmount, 2) }}" data-budget-item-discount>
-                    <input type="hidden" name="itens[{{ $indexKey }}][desconto_percentual]" value="{{ $formatDecimalValue($discountPercent, 4) }}" data-budget-item-discount-percent>
+                    <input type="hidden" id="{{ $discountTypeId }}" name="itens[{{ $indexKey }}][desconto_tipo]" value="{{ $discountType }}" data-budget-item-discount-type @disabled($lockedForConvertedEdit)>
+                    <input type="hidden" name="itens[{{ $indexKey }}][desconto]" value="{{ $formatDecimalValue($discountAmount, 2) }}" data-budget-item-discount @disabled($lockedForConvertedEdit)>
+                    <input type="hidden" name="itens[{{ $indexKey }}][desconto_percentual]" value="{{ $formatDecimalValue($discountPercent, 4) }}" data-budget-item-discount-percent @disabled($lockedForConvertedEdit)>
                 </div>
 
                 <div class="budget-item-field budget-item-field-addition">
@@ -208,6 +216,7 @@
                             value="{{ $additionDisplay }}"
                             autocomplete="off"
                             data-budget-item-addition-display
+                            @disabled($lockedForConvertedEdit)
                         >
                         <div class="budget-adjustment-toggle" role="group" aria-label="Modo do acréscimo">
                             <button
@@ -215,12 +224,14 @@
                                 class="budget-adjustment-toggle-btn {{ $additionType === 'valor' ? 'is-active' : '' }}"
                                 data-budget-adjustment-option="valor"
                                 aria-pressed="{{ $additionType === 'valor' ? 'true' : 'false' }}"
+                                @disabled($lockedForConvertedEdit)
                             >R$</button>
                             <button
                                 type="button"
                                 class="budget-adjustment-toggle-btn {{ $additionType === 'percentual' ? 'is-active' : '' }}"
                                 data-budget-adjustment-option="percentual"
                                 aria-pressed="{{ $additionType === 'percentual' ? 'true' : 'false' }}"
+                                @disabled($lockedForConvertedEdit)
                             >%</button>
                         </div>
                     </div>
@@ -236,9 +247,9 @@
                             data-budget-item-addition-preview
                         >
                     </div>
-                    <input type="hidden" id="{{ $additionTypeId }}" name="itens[{{ $indexKey }}][acrescimo_tipo]" value="{{ $additionType }}" data-budget-item-addition-type>
-                    <input type="hidden" name="itens[{{ $indexKey }}][acrescimo]" value="{{ $formatDecimalValue($additionAmount, 2) }}" data-budget-item-addition>
-                    <input type="hidden" name="itens[{{ $indexKey }}][acrescimo_percentual]" value="{{ $formatDecimalValue($additionPercent, 4) }}" data-budget-item-addition-percent>
+                    <input type="hidden" id="{{ $additionTypeId }}" name="itens[{{ $indexKey }}][acrescimo_tipo]" value="{{ $additionType }}" data-budget-item-addition-type @disabled($lockedForConvertedEdit)>
+                    <input type="hidden" name="itens[{{ $indexKey }}][acrescimo]" value="{{ $formatDecimalValue($additionAmount, 2) }}" data-budget-item-addition @disabled($lockedForConvertedEdit)>
+                    <input type="hidden" name="itens[{{ $indexKey }}][acrescimo_percentual]" value="{{ $formatDecimalValue($additionPercent, 4) }}" data-budget-item-addition-percent @disabled($lockedForConvertedEdit)>
                 </div>
 
                 <div class="budget-item-field budget-item-field-total">
@@ -264,13 +275,14 @@
                                 data-budget-item-quick-create
                                 aria-label="{{ $quickCreateAriaLabel }}"
                                 title="{{ $quickCreateAriaLabel }}"
+                                @disabled($lockedForConvertedEdit)
                             >
                                 <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>
                                 <span data-budget-item-quick-create-label>{{ $quickCreateLabel }}</span>
                             </button>
                         @endif
 
-                        <button type="button" class="btn btn-outline-danger btn-sm budget-item-remove-action" data-budget-item-remove>
+                        <button type="button" class="btn btn-outline-danger btn-sm budget-item-remove-action" data-budget-item-remove @disabled($lockedForConvertedEdit)>
                             <i class="bi bi-trash me-1"></i>
                             Excluir
                         </button>
@@ -288,6 +300,7 @@
                         rows="2"
                         placeholder="Observações do item"
                         data-budget-item-notes
+                        @disabled($lockedForConvertedEdit)
                     >{{ $field('observacoes') }}</textarea>
                 </div>
             </div>

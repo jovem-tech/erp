@@ -735,6 +735,37 @@ class FinanceiroService
      * taxa de cartão já paga à operadora não pode ser "desfeita" automaticamente);
      * lança exceção se, mesmo pulando esses, sobrar excedente sem conseguir zerar.
      *
+     * Corrige o título a receber (e, se preciso, os movimentos já baixados)
+     * de uma OS para acompanhar um novo total de orçamento — usado tanto na
+     * edição admin-autorizada de orçamento com OS já fechada
+     * (BudgetWorkflowService::updateBudget()) quanto na aplicação de uma
+     * revisão aprovada de orçamento convertido
+     * (BudgetRevisionService::applyApprovedRevision()). Retorna null quando
+     * a OS não tem título a receber (ex.: devolvido sem reparo / descartado
+     * nunca geram lançamento financeiro).
+     *
+     * @return array{ajustado: bool, ajustes?: array<int, array<string, mixed>>, valor_liberado?: float}|null
+     */
+    public function correctReceivableTitleForOrder(Order $order, float $novoTotal): ?array
+    {
+        $financeiro = Financeiro::query()
+            ->where('os_id', $order->id)
+            ->where('tipo', Financeiro::TIPO_RECEBER)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $financeiro instanceof Financeiro) {
+            return null;
+        }
+
+        $ajuste = $this->reduceMovementsToTotal($financeiro, $novoTotal);
+        $this->update($financeiro, ['valor' => $novoTotal]);
+
+        return $ajuste;
+    }
+
+    /**
      * @return array{ajustado: bool, ajustes?: array<int, array<string, mixed>>, valor_liberado?: float}
      */
     public function reduceMovementsToTotal(Financeiro $financeiro, float $novoValorTitulo): array

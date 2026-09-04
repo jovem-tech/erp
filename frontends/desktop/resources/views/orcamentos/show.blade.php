@@ -71,6 +71,18 @@
                 <span class="desktop-chip">{{ $budget['tipo_label'] ?? 'Orçamento prévio' }}</span>
                 <span class="desktop-chip">{{ $budget['origem_label'] ?? 'Manual' }}</span>
                 <span class="desktop-chip">Versão {{ (int) ($budget['versao'] ?? 1) }}</span>
+                @if (! empty($budget['is_revision']) && ! empty($budget['revision_base']))
+                    <a href="{{ route('orcamentos.show', $budget['revision_base']['id']) }}" class="desktop-chip">
+                        <i class="bi bi-arrow-repeat"></i>
+                        Revisão de {{ $budget['revision_base']['numero'] }}
+                    </a>
+                @endif
+                @if (! empty($budget['has_pending_revision']) && ! empty($budget['pending_revision']))
+                    <a href="{{ route('orcamentos.show', $budget['pending_revision']['id']) }}" class="desktop-chip text-warning-emphasis">
+                        <i class="bi bi-hourglass-split"></i>
+                        Revisão pendente: {{ $budget['pending_revision']['numero'] }}
+                    </a>
+                @endif
             </div>
         </div>
 

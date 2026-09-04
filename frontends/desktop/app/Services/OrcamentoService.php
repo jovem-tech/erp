@@ -140,7 +140,19 @@ class OrcamentoService
     {
         $response = $this->apiClient->patch('/orcamentos/'.$id, $payload);
 
-        return $response['data']['budget'] ?? [];
+        $budget = $response['data']['budget'] ?? [];
+        // Edição de orçamento convertido que virou uma revisão pendente (ver
+        // BudgetWorkflowService::updateConvertedBudget()): o "budget" aqui
+        // ainda é o orçamento base (nunca sai de `convertido`), então a
+        // revisão recém-criada vem à parte — anexada sob uma chave própria
+        // para o controller decidir para onde redirecionar sem precisar de
+        // uma segunda chamada à API.
+        $revision = $response['data']['revision'] ?? null;
+        if (is_array($budget) && is_array($revision) && $revision !== []) {
+            $budget['_revision'] = $revision;
+        }
+
+        return $budget;
     }
 
     /**

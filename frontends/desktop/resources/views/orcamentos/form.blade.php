@@ -158,8 +158,36 @@
     $originValue = old('origem', $budget['origem'] ?? ($fromOrderListing ? 'os' : 'manual'));
     $prazoExecucaoValue = old('prazo_execucao', $budget['prazo_execucao'] ?? ($fromOrderListing ? ($form['selected_order_deadline'] ?? '') : ''));
     $relatoClienteValue = old('relato_cliente', $budget['relato_cliente'] ?? ($fromOrderListing ? ($form['selected_order_relato'] ?? '') : ''));
+    // Orçamento convertido: edição fica restrita a um grupo de campos
+    // operacionais (Budget::CONVERTED_EDITABLE_FIELDS), a menos que o
+    // operador tenha entrado no modo "propor nova versão"
+    // (?modo_revisao=1), onde só os campos financeiros/cliente
+    // (Budget::CONVERTED_REVISION_FIELDS) ficam abertos — os dois grupos
+    // nunca ficam editáveis ao mesmo tempo. Ver BudgetWorkflowService::
+    // updateConvertedBudget()/BudgetRevisionService.
+    $isConvertedBudget = ($budget['status'] ?? '') === 'convertido';
+    $osSettledForConverted = (bool) ($budget['os']['os_settled'] ?? false);
+    $hasPendingRevision = (bool) ($budget['has_pending_revision'] ?? false);
+    $pendingRevision = is_array($budget['pending_revision'] ?? null) ? $budget['pending_revision'] : null;
+    $revisionMode = $isConvertedBudget && ! $hasPendingRevision && request()->boolean('modo_revisao');
+    $convertedEditableFields = array_flip($budget['converted_editable_fields'] ?? []);
+    $convertedRevisionFields = array_flip($budget['converted_revision_fields'] ?? []);
+    // true = campo travado (disabled) na tela atual.
+    $convertedFieldLocked = static function (string $field) use ($isConvertedBudget, $revisionMode, $convertedEditableFields, $convertedRevisionFields): bool {
+        if (! $isConvertedBudget) {
+            return false;
+        }
+
+        return $revisionMode ? ! isset($convertedRevisionFields[$field]) : ! isset($convertedEditableFields[$field]);
+    };
+    // Itens/cliente são campos de revisão: travados sempre que não estiver
+    // no modo revisão (inclusive quando já existe uma revisão pendente, que
+    // desliga $revisionMode acima de propósito — só uma por vez).
+    $lockedForConvertedEdit = $isConvertedBudget && ! $revisionMode;
+
     $lockedOrderContext = is_array($lockedOrderContext ?? null) ? $lockedOrderContext : [];
-    $clientLocked = (bool) ($lockedOrderContext['locked'] ?? (! $isEditMode && $selectedOrderId > 0 && $selectedClientId > 0));
+    $clientLocked = (bool) ($lockedOrderContext['locked'] ?? (! $isEditMode && $selectedOrderId > 0 && $selectedClientId > 0))
+        || $lockedForConvertedEdit;
     $lockedOrderNumber = trim((string) ($lockedOrderContext['order_number'] ?? ''));
     $lockedClientName = trim((string) ($lockedOrderContext['client_name'] ?? ''));
     if ($clientLocked && ($lockedOrderNumber === '' || $lockedClientName === '')) {
@@ -197,7 +225,12 @@
 
     // OS encerrada (skill sistema-erp-os-fluxo-fechamento): edição exige
     // confirmação de administrador — ver BudgetWorkflowService::isOrderClosed().
-    $osIsEncerrada = (bool) ($budget['os']['is_encerrada'] ?? false);
+    // Para orçamento convertido o critério é mais amplo (macrofase
+    // 'encerrado' inteira + 'cancelado', não só o subconjunto com impacto
+    // financeiro) — ver BudgetApprovalService::orderIsSettled(). O mesmo
+    // modal/fluxo de confirmação de administrador (_admin_confirm_modal.blade.php)
+    // atende os dois casos, só a fonte do flag muda.
+    $osIsEncerrada = $isConvertedBudget ? $osSettledForConverted : (bool) ($budget['os']['is_encerrada'] ?? false);
 
     // Equipamento eventual (aparelho sem cadastro) — espelha o cliente eventual.
     $clienteAvulsoValue = trim((string) old('cliente_nome_avulso', $budget['cliente_nome_avulso'] ?? ''));
@@ -273,6 +306,19 @@
                     {{ $budget['numero'] }}
                 </span>
             @endif
+            @if ($isConvertedBudget && ! $hasPendingRevision)
+                @if ($revisionMode)
+                    <a href="{{ route('orcamentos.edit', $budgetId) }}" class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-x-lg me-1"></i>
+                        Cancelar proposta de nova versão
+                    </a>
+                @else
+                    <a href="{{ route('orcamentos.edit', $budgetId) }}?modo_revisao=1" class="btn btn-outline-warning btn-sm">
+                        <i class="bi bi-arrow-repeat me-1"></i>
+                        Propor nova versão (valores/cliente)
+                    </a>
+                @endif
+            @endif
         </div>
     </div>
 
@@ -287,11 +333,46 @@
         </div>
     </div>
 
+    @if ($isConvertedBudget && $hasPendingRevision && $pendingRevision !== null)
+        <div class="alert alert-info d-flex align-items-center gap-2" role="alert">
+            <i class="bi bi-hourglass-split"></i>
+            <div>
+                <strong>Já existe uma revisão aguardando o cliente:</strong>
+                <a href="{{ route('orcamentos.show', $pendingRevision['id']) }}">{{ $pendingRevision['numero'] }}</a>
+                ({{ $pendingRevision['status_label'] ?? $pendingRevision['status'] }}).
+                Não é possível propor outra até essa ser decidida.
+            </div>
+        </div>
+    @elseif ($isConvertedBudget && $revisionMode)
+        <div class="alert alert-warning d-flex align-items-center gap-2" role="alert">
+            <i class="bi bi-arrow-repeat"></i>
+            <div>
+                <strong>Você está propondo uma nova versão deste orçamento.</strong>
+                Só os campos de cliente e valores ficam abertos agora; ao salvar, uma revisão separada é
+                criada e enviada para o cliente aprovar — o orçamento convertido atual só muda se ela for aprovada.
+            </div>
+        </div>
+    @elseif ($isConvertedBudget)
+        <div class="alert alert-secondary d-flex align-items-center gap-2" role="alert">
+            <i class="bi bi-info-circle"></i>
+            <div>
+                <strong>Este orçamento já foi convertido em OS.</strong>
+                Só os campos operacionais abaixo (garantia, contato, equipamento, relato, validade, prazo de
+                execução, forma de pagamento) podem ser corrigidos direto. Para mudar valores ou o cliente, use
+                "Propor nova versão" — isso exige nova aprovação do cliente.
+            </div>
+        </div>
+    @endif
+
     @if ($osIsEncerrada)
         <div class="alert alert-warning d-flex align-items-center gap-2" role="alert">
             <i class="bi bi-lock-fill"></i>
             <div>
-                <strong>Esta OS está encerrada.</strong>
+                @if ($isConvertedBudget)
+                    <strong>A OS deste orçamento está encerrada ou cancelada.</strong>
+                @else
+                    <strong>Esta OS está encerrada.</strong>
+                @endif
                 Qualquer alteração salva aqui exigirá confirmação de um administrador.
             </div>
         </div>
@@ -314,6 +395,7 @@
         <input type="hidden" name="canal_envio" value="whatsapp" data-budget-canal-envio>
         <input type="hidden" name="admin_email" value="" data-budget-admin-email>
         <input type="hidden" name="admin_password" value="" data-budget-admin-password>
+        <input type="hidden" name="propor_revisao" value="{{ $revisionMode ? '1' : '0' }}">
 
         <input type="hidden" name="numero" value="{{ old('numero', $budget['numero'] ?? '') }}">
         <input type="hidden" name="versao" value="{{ old('versao', $budget['versao'] ?? 1) }}">
@@ -393,12 +475,12 @@
 
                 <div>
                     <label for="orcamentoTelefoneContato">Telefone de contato <span class="text-danger" aria-hidden="true">*</span></label>
-                    <input type="text" id="orcamentoTelefoneContato" name="telefone_contato" class="form-control" value="{{ old('telefone_contato', $budget['telefone_contato'] ?? ($form['selected_client_phone'] ?? '')) }}" placeholder="(11) 98765-4321" @if (! $isEditMode) required aria-required="true" @endif>
+                    <input type="text" id="orcamentoTelefoneContato" name="telefone_contato" class="form-control" value="{{ old('telefone_contato', $budget['telefone_contato'] ?? ($form['selected_client_phone'] ?? '')) }}" placeholder="(11) 98765-4321" @if (! $isEditMode) required aria-required="true" @endif @disabled($convertedFieldLocked('telefone_contato'))>
                 </div>
 
                 <div>
                     <label for="orcamentoEmailContato">E-mail de contato</label>
-                    <input type="email" id="orcamentoEmailContato" name="email_contato" class="form-control" value="{{ old('email_contato', $budget['email_contato'] ?? ($form['selected_client_email'] ?? '')) }}" placeholder="cliente@dominio.com">
+                    <input type="email" id="orcamentoEmailContato" name="email_contato" class="form-control" value="{{ old('email_contato', $budget['email_contato'] ?? ($form['selected_client_email'] ?? '')) }}" placeholder="cliente@dominio.com" @disabled($convertedFieldLocked('email_contato'))>
                 </div>
 
                 {{-- OS vinculada: só aparece quando o cliente selecionado tem OS
@@ -406,7 +488,7 @@
                      cliente (data-budget-order-field controla a visibilidade). --}}
                 <div class="desktop-grid-span-2 d-none" data-budget-equipment-field data-budget-registered-only data-budget-order-field>
                     <label for="orcamentoOsId">OS vinculada</label>
-                    <select id="orcamentoOsId" name="os_id" class="form-select" data-select2-placeholder="Selecione uma OS..." data-select2-allow-clear="true">
+                    <select id="orcamentoOsId" name="os_id" class="form-select" data-select2-placeholder="Selecione uma OS..." data-select2-allow-clear="true" @disabled($isConvertedBudget)>
                         <option value=""></option>
                         @foreach ($orders as $order)
                             @php
@@ -429,8 +511,8 @@
             <div class="desktop-grid desktop-grid-two">
                 <div class="desktop-grid-span-2">
                     <div class="form-check">
-                        <input type="hidden" name="envolve_equipamento" value="0">
-                        <input type="checkbox" class="form-check-input" id="orcamentoEnvolveEquipamento" name="envolve_equipamento" value="1" data-budget-envolve-equipamento @checked($envolveEquipamento)>
+                        <input type="hidden" name="envolve_equipamento" value="0" @disabled($convertedFieldLocked('envolve_equipamento'))>
+                        <input type="checkbox" class="form-check-input" id="orcamentoEnvolveEquipamento" name="envolve_equipamento" value="1" data-budget-envolve-equipamento @checked($envolveEquipamento) @disabled($convertedFieldLocked('envolve_equipamento'))>
                         <label class="form-check-label" for="orcamentoEnvolveEquipamento">Orçamento para reparo de um equipamento</label>
                     </div>
                     <small class="text-secondary d-block mt-1">Desmarque para serviços sem aparelho (visita técnica, instalação de cabo de rede, etc.).</small>
@@ -445,7 +527,7 @@
                          recarregadas via AJAX ao trocar o cliente (apenas
                          equipamentos do cliente escolhido). --}}
                     <div class="d-flex gap-2 align-items-start">
-                        <select id="orcamentoEquipamentoId" name="equipamento_id" class="form-select" data-select2-placeholder="Selecione um equipamento..." data-select2-allow-clear="true" data-budget-equipment-select>
+                        <select id="orcamentoEquipamentoId" name="equipamento_id" class="form-select" data-select2-placeholder="Selecione um equipamento..." data-select2-allow-clear="true" data-budget-equipment-select @disabled($convertedFieldLocked('equipamento_id'))>
                             <option value=""></option>
                             @foreach ($equipments as $equipment)
                                 @php
@@ -502,7 +584,7 @@
                                     // acrescentamos como opção para não perder a seleção.
                                     $tipoAvulsoIsCustom = $equipTipoAvulso !== '' && ! in_array($equipTipoAvulso, $tiposEquipamento, true);
                                 @endphp
-                                <select id="orcamentoEquipTipoAvulso" name="equipamento_tipo_avulso" class="form-select" data-native-select="true" data-select2-placeholder="Selecione ou digite o tipo..." data-budget-eventual-input data-budget-equip-type-select>
+                                <select id="orcamentoEquipTipoAvulso" name="equipamento_tipo_avulso" class="form-select" data-native-select="true" data-select2-placeholder="Selecione ou digite o tipo..." data-budget-eventual-input data-budget-equip-type-select @disabled($convertedFieldLocked('equipamento_tipo_avulso'))>
                                     <option value=""></option>
                                     @foreach ($tiposEquipamento as $tipo)
                                         <option value="{{ $tipo }}" @selected($equipTipoAvulso === $tipo)>{{ $tipo }}</option>
@@ -519,7 +601,7 @@
                                     // preserva como opção para não perder a seleção salva.
                                     $marcaAvulsoIsCustom = $equipMarcaAvulso !== '' && $equipMarcaAvulsoId === 0;
                                 @endphp
-                                <select id="orcamentoEquipMarcaAvulso" name="equipamento_marca_avulso" class="form-select" data-native-select="true" data-select2-placeholder="Selecione ou digite a marca..." data-budget-eventual-input data-budget-equip-brand-select>
+                                <select id="orcamentoEquipMarcaAvulso" name="equipamento_marca_avulso" class="form-select" data-native-select="true" data-select2-placeholder="Selecione ou digite a marca..." data-budget-eventual-input data-budget-equip-brand-select @disabled($convertedFieldLocked('equipamento_marca_avulso'))>
                                     <option value=""></option>
                                     @foreach ($filteredBrandsAvulso as $brand)
                                         <option value="{{ $brand['nome'] }}" data-brand-id="{{ $brand['id'] }}" @selected($equipMarcaAvulso === $brand['nome'])>{{ $brand['nome'] }}</option>
@@ -534,7 +616,7 @@
                                 @php
                                     $modeloAvulsoIsCustom = $equipModeloAvulso !== '' && ! collect($filteredModelsAvulso)->contains(fn (array $model): bool => mb_strtolower(trim((string) ($model['nome'] ?? ''))) === mb_strtolower($equipModeloAvulso));
                                 @endphp
-                                <select id="orcamentoEquipModeloAvulso" name="equipamento_modelo_avulso" class="form-select" data-native-select="true" data-select2-placeholder="Selecione ou digite o modelo..." data-budget-eventual-input data-budget-equip-model-select>
+                                <select id="orcamentoEquipModeloAvulso" name="equipamento_modelo_avulso" class="form-select" data-native-select="true" data-select2-placeholder="Selecione ou digite o modelo..." data-budget-eventual-input data-budget-equip-model-select @disabled($convertedFieldLocked('equipamento_modelo_avulso'))>
                                     <option value=""></option>
                                     @foreach ($filteredModelsAvulso as $model)
                                         <option value="{{ $model['nome'] }}" data-model-id="{{ $model['id'] }}" @selected($equipModeloAvulso === $model['nome'])>{{ $model['nome'] }}</option>
@@ -546,7 +628,7 @@
                             </div>
                             <div>
                                 <label for="orcamentoEquipCorAvulso">Cor <span class="text-danger" aria-hidden="true">*</span></label>
-                                <input type="text" id="orcamentoEquipCorAvulso" name="equipamento_cor" class="form-control" value="{{ $equipCorAvulso }}" placeholder="Ex.: Preto" data-budget-eventual-input maxlength="100">
+                                <input type="text" id="orcamentoEquipCorAvulso" name="equipamento_cor" class="form-control" value="{{ $equipCorAvulso }}" placeholder="Ex.: Preto" data-budget-eventual-input maxlength="100" @disabled($convertedFieldLocked('equipamento_cor'))>
                             </div>
                         </div>
                     </div>
@@ -554,12 +636,12 @@
 
                 <div class="desktop-grid-span-2">
                     <label for="orcamentoRelatoCliente">Relato do cliente / defeito relatado <span class="text-danger" aria-hidden="true">*</span></label>
-                    <textarea id="orcamentoRelatoCliente" name="relato_cliente" class="form-control" rows="3" placeholder="Descreva o problema relatado pelo cliente. Ao gerar a OS, isto preenche o relato da ordem.">{{ $relatoClienteValue }}</textarea>
+                    <textarea id="orcamentoRelatoCliente" name="relato_cliente" class="form-control" rows="3" placeholder="Descreva o problema relatado pelo cliente. Ao gerar a OS, isto preenche o relato da ordem." @disabled($convertedFieldLocked('relato_cliente'))>{{ $relatoClienteValue }}</textarea>
                 </div>
 
                 <div class="desktop-grid-span-2">
                     <label for="orcamentoTitulo">Título do orçamento</label>
-                    <input type="text" id="orcamentoTitulo" name="titulo" class="form-control" value="{{ old('titulo', $budget['titulo'] ?? '') }}" placeholder="Ex.: Orçamento com equipamento na assistência">
+                    <input type="text" id="orcamentoTitulo" name="titulo" class="form-control" value="{{ old('titulo', $budget['titulo'] ?? '') }}" placeholder="Ex.: Orçamento com equipamento na assistência" @disabled($isConvertedBudget)>
                 </div>
 
                 <div>
@@ -572,7 +654,7 @@
                             sort($validadeDiasOptions);
                         }
                     @endphp
-                    <select id="orcamentoValidadeDias" name="validade_dias" class="form-select" data-budget-validity-days>
+                    <select id="orcamentoValidadeDias" name="validade_dias" class="form-select" data-budget-validity-days @disabled($convertedFieldLocked('validade_dias'))>
                         @foreach ($validadeDiasOptions as $validadeDiasOption)
                             <option value="{{ $validadeDiasOption }}" @selected($validadeDiasValue === $validadeDiasOption)>{{ $validadeDiasOption }} dias</option>
                         @endforeach
@@ -594,7 +676,7 @@
                             }
                         }
                     @endphp
-                    <input type="date" id="orcamentoValidadeData" name="validade_data" class="form-control" data-budget-validity-date value="{{ $validadeDataValue }}">
+                    <input type="date" id="orcamentoValidadeData" name="validade_data" class="form-control" data-budget-validity-date value="{{ $validadeDataValue }}" @disabled($convertedFieldLocked('validade_data'))>
                 </div>
             </div>
         </div>
@@ -661,7 +743,7 @@
                         $prazoExecucaoIsCustom = $prazoExecucaoValue !== ''
                             && ! in_array($prazoExecucaoValue, array_map($formatPrazoExecucaoLabel, $prazoExecucaoDiasOptions), true);
                     @endphp
-                    <select id="orcamentoPrazoExecucao" name="prazo_execucao" class="form-select">
+                    <select id="orcamentoPrazoExecucao" name="prazo_execucao" class="form-select" @disabled($convertedFieldLocked('prazo_execucao'))>
                         <option value=""></option>
                         @foreach ($prazoExecucaoDiasOptions as $prazoExecucaoDias)
                             @php $prazoExecucaoLabel = $formatPrazoExecucaoLabel($prazoExecucaoDias); @endphp
@@ -675,7 +757,7 @@
 
                 <div class="desktop-grid-span-2">
                     <label for="orcamentoObservacoes">Observações</label>
-                    <textarea id="orcamentoObservacoes" name="observacoes" class="form-control" rows="4" placeholder="Notas internas do orçamento">{{ old('observacoes', $budget['observacoes'] ?? '') }}</textarea>
+                    <textarea id="orcamentoObservacoes" name="observacoes" class="form-control" rows="4" placeholder="Notas internas do orçamento" @disabled($isConvertedBudget)>{{ old('observacoes', $budget['observacoes'] ?? '') }}</textarea>
                 </div>
             </div>
         </div>
@@ -704,7 +786,7 @@
                     </thead>
                     <tbody data-budget-items>
                         @foreach ($selectedItems as $index => $item)
-                            @include('orcamentos.partials.item-row', ['index' => $index, 'item' => $item, 'quickCatalogs' => $quickCatalogs])
+                            @include('orcamentos.partials.item-row', ['index' => $index, 'item' => $item, 'quickCatalogs' => $quickCatalogs, 'lockedForConvertedEdit' => $lockedForConvertedEdit])
                         @endforeach
                     </tbody>
                 </table>
@@ -715,14 +797,14 @@
                  então o botão fixo aqui embaixo garante que ele nasça sempre
                  acima do botão, nunca escondido lá em cima fora da vista. --}}
             <div class="d-flex justify-content-end mb-4">
-                <button type="button" class="btn btn-primary" data-budget-item-add>
+                <button type="button" class="btn btn-primary" data-budget-item-add @disabled($lockedForConvertedEdit)>
                     <i class="bi bi-plus-lg me-2"></i>
                     Adicionar item
                 </button>
             </div>
 
             <template id="orcamentoItemTemplate">
-                @include('orcamentos.partials.item-row', ['index' => '__INDEX__', 'item' => [], 'quickCatalogs' => $quickCatalogs])
+                @include('orcamentos.partials.item-row', ['index' => '__INDEX__', 'item' => [], 'quickCatalogs' => $quickCatalogs, 'lockedForConvertedEdit' => $lockedForConvertedEdit])
             </template>
 
             <section class="budget-terms-card mb-4" data-budget-terms aria-labelledby="orcamentoCondicoesTitulo">
@@ -744,7 +826,7 @@
                     {{-- Marcador vazio: garante que desmarcar tudo chegue ao backend
                          como "nenhuma forma aceita" em vez de campo ausente (que
                          preservaria a seleção anterior). --}}
-                    <input type="hidden" name="formas_pagamento[]" value="">
+                    <input type="hidden" name="formas_pagamento[]" value="" @disabled($convertedFieldLocked('formas_pagamento'))>
 
                     @forelse ($paymentMethodOptions as $option)
                         <div class="form-check form-check-inline">
@@ -758,6 +840,7 @@
                                 data-installments="{{ ($option['aceita_parcelamento'] ?? false) ? '1' : '0' }}"
                                 data-pix="{{ ($option['is_pix'] ?? false) ? '1' : '0' }}"
                                 {{ in_array((string) $option['codigo'], $selectedPaymentCodes, true) ? 'checked' : '' }}
+                                @disabled($convertedFieldLocked('formas_pagamento'))
                             >
                             <label class="form-check-label" for="orcamentoForma{{ $option['id'] }}">{{ $option['nome'] }}</label>
                         </div>
@@ -771,7 +854,7 @@
                 <div class="desktop-grid desktop-grid-two">
                     <div data-budget-installments-wrapper class="{{ $selectedInstallments !== '' ? '' : 'd-none' }}">
                         <label for="orcamentoParcelas">Parcelamento sem juros no cartão</label>
-                        <select id="orcamentoParcelas" name="parcelas_sem_juros" class="form-select" data-budget-installments>
+                        <select id="orcamentoParcelas" name="parcelas_sem_juros" class="form-select" data-budget-installments @disabled($convertedFieldLocked('parcelas_sem_juros'))>
                             <option value="">Somente à vista</option>
                             @for ($parcela = 2; $parcela <= $maxInstallments; $parcela++)
                                 <option value="{{ $parcela }}" {{ $selectedInstallments === (string) $parcela ? 'selected' : '' }}>
@@ -783,7 +866,7 @@
 
                     <div>
                         <label for="orcamentoGarantia">Garantia</label>
-                        <select id="orcamentoGarantia" name="garantia_dias" class="form-select">
+                        <select id="orcamentoGarantia" name="garantia_dias" class="form-select" @disabled($convertedFieldLocked('garantia_dias'))>
                             <option value="">Sem garantia definida</option>
                             @foreach ($warrantyOptions as $option)
                                 <option value="{{ $option['value'] }}" {{ $selectedWarrantyDays === (string) $option['value'] ? 'selected' : '' }}>
@@ -814,7 +897,7 @@
 
                 <div class="mt-3">
                     <label for="orcamentoCondicoes">Observações complementares</label>
-                    <textarea id="orcamentoCondicoes" name="condicoes" class="form-control" rows="3" placeholder="Só o que fugir do padrão acima (ex.: entrada de 50%, retirada em loja)">{{ old('condicoes', $budget['condicoes'] ?? '') }}</textarea>
+                    <textarea id="orcamentoCondicoes" name="condicoes" class="form-control" rows="3" placeholder="Só o que fugir do padrão acima (ex.: entrada de 50%, retirada em loja)" @disabled($isConvertedBudget)>{{ old('condicoes', $budget['condicoes'] ?? '') }}</textarea>
                 </div>
             </section>
 
@@ -852,6 +935,7 @@
                                 inputmode="decimal"
                                 autocomplete="off"
                                 data-budget-global-discount-display
+                                @disabled($lockedForConvertedEdit)
                             >
                             <div class="budget-adjustment-toggle" role="group" aria-label="Modo do desconto geral">
                                 <button
@@ -859,12 +943,14 @@
                                     class="budget-adjustment-toggle-btn {{ $globalDiscountType === 'valor' ? 'is-active' : '' }}"
                                     data-budget-adjustment-option="valor"
                                     aria-pressed="{{ $globalDiscountType === 'valor' ? 'true' : 'false' }}"
+                                    @disabled($lockedForConvertedEdit)
                                 >R$</button>
                                 <button
                                     type="button"
                                     class="budget-adjustment-toggle-btn {{ $globalDiscountType === 'percentual' ? 'is-active' : '' }}"
                                     data-budget-adjustment-option="percentual"
                                     aria-pressed="{{ $globalDiscountType === 'percentual' ? 'true' : 'false' }}"
+                                    @disabled($lockedForConvertedEdit)
                                 >%</button>
                             </div>
                         </div>
@@ -880,9 +966,9 @@
                                 data-budget-global-discount-preview
                             >
                         </div>
-                        <input type="hidden" id="orcamentoDescontoTipo" name="desconto_tipo" value="{{ $globalDiscountType }}" data-budget-global-discount-type>
-                        <input type="hidden" name="desconto" value="{{ $formatDecimalValue($globalDiscountAmount, 2) }}" data-budget-global-discount>
-                        <input type="hidden" name="desconto_percentual" value="{{ $formatDecimalValue($globalDiscountPercent, 4) }}" data-budget-global-discount-percent>
+                        <input type="hidden" id="orcamentoDescontoTipo" name="desconto_tipo" value="{{ $globalDiscountType }}" data-budget-global-discount-type @disabled($lockedForConvertedEdit)>
+                        <input type="hidden" name="desconto" value="{{ $formatDecimalValue($globalDiscountAmount, 2) }}" data-budget-global-discount @disabled($lockedForConvertedEdit)>
+                        <input type="hidden" name="desconto_percentual" value="{{ $formatDecimalValue($globalDiscountPercent, 4) }}" data-budget-global-discount-percent @disabled($lockedForConvertedEdit)>
                     </div>
 
                     <div>
@@ -896,6 +982,7 @@
                                 inputmode="decimal"
                                 autocomplete="off"
                                 data-budget-global-addition-display
+                                @disabled($lockedForConvertedEdit)
                             >
                             <div class="budget-adjustment-toggle" role="group" aria-label="Modo do acréscimo geral">
                                 <button
@@ -903,12 +990,14 @@
                                     class="budget-adjustment-toggle-btn {{ $globalAdditionType === 'valor' ? 'is-active' : '' }}"
                                     data-budget-adjustment-option="valor"
                                     aria-pressed="{{ $globalAdditionType === 'valor' ? 'true' : 'false' }}"
+                                    @disabled($lockedForConvertedEdit)
                                 >R$</button>
                                 <button
                                     type="button"
                                     class="budget-adjustment-toggle-btn {{ $globalAdditionType === 'percentual' ? 'is-active' : '' }}"
                                     data-budget-adjustment-option="percentual"
                                     aria-pressed="{{ $globalAdditionType === 'percentual' ? 'true' : 'false' }}"
+                                    @disabled($lockedForConvertedEdit)
                                 >%</button>
                             </div>
                         </div>
@@ -924,9 +1013,9 @@
                                 data-budget-global-addition-preview
                             >
                         </div>
-                        <input type="hidden" id="orcamentoAcrescimoTipo" name="acrescimo_tipo" value="{{ $globalAdditionType }}" data-budget-global-addition-type>
-                        <input type="hidden" name="acrescimo" value="{{ $formatDecimalValue($globalAdditionAmount, 2) }}" data-budget-global-addition>
-                        <input type="hidden" name="acrescimo_percentual" value="{{ $formatDecimalValue($globalAdditionPercent, 4) }}" data-budget-global-addition-percent>
+                        <input type="hidden" id="orcamentoAcrescimoTipo" name="acrescimo_tipo" value="{{ $globalAdditionType }}" data-budget-global-addition-type @disabled($lockedForConvertedEdit)>
+                        <input type="hidden" name="acrescimo" value="{{ $formatDecimalValue($globalAdditionAmount, 2) }}" data-budget-global-addition @disabled($lockedForConvertedEdit)>
+                        <input type="hidden" name="acrescimo_percentual" value="{{ $formatDecimalValue($globalAdditionPercent, 4) }}" data-budget-global-addition-percent @disabled($lockedForConvertedEdit)>
                     </div>
 
                     <div class="budget-summary-total-field">

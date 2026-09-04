@@ -2085,6 +2085,8 @@ trait BuildsLegacyErpSchema
             $table->text('motivo_rejeicao')->nullable();
             $table->string('convertido_tipo', 30)->nullable();
             $table->unsignedBigInteger('convertido_id')->nullable();
+            // Espelha 2026_09_04_000001_add_aplicada_em_to_orcamentos_table.
+            $table->dateTime('aplicada_em')->nullable();
             $table->timestamps();
         });
 

@@ -51,6 +51,61 @@ class Budget extends Model
      */
     public const MAX_INTEREST_FREE_INSTALLMENTS = 24;
 
+    /**
+     * Campos operacionais (não financeiros, não ligados a quem é o cliente)
+     * que podem ser editados diretamente num orçamento já `convertido`, sem
+     * disparar uma nova revisão/aprovação. Ver BudgetWorkflowService::
+     * updateConvertedBudget(). Fonte única compartilhada com o formulário
+     * desktop (orcamentos/form.blade.php) para as duas listas nunca
+     * desalinharem.
+     *
+     * @var array<int, string>
+     */
+    public const CONVERTED_EDITABLE_FIELDS = [
+        'garantia_dias',
+        'telefone_contato',
+        'email_contato',
+        'relato_cliente',
+        'prazo_execucao',
+        'validade_dias',
+        'validade_data',
+        'envolve_equipamento',
+        'equipamento_id',
+        'equipamento_tipo_id',
+        'equipamento_marca_id',
+        'equipamento_modelo_id',
+        'equipamento_tipo_avulso',
+        'equipamento_marca_avulso',
+        'equipamento_modelo_avulso',
+        'equipamento_cor',
+        'equipamento_cor_hex',
+        'equipamento_cor_rgb',
+        'formas_pagamento',
+        'parcelas_sem_juros',
+    ];
+
+    /**
+     * Campos financeiros e de identidade do cliente ("dono do orçamento")
+     * que, se mudados num orçamento `convertido`, exigem uma nova revisão
+     * aprovada pelo cliente antes de valer — nunca aplicados direto. Ver
+     * BudgetRevisionService.
+     *
+     * @var array<int, string>
+     */
+    public const CONVERTED_REVISION_FIELDS = [
+        'cliente_id',
+        'cliente_nome_avulso',
+        'itens',
+        'subtotal',
+        'desconto',
+        'desconto_tipo',
+        'desconto_percentual',
+        'acrescimo',
+        'acrescimo_tipo',
+        'acrescimo_percentual',
+        'total',
+    ];
+
     protected $table = 'orcamentos';
 
     protected $primaryKey = 'id';
@@ -82,6 +137,8 @@ class Budget extends Model
         'acrescimo_percentual' => 'float',
         'total' => 'float',
         'convertido_id' => 'integer',
+        'orcamento_revisao_de_id' => 'integer',
+        'aplicada_em' => 'datetime',
         'validade_data' => 'date',
         'token_expira_em' => 'datetime',
         'enviado_em' => 'datetime',
@@ -352,6 +409,11 @@ class Budget extends Model
     public function revisionBase(): BelongsTo
     {
         return $this->belongsTo(self::class, 'orcamento_revisao_de_id', 'id');
+    }
+
+    public function revisions(): HasMany
+    {
+        return $this->hasMany(self::class, 'orcamento_revisao_de_id', 'id');
     }
 
     public function items(): HasMany

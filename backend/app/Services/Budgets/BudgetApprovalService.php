@@ -36,7 +36,8 @@ class BudgetApprovalService
         private readonly OrderEventService $orderEventService,
         private readonly OrderDocumentCenterService $orderDocumentCenterService,
         private readonly NotificationDispatchService $notificationDispatchService,
-        private readonly BudgetCommercialTermsService $budgetCommercialTermsService
+        private readonly BudgetCommercialTermsService $budgetCommercialTermsService,
+        private readonly BudgetRevisionService $budgetRevisionService
     ) {
     }
 
@@ -644,6 +645,16 @@ class BudgetApprovalService
                     'os_id' => (int) ($budget->os_id ?? 0),
                 ]
             );
+
+            // Orçamento aprovado é uma revisão (orcamento_revisao_de_id
+            // preenchido) de um orçamento já convertido: aplica os campos
+            // financeiros/cliente aprovados de volta ao orçamento base, sem
+            // nunca tirar o base do status `convertido`. Cobre tanto
+            // approveByToken() (cliente, link público) quanto
+            // approveByStaff() (equipe), já que os dois passam por aqui.
+            if ($this->budgetRevisionService->isRevision($budget)) {
+                $this->budgetRevisionService->applyApprovedRevision($budget, $ctx['usuario_id'] ?? null);
+            }
         });
 
         return $approvedStatus;
@@ -1234,7 +1245,7 @@ class BudgetApprovalService
      * OS ja encerrada (entregue, irreparavel, descartada...) ou cancelada: o
      * atendimento acabou e nenhum status de orcamento deve mais move-la.
      */
-    private function orderIsSettled(Budget $budget): bool
+    public function orderIsSettled(Budget $budget): bool
     {
         $flowState = strtolower(trim((string) ($budget->order?->estado_fluxo ?? '')));
 
@@ -1381,7 +1392,11 @@ class BudgetApprovalService
     private function syncOrderForDispatch(Budget $budget, string $relativePdfPath): void
     {
         $orderId = (int) ($budget->os_id ?? 0);
-        if ($orderId <= 0) {
+        // Revisão de orçamento convertido: o PDF "oficial" da OS deve
+        // continuar sendo o do orçamento base até a revisão ser
+        // efetivamente aprovada e aplicada (BudgetRevisionService::
+        // applyApprovedRevision() cuida disso quando chegar a hora).
+        if ($orderId <= 0 || $this->budgetRevisionService->isRevision($budget)) {
             return;
         }
 
@@ -1398,7 +1413,10 @@ class BudgetApprovalService
     private function syncOrderForDecision(Budget $budget, bool $approved, Carbon $decisionAt): void
     {
         $orderId = (int) ($budget->os_id ?? 0);
-        if ($orderId <= 0) {
+        // Mesma razão do guard em syncOrderForDispatch(): a decisão sobre uma
+        // revisão não é "a" decisão do orçamento da OS — essa já aconteceu
+        // no orçamento base antes da conversão.
+        if ($orderId <= 0 || $this->budgetRevisionService->isRevision($budget)) {
             return;
         }
 

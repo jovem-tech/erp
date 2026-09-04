@@ -316,6 +316,38 @@ class BudgetController extends BaseApiController
                 null,
                 request: $request
             ),
+            'requires_admin_confirmation_converted' => $this->error(
+                'Esta OS está encerrada ou cancelada. Confirme com credenciais de administrador para editar o orçamento convertido.',
+                409,
+                'BUDGET_CONVERTED_OS_SETTLED_ADMIN_REQUIRED',
+                null,
+                request: $request
+            ),
+            'confirmation_required' => $this->error(
+                'Alterar valores ou o cliente deste orçamento convertido exige uma nova aprovação do cliente. Confirme para propor a nova versão.',
+                409,
+                'BUDGET_REVISION_CONFIRMATION_REQUIRED',
+                ['fields' => $result['fields'] ?? []],
+                request: $request
+            ),
+            'revision_conflict' => $this->error(
+                'Já existe uma revisão deste orçamento aguardando decisão do cliente.',
+                409,
+                'BUDGET_REVISION_ALREADY_PENDING',
+                ['revision_id' => $result['revision_id'] ?? null],
+                request: $request
+            ),
+            'validation_error' => $this->error(
+                (string) ($result['message'] ?? 'Campo não editável no estado atual do orçamento.'),
+                422,
+                'BUDGET_CONVERTED_FIELD_NOT_EDITABLE',
+                $result['details'] ?? null,
+                request: $request
+            ),
+            'revision_created' => $this->success(
+                ['budget' => $result, 'revision' => $result['revision'] ?? null],
+                request: $request
+            ),
             default => $this->success(
                 ['budget' => $result],
                 request: $request

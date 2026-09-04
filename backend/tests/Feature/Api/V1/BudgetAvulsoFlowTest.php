@@ -914,7 +914,13 @@ class BudgetAvulsoFlowTest extends TestCase
             ->assertJsonPath('error.code', 'ORDER_BUDGET_LINK_CONFLICT');
     }
 
-    public function test_converted_budget_is_immutable_and_active_budget_cannot_be_hard_deleted(): void
+    /**
+     * Orçamento convertido não é mais totalmente imutável para edição — ver
+     * BudgetConvertedRevisionTest para a edição limitada (campos
+     * operacionais direto, financeiro/cliente via revisão). Excluir
+     * continua bloqueado sem exceção (deleteBudget() não foi alterado).
+     */
+    public function test_converted_and_active_budgets_cannot_be_hard_deleted(): void
     {
         $admin = $this->admin();
         $clientId = $this->createClientRecord(['nome_razao' => 'Cliente snapshot']);
@@ -941,10 +947,13 @@ class BudgetAvulsoFlowTest extends TestCase
         ]);
         $token = $this->loginAndGetToken($admin->email);
 
+        // `titulo` não faz parte de nenhuma das duas listas de edição
+        // permitida num orçamento convertido (Budget::CONVERTED_EDITABLE_FIELDS/
+        // CONVERTED_REVISION_FIELDS) — fica fora do escopo e é rejeitado.
         $this->withHeader('Authorization', 'Bearer '.$token)
             ->patchJson('/api/v1/orcamentos/'.$convertedId, ['titulo' => 'Tentativa de alteração'])
-            ->assertStatus(409)
-            ->assertJsonPath('error.code', 'BUDGET_IMMUTABLE');
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'BUDGET_CONVERTED_FIELD_NOT_EDITABLE');
         $this->withHeader('Authorization', 'Bearer '.$token)
             ->deleteJson('/api/v1/orcamentos/'.$convertedId)
             ->assertStatus(409)

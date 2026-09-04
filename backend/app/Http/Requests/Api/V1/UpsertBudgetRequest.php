@@ -102,6 +102,11 @@ class UpsertBudgetRequest extends BaseApiFormRequest
             // BudgetWorkflowService::isOrderClosed()/AdminCredentialVerifier.
             'admin_email' => ['nullable', 'string', 'email'],
             'admin_password' => ['nullable', 'string'],
+            // Confirma que uma mudança de valor/cliente num orçamento
+            // convertido deve virar uma revisão pendente de aprovação do
+            // cliente — ver BudgetWorkflowService::updateConvertedBudget()/
+            // BudgetRevisionService.
+            'propor_revisao' => ['nullable', 'boolean'],
         ];
     }
 }
