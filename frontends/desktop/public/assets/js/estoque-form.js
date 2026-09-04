@@ -14,10 +14,26 @@
 
     const custoInput = document.getElementById('preco_custo');
     const vendaInput = document.getElementById('preco_venda');
-    const categoriaInput = document.getElementById('categoria');
+    // Select de Subcategoria (taxonomia de estoque) — substitui o antigo
+    // campo de texto livre "Categoria". A sugestão de preço continua
+    // funcionando com o mesmo contrato (nome em string), só troca de onde lê.
+    const categoriaInput = document.getElementById('estoque_subcategoria_id');
     const dica = document.getElementById('precoSugestao');
 
     if (!custoInput || !vendaInput || !dica) return;
+
+    // Taxonomia de estoque em cascata: Categoria só mostra as do Grupo
+    // escolhido, Subcategoria só as da Categoria escolhida.
+    if (window.DesktopUi && typeof window.DesktopUi.bindOptionCascade === 'function') {
+        window.DesktopUi.bindOptionCascade(
+            document.getElementById('tipo_equipamento_id'),
+            document.getElementById('estoque_categoria_id')
+        );
+        window.DesktopUi.bindOptionCascade(
+            document.getElementById('estoque_categoria_id'),
+            categoriaInput
+        );
+    }
 
     const money = (valor) => 'R$ ' + Number(valor || 0).toFixed(2).replace('.', ',');
 
@@ -122,7 +138,10 @@
             body: JSON.stringify({
                 preco_custo: custo,
                 preco_venda: Number(vendaInput.value) || 0,
-                categoria: categoriaInput ? categoriaInput.value : '',
+                // Nome da Subcategoria escolhida, não o id: o motor de preço
+                // (PrecificacaoService) casa por nome de categoria em string,
+                // igual antes do campo virar select.
+                categoria: categoriaInput ? (categoriaInput.selectedOptions[0]?.text ?? '') : '',
             }),
         })
             .then((resposta) => (resposta.ok ? resposta.json() : Promise.reject(resposta)))

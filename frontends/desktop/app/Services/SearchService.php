@@ -156,11 +156,16 @@ class SearchService
                 $title = '#' . (string) ($order['id'] ?? '');
             }
 
+            $numeroOsLegado = trim((string) ($order['numero_os_legado'] ?? ''));
+            $statusNome = trim((string) ($order['status_nome'] ?? ''));
+            $meta = $numeroOsLegado !== '' ? 'Legado: ' . $numeroOsLegado : '';
+            $meta = $meta !== '' && $statusNome !== '' ? $meta . ' · ' . $statusNome : $meta . $statusNome;
+
             return [
                 'id' => (int) ($order['id'] ?? 0),
                 'label' => $title,
                 'subtitle' => trim((string) ($order['cliente_nome'] ?? 'Cliente não informado')),
-                'meta' => trim((string) ($order['status_nome'] ?? '')),
+                'meta' => $meta,
                 'url' => route('orders.show', (int) ($order['id'] ?? 0)),
                 'icon' => 'bi-clipboard-check',
                 'badge' => trim((string) ($order['status_cor'] ?? '')),

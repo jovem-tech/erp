@@ -311,6 +311,7 @@
             @method($formMethod)
         @endif
         <input type="hidden" name="submission_mode" value="save_only" data-budget-submission-mode>
+        <input type="hidden" name="canal_envio" value="whatsapp" data-budget-canal-envio>
         <input type="hidden" name="admin_email" value="" data-budget-admin-email>
         <input type="hidden" name="admin_password" value="" data-budget-admin-password>
 
@@ -685,14 +686,9 @@
                     <h3 class="surface-title fs-5 mb-1">Itens do orçamento</h3>
                     <p class="surface-subtitle mb-0">Lance serviços cadastrados, peças do estoque ou itens avulsos sem cadastro vinculado.</p>
                 </div>
-
-                <button type="button" class="btn btn-primary" data-budget-item-add>
-                    <i class="bi bi-plus-lg me-2"></i>
-                    Adicionar item
-                </button>
             </div>
 
-            <div class="table-responsive mb-4">
+            <div class="table-responsive mb-3">
                 <table class="table align-middle budget-items-table">
                     <thead>
                     <tr>
@@ -712,6 +708,17 @@
                         @endforeach
                     </tbody>
                 </table>
+            </div>
+
+            {{-- Abaixo dos itens, não no cabeçalho: `itemsBody.appendChild` em
+                 orcamentos-form.js sempre insere o item novo no fim da lista,
+                 então o botão fixo aqui embaixo garante que ele nasça sempre
+                 acima do botão, nunca escondido lá em cima fora da vista. --}}
+            <div class="d-flex justify-content-end mb-4">
+                <button type="button" class="btn btn-primary" data-budget-item-add>
+                    <i class="bi bi-plus-lg me-2"></i>
+                    Adicionar item
+                </button>
             </div>
 
             <template id="orcamentoItemTemplate">
@@ -997,6 +1004,9 @@
         @include('orcamentos.partials.quick-item-modal', [
             'quickCatalogs' => $quickCatalogs,
             'tiposEquipamento' => data_get($form, 'tipos_equipamento', []),
+            'estoqueGrupos' => data_get($form, 'grupos', []),
+            'estoqueCategorias' => data_get($form, 'estoque_categorias', []),
+            'estoqueSubcategorias' => data_get($form, 'estoque_subcategorias', []),
         ])
     @endif
 
@@ -1092,6 +1102,29 @@
                             <span class="budget-summary-result-pill">Resultado final</span>
                         </div>
                         <div class="budget-review-totals" data-budget-review-totals></div>
+                    </section>
+
+                    <section class="budget-review-card" data-budget-review-channel-wrapper>
+                        <div class="budget-review-card-head">
+                            <h5>Meio de envio da proposta</h5>
+                            <span class="desktop-chip">Aprovação do cliente</span>
+                        </div>
+                        <p class="text-secondary small mb-2">Usado apenas ao enviar para aprovação — escolha por onde o cliente vai receber o PDF e o link de aprovação.</p>
+                        <div class="d-flex flex-wrap gap-3" data-budget-review-channel-options>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="canal_envio" id="orcamentoCanalWhatsapp" value="whatsapp" data-budget-channel-option checked>
+                                <label class="form-check-label" for="orcamentoCanalWhatsapp">WhatsApp</label>
+                            </div>
+                            <div class="form-check d-none" data-budget-channel-email-option>
+                                <input class="form-check-input" type="radio" name="canal_envio" id="orcamentoCanalEmail" value="email" data-budget-channel-option>
+                                <label class="form-check-label" for="orcamentoCanalEmail">E-mail</label>
+                            </div>
+                            <div class="form-check d-none" data-budget-channel-both-option>
+                                <input class="form-check-input" type="radio" name="canal_envio" id="orcamentoCanalAmbos" value="ambos" data-budget-channel-option>
+                                <label class="form-check-label" for="orcamentoCanalAmbos">WhatsApp e e-mail</label>
+                            </div>
+                        </div>
+                        <p class="text-secondary small mb-0 mt-2" data-budget-review-channel-no-email>Informe um e-mail de contato para habilitar o envio por e-mail.</p>
                     </section>
                 </div>
 

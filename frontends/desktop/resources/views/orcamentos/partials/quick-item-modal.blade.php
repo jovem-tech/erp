@@ -49,23 +49,6 @@
                         </select>
                     </div>
 
-                    <div>
-                        <label for="orcamentoQuickItemEquipmentType">Tipo de equipamento</label>
-                        <select
-                            id="orcamentoQuickItemEquipmentType"
-                            name="tipo_equipamento"
-                            class="form-select"
-                            data-native-select="true"
-                            data-select2-placeholder="Ex.: Notebook, smartphone, desktop..."
-                            data-budget-quick-field="tipo_equipamento"
-                        >
-                            <option value=""></option>
-                            @foreach ($tiposEquipamento as $tipo)
-                                <option value="{{ $tipo }}">{{ $tipo }}</option>
-                            @endforeach
-                        </select>
-                    </div>
-
                     <div class="desktop-grid-span-2">
                         <label for="orcamentoQuickItemName" data-budget-quick-name-label>Nome *</label>
                         <input
@@ -82,6 +65,23 @@
 
                     <div class="desktop-grid-span-2" data-budget-quick-group="servico" @if ($defaultQuickType !== 'servico') hidden @endif>
                         <div class="desktop-grid desktop-grid-two">
+                            <div>
+                                <label for="orcamentoQuickItemEquipmentType">Tipo de equipamento</label>
+                                <select
+                                    id="orcamentoQuickItemEquipmentType"
+                                    name="tipo_equipamento"
+                                    class="form-select"
+                                    data-native-select="true"
+                                    data-select2-placeholder="Ex.: Notebook, smartphone, desktop..."
+                                    data-budget-quick-field="tipo_equipamento"
+                                >
+                                    <option value=""></option>
+                                    @foreach ($tiposEquipamento as $tipo)
+                                        <option value="{{ $tipo }}">{{ $tipo }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
                             <div>
                                 <label for="orcamentoQuickItemServiceValue">Valor</label>
                                 <input
@@ -166,17 +166,64 @@
                                 >
                             </div>
 
+                            {{--
+                                Taxonomia de estoque (Grupo → Categoria →
+                                Subcategoria), obrigatória — decisão do
+                                cliente de manter a classificação completa
+                                mesmo no cadastro rápido. Em cascata via
+                                DesktopUi.bindOptionCascade, ver orcamentos-form.js.
+                            --}}
                             <div>
-                                <label for="orcamentoQuickItemPartCategory">Categoria</label>
-                                <input
-                                    type="text"
-                                    id="orcamentoQuickItemPartCategory"
-                                    name="categoria"
-                                    class="form-control"
-                                    autocomplete="off"
-                                    placeholder="Ex.: Armazenamento"
-                                    data-budget-quick-field="categoria"
+                                <label for="orcamentoQuickItemPartGroup">Grupo *</label>
+                                <select
+                                    id="orcamentoQuickItemPartGroup"
+                                    name="tipo_equipamento_id"
+                                    class="form-select"
+                                    data-select2-placeholder="Selecione"
+                                    data-budget-quick-field="tipo_equipamento_id"
+                                    required
                                 >
+                                    <option value=""></option>
+                                    @foreach (($estoqueGrupos ?? []) as $grupo)
+                                        <option value="{{ $grupo['id'] }}">{{ $grupo['nome'] }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <div>
+                                <label for="orcamentoQuickItemPartCategory">Categoria *</label>
+                                <select
+                                    id="orcamentoQuickItemPartCategory"
+                                    name="estoque_categoria_id"
+                                    class="form-select"
+                                    data-select2-placeholder="Selecione"
+                                    data-taxonomy-parent="orcamentoQuickItemPartGroup"
+                                    data-budget-quick-field="estoque_categoria_id"
+                                    required
+                                >
+                                    <option value=""></option>
+                                    @foreach (($estoqueCategorias ?? []) as $categoria)
+                                        <option value="{{ $categoria['id'] }}" data-parent-id="{{ $categoria['tipo_equipamento_id'] }}">{{ $categoria['nome'] }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+
+                            <div>
+                                <label for="orcamentoQuickItemPartSubcategory">Subcategoria *</label>
+                                <select
+                                    id="orcamentoQuickItemPartSubcategory"
+                                    name="estoque_subcategoria_id"
+                                    class="form-select"
+                                    data-select2-placeholder="Selecione"
+                                    data-taxonomy-parent="orcamentoQuickItemPartCategory"
+                                    data-budget-quick-field="estoque_subcategoria_id"
+                                    required
+                                >
+                                    <option value=""></option>
+                                    @foreach (($estoqueSubcategorias ?? []) as $subcategoria)
+                                        <option value="{{ $subcategoria['id'] }}" data-parent-id="{{ $subcategoria['categoria_id'] }}">{{ $subcategoria['nome'] }}</option>
+                                    @endforeach
+                                </select>
                             </div>
 
                             <div>
@@ -191,6 +238,7 @@
                                     data-budget-quick-field="preco_venda"
                                     data-budget-money
                                 >
+                                <div class="form-text d-none" id="orcamentoQuickItemPartPriceHint"></div>
                             </div>
 
                             <div>

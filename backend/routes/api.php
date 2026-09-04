@@ -22,6 +22,7 @@ use App\Http\Controllers\Api\V1\DocumentSignatureController;
 use App\Http\Controllers\Api\V1\EquipamentoDefeitoController;
 use App\Http\Controllers\Api\V1\EquipmentCollectorController;
 use App\Http\Controllers\Api\V1\EquipmentController;
+use App\Http\Controllers\Api\V1\EstoqueCatalogController;
 use App\Http\Controllers\Api\V1\EstoqueController;
 use App\Http\Controllers\Api\V1\FileManagerController;
 use App\Http\Controllers\Api\V1\InterBankingController;
@@ -542,6 +543,23 @@ Route::prefix('v1')->group(function (): void {
         Route::get('estoque/baixo', [EstoqueController::class, 'lowStock'])->name('api.v1.estoque.low_stock');
         Route::get('estoque', [EstoqueController::class, 'index'])->name('api.v1.estoque.index');
         Route::post('estoque', [EstoqueController::class, 'store'])->name('api.v1.estoque.store');
+
+        // Taxonomia de estoque (Grupo → Categoria → Subcategoria). Precisa
+        // vir ANTES de estoque/{peca} abaixo — senão "estoque/grupos" seria
+        // engolido pelo wildcard de peça de um segmento só.
+        Route::get('estoque/grupos', [EstoqueCatalogController::class, 'indexGrupos'])->name('api.v1.estoque.grupos.index');
+        Route::post('estoque/grupos', [EstoqueCatalogController::class, 'storeGrupo'])->name('api.v1.estoque.grupos.store');
+        Route::match(['put', 'patch'], 'estoque/grupos/{grupo}', [EstoqueCatalogController::class, 'updateGrupo'])->name('api.v1.estoque.grupos.update');
+        Route::delete('estoque/grupos/{grupo}', [EstoqueCatalogController::class, 'destroyGrupo'])->name('api.v1.estoque.grupos.destroy');
+        Route::get('estoque/categorias', [EstoqueCatalogController::class, 'indexCategorias'])->name('api.v1.estoque.categorias.index');
+        Route::post('estoque/categorias', [EstoqueCatalogController::class, 'storeCategoria'])->name('api.v1.estoque.categorias.store');
+        Route::match(['put', 'patch'], 'estoque/categorias/{categoria}', [EstoqueCatalogController::class, 'updateCategoria'])->name('api.v1.estoque.categorias.update');
+        Route::delete('estoque/categorias/{categoria}', [EstoqueCatalogController::class, 'destroyCategoria'])->name('api.v1.estoque.categorias.destroy');
+        Route::get('estoque/subcategorias', [EstoqueCatalogController::class, 'indexSubcategorias'])->name('api.v1.estoque.subcategorias.index');
+        Route::post('estoque/subcategorias', [EstoqueCatalogController::class, 'storeSubcategoria'])->name('api.v1.estoque.subcategorias.store');
+        Route::match(['put', 'patch'], 'estoque/subcategorias/{subcategoria}', [EstoqueCatalogController::class, 'updateSubcategoria'])->name('api.v1.estoque.subcategorias.update');
+        Route::delete('estoque/subcategorias/{subcategoria}', [EstoqueCatalogController::class, 'destroySubcategoria'])->name('api.v1.estoque.subcategorias.destroy');
+
         Route::get('estoque/{peca}/movimentacoes', [EstoqueController::class, 'movements'])->name('api.v1.estoque.movements.index');
         Route::post('estoque/{peca}/movimentacoes', [EstoqueController::class, 'storeMovement'])->name('api.v1.estoque.movements.store');
         Route::get('estoque/{peca}', [EstoqueController::class, 'show'])->name('api.v1.estoque.show');

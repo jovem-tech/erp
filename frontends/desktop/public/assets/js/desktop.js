@@ -1459,15 +1459,30 @@ const DesktopUi = (() => {
                 // Suporte opcional a um campo de motivo (ex.: rejeitar/cancelar
                 // orçamento): data-confirm-input="textarea" mostra o campo e o
                 // valor é copiado para o input [data-confirm-reason] do form.
+                // data-confirm-input="select" (ex.: canal de envio do orçamento:
+                // WhatsApp/e-mail/ambos) usa o mesmo mecanismo, com as opções
+                // vindas de data-confirm-input-options (JSON) e o valor copiado
+                // para [data-confirm-value].
                 const inputType = form.getAttribute('data-confirm-input');
+                let inputOptions;
+                if (inputType === 'select') {
+                    try {
+                        inputOptions = JSON.parse(form.getAttribute('data-confirm-input-options') || '{}');
+                    } catch (error) {
+                        inputOptions = {};
+                    }
+                }
 
                 Swal.fire({
                     title: form.getAttribute('data-confirm-title') || 'Confirmar ação',
                     text: form.getAttribute('data-confirm') || 'Deseja continuar com esta operação?',
                     icon: form.getAttribute('data-confirm-icon') || 'warning',
                     input: inputType || undefined,
+                    inputLabel: form.getAttribute('data-confirm-input-label') || undefined,
+                    inputOptions,
+                    inputValue: form.getAttribute('data-confirm-input-value') || undefined,
                     inputPlaceholder: form.getAttribute('data-confirm-input-placeholder') || '',
-                    inputAttributes: inputType ? { 'aria-label': form.getAttribute('data-confirm-input-placeholder') || 'Motivo' } : undefined,
+                    inputAttributes: inputType ? { 'aria-label': form.getAttribute('data-confirm-input-placeholder') || form.getAttribute('data-confirm-input-label') || 'Motivo' } : undefined,
                     showCancelButton: true,
                     confirmButtonText: form.getAttribute('data-confirm-button') || 'Sim, continuar',
                     cancelButtonText: 'Cancelar',
@@ -1478,9 +1493,9 @@ const DesktopUi = (() => {
                     }
 
                     if (inputType) {
-                        const reasonTarget = form.querySelector('[data-confirm-reason]');
-                        if (reasonTarget instanceof HTMLInputElement || reasonTarget instanceof HTMLTextAreaElement) {
-                            reasonTarget.value = typeof result.value === 'string' ? result.value : '';
+                        const valueTarget = form.querySelector('[data-confirm-reason], [data-confirm-value]');
+                        if (valueTarget instanceof HTMLInputElement || valueTarget instanceof HTMLTextAreaElement || valueTarget instanceof HTMLSelectElement) {
+                            valueTarget.value = typeof result.value === 'string' ? result.value : '';
                         }
                     }
 
@@ -1658,6 +1673,58 @@ const DesktopUi = (() => {
 
     const refreshSelect2 = (container = document) => {
         initSelect2(container, true);
+    };
+
+    /**
+     * Encadeia dois <select> pré-renderizados: ao mudar `parentSelect`,
+     * reconstrói as <option>s de `childSelect` deixando só as cujo
+     * `[parentAttr]` bate com o valor escolhido. Usado pela taxonomia de
+     * estoque (Grupo → Categoria → Subcategoria) nos filtros e nos
+     * formulários de cadastro — chamado uma vez por par (Grupo→Categoria,
+     * Categoria→Subcategoria).
+     *
+     * Reconstrói o <select> em vez de só esconder <option>s (`hidden`/
+     * `disabled`): o Select2 monta seu próprio dropdown lendo as <option>
+     * no init/refresh e não respeita nenhum dos dois atributos — mesma razão
+     * pela qual rebuildCatalogOptions() em orcamentos-form.js reconstrói tipo/
+     * marca/modelo em vez de escondê-las.
+     */
+    const bindOptionCascade = (parentSelect, childSelect, parentAttr = 'data-parent-id') => {
+        if (!(parentSelect instanceof HTMLSelectElement) || !(childSelect instanceof HTMLSelectElement)) {
+            return;
+        }
+
+        // Guardado uma vez, antes de qualquer filtro: a fonte completa de onde
+        // reconstruir a cada mudança do pai.
+        const allOptions = Array.from(childSelect.options).map((option) => ({
+            value: option.value,
+            text: option.textContent || '',
+            parentId: option.getAttribute(parentAttr) || '',
+        }));
+
+        const apply = () => {
+            const parentValue = parentSelect.value;
+            const previousValue = childSelect.value;
+
+            childSelect.innerHTML = '';
+
+            allOptions.forEach((item) => {
+                if (item.value !== '' && parentValue !== '' && item.parentId !== parentValue) {
+                    return;
+                }
+
+                childSelect.appendChild(new Option(item.text, item.value));
+            });
+
+            childSelect.value = Array.from(childSelect.options).some((option) => option.value === previousValue)
+                ? previousValue
+                : '';
+
+            refreshSelect2(childSelect);
+        };
+
+        parentSelect.addEventListener('change', apply);
+        apply();
     };
 
     document.addEventListener('shown.bs.modal', (event) => {
@@ -2374,6 +2441,7 @@ const DesktopUi = (() => {
     return {
         init,
         refreshSelect2,
+        bindOptionCascade,
         refreshDropdowns: initDropdowns,
         refreshFieldTooltips: initFieldTooltips,
         refreshPhotoViewers: initPhotoViewers,

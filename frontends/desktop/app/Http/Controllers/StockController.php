@@ -28,8 +28,9 @@ class StockController extends DesktopController
         $filters = [
             'search' => trim((string) $request->query('search', '')),
             'active' => $request->query('active', ''),
-            'categoria' => trim((string) $request->query('categoria', '')),
-            'tipo_equipamento' => trim((string) $request->query('tipo_equipamento', '')),
+            'tipo_equipamento_id' => (int) $request->query('tipo_equipamento_id', 0),
+            'estoque_categoria_id' => (int) $request->query('estoque_categoria_id', 0),
+            'estoque_subcategoria_id' => (int) $request->query('estoque_subcategoria_id', 0),
             'status' => trim((string) $request->query('status', '')),
             // Destino do alerta "itens abaixo do estoque minimo" do dashboard.
             'estoque_baixo' => $request->boolean('estoque_baixo') ? 1 : 0,
@@ -42,31 +43,65 @@ class StockController extends DesktopController
             static fn ($value): bool => $value !== '' && $value !== 0
         ));
 
+        $taxonomy = $this->resolveTaxonomyOptions();
+
         return view('estoque.index', [
             'pageTitle' => 'Estoque de Peças',
             'parts' => $result['items'],
             'pagination' => $result['pagination'],
             'filters' => $filters,
-            'equipmentTypes' => $this->resolveEquipmentTypeOptions(),
+            'grupos' => $taxonomy['grupos'],
+            'estoqueCategorias' => $taxonomy['estoque_categorias'],
+            'estoqueSubcategorias' => $taxonomy['estoque_subcategorias'],
+            // Sem cache e incluindo inativos: o modal "Gerenciar categorias"
+            // precisa ver (e reativar) o que o filtro/cadastro escondem.
+            'gruposAdmin' => $this->safeCatalogList(fn () => $this->stockService->grupos()),
+            'estoqueCategoriasAdmin' => $this->safeCatalogList(fn () => $this->stockService->categorias()),
+            'estoqueSubcategoriasAdmin' => $this->safeCatalogList(fn () => $this->stockService->subcategorias()),
         ]);
     }
 
     /**
-     * @return array<int, string>
+     * @param callable(): array<int, array<string, mixed>> $fetch
+     * @return array<int, array<string, mixed>>
      */
-    private function resolveEquipmentTypeOptions(): array
+    private function safeCatalogList(callable $fetch): array
     {
         try {
-            // Cacheado por ser catalogo de referencia (tipos de equipamento ativos),
-            // igual para qualquer usuario; evita repetir a chamada de form-data a cada
-            // carregamento da listagem so' para preencher o filtro.
-            return Cache::remember(
-                'desktop:estoque_filters:tipos_equipamento',
-                300,
-                fn (): array => $this->stockService->formData()['tipos_equipamento'] ?? []
-            );
+            return $fetch();
         } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
             return [];
+        }
+    }
+
+    /**
+     * Taxonomia de estoque para os 3 selects em cascata do filtro (Grupo →
+     * Categoria → Subcategoria) — só ativos, igual ao que formData() já
+     * expõe para os formulários de cadastro. Cacheado pelo mesmo motivo que
+     * o antigo resolveEquipmentTypeOptions(): catálogo de referência igual
+     * para qualquer usuário, não vale repetir a chamada a cada carregamento
+     * da listagem.
+     *
+     * @return array{grupos: array<int, array<string, mixed>>, estoque_categorias: array<int, array<string, mixed>>, estoque_subcategorias: array<int, array<string, mixed>>}
+     */
+    private function resolveTaxonomyOptions(): array
+    {
+        try {
+            return Cache::remember(
+                'desktop:estoque_filters:taxonomia',
+                300,
+                function (): array {
+                    $formData = $this->stockService->formData();
+
+                    return [
+                        'grupos' => $formData['grupos'] ?? [],
+                        'estoque_categorias' => $formData['estoque_categorias'] ?? [],
+                        'estoque_subcategorias' => $formData['estoque_subcategorias'] ?? [],
+                    ];
+                }
+            );
+        } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
+            return ['grupos' => [], 'estoque_categorias' => [], 'estoque_subcategorias' => []];
         }
     }
 
@@ -214,6 +249,40 @@ class StockController extends DesktopController
         return response()->json([
             'success' => true,
             'simulation' => $simulacao,
+        ]);
+    }
+
+    /**
+     * Prévia do código sugerido para o cadastro de peça.
+     *
+     * `formData()` já calcula isto (`Peca::generateCodigo()`, MAX(id)+1) para
+     * a tela de Estoque, mas nenhum formulário lia o campo — o operador só
+     * via o placeholder "Será sugerido se ficar em branco" e o valor real
+     * nascia mudo, direto no INSERT. É só uma prévia: como não reserva nada,
+     * pode ficar desatualizada entre duas aberturas do modal — o JS reenvia
+     * o campo em branco se o operador não tiver editado o valor, deixando o
+     * backend gerar de novo, fresco, na hora de salvar.
+     */
+    public function suggestCode(): JsonResponse
+    {
+        try {
+            $formData = $this->stockService->formData();
+        } catch (ApiAuthenticationException $exception) {
+            return $this->jsonFailure($exception->getMessage() ?: 'Sua sessão expirou. Faça login novamente.', 401);
+        } catch (ApiAuthorizationException $exception) {
+            return $this->jsonFailure($exception->getMessage() ?: 'Sem permissão para sugerir código.', 403);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            // Sugestão é conveniência: falhar aqui não pode impedir o
+            // cadastro. O backend gera o código de qualquer forma se o
+            // campo chegar em branco.
+            return $this->jsonFailure('Não foi possível sugerir um código agora.', 500);
+        }
+
+        return response()->json([
+            'success' => true,
+            'codigo_sugerido' => (string) ($formData['codigo_sugerido'] ?? ''),
         ]);
     }
 
@@ -425,6 +494,126 @@ class StockController extends DesktopController
     }
 
     /**
+     * Gerenciamento da taxonomia de estoque (Grupo → Categoria →
+     * Subcategoria) — modal "Gerenciar categorias" em Estoque > Mais ações.
+     * `Cache::forget` depois de cada gravação: os selects de cadastro (3
+     * formulários) e o filtro da listagem leem `resolveTaxonomyOptions()`
+     * cacheado 300s — sem isso, um Grupo/Categoria/Subcategoria recém-criado
+     * ficaria invisível nos selects por até 5 minutos.
+     */
+    public function saveGrupo(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'id' => ['nullable', 'integer', 'min:1'],
+            'nome' => ['required', 'string', 'max:120'],
+            'ativo' => ['nullable', 'boolean'],
+        ]);
+
+        try {
+            $this->stockService->saveGrupo($validated + ['ativo' => $request->boolean('ativo', true)]);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return back()->withInput()->with('error', $exception->getMessage());
+        }
+
+        Cache::forget('desktop:estoque_filters:taxonomia');
+
+        return back()->with('success', 'Grupo salvo com sucesso.');
+    }
+
+    public function deactivateGrupo(int $grupo): RedirectResponse
+    {
+        try {
+            $this->stockService->deactivateGrupo($grupo);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
+
+        Cache::forget('desktop:estoque_filters:taxonomia');
+
+        return back()->with('success', 'Grupo desativado com sucesso.');
+    }
+
+    public function saveCategoria(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'id' => ['nullable', 'integer', 'min:1'],
+            'tipo_equipamento_id' => ['required', 'integer', 'min:1'],
+            'nome' => ['required', 'string', 'max:120'],
+            'ordem' => ['nullable', 'integer'],
+            'ativo' => ['nullable', 'boolean'],
+        ]);
+
+        try {
+            $this->stockService->saveCategoria($validated + ['ativo' => $request->boolean('ativo', true)]);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return back()->withInput()->with('error', $exception->getMessage());
+        }
+
+        Cache::forget('desktop:estoque_filters:taxonomia');
+
+        return back()->with('success', 'Categoria salva com sucesso.');
+    }
+
+    public function deactivateCategoria(int $categoria): RedirectResponse
+    {
+        try {
+            $this->stockService->deactivateCategoria($categoria);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
+
+        Cache::forget('desktop:estoque_filters:taxonomia');
+
+        return back()->with('success', 'Categoria desativada com sucesso.');
+    }
+
+    public function saveSubcategoria(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'id' => ['nullable', 'integer', 'min:1'],
+            'categoria_id' => ['required', 'integer', 'min:1'],
+            'nome' => ['required', 'string', 'max:120'],
+            'ordem' => ['nullable', 'integer'],
+            'ativo' => ['nullable', 'boolean'],
+        ]);
+
+        try {
+            $this->stockService->saveSubcategoria($validated + ['ativo' => $request->boolean('ativo', true)]);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return back()->withInput()->with('error', $exception->getMessage());
+        }
+
+        Cache::forget('desktop:estoque_filters:taxonomia');
+
+        return back()->with('success', 'Subcategoria salva com sucesso.');
+    }
+
+    public function deactivateSubcategoria(int $subcategoria): RedirectResponse
+    {
+        try {
+            $this->stockService->deactivateSubcategoria($subcategoria);
+        } catch (ApiAuthenticationException $exception) {
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException|ApiRequestException $exception) {
+            return back()->with('error', $exception->getMessage());
+        }
+
+        Cache::forget('desktop:estoque_filters:taxonomia');
+
+        return back()->with('success', 'Subcategoria desativada com sucesso.');
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function partFormDefaults(): array
@@ -436,6 +625,9 @@ class StockController extends DesktopController
             'nome' => '',
             'categoria' => '',
             'tipo_equipamento' => '',
+            'tipo_equipamento_id' => null,
+            'estoque_categoria_id' => null,
+            'estoque_subcategoria_id' => null,
             'modelos_compativeis' => '',
             'fornecedor' => '',
             'localizacao' => '',
@@ -476,6 +668,11 @@ class StockController extends DesktopController
             'nome' => ['required', 'string', 'max:160'],
             'categoria' => ['nullable', 'string', 'max:120'],
             'tipo_equipamento' => ['nullable', 'string', 'max:120'],
+            // Fonte da verdade da taxonomia de estoque — obrigatório nos 3
+            // formulários de cadastro (tela cheia e os dois modais rápidos,
+            // que também caem aqui). Grupo/Categoria são derivados no
+            // backend a partir desta subcategoria, ver EstoqueController.
+            'estoque_subcategoria_id' => ['required', 'integer', 'min:1'],
             'modelos_compativeis' => ['nullable', 'string'],
             'fornecedor' => ['nullable', 'string', 'max:120'],
             'localizacao' => ['nullable', 'string', 'max:120'],
@@ -504,6 +701,7 @@ class StockController extends DesktopController
             'nome' => trim((string) ($validated['nome'] ?? '')),
             'categoria' => trim((string) ($validated['categoria'] ?? '')),
             'tipo_equipamento' => trim((string) ($validated['tipo_equipamento'] ?? '')),
+            'estoque_subcategoria_id' => (int) ($validated['estoque_subcategoria_id'] ?? 0),
             'modelos_compativeis' => trim((string) ($validated['modelos_compativeis'] ?? '')),
             'fornecedor' => trim((string) ($validated['fornecedor'] ?? '')),
             'localizacao' => trim((string) ($validated['localizacao'] ?? '')),

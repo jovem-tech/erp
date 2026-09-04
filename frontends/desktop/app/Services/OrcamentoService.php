@@ -151,7 +151,7 @@ class OrcamentoService
     {
         $response = $this->apiClient->post('/orcamentos/'.$id.'/send-approval', $payload);
 
-        return $response['data']['dispatch'] ?? [];
+        return $response['data'] ?? [];
     }
 
     /**

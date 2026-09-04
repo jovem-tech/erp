@@ -298,7 +298,7 @@ class DesktopNavigation
                     // destino de fallback — mesma armadilha que o comentario
                     // acima documenta para "Prontidão fiscal".
                     [
-                        'label' => 'Anexo X (MEI)',
+                        'label' => 'Relatório Mensal das Receitas',
                         'route' => 'fiscal.anexo-x',
                         'module' => 'fiscal',
                         'icon' => 'bi-journal-text',

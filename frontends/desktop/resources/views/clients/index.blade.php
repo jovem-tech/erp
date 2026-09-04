@@ -242,6 +242,15 @@
                                         </li>
                                     @endif
 
+                                    @if (\App\Support\DesktopSession::can('orcamentos', 'visualizar'))
+                                        <li>
+                                            <a href="{{ route('orcamentos.index', ['client_id' => $clientId]) }}" class="dropdown-item">
+                                                <i class="bi bi-receipt me-2"></i>
+                                                Abrir orçamentos
+                                            </a>
+                                        </li>
+                                    @endif
+
                                     @if ($phone !== '' || $email !== '')
                                         <li><hr class="dropdown-divider"></li>
                                     @endif

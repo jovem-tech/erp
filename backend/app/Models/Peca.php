@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
 use App\Models\EquipmentType;
@@ -30,11 +31,36 @@ class Peca extends Model
         'encerrado_em' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'tipo_equipamento_id' => 'integer',
+        'estoque_categoria_id' => 'integer',
+        'estoque_subcategoria_id' => 'integer',
     ];
 
     public function movimentacoes(): HasMany
     {
         return $this->hasMany(Movimentacao::class, 'peca_id', 'id');
+    }
+
+    /**
+     * Taxonomia de estoque (Grupo). Denormalizado a partir de
+     * estoqueSubcategoria->categoria->tipoEquipamento só para filtro/consulta
+     * direta — nunca gravado cru a partir do cliente, ver EstoqueController.
+     */
+    public function tipoEquipamento(): BelongsTo
+    {
+        return $this->belongsTo(EquipmentType::class, 'tipo_equipamento_id', 'id');
+    }
+
+    /** Taxonomia de estoque (Categoria). Mesma nota de denormalização acima. */
+    public function estoqueCategoria(): BelongsTo
+    {
+        return $this->belongsTo(EstoqueCategoria::class, 'estoque_categoria_id', 'id');
+    }
+
+    /** Taxonomia de estoque (Subcategoria) — a fonte da verdade da classificação. */
+    public function estoqueSubcategoria(): BelongsTo
+    {
+        return $this->belongsTo(EstoqueSubcategoria::class, 'estoque_subcategoria_id', 'id');
     }
 
     public function scopeSearch(Builder $query, string $term): Builder
@@ -51,7 +77,19 @@ class Peca extends Model
                 ->orWhereRaw('LOWER(COALESCE(tipo_equipamento, "")) LIKE ?', [$search])
                 ->orWhereRaw('LOWER(COALESCE(fornecedor, "")) LIKE ?', [$search])
                 ->orWhereRaw('LOWER(COALESCE(localizacao, "")) LIKE ?', [$search])
-                ->orWhereRaw('LOWER(COALESCE(status, "")) LIKE ?', [$search]);
+                ->orWhereRaw('LOWER(COALESCE(status, "")) LIKE ?', [$search])
+                // Texto legado continua valendo (peças antigas, nunca reclassificadas),
+                // mas uma peça só classificada pela árvore nova também precisa
+                // aparecer na busca por "Display"/"Smartphone" etc.
+                ->orWhereHas('tipoEquipamento', function (Builder $relation) use ($search): void {
+                    $relation->whereRaw('LOWER(nome) LIKE ?', [$search]);
+                })
+                ->orWhereHas('estoqueCategoria', function (Builder $relation) use ($search): void {
+                    $relation->whereRaw('LOWER(nome) LIKE ?', [$search]);
+                })
+                ->orWhereHas('estoqueSubcategoria', function (Builder $relation) use ($search): void {
+                    $relation->whereRaw('LOWER(nome) LIKE ?', [$search]);
+                });
         });
     }
 

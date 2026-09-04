@@ -64,6 +64,10 @@
             </x-list-actions>
         </x-slot:actions>
 
+        @if ((int) ($filters['client_id'] ?? 0) > 0)
+            <input type="hidden" name="client_id" value="{{ $filters['client_id'] }}">
+        @endif
+
         <div>
             <label for="status">Status</label>
             <select id="status" name="status" class="form-select">
@@ -198,6 +202,47 @@
                                                 <i class="bi bi-pencil me-2"></i>
                                                 Editar
                                             </a>
+                                        </li>
+                                    @endif
+                                    @if (! empty($budget['can_send_approval']) || ! empty($budget['can_send_client_view']))
+                                        @php
+                                            $rowEmailCandidate = trim((string) ($budget['email_contato'] ?? ($budget['cliente_email'] ?? '')));
+                                            $rowChannelOptions = $rowEmailCandidate !== ''
+                                                ? ['whatsapp' => 'WhatsApp', 'email' => 'E-mail', 'ambos' => 'WhatsApp e e-mail']
+                                                : null;
+                                            $rowAlreadySent = trim((string) ($budget['enviado_em'] ?? '')) !== '';
+                                            $rowIsApprovalRequest = ! empty($budget['can_send_approval']);
+                                            $rowLabel = $rowIsApprovalRequest
+                                                ? ($rowAlreadySent ? 'Reenviar para aprovação' : 'Enviar para aprovação')
+                                                : 'Enviar para o cliente consultar';
+                                            $rowConfirmTitle = $rowIsApprovalRequest
+                                                ? ($rowAlreadySent ? 'Reenviar proposta' : 'Enviar proposta')
+                                                : 'Enviar orçamento para consulta';
+                                            $rowConfirmText = $rowIsApprovalRequest
+                                                ? 'O PDF da proposta será gerado e enviado ao cliente. Deseja continuar?'
+                                                : 'O PDF do orçamento aprovado será gerado e enviado ao cliente para consulta. Deseja continuar?';
+                                            $rowIcon = $rowIsApprovalRequest ? 'bi-send' : 'bi-share';
+                                        @endphp
+                                        <li>
+                                            <form method="post"
+                                                action="{{ route('orcamentos.send_approval', $budgetId) }}"
+                                                data-confirm="{{ $rowConfirmText }}"
+                                                data-confirm-title="{{ $rowConfirmTitle }}"
+                                                data-confirm-button="Sim, enviar"
+                                                @if ($rowChannelOptions)
+                                                    data-confirm-input="select"
+                                                    data-confirm-input-label="Meio de envio"
+                                                    data-confirm-input-options="{{ json_encode($rowChannelOptions, JSON_UNESCAPED_UNICODE) }}"
+                                                    data-confirm-input-value="whatsapp"
+                                                @endif
+                                            >
+                                                @csrf
+                                                <input type="hidden" name="canal" value="whatsapp" data-confirm-value>
+                                                <button type="submit" class="dropdown-item">
+                                                    <i class="bi {{ $rowIcon }} me-2"></i>
+                                                    {{ $rowLabel }}
+                                                </button>
+                                            </form>
                                         </li>
                                     @endif
                                     @if ($canConvertBudgetToOrder && ! empty($budget['can_generate_os']))

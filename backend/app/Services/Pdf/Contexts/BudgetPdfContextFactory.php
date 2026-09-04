@@ -86,11 +86,13 @@ class BudgetPdfContextFactory extends OrderPdfContextFactory
             'subtotal' => (float) ($budget->subtotal ?? 0),
             'desconto' => (float) ($budget->desconto ?? 0),
             'total' => (float) ($budget->total ?? 0),
-            // Orçamento vencido: o link já devolve 410, então o botão some do
-            // documento em vez de convidar o cliente a clicar em algo morto.
-            // O condicional do modelo (`orcamento.link_aprovacao` preenchido)
-            // cuida do resto — vale para qualquer modelo, não só o padrão.
-            'link_aprovacao' => $budget->publicLinkExpired()
+            // Orçamento vencido, ou já decidido (aprovado/pendente de OS): nos dois
+            // casos não faz sentido convidar o cliente a "aprovar ou recusar" de
+            // novo — no vencido porque o link já devolve 410, no já decidido
+            // porque a decisão já foi tomada. O botão some do documento; o
+            // condicional do modelo (`orcamento.link_aprovacao` preenchido) cuida
+            // do resto — vale para qualquer modelo, não só o padrão.
+            'link_aprovacao' => ($budget->publicLinkExpired() || in_array((string) $budget->status, Budget::approvedForOrderLinkStatuses(), true))
                 ? ''
                 : trim((string) ($options['approval_link'] ?? '')),
             'formas_pagamento' => (string) $terms['formas_pagamento_texto'],

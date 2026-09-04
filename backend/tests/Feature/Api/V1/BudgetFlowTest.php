@@ -7,6 +7,7 @@ use App\Models\FinanceiroMovimento;
 use App\Services\Auth\RbacAuthorizationService;
 use App\Services\Budgets\BudgetPdfService;
 use App\Services\Company\CompanyProfileService;
+use App\Services\Integrations\EmailIntegrationSettingsService;
 use App\Services\Integrations\IntegrationSettingsService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -846,6 +847,269 @@ class BudgetFlowTest extends TestCase
         $this->assertDatabaseHas('os_documento_arquivos', [
             'documento_id' => $documentId,
             'formato' => 'a4',
+        ]);
+    }
+
+    public function test_admin_can_send_budget_for_customer_approval_via_whatsapp_and_email(): void
+    {
+        $admin = $this->createUserRecord([
+            'nome' => 'Administrador',
+            'email' => 'admin.budgets.approval.ambos@example.com',
+            'perfil' => 'admin',
+            'grupo_id' => 1,
+        ]);
+
+        $clientId = $this->createClientRecord([
+            'nome_razao' => 'Cliente Aprovacao Ambos',
+            'telefone1' => '(11) 99999-9999',
+            'email' => 'cliente.ambos@example.com',
+        ]);
+        $equipmentId = $this->createEquipmentRecord($clientId, [
+            'resumo_tecnico' => 'Notebook de aprovacao ambos',
+        ]);
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'numero_os' => 'OS26070002',
+        ]);
+        $budgetId = $this->createBudgetRecord([
+            'cliente_id' => $clientId,
+            'telefone_contato' => '(11) 99999-9999',
+            'email_contato' => 'cliente.ambos@example.com',
+            'os_id' => $orderId,
+            'equipamento_id' => $equipmentId,
+            'token_publico' => null,
+            'subtotal' => 330.00,
+            'total' => 330.00,
+        ]);
+        $this->createBudgetItemRecord($budgetId, [
+            'descricao' => 'Troca de display',
+            'valor_unitario' => 330.00,
+            'total' => 330.00,
+        ]);
+
+        $budgetPdfPath = storage_path('app/private/testing/orcamento-ambos.pdf');
+        if (! is_dir(dirname($budgetPdfPath))) {
+            mkdir(dirname($budgetPdfPath), 0777, true);
+        }
+        file_put_contents($budgetPdfPath, '%PDF-1.4 orçamento de teste');
+
+        $this->mock(BudgetPdfService::class, function ($mock) use ($budgetPdfPath): void {
+            $mock->shouldReceive('generate')
+                ->once()
+                ->andReturn([
+                    'ok' => true,
+                    'absolute_path' => $budgetPdfPath,
+                    'relative_path' => 'private/testing/orcamento-ambos.pdf',
+                    'file_name' => 'Orcamento-ORC.pdf',
+                ]);
+        });
+        $this->mock(IntegrationSettingsService::class, function ($mock): void {
+            $mock->shouldReceive('sendDirectMedia')
+                ->once()
+                ->andReturn([
+                    'ok' => true,
+                    'provider' => 'evolution',
+                    'message' => 'Proposta enviada para aprovacao.',
+                ]);
+        });
+        $this->mock(EmailIntegrationSettingsService::class, function ($mock): void {
+            $mock->shouldReceive('operationalMailerAvailable')->andReturn(true);
+        });
+        $this->mock(CompanyProfileService::class, function ($mock): void {
+            $mock->shouldReceive('payload')
+                ->andReturn([
+                    'settings' => [
+                        'empresa_nome_fantasia' => 'Sistema ERP',
+                    ],
+                ]);
+        });
+
+        // Mail::fake() não intercepta Mail::html() (chamada crua, sem Mailable),
+        // então a asserção real do envio de e-mail é a linha "enviado" abaixo em
+        // orcamento_envios — o transporte de teste (MAIL_MAILER=array) apenas
+        // guarda a mensagem em memória, sem rede.
+        $token = $this->loginAndGetToken($admin->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orcamentos/'.$budgetId.'/send-approval', ['canal' => 'ambos']);
+
+        $response->assertOk()
+            ->assertJsonPath('data.dispatch.canal', 'ambos')
+            ->assertJsonPath('data.dispatch.status', 'enviado');
+
+        $this->assertDatabaseHas('orcamentos', [
+            'id' => $budgetId,
+            'status' => 'aguardando_resposta',
+        ]);
+        $this->assertDatabaseHas('orcamento_envios', [
+            'orcamento_id' => $budgetId,
+            'canal' => 'whatsapp',
+            'status' => 'enviado',
+        ]);
+        $this->assertDatabaseHas('orcamento_envios', [
+            'orcamento_id' => $budgetId,
+            'canal' => 'email',
+            'status' => 'enviado',
+            'destino' => 'cliente.ambos@example.com',
+        ]);
+        $this->assertSame(2, DB::table('orcamento_envios')->where('orcamento_id', $budgetId)->count());
+    }
+
+    public function test_sending_budget_by_email_requires_a_valid_email_contact(): void
+    {
+        $admin = $this->createUserRecord([
+            'nome' => 'Administrador',
+            'email' => 'admin.budgets.approval.semail@example.com',
+            'perfil' => 'admin',
+            'grupo_id' => 1,
+        ]);
+
+        $clientId = $this->createClientRecord([
+            'nome_razao' => 'Cliente Sem Email',
+            'telefone1' => '(11) 99999-9999',
+            'email' => null,
+        ]);
+        $equipmentId = $this->createEquipmentRecord($clientId, [
+            'resumo_tecnico' => 'Notebook sem email',
+        ]);
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'numero_os' => 'OS26070003',
+        ]);
+        $budgetId = $this->createBudgetRecord([
+            'cliente_id' => $clientId,
+            'telefone_contato' => '(11) 99999-9999',
+            'email_contato' => null,
+            'os_id' => $orderId,
+            'equipamento_id' => $equipmentId,
+            'token_publico' => null,
+            'subtotal' => 330.00,
+            'total' => 330.00,
+        ]);
+        $this->createBudgetItemRecord($budgetId, [
+            'descricao' => 'Troca de display',
+            'valor_unitario' => 330.00,
+            'total' => 330.00,
+        ]);
+
+        $token = $this->loginAndGetToken($admin->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orcamentos/'.$budgetId.'/send-approval', ['canal' => 'email']);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('error.code', 'BUDGET_APPROVAL_VALIDATION');
+
+        $this->assertDatabaseMissing('orcamento_envios', ['orcamento_id' => $budgetId]);
+    }
+
+    public function test_sending_approved_budget_for_client_view_does_not_reopen_approval_or_regress_order_status(): void
+    {
+        $admin = $this->createUserRecord([
+            'nome' => 'Administrador',
+            'email' => 'admin.budgets.clientview@example.com',
+            'perfil' => 'admin',
+            'grupo_id' => 1,
+        ]);
+
+        $clientId = $this->createClientRecord([
+            'nome_razao' => 'Cliente Já Aprovado',
+            'telefone1' => '(11) 99999-9999',
+        ]);
+        $equipmentId = $this->createEquipmentRecord($clientId, [
+            'resumo_tecnico' => 'Notebook já aprovado',
+        ]);
+        // OS já avançou além de "aguardando_reparo" (ex.: técnico já está
+        // executando o serviço) — é exatamente o cenário onde syncFromBudget()
+        // empurraria a OS de volta indevidamente se fosse chamado aqui.
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'numero_os' => 'OS26070004',
+            'status' => 'em_execucao',
+            'estado_fluxo' => 'em_atendimento',
+        ]);
+        $budgetId = $this->createBudgetRecord([
+            'cliente_id' => $clientId,
+            'telefone_contato' => '(11) 99999-9999',
+            'os_id' => $orderId,
+            'equipamento_id' => $equipmentId,
+            'status' => 'aprovado',
+            'token_publico' => null,
+            'subtotal' => 330.00,
+            'total' => 330.00,
+        ]);
+        $this->createBudgetItemRecord($budgetId, [
+            'descricao' => 'Troca de display',
+            'valor_unitario' => 330.00,
+            'total' => 330.00,
+        ]);
+
+        $budgetPdfPath = storage_path('app/private/testing/orcamento-consulta.pdf');
+        if (! is_dir(dirname($budgetPdfPath))) {
+            mkdir(dirname($budgetPdfPath), 0777, true);
+        }
+        file_put_contents($budgetPdfPath, '%PDF-1.4 orçamento de teste');
+
+        $this->mock(BudgetPdfService::class, function ($mock) use ($budgetPdfPath): void {
+            $mock->shouldReceive('generate')
+                ->once()
+                ->andReturn([
+                    'ok' => true,
+                    'absolute_path' => $budgetPdfPath,
+                    'relative_path' => 'private/testing/orcamento-consulta.pdf',
+                    'file_name' => 'Orcamento-ORC.pdf',
+                ]);
+        });
+        $this->mock(IntegrationSettingsService::class, function ($mock): void {
+            $mock->shouldReceive('sendDirectMedia')
+                ->once()
+                ->andReturn([
+                    'ok' => true,
+                    'provider' => 'evolution',
+                    'message' => 'Envio concluído.',
+                ]);
+        });
+        $this->mock(CompanyProfileService::class, function ($mock): void {
+            $mock->shouldReceive('payload')
+                ->andReturn([
+                    'settings' => [
+                        'empresa_nome_fantasia' => 'Sistema ERP',
+                    ],
+                ]);
+        });
+
+        $token = $this->loginAndGetToken($admin->email);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orcamentos/'.$budgetId.'/send-approval', ['canal' => 'whatsapp']);
+
+        $response->assertOk()
+            ->assertJsonPath('data.dispatch.canal', 'whatsapp')
+            ->assertJsonPath('data.dispatch.status', 'enviado')
+            ->assertJsonPath('data.message', 'Orçamento enviado para consulta por WhatsApp.');
+
+        // Orçamento continua aprovado — o envio de consulta não reabre a decisão.
+        $this->assertDatabaseHas('orcamentos', [
+            'id' => $budgetId,
+            'status' => 'aprovado',
+        ]);
+        $this->assertDatabaseMissing('orcamento_status_historico', [
+            'orcamento_id' => $budgetId,
+        ]);
+        $this->assertDatabaseHas('orcamento_envios', [
+            'orcamento_id' => $budgetId,
+            'canal' => 'whatsapp',
+            'status' => 'enviado',
+        ]);
+
+        // A OS, que já tinha avançado, não pode ser empurrada de volta para
+        // "aguardando_reparo" só porque o orçamento (já aprovado) foi reenviado.
+        $this->assertDatabaseHas('os', [
+            'id' => $orderId,
+            'status' => 'em_execucao',
         ]);
     }
 

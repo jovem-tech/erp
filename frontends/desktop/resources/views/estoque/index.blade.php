@@ -4,14 +4,16 @@
     @php
         $hasActiveFilters = trim((string) ($filters['search'] ?? '')) !== ''
             || trim((string) ($filters['active'] ?? '')) !== ''
-            || trim((string) ($filters['categoria'] ?? '')) !== ''
-            || trim((string) ($filters['tipo_equipamento'] ?? '')) !== ''
+            || (int) ($filters['tipo_equipamento_id'] ?? 0) > 0
+            || (int) ($filters['estoque_categoria_id'] ?? 0) > 0
+            || (int) ($filters['estoque_subcategoria_id'] ?? 0) > 0
             || trim((string) ($filters['status'] ?? '')) !== '';
         $activeFilterCount = count(array_filter([
             trim((string) ($filters['search'] ?? '')) !== '',
             trim((string) ($filters['active'] ?? '')) !== '',
-            trim((string) ($filters['categoria'] ?? '')) !== '',
-            trim((string) ($filters['tipo_equipamento'] ?? '')) !== '',
+            (int) ($filters['tipo_equipamento_id'] ?? 0) > 0,
+            (int) ($filters['estoque_categoria_id'] ?? 0) > 0,
+            (int) ($filters['estoque_subcategoria_id'] ?? 0) > 0,
             trim((string) ($filters['status'] ?? '')) !== '',
         ]));
         // Quantidade e DECIMAL(14,4) desde specs/036-estoque-nucleo-razao:
@@ -82,6 +84,13 @@
                         <i class="bi bi-upload me-2"></i>Importar em lote
                     </button>
                 </li>
+                @if (\App\Support\DesktopSession::can('estoque', 'editar'))
+                    <li>
+                        <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#estoqueCategoriasModal">
+                            <i class="bi bi-diagram-3 me-2"></i>Gerenciar categorias
+                        </button>
+                    </li>
+                @endif
             </x-list-actions>
         </x-slot:actions>
 
@@ -94,25 +103,44 @@
             </select>
         </div>
 
+        {{--
+            Taxonomia de estoque (Grupo → Categoria → Subcategoria), em
+            cascata: Categoria só mostra as do Grupo escolhido, Subcategoria
+            só as da Categoria escolhida. Todas as opções vêm pré-renderizadas
+            (poucos registros) com `data-parent-id` no pai — o cascateamento é
+            client-side puro, ver estoque-categorias.js.
+        --}}
         <div>
-            <label for="categoria">Categoria</label>
-            <input
-                type="text"
-                id="categoria"
-                name="categoria"
-                class="form-control"
-                value="{{ $filters['categoria'] ?? '' }}"
-                placeholder="Insumos, componentes, periféricos..."
-            >
+            <label for="tipo_equipamento_id">Grupo</label>
+            <select id="tipo_equipamento_id" name="tipo_equipamento_id" class="form-select" data-select2-placeholder="Todos os grupos" data-taxonomy-select="grupo">
+                <option value="">Todos os grupos</option>
+                @foreach (($grupos ?? []) as $grupo)
+                    <option value="{{ $grupo['id'] }}" @selected((int) ($filters['tipo_equipamento_id'] ?? 0) === (int) $grupo['id'])>
+                        {{ $grupo['nome'] }}
+                    </option>
+                @endforeach
+            </select>
         </div>
 
         <div>
-            <label for="tipo_equipamento">Tipo de equipamento</label>
-            <select id="tipo_equipamento" name="tipo_equipamento" class="form-select" data-select2-placeholder="Todos os tipos">
-                <option value="">Todos os tipos</option>
-                @foreach (($equipmentTypes ?? []) as $equipmentType)
-                    <option value="{{ $equipmentType }}" @selected(($filters['tipo_equipamento'] ?? '') === $equipmentType)>
-                        {{ $equipmentType }}
+            <label for="estoque_categoria_id">Categoria</label>
+            <select id="estoque_categoria_id" name="estoque_categoria_id" class="form-select" data-select2-placeholder="Todas as categorias" data-taxonomy-select="categoria" data-taxonomy-parent="tipo_equipamento_id">
+                <option value="">Todas as categorias</option>
+                @foreach (($estoqueCategorias ?? []) as $categoria)
+                    <option value="{{ $categoria['id'] }}" data-parent-id="{{ $categoria['tipo_equipamento_id'] }}" @selected((int) ($filters['estoque_categoria_id'] ?? 0) === (int) $categoria['id'])>
+                        {{ $categoria['nome'] }}
+                    </option>
+                @endforeach
+            </select>
+        </div>
+
+        <div>
+            <label for="estoque_subcategoria_id">Subcategoria</label>
+            <select id="estoque_subcategoria_id" name="estoque_subcategoria_id" class="form-select" data-select2-placeholder="Todas as subcategorias" data-taxonomy-select="subcategoria" data-taxonomy-parent="estoque_categoria_id">
+                <option value="">Todas as subcategorias</option>
+                @foreach (($estoqueSubcategorias ?? []) as $subcategoria)
+                    <option value="{{ $subcategoria['id'] }}" data-parent-id="{{ $subcategoria['categoria_id'] }}" @selected((int) ($filters['estoque_subcategoria_id'] ?? 0) === (int) $subcategoria['id'])>
+                        {{ $subcategoria['nome'] }}
                     </option>
                 @endforeach
             </select>
@@ -190,6 +218,8 @@
                                 'nome' => '',
                                 'categoria' => '',
                                 'tipo_equipamento' => '',
+                                'tipo_equipamento_efetivo' => '',
+                                'categoria_efetiva' => '',
                                 'preco_custo' => 0,
                                 'preco_venda' => 0,
                                 'quantidade_atual' => 0,
@@ -209,8 +239,11 @@
                                     <small class="text-danger d-block mt-1">Estoque mínimo atingido</small>
                                 @endif
                             </td>
-                            <td data-label="Categoria">{{ trim((string) ($part['categoria'] ?? '')) !== '' ? $part['categoria'] : '-' }}</td>
-                            <td data-label="Tipo de equipamento">{{ trim((string) ($part['tipo_equipamento'] ?? '')) !== '' ? $part['tipo_equipamento'] : '-' }}</td>
+                            {{-- categoria_efetiva/tipo_equipamento_efetivo: nome da árvore nova
+                                 quando a peça foi classificada, ou o texto legado (categoria/
+                                 tipo_equipamento) para quem nunca foi reclassificado. --}}
+                            <td data-label="Categoria">{{ trim((string) ($part['categoria_efetiva'] ?? '')) !== '' ? $part['categoria_efetiva'] : '-' }}</td>
+                            <td data-label="Tipo de equipamento">{{ trim((string) ($part['tipo_equipamento_efetivo'] ?? '')) !== '' ? $part['tipo_equipamento_efetivo'] : '-' }}</td>
                             <td data-label="Custo">R$ {{ number_format((float) ($part['preco_custo'] ?? 0), 2, ',', '.') }}</td>
                             <td data-label="Venda">R$ {{ number_format((float) ($part['preco_venda'] ?? 0), 2, ',', '.') }}</td>
                             <td data-label="Qtd.">{{ $qtd($part['quantidade_atual'] ?? 0) }}</td>
@@ -289,4 +322,19 @@
         :action="route('estoque.import')"
         description="Envie um CSV com a mesma estrutura do modelo para cadastrar várias peças de uma vez."
     />
+
+    @include('estoque.partials.categorias-modal')
 @endpush
+
+@section('scripts')
+    <script>
+        window.__DESKTOP_ESTOQUE_INDEX = {
+            filterCascade: {
+                grupoSelect: 'tipo_equipamento_id',
+                categoriaSelect: 'estoque_categoria_id',
+                subcategoriaSelect: 'estoque_subcategoria_id',
+            },
+        };
+    </script>
+    <script src="{{ asset('assets/js/estoque-categorias.js') }}?v={{ filemtime(public_path('assets/js/estoque-categorias.js')) }}-{{ filesize(public_path('assets/js/estoque-categorias.js')) }}"></script>
+@endsection

@@ -233,6 +233,9 @@ class FinanceiroController extends DesktopController
                 'nome'         => $nome,
                 'unidade'      => trim((string) ($part['unidade'] ?? 'UN')),
                 'categoria'    => trim((string) ($part['categoria'] ?? '')),
+                // Nome da Subcategoria da árvore nova, com o texto legado
+                // como fallback — o que alimenta a sugestão de preço no JS.
+                'categoria_efetiva' => trim((string) ($part['categoria_efetiva'] ?? '')),
                 // Pré-preenche o custo da linha e mostra "3 em estoque → 8".
                 // Menos digitação é o que decide a adoção (lição da 038).
                 'saldo'        => (float) ($part['quantidade_atual'] ?? 0),
@@ -373,6 +376,12 @@ class FinanceiroController extends DesktopController
         $canEntradaEstoque = \App\Support\DesktopSession::can('estoque', 'visualizar')
             && \App\Support\DesktopSession::can('estoque', 'editar');
 
+        $canQuickPeca = \App\Support\DesktopSession::can('estoque', 'criar');
+        // Taxonomia de estoque (Grupo → Categoria → Subcategoria), obrigatória
+        // no cadastro rápido de peça deste modal — só vale buscar quando o
+        // modal realmente pode aparecer.
+        $estoqueTaxonomy = $canQuickPeca ? $this->safeStockFormData() : [];
+
         return view('financeiro.create', [
             'pageTitle' => $tipoLocked ? 'Nova despesa' : 'Novo lançamento',
             'lancamento' => $lancamento,
@@ -385,9 +394,27 @@ class FinanceiroController extends DesktopController
             'canEntradaEstoque' => $canEntradaEstoque,
             // Separado, espelhando $canQuickClient: quem pode dar entrada mas
             // não pode cadastrar peça vê a busca sem o botão "+".
-            'canQuickPeca' => \App\Support\DesktopSession::can('estoque', 'criar'),
+            'canQuickPeca' => $canQuickPeca,
             'entradaEstoqueLigada' => $entradaEstoquePreSelecionada,
+            'estoqueGrupos' => $estoqueTaxonomy['grupos'] ?? [],
+            'estoqueCategorias' => $estoqueTaxonomy['estoque_categorias'] ?? [],
+            'estoqueSubcategorias' => $estoqueTaxonomy['estoque_subcategorias'] ?? [],
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function safeStockFormData(): array
+    {
+        try {
+            return $this->stockService->formData();
+        } catch (ApiAuthenticationException|ApiAuthorizationException|ApiRequestException) {
+            // Sem taxonomia disponível: o modal de cadastro rápido de peça
+            // renderiza com os 3 selects vazios, e o próprio required do
+            // formulário barra o envio até o operador conseguir escolher algo.
+            return [];
+        }
     }
 
     /**

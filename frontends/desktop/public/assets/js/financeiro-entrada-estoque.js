@@ -207,7 +207,11 @@
     function aplicarPecaNaLinha(linha, peca) {
         linha.dataset.saldoAtual = String(peca.saldo || 0);
         linha.dataset.custoAtual = String(peca.preco_custo || 0);
-        linha.dataset.categoria = String(peca.categoria || '');
+        // categoria_efetiva: nome da Subcategoria da árvore nova, com o texto
+        // legado como fallback para peças nunca reclassificadas. Sem isto,
+        // toda peça classificada só pela taxonomia nova ficaria com a
+        // sugestão de preço sem nenhuma categoria para casar.
+        linha.dataset.categoria = String(peca.categoria_efetiva || peca.categoria || '');
         // Peça que já existe no cadastro já teve seu preço decidido por alguém:
         // nasce "suja" e a sugestão nunca escreve sozinha nela.
         linha.dataset.vendaSuja = Number(peca.preco_venda) > 0 ? '1' : '';
@@ -435,6 +439,20 @@
         btnNovaPeca.addEventListener('click', abrirModalPeca);
     }
 
+    // Taxonomia de estoque em cascata (Grupo → Categoria → Subcategoria),
+    // obrigatória no cadastro rápido de peça — mesmo helper usado no
+    // formulário cheio de Estoque e no modal do orçamento.
+    if (window.DesktopUi && typeof window.DesktopUi.bindOptionCascade === 'function') {
+        window.DesktopUi.bindOptionCascade(
+            document.getElementById('quickPecaGrupo'),
+            document.getElementById('quickPecaCategoria')
+        );
+        window.DesktopUi.bindOptionCascade(
+            document.getElementById('quickPecaCategoria'),
+            document.getElementById('quickPecaSubcategoria')
+        );
+    }
+
     function abrirModalPeca() {
         const modalEl = document.getElementById('financeiroPecaQuickModal');
         if (!modalEl || typeof window.bootstrap === 'undefined') return;
@@ -455,10 +473,22 @@
         const campo = (nome) => modalEl.querySelector(`[data-quick-peca="${nome}"]`);
         const erro = campo('erro');
         const nome = (campo('nome') || {}).value || '';
+        // Taxonomia de estoque obrigatória (decisão do cliente): sem ela nem
+        // dispara a chamada — mesmo texto de erro que o backend devolveria,
+        // só que sem round-trip.
+        const subcategoriaId = (campo('estoque_subcategoria_id') || {}).value || '';
 
         if (nome.trim() === '') {
             if (erro) {
                 erro.textContent = 'Informe o nome da peça.';
+                erro.classList.remove('d-none');
+            }
+            return;
+        }
+
+        if (subcategoriaId === '') {
+            if (erro) {
+                erro.textContent = 'Selecione Grupo, Categoria e Subcategoria da peça.';
                 erro.classList.remove('d-none');
             }
             return;
@@ -477,7 +507,7 @@
             body: JSON.stringify({
                 nome: nome.trim(),
                 codigo: ((campo('codigo') || {}).value || '').trim(),
-                categoria: ((campo('categoria') || {}).value || '').trim(),
+                estoque_subcategoria_id: Number(subcategoriaId),
                 unidade: ((campo('unidade') || {}).value || 'UN').trim(),
                 preco_custo: custo === '' ? null : Number(custo),
                 // ⚠️ SEMPRE ZERO. A quantidade comprada entra pela movimentação
@@ -539,14 +569,19 @@
             // Peça recém-criada sem preço de venda é "limpa": a sugestão pode
             // pré-preencher sem passar por cima de decisão de ninguém.
             preco_venda: Number(part.preco_venda || 0),
-            categoria: String(part.categoria || ''),
+            categoria_efetiva: String(part.categoria_efetiva || part.categoria || ''),
         });
     }
 
     function limparModal(modalEl) {
-        ['nome', 'codigo', 'categoria', 'preco_custo'].forEach((nome) => {
+        ['nome', 'codigo', 'tipo_equipamento_id', 'estoque_categoria_id', 'estoque_subcategoria_id', 'preco_custo'].forEach((nome) => {
             const el = modalEl.querySelector(`[data-quick-peca="${nome}"]`);
-            if (el) el.value = '';
+            if (!el) return;
+
+            el.value = '';
+            // Selects de taxonomia usam Select2: resetar `.value` sozinho não
+            // atualiza o texto exibido no controle.
+            if (el.tagName === 'SELECT' && temSelect2) $(el).trigger('change');
         });
 
         const unidade = modalEl.querySelector('[data-quick-peca="unidade"]');

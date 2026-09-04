@@ -1,3 +1,9 @@
+@php
+    $estoqueGrupos = is_array($estoqueGrupos ?? null) ? $estoqueGrupos : [];
+    $estoqueCategorias = is_array($estoqueCategorias ?? null) ? $estoqueCategorias : [];
+    $estoqueSubcategorias = is_array($estoqueSubcategorias ?? null) ? $estoqueSubcategorias : [];
+@endphp
+
 {{--
     Cadastro rápido de peça dentro do lançamento — specs/039.
 
@@ -27,15 +33,47 @@
                     <input type="text" class="form-control" id="quickPecaNome" data-quick-peca="nome" maxlength="160">
                 </div>
 
+                {{--
+                    Taxonomia de estoque (Grupo → Categoria → Subcategoria),
+                    obrigatória — decisão do cliente de manter a classificação
+                    completa mesmo no cadastro rápido. Em cascata via
+                    DesktopUi.bindOptionCascade, ver financeiro-entrada-estoque.js.
+                --}}
+                <div class="row g-3 mb-3">
+                    <div class="col-md-4">
+                        <label class="form-label" for="quickPecaGrupo">Grupo *</label>
+                        <select class="form-select" id="quickPecaGrupo" data-quick-peca="tipo_equipamento_id">
+                            <option value=""></option>
+                            @foreach ($estoqueGrupos as $grupo)
+                                <option value="{{ $grupo['id'] }}">{{ $grupo['nome'] }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="quickPecaCategoria">Categoria *</label>
+                        <select class="form-select" id="quickPecaCategoria" data-quick-peca="estoque_categoria_id" data-taxonomy-parent="quickPecaGrupo">
+                            <option value=""></option>
+                            @foreach ($estoqueCategorias as $categoria)
+                                <option value="{{ $categoria['id'] }}" data-parent-id="{{ $categoria['tipo_equipamento_id'] }}">{{ $categoria['nome'] }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="quickPecaSubcategoria">Subcategoria *</label>
+                        <select class="form-select" id="quickPecaSubcategoria" data-quick-peca="estoque_subcategoria_id" data-taxonomy-parent="quickPecaCategoria">
+                            <option value=""></option>
+                            @foreach ($estoqueSubcategorias as $subcategoria)
+                                <option value="{{ $subcategoria['id'] }}" data-parent-id="{{ $subcategoria['categoria_id'] }}">{{ $subcategoria['nome'] }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+
                 <div class="row g-3">
                     <div class="col-md-6">
                         <label class="form-label" for="quickPecaCodigo">Código</label>
                         <input type="text" class="form-control" id="quickPecaCodigo" data-quick-peca="codigo" maxlength="120"
                                placeholder="Será sugerido se ficar em branco">
-                    </div>
-                    <div class="col-md-6">
-                        <label class="form-label" for="quickPecaCategoria">Categoria</label>
-                        <input type="text" class="form-control" id="quickPecaCategoria" data-quick-peca="categoria" maxlength="120">
                     </div>
                     <div class="col-md-6">
                         <label class="form-label" for="quickPecaUnidade">Unidade</label>

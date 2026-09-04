@@ -109,11 +109,40 @@
                     </a>
                 @endif
 
-                @if (! empty($budget['can_send_approval']))
-                    <form method="post" action="{{ route('orcamentos.send_approval', $budgetId) }}" data-confirm="O PDF da proposta será gerado e enviado ao cliente pelo WhatsApp. Deseja continuar?" data-confirm-title="{{ $sends !== [] ? 'Reenviar proposta' : 'Enviar proposta' }}" data-confirm-button="Sim, enviar">
+                @if (! empty($budget['can_send_approval']) || ! empty($budget['can_send_client_view']))
+                    @php
+                        $sendEmailCandidate = trim((string) ($budget['email_contato'] ?? ($client['email'] ?? '')));
+                        $sendChannelOptions = $sendEmailCandidate !== ''
+                            ? ['whatsapp' => 'WhatsApp', 'email' => 'E-mail', 'ambos' => 'WhatsApp e e-mail']
+                            : null;
+                        $sendIsApprovalRequest = ! empty($budget['can_send_approval']);
+                        $sendLabel = $sendIsApprovalRequest
+                            ? ($sends !== [] ? 'Reenviar para aprovação' : 'Enviar para aprovação')
+                            : 'Enviar para o cliente consultar';
+                        $sendConfirmTitle = $sendIsApprovalRequest
+                            ? ($sends !== [] ? 'Reenviar proposta' : 'Enviar proposta')
+                            : 'Enviar orçamento para consulta';
+                        $sendConfirmText = $sendIsApprovalRequest
+                            ? 'O PDF da proposta será gerado e enviado ao cliente. Deseja continuar?'
+                            : 'O PDF do orçamento aprovado será gerado e enviado ao cliente para consulta. Deseja continuar?';
+                        $sendIcon = $sendIsApprovalRequest ? 'bi-send' : 'bi-share';
+                    @endphp
+                    <form method="post"
+                        action="{{ route('orcamentos.send_approval', $budgetId) }}"
+                        data-confirm="{{ $sendConfirmText }}"
+                        data-confirm-title="{{ $sendConfirmTitle }}"
+                        data-confirm-button="Sim, enviar"
+                        @if ($sendChannelOptions)
+                            data-confirm-input="select"
+                            data-confirm-input-label="Meio de envio"
+                            data-confirm-input-options="{{ json_encode($sendChannelOptions, JSON_UNESCAPED_UNICODE) }}"
+                            data-confirm-input-value="whatsapp"
+                        @endif
+                    >
                         @csrf
+                        <input type="hidden" name="canal" value="whatsapp" data-confirm-value>
                         <button type="submit" class="dropdown-item">
-                            <i class="bi bi-send me-2"></i>{{ $sends !== [] ? 'Reenviar para aprovação' : 'Enviar para aprovação' }}
+                            <i class="bi {{ $sendIcon }} me-2"></i>{{ $sendLabel }}
                         </button>
                     </form>
                 @endif

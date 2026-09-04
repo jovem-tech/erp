@@ -526,35 +526,14 @@
         $equipamentoFoto = $order['equipamento_foto'] ?? null;
         $photoViewerGroup = 'order-closure-' . $orderId . '-photos';
 
-        // Discriminação padrão colada na NFS-e: numero da OS + o equipamento
-        // reparado, com o que estiver cadastrado (tipo, marca, modelo, cor e
-        // numero de serie ou IMEI — o que faltar simplesmente nao entra).
-        $equipamentoDescritores = array_values(array_filter([
-            $equipamentoTipo,
-            $equipamentoMarca,
-            $equipamentoModelo,
-            $equipamentoCor !== '' ? 'cor ' . $equipamentoCor : '',
-            $equipamentoSerie !== '' ? 'N° de série ' . $equipamentoSerie : '',
-            $equipamentoImei !== '' ? 'IMEI ' . $equipamentoImei : '',
-        ], static fn (string $parte): bool => trim($parte) !== ''));
-
-        // Nome da(s) peça(s) trocada(s) (sem valor — o valor continua fora da
-        // NFS-e, ver DocumentoFiscalService::discriminacao()), exigência do
-        // CDC de descrever ao cliente o que foi feito no aparelho.
-        $materiaisAplicados = array_values(array_filter(
-            array_map(static fn ($nome): string => trim((string) $nome), $closure['materiais_aplicados'] ?? []),
-            static fn (string $nome): bool => $nome !== ''
-        ));
-
-        // Corpo do texto (sem a garantia, que so' e' conhecida depois que o
-        // operador escolhe na etapa 1 — ver bloco perto da textarea, onde o
-        // JS recalcula a frase final a cada troca do campo "Garantia").
-        $closureDiscriminacaoCorpo = 'Prestação de serviço de assistência técnica'
-            . ($equipamentoDescritores !== [] ? ' em aparelho ' . implode(', ', $equipamentoDescritores) : '');
-
-        $closureDiscriminacaoCorpo .= $materiaisAplicados !== []
-            ? ', com a substituição e instalação de ' . implode(', ', $materiaisAplicados) . ', incluindo o fornecimento dos materiais aplicados.'
-            : '.';
+        // Discriminação padrão colada na NFS-e: mesmo texto que
+        // DocumentoFiscalService::discriminacao() monta depois de fechada —
+        // vem pronta do backend (DiscriminacaoNfseBuilder::base(), sem a
+        // garantia) pra nunca divergir da tela fiscal/nota sobre equipamento,
+        // serviço executado (item da OS ou do orçamento aprovado) e peça
+        // trocada. A garantia entra depois, no JS, a partir do campo do
+        // formulário (ver bloco perto da textarea).
+        $closureDiscriminacaoBase = (string) ($closure['discriminacao_base'] ?? ('Ordem de servico ' . ($order['numero_os'] ?? $orderId)));
 
         // Mesmas condições de orders/show.blade.php para o dropdown "Mais ações"
         // (o item "Baixa/Adiantamento" fica de fora aqui pois já estamos nessa página).
@@ -1096,8 +1075,6 @@
                                 // escolhe na etapa 1 (campo "Garantia" acima) — o valor inicial
                                 // aqui e' so' o sugerido, pra textarea nao nascer vazia; o JS
                                 // (orders-closure.js) recalcula a frase a cada troca do select.
-                                $closureDiscriminacaoBase = 'Ordem de servico ' . ($order['numero_os'] ?? $orderId) . "\n" . $closureDiscriminacaoCorpo;
-
                                 $garantiaLabelInicial = '';
                                 foreach ($garantiaOpcoes as $opcao) {
                                     if ((string) ($opcao['value'] ?? '') === $garantiaSugerida && $garantiaSugerida !== '') {

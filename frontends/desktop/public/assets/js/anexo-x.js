@@ -648,6 +648,12 @@
 
                 var aberta = linha.classList.toggle('d-none') === false;
                 botao.setAttribute('aria-expanded', aberta ? 'true' : 'false');
+
+                var icone = botao.querySelector('i');
+                if (icone) {
+                    icone.classList.toggle('bi-chevron-down', !aberta);
+                    icone.classList.toggle('bi-chevron-up', aberta);
+                }
             });
         }
 

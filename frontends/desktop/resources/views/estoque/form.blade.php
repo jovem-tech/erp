@@ -32,9 +32,15 @@
             'unidade_tributavel' => '',
         ], is_array($part ?? null) ? $part : []);
         $isEdit = (string) ($mode ?? 'create') === 'edit';
-        $categorias = data_get($formData, 'categorias', []);
-        $tiposEquipamento = data_get($formData, 'tipos_equipamento', []);
         $statusOptions = data_get($formData, 'status_options', []);
+        // Taxonomia de estoque (Grupo → Categoria → Subcategoria) — só ativos,
+        // igual ao restante do formulário.
+        $grupos = data_get($formData, 'grupos', []);
+        $estoqueCategorias = data_get($formData, 'estoque_categorias', []);
+        $estoqueSubcategorias = data_get($formData, 'estoque_subcategorias', []);
+        $selectedGrupoId = old('tipo_equipamento_id', $part['tipo_equipamento_id'] ?? '');
+        $selectedCategoriaId = old('estoque_categoria_id', $part['estoque_categoria_id'] ?? '');
+        $selectedSubcategoriaId = old('estoque_subcategoria_id', $part['estoque_subcategoria_id'] ?? '');
     @endphp
 
     <section class="desktop-form-card">
@@ -54,11 +60,15 @@
             </div>
         </div>
 
-        <form method="post" action="{{ $isEdit ? route('estoque.update', $part['id']) : route('estoque.store') }}" class="desktop-form-grid">
+        <form method="post" action="{{ $isEdit ? route('estoque.update', $part['id']) : route('estoque.store') }}" class="desktop-grid desktop-grid-two">
             @csrf
             @if ($isEdit)
                 @method('PATCH')
             @endif
+
+            <div class="desktop-grid-span-2">
+                <p class="desktop-eyebrow">Identificação</p>
+            </div>
 
             <div>
                 <label for="codigo">Código</label>
@@ -72,32 +82,60 @@
                 @error('codigo_fabricante')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
 
-            <div class="col-span-full">
+            <div class="desktop-grid-span-2">
                 <label for="nome">Nome *</label>
                 <input type="text" id="nome" name="nome" class="form-control @error('nome') is-invalid @enderror" value="{{ old('nome', $part['nome']) }}" maxlength="160" required>
                 @error('nome')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
 
-            <div>
-                <label for="categoria">Categoria</label>
-                <input list="estoqueCategorias" type="text" id="categoria" name="categoria" class="form-control @error('categoria') is-invalid @enderror" value="{{ old('categoria', $part['categoria']) }}" maxlength="120">
-                <datalist id="estoqueCategorias">
-                    @foreach ($categorias as $categoria)
-                        <option value="{{ $categoria }}"></option>
-                    @endforeach
-                </datalist>
-                @error('categoria')<div class="invalid-feedback">{{ $message }}</div>@enderror
+            {{--
+                Taxonomia de estoque (Grupo → Categoria → Subcategoria), em
+                cascata: Categoria só mostra as do Grupo escolhido,
+                Subcategoria só as da Categoria escolhida (DesktopUi.bindOptionCascade,
+                ver estoque-form.js). Só a Subcategoria é obrigatória de
+                verdade no backend — Grupo/Categoria são o caminho até ela.
+            --}}
+            <div class="desktop-grid-span-2 mt-2 pt-2 border-top">
+                <p class="desktop-eyebrow">Classificação</p>
             </div>
 
-            <div>
-                <label for="tipo_equipamento">Tipo de equipamento</label>
-                <input list="estoqueTiposEquipamento" type="text" id="tipo_equipamento" name="tipo_equipamento" class="form-control @error('tipo_equipamento') is-invalid @enderror" value="{{ old('tipo_equipamento', $part['tipo_equipamento']) }}" maxlength="120">
-                <datalist id="estoqueTiposEquipamento">
-                    @foreach ($tiposEquipamento as $tipo)
-                        <option value="{{ $tipo }}"></option>
-                    @endforeach
-                </datalist>
-                @error('tipo_equipamento')<div class="invalid-feedback">{{ $message }}</div>@enderror
+            <div class="desktop-grid-span-2 desktop-grid desktop-grid-three">
+                <div>
+                    <label for="tipo_equipamento_id">Grupo *</label>
+                    <select id="tipo_equipamento_id" name="tipo_equipamento_id" class="form-select @error('tipo_equipamento_id') is-invalid @enderror" required>
+                        <option value="">Selecione</option>
+                        @foreach ($grupos as $grupo)
+                            <option value="{{ $grupo['id'] }}" @selected((string) $selectedGrupoId === (string) $grupo['id'])>{{ $grupo['nome'] }}</option>
+                        @endforeach
+                    </select>
+                    @error('tipo_equipamento_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
+
+                <div>
+                    <label for="estoque_categoria_id">Categoria *</label>
+                    <select id="estoque_categoria_id" name="estoque_categoria_id" class="form-select @error('estoque_categoria_id') is-invalid @enderror" data-taxonomy-parent="tipo_equipamento_id" required>
+                        <option value="">Selecione</option>
+                        @foreach ($estoqueCategorias as $categoria)
+                            <option value="{{ $categoria['id'] }}" data-parent-id="{{ $categoria['tipo_equipamento_id'] }}" @selected((string) $selectedCategoriaId === (string) $categoria['id'])>{{ $categoria['nome'] }}</option>
+                        @endforeach
+                    </select>
+                    @error('estoque_categoria_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
+
+                <div>
+                    <label for="estoque_subcategoria_id">Subcategoria *</label>
+                    <select id="estoque_subcategoria_id" name="estoque_subcategoria_id" class="form-select @error('estoque_subcategoria_id') is-invalid @enderror" data-taxonomy-parent="estoque_categoria_id" required>
+                        <option value="">Selecione</option>
+                        @foreach ($estoqueSubcategorias as $subcategoria)
+                            <option value="{{ $subcategoria['id'] }}" data-parent-id="{{ $subcategoria['categoria_id'] }}" @selected((string) $selectedSubcategoriaId === (string) $subcategoria['id'])>{{ $subcategoria['nome'] }}</option>
+                        @endforeach
+                    </select>
+                    @error('estoque_subcategoria_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
+            </div>
+
+            <div class="desktop-grid-span-2 mt-2 pt-2 border-top">
+                <p class="desktop-eyebrow">Fornecimento</p>
             </div>
 
             <div>
@@ -112,10 +150,14 @@
                 @error('localizacao')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
 
-            <div class="col-span-full">
+            <div class="desktop-grid-span-2">
                 <label for="modelos_compativeis">Modelos compatíveis</label>
                 <textarea id="modelos_compativeis" name="modelos_compativeis" class="form-control @error('modelos_compativeis') is-invalid @enderror" rows="3" placeholder="Lista de modelos separados por vírgula">{{ old('modelos_compativeis', $part['modelos_compativeis']) }}</textarea>
                 @error('modelos_compativeis')<div class="invalid-feedback">{{ $message }}</div>@enderror
+            </div>
+
+            <div class="desktop-grid-span-2 mt-2 pt-2 border-top">
+                <p class="desktop-eyebrow">Comercial</p>
             </div>
 
             <div>
@@ -134,22 +176,32 @@
                 <div class="form-text d-none" id="precoSugestao"></div>
             </div>
 
-            <div>
-                <label for="quantidade_atual">Quantidade atual</label>
-                <input type="number" id="quantidade_atual" name="quantidade_atual" class="form-control @error('quantidade_atual') is-invalid @enderror" value="{{ old('quantidade_atual', $part['quantidade_atual']) }}" min="0" step="any">
-                @error('quantidade_atual')<div class="invalid-feedback">{{ $message }}</div>@enderror
+            <div class="desktop-grid-span-2 mt-2 pt-2 border-top">
+                <p class="desktop-eyebrow">Estoque</p>
             </div>
 
-            <div>
-                <label for="estoque_minimo">Estoque mínimo</label>
-                <input type="number" id="estoque_minimo" name="estoque_minimo" class="form-control @error('estoque_minimo') is-invalid @enderror" value="{{ old('estoque_minimo', $part['estoque_minimo']) }}" min="0" step="any">
-                @error('estoque_minimo')<div class="invalid-feedback">{{ $message }}</div>@enderror
+            <div class="desktop-grid-span-2 desktop-grid desktop-grid-three">
+                <div>
+                    <label for="quantidade_atual">Quantidade atual</label>
+                    <input type="number" id="quantidade_atual" name="quantidade_atual" class="form-control @error('quantidade_atual') is-invalid @enderror" value="{{ old('quantidade_atual', $part['quantidade_atual']) }}" min="0" step="any">
+                    @error('quantidade_atual')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
+
+                <div>
+                    <label for="estoque_minimo">Estoque mínimo</label>
+                    <input type="number" id="estoque_minimo" name="estoque_minimo" class="form-control @error('estoque_minimo') is-invalid @enderror" value="{{ old('estoque_minimo', $part['estoque_minimo']) }}" min="0" step="any">
+                    @error('estoque_minimo')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
+
+                <div>
+                    <label for="estoque_maximo">Estoque máximo</label>
+                    <input type="number" id="estoque_maximo" name="estoque_maximo" class="form-control @error('estoque_maximo') is-invalid @enderror" value="{{ old('estoque_maximo', $part['estoque_maximo']) }}" min="0" step="any">
+                    @error('estoque_maximo')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
             </div>
 
-            <div>
-                <label for="estoque_maximo">Estoque máximo</label>
-                <input type="number" id="estoque_maximo" name="estoque_maximo" class="form-control @error('estoque_maximo') is-invalid @enderror" value="{{ old('estoque_maximo', $part['estoque_maximo']) }}" min="0" step="any">
-                @error('estoque_maximo')<div class="invalid-feedback">{{ $message }}</div>@enderror
+            <div class="desktop-grid-span-2 mt-2 pt-2 border-top">
+                <p class="desktop-eyebrow">Informações adicionais</p>
             </div>
 
             <div>
@@ -162,23 +214,23 @@
                 @error('status')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
 
-            <div class="col-span-full">
-                <label for="observacoes">Observações</label>
-                <textarea id="observacoes" name="observacoes" class="form-control @error('observacoes') is-invalid @enderror" rows="4" placeholder="Observações, compatibilidades e detalhes operacionais">{{ old('observacoes', $part['observacoes']) }}</textarea>
-                @error('observacoes')<div class="invalid-feedback">{{ $message }}</div>@enderror
-            </div>
-
-            <div class="col-span-full">
+            <div>
                 <label for="codigo_barras">Código de barras (EAN/GTIN)</label>
                 <input type="text" id="codigo_barras" name="codigo_barras" class="form-control @error('codigo_barras') is-invalid @enderror" value="{{ old('codigo_barras', $part['codigo_barras'] ?? '') }}" maxlength="20" inputmode="numeric">
-                <small class="text-secondary">Preenchido, o leitor do PDV encontra o produto direto pelo código.</small>
+                <small class="text-secondary">O leitor do PDV encontra o produto direto pelo código.</small>
                 @error('codigo_barras')<div class="invalid-feedback">{{ $message }}</div>@enderror
+            </div>
+
+            <div class="desktop-grid-span-2">
+                <label for="observacoes">Observações</label>
+                <textarea id="observacoes" name="observacoes" class="form-control @error('observacoes') is-invalid @enderror" rows="3" placeholder="Observações, compatibilidades e detalhes operacionais">{{ old('observacoes', $part['observacoes']) }}</textarea>
+                @error('observacoes')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
 
             {{-- Bloco fiscal recolhido: os campos existem para a emissão futura
                  (specs/027-vendas-balcao-pdv) e ainda não são usados por nada.
                  Aberto por padrão, só pesaria o cadastro do dia a dia. --}}
-            <div class="col-span-full">
+            <div class="desktop-grid-span-2">
                 <details class="border rounded p-3">
                     <summary class="fw-semibold" style="cursor: pointer;">
                         Dados fiscais (opcional)
@@ -229,7 +281,7 @@
                 </details>
             </div>
 
-            <div class="field-actions col-span-full">
+            <div class="field-actions desktop-grid-span-2 mt-2 pt-2 border-top">
                 <button type="submit" class="btn btn-primary flex-fill">
                     <i class="bi bi-save me-2"></i>
                     {{ $isEdit ? 'Salvar alterações' : 'Cadastrar peça' }}

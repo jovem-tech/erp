@@ -12,20 +12,24 @@ use App\Models\OrderStatus;
 use App\Models\User;
 use App\Services\Channels\Whatsapp\PhoneNumberNormalizationService;
 use App\Services\Company\CompanyProfileService;
+use App\Services\Integrations\EmailIntegrationSettingsService;
 use App\Services\Integrations\IntegrationSettingsService;
 use App\Services\Notifications\NotificationDispatchService;
 use App\Services\Orders\OrderDocumentCenterService;
 use App\Services\Orders\OrderEventService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Throwable;
 
 class BudgetApprovalService
 {
     public function __construct(
         private readonly BudgetPdfService $budgetPdfService,
         private readonly IntegrationSettingsService $integrationSettingsService,
+        private readonly EmailIntegrationSettingsService $emailIntegrationSettingsService,
         private readonly CompanyProfileService $companyProfileService,
         private readonly PhoneNumberNormalizationService $phoneNumberNormalizationService,
         private readonly BudgetOrderSyncService $budgetOrderSyncService,
@@ -67,7 +71,16 @@ class BudgetApprovalService
             ];
         }
 
-        $pendencias = $this->dispatchPendencies($budget);
+        // Orçamento já decidido (aprovado/pendente de OS): o envio deixa de ser um
+        // pedido de aprovação e vira só um compartilhamento do PDF/link para o
+        // cliente consultar — não pode reabrir o fluxo de decisão nem mexer no
+        // status atual.
+        $isResolved = in_array((string) $budget->status, Budget::approvedForOrderLinkStatuses(), true);
+
+        $canal = $this->normalizeDispatchChannel((string) ($context['canal'] ?? 'whatsapp'));
+        $channels = $this->resolveDispatchChannels($canal);
+
+        $pendencias = $this->dispatchPendencies($budget, $channels);
         if ($pendencias !== []) {
             return [
                 'result' => 'validation_error',
@@ -93,24 +106,27 @@ class BudgetApprovalService
             ];
         }
 
-        $destinationPhone = $this->resolveDestinationPhone($budget);
         $companyName = $this->companyName();
         $sendAt = now();
-        $caption = $this->buildWhatsappCaption($budget, $companyName, $approvalLink);
 
-        $dispatch = $this->integrationSettingsService->sendDirectMedia(
-            $destinationPhone,
-            (string) ($pdf['absolute_path'] ?? ''),
-            'document',
-            $caption,
-            (string) ($pdf['file_name'] ?? null)
-        );
+        // Um resultado por canal escolhido — "ambos" tenta os dois
+        // independentemente e cada um vira sua própria linha em BudgetSend,
+        // igual ao histórico já esperado pela tela de orçamento.
+        $results = [];
+        foreach ($channels as $channel) {
+            $results[$channel] = $channel === 'email'
+                ? $this->dispatchEmailApproval($budget, $companyName, $approvalLink, $pdf, $isResolved)
+                : $this->dispatchWhatsappApproval($budget, $companyName, $approvalLink, $pdf, $isResolved);
+        }
 
-        $dispatchOk = (bool) ($dispatch['ok'] ?? false);
-        $provider = trim((string) ($dispatch['provider'] ?? ''));
-        $dispatchMessage = trim((string) ($dispatch['message'] ?? ($dispatchOk ? 'Proposta enviada para aprovação.' : 'Falha ao enviar proposta para aprovação.')));
-        $sendStatus = $dispatchOk ? 'enviado' : 'erro';
-        $targetStatus = $dispatchOk ? Budget::STATUS_WAITING_REPLY : Budget::STATUS_PENDING_SEND;
+        $dispatchOk = collect($results)->contains(static fn (array $result): bool => (bool) ($result['ok'] ?? false));
+        $dispatchMessage = $this->summarizeDispatchMessage($results, $channels, $isResolved);
+        // Orçamento já decidido: nunca muda de status por causa de um reenvio de
+        // consulta — nem em caso de sucesso (senão reabriria a aprovação), nem em
+        // caso de falha (senão derrubaria um "aprovado" para "erro de envio").
+        $targetStatus = $isResolved
+            ? (string) $budget->status
+            : ($dispatchOk ? Budget::STATUS_WAITING_REPLY : Budget::STATUS_PENDING_SEND);
 
         DB::transaction(function () use (
             $budget,
@@ -118,33 +134,15 @@ class BudgetApprovalService
             $token,
             $pdf,
             $sendAt,
-            $destinationPhone,
-            $caption,
-            $provider,
-            $dispatchMessage,
+            $channels,
+            $results,
             $dispatchOk,
-            $sendStatus,
-            $targetStatus
+            $targetStatus,
+            $isResolved
         ): void {
             $budget->refresh();
             $previousStatus = (string) ($budget->status ?? Budget::STATUS_DRAFT);
             $expiry = $this->resolveTokenExpiry($budget);
-
-            $envio = BudgetSend::query()->create([
-                'orcamento_id' => (int) $budget->id,
-                'canal' => 'whatsapp',
-                'destino' => $destinationPhone,
-                'mensagem' => $caption,
-                'documento_path' => (string) ($pdf['relative_path'] ?? ''),
-                'status' => $sendStatus,
-                'provedor' => $provider !== '' ? $provider : null,
-                'referencia_externa' => null,
-                'erro_detalhe' => $dispatchOk ? null : $dispatchMessage,
-                'enviado_por' => (int) $user->id,
-                'enviado_em' => $dispatchOk ? $sendAt : null,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
 
             $osId = (int) ($budget->os_id ?? 0);
             if ($osId > 0) {
@@ -160,19 +158,44 @@ class BudgetApprovalService
                     ],
                     (int) $user->id
                 );
+            }
 
-                if ($dispatchOk) {
+            foreach ($channels as $channel) {
+                $result = $results[$channel];
+                $channelOk = (bool) ($result['ok'] ?? false);
+                $channelStatus = $channelOk ? 'enviado' : 'erro';
+                $provider = trim((string) ($result['provider'] ?? ''));
+
+                $envio = BudgetSend::query()->create([
+                    'orcamento_id' => (int) $budget->id,
+                    'canal' => $channel,
+                    'destino' => (string) ($result['destino'] ?? ''),
+                    'mensagem' => (string) ($result['mensagem'] ?? ''),
+                    'documento_path' => (string) ($pdf['relative_path'] ?? ''),
+                    'status' => $channelStatus,
+                    'provedor' => $provider !== '' ? $provider : null,
+                    'referencia_externa' => null,
+                    'erro_detalhe' => $channelOk ? null : (string) ($result['erro'] ?? ''),
+                    'enviado_por' => (int) $user->id,
+                    'enviado_em' => $channelOk ? $sendAt : null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                if ($osId > 0 && $channelOk) {
                     $this->orderEventService->record(
                         $osId,
                         OrderEvent::CATEGORIA_ORCAMENTO,
                         OrderEvent::TIPO_ORCAMENTO_ENVIADO,
-                        'Orçamento enviado para aprovação',
-                        sprintf('Orçamento %s enviado ao cliente para aprovação.', $budget->numero),
+                        $isResolved ? 'Orçamento enviado para consulta' : 'Orçamento enviado para aprovação',
+                        $isResolved
+                            ? sprintf('Orçamento %s (já aprovado) enviado ao cliente para consulta (%s).', $budget->numero, $channel === 'email' ? 'e-mail' : 'WhatsApp')
+                            : sprintf('Orçamento %s enviado ao cliente para aprovação (%s).', $budget->numero, $channel === 'email' ? 'e-mail' : 'WhatsApp'),
                         [
                             'orcamento_id' => (int) $budget->id,
                             'envio_id' => (int) $envio->id,
-                            'canal' => 'whatsapp',
-                            'destino' => $destinationPhone,
+                            'canal' => $channel,
+                            'destino' => (string) ($result['destino'] ?? ''),
                         ],
                         (int) $user->id
                     );
@@ -180,14 +203,29 @@ class BudgetApprovalService
                     $this->orderEventService->record(
                         $osId,
                         OrderEvent::CATEGORIA_MENSAGEM,
-                        OrderEvent::TIPO_WHATSAPP_ENVIADO,
-                        'Orçamento enviado por WhatsApp',
+                        $channel === 'email' ? OrderEvent::TIPO_EMAIL_ENVIADO : OrderEvent::TIPO_WHATSAPP_ENVIADO,
+                        $channel === 'email' ? 'Orçamento enviado por e-mail' : 'Orçamento enviado por WhatsApp',
                         sprintf('Proposta do orçamento %s enviada com PDF anexo.', $budget->numero),
                         [
                             'origin' => 'orcamento_aprovacao',
                             'orcamento_id' => (int) $budget->id,
                             'envio_id' => (int) $envio->id,
-                            'destino' => $destinationPhone,
+                            'destino' => (string) ($result['destino'] ?? ''),
+                        ],
+                        (int) $user->id
+                    );
+                } elseif ($osId > 0) {
+                    $this->orderEventService->record(
+                        $osId,
+                        OrderEvent::CATEGORIA_MENSAGEM,
+                        $channel === 'email' ? OrderEvent::TIPO_EMAIL_FALHOU : OrderEvent::TIPO_WHATSAPP_FALHOU,
+                        $channel === 'email' ? 'Falha ao enviar orçamento por e-mail' : 'Falha ao enviar orçamento por WhatsApp',
+                        sprintf('Não foi possível enviar a proposta do orçamento %s. %s', $budget->numero, (string) ($result['erro'] ?? '')),
+                        [
+                            'origin' => 'orcamento_aprovacao',
+                            'orcamento_id' => (int) $budget->id,
+                            'envio_id' => (int) $envio->id,
+                            'destino' => (string) ($result['destino'] ?? ''),
                         ],
                         (int) $user->id
                     );
@@ -216,7 +254,14 @@ class BudgetApprovalService
             }
 
             $this->syncOrderForDispatch($budget, (string) ($pdf['relative_path'] ?? ''));
-            $this->budgetOrderSyncService->syncFromBudget($budget, (int) $user->id);
+
+            // Orçamento já decidido: não há mudança de status para reconciliar na
+            // OS, e chamar isso aqui reabriria um risco real — syncFromBudget()
+            // força a OS de volta para "aguardando_reparo" sempre que o orçamento
+            // está "aprovado", sem checar se a OS já avançou além disso.
+            if (! $isResolved) {
+                $this->budgetOrderSyncService->syncFromBudget($budget, (int) $user->id);
+            }
         });
 
         if ((int) ($budget->os_id ?? 0) > 0) {
@@ -236,14 +281,13 @@ class BudgetApprovalService
 
         return [
             'result' => $dispatchOk ? 'ok' : 'dispatch_failed',
-            'message' => $dispatchMessage !== ''
-                ? $dispatchMessage
-                : ($dispatchOk ? 'Proposta enviada para aprovação.' : 'Falha ao enviar proposta para aprovação.'),
+            'message' => $dispatchMessage,
             'dispatch' => [
-                'canal' => 'whatsapp',
-                'status' => $sendStatus,
-                'destino' => $destinationPhone,
+                'canal' => $canal,
+                'status' => $dispatchOk ? 'enviado' : 'erro',
+                'destino' => (string) ($results[$channels[0]]['destino'] ?? ''),
                 'public_url' => $approvalLink,
+                'channels' => $results,
             ],
         ];
     }
@@ -833,9 +877,10 @@ class BudgetApprovalService
     }
 
     /**
+     * @param  array<int, string>  $channels
      * @return array<int, string>
      */
-    private function dispatchPendencies(Budget $budget): array
+    private function dispatchPendencies(Budget $budget, array $channels = ['whatsapp']): array
     {
         $pendencias = [];
 
@@ -851,11 +896,188 @@ class BudgetApprovalService
             $pendencias[] = 'O total final precisa ser maior que zero para enviar a proposta ao cliente.';
         }
 
-        if (! $this->hasValidWhatsappPhone($budget)) {
+        if (in_array('whatsapp', $channels, true) && ! $this->hasValidWhatsappPhone($budget)) {
             $pendencias[] = 'Informe um telefone de contato com WhatsApp válido para enviar o PDF de aprovação.';
         }
 
+        if (in_array('email', $channels, true) && ! $this->hasValidEmail($budget)) {
+            $pendencias[] = 'Informe um e-mail de contato válido para enviar a proposta por e-mail.';
+        }
+
         return $pendencias;
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function resolveDispatchChannels(string $canal): array
+    {
+        return match ($canal) {
+            'email' => ['email'],
+            'ambos' => ['whatsapp', 'email'],
+            default => ['whatsapp'],
+        };
+    }
+
+    private function normalizeDispatchChannel(?string $canal): string
+    {
+        $normalized = mb_strtolower(trim((string) $canal));
+
+        return in_array($normalized, ['whatsapp', 'email', 'ambos'], true) ? $normalized : 'whatsapp';
+    }
+
+    /**
+     * @param  array<string, array{ok: bool, erro?: ?string}>  $results
+     * @param  array<int, string>  $channels
+     */
+    private function summarizeDispatchMessage(array $results, array $channels, bool $isResolved = false): string
+    {
+        $channelLabel = static fn (string $channel): string => $channel === 'email' ? 'e-mail' : 'WhatsApp';
+        $sentVerb = $isResolved ? 'Orçamento enviado para consulta por ' : 'Proposta enviada para aprovação por ';
+        $failVerb = $isResolved ? 'Falha ao enviar orçamento por ' : 'Falha ao enviar proposta por ';
+
+        if (count($channels) === 1) {
+            $channel = $channels[0];
+            $result = $results[$channel];
+
+            if ($result['ok'] ?? false) {
+                return $sentVerb.$channelLabel($channel).'.';
+            }
+
+            $erro = trim((string) ($result['erro'] ?? ''));
+
+            return $erro !== '' ? $erro : $failVerb.$channelLabel($channel).'.';
+        }
+
+        $succeeded = [];
+        $failed = [];
+        foreach ($channels as $channel) {
+            if ($results[$channel]['ok'] ?? false) {
+                $succeeded[] = $channelLabel($channel);
+            } else {
+                $failed[] = $channelLabel($channel);
+            }
+        }
+
+        if ($failed === []) {
+            return $sentVerb.implode(' e ', $succeeded).'.';
+        }
+
+        if ($succeeded === []) {
+            return $isResolved
+                ? 'Falha ao enviar o orçamento por '.implode(' e ', $failed).'.'
+                : 'Falha ao enviar a proposta por '.implode(' e ', $failed).'.';
+        }
+
+        return ($isResolved ? 'Orçamento enviado por ' : 'Proposta enviada por ').implode(' e ', $succeeded).'. Falha ao enviar por '.implode(' e ', $failed).'.';
+    }
+
+    /**
+     * @return array{ok: bool, provider: string, destino: string, mensagem: string, erro: ?string}
+     */
+    private function dispatchWhatsappApproval(Budget $budget, string $companyName, string $approvalLink, array $pdf, bool $isResolved = false): array
+    {
+        $destinationPhone = $this->resolveDestinationPhone($budget);
+        $caption = $this->buildWhatsappCaption($budget, $companyName, $approvalLink, $isResolved);
+
+        $dispatch = $this->integrationSettingsService->sendDirectMedia(
+            $destinationPhone,
+            (string) ($pdf['absolute_path'] ?? ''),
+            'document',
+            $caption,
+            (string) ($pdf['file_name'] ?? null)
+        );
+
+        $ok = (bool) ($dispatch['ok'] ?? false);
+
+        return [
+            'ok' => $ok,
+            'provider' => trim((string) ($dispatch['provider'] ?? '')) ?: 'whatsapp',
+            'destino' => $destinationPhone,
+            'mensagem' => $caption,
+            'erro' => $ok ? null : (trim((string) ($dispatch['message'] ?? '')) ?: 'Falha ao enviar proposta por WhatsApp.'),
+        ];
+    }
+
+    /**
+     * @return array{ok: bool, provider: string, destino: string, mensagem: string, erro: ?string}
+     */
+    private function dispatchEmailApproval(Budget $budget, string $companyName, string $approvalLink, array $pdf, bool $isResolved = false): array
+    {
+        $destinationEmail = $this->resolveDestinationEmail($budget);
+        $subject = $this->buildEmailSubject($budget, $companyName, $isResolved);
+        $body = $this->buildEmailBody($budget, $companyName, $approvalLink, $isResolved);
+
+        if (! $this->emailIntegrationSettingsService->operationalMailerAvailable()) {
+            return [
+                'ok' => false,
+                'provider' => 'smtp',
+                'destino' => $destinationEmail,
+                'mensagem' => $body,
+                'erro' => 'SMTP operacional não configurado.',
+            ];
+        }
+
+        try {
+            Mail::html(
+                $body,
+                function ($mail) use ($destinationEmail, $subject, $pdf): void {
+                    $mail->to($destinationEmail)->subject($subject);
+
+                    $absolutePath = (string) ($pdf['absolute_path'] ?? '');
+                    if ($absolutePath !== '') {
+                        $mail->attach($absolutePath, [
+                            'as' => (string) ($pdf['file_name'] ?? 'orcamento.pdf'),
+                            'mime' => 'application/pdf',
+                        ]);
+                    }
+                }
+            );
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return [
+                'ok' => false,
+                'provider' => 'smtp',
+                'destino' => $destinationEmail,
+                'mensagem' => $body,
+                'erro' => 'Falha ao enviar a proposta por e-mail.',
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'provider' => 'smtp',
+            'destino' => $destinationEmail,
+            'mensagem' => $body,
+            'erro' => null,
+        ];
+    }
+
+    private function buildEmailSubject(Budget $budget, string $companyName, bool $isResolved = false): string
+    {
+        $numero = trim((string) ($budget->numero ?? ('ORC-'.(int) $budget->id)));
+
+        return $companyName.' - Orçamento '.$numero.($isResolved ? ' (aprovado)' : '');
+    }
+
+    private function buildEmailBody(Budget $budget, string $companyName, string $approvalLink, bool $isResolved = false): string
+    {
+        $numero = trim((string) ($budget->numero ?? ('ORC-'.(int) $budget->id)));
+        $cliente = $this->resolveDisplayClientName($budget);
+        $total = 'R$ '.number_format((float) ($budget->total ?? 0), 2, ',', '.');
+
+        return sprintf(
+            '<p>%s</p><p>Segue o orçamento <strong>%s</strong>%s%s.</p><p>Total da proposta: <strong>%s</strong>.</p><p>%s</p><p><a href="%s">%s</a></p>',
+            e($companyName),
+            e($numero),
+            $isResolved ? ' (já aprovado)' : '',
+            $cliente !== '' ? ' para '.e($cliente) : '',
+            e($total),
+            $isResolved ? 'O PDF em anexo e o link abaixo estão disponíveis para sua consulta:' : 'Analise o PDF em anexo e responda a proposta pelo link abaixo:',
+            e($approvalLink),
+            e($approvalLink)
+        );
     }
 
     private function ensurePublicToken(Budget $budget): string
@@ -926,7 +1148,7 @@ class BudgetApprovalService
         ])->save();
     }
 
-    private function buildWhatsappCaption(Budget $budget, string $companyName, string $approvalLink): string
+    private function buildWhatsappCaption(Budget $budget, string $companyName, string $approvalLink, bool $isResolved = false): string
     {
         $numero = trim((string) ($budget->numero ?? ('ORC-' . (int) $budget->id)));
         $cliente = $this->resolveDisplayClientName($budget);
@@ -934,9 +1156,11 @@ class BudgetApprovalService
 
         return trim(
             $companyName . "\n\n"
-            . 'Segue o orçamento ' . $numero . ($cliente !== '' ? ' para ' . $cliente : '') . ".\n"
+            . 'Segue o orçamento ' . $numero . ($isResolved ? ' (já aprovado)' : '') . ($cliente !== '' ? ' para ' . $cliente : '') . ".\n"
             . 'Total da proposta: ' . $total . ".\n\n"
-            . 'Analise o PDF em anexo e responda a proposta pelo link abaixo:' . "\n"
+            . ($isResolved
+                ? 'O PDF em anexo e o link abaixo estão disponíveis para sua consulta:'
+                : 'Analise o PDF em anexo e responda a proposta pelo link abaixo:') . "\n"
             . $approvalLink
         );
     }
@@ -957,6 +1181,21 @@ class BudgetApprovalService
         $digits = preg_replace('/\D+/', '', $normalized) ?? '';
 
         return strlen($digits) >= 12;
+    }
+
+    private function resolveDestinationEmail(Budget $budget): string
+    {
+        $raw = trim((string) ($budget->email_contato ?? ''));
+        if ($raw === '') {
+            $raw = trim((string) ($budget->client?->email ?? ''));
+        }
+
+        return $raw;
+    }
+
+    private function hasValidEmail(Budget $budget): bool
+    {
+        return filter_var($this->resolveDestinationEmail($budget), FILTER_VALIDATE_EMAIL) !== false;
     }
 
     private function companyName(): string

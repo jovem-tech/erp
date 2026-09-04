@@ -42,7 +42,7 @@ class AnexoXController extends DesktopController
         $regime = $this->resolveRegime($request);
 
         return view('fiscal.anexo-x', [
-            'pageTitle' => 'Anexo X — receitas brutas',
+            'pageTitle' => 'Relatório Mensal das Receitas',
             'ano' => $ano,
             'anoAnterior' => $ano - 1,
             'anoProximo' => $ano + 1,

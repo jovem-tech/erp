@@ -13,13 +13,13 @@ use App\Jobs\Orders\NotifyOrderAdvanceJob;
 use App\Jobs\Orders\NotifyOrderClosureJob;
 use App\Models\Order;
 use App\Models\OrderEvent;
-use App\Models\OrderItem;
 use App\Models\OrderStatus;
 use App\Models\OrderStatusHistory;
 use App\Models\OsCobrancaAgendamento;
 use App\Models\OsMargem;
 use App\Models\User;
 use App\Services\Agenda\AgendaSourceReconciler;
+use App\Services\Fiscal\DiscriminacaoNfseBuilder;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
 use App\Services\Integrations\Inter\InterCobrancaService;
 use App\Services\Financeiro\FinanceiroCartaoService;
@@ -79,7 +79,8 @@ class OrderClosureService
         private readonly InterCobrancaService $interCobrancaService,
         private readonly OrderClosurePdfService $orderClosurePdfService,
         private readonly OrderEventService $orderEventService,
-        private readonly AgendaSourceReconciler $agendaReconciler
+        private readonly AgendaSourceReconciler $agendaReconciler,
+        private readonly DiscriminacaoNfseBuilder $discriminacaoNfseBuilder
     ) {
     }
 
@@ -105,11 +106,11 @@ class OrderClosureService
             'opcoes_encerramento' => $this->closureOptions(),
             'financeiro' => $this->financialSummary($order),
             'custo_summary' => $this->buildCostSummary((int) $order->id),
-            // Nomes das pecas lancadas na OS (os_itens.tipo = 'peca'), sem
-            // valor: a tela de baixa usa isso so' pra completar o texto da
-            // NFS-e com o que foi trocado — o VALOR da peca continua fora da
-            // discriminacao (ver DocumentoFiscalService::discriminacao()).
-            'materiais_aplicados' => $this->materiaisAplicados((int) $order->id),
+            // Mesmo texto que DocumentoFiscalService::discriminacao() monta
+            // depois de fechada — so' sem a garantia, que a baixa ainda nao
+            // escolheu (ver DiscriminacaoNfseBuilder::base()). A tela de baixa
+            // completa a garantia no JS a partir do campo do formulario.
+            'discriminacao_base' => $this->discriminacaoNfseBuilder->base($order),
             'retorno_padrao' => Carbon::now()->addDays(self::RETURN_FOLLOWUP_DEFAULT_DAYS)->toDateString(),
             'cartao' => $this->financeiroCartaoService->buildActiveDataset(),
             'contas_financeiras' => $this->financeiroContaService->options(),
@@ -2052,23 +2053,6 @@ class OrderClosureService
             'servicos' => $servicos,
             'total' => round($pecas + $servicos, 2),
         ];
-    }
-
-    /**
-     * @return array<int, string>
-     */
-    private function materiaisAplicados(int $orderId): array
-    {
-        return OrderItem::query()
-            ->where('os_id', $orderId)
-            ->where('tipo', 'peca')
-            ->orderBy('id')
-            ->pluck('descricao')
-            ->map(static fn ($descricao): string => trim((string) $descricao))
-            ->filter(static fn (string $descricao): bool => $descricao !== '')
-            ->unique()
-            ->values()
-            ->all();
     }
 
     /**

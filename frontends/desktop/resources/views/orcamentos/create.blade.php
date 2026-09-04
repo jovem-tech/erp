@@ -112,6 +112,10 @@
             'clientContextUrl' => route('orcamentos.client_context'),
             'quickClientStoreUrl' => ($canQuickClient ?? false) ? route('clients.quick.store') : '',
             'quickCatalogs' => $quickCatalogs ?? [],
+            // Sugestão de preço de venda no cadastro rápido de peça — mesmo
+            // motor/endpoint da tela de Estoque (specs/037).
+            'suggestPartPriceUrl' => route('estoque.suggest-price'),
+            'suggestPartCodeUrl' => route('estoque.suggest-code'),
             // Catálogo tipo/marca/modelo (EquipmentType/Brand/Model), o mesmo
             // usado no cadastro de equipamento — para o Select2 de marca/modelo
             // do "equipamento eventual" e para cadastrar marca/modelo novos
