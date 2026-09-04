@@ -13,7 +13,7 @@
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
         <div>
             <p class="desktop-eyebrow">Fiscal</p>
-            <h2 class="surface-title fs-3 mb-2">Anexo X — Relatório Mensal das Receitas Brutas <x-favorite-toggle /></h2>
+            <h2 class="surface-title fs-3 mb-2">Relatório Mensal das Receitas Brutas <x-favorite-toggle /></h2>
             <p class="surface-subtitle mb-0">
                 Obrigação do MEI (Resolução CGSN nº 140/2018, art. 106): preencher até o dia 20 do mês seguinte
                 e guardar pelo prazo decadencial. Ano-calendário {{ $resumo['ano'] ?? '' }}.

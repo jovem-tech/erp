@@ -57,6 +57,8 @@ trait BuildsLegacyErpSchema
             'orcamentos',
             'movimentacoes',
             'pecas',
+            'estoque_subcategorias',
+            'estoque_categorias',
             'servicos',
             'precificacao_categorias',
             'precificacao_componentes',
@@ -95,13 +97,18 @@ trait BuildsLegacyErpSchema
         $this->createClientsTable();
         $this->createSuppliersTable();
         $this->createServicesTable();
+        // Precisam existir antes de createPartsTable(): pecas ganha FK real
+        // para tipo_equipamento_id/estoque_categoria_id/estoque_subcategoria_id
+        // (taxonomia de estoque), e FK exige a tabela referenciada já criada
+        // com Schema::enableForeignKeyConstraints() ativo (linha acima).
+        $this->createEquipmentCatalogTables();
+        $this->createEstoqueCategoriasTables();
         $this->createPartsTable();
         $this->createMovimentacoesTable();
         $this->createPrecificacaoCategoriasTable();
         $this->createPrecificacaoComponentesTable();
         $this->createPrecificacaoCategoriaEncargosTable();
         $this->createPrecificacaoServicoOverridesTable();
-        $this->createEquipmentCatalogTables();
         $this->createEquipmentsTable();
         $this->createEquipmentPhotosTable();
         $this->createEquipmentCollectorPairingsTable();
@@ -1110,6 +1117,51 @@ trait BuildsLegacyErpSchema
             $table->string('cst_icms', 3)->nullable();
             $table->string('csosn', 4)->nullable();
             $table->string('unidade_tributavel', 6)->nullable();
+            // Espelham 2026_09_03_000013_add_taxonomy_to_pecas_table.php.
+            $table->unsignedBigInteger('tipo_equipamento_id')->nullable();
+            $table->unsignedBigInteger('estoque_categoria_id')->nullable();
+            $table->unsignedBigInteger('estoque_subcategoria_id')->nullable();
+            $table->foreign('tipo_equipamento_id', 'fk_pecas_tipo_equipamento')
+                ->references('id')->on('equipamentos_tipos')->restrictOnDelete();
+            $table->foreign('estoque_categoria_id', 'fk_pecas_estoque_categoria')
+                ->references('id')->on('estoque_categorias')->restrictOnDelete();
+            $table->foreign('estoque_subcategoria_id', 'fk_pecas_estoque_subcategoria')
+                ->references('id')->on('estoque_subcategorias')->restrictOnDelete();
+        });
+    }
+
+    /**
+     * Espelha 2026_09_03_000011/000012_create_estoque_*_table.php — taxonomia
+     * de estoque (Grupo → Categoria → Subcategoria). Precisa rodar depois de
+     * createEquipmentCatalogTables() (FK para equipamentos_tipos) e antes de
+     * createPartsTable() (pecas referencia as duas tabelas daqui).
+     */
+    private function createEstoqueCategoriasTables(): void
+    {
+        Schema::create('estoque_categorias', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('tipo_equipamento_id');
+            $table->string('nome', 120);
+            $table->boolean('ativo')->default(true);
+            $table->integer('ordem')->default(0);
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
+
+            $table->unique(['tipo_equipamento_id', 'nome'], 'ux_estoque_categorias_grupo_nome');
+            $table->foreign('tipo_equipamento_id')->references('id')->on('equipamentos_tipos')->restrictOnDelete();
+        });
+
+        Schema::create('estoque_subcategorias', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('categoria_id');
+            $table->string('nome', 120);
+            $table->boolean('ativo')->default(true);
+            $table->integer('ordem')->default(0);
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
+
+            $table->unique(['categoria_id', 'nome'], 'ux_estoque_subcategorias_categoria_nome');
+            $table->foreign('categoria_id')->references('id')->on('estoque_categorias')->restrictOnDelete();
         });
     }
 

@@ -32,6 +32,7 @@ class OrcamentoController extends DesktopController
             'status' => trim((string) $request->query('status', '')),
             'tipo' => trim((string) $request->query('tipo', '')),
             'origem' => trim((string) $request->query('origem', '')),
+            'client_id' => (int) $request->query('client_id', 0),
             'page' => (int) $request->query('page', 1),
             'per_page' => (int) $request->query('per_page', 15),
         ];
@@ -237,6 +238,7 @@ class OrcamentoController extends DesktopController
     public function store(Request $request): RedirectResponse
     {
         $submissionMode = $this->resolveSubmissionMode($request);
+        $dispatchChannel = $this->resolveDispatchChannel($request);
         $payload = $this->validatedBudgetPayload($request, requireComplete: true);
 
         try {
@@ -263,7 +265,7 @@ class OrcamentoController extends DesktopController
                 ->with('error', 'Não foi possível criar o orçamento agora. Tente novamente.');
         }
 
-        return $this->redirectAfterPersist($budget, $submissionMode, true);
+        return $this->redirectAfterPersist($budget, $submissionMode, true, 0, $dispatchChannel);
     }
 
     public function show(int $orcamento): View|RedirectResponse
@@ -424,6 +426,7 @@ class OrcamentoController extends DesktopController
     public function update(Request $request, int $orcamento): RedirectResponse
     {
         $submissionMode = $this->resolveSubmissionMode($request);
+        $dispatchChannel = $this->resolveDispatchChannel($request);
         $payload = $this->validatedBudgetPayload($request);
 
         try {
@@ -450,34 +453,42 @@ class OrcamentoController extends DesktopController
                 ->with('error', 'Não foi possível atualizar o orçamento agora. Tente novamente.');
         }
 
-        return $this->redirectAfterPersist($budget, $submissionMode, false, $orcamento);
+        return $this->redirectAfterPersist($budget, $submissionMode, false, $orcamento, $dispatchChannel);
     }
 
-    public function sendApproval(int $orcamento): RedirectResponse
+    public function sendApproval(Request $request, int $orcamento): RedirectResponse
     {
+        // Esta mesma ação atende dois fluxos: pedir aprovação (orçamento ainda em
+        // decisão) ou só compartilhar o PDF/link para o cliente consultar
+        // (orçamento já aprovado). Quem decide qual dos dois é o backend
+        // (BudgetApprovalService::dispatchForApproval), então as mensagens aqui
+        // ficam neutras — "ao cliente" em vez de "para aprovação" — para não
+        // contradizer um envio de consulta.
         try {
-            $this->orcamentoService->sendForApproval($orcamento);
+            $result = $this->orcamentoService->sendForApproval($orcamento, [
+                'canal' => $this->resolveDispatchChannel($request),
+            ]);
         } catch (ApiAuthenticationException $exception) {
             return redirect()->route('login')->with('error', $exception->getMessage());
         } catch (ApiAuthorizationException $exception) {
             return redirect()
                 ->route('orcamentos.show', $orcamento)
-                ->with('error', 'O seu usuário não tem permissão para enviar o orçamento para aprovação.');
+                ->with('error', 'O seu usuário não tem permissão para enviar este orçamento ao cliente.');
         } catch (ApiRequestException $exception) {
             return redirect()
                 ->route('orcamentos.show', $orcamento)
-                ->with('error', $this->approvalDispatchWarning($exception, 'O envio para aprovação não foi concluído.'));
+                ->with('error', $this->approvalDispatchWarning($exception, 'O envio ao cliente não foi concluído.'));
         } catch (Throwable $exception) {
             report($exception);
 
             return redirect()
                 ->route('orcamentos.show', $orcamento)
-                ->with('error', 'Não foi possível enviar o orçamento para aprovação agora. Tente novamente.');
+                ->with('error', 'Não foi possível enviar o orçamento ao cliente agora. Tente novamente.');
         }
 
         return redirect()
             ->route('orcamentos.show', $orcamento)
-            ->with('success', 'Orçamento enviado para aprovação do cliente.');
+            ->with('success', trim((string) ($result['message'] ?? '')) !== '' ? $result['message'] : 'Orçamento enviado ao cliente.');
     }
 
     public function approve(Request $request, int $orcamento): RedirectResponse
@@ -865,7 +876,8 @@ class OrcamentoController extends DesktopController
         array $budget,
         string $submissionMode,
         bool $created,
-        int $fallbackBudgetId = 0
+        int $fallbackBudgetId = 0,
+        string $dispatchChannel = 'whatsapp'
     ): RedirectResponse {
         $budgetId = (int) ($budget['id'] ?? $fallbackBudgetId);
         $successMessage = $created
@@ -888,7 +900,7 @@ class OrcamentoController extends DesktopController
         }
 
         try {
-            $this->orcamentoService->sendForApproval($budgetId);
+            $this->orcamentoService->sendForApproval($budgetId, ['canal' => $dispatchChannel]);
 
             return redirect()
                 ->route('orcamentos.show', $budgetId)
@@ -922,6 +934,17 @@ class OrcamentoController extends DesktopController
         return $request->input('submission_mode') === 'send_for_approval'
             ? 'send_for_approval'
             : 'save_only';
+    }
+
+    /**
+     * Meio de envio da proposta ao cliente (WhatsApp, e-mail ou ambos) —
+     * escolhido no seletor de canal exibido quando há e-mail cadastrado.
+     */
+    private function resolveDispatchChannel(Request $request): string
+    {
+        $canal = trim((string) $request->input('canal', $request->input('canal_envio', 'whatsapp')));
+
+        return in_array($canal, ['whatsapp', 'email', 'ambos'], true) ? $canal : 'whatsapp';
     }
 
     private function approvalDispatchWarning(

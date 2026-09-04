@@ -5,7 +5,6 @@ namespace App\Services\Fiscal;
 use App\Models\Client;
 use App\Models\DocumentoFiscal;
 use App\Models\Order;
-use App\Models\OrderItem;
 use App\Support\Documento;
 use App\Support\RateioAtividade;
 use Illuminate\Support\Carbon;
@@ -31,6 +30,11 @@ use Illuminate\Validation\ValidationException;
  */
 class DocumentoFiscalService
 {
+    public function __construct(
+        private readonly DiscriminacaoNfseBuilder $discriminacaoBuilder,
+    ) {
+    }
+
     /**
      * Monta (ou recupera) o rascunho de NFS-e de uma OS.
      *
@@ -774,104 +778,18 @@ class DocumentoFiscalService
     /**
      * Texto que o operador cola no campo "Discriminação dos serviços".
      *
-     * O VALOR da peça continua de fora daqui e da soma tributada da NFS-e —
+     * Delegado ao DiscriminacaoNfseBuilder — único ponto que monta esse texto,
+     * pra baixa da OS (rascunho, garantia ainda não escolhida) e documento
+     * fiscal (aqui, garantia já gravada) nunca divergirem sobre o que a nota
+     * diz. O VALOR da peça fica de fora dele e da soma tributada da NFS-e —
      * ela e' mercadoria, sai por NF-e/NFC-e na SEFAZ estadual, e entra no
      * rateio do Anexo do Simples como mercadoria (RateioAtividade). Misturar
      * esse valor no serviço é o erro que a separação `os_itens.tipo` existe
      * para evitar, e mudar isso exige decisão explícita com o contador.
-     *
-     * O NOME da peça, porém, entra — só como texto informativo (sem preço),
-     * pedido explícito do usuário pra a nota descrever o que foi trocado,
-     * exigência do CDC de discriminar o serviço prestado ao cliente.
      */
     private function discriminacao(Order $order): string
     {
-        $itens = OrderItem::query()
-            ->where('os_id', $order->id)
-            ->orderBy('id')
-            ->get();
-
-        $linhas = [];
-
-        foreach ($itens as $item) {
-            if ($item->tipo !== 'servico') {
-                continue;
-            }
-
-            $quantidade = (float) ($item->quantidade ?? 1);
-            $descricao = trim((string) ($item->descricao ?? ''));
-
-            if ($descricao === '') {
-                continue;
-            }
-
-            $linhas[] = $quantidade > 1
-                ? sprintf('%s (%dx) — %s', $descricao, (int) $quantidade, $this->moeda((float) $item->valor_total))
-                : sprintf('%s — %s', $descricao, $this->moeda((float) $item->valor_total));
-        }
-
-        $numero = (string) ($order->numero_os ?? $order->id);
-
-        if ($linhas === []) {
-            // OS sem item de servico detalhado ainda tem mao de obra somada.
-            // Melhor uma linha generica que um campo vazio no portal — mas com
-            // o equipamento junto (tipo, marca, modelo, cor e numero de serie
-            // ou IMEI, o que estiver cadastrado), pra nota nao sair generica
-            // demais quando a OS nao tem itens de servico lancados.
-            //
-            // Sem repetir o numero: a primeira linha ja' o traz, e
-            // `numero_os` ja' vem com o prefixo "OS" — concatenar outro
-            // produzia "OS OS26070030".
-            $linhas[] = $this->descricaoGenericaComEquipamento($order);
-        }
-
-        $materiais = $this->linhaMateriaisAplicados($itens);
-        if ($materiais !== null) {
-            $linhas[] = $materiais;
-        }
-
-        array_unshift($linhas, sprintf('Ordem de servico %s', $numero));
-
-        return implode("\n", $linhas);
-    }
-
-    /**
-     * @param  \Illuminate\Support\Collection<int, OrderItem>  $itens
-     */
-    private function linhaMateriaisAplicados($itens): ?string
-    {
-        $nomes = $itens
-            ->where('tipo', 'peca')
-            ->map(static fn (OrderItem $item): string => trim((string) ($item->descricao ?? '')))
-            ->filter(static fn (string $nome): bool => $nome !== '')
-            ->unique()
-            ->values();
-
-        if ($nomes->isEmpty()) {
-            return null;
-        }
-
-        return 'Material aplicado: '.$nomes->implode(', ').'.';
-    }
-
-    private function descricaoGenericaComEquipamento(Order $order): string
-    {
-        $equipamento = $order->equipment;
-
-        $descritores = array_values(array_filter([
-            trim((string) ($equipamento?->type?->nome ?? '')),
-            trim((string) ($equipamento?->brand?->nome ?? '')),
-            trim((string) ($equipamento?->model?->nome ?? '')),
-            trim((string) ($equipamento?->cor ?? '')) !== '' ? 'cor '.trim((string) $equipamento->cor) : '',
-            trim((string) ($equipamento?->numero_serie ?? '')) !== '' ? 'N° de série '.trim((string) $equipamento->numero_serie) : '',
-            trim((string) ($equipamento?->imei ?? '')) !== '' ? 'IMEI '.trim((string) $equipamento->imei) : '',
-        ], static fn (string $parte): bool => $parte !== ''));
-
-        if ($descritores === []) {
-            return 'Servicos de assistencia tecnica.';
-        }
-
-        return 'Servicos de assistencia tecnica. Reparo de '.implode(', ', $descritores).'.';
+        return $this->discriminacaoBuilder->montar($order);
     }
 
     private function moeda(float $valor): string

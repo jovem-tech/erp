@@ -148,4 +148,96 @@ class StockService
 
         return $response['data'] ?? [];
     }
+
+    /**
+     * Taxonomia de estoque (Grupo → Categoria → Subcategoria). Grupos,
+     * categorias e subcategorias abaixo alimentam o modal "Gerenciar
+     * categorias" — sempre a lista completa (inclusive inativos), diferente
+     * de formData(), que só traz os ativos para os selects de cadastro.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function grupos(): array
+    {
+        $response = $this->apiClient->get('/estoque/grupos');
+
+        return $response['data']['grupos'] ?? [];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function saveGrupo(array $payload): array
+    {
+        $id = (int) ($payload['id'] ?? 0);
+        $response = $id > 0
+            ? $this->apiClient->patch('/estoque/grupos/' . $id, $payload)
+            : $this->apiClient->post('/estoque/grupos', $payload);
+
+        return $response['data']['grupo'] ?? [];
+    }
+
+    public function deactivateGrupo(int $id): void
+    {
+        $this->apiClient->delete('/estoque/grupos/' . $id);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function categorias(): array
+    {
+        $response = $this->apiClient->get('/estoque/categorias');
+
+        return $response['data']['categorias'] ?? [];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function saveCategoria(array $payload): array
+    {
+        $id = (int) ($payload['id'] ?? 0);
+        $response = $id > 0
+            ? $this->apiClient->patch('/estoque/categorias/' . $id, $payload)
+            : $this->apiClient->post('/estoque/categorias', $payload);
+
+        return $response['data']['categoria'] ?? [];
+    }
+
+    public function deactivateCategoria(int $id): void
+    {
+        $this->apiClient->delete('/estoque/categorias/' . $id);
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function subcategorias(): array
+    {
+        $response = $this->apiClient->get('/estoque/subcategorias');
+
+        return $response['data']['subcategorias'] ?? [];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     * @return array<string, mixed>
+     */
+    public function saveSubcategoria(array $payload): array
+    {
+        $id = (int) ($payload['id'] ?? 0);
+        $response = $id > 0
+            ? $this->apiClient->patch('/estoque/subcategorias/' . $id, $payload)
+            : $this->apiClient->post('/estoque/subcategorias', $payload);
+
+        return $response['data']['subcategoria'] ?? [];
+    }
+
+    public function deactivateSubcategoria(int $id): void
+    {
+        $this->apiClient->delete('/estoque/subcategorias/' . $id);
+    }
 }

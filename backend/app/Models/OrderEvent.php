@@ -70,6 +70,8 @@ class OrderEvent extends Model
     // sucedido: sem isso a OS ficava sem vestigio nenhum da tentativa e o
     // operador acreditava ter avisado o cliente.
     public const TIPO_WHATSAPP_FALHOU = 'whatsapp_falhou';
+    public const TIPO_EMAIL_ENVIADO = 'email_enviado';
+    public const TIPO_EMAIL_FALHOU = 'email_falhou';
 
     protected $table = 'os_eventos';
 

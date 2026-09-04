@@ -381,11 +381,15 @@ class BudgetController extends BaseApiController
 
         $result = $this->budgetApprovalService->dispatchForApproval($budget, $user, [
             'mensagem' => $request->input('mensagem'),
+            'canal' => $request->input('canal'),
         ]);
 
         return match ($result['result'] ?? 'error') {
             'ok' => $this->success(
-                ['dispatch' => $result['dispatch'] ?? []],
+                [
+                    'dispatch' => $result['dispatch'] ?? [],
+                    'message' => $result['message'] ?? '',
+                ],
                 request: $request
             ),
             'not_found' => $this->error(

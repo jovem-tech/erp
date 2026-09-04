@@ -9,6 +9,9 @@ use App\Models\BudgetSend;
 use App\Models\BudgetStatusHistory;
 use App\Models\Client;
 use App\Models\Equipment;
+use App\Models\EquipmentType;
+use App\Models\EstoqueCategoria;
+use App\Models\EstoqueSubcategoria;
 use App\Models\Financeiro;
 use App\Models\Order;
 use App\Models\OrderEvent;
@@ -407,6 +410,21 @@ class BudgetWorkflowService
             'services' => $services,
             'parts' => $parts,
             'tipos_equipamento' => Servico::tiposEquipamentoAtivos(),
+            // Taxonomia de estoque (Grupo → Categoria → Subcategoria) —
+            // obrigatória no cadastro rápido de peça deste orçamento. Mesmo
+            // formato achatado que EstoqueController::formData() já expõe.
+            'grupos' => EquipmentType::query()
+                ->where('ativo', 1)
+                ->orderBy('nome')
+                ->get(['id', 'nome'])
+                ->map(static fn (EquipmentType $tipo): array => [
+                    'id' => (int) $tipo->id,
+                    'nome' => (string) $tipo->nome,
+                ])
+                ->values()
+                ->all(),
+            'estoque_categorias' => EstoqueCategoria::activeOptions(),
+            'estoque_subcategorias' => EstoqueSubcategoria::activeOptions(),
             'status_options' => Budget::statusOptions(),
             'type_options' => Budget::typeOptions(),
             'origin_options' => Budget::originOptions(),
@@ -1092,6 +1110,18 @@ class BudgetWorkflowService
         $client = $budget->client;
         $equipment = $budget->equipment;
         $order = $budget->order;
+        $canSendApproval = in_array($status, [
+            Budget::STATUS_DRAFT,
+            Budget::STATUS_PENDING_SEND,
+            Budget::STATUS_SENT,
+            Budget::STATUS_WAITING_REPLY,
+            Budget::STATUS_PENDING,
+            Budget::STATUS_RESEND,
+        ], true);
+        // Orçamento já decidido: o dropdown troca "enviar para aprovação" por
+        // "enviar para o cliente consultar" — mesmo mecanismo, sem reabrir a
+        // decisão (ver BudgetApprovalService::dispatchForApproval).
+        $canSendClientView = in_array($status, Budget::approvedForOrderLinkStatuses(), true);
 
         $links = [];
         if ((int) ($budget->os_id ?? 0) > 0) {
@@ -1121,6 +1151,10 @@ class BudgetWorkflowService
             'envolve_equipamento' => (bool) ($budget->envolve_equipamento ?? true),
             'os_numero' => trim((string) ($order?->numero_os ?? '')),
             'vinculos' => implode(' | ', $links),
+            'telefone_contato' => trim((string) ($budget->telefone_contato ?? '')),
+            'email_contato' => trim((string) ($budget->email_contato ?? '')),
+            'cliente_email' => trim((string) ($client?->email ?? '')),
+            'enviado_em' => optional($budget->enviado_em)->format('d/m/Y H:i'),
             'validade_dias' => (int) ($budget->validade_dias ?? 0),
             'validade_data' => optional($budget->validade_data)->format('d/m/Y'),
             'subtotal' => round((float) ($budget->subtotal ?? 0), 2),
@@ -1140,6 +1174,8 @@ class BudgetWorkflowService
             'can_reject' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
             'can_cancel' => ! in_array($status, [Budget::STATUS_CONVERTED, Budget::STATUS_CANCELLED], true),
             'can_generate_os' => $this->isLinkableForOrder($budget),
+            'can_send_approval' => $canSendApproval,
+            'can_send_client_view' => $canSendClientView,
         ];
     }
 
@@ -1166,7 +1202,8 @@ class BudgetWorkflowService
             Budget::STATUS_PENDING,
             Budget::STATUS_RESEND,
         ], true);
-        $publicLink = $canSendApproval || trim((string) ($budget->token_publico ?? '')) !== ''
+        $canSendClientView = in_array($status, Budget::approvedForOrderLinkStatuses(), true);
+        $publicLink = $canSendApproval || $canSendClientView || trim((string) ($budget->token_publico ?? '')) !== ''
             ? $this->budgetApprovalService->ensurePublicApprovalUrl($budget)
             : '';
 
@@ -1314,6 +1351,7 @@ class BudgetWorkflowService
             'can_edit' => ! in_array($status, [Budget::STATUS_CONVERTED], true),
             'can_delete' => in_array($status, [Budget::STATUS_DRAFT, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
             'can_send_approval' => $canSendApproval,
+            'can_send_client_view' => $canSendClientView,
             'can_approve' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
             'can_reject' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
             'can_cancel' => ! in_array($status, [Budget::STATUS_CONVERTED, Budget::STATUS_CANCELLED], true),

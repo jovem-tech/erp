@@ -1227,6 +1227,33 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/estoque/sugerir-preco', [StockController::class, 'suggestPrice'])
         ->middleware('desktop.permission:estoque,criar|editar')
         ->name('estoque.suggest-price');
+    // Prévia do próximo código (MAX(id)+1 em Peca::generateCodigo()), só para
+    // exibir no campo antes de salvar — o valor real é gerado de novo no
+    // backend na hora do INSERT se o campo chegar em branco, então esta
+    // prévia nunca reserva nada e pode ficar desatualizada sem quebrar nada.
+    Route::get('/estoque/sugerir-codigo', [StockController::class, 'suggestCode'])
+        ->middleware('desktop.permission:estoque,criar|editar')
+        ->name('estoque.suggest-code');
+    // Taxonomia de estoque (Grupo → Categoria → Subcategoria) — modal
+    // "Gerenciar categorias" em Estoque > Mais ações.
+    Route::post('/estoque/grupos', [StockController::class, 'saveGrupo'])
+        ->middleware('desktop.permission:estoque,editar')
+        ->name('estoque.grupos.save');
+    Route::delete('/estoque/grupos/{grupo}', [StockController::class, 'deactivateGrupo'])
+        ->middleware('desktop.permission:estoque,excluir')
+        ->name('estoque.grupos.delete');
+    Route::post('/estoque/categorias', [StockController::class, 'saveCategoria'])
+        ->middleware('desktop.permission:estoque,editar')
+        ->name('estoque.categorias.save');
+    Route::delete('/estoque/categorias/{categoria}', [StockController::class, 'deactivateCategoria'])
+        ->middleware('desktop.permission:estoque,excluir')
+        ->name('estoque.categorias.delete');
+    Route::post('/estoque/subcategorias', [StockController::class, 'saveSubcategoria'])
+        ->middleware('desktop.permission:estoque,editar')
+        ->name('estoque.subcategorias.save');
+    Route::delete('/estoque/subcategorias/{subcategoria}', [StockController::class, 'deactivateSubcategoria'])
+        ->middleware('desktop.permission:estoque,excluir')
+        ->name('estoque.subcategorias.delete');
     Route::get('/estoque/exportar-csv', [StockController::class, 'exportCsv'])
         ->middleware('desktop.permission:estoque,exportar')
         ->name('estoque.export.csv');

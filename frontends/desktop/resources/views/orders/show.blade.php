@@ -75,6 +75,8 @@
         $deadline = is_array($order['prazo'] ?? null) ? $order['prazo'] : [];
         $deadlineColor = $deadlineColors[$deadline['estado'] ?? 'sem_previsao'] ?? '#64748b';
 
+        $numeroOsLegado = trim((string) ($order['numero_os_legado'] ?? ''));
+
         $dataPrevisaoFormatada = null;
         if (($order['data_previsao'] ?? '') !== '') {
             try {
@@ -125,6 +127,9 @@
             </div>
 
             <div class="os-header-meta">
+                @if ($numeroOsLegado !== '')
+                    <span class="os-header-meta-item"><i class="bi bi-archive"></i>Legado: {{ $numeroOsLegado }}</span>
+                @endif
                 @if ($duracaoLabel !== null)
                     <span class="os-header-meta-item"><i class="bi bi-clock-history"></i>{{ $duracaoLabel }}</span>
                 @endif

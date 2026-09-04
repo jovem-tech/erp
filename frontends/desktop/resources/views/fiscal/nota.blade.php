@@ -3,6 +3,7 @@
 @section('content')
     @php
         $moeda = static fn ($v) => 'R$ ' . number_format((float) $v, 2, ',', '.');
+        $formatarDocumento = static fn ($v) => \App\Support\DocumentFormatter::format($v);
         $status = $documento['status'] ?? 'rascunho';
         $emitido = in_array($status, ['emitido', 'cancelado'], true);
         $documentoId = (int) ($documento['id'] ?? 0);
@@ -145,7 +146,7 @@
                     <dd class="col-sm-8">{{ $documento['tomador_nome'] ?? '—' }}</dd>
                     <dt class="col-sm-4 surface-subtitle">CPF/CNPJ</dt>
                     <dd class="col-sm-8">
-                        {{ $documento['tomador_documento'] ?: '—' }}
+                        {{ $formatarDocumento($documento['tomador_documento'] ?? null) ?: '—' }}
                         @if (($documento['cliente_id'] ?? null) && \App\Support\DesktopSession::can('clientes', 'editar'))
                             <button type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline"
                                     data-editar-cliente

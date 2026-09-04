@@ -1622,6 +1622,24 @@
         const quickItemNameLabel = document.querySelector('[data-budget-quick-name-label]');
         const quickItemServiceGroup = document.querySelector('[data-budget-quick-group="servico"]');
         const quickItemPartGroup = document.querySelector('[data-budget-quick-group="peca"]');
+        const quickItemPartCostInput = document.getElementById('orcamentoQuickItemPartCostPrice');
+        const quickItemPartSaleInput = document.getElementById('orcamentoQuickItemPartSalePrice');
+        // Taxonomia de estoque (Grupo → Categoria → Subcategoria), obrigatória
+        // no cadastro rápido de peça. A sugestão de preço lê da Subcategoria
+        // (o nível mais específico), não da Categoria — mesma granularidade
+        // que o texto livre "categoria" tinha antes de virar 3 selects.
+        const quickItemPartGroupSelect = document.getElementById('orcamentoQuickItemPartGroup');
+        const quickItemPartCategoryInput = document.getElementById('orcamentoQuickItemPartCategory');
+        const quickItemPartSubcategoryInput = document.getElementById('orcamentoQuickItemPartSubcategory');
+        const quickItemPartPriceHint = document.getElementById('orcamentoQuickItemPartPriceHint');
+        const quickItemPartCodeInput = document.getElementById('orcamentoQuickItemPartCode');
+        const suggestPartPriceUrl = String(config.suggestPartPriceUrl || '').trim();
+        const suggestPartCodeUrl = String(config.suggestPartCodeUrl || '').trim();
+
+        if (window.DesktopUi && typeof window.DesktopUi.bindOptionCascade === 'function') {
+            window.DesktopUi.bindOptionCascade(quickItemPartGroupSelect, quickItemPartCategoryInput);
+            window.DesktopUi.bindOptionCascade(quickItemPartCategoryInput, quickItemPartSubcategoryInput);
+        }
         const reviewModalElement = document.getElementById('orcamentoReviewModal');
         const reviewPendenciesWrapper = document.querySelector('[data-budget-review-pendencies-wrapper]');
         const reviewPendenciesList = document.querySelector('[data-budget-review-pendencies]');
@@ -1633,6 +1651,11 @@
         const reviewNotesContainer = document.querySelector('[data-budget-review-notes]');
         const reviewTermsContainer = document.querySelector('[data-budget-review-terms]');
         const reviewSubmitButtons = Array.from(document.querySelectorAll('[data-budget-review-submit]'));
+        const reviewChannelEmailOption = document.querySelector('[data-budget-channel-email-option]');
+        const reviewChannelBothOption = document.querySelector('[data-budget-channel-both-option]');
+        const reviewChannelNoEmailHint = document.querySelector('[data-budget-review-channel-no-email]');
+        const reviewChannelOptions = Array.from(document.querySelectorAll('[data-budget-channel-option]'));
+        const canalEnvioInput = form.querySelector('[data-budget-canal-envio]');
 
         if (!(form instanceof HTMLFormElement) || !(itemsBody instanceof HTMLElement) || !(template instanceof HTMLTemplateElement)) {
             return;
@@ -1657,6 +1680,11 @@
             // gate de submit resolver (ou constatar que não há nada pendente).
             catalogEntriesResolved: false,
         };
+        let quickItemPartPricePending = null;
+        // Guarda o exato valor sugerido para "Código" enquanto o operador não
+        // mexer nele — usado para reverter o campo a vazio no submit e deixar
+        // o backend gerar o código de novo, fresco, na hora do INSERT.
+        let quickItemPartSuggestedCode = '';
 
         // OS encerrada (skill sistema-erp-os-fluxo-fechamento): salvar exige
         // confirmação de administrador — ver orcamentos/_admin_confirm_modal.blade.php.
@@ -1926,6 +1954,172 @@
             }
         };
 
+        const hideQuickItemPartPriceHint = () => {
+            if (quickItemPartPriceHint instanceof HTMLElement) {
+                quickItemPartPriceHint.classList.add('d-none');
+                quickItemPartPriceHint.innerHTML = '';
+            }
+        };
+
+        const applyQuickItemPartSuggestedPrice = (valor) => {
+            if (!(quickItemPartSaleInput instanceof HTMLInputElement)) {
+                return;
+            }
+
+            quickItemPartSaleInput.value = formatMoney(valor);
+            quickItemPartSaleInput.dispatchEvent(new Event('change', { bubbles: true }));
+        };
+
+        // Nunca escreve no campo sozinha: sempre uma dica abaixo de "Preço de
+        // venda" com botão "Aplicar" — decisão do usuário, não um valor que
+        // aparece pronto no campo sem ele perceber de onde veio.
+        const renderQuickItemPartPriceSuggestion = (simulacao) => {
+            if (!(quickItemPartPriceHint instanceof HTMLElement)) {
+                return;
+            }
+
+            const recomendado = toNumber(simulacao?.valor_recomendado || 0);
+            const calculado = toNumber(simulacao?.valor_calculado ?? recomendado);
+
+            if (recomendado <= 0) {
+                hideQuickItemPartPriceHint();
+                return;
+            }
+
+            quickItemPartPriceHint.classList.remove('d-none');
+            quickItemPartPriceHint.innerHTML = '';
+
+            const texto = document.createElement('span');
+
+            if (calculado > 0 && Math.abs(calculado - recomendado) > 0.005) {
+                texto.textContent = `Calculado ${formatMoney(calculado)} · sugerido ${formatMoney(recomendado)} `
+                    + '(mantém seu preço de tabela) ';
+            } else {
+                texto.textContent = `Sugerido ${formatMoney(recomendado)} `;
+
+                if (simulacao?.visibilidade_custo === 'completo'
+                    && simulacao?.percentual_encargos != null
+                    && simulacao?.percentual_margem != null) {
+                    texto.textContent += `· custo ${formatMoney(simulacao.preco_custo_referencia)}`
+                        + ` + encargos ${simulacao.percentual_encargos}%`
+                        + ` + margem ${simulacao.percentual_margem}% `;
+                }
+            }
+
+            const botao = document.createElement('button');
+            botao.type = 'button';
+            botao.className = 'btn btn-sm btn-outline-primary py-0 px-2 ms-1';
+            botao.textContent = 'Aplicar';
+            botao.addEventListener('click', () => applyQuickItemPartSuggestedPrice(recomendado));
+
+            quickItemPartPriceHint.appendChild(texto);
+            quickItemPartPriceHint.appendChild(botao);
+        };
+
+        const consultQuickItemPartPrice = () => {
+            if (!suggestPartPriceUrl || !(quickItemPartCostInput instanceof HTMLInputElement)) {
+                return;
+            }
+
+            const custo = toNumber(quickItemPartCostInput.value);
+
+            if (!(custo > 0)) {
+                hideQuickItemPartPriceHint();
+                return;
+            }
+
+            fetch(suggestPartPriceUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    'X-CSRF-TOKEN': csrfToken,
+                },
+                body: JSON.stringify({
+                    preco_custo: custo,
+                    preco_venda: quickItemPartSaleInput instanceof HTMLInputElement ? toNumber(quickItemPartSaleInput.value) : 0,
+                    // Nome da Subcategoria, não o id: o motor de preço casa
+                    // por nome de categoria em string (PrecificacaoService).
+                    categoria: quickItemPartSubcategoryInput instanceof HTMLSelectElement
+                        ? (quickItemPartSubcategoryInput.selectedOptions[0]?.text ?? '')
+                        : '',
+                }),
+            })
+                .then((resposta) => (resposta.ok ? resposta.json() : Promise.reject(resposta)))
+                .then((dados) => {
+                    if (dados && dados.simulation) {
+                        renderQuickItemPartPriceSuggestion(dados.simulation);
+                    }
+                })
+                // Sugestão é conveniência, não requisito: falha nunca pode
+                // atrapalhar o cadastro rápido da peça.
+                .catch(hideQuickItemPartPriceHint);
+        };
+
+        // `change`/`blur`, nunca `input`: em `input` a consulta dispararia a
+        // cada tecla e calcularia a sugestão a partir do custo parcial.
+        const scheduleQuickItemPartPriceLookup = () => {
+            window.clearTimeout(quickItemPartPricePending);
+            quickItemPartPricePending = window.setTimeout(consultQuickItemPartPrice, 400);
+        };
+
+        if (quickItemPartCostInput instanceof HTMLInputElement) {
+            quickItemPartCostInput.addEventListener('change', scheduleQuickItemPartPriceLookup);
+            quickItemPartCostInput.addEventListener('blur', scheduleQuickItemPartPriceLookup);
+        }
+
+        if (quickItemPartSubcategoryInput instanceof HTMLSelectElement) {
+            quickItemPartSubcategoryInput.addEventListener('change', scheduleQuickItemPartPriceLookup);
+        }
+
+        const applyQuickItemPartSuggestedCode = (codigo) => {
+            if (!(quickItemPartCodeInput instanceof HTMLInputElement)) {
+                return;
+            }
+
+            const codigoLimpo = String(codigo ?? '').trim();
+
+            // Chegada tardia depois que o operador já digitou algo: não pisa
+            // no que a pessoa escreveu.
+            if (codigoLimpo === '' || quickItemPartCodeInput.value.trim() !== '') {
+                return;
+            }
+
+            quickItemPartCodeInput.value = codigoLimpo;
+            quickItemPartSuggestedCode = codigoLimpo;
+        };
+
+        const fetchQuickItemPartSuggestedCode = () => {
+            quickItemPartSuggestedCode = '';
+
+            if (!suggestPartCodeUrl || !(quickItemPartCodeInput instanceof HTMLInputElement)) {
+                return;
+            }
+
+            fetch(suggestPartCodeUrl, {
+                method: 'GET',
+                headers: { Accept: 'application/json' },
+            })
+                .then((resposta) => (resposta.ok ? resposta.json() : Promise.reject(resposta)))
+                .then((dados) => {
+                    if (dados && dados.codigo_sugerido) {
+                        applyQuickItemPartSuggestedCode(dados.codigo_sugerido);
+                    }
+                })
+                // Sugestão é conveniência: sem ela o campo só fica em branco,
+                // exatamente como já era, e o backend gera o código de
+                // qualquer forma ao salvar.
+                .catch(() => {});
+        };
+
+        if (quickItemPartCodeInput instanceof HTMLInputElement) {
+            quickItemPartCodeInput.addEventListener('input', () => {
+                if (quickItemPartCodeInput.value.trim() !== quickItemPartSuggestedCode) {
+                    quickItemPartSuggestedCode = '';
+                }
+            });
+        }
+
         const openQuickItemModal = (row) => {
             if (!(row instanceof HTMLElement) || !(quickItemModal instanceof HTMLElement)) {
                 return;
@@ -1944,6 +2138,16 @@
             resetQuickItemForm();
             updateQuickItemMode(resolvedType);
             fillQuickItemFormFromRow(row, resolvedType);
+            hideQuickItemPartPriceHint();
+            // A linha pode já chegar com custo preenchido (edição de uma linha
+            // existente); sem isto a dica só nasceria depois de um blur manual
+            // no campo, e o operador não veria sugestão nenhuma de cara.
+            consultQuickItemPartPrice();
+
+            if (resolvedType === 'peca') {
+                fetchQuickItemPartSuggestedCode();
+            }
+
             clearQuickItemErrors();
             getModal(quickItemModal)?.show();
         };
@@ -2016,6 +2220,16 @@
                         payload[field] = toNumber(payload[field]);
                     }
                 });
+
+                // Operador não mexeu no "Código": manda em branco para o
+                // backend gerar de novo na hora do INSERT em vez de gravar a
+                // prévia (que só leu MAX(id) e pode ter ficado desatualizada
+                // desde que o modal abriu).
+                if (type === 'peca'
+                    && quickItemPartSuggestedCode !== ''
+                    && String(payload.codigo || '').trim() === quickItemPartSuggestedCode) {
+                    payload.codigo = '';
+                }
 
                 const response = await requestJson(storeUrl, {
                     method: 'POST',
@@ -2718,6 +2932,27 @@
 
             if (reviewNotesContainer instanceof HTMLElement) {
                 reviewNotesContainer.innerHTML = renderReviewNotes(snapshot);
+            }
+
+            const hasEmail = snapshot.email !== '';
+            if (reviewChannelEmailOption instanceof HTMLElement) {
+                reviewChannelEmailOption.classList.toggle('d-none', !hasEmail);
+            }
+            if (reviewChannelBothOption instanceof HTMLElement) {
+                reviewChannelBothOption.classList.toggle('d-none', !hasEmail);
+            }
+            if (reviewChannelNoEmailHint instanceof HTMLElement) {
+                reviewChannelNoEmailHint.classList.toggle('d-none', hasEmail);
+            }
+            if (!hasEmail) {
+                reviewChannelOptions.forEach((option) => {
+                    if (option instanceof HTMLInputElement && option.value !== 'whatsapp') {
+                        option.checked = false;
+                    }
+                    if (option instanceof HTMLInputElement && option.value === 'whatsapp') {
+                        option.checked = true;
+                    }
+                });
             }
 
             if (reviewPendenciesWrapper instanceof HTMLElement && reviewPendenciesList instanceof HTMLElement) {
@@ -3684,6 +3919,11 @@
                     submissionModeInput.value = mode;
                 }
 
+                if (canalEnvioInput instanceof HTMLInputElement) {
+                    const checkedChannel = reviewChannelOptions.find((option) => option instanceof HTMLInputElement && option.checked);
+                    canalEnvioInput.value = checkedChannel instanceof HTMLInputElement ? checkedChannel.value : 'whatsapp';
+                }
+
                 state.reviewConfirmed = true;
                 getModal(reviewModalElement)?.hide();
 
@@ -3703,7 +3943,16 @@
         });
 
         if (quickItemType instanceof HTMLSelectElement) {
-            quickItemType.addEventListener('change', () => updateQuickItemMode(quickItemType.value));
+            quickItemType.addEventListener('change', () => {
+                const resolvedType = getResolvedQuickType(quickItemType.value);
+                updateQuickItemMode(resolvedType);
+                hideQuickItemPartPriceHint();
+                consultQuickItemPartPrice();
+
+                if (resolvedType === 'peca' && quickItemPartCodeInput instanceof HTMLInputElement && quickItemPartCodeInput.value.trim() === '') {
+                    fetchQuickItemPartSuggestedCode();
+                }
+            });
         }
 
         if (quickItemForm instanceof HTMLFormElement) {

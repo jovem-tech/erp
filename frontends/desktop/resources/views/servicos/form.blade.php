@@ -34,13 +34,17 @@
             </div>
         </div>
 
-        <form method="post" action="{{ $isEdit ? route('servicos.update', $service['id']) : route('servicos.store') }}" class="desktop-form-grid">
+        <form method="post" action="{{ $isEdit ? route('servicos.update', $service['id']) : route('servicos.store') }}" class="desktop-grid desktop-grid-two">
             @csrf
             @if ($isEdit)
                 @method('PATCH')
             @endif
 
-            <div>
+            <div class="desktop-grid-span-2">
+                <p class="desktop-eyebrow">Identificação</p>
+            </div>
+
+            <div class="desktop-grid-span-2">
                 <label for="nome">Nome *</label>
                 <input type="text" id="nome" name="nome" class="form-control @error('nome') is-invalid @enderror" value="{{ old('nome', $service['nome']) }}" maxlength="120" required>
                 @error('nome')<div class="invalid-feedback">{{ $message }}</div>@enderror
@@ -57,34 +61,43 @@
                 @error('tipo_equipamento')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
 
-            <div class="col-span-full">
+            <div class="desktop-grid-span-2">
                 <label for="descricao">Descrição</label>
-                <textarea id="descricao" name="descricao" class="form-control @error('descricao') is-invalid @enderror" rows="4" placeholder="Explique a atividade com clareza">{{ old('descricao', $service['descricao']) }}</textarea>
+                <textarea id="descricao" name="descricao" class="form-control @error('descricao') is-invalid @enderror" rows="3" placeholder="Explique a atividade com clareza">{{ old('descricao', $service['descricao']) }}</textarea>
                 @error('descricao')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
 
-            <div>
-                <label for="valor">Valor</label>
-                <input type="number" id="valor" name="valor" class="form-control @error('valor') is-invalid @enderror" value="{{ old('valor', $service['valor']) }}" min="0" step="0.01">
-                @error('valor')<div class="invalid-feedback">{{ $message }}</div>@enderror
-                {{-- Preço sugerido (specs/037). Mesma regra do cadastro de peça:
-                     preenche o campo vazio, nunca sobrescreve digitação. --}}
-                <div class="form-text d-none" id="precoSugestao"></div>
+            <div class="desktop-grid-span-2 mt-2 pt-2 border-top">
+                <p class="desktop-eyebrow">Precificação e execução</p>
             </div>
 
-            <div>
-                <label for="tempo_padrao_horas">Tempo padrão (horas)</label>
-                <input type="number" id="tempo_padrao_horas" name="tempo_padrao_horas" class="form-control @error('tempo_padrao_horas') is-invalid @enderror" value="{{ old('tempo_padrao_horas', $service['tempo_padrao_horas']) }}" min="0" step="0.01">
-                @error('tempo_padrao_horas')<div class="invalid-feedback">{{ $message }}</div>@enderror
+            <div class="desktop-grid-span-2 desktop-grid desktop-grid-three">
+                <div>
+                    <label for="valor">Valor</label>
+                    <input type="number" id="valor" name="valor" class="form-control @error('valor') is-invalid @enderror" value="{{ old('valor', $service['valor']) }}" min="0" step="0.01">
+                    @error('valor')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                    {{-- Preço sugerido (specs/037). Mesma regra do cadastro de peça:
+                         preenche o campo vazio, nunca sobrescreve digitação. --}}
+                    <div class="form-text d-none" id="precoSugestao"></div>
+                </div>
+
+                <div>
+                    <label for="tempo_padrao_horas">Tempo padrão (horas)</label>
+                    <input type="number" id="tempo_padrao_horas" name="tempo_padrao_horas" class="form-control @error('tempo_padrao_horas') is-invalid @enderror" value="{{ old('tempo_padrao_horas', $service['tempo_padrao_horas']) }}" min="0" step="0.01">
+                    @error('tempo_padrao_horas')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
+
+                <div>
+                    <label for="custo_direto_padrao">Custo de materiais por execução</label>
+                    <input type="number" id="custo_direto_padrao" name="custo_direto_padrao" class="form-control @error('custo_direto_padrao') is-invalid @enderror" value="{{ old('custo_direto_padrao', $service['custo_direto_padrao']) }}" min="0" step="0.01">
+                    @error('custo_direto_padrao')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
             </div>
 
-            <div>
-                <label for="custo_direto_padrao">Custo de materiais por execução</label>
-                <input type="number" id="custo_direto_padrao" name="custo_direto_padrao" class="form-control @error('custo_direto_padrao') is-invalid @enderror" value="{{ old('custo_direto_padrao', $service['custo_direto_padrao']) }}" min="0" step="0.01">
-                @error('custo_direto_padrao')<div class="invalid-feedback">{{ $message }}</div>@enderror
-                {{-- Nada dizia ao operador se mão de obra entrava aqui, e metade
-                     dos cadastros a incluía — o que dupla-contaria contra
-                     tempo × custo-hora. O rótulo é a correção (specs/037). --}}
+            {{-- Nada dizia ao operador se mão de obra entrava no custo direto, e
+                 metade dos cadastros a incluía — o que dupla-contaria contra
+                 tempo × custo-hora. O rótulo é a correção (specs/037). --}}
+            <div class="desktop-grid-span-2">
                 <p class="form-text mb-0">
                     Só materiais e consumíveis (pasta térmica, cola, fita). <strong>Não inclua mão de obra</strong>
                     — ela é calculada a partir do tempo padrão × custo-hora.
@@ -94,8 +107,12 @@
             {{-- Cadeia de custo: é literalmente a saída que o motor já produz.
                  Torna `tempo_padrao_horas` um campo vivo — até aqui ele existia
                  e nenhum cálculo real o lia. --}}
-            <div class="col-span-full">
+            <div class="desktop-grid-span-2">
                 <div class="surface-card p-3 d-none" id="cadeiaCusto"></div>
+            </div>
+
+            <div class="desktop-grid-span-2 mt-2 pt-2 border-top">
+                <p class="desktop-eyebrow">Configuração</p>
             </div>
 
             <div>
@@ -111,7 +128,7 @@
             {{-- Dados fiscais: mesmo formato da aba fiscal da peca (027), fechado
                  por padrao. Aberto pesaria o cadastro do dia a dia sem motivo,
                  porque sao campos que se preenchem uma vez. --}}
-            <div class="col-span-full">
+            <div class="desktop-grid-span-2">
                 <details class="border rounded p-3">
                     <summary class="fw-semibold" style="cursor: pointer;">
                         Dados fiscais (opcional)
@@ -151,7 +168,7 @@
                 </details>
             </div>
 
-            <div class="field-actions col-span-full">
+            <div class="field-actions desktop-grid-span-2 mt-2 pt-2 border-top">
                 <button type="submit" class="btn btn-primary flex-fill">
                     <i class="bi bi-save me-2"></i>
                     {{ $isEdit ? 'Salvar alterações' : 'Cadastrar serviço' }}

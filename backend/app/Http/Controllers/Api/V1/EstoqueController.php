@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Models\EquipmentType;
+use App\Models\EstoqueCategoria;
+use App\Models\EstoqueSubcategoria;
 use App\Models\Movimentacao;
 use App\Models\Peca;
 use App\Models\User;
@@ -11,10 +13,26 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Throwable;
 
 class EstoqueController extends BaseApiController
 {
+    /**
+     * Colunas novas (`grupo`/`estoque_categoria`/`estoque_subcategoria`) vão
+     * ao final, opcionais no import — casadas por nome contra a árvore ativa;
+     * se não baterem, a peça importada nasce sem classificação, igual às
+     * peças legadas nunca reclassificadas.
+     *
+     * @var array<int, string>
+     */
+    private const CSV_COLUMNS = [
+        'codigo', 'codigo_fabricante', 'nome', 'categoria', 'tipo_equipamento',
+        'modelos_compativeis', 'fornecedor', 'localizacao', 'preco_custo', 'preco_venda',
+        'quantidade_atual', 'estoque_minimo', 'estoque_maximo', 'status', 'observacoes',
+        'grupo', 'estoque_categoria', 'estoque_subcategoria',
+    ];
+
     public function index(Request $request): JsonResponse
     {
         $this->authorize('estoque:visualizar');
@@ -22,11 +40,16 @@ class EstoqueController extends BaseApiController
         $search = trim((string) $request->query('search', $request->query('q', '')));
         $perPage = max(1, min(50, (int) $request->query('per_page', 15)));
         $ativo = $request->query('active');
-        $categoria = trim((string) $request->query('categoria', ''));
-        $tipoEquipamento = trim((string) $request->query('tipo_equipamento', ''));
+        $tipoEquipamentoId = (int) $request->query('tipo_equipamento_id', 0);
+        $estoqueCategoriaId = (int) $request->query('estoque_categoria_id', 0);
+        $estoqueSubcategoriaId = (int) $request->query('estoque_subcategoria_id', 0);
         $status = trim((string) $request->query('status', ''));
 
-        $query = Peca::query();
+        $query = Peca::query()->with([
+            'tipoEquipamento:id,nome',
+            'estoqueCategoria:id,nome',
+            'estoqueSubcategoria:id,nome',
+        ]);
 
         if ($search !== '') {
             $query->search($search);
@@ -36,12 +59,16 @@ class EstoqueController extends BaseApiController
             $query->where('ativo', filter_var($ativo, FILTER_VALIDATE_BOOL));
         }
 
-        if ($categoria !== '') {
-            $query->where('categoria', $categoria);
+        if ($tipoEquipamentoId > 0) {
+            $query->where('tipo_equipamento_id', $tipoEquipamentoId);
         }
 
-        if ($tipoEquipamento !== '') {
-            $query->where('tipo_equipamento', $tipoEquipamento);
+        if ($estoqueCategoriaId > 0) {
+            $query->where('estoque_categoria_id', $estoqueCategoriaId);
+        }
+
+        if ($estoqueSubcategoriaId > 0) {
+            $query->where('estoque_subcategoria_id', $estoqueSubcategoriaId);
         }
 
         if ($status !== '') {
@@ -78,8 +105,26 @@ class EstoqueController extends BaseApiController
         return $this->success([
             'form' => [
                 'codigo_sugerido' => Peca::generateCodigo(),
+                // Legado: alimentam os campos de texto livre que ainda não
+                // migraram para a árvore nova (ex.: modal de serviço).
                 'tipos_equipamento' => Peca::tiposEquipamentoAtivos(),
                 'categorias' => Peca::categoriasAtivas(),
+                // Taxonomia de estoque (Grupo → Categoria → Subcategoria).
+                // Vem tudo de uma vez, achatado com o id do pai em cada
+                // registro, para os 3 selects em cascata montarem no cliente
+                // sem round-trip extra.
+                'grupos' => EquipmentType::query()
+                    ->where('ativo', 1)
+                    ->orderBy('nome')
+                    ->get(['id', 'nome'])
+                    ->map(static fn (EquipmentType $tipo): array => [
+                        'id' => (int) $tipo->id,
+                        'nome' => (string) $tipo->nome,
+                    ])
+                    ->values()
+                    ->all(),
+                'estoque_categorias' => EstoqueCategoria::activeOptions(),
+                'estoque_subcategorias' => EstoqueSubcategoria::activeOptions(),
                 'status_options' => [
                     ['value' => 'ativo', 'label' => 'Ativo'],
                     ['value' => 'encerrado', 'label' => 'Encerrado'],
@@ -114,6 +159,7 @@ class EstoqueController extends BaseApiController
         $this->authorize('estoque:visualizar');
 
         $parts = Peca::query()
+            ->with(['tipoEquipamento:id,nome', 'estoqueCategoria:id,nome', 'estoqueSubcategoria:id,nome'])
             ->where('ativo', 1)
             ->whereColumn('quantidade_atual', '<=', 'estoque_minimo')
             ->orderBy('nome')
@@ -327,7 +373,10 @@ class EstoqueController extends BaseApiController
     {
         $this->authorize('estoque:exportar');
 
-        $parts = Peca::query()->orderBy('nome')->get();
+        $parts = Peca::query()
+            ->with(['tipoEquipamento:id,nome', 'estoqueCategoria:id,nome', 'estoqueSubcategoria:id,nome'])
+            ->orderBy('nome')
+            ->get();
 
         $filename = 'estoque_pecas_' . now()->format('Y-m-d_H-i') . '.csv';
 
@@ -338,7 +387,7 @@ class EstoqueController extends BaseApiController
             }
 
             fwrite($handle, "\xEF\xBB\xBF");
-            fputcsv($handle, ['codigo', 'codigo_fabricante', 'nome', 'categoria', 'tipo_equipamento', 'modelos_compativeis', 'fornecedor', 'localizacao', 'preco_custo', 'preco_venda', 'quantidade_atual', 'estoque_minimo', 'estoque_maximo', 'status', 'observacoes'], ';');
+            fputcsv($handle, self::CSV_COLUMNS, ';');
 
             foreach ($parts as $part) {
                 fputcsv($handle, [
@@ -357,6 +406,12 @@ class EstoqueController extends BaseApiController
                     $this->formatQuantidadeCsv($part->estoque_maximo ?? 0),
                     (string) ($part->status ?? ''),
                     (string) ($part->observacoes ?? ''),
+                    // Taxonomia nova, colunas no final — não desloca nada que
+                    // uma planilha externa já leia por posição. Em branco
+                    // para quem nunca foi classificado pela árvore.
+                    (string) ($part->tipoEquipamento?->nome ?? ''),
+                    (string) ($part->estoqueCategoria?->nome ?? ''),
+                    (string) ($part->estoqueSubcategoria?->nome ?? ''),
                 ], ';');
             }
 
@@ -379,7 +434,7 @@ class EstoqueController extends BaseApiController
             }
 
             fwrite($handle, "\xEF\xBB\xBF");
-            fputcsv($handle, ['codigo', 'codigo_fabricante', 'nome', 'categoria', 'tipo_equipamento', 'modelos_compativeis', 'fornecedor', 'localizacao', 'preco_custo', 'preco_venda', 'quantidade_atual', 'estoque_minimo', 'estoque_maximo', 'status', 'observacoes'], ';');
+            fputcsv($handle, self::CSV_COLUMNS, ';');
             fclose($handle);
         }, $filename, [
             'Content-Type' => 'text/csv; charset=UTF-8',
@@ -413,6 +468,15 @@ class EstoqueController extends BaseApiController
             'nome' => ['required', 'string', 'max:160'],
             'categoria' => ['nullable', 'string', 'max:120'],
             'tipo_equipamento' => ['nullable', 'string', 'max:120'],
+            // Fonte da verdade da taxonomia de estoque (Grupo → Categoria →
+            // Subcategoria) — Grupo/Categoria são derivados a partir desta
+            // subcategoria logo abaixo, nunca aceitos crus do cliente, para
+            // nunca existir uma tripla inconsistente.
+            'estoque_subcategoria_id' => [
+                'required',
+                'integer',
+                Rule::exists('estoque_subcategorias', 'id')->where(fn ($query) => $query->where('ativo', 1)),
+            ],
             'modelos_compativeis' => ['nullable', 'string'],
             'fornecedor' => ['nullable', 'string', 'max:120'],
             'localizacao' => ['nullable', 'string', 'max:120'],
@@ -475,6 +539,20 @@ class EstoqueController extends BaseApiController
         $payload['status'] = $this->normalizeStatus($validated['status'] ?? null);
         $payload['ativo'] = $request->boolean('ativo', true);
 
+        // Grupo/Categoria nunca vêm crus do cliente — derivados aqui a partir
+        // da Subcategoria escolhida, a única id realmente validada acima.
+        // Isso garante que a tripla gravada em `pecas` é sempre consistente,
+        // mesmo que o cliente mande um `estoque_categoria_id` desencontrado.
+        $subcategoria = EstoqueSubcategoria::query()
+            ->with('categoria')
+            ->find((int) $validated['estoque_subcategoria_id']);
+
+        $payload['estoque_subcategoria_id'] = $subcategoria instanceof EstoqueSubcategoria ? (int) $subcategoria->id : null;
+        $payload['estoque_categoria_id'] = $subcategoria instanceof EstoqueSubcategoria ? (int) $subcategoria->categoria_id : null;
+        $payload['tipo_equipamento_id'] = $subcategoria instanceof EstoqueSubcategoria && $subcategoria->categoria instanceof EstoqueCategoria
+            ? (int) $subcategoria->categoria->tipo_equipamento_id
+            : null;
+
         return $payload;
     }
 
@@ -527,6 +605,12 @@ class EstoqueController extends BaseApiController
                 continue;
             }
 
+            $payload += $this->resolveEstoqueTaxonomyIds(
+                $this->normalizeText($data['grupo'] ?? null),
+                $this->normalizeText($data['estoque_categoria'] ?? null),
+                $this->normalizeText($data['estoque_subcategoria'] ?? null)
+            );
+
             Peca::query()->create($payload);
             $imported++;
         }
@@ -548,6 +632,19 @@ class EstoqueController extends BaseApiController
             'nome' => (string) ($peca->nome ?? ''),
             'categoria' => (string) ($peca->categoria ?? ''),
             'tipo_equipamento' => (string) ($peca->tipo_equipamento ?? ''),
+            // Taxonomia de estoque (Grupo → Categoria → Subcategoria). Os
+            // ids ficam null para peças ainda não classificadas (as 9
+            // legadas, ou qualquer uma importada por CSV sem a coluna nova).
+            'tipo_equipamento_id' => $peca->tipo_equipamento_id !== null ? (int) $peca->tipo_equipamento_id : null,
+            'estoque_categoria_id' => $peca->estoque_categoria_id !== null ? (int) $peca->estoque_categoria_id : null,
+            'estoque_subcategoria_id' => $peca->estoque_subcategoria_id !== null ? (int) $peca->estoque_subcategoria_id : null,
+            'grupo_nome' => (string) ($peca->tipoEquipamento?->nome ?? ''),
+            'estoque_categoria_nome' => (string) ($peca->estoqueCategoria?->nome ?? ''),
+            'estoque_subcategoria_nome' => (string) ($peca->estoqueSubcategoria?->nome ?? ''),
+            // Fallback para exibição/precificação: nome da árvore nova, ou o
+            // texto legado se a peça nunca foi reclassificada.
+            'tipo_equipamento_efetivo' => (string) ($peca->tipoEquipamento?->nome ?: ($peca->tipo_equipamento ?? '')),
+            'categoria_efetiva' => (string) ($peca->estoqueSubcategoria?->nome ?: ($peca->categoria ?? '')),
             'modelos_compativeis' => (string) ($peca->modelos_compativeis ?? ''),
             'fornecedor' => (string) ($peca->fornecedor ?? ''),
             'localizacao' => (string) ($peca->localizacao ?? ''),
@@ -620,6 +717,60 @@ class EstoqueController extends BaseApiController
             'responsavel_id' => data_get($movement, 'responsavel_id') !== null ? (int) data_get($movement, 'responsavel_id') : null,
             'responsavel_nome' => (string) data_get($movement, 'responsavel_nome', ''),
             'created_at' => $this->formatDateTime(data_get($movement, 'created_at')),
+        ];
+    }
+
+    /**
+     * Resolve nomes de Grupo/Categoria/Subcategoria (vindos do CSV) para os
+     * ids da taxonomia — casamento exato case-insensitive contra os ativos.
+     * Import não exige essas 3 colunas: qualquer uma ausente ou que não bata
+     * com nada deixa a peça sem classificação, igual às legadas.
+     *
+     * @return array{tipo_equipamento_id: ?int, estoque_categoria_id: ?int, estoque_subcategoria_id: ?int}
+     */
+    private function resolveEstoqueTaxonomyIds(?string $grupoNome, ?string $categoriaNome, ?string $subcategoriaNome): array
+    {
+        $vazio = ['tipo_equipamento_id' => null, 'estoque_categoria_id' => null, 'estoque_subcategoria_id' => null];
+
+        if ($grupoNome === null || $grupoNome === '') {
+            return $vazio;
+        }
+
+        $grupo = EquipmentType::query()->where('ativo', 1)->whereRaw('LOWER(nome) = ?', [mb_strtolower($grupoNome)])->first();
+        if (! $grupo instanceof EquipmentType) {
+            return $vazio;
+        }
+
+        if ($categoriaNome === null || $categoriaNome === '') {
+            return $vazio;
+        }
+
+        $categoria = EstoqueCategoria::query()
+            ->where('ativo', 1)
+            ->where('tipo_equipamento_id', $grupo->id)
+            ->whereRaw('LOWER(nome) = ?', [mb_strtolower($categoriaNome)])
+            ->first();
+        if (! $categoria instanceof EstoqueCategoria) {
+            return $vazio;
+        }
+
+        if ($subcategoriaNome === null || $subcategoriaNome === '') {
+            return $vazio;
+        }
+
+        $subcategoria = EstoqueSubcategoria::query()
+            ->where('ativo', 1)
+            ->where('categoria_id', $categoria->id)
+            ->whereRaw('LOWER(nome) = ?', [mb_strtolower($subcategoriaNome)])
+            ->first();
+        if (! $subcategoria instanceof EstoqueSubcategoria) {
+            return $vazio;
+        }
+
+        return [
+            'tipo_equipamento_id' => (int) $grupo->id,
+            'estoque_categoria_id' => (int) $categoria->id,
+            'estoque_subcategoria_id' => (int) $subcategoria->id,
         ];
     }
 
