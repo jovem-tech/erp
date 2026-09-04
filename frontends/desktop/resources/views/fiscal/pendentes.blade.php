@@ -5,6 +5,7 @@
         $moeda = static fn ($v) => 'R$ ' . number_format((float) $v, 2, ',', '.');
         $data = static fn ($v) => $v ? \Illuminate\Support\Carbon::parse($v)->format('d/m/Y') : '—';
         $podeEditarCliente = \App\Support\DesktopSession::can('clientes', 'editar');
+        $formatarDocumento = static fn ($v) => \App\Support\DocumentFormatter::format($v);
     @endphp
 
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
@@ -53,7 +54,7 @@
                                 <td>{{ $ordem['cliente_nome'] ?? '—' }}</td>
                                 <td>
                                     @if (($ordem['cliente_documento'] ?? '') !== '')
-                                        {{ $ordem['cliente_documento'] }}
+                                        {{ $formatarDocumento($ordem['cliente_documento']) }}
                                     @elseif (($ordem['cliente_id'] ?? null) && $podeEditarCliente)
                                         {{-- Sem documento a NFS-e nao sai. O aviso LEVA ao
                                              cadastro: apontar a pendencia sem oferecer o

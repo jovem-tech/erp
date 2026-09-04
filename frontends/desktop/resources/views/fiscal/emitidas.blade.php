@@ -5,6 +5,7 @@
         $moeda = static fn ($v) => 'R$ ' . number_format((float) $v, 2, ',', '.');
         $data = static fn ($v) => $v ? \Illuminate\Support\Carbon::parse($v)->format('d/m/Y') : '—';
         $podeEmitir = \App\Support\DesktopSession::can('os', 'editar');
+        $formatarDocumento = static fn ($v) => \App\Support\DocumentFormatter::format($v);
 
         $rotulos = [
             'emitido' => ['Emitida', 'bg-success'],
@@ -167,11 +168,7 @@
                                 <td>
                                     {{ ($documento['tomador_nome'] ?? '') !== '' ? $documento['tomador_nome'] : '—' }}
                                     @if (($documento['tomador_documento'] ?? '') !== '')
-                                        {{-- Sem mascara, igual a tela da nota: o
-                                             formatador mora no backend, e um
-                                             terceiro espelho da regra de CPF/CNPJ
-                                             aqui so' daria divergencia. --}}
-                                        <span class="surface-subtitle small d-block">{{ $documento['tomador_documento'] }}</span>
+                                        <span class="surface-subtitle small d-block">{{ $formatarDocumento($documento['tomador_documento']) }}</span>
                                     @endif
                                 </td>
                                 <td>{{ $data($documento['emitido_em'] ?? null) }}</td>
