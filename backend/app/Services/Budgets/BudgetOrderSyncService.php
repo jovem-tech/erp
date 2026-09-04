@@ -33,6 +33,18 @@ class BudgetOrderSyncService
             return;
         }
 
+        // Revisão de orçamento convertido (orcamento_revisao_de_id
+        // preenchido): o status dela percorre reenviar_orcamento -> ... ->
+        // aprovado durante o próprio ciclo de aprovação, mas a OS vinculada
+        // já avançou (ou não) por fora desse ciclo — sincronizar o status da
+        // OS a partir do status da revisão empurraria a OS de volta para um
+        // status antigo. A única propagação válida de uma revisão aprovada é
+        // BudgetRevisionService::applyApprovedRevision(), que usa
+        // syncFinancialsFromBudget() (só valores, nunca status).
+        if ((int) ($budget->orcamento_revisao_de_id ?? 0) > 0) {
+            return;
+        }
+
         $order = Order::query()->find($orderId);
         if (! $order instanceof Order) {
             return;

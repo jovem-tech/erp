@@ -12,7 +12,6 @@ use App\Models\Equipment;
 use App\Models\EquipmentType;
 use App\Models\EstoqueCategoria;
 use App\Models\EstoqueSubcategoria;
-use App\Models\Financeiro;
 use App\Models\Order;
 use App\Models\OrderEvent;
 use App\Models\OrderStatus;
@@ -42,7 +41,8 @@ class BudgetWorkflowService
         private readonly FinanceiroService $financeiroService,
         private readonly OsMargemService $osMargemService,
         private readonly BudgetCommercialTermsService $budgetCommercialTermsService,
-        private readonly PrecificacaoService $precificacaoService
+        private readonly PrecificacaoService $precificacaoService,
+        private readonly BudgetRevisionService $budgetRevisionService
     ) {}
 
     /**
@@ -719,7 +719,7 @@ class BudgetWorkflowService
             }
 
             if ((string) ($budget->status ?? '') === Budget::STATUS_CONVERTED) {
-                return ['result' => 'immutable'];
+                return $this->updateConvertedBudget($budget, $user, $payload, $verifiedAdmin);
             }
 
             $order = $budget->order; // já eager-loaded por loadBudget()
@@ -900,6 +900,271 @@ class BudgetWorkflowService
     }
 
     /**
+     * Edição de um orçamento já `convertido`: chamado de dentro da mesma
+     * transação de updateBudget() (não abre transação própria). Campos
+     * operacionais (Budget::CONVERTED_EDITABLE_FIELDS) aplicam direto, sem
+     * aprovação nova. Campos financeiros/cliente
+     * (Budget::CONVERTED_REVISION_FIELDS) exigem uma revisão aprovada pelo
+     * cliente (BudgetRevisionService) — nunca são aplicados neste método.
+     * Qualquer outro campo, se vier com valor diferente do atual, é rejeitado
+     * (o orçamento convertido só pode mudar nesses dois grupos).
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function updateConvertedBudget(Budget $budget, User $user, array $payload, ?User $verifiedAdmin): array
+    {
+        $order = $budget->order; // já eager-loaded por loadBudgetForUpdate()
+
+        // Macrofase da OS encerrada ou cancelada: nenhuma mudança (nem
+        // operacional, nem de revisão) sem confirmação de administrador —
+        // mesmo padrão de bypass já usado para OS encerrada em
+        // updateBudget(), só que aqui o critério é mais amplo (grupo_macro
+        // 'encerrado' inteiro + 'cancelado', não só o subconjunto com
+        // impacto financeiro).
+        if ($this->budgetApprovalService->orderIsSettled($budget) && ! ($verifiedAdmin instanceof User)) {
+            return ['result' => 'requires_admin_confirmation_converted'];
+        }
+
+        $attributes = $this->normalizePayload($payload, false);
+
+        $allowedKeys = array_merge(Budget::CONVERTED_EDITABLE_FIELDS, Budget::CONVERTED_REVISION_FIELDS);
+        $technicalKeys = ['admin_email', 'admin_password', 'propor_revisao', 'numero', 'versao', 'status'];
+        $violations = [];
+        foreach ($attributes as $key => $value) {
+            if (in_array($key, $allowedKeys, true) || in_array($key, $technicalKeys, true)) {
+                continue;
+            }
+            if (! $this->convertedBudgetValueMatches($budget, $key, $value)) {
+                $violations[] = $key;
+            }
+        }
+        if ($violations !== []) {
+            return [
+                'result' => 'validation_error',
+                'message' => 'Orçamento convertido: campo não editável fora da lista permitida.',
+                'details' => ['fields' => $violations],
+            ];
+        }
+
+        $revisionDiffFields = [];
+        foreach (Budget::CONVERTED_REVISION_FIELDS as $field) {
+            if ($field === 'itens' || ! array_key_exists($field, $attributes)) {
+                continue;
+            }
+            if (! $this->convertedBudgetValueMatches($budget, $field, $attributes[$field])) {
+                $revisionDiffFields[] = $field;
+            }
+        }
+        $itemsChanged = array_key_exists('itens', $attributes)
+            && $this->convertedBudgetItemsDiffer($budget, is_array($attributes['itens']) ? $attributes['itens'] : []);
+        if ($itemsChanged) {
+            $revisionDiffFields[] = 'itens';
+        }
+
+        if ($revisionDiffFields !== []) {
+            if (! filter_var($attributes['propor_revisao'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                return ['result' => 'confirmation_required', 'fields' => $revisionDiffFields];
+            }
+
+            if ($this->budgetRevisionService->hasUnresolvedRevision($budget)) {
+                $pending = $this->budgetRevisionService->pendingRevisionFor($budget);
+
+                return ['result' => 'revision_conflict', 'revision_id' => (int) ($pending?->id ?? 0)];
+            }
+
+            $revisionAttributes = array_intersect_key($attributes, array_flip(Budget::CONVERTED_REVISION_FIELDS));
+            unset($revisionAttributes['itens']);
+
+            $revision = $this->budgetRevisionService->spawnRevision($budget, $user, $revisionAttributes);
+
+            if ($itemsChanged) {
+                $itemsSubtotal = $this->syncItems($revision, is_array($attributes['itens']) ? $attributes['itens'] : []);
+                $this->recalculateBudgetFinancials($revision, $itemsSubtotal, $revisionAttributes['subtotal'] ?? $revision->subtotal);
+            }
+
+            return ['result' => 'revision_created', 'revision' => $this->budgetListItem($revision->fresh())]
+                + $this->budgetDetail($this->loadBudgetOrFail((int) $budget->id));
+        }
+
+        // Sem mudança de valor/cliente: aplica os campos operacionais direto,
+        // sem passar por revisão nem tocar em status/sincronização de OS.
+        if (array_key_exists('telefone_contato', $attributes)) {
+            $budget->telefone_contato = $attributes['telefone_contato'];
+        }
+        if (array_key_exists('email_contato', $attributes)) {
+            $budget->email_contato = $attributes['email_contato'];
+        }
+        if (array_key_exists('relato_cliente', $attributes)) {
+            $budget->relato_cliente = $attributes['relato_cliente'];
+        }
+        if (array_key_exists('prazo_execucao', $attributes)) {
+            $budget->prazo_execucao = $attributes['prazo_execucao'];
+        }
+
+        if (array_key_exists('validade_data', $attributes) || array_key_exists('validade_dias', $attributes)) {
+            $newValidityDays = max(0, (int) ($attributes['validade_dias'] ?? $budget->validade_dias ?? 10));
+            $newValidityDate = $this->resolveValidityDate($attributes, $newValidityDays, $budget->validade_data);
+            $currentValidityDate = $budget->validade_data instanceof Carbon
+                ? $budget->validade_data->toDateString()
+                : trim((string) $budget->validade_data);
+
+            if ($currentValidityDate !== '' && $newValidityDate !== null && $newValidityDate < $currentValidityDate) {
+                return [
+                    'result' => 'validation_error',
+                    'message' => 'A validade de um orçamento convertido só pode ser adiada, nunca antecipada.',
+                    'details' => ['fields' => ['validade_data']],
+                ];
+            }
+
+            $budget->validade_dias = $newValidityDays;
+            $budget->validade_data = $newValidityDate;
+        }
+
+        if (array_key_exists('envolve_equipamento', $attributes)) {
+            $budget->envolve_equipamento = $this->resolveEnvolveEquipamento(
+                $attributes,
+                (bool) ($budget->envolve_equipamento ?? true)
+            );
+        }
+        $budget->equipamento_id = $this->resolveEquipmentId($attributes, $budget->os_id);
+        foreach ([
+            'equipamento_tipo_id', 'equipamento_marca_id', 'equipamento_modelo_id',
+            'equipamento_tipo_avulso', 'equipamento_marca_avulso', 'equipamento_modelo_avulso',
+            'equipamento_cor', 'equipamento_cor_hex', 'equipamento_cor_rgb',
+        ] as $field) {
+            if (array_key_exists($field, $attributes)) {
+                $budget->{$field} = $attributes[$field];
+            }
+        }
+        $this->applyClientEquipmentExclusivity($budget);
+
+        $garantiaChanged = false;
+        if (array_key_exists('garantia_dias', $attributes)) {
+            $normalizedGarantia = $this->budgetCommercialTermsService->normalizeWarrantyDays($attributes['garantia_dias']);
+            $garantiaChanged = $normalizedGarantia !== (int) ($budget->garantia_dias ?? 0);
+            $budget->garantia_dias = $normalizedGarantia;
+        }
+
+        $paymentCodes = array_key_exists('formas_pagamento', $attributes)
+            ? $this->budgetCommercialTermsService->normalizeCodes(
+                is_array($attributes['formas_pagamento']) ? $attributes['formas_pagamento'] : []
+            )
+            : null;
+
+        if ($paymentCodes !== null || array_key_exists('parcelas_sem_juros', $attributes)) {
+            $currentCodes = $paymentCodes ?? $budget->paymentMethods->sortBy('ordem')->pluck('forma_codigo')->map(strval(...))->all();
+            $budget->parcelas_sem_juros = $this->budgetCommercialTermsService->normalizeInstallments(
+                $attributes['parcelas_sem_juros'] ?? $budget->parcelas_sem_juros,
+                $currentCodes
+            );
+        }
+
+        $budget->atualizado_por = (int) $user->id;
+        $budget->save();
+
+        if ($paymentCodes !== null) {
+            $this->budgetCommercialTermsService->syncPaymentMethods($budget, $paymentCodes);
+        }
+
+        // Prazo de garantia é o que vai para o termo de garantia impresso na
+        // entrega (`{{ os.garantia_dias }}`) — uma correção deliberada no
+        // orçamento precisa refletir na OS, não só ficar registrada aqui.
+        if ($garantiaChanged && $order instanceof Order) {
+            $order->forceFill(['garantia_dias' => (int) ($budget->garantia_dias ?? 0)])->save();
+        }
+
+        if ((int) ($budget->os_id ?? 0) > 0) {
+            $this->orderEventService->record(
+                (int) $budget->os_id,
+                OrderEvent::CATEGORIA_ORCAMENTO,
+                OrderEvent::TIPO_ORCAMENTO_ATUALIZADO,
+                'Orçamento atualizado',
+                sprintf('Orçamento convertido %s atualizado (campos operacionais).', $budget->numero),
+                [
+                    'orcamento_id' => (int) $budget->id,
+                    'numero' => (string) $budget->numero,
+                ],
+                (int) $user->id
+            );
+        }
+
+        // Nunca chama syncFromBudget()/osMargemService aqui: status não muda
+        // e nada acima toca em valor — não há nada de OS para ressincronizar.
+        return $this->budgetDetail($this->loadBudgetOrFail((int) $budget->id));
+    }
+
+    private function convertedBudgetValueMatches(Budget $budget, string $key, mixed $value): bool
+    {
+        $current = $budget->getAttribute($key);
+
+        if ($current instanceof Carbon) {
+            $current = $current->toDateString();
+        }
+
+        $normalizedValue = is_string($value) ? trim($value) : $value;
+        $normalizedCurrent = is_string($current) ? trim($current) : $current;
+
+        if (is_bool($normalizedCurrent) || is_bool($normalizedValue)) {
+            return filter_var($normalizedValue, FILTER_VALIDATE_BOOLEAN) === filter_var($normalizedCurrent, FILTER_VALIDATE_BOOLEAN);
+        }
+
+        if (is_numeric($normalizedValue) && is_numeric($normalizedCurrent)) {
+            return abs((float) $normalizedValue - (float) $normalizedCurrent) < 0.0001;
+        }
+
+        return (string) ($normalizedValue ?? '') === (string) ($normalizedCurrent ?? '');
+    }
+
+    /**
+     * Diferença estrutural entre os itens submetidos e os itens atuais do
+     * orçamento (descrição/quantidade/valor unitário/desconto/acréscimo por
+     * linha, além da contagem) — usado só para decidir se um envio de
+     * orçamento convertido precisa virar uma revisão. Não recalcula preço:
+     * quem faz isso é syncItems(), só chamado depois que já se sabe que uma
+     * revisão será criada.
+     *
+     * @param  array<int, mixed>  $submittedItems
+     */
+    private function convertedBudgetItemsDiffer(Budget $budget, array $submittedItems): bool
+    {
+        $current = $budget->items->sortBy('ordem')->values();
+
+        if (count($submittedItems) !== $current->count()) {
+            return true;
+        }
+
+        foreach (array_values($submittedItems) as $index => $item) {
+            if (! is_array($item)) {
+                return true;
+            }
+
+            $existing = $current->get($index);
+            if (! $existing instanceof BudgetItem) {
+                return true;
+            }
+
+            $descricao = trim((string) ($item['descricao'] ?? ''));
+            $quantidade = (float) ($item['quantidade'] ?? 0);
+            $valorUnitario = (float) ($item['valor_unitario'] ?? 0);
+            $desconto = (float) ($item['desconto'] ?? 0);
+            $acrescimo = (float) ($item['acrescimo'] ?? 0);
+
+            if (
+                $descricao !== trim((string) $existing->descricao)
+                || abs($quantidade - (float) $existing->quantidade) > 0.0001
+                || abs($valorUnitario - (float) $existing->valor_unitario) > 0.009
+                || abs($desconto - (float) $existing->desconto) > 0.009
+                || abs($acrescimo - (float) $existing->acrescimo) > 0.009
+            ) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Corrige o título a receber (e, se preciso, os movimentos já baixados)
      * de uma OS encerrada para acompanhar o novo total do orçamento — usado
      * apenas na edição admin-autorizada de orçamento com OS já fechada.
@@ -910,21 +1175,7 @@ class BudgetWorkflowService
      */
     private function correctClosedOrderFinancials(Order $order, float $novoTotal): ?array
     {
-        $financeiro = Financeiro::query()
-            ->where('os_id', $order->id)
-            ->where('tipo', Financeiro::TIPO_RECEBER)
-            ->orderByDesc('created_at')
-            ->orderByDesc('id')
-            ->first();
-
-        if (! $financeiro instanceof Financeiro) {
-            return null;
-        }
-
-        $ajuste = $this->financeiroService->reduceMovementsToTotal($financeiro, $novoTotal);
-        $this->financeiroService->update($financeiro, ['valor' => $novoTotal]);
-
-        return $ajuste;
+        return $this->financeiroService->correctReceivableTitleForOrder($order, $novoTotal);
     }
 
     /**
@@ -996,7 +1247,8 @@ class BudgetWorkflowService
             ])
             ->where('orcamentos.tipo_orcamento', Budget::TYPE_PREVIEW)
             ->whereIn('orcamentos.status', Budget::linkableToOrderStatuses())
-            ->whereNull('orcamentos.os_id');
+            ->whereNull('orcamentos.os_id')
+            ->whereNull('orcamentos.orcamento_revisao_de_id');
     }
 
     /**
@@ -1022,7 +1274,12 @@ class BudgetWorkflowService
     {
         return (string) ($budget->tipo_orcamento ?? '') === Budget::TYPE_PREVIEW
             && in_array((string) ($budget->status ?? ''), Budget::linkableToOrderStatuses(), true)
-            && (int) ($budget->os_id ?? 0) <= 0;
+            && (int) ($budget->os_id ?? 0) <= 0
+            // Defesa em profundidade: uma revisão de orçamento convertido
+            // (ver BudgetRevisionService) sempre herda o os_id do base, então
+            // o check acima já bastaria — mas nunca deve virar origem de uma
+            // segunda OS mesmo se esse invariante mudar.
+            && (int) ($budget->orcamento_revisao_de_id ?? 0) <= 0;
     }
 
     /**
@@ -1122,6 +1379,10 @@ class BudgetWorkflowService
         // "enviar para o cliente consultar" — mesmo mecanismo, sem reabrir a
         // decisão (ver BudgetApprovalService::dispatchForApproval).
         $canSendClientView = in_array($status, Budget::approvedForOrderLinkStatuses(), true);
+        $isRevision = $this->budgetRevisionService->isRevision($budget);
+        $pendingRevision = $status === Budget::STATUS_CONVERTED
+            ? $this->budgetRevisionService->pendingRevisionFor($budget)
+            : null;
 
         $links = [];
         if ((int) ($budget->os_id ?? 0) > 0) {
@@ -1168,7 +1429,10 @@ class BudgetWorkflowService
             'total_formatado' => number_format((float) ($budget->total ?? 0), 2, ',', '.'),
             'updated_at' => optional($budget->updated_at)->format('d/m/Y H:i'),
             'created_at' => optional($budget->created_at)->format('d/m/Y H:i'),
-            'can_edit' => ! in_array($status, [Budget::STATUS_CONVERTED], true),
+            // Convertido também pode ser editado agora (edição limitada — ver
+            // BudgetWorkflowService::updateConvertedBudget()), então não
+            // exclui mais nenhum status daqui.
+            'can_edit' => true,
             'can_delete' => in_array($status, [Budget::STATUS_DRAFT, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
             'can_approve' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
             'can_reject' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
@@ -1176,6 +1440,18 @@ class BudgetWorkflowService
             'can_generate_os' => $this->isLinkableForOrder($budget),
             'can_send_approval' => $canSendApproval,
             'can_send_client_view' => $canSendClientView,
+            'is_revision' => $isRevision,
+            'revision_base' => $isRevision && $budget->revisionBase instanceof Budget ? [
+                'id' => (int) $budget->revisionBase->id,
+                'numero' => (string) $budget->revisionBase->numero,
+            ] : null,
+            'has_pending_revision' => $pendingRevision instanceof Budget,
+            'pending_revision' => $pendingRevision instanceof Budget ? [
+                'id' => (int) $pendingRevision->id,
+                'numero' => (string) $pendingRevision->numero,
+                'status' => (string) $pendingRevision->status,
+                'status_label' => Budget::statusLabel($pendingRevision->status),
+            ] : null,
         ];
     }
 
@@ -1206,6 +1482,11 @@ class BudgetWorkflowService
         $publicLink = $canSendApproval || $canSendClientView || trim((string) ($budget->token_publico ?? '')) !== ''
             ? $this->budgetApprovalService->ensurePublicApprovalUrl($budget)
             : '';
+        $isRevision = $this->budgetRevisionService->isRevision($budget);
+        $revisionBase = $isRevision ? $budget->revisionBase : null;
+        $pendingRevision = $status === Budget::STATUS_CONVERTED
+            ? $this->budgetRevisionService->pendingRevisionFor($budget)
+            : null;
 
         return [
             'id' => (int) $budget->id,
@@ -1276,6 +1557,14 @@ class BudgetWorkflowService
                 'status' => (string) ($order->status ?? ''),
                 'estado_fluxo' => (string) ($order->estado_fluxo ?? ''),
                 'is_encerrada' => $this->isOrderClosed($order),
+                // Mais amplo que is_encerrada: cobre a macrofase 'encerrado'
+                // inteira (não só o subconjunto com impacto financeiro) mais
+                // 'cancelado'. É o gate usado na edição de orçamento
+                // convertido (ver BudgetWorkflowService::
+                // updateConvertedBudget() e BudgetApprovalService::
+                // orderIsSettled()); is_encerrada continua sendo o gate de
+                // pré-conversão, sem mudança.
+                'os_settled' => $this->budgetApprovalService->orderIsSettled($budget),
             ] : null,
             'responsavel' => $budget->responsible ? [
                 'id' => (int) $budget->responsible->id,
@@ -1348,7 +1637,10 @@ class BudgetWorkflowService
             'status_options' => Budget::statusOptions(),
             'type_options' => Budget::typeOptions(),
             'origin_options' => Budget::originOptions(),
-            'can_edit' => ! in_array($status, [Budget::STATUS_CONVERTED], true),
+            // Convertido também pode ser editado agora (edição limitada — ver
+            // BudgetWorkflowService::updateConvertedBudget()), então não
+            // exclui mais nenhum status daqui.
+            'can_edit' => true,
             'can_delete' => in_array($status, [Budget::STATUS_DRAFT, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
             'can_send_approval' => $canSendApproval,
             'can_send_client_view' => $canSendClientView,
@@ -1358,6 +1650,20 @@ class BudgetWorkflowService
             'can_generate_os' => $this->isLinkableForOrder($budget),
             'has_registered_client' => $client !== null,
             'link_publico' => $publicLink,
+            'is_revision' => $isRevision,
+            'revision_base' => $revisionBase instanceof Budget ? [
+                'id' => (int) $revisionBase->id,
+                'numero' => (string) $revisionBase->numero,
+            ] : null,
+            'has_pending_revision' => $pendingRevision instanceof Budget,
+            'pending_revision' => $pendingRevision instanceof Budget ? [
+                'id' => (int) $pendingRevision->id,
+                'numero' => (string) $pendingRevision->numero,
+                'status' => (string) $pendingRevision->status,
+                'status_label' => Budget::statusLabel($pendingRevision->status),
+            ] : null,
+            'converted_editable_fields' => Budget::CONVERTED_EDITABLE_FIELDS,
+            'converted_revision_fields' => Budget::CONVERTED_REVISION_FIELDS,
             'created_at' => optional($budget->created_at)->format('d/m/Y H:i'),
             'updated_at' => optional($budget->updated_at)->format('d/m/Y H:i'),
         ];
@@ -1424,7 +1730,7 @@ class BudgetWorkflowService
         $clientId = (int) ($filters['cliente_id'] ?? $filters['client_id'] ?? 0);
         $orderId = (int) ($filters['os_id'] ?? $filters['order_id'] ?? 0);
 
-        $query = Budget::query()->with(['client', 'equipment', 'order', 'responsible', 'creator', 'updater']);
+        $query = Budget::query()->with(['client', 'equipment', 'order', 'responsible', 'creator', 'updater', 'revisionBase']);
 
         if ($search !== '') {
             $query->withSearch($search);
@@ -2120,14 +2426,14 @@ class BudgetWorkflowService
     private function loadBudget(int $budgetId): ?Budget
     {
         return Budget::query()
-            ->with(['client', 'equipment.brand', 'equipment.model', 'equipment.type', 'order', 'responsible', 'creator', 'updater', 'items', 'paymentMethods', 'histories.user', 'sends.sender', 'approvals.user'])
+            ->with(['client', 'equipment.brand', 'equipment.model', 'equipment.type', 'order', 'responsible', 'creator', 'updater', 'items', 'paymentMethods', 'histories.user', 'sends.sender', 'approvals.user', 'revisionBase'])
             ->find($budgetId);
     }
 
     private function loadBudgetForUpdate(int $budgetId): ?Budget
     {
         return Budget::query()
-            ->with(['client', 'equipment.brand', 'equipment.model', 'equipment.type', 'order', 'responsible', 'creator', 'updater', 'items', 'paymentMethods', 'histories.user', 'sends.sender', 'approvals.user'])
+            ->with(['client', 'equipment.brand', 'equipment.model', 'equipment.type', 'order', 'responsible', 'creator', 'updater', 'items', 'paymentMethods', 'histories.user', 'sends.sender', 'approvals.user', 'revisionBase'])
             ->lockForUpdate()
             ->find($budgetId);
     }

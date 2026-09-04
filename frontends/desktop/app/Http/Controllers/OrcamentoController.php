@@ -453,6 +453,18 @@ class OrcamentoController extends DesktopController
                 ->with('error', 'Não foi possível atualizar o orçamento agora. Tente novamente.');
         }
 
+        // Mudança de valor/cliente num orçamento convertido gera uma revisão
+        // separada (o orçamento base nunca sai de "convertido" — ver
+        // BudgetWorkflowService::updateConvertedBudget()). Redireciona para a
+        // revisão, não para o orçamento base inalterado, senão parece que
+        // nada aconteceu.
+        $revision = is_array($budget['_revision'] ?? null) ? $budget['_revision'] : null;
+        if ($revision !== null && (int) ($revision['id'] ?? 0) > 0) {
+            return redirect()
+                ->route('orcamentos.show', (int) $revision['id'])
+                ->with('success', 'Revisão criada. Envie para o cliente aprovar as novas condições.');
+        }
+
         return $this->redirectAfterPersist($budget, $submissionMode, false, $orcamento, $dispatchChannel);
     }
 
@@ -725,6 +737,10 @@ class OrcamentoController extends DesktopController
             // orcamentos/_admin_confirm_modal.blade.php.
             'admin_email' => ['nullable', 'string'],
             'admin_password' => ['nullable', 'string'],
+            // Confirma proposta de revisão de valor/cliente num orçamento
+            // convertido — ver orcamentos/form.blade.php (botão "Propor nova
+            // versão") e BudgetWorkflowService::updateConvertedBudget().
+            'propor_revisao' => ['nullable', 'boolean'],
         ], [], [
             'numero' => 'número',
             'versao' => 'versão',

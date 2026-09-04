@@ -153,6 +153,18 @@
                             <td data-label="Número">
                                 <div class="fw-semibold">{{ $budget['numero'] !== '' ? $budget['numero'] : ('#' . $budgetId) }}</div>
                                 <small class="text-secondary d-block">Versão {{ (int) ($budget['versao'] ?? 1) }}</small>
+                                @if (! empty($budget['is_revision']) && ! empty($budget['revision_base']))
+                                    <small class="text-secondary d-block">
+                                        <i class="bi bi-arrow-repeat"></i>
+                                        Revisão de <a href="{{ route('orcamentos.show', $budget['revision_base']['id']) }}">{{ $budget['revision_base']['numero'] }}</a>
+                                    </small>
+                                @endif
+                                @if (! empty($budget['has_pending_revision']) && ! empty($budget['pending_revision']))
+                                    <small class="text-warning-emphasis d-block">
+                                        <i class="bi bi-hourglass-split"></i>
+                                        Revisão pendente: <a href="{{ route('orcamentos.show', $budget['pending_revision']['id']) }}">{{ $budget['pending_revision']['numero'] }}</a>
+                                    </small>
+                                @endif
                             </td>
                             <td data-label="Cliente">
                                 <div class="fw-semibold">{{ $clientName !== '' ? $clientName : 'Cliente não informado' }}</div>
