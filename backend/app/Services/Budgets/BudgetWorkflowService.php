@@ -602,7 +602,13 @@ class BudgetWorkflowService
         return DB::transaction(function () use ($user, $payload, $verifiedAdmin): array {
             $attributes = $this->normalizePayload($payload, true);
             $budgetAttributes = $attributes;
-            unset($budgetAttributes['itens'], $budgetAttributes['formas_pagamento']);
+            unset(
+                $budgetAttributes['itens'],
+                $budgetAttributes['formas_pagamento'],
+                $budgetAttributes['admin_email'],
+                $budgetAttributes['admin_password'],
+                $budgetAttributes['propor_revisao']
+            );
 
             $osId = (int) ($budgetAttributes['os_id'] ?? 0);
             if ($osId > 0) {
@@ -731,7 +737,13 @@ class BudgetWorkflowService
 
             $attributes = $this->normalizePayload($payload, false);
             $budgetAttributes = $attributes;
-            unset($budgetAttributes['itens'], $budgetAttributes['formas_pagamento']);
+            unset(
+                $budgetAttributes['itens'],
+                $budgetAttributes['formas_pagamento'],
+                $budgetAttributes['admin_email'],
+                $budgetAttributes['admin_password'],
+                $budgetAttributes['propor_revisao']
+            );
             $previousStatus = (string) ($budget->status ?? Budget::STATUS_DRAFT);
             $previousTotal = (float) ($budget->total ?? 0);
 
