@@ -49,12 +49,19 @@ Existe para provar **um** ponto, e é um ponto que o código já tinha errado:
 
 Também registra dois valores em uso que divergem dos padrões do sistema:
 
-- **`serie` = 70000** (o padrão era `00001`). Série e `nDPS` compõem o `Id`
-  assinado da DPS, então divergir aqui gera `Id` que o ADN recusa.
-- **`nDPS` = 4** — ou seja, esta empresa já consumiu números pelo portal antes
-  de existir emissão automática. É por isso que `fiscal_sequencias` nasce em
-  zero e precisa ser reposicionada com `fiscal:sequencia-dps` antes de ligar em
-  produção; começar do 1 colidiria com DPS que já existem.
+- **`serie` = 70000, e isso NÃO deve ser copiado.** A série da DPS declara o
+  **tipo de emissor**, não a empresa: `00001`-`49999` é aplicativo próprio
+  (API), `50000`-`69999` emissor móvel, `70000`-`79999` **emissor web** — que é
+  o que gerou esta nota (`verAplic` = `EmissorWeb_1.6.0.0`). Usar 70000 na
+  emissão por API devolve rejeição **E0010** do Ambiente Nacional ("a série
+  informada na DPS não pertence à faixa definida para o tipo de emissor").
+  Aconteceu exatamente isso ao ler esta fixture como se a série fosse da
+  empresa. `EmissaoNfseService::conferirFaixaDaSerie()` passou a barrar antes
+  de transmitir.
+- **`nDPS` = 4 — na série do portal.** Como a numeração é **por série**, e a
+  API usa outra faixa, esses números **não** consomem a sequência da emissão
+  automática. Não se semeia `fiscal_sequencias` com o último número visto no
+  portal: são numerações independentes.
 
 ⚠️ **Esta cópia não é byte-exata.** Ela chegou por colagem em conversa, não
 como arquivo, e a assinatura original não conferia contra o conteúdo recebido

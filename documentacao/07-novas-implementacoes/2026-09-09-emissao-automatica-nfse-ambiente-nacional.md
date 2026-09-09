@@ -76,9 +76,15 @@ automação tem números que o banco nunca viu.
 A migration semeia em **zero**, não no número real de nenhuma empresa: o ERP
 é vendido, e cravar o contador de um cliente quebraria a próxima instalação.
 `php artisan fiscal:sequencia-dps --serie=SERIE --definir=N` reposiciona o
-contador para o último `nDPS` que o Emissor Nacional mostra — passo manual
-obrigatório antes de ligar em produção numa empresa que já emitia pelo
-portal.
+contador quando necessário.
+
+**A série declara o tipo de emissor, não a empresa** — `00001`-`49999` é
+aplicativo próprio (API), `70000`-`79999` é o Emissor Web do portal. Como a
+numeração é por série, notas emitidas pelo portal **não** consomem números da
+série usada pela API: não se semeia o contador da API com o último número
+visto no portal. `EmissaoNfseService::conferirFaixaDaSerie()` recusa emitir
+com série fora da faixa de aplicativo próprio, trocando a rejeição E0010 do
+ADN (que só chega depois de queimar um número) por uma mensagem local.
 
 ### Tomador deixa de ser obrigatório
 
@@ -141,9 +147,11 @@ ninguém olha é a que aceita lixo.
 1. Abrir o Swagger de produção restrita com o certificado da empresa e
    conferir path/campos contra os defaults de `config/fiscal.php`
    (`nfse.transmissao`) — corrigir por `.env` se divergir;
-2. `php artisan fiscal:sequencia-dps --serie=SERIE --definir=N` com o último
-   `nDPS` real da série, lido no Emissor Nacional;
-3. Testar em homologação: OS com documento, OS sem documento, rede caindo
+2. Conferir `FISCAL_NFSE_SERIE` — tem de estar na faixa `00001`-`49999`
+   (aplicativo próprio). **Não** copiar a série de notas emitidas pelo portal;
+3. `php artisan fiscal:sequencia-dps` só se a empresa já tiver emitido **por
+   API** nessa mesma série antes — emissões do portal não contam;
+4. Testar em homologação: OS com documento, OS sem documento, rede caindo
    no meio do envio (confirmar que a consulta evita duplicar);
-4. `FISCAL_NFSE_AMBIENTE=1` e conferir a primeira nota real no portal do
+5. `FISCAL_NFSE_AMBIENTE=1` e conferir a primeira nota real no portal do
    governo antes de liberar para o time.
