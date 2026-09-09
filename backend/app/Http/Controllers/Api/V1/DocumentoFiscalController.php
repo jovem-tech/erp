@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Api\V1;
 use App\Models\DocumentoFiscal;
 use App\Models\Order;
 use App\Services\Fiscal\DocumentoFiscalService;
+use App\Services\Fiscal\CertificadoA1;
+use App\Services\Fiscal\EmissaoNfseService;
+use App\Services\Fiscal\NfseException;
 use App\Services\Fiscal\NfseXmlImporter;
 use App\Services\Fiscal\NotaFiscalEnvioService;
 use App\Services\Pdf\NfseDanfseRenderer;
@@ -108,7 +111,7 @@ class DocumentoFiscalController extends BaseApiController
      * Monta o rascunho da NFS-e da OS — idempotente: chamar de novo devolve o
      * mesmo rascunho, nunca um segundo.
      */
-    public function rascunhoDeOrdem(Request $request, int $order): JsonResponse
+    public function rascunhoDeOrdem(Request $request, int $order, CertificadoA1 $certificado): JsonResponse
     {
         $this->authorize('fiscal:criar');
 
@@ -119,7 +122,21 @@ class DocumentoFiscalController extends BaseApiController
             $this->authenticatedUser($request)?->id
         );
 
-        return $this->success(['documento' => $this->mapear($documento)], request: $request);
+        $problemas = $certificado->problemas();
+
+        return $this->success([
+            'documento' => $this->mapear($documento),
+            // O desktop e' outra aplicacao e nao enxerga `config/fiscal.php`.
+            // Sem isto a tela nao teria como dizer se o botao de emitir esta'
+            // disponivel — nem, muito mais importante, em qual AMBIENTE ela
+            // vai emitir. Operador que emite em producao achando que testava
+            // gera documento fiscal de verdade, com obrigacao tributaria real.
+            'emissao' => [
+                'ambiente' => (int) config('fiscal.nfse.ambiente', 2),
+                'disponivel' => $problemas === [],
+                'impedimento' => $problemas === [] ? null : implode(' ', $problemas),
+            ],
+        ], request: $request);
     }
 
     public function registrarEmissao(Request $request, int $documento): JsonResponse
@@ -172,6 +189,33 @@ class DocumentoFiscalController extends BaseApiController
             // importacao silenciosa esconde o XML errado.
             'lido' => $resultado['lido'],
         ], request: $request);
+    }
+
+    /**
+     * Emite a NFS-e direto pelo sistema, transmitindo ao Ambiente Nacional.
+     *
+     * Mesma permissao de `importarXml`: as duas terminam no mesmo lugar — uma
+     * nota registrada. A diferenca e' quem digita no portal.
+     *
+     * `NfseException` vira 422 com a mensagem do ADN, e nao 500: "competencia
+     * encerrada" ou "serie ja utilizada" e' recado para o operador agir, nao
+     * erro de programa. O documento ja' foi marcado como rejeitado la' dentro
+     * quando era o caso.
+     */
+    public function emitirPeloSistema(Request $request, int $documento, EmissaoNfseService $emissao): JsonResponse
+    {
+        $this->authorize('fiscal:criar');
+
+        try {
+            $registro = $emissao->emitir(
+                DocumentoFiscal::query()->findOrFail($documento),
+                $this->authenticatedUser($request)?->id
+            );
+        } catch (NfseException $e) {
+            return $this->error($e->getMessage(), status: 422, request: $request);
+        }
+
+        return $this->success(['documento' => $this->mapear($registro)], request: $request);
     }
 
     public function registrarRejeicao(Request $request, int $documento): JsonResponse

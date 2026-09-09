@@ -128,6 +128,29 @@ class OrderFlowMapLayoutTest extends TestCase
         $this->assertLessThan($layout['cards']['entregue_reparado_pago']['y'], $layout['port']['y']);
     }
 
+    /**
+     * O trajeto percorrido e a proxima etapa sugerida sao desenhados na cor do
+     * card de destino (PHASE_COLORED em orders-map.js). Se duas macrofases
+     * dividissem a mesma cor, a leitura por cor deixaria de funcionar.
+     */
+    public function test_cards_carry_the_phase_colour_and_phases_are_distinguishable(): void
+    {
+        $cards = OrderFlowMapLayout::build($this->catalog())['cards'];
+
+        $this->assertSame(
+            OrderStatusMacroGroups::flowAccent('recepcao')['color'],
+            $cards['triagem']['color']
+        );
+        $this->assertSame(
+            OrderStatusMacroGroups::flowAccent('interrupcao')['color'],
+            $cards['aguardando_peca']['color']
+        );
+
+        // Fases distintas, cores distintas — Triagem (azul) e Aguardando Peca
+        // (amarelo) sao justamente o exemplo do pedido.
+        $this->assertNotSame($cards['triagem']['color'], $cards['aguardando_peca']['color']);
+    }
+
     public function test_empty_catalog_does_not_blow_up(): void
     {
         $layout = OrderFlowMapLayout::build([]);

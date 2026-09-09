@@ -159,6 +159,15 @@ class Financeiro extends Model
 
     public function scopeWithFilters(Builder $query, array $filters): Builder
     {
+        // Recorte de caixa: além do vencimento, o título entra no período em
+        // que foi efetivamente baixado (financeiro.data_pagamento, derivada
+        // dos movimentos por FinanceiroService::syncFromMovements()). Assim
+        // uma despesa vencida em agosto e paga em setembro aparece nos dois
+        // meses — no do compromisso e no da saída de caixa. Flag opcional
+        // porque só a tela de Despesas quer essa visão; a listagem geral de
+        // Lançamentos segue por vencimento puro.
+        $incluirBaixas = filter_var($filters['incluir_baixas_do_periodo'] ?? false, FILTER_VALIDATE_BOOLEAN);
+
         $tipo = trim((string) ($filters['tipo'] ?? ''));
         if ($tipo !== '' && $tipo !== 'todos') {
             $query->where('tipo', $tipo);
@@ -201,24 +210,48 @@ class Financeiro extends Model
         $mes = trim((string) ($filters['mes'] ?? ''));
         if (preg_match('/^\d{4}-\d{2}$/', $mes) === 1) {
             [$ano, $mesNumero] = explode('-', $mes);
-            $query->whereYear('data_vencimento', (int) $ano)->whereMonth('data_vencimento', (int) $mesNumero);
+            $ano = (int) $ano;
+            $mesNumero = (int) $mesNumero;
+
+            // Agrupamento obrigatório: sem ele o orWhere da baixa vazaria por
+            // cima de tipo/status/dre_fixo_mensal, já aplicados acima no
+            // mesmo builder.
+            $query->where(function (Builder $q) use ($ano, $mesNumero, $incluirBaixas): void {
+                $q->where(function (Builder $qq) use ($ano, $mesNumero): void {
+                    $qq->whereYear('data_vencimento', $ano)->whereMonth('data_vencimento', $mesNumero);
+                });
+
+                if ($incluirBaixas) {
+                    $q->orWhere(function (Builder $qq) use ($ano, $mesNumero): void {
+                        $qq->whereYear('data_pagamento', $ano)->whereMonth('data_pagamento', $mesNumero);
+                    });
+                }
+            });
         }
 
         // Visão padrão da tela de Despesas (fixas e variáveis, sem
         // mês/status/tipo de despesa escolhidos pelo usuário): mês corrente
         // (qualquer status) + pendências de meses anteriores ainda em
-        // aberto. Nunca inclui meses futuros — esses só aparecem se o
-        // usuário pedir explicitamente pelo filtro de mês.
+        // aberto. Meses futuros só aparecem se o usuário pedir pelo filtro
+        // de mês — a única exceção é com incluir_baixas_do_periodo: um
+        // título de vencimento futuro já baixado neste mês entra, porque o
+        // dinheiro saiu no mês corrente.
         if (filter_var($filters['periodo_atual_e_atrasadas'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
             $inicioMesAtual = now()->startOfMonth()->toDateString();
             $fimMesAtual = now()->endOfMonth()->toDateString();
 
-            $query->where(function (Builder $q) use ($inicioMesAtual, $fimMesAtual): void {
+            $query->where(function (Builder $q) use ($inicioMesAtual, $fimMesAtual, $incluirBaixas): void {
                 $q->whereBetween('data_vencimento', [$inicioMesAtual, $fimMesAtual])
                     ->orWhere(function (Builder $qq) use ($inicioMesAtual): void {
                         $qq->where('data_vencimento', '<', $inicioMesAtual)
                             ->whereIn('status', [self::STATUS_PENDENTE, self::STATUS_PARCIAL]);
                     });
+
+                if ($incluirBaixas) {
+                    // data_pagamento é NULL em pendente/cancelado, então este
+                    // ramo só traz título efetivamente baixado no mês.
+                    $q->orWhereBetween('data_pagamento', [$inicioMesAtual, $fimMesAtual]);
+                }
             });
         }
 

@@ -1,7 +1,7 @@
 # Mapa da OS passa a ser gerado do catálogo vivo, com cronologia real
 
 **Data:** 09/09/2026
-**Versão:** `5.80.0.0` – `5.80.2.0`
+**Versão:** `5.80.0.0` – `5.80.4.0` (código) · `5.80.5.1` (documentação)
 **Status:** ativo no ambiente de desenvolvimento LAN; não publicado na VPS de produção
 
 ## Objetivo
@@ -98,6 +98,14 @@ Classe pura (sem I/O). Recebe `status_disponiveis` e devolve `width/height/lanes
 (o modal, incluído por cinco telas) resolve via `OrderFlowMapLayoutFactory`, singleton
 memoizado por request.
 
+#### A faixa de desfechos divide uma linha só, alinhada à direita
+
+Saídas (Sem reparo, Cancelado) e Encerramento eram duas faixas empilhadas, cada uma com
+uma ou duas raias encostadas na margem esquerda: dois terços do desenho ficavam vazios e a
+seta roxa da baixa cruzava o mapa inteiro. Agora as três dividem a mesma linha, alinhada
+à **direita** — a raia de Encerramento cai logo abaixo de "Concluído", que é onde o fluxo
+termina, e a porta da baixa fica encostada nela. Altura do desenho caiu de 1364 para 1040.
+
 ### As arestas passaram a ser desenhadas em runtime
 
 Não existem mais no SVG. `orders-map.js` ganhou um roteador ortogonal que liga duas
@@ -105,9 +113,9 @@ caixas lidas com `getBBox()`, dentro de `[data-os-map-layer="edges"]`. Camadas:
 
 | Camada | Fonte | Estilo |
 | --- | --- | --- |
-| Trajeto percorrido | `os_eventos` categoria `status` | verde, **sempre desenhado** |
+| Trajeto percorrido | `os_eventos` categoria `status` | **cor do card de destino**, cheio, **sempre desenhado** |
 | Rota provável | frequência real medida | tracejado azul animado |
-| Próximas etapas | `proximas_etapas` | tracejado laranja curto |
+| Próximas etapas | `proximas_etapas` | **cor do card de destino**, tracejado curto |
 | Baixa | regra fixa | roxo, até a porta |
 | Catálogo (overlay) | `os_status_transicoes` | cinza fino, **desligado por padrão** |
 
@@ -136,13 +144,42 @@ até Concluído só podia contornar as raias por cima e virava um "U" gigante; a
 corta rente, por baixo dos cards de Qualidade. Os cantos são arredondados (`CORNER_R`),
 o que faz a seta ler como fluxo e não como moldura das raias.
 
-#### A faixa de desfechos divide uma linha só, alinhada à direita
+#### A cor da seta é a cor da etapa de destino
 
-Saídas (Sem reparo, Cancelado) e Encerramento eram duas faixas empilhadas, cada uma com
-uma ou duas raias encostadas na margem esquerda: dois terços do desenho ficavam vazios e a
-seta roxa da baixa cruzava o mapa inteiro. Agora as três dividem a mesma linha, alinhada
-à **direita** — a raia de Encerramento cai logo abaixo de "Concluído", que é onde o fluxo
-termina, e a porta da baixa fica encostada nela. Altura do desenho caiu de 1364 para 1040.
+Pedido do usuário: seguir o percurso e saber em que fase a OS entrou sem ler rótulo. O
+trecho `Triagem → Aguardando Peça` sai **amarelo**, a cor de "Em espera", não verde.
+
+- A cor vem do próprio nó (`data-cor`, emitido de `$card['color']`), não de uma consulta
+  por macrofase — assim a linha nunca diverge do card, inclusive quando o usuário inventa
+  um `grupo_macro` (o campo é texto livre) e o card cai na cor padrão.
+- `marker` não herda o `stroke` do path (`fill="context-stroke"` é SVG 2 e não é
+  universal), então o SVG emite dois markers por cor distinta em uso —
+  `osMapArrowFase-RRGGBB` e `osMapArrowFaseNext-RRGGBB`. Sem isso a seta amarela terminaria
+  com ponta verde. Os cinco markers de cor fixa continuam como fallback de quem não tem cor
+  de destino (a porta da baixa).
+- `PHASE_COLORED` (em `orders-map.js`) limita o comportamento a `traveled` e `next`. **A
+  rota provável fica de fora de propósito:** ela é estatística, e mantê-la azul preserva a
+  leitura de "o que aconteceu" contra "o que costuma acontecer". Baixa e catálogo também
+  ficam fora — são regra e material de leitura, não etapas.
+- **Contraste — decisão explícita do usuário (09/09/2026).** Foram oferecidas as
+  alternativas de escurecer o traço em tempo de desenho ou dar contorno escuro, e ambas
+  foram recusadas: o ponto é o traço casar com o card. Onde a cor não dava conta como
+  linha, quem mudou foi **a paleta**, não o desenho:
+  - `interrupcao` era `#FFD400` e ficava em **1.43:1** sobre o branco — sumia. Virou
+    `#B8860B` (3.25:1), que continua lendo como amarelo/dourado e destaca; o texto do card
+    passou a branco (o `#3D3200` escuro existia por causa do amarelo claro).
+  - `cancelado` era `#CC0000`, a mesma cor de `finalizado_sem_reparo`. Virou `#000000`,
+    separando as duas saídas do fluxo.
+
+  Seguem abaixo de 3:1 como linha, por opção do usuário: `orcamento` 2.24, `diagnostico`
+  2.34, `qualidade` 2.51. Registrado no docblock de
+  `OrderStatusMacroGroups::flowAccent()` e junto de `PHASE_COLORED` — **não "corrigir" sem
+  falar com o usuário.**
+
+  **Efeito colateral observado:** com `interrupcao` escuro, "Em espera" (`#B8860B`) e
+  "Execução" (`#999900`) ficaram próximos — são raias vizinhas e os dois são amarelos
+  escuros. Antes o que separava as duas era a luminosidade, não o matiz. Registrado para
+  decisão do usuário; a saída seria mexer em `execucao`, que ele não pediu.
 
 #### Legenda
 
@@ -151,6 +188,11 @@ espessura e tracejado. Antes ela mostrava "próximas etapas" como uma bolinha (h
 quando isso era só destaque de nó, não uma seta laranja) e não tinha entrada nenhuma para
 o overlay de catálogo. Agora são seis itens, e há um teste que quebra se uma camada de
 aresta existir sem amostra na legenda.
+
+As amostras de trajeto e próxima etapa são uma faixa em `linear-gradient` com paradas da
+paleta real, não uma cor chapada: com o traço colorido por destino, cor única ali seria
+mentira. Os rótulos ganharam "(cor da etapa)".
+
 
 ### A "rota provável" passou a ser medida, não declarada
 
@@ -190,26 +232,36 @@ triagem → diagnóstico (37,9%) → aguardando avaliação (20,5%) → aguardan
 `frontends/desktop/tests/Unit/OrderFlowMapLayoutTest.php`,
 `backend/tests/Feature/Api/V1/OrderFlowStatisticsTest.php`.
 
+**Documentação:** esta nota, `documentacao/03-arquitetura-tecnica/catalogo-status-os.md`
+(ordem oficial das macrofases + mapa gerado + rota medida), `backend/openapi.yaml` e o
+skill `.agents/skills/sistema-erp-os-fluxo-fechamento/SKILL.md`.
+
 **Removidos:** `scripts/python/diagrama_fluxo_os_organizado.{py,svg,png}` e
 `README-diagrama-fluxo-os.md` — manter um segundo gerador não-mantido era a causa do problema.
 
 ## Impactos
 
-- **Contrato de API:** um endpoint novo (`GET /knowledge/os-flow/estatisticas`, gate
-  `os:visualizar`). Nenhum endpoint existente mudou de forma.
-- **Banco:** nenhuma migration. Só leitura de `os_status_historico`.
+- **Contrato de API:** um endpoint novo — `GET /knowledge/os-flow/estatisticas`, gate
+  `os:visualizar`, documentado em `backend/openapi.yaml` (schema `OrderFlowStatistics`).
+  Nenhum endpoint existente mudou de forma.
+- **Banco:** nenhuma migration. Só leitura de `os_status_historico` (agregada, cache 1h).
 - **Regra de fechamento:** inalterada. Os 5 `closureCodes()` continuam entrando só por
   `OrderClosureService::close()`; o mapa segue marcando esses cards como `closure` e
   roteando o clique para a porta de baixa.
-- **Visual:** "Interrupção" → "Em espera" e "Finalizado sem Reparo" → "Sem reparo" nas
-  telas Status de OS, Modelo da Assistência e no donut do dashboard.
+- **Visual — rótulos:** "Interrupção" → "Em espera" e "Finalizado sem Reparo" → "Sem
+  reparo" nas telas Status de OS, Modelo da Assistência e no donut do dashboard.
+- **Visual — paleta de fluxo** (`flowAccent()`, usada pelo Mapa da OS e pelo fluxograma do
+  modal): "Em espera" `#FFD400` → `#B8860B` com texto branco; "Cancelado" `#CC0000` →
+  `#000000`. `accent()`/`softAccent()`, que servem o donut do dashboard e as telas Status
+  de OS / Modelo da Assistência, **não** mudaram — lá "Cancelado" segue vermelho.
 
 ## Validação
 
-- `frontends/desktop`: 557 passando; as 9 falhas restantes são pré-existentes,
+- `frontends/desktop`: **562 passando**; as 9 falhas restantes são pré-existentes,
   confirmadas com `git stash` na árvore limpa (`ClassIsolationTest`,
   `BudgetCommercialTermsAssetsTest`, `ConfigurationIntegrationsTest`,
   `FinanceiroReportTest` e 5 de `DesktopFrontendTest`).
+- `backend/openapi.yaml` validado como YAML após a inclusão do endpoint (176 paths).
 - `backend`: `OrderFlowTest` + `OrderFlowStatisticsTest` — 104 passando.
 - SVG gerado do catálogo real validado como XML: 27 cards, 10 raias, 0 cards fora do
   `viewBox`, 0 cards sobrepostos, 0 setas pré-desenhadas.

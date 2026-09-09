@@ -1,5 +1,28 @@
 # Historico de versoes
 
+## v5.80.0.0 a v5.80.4.0 - 2026-09-09
+
+- nota tecnica criada em `documentacao/07-novas-implementacoes/2026-09-09-mapa-os-gerado-do-catalogo.md`
+- Mapa da OS (`/os/{id}/mapa` e a aba "Mapa de status" do modal) deixou de ser um SVG
+  estatico gerado por script Python e passou a ser desenhado do catalogo vivo de status:
+  criar, renomear, reordenar ou desativar um status na tela "Status de OS" agora aparece
+  no mapa, sem regenerar artefato nenhum. O gerador `scripts/python/diagrama_fluxo_os_organizado.py` foi removido
+- setas saem do SVG e passam a ser desenhadas em runtime por corredores livres entre
+  raias, entao o trajeto real da OS aparece mesmo em saltos que nao existem em
+  `os_status_transicoes` — o caso que motivou a mudanca (OS 3654:
+  `aguardando_reparo -> reparo_concluido`) nao mostrava linha nenhuma
+- "rota provavel" deixou de ser Dijkstra sobre o catalogo congelado e passou a ser medida
+  da frequencia real das transicoes: novo `OrderFlowStatisticsService` e endpoint
+  `GET /api/v1/knowledge/os-flow/estatisticas` (cache 1h, gate `os:visualizar`)
+- ordem, rotulos e cores das macrofases viraram fonte unica em
+  `App\Support\OrderStatusMacroGroups` — existiam quatro copias divergentes com tres
+  ordens diferentes entre si
+- trajeto percorrido e proxima etapa sugerida passaram a ser desenhados na cor do card de
+  DESTINO; paleta de fluxo ajustada em seguida ("Em espera" `#FFD400` -> `#B8860B`,
+  "Cancelado" `#CC0000` -> `#000000`)
+- bug corrigido: a pagina cheia do mapa nao passava `statusDisponiveis`, o que marcava ~22
+  dos 27 nos como encerramento e fazia clicar em "Triagem" abrir "Encerramento e pela baixa"
+
 ## v5.40.0.0 - 2026-08-22
 
 - nota tecnica criada em `documentacao/07-novas-implementacoes/2026-08-22-backup-restauracao-sistema.md`

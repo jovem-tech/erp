@@ -669,6 +669,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/fiscal/documentos/{documento}/importar-xml', [DocumentoFiscalController::class, 'importarXml'])
         ->middleware('desktop.permission:os,editar')
         ->name('fiscal.documentos.importar-xml');
+    Route::post('/fiscal/documentos/{documento}/emitir', [DocumentoFiscalController::class, 'emitirPeloSistema'])
+        ->middleware('desktop.permission:os,editar')
+        ->name('fiscal.documentos.emitir');
     Route::post('/fiscal/os/{order}/documento-fiscal/novo', [DocumentoFiscalController::class, 'novoDocumento'])
         ->middleware('desktop.permission:os,editar')
         ->name('fiscal.documentos.novo');

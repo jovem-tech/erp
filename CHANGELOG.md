@@ -1,5 +1,29 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.80.5.1 — 2026-09-09 13:44
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Documentacao da entrega do Mapa da OS: endpoint GET /knowledge/os-flow/estatisticas documentado no backend/openapi.yaml (schema OrderFlowStatistics, 176 paths), nota de release reorganizada (a hierarquia de titulos tinha quebrado depois de cinco remendos e a secao de layout estava dentro da de setas), secoes Impactos/Arquivos/Validacao atualizadas com a paleta nova e os numeros reais, indice documentacao/README.md e historico-de-versoes.md passaram a apontar a entrega.
+- **Arquivos:** backend/openapi.yaml,documentacao/07-novas-implementacoes/2026-09-09-mapa-os-gerado-do-catalogo.md,documentacao/07-novas-implementacoes/historico-de-versoes.md,documentacao/README.md,documentacao/03-arquitetura-tecnica/catalogo-status-os.md,.agents/skills/sistema-erp-os-fluxo-fechamento/SKILL.md
+
+## v5.80.5.0 — 2026-09-09 13:41
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Tela de Despesas passa a listar tambem pelo mes da BAIXA, nao so pelo vencimento: despesa vencida em um mes e paga em outro aparece nos dois recortes (o do compromisso e o da saida de caixa) e soma nos totalizadores dos dois, em vez de sumir do mes em que o dinheiro saiu. Novo filtro incluir_baixas_do_periodo no Financeiro::scopeWithFilters (orWhere agrupado sobre data_pagamento, valendo no filtro de mes e na visao padrao mes-atual+atrasadas); so a tela de Despesas envia a flag, Lancamentos segue por vencimento puro. Badge 'Pago em atraso'/'Pago adiantado' quando a baixa cai em mes diferente do vencimento, e o filtro passa a se chamar 'Mes (vencimento ou baixa)'.
+- **Arquivos:** backend/app/Models/Financeiro.php,backend/tests/Feature/Api/V1/FinanceiroTest.php,frontends/desktop/app/Http/Controllers/FinanceiroController.php,frontends/desktop/resources/views/financeiro/despesas-fixas.blade.php,frontends/desktop/resources/views/financeiro/_lancamentos_table.blade.php,frontends/desktop/tests/Feature/Desktop/FinanceiroTest.php,documentacao/07-novas-implementacoes/2026-09-09-despesas-recorte-por-mes-da-baixa.md
+
+## v5.80.4.0 — 2026-09-09 12:23
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Mapa da OS, paleta de fluxo: 'Em espera' sai de #FFD400 para #B8860B (o amarelo claro sumia como traco, 1.43:1 sobre o branco) com texto do card em branco, e 'Cancelado' sai de #CC0000 para preto, separando as duas saidas do fluxo que dividiam a mesma cor. Removido o override de CSS do modal que existia so por causa do amarelo claro; faixa da legenda atualizada.
+- **Arquivos:** frontends/desktop/app/Support/OrderStatusMacroGroups.php,frontends/desktop/resources/views/orders/map.blade.php,frontends/desktop/resources/views/orders/_status_modal.blade.php,frontends/desktop/public/assets/js/orders-map.js
+
+## v5.80.3.0 — 2026-09-09 12:03
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Mapa da OS: o trajeto percorrido e a proxima etapa sugerida passam a ser desenhados na cor do card de DESTINO em vez de verde/laranja fixos — Triagem -> Aguardando Peca sai amarelo, a cor de 'Em espera', entao da pra seguir o percurso e saber em que fase a OS entrou sem ler rotulo. Cor lida do proprio no (data-cor), com um par de markers por cor no defs porque marker nao herda o stroke do path. Rota provavel segue azul de proposito (e estatistica, nao etapa), assim como baixa e catalogo. Legenda passa a mostrar faixa de gradiente nessas duas camadas. Contraste: decisao explicita do usuario de usar a cor literal do card mesmo com 4 das 11 cores abaixo de 3:1 sobre o branco.
+- **Arquivos:** frontends/desktop/public/assets/js/orders-map.js,frontends/desktop/resources/views/orders/_flow_map_svg.blade.php,frontends/desktop/resources/views/orders/map.blade.php,frontends/desktop/resources/views/orders/_status_modal.blade.php,frontends/desktop/app/Support/OrderStatusMacroGroups.php,frontends/desktop/tests/Unit/OrderStatusMapAssetsTest.php,frontends/desktop/tests/Unit/OrderFlowMapLayoutTest.php
+
 ## v5.80.2.0 — 2026-09-09 09:43
 - **Tier:** patch
 - **Autor/Agente:** Codex

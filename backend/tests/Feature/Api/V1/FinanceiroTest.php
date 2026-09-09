@@ -548,7 +548,8 @@ class FinanceiroTest extends TestCase
             'data_vencimento' => now()->subMonthsNoOverflow(2)->toDateString(),
         ]);
 
-        // Mês passado, já paga: NÃO deve aparecer (resolvida, é só histórico).
+        // Mês passado, paga mas SEM baixa registrada (data_pagamento nula):
+        // não entra nem pelo vencimento nem pelo recorte de caixa.
         Financeiro::query()->create([
             'tipo' => Financeiro::TIPO_PAGAR,
             'categoria' => 'Energia',
@@ -577,6 +578,142 @@ class FinanceiroTest extends TestCase
             [$mesAtualPago->id, $mesAtualPendente->id, $mesPassadoPendente->id],
             $ids
         );
+    }
+
+    public function test_index_periodo_atual_e_atrasadas_inclui_atrasada_baixada_no_mes_com_flag(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        // Venceu há dois meses, mas o dinheiro só saiu neste mês: é despesa
+        // do caixa do mês corrente, ainda que o vencimento seja antigo.
+        $atrasadaPagaAgora = Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Energia',
+            'descricao' => 'Energia atrasada, paga neste mês',
+            'valor' => 200.00,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->subMonthsNoOverflow(2)->startOfMonth()->addDays(5)->toDateString(),
+            'data_pagamento' => now()->toDateString(),
+        ]);
+
+        $semFlag = $this->getJson('/api/v1/financeiro?tipo=pagar&periodo_atual_e_atrasadas=1');
+        $semFlag->assertOk()->assertJsonCount(0, 'data.lancamentos');
+
+        $comFlag = $this->getJson('/api/v1/financeiro?tipo=pagar&periodo_atual_e_atrasadas=1&incluir_baixas_do_periodo=1');
+        $comFlag->assertOk()
+            ->assertJsonCount(1, 'data.lancamentos')
+            ->assertJsonPath('data.lancamentos.0.id', $atrasadaPagaAgora->id);
+    }
+
+    public function test_index_mes_com_incluir_baixas_do_periodo_lista_no_vencimento_e_na_baixa(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $atrasadaPagaAgora = Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Aluguel',
+            'descricao' => 'Aluguel do mês passado, pago neste mês',
+            'valor' => 900.00,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->subMonthNoOverflow()->startOfMonth()->addDays(5)->toDateString(),
+            'data_pagamento' => now()->toDateString(),
+        ]);
+
+        $mesAtual = now()->format('Y-m');
+        $mesPassado = now()->subMonthNoOverflow()->format('Y-m');
+
+        // Mês do vencimento: continua aparecendo (o compromisso é de lá).
+        $this->getJson("/api/v1/financeiro?tipo=pagar&mes={$mesPassado}&incluir_baixas_do_periodo=1")
+            ->assertOk()
+            ->assertJsonCount(1, 'data.lancamentos')
+            ->assertJsonPath('data.lancamentos.0.id', $atrasadaPagaAgora->id);
+
+        // Mês da baixa: passa a aparecer também (a saída de caixa é daqui).
+        $this->getJson("/api/v1/financeiro?tipo=pagar&mes={$mesAtual}&incluir_baixas_do_periodo=1")
+            ->assertOk()
+            ->assertJsonCount(1, 'data.lancamentos')
+            ->assertJsonPath('data.lancamentos.0.id', $atrasadaPagaAgora->id);
+
+        // Sem a flag (listagem geral de Lançamentos) segue por vencimento puro.
+        $this->getJson("/api/v1/financeiro?tipo=pagar&mes={$mesAtual}")
+            ->assertOk()
+            ->assertJsonCount(0, 'data.lancamentos');
+    }
+
+    public function test_index_totais_despesas_incluem_atrasada_baixada_no_mes(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Água',
+            'descricao' => 'Água deste mês',
+            'valor' => 50.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->startOfMonth()->addDays(2)->toDateString(),
+            'dre_fixo_mensal' => true,
+        ]);
+
+        Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Aluguel',
+            'descricao' => 'Aluguel do mês passado, pago neste mês',
+            'valor' => 900.00,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->subMonthNoOverflow()->startOfMonth()->addDays(5)->toDateString(),
+            'data_pagamento' => now()->toDateString(),
+            'dre_fixo_mensal' => true,
+        ]);
+
+        $mesAtual = now()->format('Y-m');
+
+        // O totalizador passa pelo mesmo scope da listagem: se a despesa
+        // aparece na tabela, ela tem de estar somada aqui.
+        $this->getJson("/api/v1/financeiro?tipo=pagar&mes={$mesAtual}&incluir_baixas_do_periodo=1")
+            ->assertOk()
+            ->assertJsonPath('data.totais_despesas.fixas', 950.0);
+
+        $this->getJson("/api/v1/financeiro?tipo=pagar&mes={$mesAtual}")
+            ->assertOk()
+            ->assertJsonPath('data.totais_despesas.fixas', 50.0);
+    }
+
+    public function test_incluir_baixas_do_periodo_nao_vaza_por_cima_dos_demais_filtros(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        // Paga no mês corrente: entraria pelo ramo da baixa, mas o filtro
+        // status=pendente tem de continuar valendo (o orWhere do período
+        // precisa estar agrupado).
+        Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Energia',
+            'descricao' => 'Energia atrasada, paga neste mês',
+            'valor' => 200.00,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now()->subMonthsNoOverflow(2)->startOfMonth()->addDays(5)->toDateString(),
+            'data_pagamento' => now()->toDateString(),
+        ]);
+
+        $pendente = Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Água',
+            'descricao' => 'Água deste mês',
+            'valor' => 50.00,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->startOfMonth()->addDays(2)->toDateString(),
+        ]);
+
+        $mesAtual = now()->format('Y-m');
+
+        $this->getJson("/api/v1/financeiro?tipo=pagar&status=pendente&mes={$mesAtual}&incluir_baixas_do_periodo=1")
+            ->assertOk()
+            ->assertJsonCount(1, 'data.lancamentos')
+            ->assertJsonPath('data.lancamentos.0.id', $pendente->id);
     }
 
     public function test_index_totais_despesas_sums_fixed_and_variable_and_ignores_cancelled(): void

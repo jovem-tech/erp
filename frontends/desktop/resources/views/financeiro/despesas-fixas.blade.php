@@ -67,7 +67,7 @@
         </div>
 
         <div>
-            <label for="mes">Mês (vencimento)</label>
+            <label for="mes">Mês (vencimento ou baixa)</label>
             <input type="month" id="mes" name="mes" class="form-control" value="{{ $filters['mes'] ?? '' }}">
         </div>
 
@@ -81,7 +81,7 @@
         </div>
     </x-list-filters>
 
-    <div class="desktop-grid desktop-grid-two mb-4">
+    <div class="desktop-grid desktop-grid-two mb-2">
         <div class="desktop-form-card text-center">
             <p class="surface-subtitle mb-1">Total despesas fixas{{ ($filters['mes'] ?? '') !== '' ? ' — ' . $filters['mes'] : '' }}</p>
             <h3 class="surface-title mb-0">R$ {{ number_format((float) ($totaisDespesas['fixas'] ?? 0), 2, ',', '.') }}</h3>
@@ -91,6 +91,14 @@
             <h3 class="surface-title mb-0">R$ {{ number_format((float) ($totaisDespesas['variaveis'] ?? 0), 2, ',', '.') }}</h3>
         </div>
     </div>
+
+    {{-- Sem esta linha o usuário não entende por que a mesma despesa soma em
+         dois meses: ela conta no mês do vencimento e no mês em que foi paga. --}}
+    <p class="surface-subtitle small mb-4">
+        <i class="bi bi-info-circle me-1"></i>
+        O mês inclui o que <strong>venceu</strong> nele e também o que foi <strong>baixado</strong> nele — uma despesa
+        atrasada paga agora aparece no mês do vencimento e no mês do pagamento.
+    </p>
 
     @include('financeiro._lancamentos_table', [
         'lancamentos' => $lancamentos,

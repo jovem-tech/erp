@@ -43,7 +43,7 @@ return [
         // obrigacao tributaria real e cancelamento a fazer.
         'ambiente' => (int) env('FISCAL_NFSE_AMBIENTE', 2),
         'versao_aplicativo' => (string) env('FISCAL_NFSE_VERSAO_APP', 'ERP-JT'),
-        'serie' => (string) env('FISCAL_NFSE_SERIE', '00001'),
+        'serie' => (string) env('FISCAL_NFSE_SERIE', '70000'),
         // `opSimpNac` no layout da DPS. Um XML real de NFS-e MEI devolvido pelo
         // Ambiente Nacional traz **2** — o padrao anterior (1) faria a DPS
         // declarar regime errado. Confirmar com o contador mesmo assim: o
@@ -67,5 +67,37 @@ return [
         // (a fixture versionada no repo e' uma). Mesmo desligado, XML assinado
         // e ADULTERADO continua sendo recusado — isso nao e' configuravel.
         'exigir_assinatura_xml' => (bool) env('FISCAL_NFSE_EXIGIR_ASSINATURA', true),
+
+        /*
+         | Transmissao ao Ambiente Nacional (SEFIN Nacional).
+         |
+         | O path e os nomes de campo ficam AQUI, e nao em constante, de
+         | proposito: o Swagger oficial exige certificado para abrir, entao a
+         | conferencia do contrato so' acontece em homologacao, com o
+         | certificado da empresa na mao. Se divergir, o conserto e' `.env` —
+         | nao deploy.
+         |
+         | O corpo vai e volta comprimido: DPS assinada -> gzip -> base64 no
+         | campo de envio; a resposta traz a NFS-e pronta pelo mesmo caminho,
+         | mais a chave de acesso de 50 posicoes.
+         */
+        'transmissao' => [
+            'urls' => [
+                // 1 = producao, 2 = homologacao ("producao restrita"),
+                // indexado pelo mesmo `ambiente` acima.
+                1 => (string) env('FISCAL_NFSE_URL_PRODUCAO', 'https://sefin.nfse.gov.br/SefinNacional'),
+                2 => (string) env('FISCAL_NFSE_URL_HOMOLOGACAO', 'https://sefin.producaorestrita.nfse.gov.br/SefinNacional'),
+            ],
+            'path_emissao' => (string) env('FISCAL_NFSE_PATH_EMISSAO', '/nfse'),
+            // `{idDps}` e' substituido pelo Id da DPS na consulta.
+            'path_consulta_dps' => (string) env('FISCAL_NFSE_PATH_CONSULTA_DPS', '/dps/{idDps}'),
+            'campo_dps' => (string) env('FISCAL_NFSE_CAMPO_DPS', 'dpsXmlGZipB64'),
+            'campo_resposta' => (string) env('FISCAL_NFSE_CAMPO_RESPOSTA', 'nfseXmlGZipB64'),
+            // Emissao sincrona: o ADN monta a nota antes de responder, entao o
+            // teto e' generoso de proposito. Cortar cedo demais e' o caminho
+            // para o pior caso — nota emitida la', rascunho aqui.
+            'timeout' => (int) env('FISCAL_NFSE_TIMEOUT', 60),
+            'connect_timeout' => (int) env('FISCAL_NFSE_CONNECT_TIMEOUT', 15),
+        ],
     ],
 ];

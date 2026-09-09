@@ -1312,6 +1312,7 @@ class OrderController extends DesktopController
             'tempo_tecnico_horas' => ['nullable', 'numeric', 'min:0', 'max:999'],
             'notificar_cliente' => ['nullable', 'boolean'],
             'emitir_nota_fiscal' => ['nullable', 'boolean'],
+            'emitir_nfse_automatico' => ['nullable', 'boolean'],
             'nota_fiscal_xml' => ['nullable', 'file', 'mimes:xml,txt', 'max:10240'],
             'agendar_retorno' => ['nullable', 'boolean'],
             'retorno_data' => ['nullable', 'date'],
@@ -1388,6 +1389,34 @@ class OrderController extends DesktopController
                     ->route('fiscal.nota', $order)
                     ->with('error', 'A OS foi encerrada, mas o XML não pôde ser registrado: '
                         .$excecao->getMessage().' Importe o XML novamente aqui.');
+            }
+        }
+
+        if ($encerrouEntregue && $request->boolean('emitir_nfse_automatico')) {
+            // Mesma regra do bloco acima, e pelo mesmo motivo: a OS JA FOI
+            // ENCERRADA. Falha na emissao nao pode desfazer o encerramento —
+            // seria dizer que a baixa nao aconteceu quando aconteceu, e o
+            // operador tentaria de novo numa OS ja' fechada.
+            //
+            // A nota fica como rascunho com o nDPS gravado, e a retentativa
+            // pela tela da nota consulta o Ambiente Nacional antes de reenviar
+            // — e' o que impede emitir duas vezes o mesmo servico.
+            try {
+                $documento = $this->documentoFiscalService->rascunhoDeOrdem($order);
+                $emitida = $this->documentoFiscalService->emitirPeloSistema((int) ($documento['id'] ?? 0));
+                $nota = $emitida['documento'] ?? [];
+
+                return redirect()
+                    ->route('fiscal.nota', $order)
+                    ->with('success', $message.sprintf(
+                        ' NFS-e nº %s emitida pelo sistema.',
+                        $nota['numero'] ?? '—'
+                    ));
+            } catch (Throwable $excecao) {
+                return redirect()
+                    ->route('fiscal.nota', $order)
+                    ->with('error', 'A OS foi encerrada, mas a nota não pôde ser emitida: '
+                        .$excecao->getMessage().' Tente emitir novamente aqui.');
             }
         }
 

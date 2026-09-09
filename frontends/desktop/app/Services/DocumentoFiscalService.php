@@ -46,9 +46,25 @@ class DocumentoFiscalService
      */
     public function rascunhoDeOrdem(int $order): array
     {
+        return $this->rascunhoComContexto($order)['documento'] ?? [];
+    }
+
+    /**
+     * Rascunho MAIS o contexto de emissao (ambiente e disponibilidade do
+     * certificado).
+     *
+     * O desktop e' uma aplicacao separada e nao le' `config/fiscal.php` do
+     * backend — sem este atalho a tela nao teria como avisar que a emissao sai
+     * em homologacao, nem por que o botao esta' indisponivel. Uma chamada so',
+     * a mesma que ja' abre o rascunho.
+     *
+     * @return array<string, mixed>
+     */
+    public function rascunhoComContexto(int $order): array
+    {
         $response = $this->apiClient->post('/orders/' . $order . '/documento-fiscal', []);
 
-        return $response['data']['documento'] ?? [];
+        return $response['data'] ?? [];
     }
 
     /**
@@ -126,6 +142,22 @@ class DocumentoFiscalService
             [],
             ['arquivo' => [$arquivo]]
         );
+
+        return $response['data'] ?? [];
+    }
+
+    /**
+     * Emite a NFS-e pelo proprio sistema, transmitindo ao Ambiente Nacional.
+     *
+     * Sincrono de proposito: o endpoint do governo responde com a nota pronta,
+     * e o operador precisa ver o numero na volta. O page loader do desktop e'
+     * quem segura a espera.
+     *
+     * @return array<string, mixed>
+     */
+    public function emitirPeloSistema(int $documento): array
+    {
+        $response = $this->apiClient->post('/fiscal/documentos/' . $documento . '/emitir');
 
         return $response['data'] ?? [];
     }

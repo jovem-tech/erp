@@ -214,9 +214,25 @@
        correspondente em espessura, cor e tracejado. Ao mexer numa camada de
        aresta, mexa nas duas — legenda que nao bate com o desenho e pior que
        legenda nenhuma. */
-    .os-map-legend-swatch--traveled { border-top-width: 5px; border-top-color: #2B8A3E; }
+    /* Trajeto e proxima etapa sao desenhados na cor da etapa de DESTINO, entao
+       amostra de cor chapada aqui seria mentira: viram uma faixa com paradas
+       da paleta real das macrofases. Ver PHASE_COLORED em orders-map.js. */
+    .os-map-legend-swatch--traveled,
+    .os-map-legend-swatch--next {
+        border-top: 0;
+        background: linear-gradient(90deg, #10739E, #F2931E, #B8860B, #00994D);
+    }
+
+    .os-map-legend-swatch--traveled { height: 5px; }
+
+    /* Tracejado simulado; sem suporte a mask degrada para faixa continua. */
+    .os-map-legend-swatch--next {
+        height: 3px;
+        -webkit-mask: repeating-linear-gradient(90deg, #000 0 4px, transparent 4px 8px);
+        mask: repeating-linear-gradient(90deg, #000 0 4px, transparent 4px 8px);
+    }
+
     .os-map-legend-swatch--route { border-top-width: 4px; border-top-style: dashed; border-top-color: #1864AB; }
-    .os-map-legend-swatch--next { border-top-width: 3px; border-top-style: dashed; border-top-color: #F08C00; }
     .os-map-legend-swatch--baixa { border-top-width: 4px; border-top-color: #7048E8; }
     .os-map-legend-swatch--catalog { border-top-width: 2px; border-top-color: #AAB4C0; opacity: 0.7; }
 
@@ -515,10 +531,10 @@
         <div class="os-map-frame">
             <div class="os-map-legend">
                 <div class="os-map-legend-items">
-                    <span class="os-map-legend-item" title="Por onde esta OS realmente passou, na ordem em que aconteceu."><span class="os-map-legend-swatch os-map-legend-swatch--traveled"></span>trajeto percorrido</span>
+                    <span class="os-map-legend-item" title="Por onde esta OS realmente passou, na ordem em que aconteceu."><span class="os-map-legend-swatch os-map-legend-swatch--traveled"></span>trajeto percorrido (cor da etapa)</span>
                     <span class="os-map-legend-item"><span class="os-map-legend-dot os-map-legend-dot--current"></span>posição atual</span>
                     <span class="os-map-legend-item" title="Caminho mais frequente a partir da etapa atual, medido no histórico real das OS."><span class="os-map-legend-swatch os-map-legend-swatch--route"></span>rota provável (medida do histórico)</span>
-                    <span class="os-map-legend-item" title="Etapas sugeridas pelo catálogo a partir da etapa atual."><span class="os-map-legend-swatch os-map-legend-swatch--next"></span>próxima etapa sugerida</span>
+                    <span class="os-map-legend-item" title="Etapas sugeridas pelo catálogo a partir da etapa atual."><span class="os-map-legend-swatch os-map-legend-swatch--next"></span>próxima etapa sugerida (cor da etapa)</span>
                     <span class="os-map-legend-item" title="Os status de encerramento só são aplicados pela tela de baixa."><span class="os-map-legend-swatch os-map-legend-swatch--baixa"></span>baixa da OS (encerramento)</span>
                     <span class="os-map-legend-item" title="Ligue no botão da barra de ferramentas para ver as transições cadastradas."><span class="os-map-legend-swatch os-map-legend-swatch--catalog"></span>catálogo de transições (opcional)</span>
                     <span class="os-map-legend-item">clique numa etapa para mover a OS</span>
