@@ -33,6 +33,23 @@ class SecurityHeaders
 
         if ($isHtml) {
             $response->headers->set('Content-Security-Policy', $this->policy());
+
+            // Sem no-store, o "Voltar" depois do logout remontava a tela
+            // autenticada: o bfcache guarda a página JÁ RENDERIZADA em memória e
+            // a devolve sem tocar no servidor, então EnsureBackendToken nunca
+            // roda para redirecionar ao login. O `no-cache, private` que o
+            // Laravel manda por padrão não resolve — ele governa o cache HTTP,
+            // e o bfcache não é cache HTTP. Só `no-store` torna o documento
+            // inelegível para o bfcache, fechando os dois de uma vez.
+            //
+            // Vale para as telas públicas também: o formulário de login carrega
+            // token CSRF e não deve ficar em disco.
+            //
+            // Efeito colateral: sem bfcache, todo Voltar vira carga completa com
+            // navigationType 'back_forward'. O guard de sessão em layouts.app já
+            // trata esse tipo confiando só no heartbeat — sem aquilo, esta linha
+            // deslogaria o usuário a cada Voltar.
+            $response->headers->set('Cache-Control', 'private, no-store, max-age=0');
         }
 
         $response->headers->set('X-Content-Type-Options', 'nosniff');
