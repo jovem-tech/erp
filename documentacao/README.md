@@ -14,6 +14,7 @@ Este índice organiza a documentação da nova plataforma `sistema-erp`.
 
 ## Atualizações recentes
 
+- [Emissão automática de NFS-e pelo Ambiente Nacional](07-novas-implementacoes/2026-09-09-emissao-automatica-nfse-ambiente-nacional.md)
 - [Mapa da OS gerado do catálogo vivo, com cronologia real](07-novas-implementacoes/2026-09-09-mapa-os-gerado-do-catalogo.md)
 - [Catálogo de status da OS — ordem oficial das macrofases e rota medida](03-arquitetura-tecnica/catalogo-status-os.md)
 - [Consolidado de 20/07/2026 — Gerenciador de Arquivos, permissões e criação segura de OS](07-novas-implementacoes/2026-07-20-consolidado-gerenciador-arquivos-permissoes-os.md)
