@@ -332,6 +332,67 @@
 
         <div class="col-12 col-lg-{{ $emitido ? '7' : '5' }}">
             @if (! $emitido)
+                @php
+                    $emissaoAmbiente = (int) ($emissao['ambiente'] ?? 2);
+                    $emissaoDisponivel = (bool) ($emissao['disponivel'] ?? false);
+                    $emissaoImpedimento = $emissao['impedimento'] ?? null;
+                    $emissaoProducao = $emissaoAmbiente === 1;
+                @endphp
+
+                {{-- Emissao direta (spec 041). Vem ANTES dos caminhos manuais
+                     de proposito: quando funciona, e' o caminho curto, e os
+                     outros dois viram alternativa para quando o ADN esta' fora
+                     ou a nota ja' foi emitida no portal. --}}
+                <div class="surface-card p-3 mb-3">
+                    <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                        <h3 class="surface-title fs-5 mb-0">Emitir agora pelo sistema</h3>
+                        @if ($emissaoProducao)
+                            <span class="badge bg-danger align-self-center">Produção</span>
+                        @else
+                            <span class="badge bg-warning text-dark align-self-center">Homologação</span>
+                        @endif
+                    </div>
+
+                    <p class="surface-subtitle small mb-3">
+                        Transmite a nota direto ao Ambiente Nacional com o certificado A1 —
+                        sem abrir o portal, sem redigitar. O XML volta assinado e já fica guardado.
+                    </p>
+
+                    @if ($emissaoProducao)
+                        <div class="alert alert-danger py-2 px-3 small mb-3">
+                            <strong>Isto gera documento fiscal de verdade</strong>, com obrigação
+                            tributária real. Desfazer exige pedido de cancelamento.
+                        </div>
+                    @else
+                        <div class="alert alert-warning py-2 px-3 small mb-3">
+                            Ambiente de <strong>homologação</strong>: a nota é de teste e não vale
+                            para o cliente nem para o fisco.
+                        </div>
+                    @endif
+
+                    @if ($emissaoDisponivel)
+                        <form method="POST" action="{{ route('fiscal.documentos.emitir', $documentoId) }}">
+                            @csrf
+                            <input type="hidden" name="os_id" value="{{ $osId }}">
+                            <button type="submit" class="btn btn-primary w-100"
+                                    onclick="return confirm('{{ $emissaoProducao
+                                        ? 'Emitir a NFS-e em PRODUÇÃO? A nota passa a valer de verdade.'
+                                        : 'Emitir a NFS-e em homologação (teste)?' }}');">
+                                <i class="bi bi-send me-1"></i>Emitir NFS-e
+                            </button>
+                        </form>
+                    @else
+                        <button type="button" class="btn btn-primary w-100" disabled>
+                            <i class="bi bi-send me-1"></i>Emitir NFS-e
+                        </button>
+                        <p class="surface-subtitle small mt-2 mb-0">
+                            Indisponível: {{ $emissaoImpedimento ?: 'certificado A1 não configurado.' }}
+                            <a href="{{ route('configurations.integrations.index') }}">Abrir Integrações</a>.
+                            Enquanto isso, use os caminhos abaixo.
+                        </p>
+                    @endif
+                </div>
+
                 <div class="surface-card p-3 mb-3">
                     <h3 class="surface-title fs-5 mb-2">Importar o XML da nota</h3>
                     <p class="surface-subtitle small mb-3">

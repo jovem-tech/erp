@@ -445,9 +445,15 @@ pelo usuario. Implementado em `orders-status-modal.js`
   o usuario o descreve como saida distinta), embora no fluxograma de
   referencia ele apareca na mesma faixa de "sem reparo".
 - Paleta por fase (`--phase-color`/`--phase-text`): recepcao `#10739E`,
-  diagnostico `#F2931E`, orcamento `#66B2FF`, interrupcao `#FFD400` (texto
-  escuro), execucao `#999900`, qualidade `#9999FF`, concluido `#00994D`,
-  finalizado_sem_reparo e cancelado `#CC0000`. Desde 2026-09-09 vem de
+  diagnostico `#F2931E`, orcamento `#66B2FF`, interrupcao `#B8860B`, execucao
+  `#999900`, qualidade `#9999FF`, concluido `#00994D`, finalizado_sem_reparo
+  `#CC0000`, cancelado `#000000`.
+  Ajustes de 2026-09-09 pedidos pelo usuario ao ver o mapa: `interrupcao` era
+  `#FFD400` (texto escuro) e sumia como linha (1.43:1 sobre o branco); virou
+  `#B8860B` com texto branco. `cancelado` era `#CC0000`, igual a
+  `finalizado_sem_reparo`; virou preto para separar as duas saidas. Como a cor
+  agora e' tambem a cor do TRACO, qualquer cor nova precisa funcionar nos dois
+  papeis — preenchimento de card e linha sobre fundo branco. Desde 2026-09-09 vem de
   `OrderStatusMacroGroups::flowAccent()` e e aplicada **inline** por raia (era
   seletor CSS `.os-flow-row[data-phase="..."]`, que deixava macrofase nova sem
   cor). Nao confundir com `accent()`/`softAccent()`, que sao a paleta do donut
@@ -621,9 +627,18 @@ roteando coordenadas no Python. **O script foi removido; nao recriar.**
   quem nao tem o catalogo a mao — o modal e incluido por cinco telas.
 - **As setas nao existem no SVG.** Sao desenhadas em runtime por
   `orders-map.js` dentro de `[data-os-map-layer="edges"]`, a partir das caixas
-  dos cards (`getBBox()`). Camadas: trajeto percorrido (verde), rota provavel
-  (tracejado azul), proximas etapas (laranja), baixa (roxo) e o overlay
-  opcional do catalogo (cinza, desligado por padrao).
+  dos cards (`getBBox()`). Camadas: trajeto percorrido, rota provavel
+  (tracejado azul), proximas etapas, baixa (roxo) e o overlay opcional do
+  catalogo (cinza, desligado por padrao).
+- **Trajeto percorrido e proximas etapas usam a COR DO CARD DE DESTINO**
+  (2026-09-09) — `PHASE_COLORED` em `orders-map.js`, cor lida do `data-cor` do
+  proprio no. Rota provavel fica de fora de proposito (e' estatistica; azul
+  distingue "o que aconteceu" de "o que costuma acontecer"), assim como baixa
+  e catalogo. Cada cor precisa dos seus markers `osMapArrowFase[-Next]-RRGGBB`
+  no `<defs>`, senao a seta colorida termina com ponta da cor fixa antiga.
+  Decisao explicita do usuario: usar a cor LITERAL do card, mesmo com
+  `interrupcao` (#FFD400) ficando em 1.43:1 de contraste sobre o branco —
+  escurecer/contornar foi avaliado e recusado. Nao "corrigir" sem falar com ele.
 - **Por que isso importa para a regra deste skill:** o trajeto percorrido antes
   so era pintado se a seta `de:para` ja existisse no desenho. Como o backend
   aceita qualquer status ativo nao-encerramento desde 2026-08-09, a maioria dos

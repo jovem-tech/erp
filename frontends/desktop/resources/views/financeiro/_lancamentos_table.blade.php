@@ -69,6 +69,22 @@
                         // genérico apaga o vínculo do cartão e o devolve para
                         // pendente) — o backend recusa, então a tela não oferece.
                         $isReciboFatura = ($lancamento['origem_tipo'] ?? null) === 'fatura_cartao_credito';
+                        // Baixa em mês diferente do vencimento: na tela de
+                        // Despesas essa linha entra no recorte do mês por causa
+                        // do pagamento, não do vencimento — sem a marca ela se
+                        // confunde com uma despesa que venceu no próprio mês.
+                        $vencimentoData = !empty($lancamento['data_vencimento'])
+                            ? \Illuminate\Support\Carbon::parse($lancamento['data_vencimento'])
+                            : null;
+                        $baixaData = !empty($lancamento['data_pagamento'])
+                            ? \Illuminate\Support\Carbon::parse($lancamento['data_pagamento'])
+                            : null;
+                        $baixaForaDoMes = $vencimentoData !== null && $baixaData !== null
+                            && $baixaData->format('Y-m') !== $vencimentoData->format('Y-m');
+                        $baixaAtrasada = $baixaForaDoMes && $baixaData->greaterThan($vencimentoData);
+                        $baixaForaDoMesLabel = $baixaForaDoMes
+                            ? ($tipo === 'receber' ? 'Recebido' : 'Pago').' '.($baixaAtrasada ? 'em atraso' : 'adiantado')
+                            : '';
                     @endphp
                     <tr>
                         <td data-label="ID">{{ $id > 0 ? $id : '-' }}</td>
@@ -115,6 +131,15 @@
                                 'color' => $statusColors[$status] ?? '#8b93a7',
                                 'small' => true,
                             ])
+                            @if ($baixaForaDoMes)
+                                <span class="d-block mt-1">
+                                    @include('layouts.partials.status-pill', [
+                                        'label' => $baixaForaDoMesLabel,
+                                        'color' => $baixaAtrasada ? '#f59e0b' : '#3b82f6',
+                                        'small' => true,
+                                    ])
+                                </span>
+                            @endif
                         </td>
                         <td data-label="Ações" class="text-end">
                             <x-list-actions>

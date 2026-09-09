@@ -131,18 +131,7 @@ class DpsXmlBuilder
         $this->texto($dom, $regime, 'regEspTrib', (string) $config['regime_especial']);
 
         // ---- tomador ----
-        $documentoTomador = Documento::normalizar((string) $documento->tomador_documento);
-
-        if ($documentoTomador === null) {
-            // A NFS-e exige identificar o tomador. Falhar aqui, com mensagem
-            // clara, e' melhor que ser rejeitado pelo ADN depois.
-            throw new RuntimeException('Tomador sem CPF/CNPJ — a NFS-e exige identificar quem recebeu o serviço.');
-        }
-
-        $toma = $dom->createElement('toma');
-        $inf->appendChild($toma);
-        $this->texto($dom, $toma, strlen($documentoTomador) === 14 ? 'CNPJ' : 'CPF', $documentoTomador);
-        $this->texto($dom, $toma, 'xNome', (string) $documento->tomador_nome);
+        $this->montarTomador($dom, $inf, $documento);
 
         // ---- serviço ----
         $serv = $dom->createElement('serv');
@@ -312,6 +301,61 @@ class DpsXmlBuilder
      * Id da DPS no formato do padrão nacional: "DPS" + código do município +
      * tipo de inscrição + inscrição + série + número.
      */
+    /**
+     * Bloco do tomador — que pode simplesmente nao existir.
+     *
+     * Balcao de assistencia atende quem nao quer se identificar, e a nota
+     * precisa sair assim mesmo. O XSD concorda: `toma` e' `minOccurs="0"`
+     * (tiposComplexos_v1.01.xsd), e uma NFS-e REAL autorizada pelo Ambiente
+     * Nacional — `tests/Fixtures/nfse/nfse-real-sem-tomador.xml`, cStat 107,
+     * emitida em producao pelo EmissorWeb — vai direto de `</prest>` para
+     * `<serv>`, sem tomador nenhum. E' a prova de que a omissao e' aceita, e
+     * nao inferencia a partir do schema.
+     *
+     * **Nao se usa `cNaoNIF` aqui.** Ele existe para estrangeiro sem NIF, e o
+     * bloco `toma` exige `xNome` junto — ou seja, usa-lo para consumidor
+     * brasileiro sem CPF inventaria um tomador meia-boca onde o layout ja'
+     * oferece a ausencia limpa.
+     *
+     * Guardar o nome sem documento tambem nao ajudaria: `TCInfoPessoa` obriga
+     * escolher CNPJ|CPF|NIF|cNaoNIF antes de `xNome`, entao "so' o nome" nao e'
+     * uma forma valida. Quem quiser o nome na nota preenche o CPF no cadastro.
+     */
+    private function montarTomador(DOMDocument $dom, DOMElement $inf, DocumentoFiscal $documento): void
+    {
+        $documentoTomador = Documento::normalizar((string) $documento->tomador_documento);
+
+        if ($documentoTomador === null) {
+            return;
+        }
+
+        $toma = $dom->createElement('toma');
+        $inf->appendChild($toma);
+        $this->texto($dom, $toma, strlen($documentoTomador) === 14 ? 'CNPJ' : 'CPF', $documentoTomador);
+        $this->texto($dom, $toma, 'xNome', (string) $documento->tomador_nome);
+    }
+
+    /**
+     * O `Id` que esta DPS teria — sem montar o XML inteiro.
+     *
+     * Serve a consulta de seguranca: quando uma transmissao morre sem resposta,
+     * e' por este identificador que se pergunta ao Ambiente Nacional "essa DPS
+     * ja' virou nota?" antes de arriscar um segundo envio. Delega a `montarId()`
+     * para que o formato exista num lugar so' — Id calculado de duas formas
+     * diferentes e' Id que diverge no dia em que uma das duas mudar.
+     */
+    public function idDps(int $numeroDps): string
+    {
+        $settings = (array) ($this->empresa->payload()['settings'] ?? []);
+        $cnpjPrestador = Documento::normalizar((string) ($settings['empresa_cnpj'] ?? ''));
+
+        if ($cnpjPrestador === null) {
+            throw new RuntimeException('CNPJ da empresa não cadastrado — sem ele não há Id de DPS.');
+        }
+
+        return $this->montarId($cnpjPrestador, (string) config('fiscal.nfse.serie'), $numeroDps);
+    }
+
     private function montarId(string $documentoPrestador, string $serie, int $numero): string
     {
         $settings = (array) ($this->empresa->payload()['settings'] ?? []);

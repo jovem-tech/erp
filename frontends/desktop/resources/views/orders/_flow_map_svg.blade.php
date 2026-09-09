@@ -22,6 +22,17 @@
     // sempre tem catalogo na view, entao cai no factory memoizado.
     $layout = $layout ?? app(\App\Support\OrderFlowMapLayoutFactory::class)->current();
     $lineHeight = \App\Support\OrderFlowMapLayout::lineHeight();
+
+    // Cores distintas em uso pelos cards. O trajeto percorrido e a proxima
+    // etapa sugerida sao desenhados na cor da etapa de DESTINO, entao cada cor
+    // precisa da sua propria ponta de seta — marker nao herda o stroke do path
+    // (fill="context-stroke" e' SVG2 e nem todo navegador suporta).
+    // `finalizado_sem_reparo` e `cancelado` compartilham #CC0000, por isso o
+    // array_unique: uma cor, um marker.
+    $arrowColors = array_values(array_unique(array_map(
+        static fn (array $card): string => $card['color'],
+        $layout['cards']
+    )));
 @endphp
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {{ $layout['width'] }} {{ $layout['height'] }}" class="os-map-svg">
     <defs>
@@ -45,6 +56,20 @@
         <marker id="osMapArrowCatalog" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="8" refX="10" refY="4" orient="auto">
             <path d="M 0 0 L 11 4 L 0 8 z" fill="#AAB4C0"/>
         </marker>
+
+        {{-- Pontas coloridas por fase, em dois calibres: o do trajeto (igual
+             ao osMapArrowTraveled) e o da sugestao (igual ao osMapArrowNext).
+             Os cinco markers acima continuam servindo de fallback para quem
+             nao tem cor de destino — a porta da baixa, por exemplo. --}}
+        @foreach ($arrowColors as $arrowColor)
+            @php $arrowId = ltrim($arrowColor, '#'); @endphp
+            <marker id="osMapArrowFase-{{ $arrowId }}" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="12" refX="15" refY="6" orient="auto">
+                <path d="M 0 0 L 16 6 L 0 12 z" fill="{{ $arrowColor }}"/>
+            </marker>
+            <marker id="osMapArrowFaseNext-{{ $arrowId }}" markerUnits="userSpaceOnUse" markerWidth="13" markerHeight="10" refX="12" refY="5" orient="auto">
+                <path d="M 0 0 L 13 5 L 0 10 z" fill="{{ $arrowColor }}"/>
+            </marker>
+        @endforeach
     </defs>
 
     <rect width="{{ $layout['width'] }}" height="{{ $layout['height'] }}" fill="#FFFFFF"/>
@@ -98,7 +123,8 @@
         @php
             $textTop = $card['y'] + ($card['h'] - (count($card['lines']) - 1) * $lineHeight) / 2 + 5;
         @endphp
-        <g class="os-map-node" data-status="{{ $codigo }}" data-kind="{{ $card['kind'] }}" data-grupo="{{ $card['grupo'] }}">
+        <g class="os-map-node" data-status="{{ $codigo }}" data-kind="{{ $card['kind'] }}"
+           data-grupo="{{ $card['grupo'] }}" data-cor="{{ $card['color'] }}">
             <title>{{ $card['nome_completo'] }}</title>
             <rect x="{{ $card['x'] }}" y="{{ $card['y'] }}" width="{{ $card['w'] }}" height="{{ $card['h'] }}"
                   rx="14" fill="{{ $card['color'] }}" stroke="{{ $card['color'] }}" stroke-width="2"

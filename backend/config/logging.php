@@ -93,6 +93,26 @@ return [
             'replace_placeholders' => true,
         ],
 
+        /*
+         * Trilha da emissao fiscal (transmissao ao Ambiente Nacional da NFS-e).
+         *
+         * Mesmo motivo do canal acima — nivel independente do LOG_LEVEL global
+         * —, com um agravante: documento fiscal tem guarda legal de cinco anos,
+         * e quando uma nota "some" (emitida la', rascunho aqui) este log e' a
+         * unica forma de reconstruir o que foi enviado e o que voltou. Por isso
+         * a retencao e' longa.
+         *
+         * O que NUNCA entra aqui: o PEM do certificado e a senha do .pfx.
+         */
+        'fiscal' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/fiscal.log'),
+            'level' => env('LOG_FISCAL_LEVEL', 'info'),
+            'days' => env('LOG_FISCAL_DAYS', 180),
+            'permission' => 0664,
+            'replace_placeholders' => true,
+        ],
+
         'slack' => [
             'driver' => 'slack',
             'url' => env('LOG_SLACK_WEBHOOK_URL'),

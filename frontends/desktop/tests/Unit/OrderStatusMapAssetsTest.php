@@ -210,10 +210,66 @@ class OrderStatusMapAssetsTest extends TestCase
                 $this->assertStringContainsString(".os-map-edge.is-{$layer}", $html);
             }
 
+            // Trajeto e proxima etapa sao desenhados na cor da etapa de
+            // destino: amostra de cor chapada aqui seria mentira.
+            $this->assertMatchesRegularExpression(
+                '/\.os-map-legend-swatch--traveled,\s*\n\s*\.os-map-legend-swatch--next\s*\{[^}]*linear-gradient/',
+                $html,
+                "{$view}: as amostras de trajeto/proxima etapa precisam ser faixa de gradiente, nao cor unica."
+            );
+            $this->assertStringContainsString('trajeto percorrido (cor da etapa)', $html);
+            $this->assertStringContainsString('próxima etapa sugerida (cor da etapa)', $html);
+
             // Nomes da versao anterior, quando a legenda mostrava "proximas
             // etapas" como bolinha e nao havia overlay de catalogo.
             $this->assertStringNotContainsString('os-map-legend-swatch--suggested', $html);
             $this->assertStringNotContainsString('os-map-legend-dot--clickable', $html);
+        }
+    }
+
+    /**
+     * Pedido do usuario (2026-09-09): o traco assume a cor do card de DESTINO,
+     * para dar para seguir o percurso e saber em que fase a OS entrou sem ler
+     * rotulo — Triagem -> Aguardando Peca sai amarelo, a cor de "Em espera".
+     *
+     * A cor vem do proprio no (`data-cor`), nao de uma consulta por macrofase:
+     * assim a linha nunca diverge do card, inclusive quando o usuario inventa
+     * um grupo_macro novo (o campo e texto livre) e o card cai na cor padrao.
+     */
+    public function test_travelled_and_next_edges_take_the_destination_colour(): void
+    {
+        $script = (string) file_get_contents($this->desktopPath('public/assets/js/orders-map.js'));
+
+        $this->assertStringContainsString("const PHASE_COLORED = new Set(['traveled', 'next']);", $script);
+        $this->assertStringContainsString("toEl.dataset?.cor", $script);
+        $this->assertStringContainsString('osMapArrowFase', $script);
+
+        // A rota provavel e' estatistica e fica azul de proposito; baixa e
+        // catalogo sao regra/leitura, nao etapas. Nenhuma delas pode entrar.
+        $phaseColored = substr($script, strpos($script, 'const PHASE_COLORED'), 60);
+        foreach (['route', 'baixa', 'catalog'] as $layer) {
+            $this->assertStringNotContainsString($layer, $phaseColored);
+        }
+    }
+
+    /**
+     * O no precisa carregar a propria cor e cada cor precisa da sua ponta de
+     * seta: marker nao herda o stroke do path (`fill="context-stroke"` e' SVG2
+     * e nem todo navegador suporta), entao sem isso a seta amarela terminaria
+     * com uma ponta verde.
+     */
+    public function test_map_svg_exposes_node_colour_and_a_marker_per_phase(): void
+    {
+        $svg = (string) file_get_contents($this->desktopPath('resources/views/orders/_flow_map_svg.blade.php'));
+
+        $this->assertStringContainsString("data-cor=\"{{ \$card['color'] }}\"", $svg);
+        $this->assertStringContainsString('osMapArrowFase-{{ $arrowId }}', $svg);
+        $this->assertStringContainsString('osMapArrowFaseNext-{{ $arrowId }}', $svg);
+
+        // Os markers de cor fixa continuam existindo: sao o fallback de quem
+        // nao tem cor de destino (a porta da baixa) e servem rota/baixa/catalogo.
+        foreach (['osMapArrowTraveled', 'osMapArrowRoute', 'osMapArrowNext', 'osMapArrowBaixa', 'osMapArrowCatalog'] as $marker) {
+            $this->assertStringContainsString($marker, $svg);
         }
     }
 

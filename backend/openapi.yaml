@@ -1309,6 +1309,90 @@ components:
                 Referência mínima ao equipamento cadastrado. Número de série e
                 IMEI não são expostos por este endpoint.
 
+    OrderFlowStatistics:
+      type: object
+      description: >-
+        Estatísticas do fluxo real das OS. Os saltos são reconstruídos com
+        `LAG(status_novo) OVER (PARTITION BY os_id ORDER BY created_at, id)`, e não pelo
+        campo `status_anterior`: no banco real só 728 das 4.394 linhas de
+        `os_status_historico` têm esse campo preenchido — o restante veio do legado sem ele.
+      properties:
+        transicoes:
+          type: object
+          description: >-
+            Mapa `codigo do status de origem` -> destinos, já ordenados do mais frequente
+            para o menos frequente. Transições para o próprio status são descartadas.
+          additionalProperties:
+            type: object
+            properties:
+              total:
+                type: integer
+                description: Total de saltos observados saindo deste status.
+                example: 116
+              destinos:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    para:
+                      type: string
+                      example: diagnostico
+                    n:
+                      type: integer
+                      example: 44
+                    pct:
+                      type: number
+                      format: float
+                      example: 37.9
+        catalogo_transicoes:
+          type: array
+          description: >-
+            Pares (origem, destino) ativos de `os_status_transicoes`. Material do overlay
+            opcional do Mapa da OS, desligado por padrão — é leitura do fluxo cadastrado,
+            não regra do que pode acontecer.
+          items:
+            type: object
+            properties:
+              de:
+                type: string
+                example: aguardando_reparo
+              para:
+                type: string
+                example: reparo_execucao
+        amostra_minima:
+          type: integer
+          description: >-
+            Abaixo deste número de ocorrências a caminhada da rota provável para, em vez de
+            sugerir um caminho sustentado por uma OS isolada.
+          example: 3
+        total_saltos:
+          type: integer
+          description: Soma de todos os saltos medidos.
+          example: 574
+        codigos_encerramento:
+          type: array
+          description: >-
+            `OrderStatus::closureCodes()`. O frontend usa para saber onde a caminhada
+            termina; nunca deve hardcodar esses códigos.
+          items:
+            type: string
+          example:
+            - entregue_reparado_pago
+            - entregue_reparado_sem_custo
+            - entregue_reparado_garantia
+            - devolvido_sem_reparo
+            - descartado
+        codigos_saida:
+          type: array
+          description: "`OrderStatus::flowExitCodes()` — saídas do fluxo."
+          items:
+            type: string
+          example:
+            - irreparavel
+            - irreparavel_disponivel_loja
+            - reparo_recusado
+            - cancelado
+
     ApiSuccess:
       type: object
       required:
@@ -3511,6 +3595,45 @@ components:
             $ref: "#/components/schemas/ApiError"
 
 paths:
+  /knowledge/os-flow/estatisticas:
+    get:
+      tags:
+        - Conhecimento
+      summary: Estatísticas do fluxo real das OS.
+      description: >-
+        Frequência com que cada transição de status de fato aconteceu, reconstruída de
+        `os_status_historico`. Alimenta a "rota provável" do Mapa da OS, que até 09/09/2026
+        era um Dijkstra sobre o catálogo `os_status_transicoes` — catálogo esse congelado
+        desde que o editor da matriz saiu do desktop (23/08/2026) e que, desde 09/08/2026,
+        não restringe mais para onde a OS pode ir.
+        Devolve o catálogo inteiro, não por OS: um único payload cacheado (1h) serve a
+        página cheia do mapa e a aba "Mapa de status" do modal, e o frontend recalcula a
+        rota quando a OS se move, sem novo round trip. Exige `os:visualizar`.
+      parameters:
+        - in: query
+          name: fresh
+          required: false
+          schema:
+            type: boolean
+            default: false
+          description: Ignora o cache e recalcula a matriz. Uso pontual de diagnóstico.
+      responses:
+        "200":
+          description: Matriz de transições medida.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/OrderFlowStatistics"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /knowledge/pdf-engine/templates:
     post:
       tags:

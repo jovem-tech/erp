@@ -253,14 +253,55 @@ class DpsXmlBuilderTest extends TestCase
         $this->assertStringContainsString('<opSimpNac>2</opSimpNac>', $xml);
     }
 
-    public function test_recusa_emitir_sem_documento_do_tomador(): void
+    public function test_emite_sem_tomador_quando_o_cliente_nao_se_identifica(): void
     {
-        // A NFS-e exige identificar o tomador. Falhar aqui, com mensagem
-        // clara, e' melhor do que ser rejeitado pelo ADN depois.
-        $this->expectException(RuntimeException::class);
-        $this->expectExceptionMessageMatches('/Tomador sem CPF/');
+        // Balcao atende quem nao quer dar CPF, e a nota tem de sair assim
+        // mesmo. Antes isto era `RuntimeException` — regra inventada aqui, que
+        // o layout oficial nao pede.
+        $xml = $this->builder()->montar($this->documento(['tomador_documento' => null]), 1);
 
-        $this->builder()->montar($this->documento(['tomador_documento' => null]), 1);
+        $this->assertStringNotContainsString('<toma>', $xml);
+        // O prestador continua identificado — quem some e' so' o tomador.
+        $this->assertStringContainsString('<CNPJ>11222333000181</CNPJ>', $xml);
+        // Vai direto de </prest> para <serv>, como a nota real autorizada.
+        $this->assertStringContainsString('</prest><serv>', $xml);
+    }
+
+    public function test_dps_sem_tomador_valida_contra_o_xsd_oficial(): void
+    {
+        // O XSD marca `toma` como minOccurs=0. Este teste e' o que impede
+        // alguem de "consertar" o builder tornando o tomador obrigatorio de
+        // novo sem perceber que quebra o atendimento de balcao.
+        $xml = $this->builder()->gerarAssinado($this->documento(['tomador_documento' => null]), 1);
+
+        libxml_use_internal_errors(true);
+        libxml_clear_errors();
+
+        $dom = new DOMDocument();
+        $dom->loadXML($xml);
+        $dom->schemaValidate(base_path('tests/Fixtures/nfse-schemas/DPS_v1.01.xsd'));
+
+        $erros = array_filter(
+            array_map(static fn (\LibXMLError $e): string => trim($e->message), libxml_get_errors()),
+            // Unico erro tolerado: o pattern insatisfazivel de `serie`, defeito
+            // do schema publicado. Ate' a NFS-e real do governo tropeca nele.
+            static fn (string $erro): bool => ! str_contains($erro, 'serie'),
+        );
+        libxml_clear_errors();
+
+        $this->assertSame([], array_values($erros));
+    }
+
+    public function test_a_nota_real_autorizada_sem_tomador_e_a_prova_versionada(): void
+    {
+        // Nao e' teste do nosso codigo: e' a evidencia que sustenta a decisao
+        // de omitir `<toma>`. NFS-e emitida em producao pelo Emissor Nacional
+        // (cStat 107), sem tomador. Se este arquivo sumir, a decisao perde o
+        // chao.
+        $conteudo = file_get_contents(base_path('tests/Fixtures/nfse/nfse-real-sem-tomador.xml'));
+
+        $this->assertStringNotContainsString('<toma>', (string) $conteudo);
+        $this->assertStringContainsString('<cStat>107</cStat>', (string) $conteudo);
     }
 
     public function test_recusa_emitir_sem_codigo_ibge_da_empresa(): void

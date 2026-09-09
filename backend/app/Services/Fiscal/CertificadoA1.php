@@ -223,6 +223,36 @@ class CertificadoA1
     }
 
     /**
+     * Certificado, cadeia intermediaria e chave privada — para o handshake
+     * mTLS com o Ambiente Nacional.
+     *
+     * `pem()` descarta os `extracerts` porque para ASSINAR basta a chave. Para
+     * AUTENTICAR nao basta: o servidor precisa conseguir montar o caminho ate'
+     * uma raiz que ele confia, e quem entrega os elos do meio e' o cliente. Sem
+     * a cadeia o handshake falha com erro de certificado desconhecido — que na
+     * tela vira "nao consegui falar com o governo", sem dizer o porque.
+     *
+     * @return array{cert: string, pkey: string, cadeia: array<int, string>}|null
+     */
+    public function pemComCadeia(): ?array
+    {
+        $lido = $this->ler();
+
+        if ($lido === null) {
+            return null;
+        }
+
+        return [
+            'cert' => $lido['cert'],
+            'pkey' => $lido['pkey'],
+            'cadeia' => array_values(array_filter(
+                (array) ($lido['extracerts'] ?? []),
+                static fn ($pem): bool => is_string($pem) && trim($pem) !== ''
+            )),
+        ];
+    }
+
+    /**
      * Abre o `.pfx` uma vez por instância. `openssl_pkcs12_read` falha tanto
      * por senha errada quanto por arquivo corrompido, e os dois casos viram
      * `null` de propósito: para quem chama, o certificado não está usável.

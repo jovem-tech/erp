@@ -592,7 +592,8 @@ class FinanceiroTest extends TestCase
 
             parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
 
-            return ($query['periodo_atual_e_atrasadas'] ?? null) === '1';
+            return ($query['periodo_atual_e_atrasadas'] ?? null) === '1'
+                && ($query['incluir_baixas_do_periodo'] ?? null) === '1';
         });
     }
 
@@ -628,8 +629,82 @@ class FinanceiroTest extends TestCase
             parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
 
             return ! array_key_exists('periodo_atual_e_atrasadas', $query)
-                && ($query['mes'] ?? null) === '2026-12';
+                && ($query['mes'] ?? null) === '2026-12'
+                // O recorte de caixa não depende da visão padrão: com mês
+                // escolhido, ele é o que traz a despesa baixada naquele mês.
+                && ($query['incluir_baixas_do_periodo'] ?? null) === '1';
         });
+    }
+
+    /**
+     * Título cuja baixa caiu em mês diferente do vencimento aparece no recorte
+     * do mês por causa do PAGAMENTO, não do vencimento. Sem a marca ele se
+     * confunde com uma despesa que venceu no próprio mês.
+     */
+    public function test_despesas_fixas_page_marks_settlement_outside_the_due_month(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => ['categorias' => [], 'cartao' => ['operadoras' => [], 'bandeiras' => [], 'taxas' => []]],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/financeiro*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'lancamentos' => [
+                        // Venceu em agosto, só foi paga em setembro.
+                        [
+                            'id' => 1,
+                            'tipo' => 'pagar',
+                            'categoria' => 'Aluguel',
+                            'valor' => 900.0,
+                            'status' => 'pago',
+                            'data_vencimento' => '2026-08-10',
+                            'data_pagamento' => '2026-09-03',
+                        ],
+                        // Vence em setembro, mas foi paga adiantado em agosto.
+                        [
+                            'id' => 2,
+                            'tipo' => 'pagar',
+                            'categoria' => 'Energia',
+                            'valor' => 25.0,
+                            'status' => 'pago',
+                            'data_vencimento' => '2026-09-25',
+                            'data_pagamento' => '2026-08-21',
+                        ],
+                        // Venceu e foi paga no mesmo mês: sem marca nenhuma.
+                        [
+                            'id' => 3,
+                            'tipo' => 'pagar',
+                            'categoria' => 'Internet',
+                            'valor' => 120.0,
+                            'status' => 'pago',
+                            'data_vencimento' => '2026-09-05',
+                            'data_pagamento' => '2026-09-08',
+                        ],
+                    ],
+                    'status_options' => [],
+                    'totais_despesas' => ['fixas' => 1045.0, 'variaveis' => 0.0],
+                ],
+                'error' => null,
+                'meta' => ['pagination' => ['current_page' => 1, 'per_page' => 15, 'total' => 3, 'last_page' => 1, 'from' => 1, 'to' => 3]],
+            ], 200),
+        ]);
+
+        $content = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar']]))
+            ->get('/financeiro/despesas-fixas')
+            ->assertOk()
+            ->assertSee('Pago em atraso')
+            ->assertSee('Pago adiantado')
+            ->getContent();
+
+        // Uma marca por título fora do mês — a despesa do próprio mês não ganha.
+        $this->assertSame(1, substr_count($content, 'Pago em atraso'));
+        $this->assertSame(1, substr_count($content, 'Pago adiantado'));
     }
 
     public function test_show_page_groups_actions_in_mais_acoes_dropdown(): void

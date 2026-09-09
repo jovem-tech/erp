@@ -1103,13 +1103,16 @@
                             </div>
 
                             <div class="form-check mt-2">
-                                <input type="checkbox" class="form-check-input" disabled>
-                                <label class="form-check-label text-secondary">
-                                    Emitir automaticamente com o certificado A1
+                                <input type="checkbox" class="form-check-input" id="emitirNfseAutomatico"
+                                       name="emitir_nfse_automatico" value="1" @checked(old('emitir_nfse_automatico', false))>
+                                <label class="form-check-label" for="emitirNfseAutomatico">
+                                    Emitir a NFS-e automaticamente com o certificado A1
                                 </label>
                                 <div class="form-text">
-                                    Ainda não disponível: depende da transmissão ao Ambiente
-                                    Nacional, que não está implementada.
+                                    Transmite a nota ao Ambiente Nacional no ato do encerramento, sem
+                                    abrir o portal. Não marque se a nota já foi emitida por lá.
+                                    <strong>O encerramento não depende disto</strong>: se a emissão
+                                    falhar, a OS é encerrada do mesmo jeito e a nota fica pendente.
                                 </div>
                             </div>
                         </div>

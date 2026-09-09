@@ -562,7 +562,33 @@ class DocumentoFiscalService
         NfseXmlImporter $importador,
         ?int $usuarioId = null
     ): array {
-        $lido = $importador->ler((string) file_get_contents($arquivo->getRealPath()));
+        return $this->registrarPorConteudoXml(
+            $documento,
+            (string) file_get_contents($arquivo->getRealPath()),
+            $importador,
+            $usuarioId
+        );
+    }
+
+    /**
+     * Registra a nota a partir do XML em memoria.
+     *
+     * A porta que a emissao automatica usa: o XML chega na resposta do Ambiente
+     * Nacional, nao como upload. Compartilhar este metodo com o fluxo manual e'
+     * o que garante que uma nota transmitida pelo sistema passe exatamente
+     * pelas mesmas conferencias — assinatura, tomador, duplicidade — que uma
+     * nota baixada do portal. Duas trilhas de registro divergiriam com o tempo,
+     * e a que ninguem olha e' a que aceita lixo.
+     *
+     * @return array{documento: DocumentoFiscal, lido: array<string, mixed>}
+     */
+    public function registrarPorConteudoXml(
+        DocumentoFiscal $documento,
+        string $xml,
+        NfseXmlImporter $importador,
+        ?int $usuarioId = null
+    ): array {
+        $lido = $importador->ler($xml);
 
         $this->conferirTomador($documento, $lido);
 
@@ -578,9 +604,9 @@ class DocumentoFiscalService
             'assinatura_conferida' => $lido['assinatura_conferida'] ?? null,
         ], $usuarioId);
 
-        // O anexo vem DEPOIS do registro de propósito: `anexarArquivo()` recusa
+        // O anexo vem DEPOIS do registro de propósito: `anexarConteudo()` recusa
         // rascunho, e o XML é justamente a prova de que a nota existe.
-        $registro = $this->anexarArquivo($registro, $arquivo, 'xml');
+        $registro = $this->anexarConteudo($registro, $xml, 'xml');
 
         return ['documento' => $registro, 'lido' => $lido];
     }
@@ -631,6 +657,30 @@ class DocumentoFiscalService
         string $formato,
         ?NfseXmlImporter $importador = null
     ): DocumentoFiscal {
+        return $this->anexarConteudo(
+            $documento,
+            (string) file_get_contents($arquivo->getRealPath()),
+            $formato,
+            $importador
+        );
+    }
+
+    /**
+     * Mesma guarda de `anexarArquivo()`, para conteudo que nunca foi upload.
+     *
+     * A emissao automatica recebe o XML da nota pela resposta do Ambiente
+     * Nacional — nao ha' `UploadedFile` nenhum, e inventar um arquivo
+     * temporario so' para satisfazer a assinatura seria contorcionismo. As duas
+     * portas caem aqui para que a conferencia (chave, tomador) e a forma de
+     * guardar sejam LITERALMENTE as mesmas: se divergissem, o XML vindo da
+     * transmissao seria guardado com menos rigor que o baixado a mao.
+     */
+    public function anexarConteudo(
+        DocumentoFiscal $documento,
+        string $conteudo,
+        string $formato,
+        ?NfseXmlImporter $importador = null
+    ): DocumentoFiscal {
         $formato = strtolower(trim($formato));
 
         if (! in_array($formato, ['xml', 'pdf'], true)) {
@@ -647,8 +697,6 @@ class DocumentoFiscalService
                 'arquivo' => 'Registre a emissão antes de anexar o arquivo do portal.',
             ]);
         }
-
-        $conteudo = (string) file_get_contents($arquivo->getRealPath());
 
         // O XML e' conferido; o PDF, nao — nao ha' como ler tomador nem chave
         // de um PDF neste sistema, entao a garantia para PDF continua sendo o

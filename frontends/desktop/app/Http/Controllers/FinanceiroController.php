@@ -308,6 +308,12 @@ class FinanceiroController extends DesktopController
             'dre_fixo_mensal' => $dreFixoMensalFiltro,
             'mes' => $mesFiltro,
             'periodo_atual_e_atrasadas' => $isDefaultView ? '1' : '',
+            // Despesa vencida num mês e baixada em outro aparece nos dois
+            // recortes — no do vencimento (o compromisso) e no da baixa (a
+            // saída de caixa). Vale na visão padrão e no filtro de mês; a
+            // listagem geral de Lançamentos não manda a flag e segue por
+            // vencimento puro.
+            'incluir_baixas_do_periodo' => '1',
             'page' => (int) $request->query('page', 1),
             'per_page' => (int) $request->query('per_page', 15),
         ];

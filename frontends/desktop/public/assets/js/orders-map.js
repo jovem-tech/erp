@@ -442,6 +442,25 @@
             ]);
         };
 
+        // Camadas cujo traço assume a cor do card de DESTINO, para dar para
+        // seguir o percurso e saber em que fase a OS entrou sem ler rótulo:
+        // Triagem -> Aguardando Peça sai amarelo, a cor de "Em espera".
+        //
+        // A rota provável fica de fora de propósito: ela é estatística (medida
+        // do histórico), e mantê-la azul fixa preserva a leitura de "o que
+        // aconteceu" contra "o que costuma acontecer". Baixa e catálogo também
+        // ficam fora — são regra e material de leitura, não etapas.
+        //
+        // DECISÃO EXPLÍCITA DO USUÁRIO (09/09/2026): usa a cor LITERAL do card,
+        // sem escurecer nem contornar em tempo de desenho. Onde a cor não dava
+        // conta como linha, quem mudou foi a PALETA: "Em espera" era #FFD400
+        // (1.43:1 sobre o branco, sumia) e virou #B8860B. Ainda ficam abaixo de
+        // 3:1 `orcamento`, `diagnostico` e `qualidade` — ver o docblock de
+        // OrderStatusMacroGroups::flowAccent(). Não "corrigir" aqui: se alguma
+        // cor precisar de ajuste, o ajuste é na paleta, para o traço continuar
+        // idêntico ao card.
+        const PHASE_COLORED = new Set(['traveled', 'next']);
+
         // Desenha uma aresta na camada [data-os-map-layer="edges"].
         // `kind` casa com as classes/markers definidos no partial do SVG.
         const drawEdge = (fromEl, toEl, kind, slot, title) => {
@@ -454,8 +473,25 @@
             const path = document.createElementNS(SVG_NS, 'path');
             path.setAttribute('d', routeBetween(from, to, slot));
             path.setAttribute('fill', 'none');
-            path.setAttribute('marker-end', `url(#osMapArrow${kind.charAt(0).toUpperCase()}${kind.slice(1)})`);
             path.classList.add('os-map-edge', `is-${kind}`);
+
+            // A cor sai do próprio nó de destino (data-cor), e não de uma
+            // consulta por macrofase: assim a linha nunca diverge do card,
+            // inclusive quando o usuário inventa um grupo_macro novo (o campo
+            // é texto livre) e o card cai na cor padrão.
+            const cor = PHASE_COLORED.has(kind) ? String(toEl.dataset?.cor || '').trim() : '';
+
+            if (cor) {
+                // Inline vence a cor da regra .os-map-edge.is-*, que continua
+                // valendo como fallback (a porta da baixa não tem data-cor).
+                path.style.stroke = cor;
+                path.setAttribute(
+                    'marker-end',
+                    `url(#osMapArrowFase${kind === 'next' ? 'Next' : ''}-${cor.replace('#', '')})`
+                );
+            } else {
+                path.setAttribute('marker-end', `url(#osMapArrow${kind.charAt(0).toUpperCase()}${kind.slice(1)})`);
+            }
 
             if (title) {
                 const t = document.createElementNS(SVG_NS, 'title');

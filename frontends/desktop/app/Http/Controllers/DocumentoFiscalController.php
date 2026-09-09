@@ -67,10 +67,13 @@ class DocumentoFiscalController extends DesktopController
 
     public function nota(int $order): View
     {
+        $dados = $this->documentoFiscalService->rascunhoComContexto($order);
+
         return view('fiscal.nota', [
             'pageTitle' => 'Emitir nota da OS',
             'osId' => $order,
-            'documento' => $this->documentoFiscalService->rascunhoDeOrdem($order),
+            'documento' => $dados['documento'] ?? [],
+            'emissao' => $dados['emissao'] ?? ['ambiente' => 2, 'disponivel' => false, 'impedimento' => null],
         ]);
     }
 
@@ -169,6 +172,32 @@ class DocumentoFiscalController extends DesktopController
                 'Nota enviada por %s para %s.',
                 $validated['canal'] === 'email' ? 'e-mail' : 'WhatsApp',
                 (string) ($envio['destino'] ?? $validated['destino'])
+            ));
+    }
+
+    /**
+     * Emite a nota direto pelo sistema, sem o portal do gov.br.
+     *
+     * Nao ha' `try/catch` aqui de proposito: rejeicao do Ambiente Nacional
+     * chega como 422 e o handler global (`bootstrap/app.php`) ja' devolve o
+     * operador para a tela com a mensagem do fisco — que e' exatamente o que
+     * ele precisa ler ("competencia encerrada", "serie ja utilizada"). Capturar
+     * aqui so' serviria para reescrever a mensagem com menos informacao.
+     */
+    public function emitirPeloSistema(Request $request, int $documento): RedirectResponse
+    {
+        $validated = $request->validate([
+            'os_id' => ['required', 'integer'],
+        ]);
+
+        $resultado = $this->documentoFiscalService->emitirPeloSistema($documento);
+        $nota = $resultado['documento'] ?? [];
+
+        return redirect()
+            ->route('fiscal.nota', $validated['os_id'])
+            ->with('success', sprintf(
+                'NFS-e nº %s emitida e registrada. O XML já está guardado.',
+                $nota['numero'] ?? '—'
             ));
     }
 

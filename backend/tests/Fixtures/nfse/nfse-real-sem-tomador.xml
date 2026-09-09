@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">
+<infNFSe Id="NFS33052082234129526000198000000000000526090068854962">
+<xLocEmi>São Pedro da Aldeia</xLocEmi>
+<xLocPrestacao>São Pedro da Aldeia</xLocPrestacao>
+<nNFSe>5</nNFSe>
+<cLocIncid>3305208</cLocIncid>
+<xLocIncid>São Pedro da Aldeia</xLocIncid>
+<xTribNac>Assistência técnica.</xTribNac>
+<xNBS>Serviços de manutenção e reparação de equipamentos e aparelhos de telecomunicações</xNBS>
+<verAplic>EmissorWeb_1.6.0.0</verAplic>
+<ambGer>2</ambGer>
+<tpEmis>1</tpEmis>
+<procEmi>2</procEmi>
+<cStat>107</cStat>
+<dhProc>2026-09-05T23:44:23-03:00</dhProc>
+<nDFSe>139726</nDFSe>
+<emit>
+<CNPJ>34129526000198</CNPJ>
+<xNome>DEBORAH EVELYN ARAUJO DE OLIVEIRA 05525370395</xNome>
+<enderNac>
+<xLgr>RUA COMANDANTE RESENDE ROCHA</xLgr>
+<nro>88</nro>
+<xBairro>BALNEARIO DAS CONCHAS</xBairro>
+<cMun>3305208</cMun>
+<UF>RJ</UF>
+<CEP>28949456</CEP>
+</enderNac>
+<fone>2223204696</fone>
+<email>JOVEMTECH.ASSISTENCIA@GMAIL.COM</email>
+</emit>
+<valores>
+<vLiq>360.00</vLiq>
+</valores>
+<DPS xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.01">
+<infDPS Id="DPS330520823412952600019870000000000000000004">
+<tpAmb>1</tpAmb>
+<dhEmi>2026-09-05T23:44:23-03:00</dhEmi>
+<verAplic>EmissorWeb_1.6.0.0</verAplic>
+<serie>70000</serie>
+<nDPS>4</nDPS>
+<dCompet>2026-09-05</dCompet>
+<tpEmit>1</tpEmit>
+<cLocEmi>3305208</cLocEmi>
+<prest>
+<CNPJ>34129526000198</CNPJ>
+<fone>22988190758</fone>
+<email>deborahevelyn07@outlook.com</email>
+<regTrib>
+<opSimpNac>2</opSimpNac>
+<regEspTrib>0</regEspTrib>
+</regTrib>
+</prest>
+<serv>
+<locPrest>
+<cLocPrestacao>3305208</cLocPrestacao>
+</locPrest>
+<cServ>
+<cTribNac>140201</cTribNac>
+<xDescServ>Ordem de servico OS26090003 Prestação de serviço de assistência técnica em aparelho Smartphone, samsung, A156M A15, cor Azul: Substituição completa do display frontal A15 oled.</xDescServ>
+<cNBS>120017000</cNBS>
+</cServ>
+</serv>
+<valores>
+<vServPrest>
+<vServ>360.00</vServ>
+</vServPrest>
+<trib>
+<tribMun>
+<tribISSQN>1</tribISSQN>
+<tpRetISSQN>1</tpRetISSQN>
+</tribMun>
+<totTrib>
+<indTotTrib>0</indTotTrib>
+</totTrib>
+</trib>
+</valores>
+</infDPS>
+</DPS>
+</infNFSe>
+</NFSe>

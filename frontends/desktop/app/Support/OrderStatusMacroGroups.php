@@ -96,6 +96,23 @@ class OrderStatusMacroGroups
      * as fatias pequenas ficam indistinguíveis). São dois usos legítimos e
      * distintos da mesma taxonomia — não unificar sem decisão do usuário.
      *
+     * ATENÇÃO — estas cores também viram TRAÇO no Mapa da OS: o trajeto
+     * percorrido e a próxima etapa sugerida são desenhados na cor do card de
+     * destino (ver PHASE_COLORED em orders-map.js). Por isso cada cor precisa
+     * funcionar nos dois papéis: preenchimento de card E linha sobre branco.
+     *
+     * Ajustes de 2026-09-09, pedidos pelo usuário depois de ver o mapa:
+     * - `interrupcao` era #FFD400, um amarelo que como linha ficava em 1.43:1
+     *   sobre o branco e sumia. Passou a #B8860B (3.25:1), que continua lendo
+     *   como amarelo/dourado mas destaca. O texto do card virou branco — o
+     *   #3D3200 escuro de antes existia por causa do amarelo claro.
+     * - `cancelado` era #CC0000, a mesma cor de `finalizado_sem_reparo`.
+     *   Passou a #000000, que separa as duas saídas do fluxo.
+     *
+     * Ainda abaixo de 3:1 como linha, por decisão explícita do usuário de usar
+     * a cor literal do card em vez de escurecer/contornar: `orcamento` 2.24,
+     * `diagnostico` 2.34, `qualidade` 2.51. Não "corrigir" sem falar com ele.
+     *
      * @return array{color: string, text: string}
      */
     public static function flowAccent(string $grupoMacro): array
@@ -104,12 +121,12 @@ class OrderStatusMacroGroups
             'recepcao' => ['color' => '#10739E', 'text' => '#FFFFFF'],
             'diagnostico' => ['color' => '#F2931E', 'text' => '#FFFFFF'],
             'orcamento' => ['color' => '#66B2FF', 'text' => '#10395B'],
-            'interrupcao' => ['color' => '#FFD400', 'text' => '#3D3200'],
+            'interrupcao' => ['color' => '#B8860B', 'text' => '#FFFFFF'],
             'execucao' => ['color' => '#999900', 'text' => '#FFFFFF'],
             'qualidade' => ['color' => '#9999FF', 'text' => '#1F1F5B'],
             'concluido' => ['color' => '#00994D', 'text' => '#FFFFFF'],
             'finalizado_sem_reparo' => ['color' => '#CC0000', 'text' => '#FFFFFF'],
-            'cancelado' => ['color' => '#CC0000', 'text' => '#FFFFFF'],
+            'cancelado' => ['color' => '#000000', 'text' => '#FFFFFF'],
             self::CLOSURE_GROUP => ['color' => '#7048E8', 'text' => '#FFFFFF'],
             default => ['color' => '#6f5afc', 'text' => '#FFFFFF'],
         };
