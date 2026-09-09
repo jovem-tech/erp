@@ -99,7 +99,10 @@ class DashboardPanelTest extends TestCase
         $this->assertCount(4, $status['items']);
 
         $groups = collect($status['groups']);
-        $this->assertSame(['Interrupção', 'Diagnóstico', 'Recepção'], $groups->pluck('nome')->all());
+        // "Em espera" (e nao "Interrupcao") desde 09/09/2026: o rotulo das
+        // macrofases passou a ter fonte unica em OrderStatusMacroGroups, e o
+        // escolhido foi o texto curto que o tecnico ja lia no modal de status.
+        $this->assertSame(['Em espera', 'Diagnóstico', 'Recepção'], $groups->pluck('nome')->all());
         $this->assertSame([5, 3, 1], $groups->pluck('total')->all());
 
         $diagnostico = $groups->firstWhere('slug', 'diagnostico');

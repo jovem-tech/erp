@@ -682,6 +682,7 @@ Route::prefix('v1')->group(function (): void {
             ->name('api.v1.knowledge.checklists.items.toggle_active');
 
         Route::get('knowledge/os-flow', [OrderStatusFlowController::class, 'index'])->name('api.v1.knowledge.os_flow.index');
+        Route::get('knowledge/os-flow/estatisticas', [OrderStatusFlowController::class, 'statistics'])->name('api.v1.knowledge.os_flow.statistics');
         Route::post('knowledge/os-flow/statuses', [OrderStatusFlowController::class, 'store'])->name('api.v1.knowledge.os_flow.statuses.store');
         Route::match(['put', 'patch'], 'knowledge/os-flow/statuses/{status}', [OrderStatusFlowController::class, 'update'])->whereNumber('status')->name('api.v1.knowledge.os_flow.statuses.update');
         Route::match(['put', 'patch'], 'knowledge/os-flow/transitions', [OrderStatusFlowController::class, 'updateTransitions'])->name('api.v1.knowledge.os_flow.transitions.update');

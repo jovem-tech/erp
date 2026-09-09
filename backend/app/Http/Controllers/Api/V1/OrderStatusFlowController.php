@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Models\OrderStatus;
 use App\Models\OrderStatusTransition;
+use App\Services\Orders\OrderFlowStatisticsService;
 use App\Services\OrderStatusFlowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -35,6 +36,25 @@ class OrderStatusFlowController extends BaseApiController
                     'ativo' => (bool) $transition->ativo,
                 ])->values()->all(),
             ],
+            request: $request
+        );
+    }
+
+    /**
+     * Estatisticas do fluxo real — com que frequencia cada transicao de status
+     * aconteceu de fato. Alimenta a "rota provavel" do Mapa da OS, que ate
+     * 09/09/2026 era um Dijkstra sobre o catalogo congelado de transicoes.
+     *
+     * Devolve o catalogo inteiro (nao por OS) de proposito: um unico payload
+     * cacheado serve a pagina cheia e a aba do modal, e o frontend recalcula a
+     * rota assim que a OS se move, sem novo round trip.
+     */
+    public function statistics(Request $request, OrderFlowStatisticsService $statistics): JsonResponse
+    {
+        $this->authorize('os:visualizar');
+
+        return $this->success(
+            $statistics->mapPayload((bool) $request->boolean('fresh')),
             request: $request
         );
     }

@@ -74,7 +74,10 @@ class AssistanceModelController extends DesktopController
 
         $groups = $active
             ->groupBy(static fn (array $status): string => trim((string) ($status['grupo_macro'] ?? '')))
-            ->sortBy(static fn ($groupStatuses): int => (int) $groupStatuses->min('ordem_fluxo'));
+            // Mesma ordem cronologica do Mapa da OS, do modal de status e do
+            // cadastro Status de OS — ver OrderStatusMacroGroups::orderIndex().
+            ->sortKeysUsing(static fn (string $a, string $b): int => [OrderStatusMacroGroups::orderIndex($a), $a]
+                <=> [OrderStatusMacroGroups::orderIndex($b), $b]);
 
         $pauseCount = $active->filter(static fn (array $s): bool => (bool) ($s['status_pausa'] ?? false))->count();
         $finalCount = $active->filter(static fn (array $s): bool => (bool) ($s['status_final'] ?? false))->count();

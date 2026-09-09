@@ -1,6 +1,8 @@
 (function () {
-    const BAIXA_TARGET = '__baixa__';
-    const DESTINO_FINAL = 'entregue_reparado_pago';
+    // Limite de passos da rota provavel. Protege contra caminhada longa demais
+    // num catalogo grande; a parada normal e chegar num status de saida/
+    // encerramento ou ficar sem amostra suficiente.
+    const ROUTE_MAX_STEPS = 12;
 
     // Fábrica de widget: cada chamada cria uma instância independente (state,
     // view, listeners próprios), presa a um `root` (elemento que contém os
@@ -30,6 +32,9 @@
             proximasEtapas: [],
             statusDisponiveis: [],
             path: [],
+            flowStats: {},
+            transicoesCatalogo: [],
+            showCatalog: false,
             etapaByCode: {},
             suggestedCodes: new Set(),
             clickableCodes: new Set(),
@@ -37,27 +42,35 @@
         };
 
         // ------------------------------------------------------------------
-        // Grafo a partir do próprio SVG (data-edge="origem:destino") — estrutura
-        // fixa, calculada uma vez só; o que muda entre atualizações é o estado
-        // (state) e as classes aplicadas em cima desses mesmos elementos.
+        // Nós do desenho. O SVG agora é GERADO do catálogo vivo
+        // (App\Support\OrderFlowMapLayout), então todo status ativo tem card —
+        // inclusive um criado agora na tela "Status de OS".
+        //
+        // As ARESTAS não existem mais no SVG. Até 09/09/2026 elas eram 73
+        // polilinhas roteadas à mão no gerador Python, e uma aresta só podia
+        // ser pintada de "percorrida" se já existisse ali: um salto real fora
+        // do catálogo de transições (ex.: aguardando_reparo -> reparo_concluido,
+        // que o backend aceita desde 09/08/2026) simplesmente não aparecia.
+        // Agora as arestas são desenhadas em runtime, a partir das caixas dos
+        // cards, então qualquer par de nós pode ser ligado.
         // ------------------------------------------------------------------
         const nodesByCode = {};
         svg.querySelectorAll('[data-status]').forEach((el) => {
             nodesByCode[el.dataset.status] = el;
         });
 
-        const edgesByPair = {};
-        const adjacency = {};
-        svg.querySelectorAll('[data-edge]').forEach((el) => {
-            const pair = String(el.dataset.edge || '');
-            const [from, to] = pair.split(':');
-            if (!from || !to) return;
-            edgesByPair[pair] = el;
-            (adjacency[from] = adjacency[from] || []).push({ to, kind: el.dataset.edgeKind || 'alt' });
-        });
+        const edgeLayer = svg.querySelector('[data-os-map-layer="edges"]');
 
         const portEl = svg.querySelector('[data-port="baixa"]');
         if (portEl) portEl.classList.add('is-actionable');
+
+        // Caixa de um card/porta em coordenadas do viewBox. getBBox() já era
+        // usado por markHere(); aqui é a base de todo o roteamento.
+        const boxOf = (el) => {
+            if (!el) return null;
+            const b = el.getBBox();
+            return { x: b.x, y: b.y, w: b.width, h: b.height, cx: b.x + b.width / 2, cy: b.y + b.height / 2 };
+        };
 
         // Em tela cheia nativa (Fullscreen API), só o elemento em fullscreen (e
         // seus descendentes) é exibido — qualquer coisa fora dele (como o
@@ -108,6 +121,14 @@
             state.proximasEtapas = Array.isArray(config.proximasEtapas) ? config.proximasEtapas : [];
             state.statusDisponiveis = Array.isArray(config.statusDisponiveis) ? config.statusDisponiveis : [];
             state.path = Array.isArray(config.path) ? config.path : [];
+            state.flowStats = config.flowStats && typeof config.flowStats === 'object' ? config.flowStats : {};
+
+            // Catálogo de transições para o overlay opcional — vem junto das
+            // estatísticas. É só material de leitura: não trava o que pode ser
+            // escolhido (o backend não valida transição desde 09/08/2026).
+            state.transicoesCatalogo = Array.isArray(state.flowStats.catalogo_transicoes)
+                ? state.flowStats.catalogo_transicoes
+                : [];
 
             // Os status de encerramento (grupo_macro 'encerrado') são
             // descartados aqui, na fonte: nunca podem ser aplicados fora do
@@ -165,11 +186,15 @@
             svg.querySelectorAll('.is-visited, .is-current, .is-clickable, .is-destination').forEach((el) => {
                 el.classList.remove('is-visited', 'is-current', 'is-clickable', 'is-destination');
             });
-            svg.querySelectorAll('.is-traveled, .is-suggested').forEach((el) => {
-                el.classList.remove('is-traveled', 'is-suggested');
-            });
             portEl?.classList.remove('is-suggested');
             svg.querySelectorAll('.os-map-here').forEach((el) => el.remove());
+            // As arestas são recriadas do zero a cada redecorate() — são
+            // geradas, não fazem parte do desenho base.
+            if (edgeLayer) edgeLayer.replaceChildren();
+            // Geometria dos corredores é estável enquanto o SVG for o mesmo,
+            // mas o modal cria o widget com o SVG ainda escondido: a primeira
+            // medição pode vir zerada. Recalcula a cada redecorate().
+            corridors = null;
             currentNode = null;
         };
 
@@ -183,61 +208,360 @@
             svg.appendChild(here);
         };
 
-        // Dijkstra até reparo_concluido preferindo o caminho feliz (main=1,
-        // demais=5); a etapa final (baixa → entregue reparado e pago) é a aresta
-        // roxa da porta, fora do catálogo de transições.
-        const suggestRoute = () => {
+        // ------------------------------------------------------------------
+        // Roteador ortogonal por CORREDORES LIVRES.
+        //
+        // O layout (App\Support\OrderFlowMapLayout) põe as raias numa grade
+        // uniforme: mesma largura, mesmo passo, todas começando na mesma
+        // margem. Isso cria duas famílias de faixas garantidamente vazias —
+        // os vãos verticais entre raias vizinhas e os vãos horizontais entre
+        // as linhas de raias. Toda seta anda por elas.
+        //
+        // A primeira versão ligava as caixas pelo ponto médio e cortava por
+        // cima dos cards que estivessem no caminho. Aqui a rota sai do card
+        // até o vão ao lado da própria raia, desce/sobe por esse vão até um
+        // canal horizontal livre, atravessa, e só então entra no destino.
+        // ------------------------------------------------------------------
+        const SVG_NS = 'http://www.w3.org/2000/svg';
+
+        // Calculado sob demanda: getBBox() só devolve valor útil depois do
+        // SVG estar no layout (dentro do modal ele nasce escondido).
+        let corridors = null;
+
+        const buildCorridors = () => {
+            const laneBoxes = [];
+            svg.querySelectorAll('.os-map-lane').forEach((el) => {
+                const b = boxOf(el);
+                if (b) laneBoxes.push(b);
+            });
+
+            const cards = [];
+            svg.querySelectorAll('[data-status]').forEach((el) => {
+                const b = boxOf(el);
+                if (b) cards.push(b);
+            });
+
+            const portBox = portEl ? boxOf(portEl) : null;
+            const obstacles = portBox ? cards.concat([portBox]) : cards.slice();
+
+            if (laneBoxes.length === 0) {
+                return { gutters: [], channels: [], crossings: [], cards, obstacles };
+            }
+
+            // Vãos verticais: um à esquerda da primeira coluna de raias, um
+            // entre cada par de colunas, um à direita da última.
+            const laneW = laneBoxes[0].w;
+            const xs = [...new Set(laneBoxes.map((l) => Math.round(l.x)))].sort((a, b) => a - b);
+            const gap = xs.length > 1 ? Math.max(12, xs[1] - (xs[0] + laneW)) : 34;
+
+            const gutters = [xs[0] - gap / 2];
+            xs.forEach((x, i) => {
+                gutters.push(i < xs.length - 1 ? (x + laneW + xs[i + 1]) / 2 : x + laneW + gap / 2);
+            });
+
+            // Canais horizontais: acima da primeira linha de raias, entre as
+            // linhas, e abaixo da última.
+            const rowsByY = new Map();
+            laneBoxes.forEach((l) => {
+                const key = Math.round(l.y);
+                const row = rowsByY.get(key) || { top: l.y, bottom: l.y + l.h };
+                row.bottom = Math.max(row.bottom, l.y + l.h);
+                rowsByY.set(key, row);
+            });
+            const rows = [...rowsByY.values()].sort((a, b) => a.top - b.top);
+
+            const channels = [rows[0].top - 22];
+            rows.forEach((row, i) => {
+                channels.push(i < rows.length - 1 ? (row.bottom + rows[i + 1].top) / 2 : row.bottom + 22);
+            });
+
+            // Além dos canais entre linhas de raias, toda folga vertical entre
+            // obstáculos serve de travessia. Sem isso, uma seta de Execução
+            // até Concluído só podia contornar as raias por cima, virando um
+            // "U" gigante; agora ela corta rente, por baixo dos cards de
+            // Qualidade, que é o caminho curto e legível.
+            const edges = [];
+            obstacles.forEach((o) => edges.push(o.y, o.y + o.h));
+            edges.sort((a, b) => a - b);
+
+            const crossings = new Set(channels);
+            for (let i = 0; i < edges.length - 1; i++) {
+                if (edges[i + 1] - edges[i] >= 26) {
+                    crossings.add((edges[i] + edges[i + 1]) / 2);
+                }
+            }
+
+            return { gutters, channels, crossings: [...crossings].sort((a, b) => a - b), cards, obstacles };
+        };
+
+        const nearestTo = (values, target) => values.reduce(
+            (best, v) => (Math.abs(v - target) < Math.abs(best - target) ? v : best),
+            values[0]
+        );
+
+        // Vão livre imediatamente ao lado da caixa, no sentido pedido.
+        const gutterBeside = (box, towardRight) => {
+            const all = corridors.gutters;
+            if (all.length === 0) return towardRight ? box.x + box.w + 20 : box.x - 20;
+
+            const candidates = towardRight
+                ? all.filter((x) => x > box.x + box.w)
+                : all.filter((x) => x < box.x);
+
+            if (candidates.length === 0) return nearestTo(all, box.cx);
+
+            return towardRight ? Math.min(...candidates) : Math.max(...candidates);
+        };
+
+        const sameBox = (a, b) => a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
+
+        // Existe obstáculo entre as duas caixas, na faixa vertical em x? Se
+        // não, dá para descer reto. Olha TODOS os obstáculos, não só cards:
+        // a porta da baixa fica entre a raia de saídas e a de encerramento,
+        // exatamente na coluna dos cards, e uma reta de "Reparo Recusado" até
+        // "Entregue - Reparado e Pago" passava por cima dela.
+        const blockedBetween = (from, to, x) => {
+            const lo = Math.min(from.cy, to.cy);
+            const hi = Math.max(from.cy, to.cy);
+
+            return corridors.obstacles.some((o) => {
+                if (sameBox(o, from) || sameBox(o, to)) return false;
+
+                return o.x - 4 < x && x < o.x + o.w + 4
+                    && o.y < hi - 1 && lo + 1 < o.y + o.h;
+            });
+        };
+
+        // Canal horizontal que atravessa de xa a xb sem esbarrar em card nem
+        // na porta da baixa. A margem cobre o deslocamento por aresta.
+        const pickChannel = (xa, xb, midY) => {
+            const lo = Math.min(xa, xb);
+            const hi = Math.max(xa, xb);
+            const M = 20;
+
+            const free = corridors.crossings.filter((y) => !corridors.obstacles.some(
+                (o) => o.y - M < y && y < o.y + o.h + M && o.x - M < hi && lo < o.x + o.w + M
+            ));
+
+            return nearestTo(free.length > 0 ? free : corridors.channels, midY);
+        };
+
+        const CORNER_R = 12;
+
+        // Monta o "d" da polilinha com os cantos arredondados. Descarta pontos
+        // consecutivos iguais no caminho — raias vizinhas na mesma altura
+        // geravam um segmento de comprimento zero no meio.
+        const pathOf = (points) => {
+            const pts = points.filter(
+                (p, i, all) => i === 0 || p[0] !== all[i - 1][0] || p[1] !== all[i - 1][1]
+            );
+
+            if (pts.length < 3) {
+                return pts.map(([x, y], i) => `${i === 0 ? 'M' : 'L'} ${x} ${y}`).join(' ');
+            }
+
+            const round1 = (n) => Math.round(n * 10) / 10;
+            let d = `M ${round1(pts[0][0])} ${round1(pts[0][1])}`;
+
+            for (let i = 1; i < pts.length - 1; i++) {
+                const [ax, ay] = pts[i - 1];
+                const [px, py] = pts[i];
+                const [bx, by] = pts[i + 1];
+
+                const dIn = Math.hypot(px - ax, py - ay);
+                const dOut = Math.hypot(bx - px, by - py);
+                const r = Math.min(CORNER_R, dIn / 2, dOut / 2);
+
+                if (r < 1) {
+                    d += ` L ${round1(px)} ${round1(py)}`;
+
+                    continue;
+                }
+
+                const inX = px - ((px - ax) / dIn) * r;
+                const inY = py - ((py - ay) / dIn) * r;
+                const outX = px + ((bx - px) / dOut) * r;
+                const outY = py + ((by - py) / dOut) * r;
+
+                d += ` L ${round1(inX)} ${round1(inY)}`
+                    + ` Q ${round1(px)} ${round1(py)} ${round1(outX)} ${round1(outY)}`;
+            }
+
+            const last = pts[pts.length - 1];
+
+            return `${d} L ${round1(last[0])} ${round1(last[1])}`;
+        };
+
+        const routeBetween = (from, to, slot) => {
+            if (!corridors) corridors = buildCorridors();
+
+            // Deslocamento por aresta, para setas paralelas não se cobrirem.
+            // Teto de 12px: do centro do vão até a borda do card há ~39px.
+            const jitter = ((slot % 5) - 2) * 6;
+
+            const sameColumn = Math.abs(from.cx - to.cx) < 2;
+            const straightX = from.cx + ((slot % 3) - 1) * 8;
+
+            // Mesma coluna e nada no meio: reto pelo vão entre os cards.
+            if (sameColumn && !blockedBetween(from, to, straightX)) {
+                const y1 = to.cy > from.cy ? from.y + from.h : from.y;
+                const y2 = to.cy > from.cy ? to.y : to.y + to.h;
+
+                return pathOf([[straightX, y1], [straightX, y2]]);
+            }
+
+            // Mesma coluna com algo no meio: contorna pelo vão ao lado.
+            if (sameColumn) {
+                const g = gutterBeside(from, true) + jitter;
+
+                return pathOf([
+                    [from.x + from.w, from.cy], [g, from.cy],
+                    [g, to.cy], [to.x + to.w, to.cy],
+                ]);
+            }
+
+            const goingRight = to.cx > from.cx;
+            const x1 = goingRight ? from.x + from.w : from.x;
+            const x2 = goingRight ? to.x : to.x + to.w;
+            const gA = gutterBeside(from, goingRight) + jitter;
+            const gB = gutterBeside(to, !goingRight) + jitter;
+
+            // Raias vizinhas: os dois lados caem no mesmo vão, então a rota
+            // é sair, descer/subir nele e entrar — sem canal horizontal.
+            if (Math.abs(gA - gB) < 1) {
+                return pathOf([
+                    [x1, from.cy], [gA, from.cy], [gA, to.cy], [x2, to.cy],
+                ]);
+            }
+
+            const channel = pickChannel(gA, gB, (from.cy + to.cy) / 2) + jitter;
+
+            return pathOf([
+                [x1, from.cy], [gA, from.cy], [gA, channel],
+                [gB, channel], [gB, to.cy], [x2, to.cy],
+            ]);
+        };
+
+        // Desenha uma aresta na camada [data-os-map-layer="edges"].
+        // `kind` casa com as classes/markers definidos no partial do SVG.
+        const drawEdge = (fromEl, toEl, kind, slot, title) => {
+            if (!edgeLayer || !fromEl || !toEl || fromEl === toEl) return null;
+
+            const from = boxOf(fromEl);
+            const to = boxOf(toEl);
+            if (!from || !to) return null;
+
+            const path = document.createElementNS(SVG_NS, 'path');
+            path.setAttribute('d', routeBetween(from, to, slot));
+            path.setAttribute('fill', 'none');
+            path.setAttribute('marker-end', `url(#osMapArrow${kind.charAt(0).toUpperCase()}${kind.slice(1)})`);
+            path.classList.add('os-map-edge', `is-${kind}`);
+
+            if (title) {
+                const t = document.createElementNS(SVG_NS, 'title');
+                t.textContent = title;
+                path.appendChild(t);
+            }
+
+            edgeLayer.appendChild(path);
+
+            return path;
+        };
+
+        // ------------------------------------------------------------------
+        // Rota provável MEDIDA. Antes era um Dijkstra sobre o catálogo
+        // congelado `os_status_transicoes`, mirando um alvo fixo
+        // (`reparo_concluido`) e terminando num destino fixo
+        // (`entregue_reparado_pago`) — um "caminho feliz" declarado à mão em
+        // 2026-07. Agora caminha pela frequência real das transições
+        // (OrderFlowStatisticsService), que vem em config.flowStats.
+        // ------------------------------------------------------------------
+        const probableRoute = () => {
+            const stats = state.flowStats || {};
+            const freq = stats.transicoes || {};
+            const minSample = Number(stats.amostra_minima || 3);
+            const stop = new Set([
+                ...(Array.isArray(stats.codigos_encerramento) ? stats.codigos_encerramento : []),
+                ...(Array.isArray(stats.codigos_saida) ? stats.codigos_saida : []),
+            ]);
+
+            const hops = [];
+            const visited = new Set([state.statusAtual]);
+            let cursor = state.statusAtual;
+
+            while (hops.length < ROUTE_MAX_STEPS) {
+                const destinos = (freq[cursor] || {}).destinos || [];
+
+                // Já ordenado por frequência no backend; pula quem já foi
+                // visitado porque o histórico real tem ciclos de verdade
+                // (retrabalho, reabertura, cancelar baixa).
+                const next = destinos.find((d) => !visited.has(d.para) && d.n >= minSample);
+                if (!next) break;
+
+                hops.push({ de: cursor, para: next.para, n: next.n, pct: next.pct });
+                visited.add(next.para);
+                cursor = next.para;
+
+                if (stop.has(cursor)) break;
+            }
+
+            return hops;
+        };
+
+        // Sem dado medido saindo da etapa atual, a sugestão cai para o
+        // catálogo de transições (`proximas_etapas`) — congelado desde
+        // 23/08/2026, mas melhor que nada quando o histórico é curto.
+        const drawProbableRoute = () => {
             if (state.isEncerrada || !currentNode) return;
 
-            const dist = { [state.statusAtual]: 0 };
-            const prev = {};
-            const queue = [state.statusAtual];
+            const hops = probableRoute();
+            let slot = 0;
 
-            while (queue.length > 0) {
-                queue.sort((a, b) => (dist[a] ?? Infinity) - (dist[b] ?? Infinity));
-                const node = queue.shift();
-                if (node === 'reparo_concluido') break;
+            hops.forEach((hop) => {
+                const fromEl = nodesByCode[hop.de];
+                const toEl = nodesByCode[hop.para];
+                drawEdge(fromEl, toEl, 'route', slot++, `rota provável: ${hop.pct}% das OS (${hop.n})`);
+                if (toEl) toEl.classList.add('is-destination');
+            });
 
-                (adjacency[node] || []).forEach((edge) => {
-                    if (edge.to === BAIXA_TARGET) return;
-                    const cost = (dist[node] ?? Infinity) + (edge.kind === 'main' ? 1 : 5);
-                    if (cost < (dist[edge.to] ?? Infinity)) {
-                        dist[edge.to] = cost;
-                        prev[edge.to] = node;
-                        queue.push(edge.to);
-                    }
-                });
+            const last = hops.length > 0 ? hops[hops.length - 1].para : state.statusAtual;
+
+            // A baixa parte de qualquer etapa aberta; o mapa mostra a porta
+            // como continuação natural do fim da rota.
+            if (portEl && !state.closureCodeSet.has(last)) {
+                drawEdge(nodesByCode[last], portEl, 'baixa', 0, 'encerramento: só pela baixa da OS');
+                portEl.classList.add('is-suggested');
             }
+        };
 
-            if (!('reparo_concluido' in dist)) return;
-
-            const routeNodes = [];
-            let cursor = 'reparo_concluido';
-            while (cursor !== undefined) {
-                routeNodes.unshift(cursor);
-                cursor = prev[cursor];
-            }
-
-            for (let i = 0; i < routeNodes.length - 1; i++) {
-                const el = edgesByPair[`${routeNodes[i]}:${routeNodes[i + 1]}`];
-                if (el) el.classList.add('is-suggested');
-                const node = nodesByCode[routeNodes[i + 1]];
-                if (node) node.classList.add('is-destination');
-            }
-
-            const baixaEdge = edgesByPair[`reparo_concluido:${BAIXA_TARGET}`];
-            if (baixaEdge) baixaEdge.classList.add('is-suggested');
-            portEl?.classList.add('is-suggested');
-            if (nodesByCode[DESTINO_FINAL]) nodesByCode[DESTINO_FINAL].classList.add('is-destination');
+        // Overlay do catálogo de transições (desligado por padrão). Mostra as
+        // setas que existem em os_status_transicoes — úteis como leitura do
+        // fluxo desenhado, mas congeladas: o editor da matriz saiu do desktop
+        // em 23/08/2026 e o backend não valida transição desde 09/08/2026.
+        const drawCatalogOverlay = () => {
+            let slot = 0;
+            state.transicoesCatalogo.forEach(({ de, para }) => {
+                drawEdge(nodesByCode[de], nodesByCode[para], 'catalog', slot++, 'transição cadastrada no catálogo');
+            });
         };
 
         const applyDecoration = () => {
+            // 1. Trajeto percorrido — SEMPRE desenhado, inclusive quando o
+            // salto não existe no catálogo de transições. Era exatamente esse
+            // o bug de cronologia: a OS 3654 foi aguardando_reparo ->
+            // reparo_concluido (salto que o backend aceita desde 09/08/2026,
+            // mas que não está em os_status_transicoes) e o mapa não mostrava
+            // linha nenhuma, porque procurava uma seta pré-desenhada.
+            let slot = 0;
             state.path.forEach((hop) => {
                 const de = String(hop.de || '');
                 const para = String(hop.para || '');
-                if (de && edgesByPair[`${de}:${para}`]) {
-                    edgesByPair[`${de}:${para}`].classList.add('is-traveled');
+
+                if (de && nodesByCode[de] && nodesByCode[para]) {
+                    const quando = String(hop.em || '').slice(0, 10).split('-').reverse().join('/');
+                    drawEdge(nodesByCode[de], nodesByCode[para], 'traveled', slot++, quando !== '' ? `percorrido em ${quando}` : 'percorrido');
                 }
+
                 if (de && nodesByCode[de]) nodesByCode[de].classList.add('is-visited');
                 if (nodesByCode[para]) nodesByCode[para].classList.add('is-visited');
             });
@@ -245,8 +569,10 @@
             currentNode = nodesByCode[state.statusAtual] || null;
 
             if (!currentNode && state.statusAtual !== '') {
-                // Status legado/desconhecido: painel lateral já mostra o código cru.
-                showToast(`Status atual (${state.statusAtual}) não está no mapa do fluxo.`, 'warning');
+                // Todo status ATIVO tem card desde que o desenho passou a ser
+                // gerado do catálogo; sobrar aqui significa status desativado
+                // (ou legado) em que uma OS antiga ficou parada.
+                showToast(`Status atual (${state.statusAtual}) não está mais no catálogo ativo — o mapa não tem card para ele.`, 'warning');
             }
 
             if (currentNode) {
@@ -254,16 +580,30 @@
                 markHere(currentNode);
             }
 
-            suggestRoute();
+            // 2. Rota provável, medida do histórico real.
+            drawProbableRoute();
+
+            // 3. Próximas etapas sugeridas pelo catálogo de transições, saindo
+            // do nó atual. Continua sendo só destaque: qualquer status ativo
+            // não-baixa pode ser escolhido (decisão de 09/08/2026).
+            if (currentNode && !state.isEncerrada) {
+                let nextSlot = 0;
+                state.suggestedCodes.forEach((code) => {
+                    const target = nodesByCode[code];
+                    if (!target || code === state.statusAtual) return;
+                    target.classList.add('is-destination');
+                    drawEdge(currentNode, target, 'next', nextSlot++, 'próxima etapa sugerida pelo catálogo');
+                });
+            }
 
             if (state.canEditStatus && !state.isEncerrada) {
                 state.clickableCodes.forEach((code) => nodesByCode[code]?.classList.add('is-clickable'));
             }
 
-            // Sugestão imediata do catálogo de transições (proximas_etapas) —
-            // destaque visual mesmo fora da rota Dijkstra até reparo_concluido,
-            // mesma classe is-destination usada pra rota sugerida.
-            state.suggestedCodes.forEach((code) => nodesByCode[code]?.classList.add('is-destination'));
+            // 4. Overlay opcional: o catálogo inteiro de transições. Fica
+            // desligado por padrão — são sugestões congeladas desde que o
+            // editor da matriz saiu do desktop (23/08/2026), não regra.
+            if (state.showCatalog) drawCatalogOverlay();
         };
 
         const redecorate = () => {
@@ -335,6 +675,7 @@
                 proximasEtapas: order.proximas_etapas,
                 statusDisponiveis: order.status_disponiveis,
                 path: data.path,
+                flowStats: data.flowStats,
             });
 
             // Pill de status e banner ficam no cabeçalho da página (fora de
@@ -481,8 +822,12 @@
         // ------------------------------------------------------------------
         // Pan / zoom
         // ------------------------------------------------------------------
-        const MAP_W = 1780;
-        const MAP_H = 1560;
+        // Dimensões vêm do viewBox do SVG gerado — o desenho agora cresce ou
+        // encolhe conforme o catálogo, então constantes fixas (eram 1780x1560,
+        // do artefato Python) quebrariam o zoom/fit a cada mudança de status.
+        const viewBox = (svg.getAttribute('viewBox') || '0 0 1780 1560').split(/\s+/).map(Number);
+        const MAP_W = viewBox[2] || 1780;
+        const MAP_H = viewBox[3] || 1560;
         const view = { x: 0, y: 0, scale: 1 };
 
         const applyTransform = () => {
@@ -567,6 +912,18 @@
         });
         root.querySelector('[data-os-map="zoom-reset"]')?.addEventListener('click', fitToViewport);
         root.querySelector('[data-os-map="center-current"]')?.addEventListener('click', centerOnCurrent);
+
+        // Liga/desliga o overlay do catálogo de transições. Fica desligado por
+        // padrão: são as setas cadastradas em os_status_transicoes, congeladas
+        // desde 23/08/2026 — leitura do fluxo desenhado, não do que a OS pode
+        // fazer (o backend aceita qualquer status ativo não-baixa).
+        const catalogBtn = root.querySelector('[data-os-map="toggle-catalog"]');
+        catalogBtn?.addEventListener('click', () => {
+            state.showCatalog = !state.showCatalog;
+            catalogBtn.classList.toggle('is-active', state.showCatalog);
+            catalogBtn.setAttribute('aria-pressed', state.showCatalog ? 'true' : 'false');
+            redecorate();
+        });
 
         // ------------------------------------------------------------------
         // Tela cheia: Fullscreen API nativa (Esc sai de graça) com fallback

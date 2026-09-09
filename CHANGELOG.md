@@ -1,5 +1,23 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.80.2.0 — 2026-09-09 09:43
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Mapa da OS, legibilidade: faixa de desfechos (Sem reparo + Cancelado + Encerramento) passa a dividir uma linha unica alinhada a direita, com a raia de encerramento e a porta da baixa logo abaixo de Concluido — antes eram duas faixas empilhadas na margem esquerda e a seta da baixa cruzava o mapa inteiro (altura 1364 -> 1040). Travessias horizontais deixam de se limitar aos vaos entre linhas de raias e passam a usar qualquer folga entre obstaculos, entao uma seta de Execucao ate Concluido corta rente por baixo de Qualidade em vez de contornar por cima. Cantos das setas arredondados. Rotulo da porta movido para cima dela, fora do caminho da seta.
+- **Arquivos:** frontends/desktop/app/Support/OrderFlowMapLayout.php,frontends/desktop/public/assets/js/orders-map.js,frontends/desktop/resources/views/orders/_flow_map_svg.blade.php
+
+## v5.80.1.0 — 2026-09-09 09:23
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Mapa da OS: setas passam a ser roteadas por corredores livres (vaos entre raias e canais entre linhas de raias) em vez de ligar as caixas pelo ponto medio, entao nenhuma rota cruza card — inclui a porta da baixa no teste de obstaculo, que ficava entre 'Reparo Recusado' e 'Entregue - Reparado e Pago' na mesma coluna. Legenda corrigida para espelhar as camadas realmente desenhadas: 'proximas etapas' vira amostra de linha tracejada laranja (era bolinha) e entra o item do overlay de catalogo.
+- **Arquivos:** frontends/desktop/public/assets/js/orders-map.js,frontends/desktop/app/Support/OrderFlowMapLayout.php,frontends/desktop/resources/views/orders/map.blade.php,frontends/desktop/resources/views/orders/_status_modal.blade.php,frontends/desktop/tests/Unit/OrderStatusMapAssetsTest.php
+
+## v5.80.0.0 — 2026-09-09 08:39
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Mapa da OS gerado do catalogo vivo de status em vez de SVG estatico do script Python: criar/renomear/reordenar/desativar status na tela Status de OS agora reflete no mapa. Setas passam a ser desenhadas em runtime, entao o trajeto percorrido aparece mesmo em saltos fora do catalogo de transicoes (OS 3654: aguardando_reparo -> reparo_concluido). Rota provavel deixa de ser Dijkstra sobre catalogo congelado e passa a ser medida da frequencia real (OrderFlowStatisticsService + GET /knowledge/os-flow/estatisticas). Ordem, rotulos e cores das macrofases unificados em OrderStatusMacroGroups (eram 4 copias com 3 ordens). Corrige map.blade.php sem statusDisponiveis, que marcava ~22 nos como encerramento por engano.
+- **Arquivos:** frontends/desktop/app/Support/OrderStatusMacroGroups.php,frontends/desktop/app/Support/OrderFlowMapLayout.php,frontends/desktop/app/Support/OrderFlowMapLayoutFactory.php,frontends/desktop/resources/views/orders/_flow_map_svg.blade.php,frontends/desktop/resources/views/orders/map.blade.php,frontends/desktop/resources/views/orders/_status_modal.blade.php,frontends/desktop/public/assets/js/orders-map.js,frontends/desktop/public/assets/js/orders-status-modal.js,backend/app/Services/Orders/OrderFlowStatisticsService.php,backend/routes/api.php
+
 ## v5.79.1.0 — 2026-09-03 09:36
 - **Tier:** patch
 - **Autor/Agente:** Codex

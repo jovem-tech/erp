@@ -3,6 +3,21 @@
     Incluir em qualquer view que precise desta funcionalidade.
     Requer orders-status-modal.js e window.__DESKTOP_STATUS_MODAL configurado.
 --}}
+{{--
+    Vocabulário das macrofases (ordem, rótulo e cor) para o JS. Emitido aqui,
+    e não em cada uma das cinco telas que incluem este modal, porque é o modal
+    que precisa dele. Inline de propósito: precisa existir antes de
+    orders-status-modal.js rodar no fim do body.
+
+    Fonte única: App\Support\OrderStatusMacroGroups. Antes de 09/09/2026 esta
+    mesma informação vivia duplicada em quatro lugares divergentes (esta
+    classe, o MACRO_PHASES do JS, a paleta CSS logo abaixo e as LANES do
+    gerador Python do mapa), com três ordens diferentes entre si.
+--}}
+<script>
+    window.__DESKTOP_OS_FLOW_PHASES = window.__DESKTOP_OS_FLOW_PHASES
+        || {!! \Illuminate\Support\Js::from(\App\Support\OrderStatusMacroGroups::toPayload()) !!};
+</script>
 <style>
     .os-status-context-card {
         background: var(--desktop-surface-soft);
@@ -243,15 +258,13 @@
     }
 
     /* Cores por macrofase — paleta definida pelo usuário no fluxograma. */
-    .os-flow-row[data-phase="recepcao"] { --phase-color: #10739E; --phase-text: #fff; }
-    .os-flow-row[data-phase="diagnostico"] { --phase-color: #F2931E; --phase-text: #fff; }
-    .os-flow-row[data-phase="orcamento"] { --phase-color: #66B2FF; --phase-text: #fff; }
-    .os-flow-row[data-phase="interrupcao"] { --phase-color: #FFD400; --phase-text: #3d3000; }
-    .os-flow-row[data-phase="execucao"] { --phase-color: #999900; --phase-text: #fff; }
-    .os-flow-row[data-phase="qualidade"] { --phase-color: #9999FF; --phase-text: #fff; }
-    .os-flow-row[data-phase="concluido"] { --phase-color: #00994D; --phase-text: #fff; }
-    .os-flow-row[data-phase="finalizado_sem_reparo"] { --phase-color: #CC0000; --phase-text: #fff; }
-    .os-flow-row[data-phase="cancelado"] { --phase-color: #CC0000; --phase-text: #fff; }
+    /* A paleta das macrofases vem inline do JS, alimentada por
+       App\Support\OrderStatusMacroGroups::flowAccent() — fonte unica
+       compartilhada com o Mapa da OS. Ate 09/09/2026 os valores estavam
+       aqui, e uma macrofase criada pelo usuario (o campo grupo_macro e texto
+       livre no cadastro) ficava sem cor por nao ter seletor. Mantido so o
+       fallback, para a linha nao nascer sem variavel. */
+    .os-flow-row { --phase-color: #6f5afc; --phase-text: #fff; }
 
     /* "Em espera" é amarelo com texto escuro; o anel de etapa atual/sugerida
        precisa contrastar com o fundo claro. */
@@ -508,9 +521,15 @@
         border-radius: 2px;
     }
 
-    .os-map-legend-swatch--traveled { border-top-color: #2B8A3E; }
-    .os-map-legend-swatch--suggested { border-top-style: dashed; border-top-color: #1864AB; }
-    .os-map-legend-swatch--baixa { border-top-color: #7048E8; }
+    /* Cada amostra da legenda espelha EXATAMENTE a classe .os-map-edge.is-*
+       correspondente em espessura, cor e tracejado. Ao mexer numa camada de
+       aresta, mexa nas duas — legenda que nao bate com o desenho e pior que
+       legenda nenhuma. */
+    .os-map-legend-swatch--traveled { border-top-width: 5px; border-top-color: #2B8A3E; }
+    .os-map-legend-swatch--route { border-top-width: 4px; border-top-style: dashed; border-top-color: #1864AB; }
+    .os-map-legend-swatch--next { border-top-width: 3px; border-top-style: dashed; border-top-color: #F08C00; }
+    .os-map-legend-swatch--baixa { border-top-width: 4px; border-top-color: #7048E8; }
+    .os-map-legend-swatch--catalog { border-top-width: 2px; border-top-color: #AAB4C0; opacity: 0.7; }
 
     .os-map-legend-dot {
         display: inline-block;
@@ -520,13 +539,10 @@
     }
 
     .os-map-legend-dot--current { background: #1864AB; box-shadow: 0 0 0 3px rgba(24, 100, 171, 0.25); }
-    .os-map-legend-dot--clickable { background: #fff; border: 2px solid #1864AB; }
 
     /* ---- Decoração do SVG (aplicada por orders-map.js) ------------------ */
-    .os-map--decorated .os-map-edge {
-        opacity: 0.18;
-    }
-
+    /* As arestas sao CRIADAS pelo orders-map.js (nao existem no SVG gerado);
+       cada camada tem sua classe .is-* e seu marker de seta. */
     .os-map--decorated .os-map-node,
     .os-map--decorated .os-map-port {
         opacity: 0.45;
@@ -540,15 +556,45 @@
         opacity: 1;
     }
 
-    .os-map--decorated .os-map-edge.is-traveled {
-        opacity: 1;
-        stroke: #2B8A3E;
+    .os-map-edge {
+        fill: none;
+        stroke-linejoin: round;
+        stroke-linecap: round;
     }
 
-    .os-map--decorated .os-map-edge.is-suggested {
-        opacity: 1;
+    /* Trajeto realmente percorrido pela OS. Desenhado mesmo quando o salto nao
+       existe no catalogo de transicoes — era esse o bug de cronologia. */
+    .os-map-edge.is-traveled {
+        stroke: #2B8A3E;
+        stroke-width: 5;
+    }
+
+    /* Rota provavel, medida da frequencia real das transicoes. */
+    .os-map-edge.is-route {
+        stroke: #1864AB;
+        stroke-width: 3.5;
         stroke-dasharray: 10 7;
         animation: os-map-dash 1.4s linear infinite;
+    }
+
+    /* Proxima etapa sugerida pelo catalogo, saindo da etapa atual. */
+    .os-map-edge.is-next {
+        stroke: #F08C00;
+        stroke-width: 2.5;
+        stroke-dasharray: 4 5;
+    }
+
+    /* Porta unica de encerramento (baixa da OS). */
+    .os-map-edge.is-baixa {
+        stroke: #7048E8;
+        stroke-width: 4;
+    }
+
+    /* Overlay opcional do catalogo cadastrado — desligado por padrao. */
+    .os-map-edge.is-catalog {
+        stroke: #AAB4C0;
+        stroke-width: 1.5;
+        opacity: 0.55;
     }
 
     @keyframes os-map-dash {
@@ -764,9 +810,11 @@
                                         <div class="os-map-legend-items">
                                             <span class="os-map-legend-item"><span class="os-map-legend-swatch os-map-legend-swatch--traveled"></span>trajeto percorrido</span>
                                             <span class="os-map-legend-item"><span class="os-map-legend-dot os-map-legend-dot--current"></span>posição atual</span>
-                                            <span class="os-map-legend-item"><span class="os-map-legend-swatch os-map-legend-swatch--suggested"></span>rota provável</span>
-                                            <span class="os-map-legend-item"><span class="os-map-legend-dot os-map-legend-dot--clickable"></span>clique em qualquer etapa pra mover</span>
+                                            <span class="os-map-legend-item"><span class="os-map-legend-swatch os-map-legend-swatch--route"></span>rota provável (medida do histórico)</span>
+                                            <span class="os-map-legend-item"><span class="os-map-legend-swatch os-map-legend-swatch--next"></span>próxima etapa sugerida</span>
                                             <span class="os-map-legend-item"><span class="os-map-legend-swatch os-map-legend-swatch--baixa"></span>baixa da OS (encerramento)</span>
+                                            <span class="os-map-legend-item"><span class="os-map-legend-swatch os-map-legend-swatch--catalog"></span>catálogo de transições (opcional)</span>
+                                            <span class="os-map-legend-item">clique em qualquer etapa pra mover</span>
                                         </div>
                                     </div>
                                     <div class="os-map-viewport" data-os-map="viewport">
@@ -778,6 +826,7 @@
                                             <button type="button" class="btn btn-sm" data-os-map="zoom-in" title="Ampliar"><i class="bi bi-plus-lg"></i></button>
                                             <button type="button" class="btn btn-sm" data-os-map="zoom-reset" title="Ajustar à tela"><i class="bi bi-aspect-ratio"></i></button>
                                             <button type="button" class="btn btn-sm" data-os-map="center-current" title="Centralizar na posição atual"><i class="bi bi-crosshair"></i></button>
+                                            <button type="button" class="btn btn-sm" data-os-map="toggle-catalog" aria-pressed="false" title="Mostrar/ocultar o catálogo de transições cadastradas"><i class="bi bi-diagram-3"></i></button>
                                             <button type="button" class="btn btn-sm" data-os-map="fullscreen" title="Tela cheia"><i class="bi bi-arrows-fullscreen"></i></button>
                                         </div>
                                         <button type="button" class="os-map-close" data-os-map="exit-fullscreen" title="Sair da tela cheia (Esc)" aria-label="Sair da tela cheia">

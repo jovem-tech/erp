@@ -151,6 +151,13 @@ aberto.
   que so oferece ir para a tela de baixa. O filtro fica DENTRO do widget (nao
   so em quem chama) porque `status_disponiveis` e o catalogo COMPLETO e
   inclui os status de baixa — ver secao "Mapa de status dentro do modal".
+  `OrderFlowMapLayout` marca esses cards com `kind = 'closure'` no desenho.
+- **Bug corrigido em 2026-09-09:** `map.blade.php` nao passava
+  `statusDisponiveis` no `window.__DESKTOP_OS_MAP` (a aba do modal passava).
+  O fallback de `applyState()` entao marcava como `.is-closure` **todo** no
+  que nao estivesse em `proximas_etapas` — ~22 dos 27 — e clicar em "Triagem"
+  abria "Encerramento e pela baixa da OS" por engano. Ao mexer no config do
+  mapa, garanta que as duas superficies passem o catalogo completo.
 - A tela de baixa (`orders/closure.blade.php`) e o UNICO lugar que exibe os 3
   status — via `OrderClosureService::closureOptions()`.
 
@@ -418,13 +425,18 @@ pelo usuario. Implementado em `orders-status-modal.js`
 (`MACRO_PHASES`, `EXIT_PHASES`, `buildStep`, `buildPhaseRow`,
 `renderStatusGrid`) + CSS em `_status_modal.blade.php` (`.os-flow*`).
 
-- **A ordem das macrofases e declarada em `MACRO_PHASES`, NAO derivada de
+- **A ordem das macrofases e declarada, NAO derivada de
   `os_status.ordem_fluxo`** — decisao explicita do usuario: Recepcao >
   Diagnostico > Orcamento > **Em espera** > Execucao > Qualidade > Concluido.
   No banco `interrupcao` (Em espera) tem `ordem_fluxo` 120-140, ou seja,
-  cairia depois de Execucao/Qualidade. Ao adicionar uma macrofase nova ao
-  catalogo, inclua-a em `MACRO_PHASES` (ou em `EXIT_PHASES`) — fases fora
-  dessas listas ainda aparecem, mas caem no fim da tela.
+  cairia depois de Execucao/Qualidade.
+  **Desde 2026-09-09 essa lista vive em UM lugar so:**
+  `App\Support\OrderStatusMacroGroups::order()`/`exitOrder()` (desktop),
+  entregue ao JS por `toPayload()` / `window.__DESKTOP_OS_FLOW_PHASES`. O
+  `MACRO_PHASES` que existia em `orders-status-modal.js` foi removido — nao
+  reintroduzir. Macrofase fora dessas listas ainda aparece (o campo
+  `grupo_macro` e texto livre no cadastro), caindo no fim via
+  `orderIndex()`; no mapa ela ganha raia propria.
 - **Dentro de cada fase** a ordem continua sendo a de `ordem_fluxo` (ordem em
   que `status_disponiveis` chega do backend), sem override por status.
 - `finalizado_sem_reparo` e `cancelado` sao **saidas do fluxo**: ficam num
@@ -432,11 +444,14 @@ pelo usuario. Implementado em `orders-status-modal.js`
   vermelho. Cancelado tem linha propria (e `grupo_macro` proprio no banco e
   o usuario o descreve como saida distinta), embora no fluxograma de
   referencia ele apareca na mesma faixa de "sem reparo".
-- Paleta por fase (`--phase-color`/`--phase-text`, seletores
-  `.os-flow-row[data-phase="..."]`): recepcao `#10739E`, diagnostico
-  `#F2931E`, orcamento `#66B2FF`, interrupcao `#FFD400` (texto escuro),
-  execucao `#999900`, qualidade `#9999FF`, concluido `#00994D`,
-  finalizado_sem_reparo e cancelado `#CC0000`.
+- Paleta por fase (`--phase-color`/`--phase-text`): recepcao `#10739E`,
+  diagnostico `#F2931E`, orcamento `#66B2FF`, interrupcao `#FFD400` (texto
+  escuro), execucao `#999900`, qualidade `#9999FF`, concluido `#00994D`,
+  finalizado_sem_reparo e cancelado `#CC0000`. Desde 2026-09-09 vem de
+  `OrderStatusMacroGroups::flowAccent()` e e aplicada **inline** por raia (era
+  seletor CSS `.os-flow-row[data-phase="..."]`, que deixava macrofase nova sem
+  cor). Nao confundir com `accent()`/`softAccent()`, que sao a paleta do donut
+  do dashboard e tem outra exigencia (cada matiz uma vez so).
 - Continua valendo tudo da secao anterior: status de `grupo_macro='encerrado'`
   nunca aparecem (so pela baixa), e qualquer etapa nao-baixa e clicavel.
 
@@ -482,6 +497,11 @@ com a mensagem que sera enviada, **editavel** antes de salvar.
   o historico precisa refletir a tentativa, nao so a entrega.
 
 ## Mapa de status dentro do modal "Alterar status" (2026-08-09)
+
+> **Leia antes a secao "Mapa da OS e gerado do catalogo vivo (2026-09-09)"
+> mais abaixo.** O widget e o reaproveitamento entre modal e pagina descritos
+> aqui continuam valendo, mas o DESENHO deixou de ser o SVG estatico do script
+> Python (removido) e as setas nao vivem mais no SVG.
 
 O modal virou `modal-fullscreen` e ganhou a aba **"Mapa de status"**, que
 reaproveita o MESMO mapa interativo da pagina `/os/{id}/mapa` — nao existe
@@ -584,6 +604,56 @@ mais acontecer.
   teste. Corrigido o `grupo_macro` de `cancelado` e adicionados os 3 códigos
   faltantes com `grupo_macro='finalizado_sem_reparo'`, batendo com produção.
 
+## Mapa da OS e gerado do catalogo vivo (2026-09-09)
+
+O desenho do mapa **nao e mais um artefato estatico**. Ate esta data
+`orders/_flow_map_svg.blade.php` era um SVG de 43 KB gerado por
+`scripts/python/diagrama_fluxo_os_organizado.py --embed`, com raias, cards e 73
+setas em coordenadas escritas a mao — criar, renomear, reordenar ou desativar um
+status na tela "Status de OS" nao mudava nada, e regenerar exigia um dev
+roteando coordenadas no Python. **O script foi removido; nao recriar.**
+
+- `App\Support\OrderFlowMapLayout::build($statusDisponiveis)` (desktop, classe
+  pura) calcula `width/height/lanes/cards/port` do catalogo ativo. Raia por
+  `grupo_macro` na ordem de `OrderStatusMacroGroups::orderIndex()`; cards por
+  `ordem_fluxo`; rotulo de `os_status.nome` com quebra automatica de linha.
+- `OrderFlowMapLayoutFactory` (singleton por request) resolve o layout para
+  quem nao tem o catalogo a mao — o modal e incluido por cinco telas.
+- **As setas nao existem no SVG.** Sao desenhadas em runtime por
+  `orders-map.js` dentro de `[data-os-map-layer="edges"]`, a partir das caixas
+  dos cards (`getBBox()`). Camadas: trajeto percorrido (verde), rota provavel
+  (tracejado azul), proximas etapas (laranja), baixa (roxo) e o overlay
+  opcional do catalogo (cinza, desligado por padrao).
+- **Por que isso importa para a regra deste skill:** o trajeto percorrido antes
+  so era pintado se a seta `de:para` ja existisse no desenho. Como o backend
+  aceita qualquer status ativo nao-encerramento desde 2026-08-09, a maioria dos
+  saltos reais nao tem transicao cadastrada e o mapa nao mostrava nada. Caso
+  real: OS 3654 foi `aguardando_reparo -> reparo_concluido`, par ausente de
+  `os_status_transicoes`. Agora a geometria e calculada, entao qualquer par e
+  ligavel. **Nao volte a condicionar o desenho do trajeto a existencia de uma
+  transicao cadastrada.**
+
+### "Rota provavel" e medida, nao declarada
+
+`App\Services\Orders\OrderFlowStatisticsService` (backend) +
+`GET /api/v1/knowledge/os-flow/estatisticas` (gate `os:visualizar`, cache 1 h).
+
+- Reconstroi cada salto com
+  `LAG(status_novo) OVER (PARTITION BY os_id ORDER BY created_at, id)` sobre
+  `os_status_historico`. **Nao usar `status_anterior` direto:** so 728 das 4.394
+  linhas tem esse campo preenchido (o resto veio do legado sem ele).
+- Devolve o catalogo inteiro (nao por OS): um payload cacheado serve a pagina
+  cheia e a aba do modal, e o JS recalcula a rota quando a OS se move.
+- O payload carrega `codigos_encerramento` e `codigos_saida` vindos de
+  `OrderStatus::closureCodes()`/`flowExitCodes()` — o JS **nao** hardcoda esses
+  codigos; e assim que a caminhada sabe onde parar.
+- O `suggestRoute()` antigo (Dijkstra sobre o catalogo congelado, alvo fixo
+  `reparo_concluido`, destino fixo `entregue_reparado_pago`) foi removido junto
+  com a constante `DESTINO_FINAL`. A caminhada nova tem conjunto de visitados
+  (o historico real tem ciclos: retrabalho, reabertura, cancelar baixa),
+  amostra minima de 3 e teto de 12 passos — abaixo da amostra ela **para** em
+  vez de inventar rota.
+
 ## Checklist ao tocar em status de OS ou relatorios financeiros
 
 - [ ] Se adicionar um novo caminho que possa alterar `os.status` (novo
@@ -600,6 +670,13 @@ mais acontecer.
       respeita o bloqueio de OS encerrada (`order_is_closed`) — nao deve ser
       possivel tirar uma OS de `closureCodes()` por fora de
       `OrderClosureService::cancelClosure()`.
+- [ ] Se adicionar/renomear/desativar um status ou uma macrofase, NAO ha
+      artefato para regenerar: o mapa sai do catalogo vivo. Mas confira se a
+      macrofase nova precisa entrar em `OrderStatusMacroGroups::order()` (senao
+      cai no fim, junto das desconhecidas) e se ganhou cor em `flowAccent()`.
+- [ ] Nunca declare ordem, rotulo ou cor de macrofase fora de
+      `OrderStatusMacroGroups` — foi exatamente assim que surgiram as quatro
+      copias divergentes eliminadas em 2026-09-09.
 
 ## Workflow de decisao
 

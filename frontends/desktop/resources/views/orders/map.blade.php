@@ -210,9 +210,15 @@
         border-radius: 2px;
     }
 
-    .os-map-legend-swatch--traveled { border-top-color: #2B8A3E; }
-    .os-map-legend-swatch--suggested { border-top-style: dashed; border-top-color: #1864AB; }
-    .os-map-legend-swatch--baixa { border-top-color: #7048E8; }
+    /* Cada amostra da legenda espelha EXATAMENTE a classe .os-map-edge.is-*
+       correspondente em espessura, cor e tracejado. Ao mexer numa camada de
+       aresta, mexa nas duas — legenda que nao bate com o desenho e pior que
+       legenda nenhuma. */
+    .os-map-legend-swatch--traveled { border-top-width: 5px; border-top-color: #2B8A3E; }
+    .os-map-legend-swatch--route { border-top-width: 4px; border-top-style: dashed; border-top-color: #1864AB; }
+    .os-map-legend-swatch--next { border-top-width: 3px; border-top-style: dashed; border-top-color: #F08C00; }
+    .os-map-legend-swatch--baixa { border-top-width: 4px; border-top-color: #7048E8; }
+    .os-map-legend-swatch--catalog { border-top-width: 2px; border-top-color: #AAB4C0; opacity: 0.7; }
 
     .os-map-legend-dot {
         display: inline-block;
@@ -222,7 +228,6 @@
     }
 
     .os-map-legend-dot--current { background: #1864AB; box-shadow: 0 0 0 3px rgba(24, 100, 171, 0.25); }
-    .os-map-legend-dot--clickable { background: #fff; border: 2px solid #1864AB; }
 
     /* A pílula de status do cabeçalho não fica dentro de .os-map-frame, mas
        ainda é "vizinha" o bastante pro navegador pular a seleção pra ela
@@ -376,10 +381,8 @@
     }
 
     /* ---- Decoração do SVG (aplicada pelo orders-map.js) ---------------- */
-    .os-map--decorated .os-map-edge {
-        opacity: 0.18;
-    }
-
+    /* As arestas sao CRIADAS pelo orders-map.js (nao existem no SVG gerado);
+       cada camada tem sua classe .is-* e seu marker de seta. */
     .os-map--decorated .os-map-node,
     .os-map--decorated .os-map-port {
         opacity: 0.45;
@@ -393,15 +396,45 @@
         opacity: 1;
     }
 
-    .os-map--decorated .os-map-edge.is-traveled {
-        opacity: 1;
-        stroke: #2B8A3E;
+    .os-map-edge {
+        fill: none;
+        stroke-linejoin: round;
+        stroke-linecap: round;
     }
 
-    .os-map--decorated .os-map-edge.is-suggested {
-        opacity: 1;
+    /* Trajeto realmente percorrido pela OS. Desenhado mesmo quando o salto nao
+       existe no catalogo de transicoes — era esse o bug de cronologia. */
+    .os-map-edge.is-traveled {
+        stroke: #2B8A3E;
+        stroke-width: 5;
+    }
+
+    /* Rota provavel, medida da frequencia real das transicoes. */
+    .os-map-edge.is-route {
+        stroke: #1864AB;
+        stroke-width: 3.5;
         stroke-dasharray: 10 7;
         animation: os-map-dash 1.4s linear infinite;
+    }
+
+    /* Proxima etapa sugerida pelo catalogo, saindo da etapa atual. */
+    .os-map-edge.is-next {
+        stroke: #F08C00;
+        stroke-width: 2.5;
+        stroke-dasharray: 4 5;
+    }
+
+    /* Porta unica de encerramento (baixa da OS). */
+    .os-map-edge.is-baixa {
+        stroke: #7048E8;
+        stroke-width: 4;
+    }
+
+    /* Overlay opcional do catalogo cadastrado — desligado por padrao. */
+    .os-map-edge.is-catalog {
+        stroke: #AAB4C0;
+        stroke-width: 1.5;
+        opacity: 0.55;
     }
 
     @keyframes os-map-dash {
@@ -482,11 +515,13 @@
         <div class="os-map-frame">
             <div class="os-map-legend">
                 <div class="os-map-legend-items">
-                    <span class="os-map-legend-item"><span class="os-map-legend-swatch os-map-legend-swatch--traveled"></span>trajeto percorrido</span>
+                    <span class="os-map-legend-item" title="Por onde esta OS realmente passou, na ordem em que aconteceu."><span class="os-map-legend-swatch os-map-legend-swatch--traveled"></span>trajeto percorrido</span>
                     <span class="os-map-legend-item"><span class="os-map-legend-dot os-map-legend-dot--current"></span>posição atual</span>
-                    <span class="os-map-legend-item"><span class="os-map-legend-swatch os-map-legend-swatch--suggested"></span>rota provável</span>
-                    <span class="os-map-legend-item"><span class="os-map-legend-dot os-map-legend-dot--clickable"></span>próximas etapas (clique para mover)</span>
-                    <span class="os-map-legend-item"><span class="os-map-legend-swatch os-map-legend-swatch--baixa"></span>baixa da OS (encerramento)</span>
+                    <span class="os-map-legend-item" title="Caminho mais frequente a partir da etapa atual, medido no histórico real das OS."><span class="os-map-legend-swatch os-map-legend-swatch--route"></span>rota provável (medida do histórico)</span>
+                    <span class="os-map-legend-item" title="Etapas sugeridas pelo catálogo a partir da etapa atual."><span class="os-map-legend-swatch os-map-legend-swatch--next"></span>próxima etapa sugerida</span>
+                    <span class="os-map-legend-item" title="Os status de encerramento só são aplicados pela tela de baixa."><span class="os-map-legend-swatch os-map-legend-swatch--baixa"></span>baixa da OS (encerramento)</span>
+                    <span class="os-map-legend-item" title="Ligue no botão da barra de ferramentas para ver as transições cadastradas."><span class="os-map-legend-swatch os-map-legend-swatch--catalog"></span>catálogo de transições (opcional)</span>
+                    <span class="os-map-legend-item">clique numa etapa para mover a OS</span>
                 </div>
                 <div class="os-map-legend-os" id="osMapLegendOs">
                     <strong>{{ $numeroOs }}</strong>
@@ -497,13 +532,14 @@
             </div>
             <div class="os-map-viewport" id="osMapViewport" data-os-map="viewport">
                 <div class="os-map-canvas" id="osMapCanvas" data-os-map="canvas">
-                    @include('orders._flow_map_svg')
+                    @include('orders._flow_map_svg', ['layout' => $mapLayout])
                 </div>
                 <div class="os-map-toolbar">
                     <button type="button" class="btn btn-sm" id="osMapZoomOut" data-os-map="zoom-out" title="Reduzir"><i class="bi bi-dash-lg"></i></button>
                     <button type="button" class="btn btn-sm" id="osMapZoomIn" data-os-map="zoom-in" title="Ampliar"><i class="bi bi-plus-lg"></i></button>
                     <button type="button" class="btn btn-sm" id="osMapZoomReset" data-os-map="zoom-reset" title="Ajustar à tela"><i class="bi bi-aspect-ratio"></i></button>
                     <button type="button" class="btn btn-sm" id="osMapCenterCurrent" data-os-map="center-current" title="Centralizar na posição atual"><i class="bi bi-crosshair"></i></button>
+                    <button type="button" class="btn btn-sm" data-os-map="toggle-catalog" aria-pressed="false" title="Mostrar/ocultar o catálogo de transições cadastradas"><i class="bi bi-diagram-3"></i></button>
                     <button type="button" class="btn btn-sm" id="osMapFullscreen" data-os-map="fullscreen" title="Tela cheia"><i class="bi bi-arrows-fullscreen"></i></button>
                 </div>
                 <button type="button" class="os-map-close" id="osMapExitFullscreen" data-os-map="exit-fullscreen" title="Sair da tela cheia (Esc)" aria-label="Sair da tela cheia">
@@ -551,6 +587,7 @@
 
 @section('scripts')
     <script>
+        window.__DESKTOP_OS_FLOW_PHASES = {!! \Illuminate\Support\Js::from($flowPhases) !!};
         window.__DESKTOP_OS_MAP = {!! \Illuminate\Support\Js::from([
             'orderId' => $osId,
             'numeroOs' => $numeroOs,
@@ -561,6 +598,13 @@
             'statusCongelaPrazo' => (bool) ($order['status_congela_prazo'] ?? false),
             'path' => $path,
             'proximasEtapas' => $proximasEtapas,
+            // Sem isto o widget caia no fallback de applyState() e marcava
+            // como `.is-closure` TODO no que nao estivesse em proximas_etapas
+            // (~22 dos 27): clicar em "Triagem" abria "Encerramento e pela
+            // baixa" por engano, e so as etapas sugeridas eram clicaveis. A
+            // aba do modal sempre passou o catalogo; a pagina cheia nao.
+            'statusDisponiveis' => is_array($order['status_disponiveis'] ?? null) ? $order['status_disponiveis'] : [],
+            'flowStats' => $flowStats,
             'statusUpdateUrl' => route('orders.status.update', $osId),
             'closureUrl' => route('orders.closure.show', $osId),
             'mapDataUrl' => route('orders.map.data', $osId),

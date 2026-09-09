@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use App\Support\OrderStatusMacroGroups;
 use PHPUnit\Framework\TestCase;
 
 /**
@@ -90,22 +91,147 @@ class OrderStatusMapAssetsTest extends TestCase
      * 'interrupcao' (Em espera) viria depois de Execução/Qualidade, mas o
      * fluxo real da OS a coloca logo após Orçamento.
      */
+    /**
+     * A ordem cronologica das macrofases e decisao de produto (2026-08-10):
+     * "Em espera" vem logo depois de Orcamento, e NAO derivada de
+     * `os_status.ordem_fluxo` (no banco `interrupcao` e 120-140, cairia depois
+     * de Execucao/Qualidade).
+     *
+     * Desde 09/09/2026 a lista vive em UM lugar so — antes existiam quatro
+     * copias divergentes (esta classe, o MACRO_PHASES de
+     * orders-status-modal.js, a paleta CSS de _status_modal.blade.php e as
+     * LANES do gerador Python do mapa), com tres ordens diferentes entre si.
+     */
     public function test_status_flow_declares_the_macro_phase_order_with_waiting_before_execution(): void
+    {
+        $this->assertSame(
+            ['recepcao', 'diagnostico', 'orcamento', 'interrupcao', 'execucao', 'qualidade', 'concluido'],
+            OrderStatusMacroGroups::order()
+        );
+
+        $this->assertSame(['finalizado_sem_reparo', 'cancelado'], OrderStatusMacroGroups::exitOrder());
+
+        // "Em espera" tem de vir ANTES de "Execucao" na ordenacao real.
+        $this->assertLessThan(
+            OrderStatusMacroGroups::orderIndex('execucao'),
+            OrderStatusMacroGroups::orderIndex('interrupcao')
+        );
+
+        // Saidas e encerramento sempre depois das fases de progresso.
+        $this->assertGreaterThan(
+            OrderStatusMacroGroups::orderIndex('concluido'),
+            OrderStatusMacroGroups::orderIndex('cancelado')
+        );
+        $this->assertGreaterThan(
+            OrderStatusMacroGroups::orderIndex('cancelado'),
+            OrderStatusMacroGroups::orderIndex('encerrado')
+        );
+    }
+
+    /**
+     * O JS nao pode voltar a declarar a ordem por conta propria: e assim que
+     * as copias divergem de novo. Ele consome window.__DESKTOP_OS_FLOW_PHASES,
+     * emitido por OrderStatusMacroGroups::toPayload().
+     */
+    public function test_status_modal_reads_the_macro_phase_order_from_php(): void
     {
         $script = (string) file_get_contents($this->desktopPath('public/assets/js/orders-status-modal.js'));
 
-        $start = strpos($script, 'const MACRO_PHASES = [');
-        $end = strpos($script, '];', $start === false ? 0 : $start);
+        $this->assertStringContainsString('window.__DESKTOP_OS_FLOW_PHASES', $script);
+        $this->assertStringNotContainsString("{ code: 'recepcao', label:", $script);
 
-        $this->assertNotFalse($start);
-        $this->assertNotFalse($end);
+        $modal = (string) file_get_contents($this->desktopPath('resources/views/orders/_status_modal.blade.php'));
 
-        preg_match_all("/code: '([a-z_]+)'/", substr($script, $start, $end - $start), $matches);
+        $this->assertStringContainsString('OrderStatusMacroGroups::toPayload()', $modal);
+    }
 
-        $this->assertSame(
-            ['recepcao', 'diagnostico', 'orcamento', 'interrupcao', 'execucao', 'qualidade', 'concluido'],
-            $matches[1]
+    /**
+     * O desenho do mapa passou a ser gerado do catalogo vivo em 09/09/2026.
+     * Se voltar a existir um artefato estatico, criar/renomear/desativar um
+     * status na tela "Status de OS" para de aparecer no mapa outra vez.
+     */
+    public function test_map_svg_is_generated_from_the_live_catalog(): void
+    {
+        $svg = (string) file_get_contents($this->desktopPath('resources/views/orders/_flow_map_svg.blade.php'));
+
+        $this->assertStringContainsString('OrderFlowMapLayoutFactory', $svg);
+        $this->assertStringContainsString("@foreach (\$layout['cards']", $svg);
+
+        // Nenhum rotulo de status pode estar escrito no template.
+        $this->assertStringNotContainsString('Reparo concluído', $svg);
+        $this->assertStringNotContainsString('G1 ·', $svg);
+
+        $this->assertFileDoesNotExist(
+            dirname(__DIR__, 4).'/scripts/python/diagrama_fluxo_os_organizado.py'
         );
+    }
+
+    /**
+     * As setas andam pelos vaos entre raias e pelos canais entre linhas de
+     * raias — faixas garantidamente vazias. A primeira versao ligava as
+     * caixas pelo ponto medio e cortava por cima dos cards que estivessem no
+     * caminho.
+     *
+     * A checagem geometrica de verdade (toda rota x todo card) e feita fora
+     * do PHPUnit; aqui o que se protege e a ESTRUTURA: se alguem trocar o
+     * roteador por um que ignore os corredores, isto quebra.
+     */
+    public function test_edge_router_uses_card_free_corridors(): void
+    {
+        $script = (string) file_get_contents($this->desktopPath('public/assets/js/orders-map.js'));
+
+        $this->assertStringContainsString('const buildCorridors', $script);
+        $this->assertStringContainsString('gutterBeside', $script);
+        $this->assertStringContainsString('pickChannel', $script);
+
+        // A porta da baixa fica entre a raia de saidas e a de encerramento,
+        // na mesma coluna dos cards: o teste de "tem algo no meio?" precisa
+        // olhar todos os obstaculos, nao so os cards (bug real corrigido).
+        $this->assertStringContainsString('blockedBetween', $script);
+        $this->assertStringContainsString('corridors.obstacles', $script);
+        $this->assertStringNotContainsString('const cardBetween', $script);
+    }
+
+    /**
+     * Legenda que nao bate com o desenho e pior que legenda nenhuma: cada
+     * amostra tem de existir para a camada de aresta correspondente.
+     */
+    public function test_legend_matches_the_edge_layers_that_are_drawn(): void
+    {
+        foreach (['resources/views/orders/map.blade.php', 'resources/views/orders/_status_modal.blade.php'] as $view) {
+            $html = (string) file_get_contents($this->desktopPath($view));
+
+            foreach (['traveled', 'route', 'next', 'baixa', 'catalog'] as $layer) {
+                $this->assertStringContainsString(
+                    "os-map-legend-swatch--{$layer}",
+                    $html,
+                    "{$view}: falta a amostra da camada '{$layer}' na legenda."
+                );
+                $this->assertStringContainsString(".os-map-edge.is-{$layer}", $html);
+            }
+
+            // Nomes da versao anterior, quando a legenda mostrava "proximas
+            // etapas" como bolinha e nao havia overlay de catalogo.
+            $this->assertStringNotContainsString('os-map-legend-swatch--suggested', $html);
+            $this->assertStringNotContainsString('os-map-legend-dot--clickable', $html);
+        }
+    }
+
+    /**
+     * O trajeto percorrido tem de ser DESENHADO, nao procurado entre setas
+     * pre-existentes. Bug real: a OS 3654 foi aguardando_reparo ->
+     * reparo_concluido (salto que o backend aceita desde 09/08/2026 mas que
+     * nao esta em os_status_transicoes) e o mapa nao mostrava linha nenhuma.
+     */
+    public function test_map_draws_the_travelled_path_even_without_a_catalog_transition(): void
+    {
+        $script = (string) file_get_contents($this->desktopPath('public/assets/js/orders-map.js'));
+
+        $this->assertStringContainsString("drawEdge(nodesByCode[de], nodesByCode[para], 'traveled'", $script);
+
+        // O grafo de arestas pre-desenhadas nao pode voltar.
+        $this->assertStringNotContainsString('edgesByPair', $script);
+        $this->assertStringNotContainsString("const DESTINO_FINAL", $script);
     }
 
     /**

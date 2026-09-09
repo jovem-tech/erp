@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-09-03T09:36:48-03:00`
-- Versao do sistema: `5.79.1`
+- Gerado em: `2026-09-09T09:43:14-03:00`
+- Versao do sistema: `5.80.2`
 - Versao da API: `1.6.1`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -220,6 +220,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-09-02-reconstroi-conferencia-de-assinatura-xml.md` - Verificação de assinatura do XML reconstruída (2026-09-02)
 - `documentacao/07-novas-implementacoes/2026-09-03-anexo-x-relatorio-mensal-receitas-brutas.md` - Anexo X — Relatório Mensal das Receitas Brutas do MEI (2026-09-03)
 - `documentacao/07-novas-implementacoes/2026-09-03-anexo-x-tela-do-ano-e-ajustes-auditados.md` - Anexo X: tela do ano, gráfico dos dois regimes e ajustes auditados (2026-09-03)
+- `documentacao/07-novas-implementacoes/2026-09-09-mapa-os-gerado-do-catalogo.md` - Mapa da OS passa a ser gerado do catálogo vivo, com cronologia real
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 - `documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md` - Revisão de segurança — Fluxo de orçamento na assistência (com OS)
 

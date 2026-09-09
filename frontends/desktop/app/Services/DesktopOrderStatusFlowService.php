@@ -28,6 +28,27 @@ class DesktopOrderStatusFlowService
         return $response['data']['statuses'] ?? [];
     }
 
+    /**
+     * Estatisticas do fluxo real (frequencia das transicoes que aconteceram),
+     * usadas pela "rota provavel" do Mapa da OS. Falha aqui nunca pode
+     * derrubar o mapa: sem estatistica o mapa so deixa de desenhar a rota
+     * sugerida, o trajeto percorrido e a posicao atual continuam.
+     *
+     * @return array<string, mixed>
+     */
+    public function flowStatistics(): array
+    {
+        try {
+            $response = $this->apiClient->get('/knowledge/os-flow/estatisticas');
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return [];
+        }
+
+        return is_array($response['data'] ?? null) ? $response['data'] : [];
+    }
+
     /** @param array<string, mixed> $payload @return array<string, mixed> */
     public function createStatus(array $payload): array
     {

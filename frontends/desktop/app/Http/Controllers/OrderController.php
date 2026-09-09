@@ -15,6 +15,8 @@ use App\Services\ReportedDefectService;
 use App\Services\TeamMemberService;
 use App\Services\UserService;
 use App\Support\DesktopSession;
+use App\Support\OrderFlowMapLayout;
+use App\Support\OrderStatusMacroGroups;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -1004,14 +1006,20 @@ class OrderController extends DesktopController
 
     /**
      * Mapa da OS: visão "GPS" do ciclo de vida — trajeto percorrido, posição
-     * atual e rota provável até o encerramento, sobre o fluxograma real do
-     * catálogo (partial gerado por scripts/python/diagrama_fluxo_os_organizado.py --embed).
+     * atual e rota provável até o encerramento, sobre o fluxograma do catálogo
+     * VIVO de status (geometria por App\Support\OrderFlowMapLayout; até
+     * 09/09/2026 era um SVG estático gerado por script Python, que não
+     * refletia nenhuma mudança feita na tela "Status de OS").
      */
     public function map(int $order): View
     {
         $mapData = $this->resolveMapData($order);
 
         $orderLabel = trim((string) ($mapData['order']['numero_os'] ?? ''));
+
+        $statusCatalog = is_array($mapData['order']['status_disponiveis'] ?? null)
+            ? $mapData['order']['status_disponiveis']
+            : [];
 
         return view('orders.map', [
             'pageTitle' => 'Mapa da OS '.($orderLabel !== '' ? $orderLabel : ('#'.$order)),
@@ -1020,6 +1028,11 @@ class OrderController extends DesktopController
             'pathTruncated' => $mapData['pathTruncated'],
             'canEditStatus' => $mapData['canEditStatus'],
             'statusNames' => $this->buildStatusNameMap($mapData['order']),
+            // Geometria do mapa calculada do catalogo vivo — o desenho deixou
+            // de ser o SVG estatico gerado pelo script Python em 09/09/2026.
+            'mapLayout' => OrderFlowMapLayout::build($statusCatalog),
+            'flowPhases' => OrderStatusMacroGroups::toPayload(),
+            'flowStats' => $mapData['flowStats'],
         ]);
     }
 
@@ -1041,6 +1054,7 @@ class OrderController extends DesktopController
             'path' => $mapData['path'],
             'pathTruncated' => $mapData['pathTruncated'],
             'canEditStatus' => $mapData['canEditStatus'],
+            'flowStats' => $mapData['flowStats'],
             'trailHtml' => view('orders._map_trail', [
                 'path' => $mapData['path'],
                 'pathTruncated' => $mapData['pathTruncated'],
@@ -1050,7 +1064,7 @@ class OrderController extends DesktopController
     }
 
     /**
-     * @return array{order: array<string, mixed>, path: array<int, array<string, mixed>>, pathTruncated: bool, canEditStatus: bool}
+     * @return array{order: array<string, mixed>, path: array<int, array<string, mixed>>, pathTruncated: bool, canEditStatus: bool, flowStats: array<string, mixed>}
      */
     private function resolveMapData(int $order): array
     {
@@ -1102,6 +1116,10 @@ class OrderController extends DesktopController
             'path' => $path,
             'pathTruncated' => $truncated,
             'canEditStatus' => DesktopSession::can('os', 'editar'),
+            // Frequencia real das transicoes: a "rota provavel" do mapa deixou
+            // de ser Dijkstra sobre o catalogo congelado e passou a ser medida
+            // do que as OS percorreram (OrderFlowStatisticsService).
+            'flowStats' => $this->statusFlowService->flowStatistics(),
         ];
     }
 
