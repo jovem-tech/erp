@@ -60,7 +60,7 @@
     // Macrofases = o fluxo de andamento da OS, na ordem definida pelo usuário
     // (2026-08-10): Recepção > Diagnóstico > Orçamento > Em espera > Execução
     // > Qualidade > Concluído; depois as SAÍDAS do fluxo (sem reparo,
-    // cancelado). Essa ordem é declarada aqui de propósito e NÃO é derivada de
+    // cancelado). A ordem é declarada de propósito e NÃO derivada de
     // os_status.ordem_fluxo: no banco 'interrupcao' (Em espera) tem ordem
     // 120-140, ou seja, cairia depois de Execução/Qualidade — o usuário quer
     // "Em espera" logo após Orçamento, porque é onde a OS costuma parar
@@ -68,22 +68,29 @@
     //
     // 'encerrado' (baixa) nunca aparece aqui — filtrado antes (regra central
     // do skill sistema-erp-os-fluxo-fechamento: só pela tela de baixa).
-    const MACRO_PHASES = [
-        { code: 'recepcao', label: 'Recepção' },
-        { code: 'diagnostico', label: 'Diagnóstico' },
-        { code: 'orcamento', label: 'Orçamento' },
-        { code: 'interrupcao', label: 'Em espera' },
-        { code: 'execucao', label: 'Execução' },
-        { code: 'qualidade', label: 'Qualidade' },
-        { code: 'concluido', label: 'Concluído' },
-    ];
+    //
+    // Ordem, rótulos e cores das macrofases vêm do PHP
+    // (App\Support\OrderStatusMacroGroups::toPayload(), emitido como
+    // window.__DESKTOP_OS_FLOW_PHASES). Até 09/09/2026 esta lista era
+    // declarada aqui e havia mais três cópias divergentes do mesmo
+    // vocabulário — esta, a paleta CSS de _status_modal.blade.php, o
+    // OrderStatusMacroGroups do PHP e as LANES do gerador Python do mapa —,
+    // com três ordens diferentes entre si. Não voltar a declarar aqui.
+    const FLOW_PHASES = window.__DESKTOP_OS_FLOW_PHASES || {};
+
+    const phaseMeta = (code) => (FLOW_PHASES.grupos || {})[String(code || '').trim()] || null;
+
+    const MACRO_PHASES = (FLOW_PHASES.ordem || []).map((code) => ({
+        code,
+        label: phaseMeta(code)?.rotulo || code,
+    }));
 
     // Saídas do fluxo: a OS termina sem seguir para Concluído. Ficam num bloco
     // separado, depois de um divisor — não são etapas de progresso.
-    const EXIT_PHASES = [
-        { code: 'finalizado_sem_reparo', label: 'Sem reparo' },
-        { code: 'cancelado', label: 'Cancelado' },
-    ];
+    const EXIT_PHASES = (FLOW_PHASES.saidas || []).map((code) => ({
+        code,
+        label: phaseMeta(code)?.rotulo || code,
+    }));
 
     const PHASE_LABELS = [...MACRO_PHASES, ...EXIT_PHASES].reduce((acc, phase) => {
         acc[phase.code] = phase.label;
@@ -270,8 +277,14 @@
             return step + arrow;
         }).join('');
 
+        // Cor inline (não por seletor CSS): assim uma macrofase criada agora
+        // na tela "Status de OS" também ganha cor, em vez de cair num
+        // [data-phase="..."] que não existe na folha de estilo.
+        const meta = phaseMeta(phase.code) || FLOW_PHASES.padrao || {};
+        const paleta = `--phase-color: ${meta.color || '#6f5afc'}; --phase-text: ${meta.text || '#fff'};`;
+
         return `
-            <div class="os-flow-row" data-phase="${phase.code}">
+            <div class="os-flow-row" data-phase="${phase.code}" style="${paleta}">
                 <div class="os-flow-phase"><span>${phase.label}</span></div>
                 <div class="os-flow-steps">${steps}</div>
             </div>
@@ -579,6 +592,9 @@
             proximasEtapas: Array.isArray(data.proximas_etapas) ? data.proximas_etapas : [],
             statusDisponiveis: statusCatalog,
             path: Array.isArray(mapData.path) ? mapData.path : [],
+            // Frequência real das transições: alimenta a rota provável medida
+            // (antes era Dijkstra sobre o catálogo congelado).
+            flowStats: mapData.flowStats || {},
             statusUpdateUrl: buildUpdateUrl(currentOrderId),
             mapDataUrl: buildMapDataUrl(currentOrderId),
             closureUrl: buildClosureUrl(currentOrderId),

@@ -6,14 +6,176 @@ namespace App\Support;
  * Vocabulário compartilhado das macrofases (`os_status.grupo_macro`) e dos
  * estados de fluxo (`os_status.estado_fluxo_padrao`) do catálogo de status de OS.
  *
- * Vive aqui, e não dentro de um controller, porque duas telas leem o mesmo
+ * Vive aqui, e não dentro de um controller, porque várias telas leem o mesmo
  * catálogo e precisam chamar as fases pelo mesmo nome: o cadastro de status
- * (`OrderStatusFlowController`) e o Modelo da Assistência Técnica
- * (`AssistanceModelController`). Quando isso era método privado de um dos dois,
- * o outro repetia os rótulos por conta própria e eles divergiam.
+ * (`OrderStatusFlowController`), o Modelo da Assistência Técnica
+ * (`AssistanceModelController`), o modal "Alterar status da OS" e o Mapa da OS.
+ * Quando isso era método privado de um dos dois primeiros, o outro repetia os
+ * rótulos por conta própria e eles divergiam.
+ *
+ * Em 2026-09-09 esta classe virou a fonte ÚNICA de ordem, rótulo e cor das
+ * macrofases: antes existiam quatro cópias divergentes do mesmo vocabulário
+ * (esta classe, o `MACRO_PHASES` de `orders-status-modal.js`, a paleta CSS de
+ * `_status_modal.blade.php` e as `LANES` do gerador Python do mapa), com três
+ * ordens diferentes. `toPayload()` é o que atravessa para o JS — nenhuma tela
+ * deve voltar a declarar essa lista por conta própria.
  */
 class OrderStatusMacroGroups
 {
+    /**
+     * Ordem cronológica oficial das macrofases do fluxo — a mesma nas três
+     * telas (Mapa da OS, modal "Alterar status" e cadastro Status de OS).
+     *
+     * É declarada aqui de propósito e NÃO derivada de `os_status.ordem_fluxo`:
+     * no banco `interrupcao` tem ordem 120-140, ou seja, cairia depois de
+     * Execução/Qualidade — decisão explícita do usuário (2026-08-10) é que
+     * "Em espera" vem logo depois de Orçamento, porque a espera acontece
+     * antes de a bancada encostar no equipamento.
+     *
+     * @return list<string>
+     */
+    public static function order(): array
+    {
+        return ['recepcao', 'diagnostico', 'orcamento', 'interrupcao', 'execucao', 'qualidade', 'concluido'];
+    }
+
+    /**
+     * Saídas do fluxo: a OS termina sem seguir para Concluído. Espelha
+     * `OrderStatus::FLOW_EXIT_MACRO_GROUPS` do backend (que é a fonte da
+     * verdade da regra); aqui a lista existe só para posicionar essas fases
+     * DEPOIS das fases de progresso na leitura das telas.
+     *
+     * @return list<string>
+     */
+    public static function exitOrder(): array
+    {
+        return ['finalizado_sem_reparo', 'cancelado'];
+    }
+
+    /**
+     * Encerramento (`grupo_macro = 'encerrado'`) não é fase de progresso nem
+     * saída comum: só a baixa da OS aplica esses status
+     * (`OrderClosureService::close()`), por isso fica isolado no fim, atrás da
+     * porta de baixa no mapa. Ver skill sistema-erp-os-fluxo-fechamento.
+     */
+    public const CLOSURE_GROUP = 'encerrado';
+
+    /**
+     * Posição de ordenação de uma macrofase. Fases do fluxo primeiro, depois
+     * as saídas, depois o encerramento; qualquer macrofase desconhecida (o
+     * campo `grupo_macro` é texto livre no cadastro) cai no fim, ordenada
+     * alfabeticamente para o resultado ser determinístico — nunca some.
+     */
+    public static function orderIndex(string $grupoMacro): int
+    {
+        $code = mb_strtolower(trim($grupoMacro));
+
+        $flow = array_search($code, self::order(), true);
+        if ($flow !== false) {
+            return 100 + $flow;
+        }
+
+        $exit = array_search($code, self::exitOrder(), true);
+        if ($exit !== false) {
+            return 200 + $exit;
+        }
+
+        if ($code === self::CLOSURE_GROUP) {
+            return 300;
+        }
+
+        return 400;
+    }
+
+    /**
+     * Paleta de FLUXO das macrofases — a que o usuário definiu em 2026-08-10
+     * para o fluxograma do modal, agora compartilhada com o Mapa da OS.
+     *
+     * Diferente de accent()/softAccent(), que existem para o donut do
+     * dashboard e têm outra exigência (cada matiz usado uma única vez, senão
+     * as fatias pequenas ficam indistinguíveis). São dois usos legítimos e
+     * distintos da mesma taxonomia — não unificar sem decisão do usuário.
+     *
+     * @return array{color: string, text: string}
+     */
+    public static function flowAccent(string $grupoMacro): array
+    {
+        return match (mb_strtolower(trim($grupoMacro))) {
+            'recepcao' => ['color' => '#10739E', 'text' => '#FFFFFF'],
+            'diagnostico' => ['color' => '#F2931E', 'text' => '#FFFFFF'],
+            'orcamento' => ['color' => '#66B2FF', 'text' => '#10395B'],
+            'interrupcao' => ['color' => '#FFD400', 'text' => '#3D3200'],
+            'execucao' => ['color' => '#999900', 'text' => '#FFFFFF'],
+            'qualidade' => ['color' => '#9999FF', 'text' => '#1F1F5B'],
+            'concluido' => ['color' => '#00994D', 'text' => '#FFFFFF'],
+            'finalizado_sem_reparo' => ['color' => '#CC0000', 'text' => '#FFFFFF'],
+            'cancelado' => ['color' => '#CC0000', 'text' => '#FFFFFF'],
+            self::CLOSURE_GROUP => ['color' => '#7048E8', 'text' => '#FFFFFF'],
+            default => ['color' => '#6f5afc', 'text' => '#FFFFFF'],
+        };
+    }
+
+    /**
+     * Ordena os códigos de macrofase que existem de fato no catálogo vivo.
+     * Recebe os `grupo_macro` distintos e devolve na ordem oficial, com as
+     * desconhecidas no fim em ordem alfabética.
+     *
+     * @param  iterable<string>  $grupos
+     * @return list<string>
+     */
+    public static function sortGroups(iterable $grupos): array
+    {
+        // String vazia e um grupo legitimo aqui: `os_status.grupo_macro` e
+        // NOT NULL mas aceita '', e um status nessa situacao precisa aparecer
+        // no mapa e nas listagens (com o rotulo "Sem grupo macro") em vez de
+        // sumir. orderIndex('') cai no bucket das desconhecidas, no fim.
+        $codes = [];
+        foreach ($grupos as $grupo) {
+            $codes[mb_strtolower(trim((string) $grupo))] = true;
+        }
+
+        $codes = array_keys($codes);
+
+        usort($codes, static function (string $a, string $b): int {
+            return [self::orderIndex($a), $a] <=> [self::orderIndex($b), $b];
+        });
+
+        return $codes;
+    }
+
+    /**
+     * Vocabulário completo para o JS (modal e mapa). Emitido pelas views como
+     * `window.__DESKTOP_OS_FLOW_PHASES`; substitui o `MACRO_PHASES`/
+     * `EXIT_PHASES`/paleta CSS que viviam duplicados em
+     * `orders-status-modal.js` e `_status_modal.blade.php`.
+     *
+     * `grupos` cobre as macrofases conhecidas; uma fase inventada no cadastro
+     * não aparece aqui e o JS resolve pelo fallback (humanizeSlug + cor
+     * padrão), do mesmo jeito que o PHP.
+     */
+    public static function toPayload(): array
+    {
+        $grupos = [];
+
+        foreach ([...self::order(), ...self::exitOrder(), self::CLOSURE_GROUP] as $code) {
+            $grupos[$code] = [
+                'codigo' => $code,
+                'rotulo' => self::label($code),
+                'ordem' => self::orderIndex($code),
+                'saida' => in_array($code, self::exitOrder(), true),
+                'encerramento' => $code === self::CLOSURE_GROUP,
+            ] + self::flowAccent($code);
+        }
+
+        return [
+            'ordem' => self::order(),
+            'saidas' => self::exitOrder(),
+            'encerramento' => self::CLOSURE_GROUP,
+            'grupos' => $grupos,
+            'padrao' => self::flowAccent('__desconhecida__') + ['ordem' => 400],
+        ];
+    }
+
     public static function label(string $grupoMacro): string
     {
         return match (mb_strtolower(trim($grupoMacro))) {
@@ -22,9 +184,9 @@ class OrderStatusMacroGroups
             'orcamento' => 'Orçamento',
             'execucao' => 'Execução',
             'qualidade' => 'Qualidade',
-            'interrupcao' => 'Interrupção',
+            'interrupcao' => 'Em espera',
             'concluido' => 'Concluído',
-            'finalizado_sem_reparo' => 'Finalizado sem Reparo',
+            'finalizado_sem_reparo' => 'Sem reparo',
             'encerrado' => 'Encerramento',
             'cancelado' => 'Cancelado',
             default => self::humanizeSlug($grupoMacro),

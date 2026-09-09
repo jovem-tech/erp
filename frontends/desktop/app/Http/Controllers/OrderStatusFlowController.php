@@ -113,6 +113,9 @@ class OrderStatusFlowController extends DesktopController
      * transicoes aqui: a matriz de transicoes saiu da tela em 23/08/2026, junto
      * com o diagrama de fluxo que ela alimentava.
      *
+     * A ordem das macrofases vem de OrderStatusMacroGroups::orderIndex() —
+     * fonte unica compartilhada com o Mapa da OS e com o modal de status.
+     *
      * @param  array<int, array<string, mixed>>  $statuses
      * @return array<int, array<string, mixed>>
      */
@@ -125,7 +128,12 @@ class OrderStatusFlowController extends DesktopController
                 mb_strtolower(trim((string) ($status['nome'] ?? '')))
             ))
             ->groupBy(static fn (array $status): string => trim((string) ($status['grupo_macro'] ?? '')))
-            ->sortBy(static fn ($groupStatuses): int => (int) $groupStatuses->min('ordem_fluxo'))
+            // Ordem cronologica oficial das macrofases: a mesma do Mapa da OS e
+            // do modal "Alterar status" (OrderStatusMacroGroups::orderIndex()).
+            // Antes era min(ordem_fluxo), que jogava "Em espera" depois de
+            // Execucao/Qualidade e divergia das outras duas telas.
+            ->sortKeysUsing(static fn (string $a, string $b): int => [OrderStatusMacroGroups::orderIndex($a), $a]
+                <=> [OrderStatusMacroGroups::orderIndex($b), $b])
             ->map(static function ($groupStatuses, string $grupoMacro): array {
                 $groupStatuses = $groupStatuses->values();
 

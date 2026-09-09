@@ -7,6 +7,7 @@ use App\Services\SearchService;
 use App\Support\DesktopNavigation;
 use App\Support\DesktopPreferences;
 use App\Support\DesktopSession;
+use App\Support\OrderFlowMapLayoutFactory;
 use App\Support\SessionSecuritySettings;
 use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
@@ -36,6 +37,12 @@ class DesktopAppServiceProvider extends ServiceProvider
         config([
             'app.version' => $version,
         ]);
+
+        // Singleton para memoizar o catalogo de status por request: o partial
+        // do Mapa da OS (orders._flow_map_svg) resolve o layout sozinho quando
+        // e embutido pelo modal, e o mesmo request nao deve bater duas vezes
+        // na API pelo mesmo catalogo.
+        $this->app->singleton(OrderFlowMapLayoutFactory::class);
 
         $this->app->singleton(DesktopNavigation::class, fn (): DesktopNavigation => new DesktopNavigation());
 

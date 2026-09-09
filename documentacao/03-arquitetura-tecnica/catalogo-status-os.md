@@ -82,3 +82,66 @@ entra em faturamento/DRE/margem. Ver skill `sistema-erp-os-fluxo-fechamento`.
 - `garantia_concluida -> entregue_reparado_garantia` (reparo em garantia, sem cobrança)
 - `reparo_concluido -> reparado_disponivel_loja`
 - `cancelado` como terminal de encerramento administrativo
+
+## Ordem cronológica das macrofases (fonte única)
+
+A ordem em que as macrofases (`os_status.grupo_macro`) são apresentadas nas telas é
+**declarada**, não derivada de `os_status.ordem_fluxo` — decisão do usuário (2026-08-10):
+
+`Recepção › Diagnóstico › Em espera › Orçamento` — mais precisamente:
+
+1. `recepcao` · 2. `diagnostico` · 3. `orcamento` · 4. `interrupcao` (**Em espera**) ·
+5. `execucao` · 6. `qualidade` · 7. `concluido`
+— depois as saídas (`finalizado_sem_reparo` = **Sem reparo**, `cancelado`) e, por
+último, `encerrado` (**Encerramento**), que só é alcançável pela baixa da OS.
+
+No banco `interrupcao` tem `ordem_fluxo` 120-140, ou seja, cairia depois de
+Execução/Qualidade; o usuário quer "Em espera" logo após Orçamento, porque é onde a OS
+costuma parar esperando peça ou pagamento antes de entrar em execução.
+
+Essa ordem, os rótulos e as cores de fluxo vivem em **um lugar só** desde 09/09/2026:
+`frontends/desktop/app/Support/OrderStatusMacroGroups` (`order()`, `exitOrder()`,
+`orderIndex()`, `sortGroups()`, `label()`, `flowAccent()`), exposto ao JS por
+`toPayload()` / `window.__DESKTOP_OS_FLOW_PHASES`. Antes existiam quatro cópias
+divergentes com três ordens diferentes entre si. **Não voltar a declarar essa lista em
+outro arquivo.**
+
+`accent()`/`softAccent()` são uma paleta separada e continuam existindo só para o donut
+do dashboard, que exige cada matiz uma única vez; as telas de fluxo usam `flowAccent()`.
+
+## Mapa da OS é gerado do catálogo, não desenhado à mão
+
+`/os/{id}/mapa` (e a aba "Mapa de status" do modal) desenha o catálogo **vivo**:
+`App\Support\OrderFlowMapLayout::build($statusDisponiveis)` calcula raias, cards e a
+porta de baixa; `orders/_flow_map_svg.blade.php` só renderiza essa estrutura. Criar,
+renomear, reordenar ou desativar um status na tela **Status de OS** aparece no mapa no
+próximo carregamento, sem regenerar artefato nenhum.
+
+Até 09/09/2026 o desenho era um SVG estático gerado por
+`scripts/python/diagrama_fluxo_os_organizado.py` (removido), com coordenadas e rótulos
+escritos à mão — nenhuma mudança de catálogo chegava lá.
+
+As **setas não fazem parte do desenho**: são criadas em runtime por `orders-map.js` a
+partir das caixas dos cards. É isso que permite pintar o trajeto real da OS mesmo quando
+o salto não existe em `os_status_transicoes` — o que é a regra, não a exceção, já que o
+backend aceita qualquer status ativo não-encerramento desde 09/08/2026.
+
+### "Rota provável" é medida, não declarada
+
+`App\Services\Orders\OrderFlowStatisticsService` (backend) conta a frequência real de
+cada transição e expõe em `GET /api/v1/knowledge/os-flow/estatisticas` (cache de 1 h).
+
+Os saltos são reconstruídos com
+`LAG(status_novo) OVER (PARTITION BY os_id ORDER BY created_at, id)` sobre
+`os_status_historico`. **Não usar `status_anterior` diretamente:** só 728 das 4.394
+linhas têm esse campo preenchido (o restante veio do legado sem ele).
+
+O "caminho principal" listado acima é a leitura *declarada* do fluxo. O caminho
+*medido* em 09/09/2026 (574 saltos, 234 OS) difere dele e é o que o mapa desenha:
+
+`triagem → diagnostico (37,9%) → aguardando_avaliacao (20,5%) → aguardando_orcamento
+(38,9%) → aguardando_autorizacao (65,1%) → aguardando_reparo (41,7%) → reparo_execucao
+(40%) → reparo_concluido (53,8%) → entregue_reparado_pago (67,3%)`
+
+Note que `testes_operacionais`/`testes_finais` **não** aparecem no caminho medido: na
+prática a bancada pula a fase de qualidade na maior parte das OS.

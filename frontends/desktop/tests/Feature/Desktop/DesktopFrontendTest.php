@@ -7259,11 +7259,14 @@ class DesktopFrontendTest extends TestCase
             'cliente' => ['id' => 201, 'nome_razao' => 'Cliente Alpha', 'telefone1' => '(11) 99999-0000'],
             'equipamento' => ['id' => 301, 'resumo_tecnico' => 'Notebook Acer Nitro 5', 'tipo_nome' => 'Notebook', 'marca_nome' => 'Acer', 'modelo_nome' => 'Nitro 5'],
             'relato_cliente' => 'Não liga mais desde ontem.',
+            // Com grupo_macro/ordem_fluxo porque o desenho do mapa e gerado
+            // deste catalogo desde 09/09/2026 (OrderFlowMapLayout).
             'status_disponiveis' => [
-                ['codigo' => 'triagem', 'nome' => 'Triagem', 'congela_prazo' => false],
-                ['codigo' => 'diagnostico', 'nome' => 'Diagnóstico Técnico', 'congela_prazo' => false],
-                ['codigo' => 'reparo_execucao', 'nome' => 'Em execução do serviço', 'congela_prazo' => false],
-                ['codigo' => 'testes_operacionais', 'nome' => 'Testes Operacionais', 'congela_prazo' => false],
+                ['codigo' => 'triagem', 'nome' => 'Triagem', 'congela_prazo' => false, 'grupo_macro' => 'recepcao', 'ordem_fluxo' => 10],
+                ['codigo' => 'diagnostico', 'nome' => 'Diagnóstico Técnico', 'congela_prazo' => false, 'grupo_macro' => 'diagnostico', 'ordem_fluxo' => 20],
+                ['codigo' => 'reparo_execucao', 'nome' => 'Em execução do serviço', 'congela_prazo' => false, 'grupo_macro' => 'execucao', 'ordem_fluxo' => 80],
+                ['codigo' => 'testes_operacionais', 'nome' => 'Testes Operacionais', 'congela_prazo' => false, 'grupo_macro' => 'qualidade', 'ordem_fluxo' => 110],
+                ['codigo' => 'entregue_reparado_pago', 'nome' => 'Entregue - Reparado e Pago', 'congela_prazo' => false, 'grupo_macro' => 'encerrado', 'ordem_fluxo' => 220],
             ],
             'proximas_etapas' => [
                 ['codigo' => 'testes_operacionais', 'nome' => 'Testes Operacionais', 'congela_prazo' => false, 'grupo_macro' => 'qualidade', 'ordem_fluxo' => 110],
@@ -7332,9 +7335,18 @@ class DesktopFrontendTest extends TestCase
             ->assertOk()
             ->assertSee('Mapa da ordem de serviço')
             ->assertSee('OS26070009')
-            // SVG embed com nós endereçáveis presente na página.
+            // SVG gerado do catálogo vivo, com nós endereçáveis. As arestas
+            // NÃO ficam mais no SVG: são desenhadas em runtime pelo
+            // orders-map.js dentro de [data-os-map-layer="edges"], que é o que
+            // permite pintar um salto real fora do catálogo de transições.
             ->assertSee('data-status="triagem"', false)
-            ->assertSee('data-edge="reparo_concluido:__baixa__"', false)
+            ->assertSee('data-grupo="recepcao"', false)
+            ->assertSee('data-os-map-layer="edges"', false)
+            ->assertSee('data-port="baixa"', false)
+            ->assertDontSee('data-edge=', false)
+            // Rótulo do card vem de os_status.nome — renomear o status muda o
+            // desenho, sem regenerar artefato nenhum.
+            ->assertSee('Testes Operacionais')
             // Painel de trajeto renderizado no servidor, em ordem cronológica.
             ->assertSeeInOrder(['Triagem', 'Diagnóstico Técnico', 'Em execução do serviço'])
             // Config para o JS do mapa (Js::from escapa aspas como ").

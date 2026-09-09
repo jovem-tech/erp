@@ -5,7 +5,24 @@
         $canEdit = \App\Support\DesktopSession::can('conhecimento', 'editar');
         $canCreate = \App\Support\DesktopSession::can('conhecimento', 'criar');
         $workflowGroups = collect($workflowGroups ?? []);
+
+        // Macrofases conhecidas + as que ja existem no catalogo. O campo
+        // continua texto livre (uma fase nova e aceita e ganha raia propria no
+        // Mapa da OS), mas deixa de ser digitacao as cegas: errar o slug
+        // criava uma macrofase orfa sem que ninguem percebesse.
+        $macroGroupOptions = \App\Support\OrderStatusMacroGroups::sortGroups(array_merge(
+            \App\Support\OrderStatusMacroGroups::order(),
+            \App\Support\OrderStatusMacroGroups::exitOrder(),
+            [\App\Support\OrderStatusMacroGroups::CLOSURE_GROUP],
+            $workflowGroups->pluck('key')->filter()->all(),
+        ));
     @endphp
+
+    <datalist id="osFlowMacroGroups">
+        @foreach ($macroGroupOptions as $macroGroupOption)
+            <option value="{{ $macroGroupOption }}">{{ \App\Support\OrderStatusMacroGroups::label($macroGroupOption) }}</option>
+        @endforeach
+    </datalist>
 
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
         <div>
@@ -117,6 +134,7 @@
                                                 <label for="statusGrupoMacro{{ $statusId }}">Grupo macro *</label>
                                                 <input
                                                     type="text"
+                                                    list="osFlowMacroGroups"
                                                     id="statusGrupoMacro{{ $statusId }}"
                                                     name="grupo_macro"
                                                     class="form-control"
@@ -295,7 +313,8 @@
 
                         <div>
                             <label for="newStatusGrupoMacro">Grupo macro *</label>
-                            <input type="text" id="newStatusGrupoMacro" name="grupo_macro" class="form-control" maxlength="60" required>
+                            <input type="text" list="osFlowMacroGroups" id="newStatusGrupoMacro" name="grupo_macro" class="form-control" maxlength="60" required>
+                            <small class="text-muted">Uma macrofase nova é aceita e ganha raia própria no Mapa da OS, no fim do fluxo.</small>
                         </div>
 
                         <div>
