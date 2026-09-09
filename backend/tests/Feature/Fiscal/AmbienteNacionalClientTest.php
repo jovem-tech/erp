@@ -128,10 +128,15 @@ class AmbienteNacionalClientTest extends TestCase
         $this->assertNull($this->cliente()->consultarPorIdDps('DPS123'));
     }
 
-    public function test_consulta_devolve_o_xml_quando_a_nota_ja_existe(): void
+    public function test_consulta_e_em_dois_passos_chave_primeiro_xml_depois(): void
     {
+        // Contrato real do ADN: `/dps/{id}` responde se a DPS virou nota e
+        // devolve SO' a chave de acesso; o XML vem de `/nfse/{chave}`. Supor
+        // que o XML sai da primeira chamada fazia a consulta falhar e o
+        // sistema reenviar a DPS — colhendo E0014 (duplicidade) em producao.
         Http::fake([
-            '*' => Http::response([
+            '*/dps/DPS123' => Http::response(['chaveAcesso' => 'CHAVE42']),
+            '*/nfse/CHAVE42' => Http::response([
                 'nfseXmlGZipB64' => base64_encode((string) gzencode('<NFSe>ja existia</NFSe>')),
             ]),
         ]);
@@ -140,6 +145,19 @@ class AmbienteNacionalClientTest extends TestCase
 
         $this->assertSame('<NFSe>ja existia</NFSe>', $xml);
         Http::assertSent(fn (Request $r): bool => str_contains($r->url(), '/dps/DPS123'));
+        Http::assertSent(fn (Request $r): bool => str_contains($r->url(), '/nfse/CHAVE42'));
+    }
+
+    public function test_consulta_sem_chave_na_resposta_nao_passa_por_nota_inexistente(): void
+    {
+        // Resposta ilegivel nao pode ser confundida com "essa DPS nao virou
+        // nota": a diferenca entre as duas decide se o sistema reenvia a DPS.
+        Http::fake(['*/dps/*' => Http::response(['tipoAmbiente' => 2])]);
+
+        $this->expectException(NfseException::class);
+        $this->expectExceptionMessageMatches('/sem a chave de acesso/');
+
+        $this->cliente()->consultarPorIdDps('DPS123');
     }
 
     public function test_sem_certificado_falha_antes_de_tocar_a_rede(): void

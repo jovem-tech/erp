@@ -353,6 +353,15 @@ class DpsXmlBuilder
             throw new RuntimeException('CNPJ da empresa não cadastrado — sem ele não há Id de DPS.');
         }
 
+        // O municipio entra no Id e `montarId()` o preenche com `str_pad`, que
+        // transforma cadastro AUSENTE em `0000000` sem reclamar. Um Id assim e'
+        // aceito por toda a mecanica local — assina, loga, parece certo — e so'
+        // e' recusado pelo Ambiente Nacional, longe de onde o defeito esta'.
+        // Ja' aconteceu: `DPS00000002...` foi parar no log de transmissao.
+        if (trim((string) ($settings['empresa_codigo_ibge'] ?? '')) === '') {
+            throw new RuntimeException('Código IBGE do município da empresa não cadastrado — sem ele não há Id de DPS.');
+        }
+
         return $this->montarId($cnpjPrestador, (string) config('fiscal.nfse.serie'), $numeroDps);
     }
 

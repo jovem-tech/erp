@@ -108,7 +108,79 @@ class AmbienteNacionalClient
             $this->estourar($response, 'GET', $path);
         }
 
+        // A consulta por DPS devolve so' a chave de acesso — nao o XML. O
+        // documento em si vem num segundo passo, por `/nfse/{chave}`. Tratar
+        // esta resposta como se trouxesse o XML fazia a consulta "falhar" e o
+        // sistema seguir para o envio, colhendo E0014 (DPS ja' existe) — ou
+        // seja, a protecao contra duplicidade nao protegia nada.
+        $json = $response->json();
+        $chave = is_array($json) ? $this->chaveDaResposta($json) : null;
+
+        if ($chave === null) {
+            Log::channel('fiscal')->error('[NFSE] Consulta por DPS sem chave de acesso.', [
+                'corpo' => mb_substr($response->body(), 0, 1000),
+            ]);
+
+            throw NfseException::local(
+                'A consulta por DPS respondeu sem a chave de acesso da nota.',
+                ['status' => $response->status()]
+            );
+        }
+
+        return $this->consultarPorChave($chave);
+    }
+
+    /**
+     * XML da NFS-e a partir da chave de acesso.
+     *
+     * @throws NfseException
+     */
+    public function consultarPorChave(string $chave): ?string
+    {
+        $config = $this->config();
+        $path = str_replace('{chave}', rawurlencode($chave), $config['path_consulta_nfse']);
+        $url = $this->baseUrl().$path;
+
+        $response = $this->material->comOpcoesTls(
+            fn (array $tls): Response => $this->enviar(
+                fn () => Http::acceptJson()
+                    ->withOptions($tls)
+                    ->timeout($config['timeout'])
+                    ->connectTimeout($config['connect_timeout'])
+                    ->retry(3, 500, throw: false)
+                    ->get($url),
+                'GET',
+                $path
+            )
+        );
+
+        if ($response->status() === 404) {
+            return null;
+        }
+
+        if (! $response->successful()) {
+            $this->estourar($response, 'GET', $path);
+        }
+
         return $this->extrairXml($response, $config['campo_resposta']);
+    }
+
+    /**
+     * @param  array<string, mixed>  $json
+     */
+    private function chaveDaResposta(array $json): ?string
+    {
+        $json = array_change_key_case($json, CASE_LOWER);
+
+        foreach (['chaveacesso', 'chave', 'chnfse'] as $campo) {
+            $valor = trim((string) ($json[$campo] ?? ''));
+
+            if ($valor !== '') {
+                return $valor;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -255,6 +327,8 @@ class AmbienteNacionalClient
         $json = $response->json();
 
         if (is_array($json)) {
+            $json = array_change_key_case($json, CASE_LOWER);
+
             // Lista de erros de validacao do ADN.
             foreach (['erros', 'errors'] as $lista) {
                 if (! is_array($json[$lista] ?? null)) {
@@ -273,6 +347,13 @@ class AmbienteNacionalClient
                     if (! is_array($erro)) {
                         continue;
                     }
+
+                    // O ADN devolve `Codigo`/`Descricao` com inicial
+                    // MAIUSCULA. Procurar so' a forma minuscula fazia a
+                    // mensagem util ("serie fora da faixa do tipo de emissor")
+                    // ser descartada e virar um "HTTP 400" que nao diz nada —
+                    // justamente o que este metodo existe para evitar.
+                    $erro = array_change_key_case($erro, CASE_LOWER);
 
                     $codigo = trim((string) ($erro['codigo'] ?? $erro['code'] ?? ''));
                     $texto = trim((string) ($erro['descricao'] ?? $erro['mensagem'] ?? $erro['message'] ?? ''));
@@ -314,7 +395,7 @@ class AmbienteNacionalClient
     }
 
     /**
-     * @return array{path_emissao: string, path_consulta_dps: string, campo_dps: string, campo_resposta: string, timeout: int, connect_timeout: int}
+     * @return array{path_emissao: string, path_consulta_dps: string, path_consulta_nfse: string, campo_dps: string, campo_resposta: string, timeout: int, connect_timeout: int}
      */
     private function config(): array
     {
@@ -323,6 +404,7 @@ class AmbienteNacionalClient
         return [
             'path_emissao' => '/'.ltrim((string) ($c['path_emissao'] ?? '/nfse'), '/'),
             'path_consulta_dps' => '/'.ltrim((string) ($c['path_consulta_dps'] ?? '/dps/{idDps}'), '/'),
+            'path_consulta_nfse' => '/'.ltrim((string) ($c['path_consulta_nfse'] ?? '/nfse/{chave}'), '/'),
             'campo_dps' => (string) ($c['campo_dps'] ?? 'dpsXmlGZipB64'),
             'campo_resposta' => (string) ($c['campo_resposta'] ?? 'nfseXmlGZipB64'),
             'timeout' => max(1, (int) ($c['timeout'] ?? 60)),

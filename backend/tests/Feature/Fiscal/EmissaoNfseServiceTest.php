@@ -10,6 +10,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Tests\Concerns\BuildsLegacyErpSchema;
@@ -41,7 +42,9 @@ class EmissaoNfseServiceTest extends TestCase
         // A fixture real teve a assinatura removida (ver ORIGEM.md), entao a
         // trava fica desligada aqui — como no NfseXmlImporterTest.
         config()->set('fiscal.nfse.exigir_assinatura_xml', false);
-        config()->set('fiscal.nfse.serie', '70000');
+        // Faixa de aplicativo proprio (00001-49999). A 70000 do XML real
+        // e' do Emissor Web e o ADN recusa por E0010 — ver o teste da faixa.
+        config()->set('fiscal.nfse.serie', '00001');
         config()->set('fiscal.nfse.ambiente', 2);
         config()->set('fiscal.nfse.transmissao.urls', [2 => 'https://homologacao.example/SefinNacional']);
 
@@ -105,8 +108,14 @@ class EmissaoNfseServiceTest extends TestCase
         $documento = $this->rascunho();
         $documento->forceFill(['numero_dps' => 7])->save();
 
+        // Contrato real do ADN: `/dps/{id}` devolve a chave; o XML vem de
+        // `/nfse/{chave}`. Fingir que o XML sai da primeira chamada mascarava
+        // o defeito que deixou a duplicidade acontecer de verdade.
         Http::fake([
-            '*/dps/*' => Http::response(['nfseXmlGZipB64' => base64_encode((string) gzencode($this->notaReal()))]),
+            '*/dps/*' => Http::response(['chaveAcesso' => 'CHAVE-JA-EMITIDA']),
+            '*/nfse/CHAVE-JA-EMITIDA' => Http::response([
+                'nfseXmlGZipB64' => base64_encode((string) gzencode($this->notaReal())),
+            ]),
         ]);
 
         $emitido = $this->servico()->emitir($documento);
@@ -228,11 +237,205 @@ class EmissaoNfseServiceTest extends TestCase
         $this->fingirAdn($this->notaReal());
 
         $sequencia = app(SequenciaDps::class);
-        $this->assertSame(0, $sequencia->atual('70000'));
+        $this->assertSame(0, $sequencia->atual('00001'));
 
         $this->servico()->emitir($this->rascunho());
 
-        $this->assertSame(1, $sequencia->atual('70000'));
+        $this->assertSame(1, $sequencia->atual('00001'));
+    }
+
+    public function test_cadastro_fiscal_incompleto_falha_antes_de_queimar_o_numero_da_dps(): void
+    {
+        // Defeito real: sem o codigo IBGE, o builder estourava DEPOIS de o nDPS
+        // ja' ter sido alocado e gravado — cada clique queimava um numero da
+        // serie. E a excecao de la' e' `RuntimeException`, que escapava do
+        // tratamento do controller e chegava na tela como erro 500 generico.
+        Http::fake();
+        DB::table('configuracoes')->where('chave', 'empresa_codigo_ibge')->delete();
+
+        $documento = $this->rascunho();
+        $sequencia = app(SequenciaDps::class);
+
+        try {
+            $this->servico()->emitir($documento);
+            $this->fail('Deveria ter lancado NfseException.');
+        } catch (NfseException $e) {
+            $this->assertTrue($e->origemLocal);
+            // A mensagem precisa dizer O QUE falta e ONDE resolver.
+            $this->assertStringContainsString('código IBGE', $e->getMessage());
+            $this->assertStringContainsString('Configurações do Sistema', $e->getMessage());
+        }
+
+        $documento->refresh();
+
+        // Nenhum numero queimado, nada transmitido.
+        $this->assertNull($documento->numero_dps);
+        $this->assertSame(0, $sequencia->atual('00001'));
+        Http::assertNothingSent();
+    }
+
+    public function test_falha_do_builder_nao_escapa_como_erro_generico(): void
+    {
+        // Rede de seguranca para o que a guarda de cadastro nao previu: o
+        // builder sinaliza problema com RuntimeException, e ela nao pode
+        // atravessar o servico crua — viraria 500 na tela.
+        Http::fake();
+        DB::table('configuracoes')->where('chave', 'empresa_codigo_tributacao_nacional')
+            ->update(['valor' => '']);
+
+        $this->expectException(NfseException::class);
+
+        $this->servico()->emitir($this->rascunho());
+    }
+
+    public function test_recusa_serie_da_faixa_do_portal_antes_de_transmitir(): void
+    {
+        // Defeito real: a serie 70000 foi copiada de uma NFS-e que a propria
+        // empresa emitiu pelo portal. Mas a serie declara o TIPO DE EMISSOR —
+        // 70000-79999 e' do Emissor Web, e emitir por API com ela devolve
+        // rejeicao E0010 do ADN, depois de queimar um numero.
+        Http::fake();
+        config()->set('fiscal.nfse.serie', '70000');
+
+        try {
+            $this->servico()->emitir($this->rascunho());
+            $this->fail('Deveria ter lancado NfseException.');
+        } catch (NfseException $e) {
+            $this->assertTrue($e->origemLocal);
+            $this->assertStringContainsString('portal do gov.br', $e->getMessage());
+            $this->assertStringContainsString('00001 a 49999', $e->getMessage());
+        }
+
+        Http::assertNothingSent();
+    }
+
+    public function test_aceita_serie_da_faixa_de_aplicativo_proprio(): void
+    {
+        $this->fingirAdn($this->notaReal());
+        config()->set('fiscal.nfse.serie', '00001');
+
+        $this->assertTrue($this->servico()->emitir($this->rascunho())->foiEmitido());
+    }
+
+    public function test_extrai_o_motivo_da_rejeicao_mesmo_com_chaves_maiusculas(): void
+    {
+        // O ADN devolve `Codigo`/`Descricao` capitalizados. Procurar so' a
+        // forma minuscula descartava a mensagem util e deixava o operador com
+        // um "HTTP 400" que nao diz o que corrigir.
+        Http::fake([
+            '*' => Http::response([
+                'erros' => [[
+                    'Codigo' => 'E0010',
+                    'Descricao' => 'A serie informada na DPS nao pertence a faixa definida.',
+                ]],
+            ], 400),
+        ]);
+
+        $documento = $this->rascunho();
+
+        try {
+            $this->servico()->emitir($documento);
+            $this->fail('Deveria ter lancado NfseException.');
+        } catch (NfseException $e) {
+            $this->assertStringContainsString('E0010', $e->getMessage());
+            $this->assertStringContainsString('nao pertence a faixa', $e->getMessage());
+        }
+
+        $this->assertStringContainsString('E0010', (string) $documento->refresh()->motivo_rejeicao);
+    }
+
+    public function test_nota_autorizada_que_nao_registra_grita_no_log_e_salva_o_xml(): void
+    {
+        // O pior estado do sistema: o ADN autorizou, o registro local falhou.
+        // Antes isso passava em silencio — `ValidationException` nao e' logada
+        // pelo Laravel — e o XML da nota emitida se perdia.
+        $xmlIntragavel = '<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse"><naoEhNota/></NFSe>';
+        $this->fingirAdn($xmlIntragavel);
+
+        Log::shouldReceive('channel')->andReturnSelf();
+        Log::shouldReceive('info')->andReturnNull();
+        Log::shouldReceive('warning')->andReturnNull();
+        Log::shouldReceive('error')
+            ->once()
+            ->withArgs(fn (string $msg, array $ctx): bool => str_contains($msg, 'NAO REGISTRADA'));
+
+        try {
+            $this->servico()->emitir($this->rascunho());
+            $this->fail('Deveria ter lancado NfseException.');
+        } catch (NfseException $e) {
+            // A mensagem precisa impedir o reflexo errado: clicar de novo.
+            $this->assertStringContainsString('FOI EMITIDA', $e->getMessage());
+            $this->assertStringContainsString('Não emita de novo', $e->getMessage());
+        }
+    }
+
+    public function test_consulta_previa_busca_a_chave_e_depois_o_xml(): void
+    {
+        // Contrato real do ADN: `/dps/{id}` devolve so' a chave de acesso; o
+        // XML vem de `/nfse/{chave}`. Tratar a primeira resposta como se
+        // trouxesse o XML fazia a consulta falhar em silencio — e a protecao
+        // contra duplicidade nao protegia nada.
+        $documento = $this->rascunho();
+        $documento->forceFill(['numero_dps' => 9])->save();
+
+        Http::fake([
+            '*/dps/*' => Http::response(['chaveAcesso' => 'CHAVE123']),
+            '*/nfse/CHAVE123' => Http::response([
+                'nfseXmlGZipB64' => base64_encode((string) gzencode($this->notaReal())),
+            ]),
+        ]);
+
+        $emitido = $this->servico()->emitir($documento);
+
+        $this->assertTrue($emitido->foiEmitido());
+        Http::assertSent(fn (Request $r): bool => str_contains($r->url(), '/nfse/CHAVE123'));
+        // Nada de POST: a nota ja' existia.
+        Http::assertNotSent(fn (Request $r): bool => $r->method() === 'POST');
+    }
+
+    public function test_e0014_recupera_a_nota_em_vez_de_marcar_rejeitado(): void
+    {
+        // "DPS ja existe" nao e' rejeicao: e' o ADN dizendo que a nota existe
+        // do lado dele. Marcar o documento como rejeitado registraria o oposto
+        // da verdade e deixaria uma nota fiscal emitida sem contrapartida.
+        $documento = $this->rascunho();
+        $documento->forceFill(['numero_dps' => 9])->save();
+
+        $xml = $this->notaReal();
+        $consultasDps = 0;
+
+        Http::fake(function (Request $request) use ($xml, &$consultasDps) {
+            $url = $request->url();
+
+            if (str_contains($url, '/dps/')) {
+                $consultasDps++;
+
+                // A primeira consulta nao acha — foi o que deixou o envio
+                // seguir e colher o E0014 no caso real. Depois da recusa, a
+                // recuperacao pergunta de novo e o ADN entrega a chave.
+                return $consultasDps === 1
+                    ? Http::response([], 404)
+                    : Http::response(['chaveAcesso' => 'CHAVE999']);
+            }
+
+            if (str_contains($url, '/nfse/CHAVE999')) {
+                return Http::response(['nfseXmlGZipB64' => base64_encode((string) gzencode($xml))]);
+            }
+
+            return Http::response([
+                'erros' => [[
+                    'Codigo' => 'E0014',
+                    'Descricao' => 'Conjunto de Serie, Numero, Codigo do Municipio Emissor e '
+                        .'CNPJ/CPF informado nesta DPS ja existe em uma NFS-e gerada anteriormente.',
+                ]],
+            ], 400);
+        });
+
+        $emitido = $this->servico()->emitir($documento);
+
+        $this->assertTrue($emitido->foiEmitido());
+        $this->assertNotSame(DocumentoFiscal::STATUS_REJEITADO, $emitido->status);
+        $this->assertSame(2, $consultasDps, 'A recuperacao precisa consultar de novo apos o E0014.');
     }
 
     private function fingirAdn(string $xmlDaNota): void

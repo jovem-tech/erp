@@ -43,7 +43,25 @@ return [
         // obrigacao tributaria real e cancelamento a fazer.
         'ambiente' => (int) env('FISCAL_NFSE_AMBIENTE', 2),
         'versao_aplicativo' => (string) env('FISCAL_NFSE_VERSAO_APP', 'ERP-JT'),
-        'serie' => (string) env('FISCAL_NFSE_SERIE', '70000'),
+        /*
+         | A serie da DPS declara o TIPO DE EMISSOR, nao a empresa. As faixas
+         | sao definidas pelo Ambiente Nacional:
+         |
+         |   00001-49999  aplicativo proprio (API)  <- este sistema
+         |   50000-69999  emissor movel
+         |   70000-79999  emissor web (o portal do gov.br)
+         |   80000-89999  transcricao manual
+         |
+         | Copiar a serie de uma nota emitida NO PORTAL para emitir por API e'
+         | rejeicao E0010 na cara ("a serie informada na DPS nao pertence a
+         | faixa definida para o tipo de emissor"). Ja' aconteceu aqui: 70000
+         | veio de um XML real da empresa, emitido pelo EmissorWeb.
+         |
+         | Consequencia pratica: a numeracao de DPS do portal e a da API sao
+         | independentes — nao se semeia o contador da API com o ultimo numero
+         | visto no portal, porque sao series diferentes.
+         */
+        'serie' => (string) env('FISCAL_NFSE_SERIE', '00001'),
         // `opSimpNac` no layout da DPS. Um XML real de NFS-e MEI devolvido pelo
         // Ambiente Nacional traz **2** — o padrao anterior (1) faria a DPS
         // declarar regime errado. Confirmar com o contador mesmo assim: o
@@ -89,8 +107,11 @@ return [
                 2 => (string) env('FISCAL_NFSE_URL_HOMOLOGACAO', 'https://sefin.producaorestrita.nfse.gov.br/SefinNacional'),
             ],
             'path_emissao' => (string) env('FISCAL_NFSE_PATH_EMISSAO', '/nfse'),
-            // `{idDps}` e' substituido pelo Id da DPS na consulta.
+            // A consulta e' em DOIS passos, e isso e' contrato do ADN, nao
+            // escolha nossa: `/dps/{idDps}` responde se aquela DPS virou nota
+            // e devolve SO' a `chaveAcesso`; o XML vem de `/nfse/{chave}`.
             'path_consulta_dps' => (string) env('FISCAL_NFSE_PATH_CONSULTA_DPS', '/dps/{idDps}'),
+            'path_consulta_nfse' => (string) env('FISCAL_NFSE_PATH_CONSULTA_NFSE', '/nfse/{chave}'),
             'campo_dps' => (string) env('FISCAL_NFSE_CAMPO_DPS', 'dpsXmlGZipB64'),
             'campo_resposta' => (string) env('FISCAL_NFSE_CAMPO_RESPOSTA', 'nfseXmlGZipB64'),
             // Emissao sincrona: o ADN monta a nota antes de responder, entao o

@@ -4,6 +4,7 @@ namespace App\Services\Fiscal;
 
 use DOMDocument;
 use DOMElement;
+use DOMNode;
 use DOMXPath;
 
 /**
@@ -119,19 +120,45 @@ final class AssinaturaXml
 
         // ---- 1) o digest corresponde ao conteudo assinado?
         //
-        // A transform `enveloped-signature` manda tirar a propria Signature
-        // antes de canonicalizar. Feito sobre uma CLONE: mexer no documento
-        // original mudaria o que o chamador vai ler depois.
+        // A transform `enveloped-signature` manda tirar A PROPRIA Signature —
+        // **so' ela**, nao todas as do documento. Feito sobre uma CLONE: mexer
+        // no original mudaria o que o chamador vai ler depois.
+        //
+        // A distincao parece preciosismo e nao e'. A NFS-e que o Ambiente
+        // Nacional devolve tem DUAS assinaturas aninhadas: a nossa, sobre a
+        // `infDPS` que enviamos, e a dele, sobre a `infNFSe` — que CONTEM a
+        // DPS assinada dentro. O ADN calculou o digest dele incluindo a nossa
+        // assinatura; arranca-la antes de conferir muda os bytes e reprova uma
+        // nota legitima com a mensagem mais alarmante que existe aqui ("o
+        // arquivo foi alterado depois de assinado").
+        //
+        // Removendo todas, a assinatura de DENTRO continuava conferindo (ela
+        // nao cobre suas irmas) e so' a de FORA quebrava — o que fazia o
+        // defeito parecer problema do documento do governo.
+        // O clone e' feito por SERIALIZACAO, e nao por `importNode()`.
+        //
+        // `importNode()` nao e' fiel para efeito de canonicalizacao: ele
+        // redistribui as declaracoes de namespace pelos elementos filhos. No
+        // XML real da NFS-e isso somou 232 bytes ao conteudo canonicalizado —
+        // o digest dava diferente e uma nota legitima do Ambiente Nacional era
+        // acusada de adulterada. Reparsear a serializacao preserva a estrutura
+        // de namespaces exatamente como ela veio.
         $clone = new DOMDocument();
         $clone->preserveWhiteSpace = $dom->preserveWhiteSpace;
-        $clone->appendChild($clone->importNode($dom->documentElement, true));
+        $clone->loadXML((string) $dom->saveXML());
 
         $xpathClone = new DOMXPath($clone);
         $xpathClone->registerNamespace('ds', self::NS_SIG);
 
-        foreach (iterator_to_array($xpathClone->query('//ds:Signature') ?: []) as $sig) {
-            $sig->parentNode?->removeChild($sig);
+        $indice = self::posicaoDaAssinatura($xpath, $assinatura);
+        $assinaturasClone = iterator_to_array($xpathClone->query('//ds:Signature') ?: []);
+
+        if ($indice === null || ! isset($assinaturasClone[$indice])) {
+            return 'Não foi possível isolar a assinatura para conferência.';
         }
+
+        $alvoRemocao = $assinaturasClone[$indice];
+        $alvoRemocao->parentNode?->removeChild($alvoRemocao);
 
         $alvo = self::resolverReferencia($clone, $xpathClone, $uri);
 
@@ -195,6 +222,30 @@ final class AssinaturaXml
             // Signature, o que ja' foi feito.
             if (! str_contains($algoritmo, 'enveloped-signature')) {
                 return $algoritmo;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Posicao desta Signature entre todas as do documento.
+     *
+     * O clone e' copia fiel, entao a mesma posicao identifica o mesmo no' la'
+     * dentro — e' o que permite remover exatamente esta assinatura, e nao as
+     * outras, ao aplicar a transform `enveloped-signature`.
+     */
+    private static function posicaoDaAssinatura(DOMXPath $xpath, DOMElement $assinatura): ?int
+    {
+        $todas = iterator_to_array($xpath->query('//ds:Signature') ?: []);
+
+        foreach ($todas as $indice => $candidata) {
+            // `isSameNode()` e nao `===`: o PHP cria um wrapper novo a cada
+            // consulta ao DOM, entao duas referencias ao MESMO no' podem ser
+            // objetos diferentes. Comparar por identidade de objeto falha em
+            // silencio e derruba a conferencia inteira no fallback.
+            if ($candidata instanceof DOMNode && $candidata->isSameNode($assinatura)) {
+                return (int) $indice;
             }
         }
 
