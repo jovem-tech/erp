@@ -854,6 +854,7 @@
             }
 
             if (response.status === 403) {
+                window.erpMarkInternalNavigation?.();
                 window.location.href = '/dashboard';
                 return;
             }
@@ -878,6 +879,7 @@
                 });
 
                 if (response.redirected && response.url) {
+                    window.erpMarkInternalNavigation?.();
                     window.location.href = response.url;
                 }
 

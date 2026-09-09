@@ -241,6 +241,59 @@ class SessionSecurityTest extends TestCase
             ->assertSee('internalNavigation = false; }, 60000)', false);
     }
 
+    public function test_authenticated_pages_are_not_stored_so_back_after_logout_cannot_show_them(): void
+    {
+        // Depois do logout, o "Voltar" remontava a tela autenticada inteira: o
+        // bfcache devolve a página já renderizada direto da memória, sem tocar
+        // no servidor, então EnsureBackendToken nunca roda. O `no-cache` padrão
+        // do Laravel governa o cache HTTP, não o bfcache — só `no-store` torna
+        // o documento inelegível.
+        $response = $this
+            ->withSession($this->desktopSession(['dashboard' => ['visualizar']], false))
+            ->get('/dashboard');
+
+        $response->assertOk();
+        $this->assertStringContainsString(
+            'no-store',
+            (string) $response->headers->get('Cache-Control'),
+            'Tela autenticada sem no-store volta a ficar visível pelo botão Voltar após o logout.'
+        );
+    }
+
+    public function test_login_page_is_not_stored(): void
+    {
+        $response = $this->get('/login');
+
+        $response->assertOk();
+        $this->assertStringContainsString(
+            'no-store',
+            (string) $response->headers->get('Cache-Control')
+        );
+    }
+
+    public function test_reopen_guard_does_not_trust_close_marker_on_back_forward(): void
+    {
+        // Voltar/Avançar do navegador não passa por clique em <a>, submit nem
+        // keydown, então internalNavigation fica false e o pagehide da saída
+        // grava o marcador de fechamento — o usuário voltava e era deslogado.
+        // A única defesa era o pageshow/persisted, que depende do bfcache
+        // restaurar a página, e bfcache é best-effort (expira em minutos, cai
+        // sob pressão de memória, e no Firefox nem existe para páginas com
+        // beforeunload — o shell registra um). Em back_forward o marcador não
+        // pode valer; só o heartbeat, que mede hora real de parede e continua
+        // pegando o navegador realmente fechado e reaberto.
+        $response = $this
+            ->withSession($this->desktopSession(['dashboard' => ['visualizar']], false))
+            ->get('/dashboard');
+
+        $response->assertOk()
+            ->assertSee("var isHistoryNav = navType === 'back_forward';", false)
+            ->assertSee('isHistoryNav ? staleClosed : (markedClosed || staleClosed)', false)
+            // O pagehide de entrada no bfcache não é fechamento e não pode
+            // envenenar o marcador compartilhado das outras abas.
+            ->assertSee('if (event && event.persisted) { return; }', false);
+    }
+
     public function test_reopen_guard_script_is_absent_for_remembered_session(): void
     {
         $response = $this

@@ -237,7 +237,26 @@
             // (localStorage limpo / sessão restaurada de outra máquina).
             var markedClosed = closedAt > 0 && closedAt >= (lastBeat - 4000);
             var staleClosed = !lastBeat || (now() - lastBeat) > STALE_MS;
-            var browserWasClosed = navType !== 'reload' && (markedClosed || staleClosed);
+            // Voltar/Avançar do navegador (navType 'back_forward') NÃO passa por
+            // clique em <a>, submit nem keydown, então internalNavigation fica
+            // false e o pagehide da saída grava o marcador de fechamento — o
+            // usuário voltava e era deslogado. O pageshow/persisted abaixo só
+            // salva quando o bfcache restaura a página, e bfcache é best-effort:
+            // expira em poucos minutos, é descartado sob pressão de memória e no
+            // Firefox nem existe para páginas com listener de beforeunload (o
+            // shell registra um em desktop.js). Por isso o marcador NÃO pode ser
+            // usado nessa navegação.
+            //
+            // Mas 'back_forward' também não prova que o navegador ficou aberto:
+            // uma aba restaurada pelo "continuar de onde parei" do Edge/Chrome
+            // pode reportar o mesmo tipo. Nela confiamos só no heartbeat, que
+            // mede hora real de parede — navegador fechado para de bater, e
+            // nenhuma navegação consegue forjar isso. O custo é perder a
+            // detecção instantânea (fechou e reabriu em 2s) apenas no back/
+            // forward, onde o corte passa a ser os 90s de STALE_MS.
+            var isHistoryNav = navType === 'back_forward';
+            var browserWasClosed = navType !== 'reload'
+                && (isHistoryNav ? staleClosed : (markedClosed || staleClosed));
 
             if (window.console && console.info) {
                 console.info('[ERP Sessão] guard: navType=' + navType
@@ -304,7 +323,13 @@
             // para outro site) — grava o instante. Na próxima carga, se nenhum
             // beat de outra aba veio depois do marcador, o navegador esteve
             // fechado — detecção instantânea, sem esperar staleness.
-            window.addEventListener('pagehide', function () {
+            window.addEventListener('pagehide', function (event) {
+                // persisted = a página está entrando no bfcache, não sendo
+                // destruída. Por definição não é fechamento, e o marcador aqui
+                // só envenenaria as outras abas (o CLOSED_KEY é compartilhado no
+                // localStorage). Se o navegador fechar depois, com a página já
+                // no cache, os beats param e o staleClosed pega.
+                if (event && event.persisted) { return; }
                 if (!internalNavigation) {
                     try { ls.setItem(CLOSED_KEY, String(now())); } catch (e) {}
                 }

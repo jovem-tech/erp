@@ -484,6 +484,7 @@
         const response = await fetch(url, requestOptions);
 
         if (response.redirected) {
+            window.erpMarkInternalNavigation?.();
             window.location.href = response.url;
             return null;
         }
@@ -496,6 +497,7 @@
         }
 
         if (response.status === 403) {
+            window.erpMarkInternalNavigation?.();
             window.location.href = payload?.redirect || '/dashboard';
             return null;
         }
