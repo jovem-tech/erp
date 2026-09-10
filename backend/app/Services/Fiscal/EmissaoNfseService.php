@@ -47,6 +47,7 @@ class EmissaoNfseService
         private readonly SequenciaDps $sequencia,
         private readonly CertificadoA1 $certificado,
         private readonly CompanyProfileService $empresa,
+        private readonly AmbienteFiscal $ambiente,
     ) {}
 
     /**
@@ -88,7 +89,7 @@ class EmissaoNfseService
         Log::channel('fiscal')->info('[NFSE] Transmitindo DPS.', [
             'documento_id' => $documento->id,
             'id_dps' => $idDps,
-            'ambiente' => (int) config('fiscal.nfse.ambiente', 2),
+            'ambiente' => $this->ambiente->atual(),
             'retentativa' => $retentativa,
         ]);
 

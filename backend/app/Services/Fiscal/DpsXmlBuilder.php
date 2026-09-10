@@ -53,7 +53,8 @@ class DpsXmlBuilder
 
     public function __construct(
         private readonly CertificadoA1 $certificado,
-        private readonly CompanyProfileService $empresa
+        private readonly CompanyProfileService $empresa,
+        private readonly AmbienteFiscal $ambiente
     ) {}
 
     /**
@@ -100,7 +101,9 @@ class DpsXmlBuilder
         $inf->setAttribute('Id', $idDps);
         $dps->appendChild($inf);
 
-        $this->texto($dom, $inf, 'tpAmb', (string) $config['ambiente']);
+        // `tpAmb` e' o que diz ao ADN se a nota vale de verdade. Sai do
+        // servico para acompanhar a troca feita pela tela.
+        $this->texto($dom, $inf, 'tpAmb', (string) $this->ambiente->atual());
         $this->texto($dom, $inf, 'dhEmi', now()->toIso8601String());
         $this->texto($dom, $inf, 'verAplic', (string) $config['versao_aplicativo']);
         $this->texto($dom, $inf, 'serie', (string) $config['serie']);

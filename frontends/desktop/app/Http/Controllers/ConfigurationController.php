@@ -11,6 +11,7 @@ use App\Services\CompanyProfileService;
 use App\Services\ConfigurationService;
 use App\Services\DocumentationService;
 use App\Services\GroupService;
+use App\Services\DocumentoFiscalService;
 use App\Services\ProntidaoFiscalService;
 use App\Services\UserService;
 use App\Support\DesktopPreferences;
@@ -33,7 +34,8 @@ class ConfigurationController extends DesktopController
         private readonly UserService $userService,
         private readonly GroupService $groupService,
         private readonly AgendaService $agendaService,
-        private readonly ProntidaoFiscalService $prontidaoFiscalService
+        private readonly ProntidaoFiscalService $prontidaoFiscalService,
+        private readonly DocumentoFiscalService $documentoFiscalService
     ) {
     }
 
@@ -68,6 +70,9 @@ class ConfigurationController extends DesktopController
             return response()->json([
                 'success' => true,
                 'certificado' => $this->prontidaoFiscalService->verificar()['areas']['certificado'] ?? [],
+                // Vai junto para a sub-aba mostrar certificado e ambiente na
+                // mesma consulta — sao a mesma decisao para quem olha a tela.
+                'ambiente' => $this->documentoFiscalService->ambienteFiscal(),
             ]);
         } catch (Throwable $exception) {
             return response()->json([
@@ -111,6 +116,49 @@ class ConfigurationController extends DesktopController
                 $estado['titular'] ?? '—',
                 isset($estado['expira_em']) ? date('d/m/Y', strtotime((string) $estado['expira_em'])) : '—'
             ));
+    }
+
+    /**
+     * Troca o ambiente de emissao fiscal.
+     *
+     * Ligar producao exige digitar a palavra `PRODUCAO`. Nao e' burocracia
+     * decorativa: um checkbox marcado por engano, ou um clique herdado de
+     * outra aba, passa a valer para TODA emissao seguinte — e cada nota que
+     * sair depois disso e' documento fiscal com obrigacao tributaria real.
+     * Digitar obriga a saber o que se esta fazendo.
+     *
+     * Voltar para homologacao nao pede confirmacao: o caminho de reduzir risco
+     * tem de ser o mais facil dos dois.
+     */
+    public function alterarAmbienteFiscal(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'ambiente' => ['required', 'integer', 'in:1,2'],
+            'confirmacao' => ['nullable', 'string'],
+        ], [], ['ambiente' => 'ambiente de emissão']);
+
+        $paraProducao = (int) $validated['ambiente'] === 1;
+
+        if ($paraProducao && strtoupper(trim((string) ($validated['confirmacao'] ?? ''))) !== 'PRODUCAO') {
+            return redirect()
+                ->route('configurations.integrations.index')
+                ->with('error', 'Para ligar a produção, digite PRODUCAO no campo de confirmação. '
+                    .'A partir daí toda nota emitida vale de verdade.');
+        }
+
+        try {
+            $estado = $this->documentoFiscalService->alterarAmbienteFiscal((int) $validated['ambiente']);
+        } catch (ApiRequestException $excecao) {
+            return redirect()
+                ->route('configurations.integrations.index')
+                ->with('error', $excecao->getMessage() ?: 'Não foi possível alterar o ambiente de emissão.');
+        }
+
+        return redirect()
+            ->route('configurations.integrations.index')
+            ->with('success', $paraProducao
+                ? 'Ambiente de emissão em PRODUÇÃO. As próximas notas valem de verdade.'
+                : 'Ambiente de emissão em homologação. As notas emitidas agora são de teste.');
     }
 
     public function removerCertificadoFiscal(): RedirectResponse

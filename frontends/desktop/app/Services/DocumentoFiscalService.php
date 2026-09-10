@@ -163,6 +163,26 @@ class DocumentoFiscalService
     }
 
     /**
+     * Estado do ambiente de emissao (homologacao/producao).
+     *
+     * @return array<string, mixed>
+     */
+    public function ambienteFiscal(): array
+    {
+        return $this->apiClient->get('/fiscal/ambiente')['data'] ?? [];
+    }
+
+    /**
+     * Troca o ambiente de emissao.
+     *
+     * @return array<string, mixed>
+     */
+    public function alterarAmbienteFiscal(int $ambiente): array
+    {
+        return $this->apiClient->post('/fiscal/ambiente', ['ambiente' => $ambiente])['data'] ?? [];
+    }
+
+    /**
      * DANFSe reconstruído a partir do XML, para quando o PDF oficial não foi
      * anexado.
      *
