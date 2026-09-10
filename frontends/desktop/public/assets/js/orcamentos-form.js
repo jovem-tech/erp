@@ -1853,6 +1853,25 @@
             quickItemErrors.classList.remove('d-none');
         };
 
+        // O grupo inativo precisa sair da validacao do form, nao so da tela:
+        // `required` em campo apenas oculto continua valendo, e a taxonomia
+        // obrigatoria da peca (Grupo/Categoria/Subcategoria) reprovava o
+        // reportValidity() do submit no cadastro rapido de SERVICO — o POST
+        // nunca saia e o operador so via "Preencha os campos obrigatorios",
+        // sem campo algum marcado, porque o invalido estava escondido.
+        // Fieldset disabled tira os controles da validacao e do FormData.
+        const setQuickGroupActive = (group, active) => {
+            if (!(group instanceof HTMLElement)) {
+                return;
+            }
+
+            group.hidden = !active;
+
+            if ('disabled' in group) {
+                group.disabled = !active;
+            }
+        };
+
         const updateQuickItemMode = (type) => {
             const resolvedType = getResolvedQuickType(type);
             state.quickItemType = resolvedType;
@@ -1886,13 +1905,8 @@
                     : 'Ex.: Troca de conector, limpeza interna...';
             }
 
-            if (quickItemServiceGroup instanceof HTMLElement) {
-                quickItemServiceGroup.hidden = resolvedType !== 'servico';
-            }
-
-            if (quickItemPartGroup instanceof HTMLElement) {
-                quickItemPartGroup.hidden = resolvedType !== 'peca';
-            }
+            setQuickGroupActive(quickItemServiceGroup, resolvedType === 'servico');
+            setQuickGroupActive(quickItemPartGroup, resolvedType === 'peca');
 
             if (quickItemSubmit instanceof HTMLButtonElement) {
                 quickItemSubmit.innerHTML = `<i class="bi bi-plus-circle me-2"></i>${getQuickCatalogConfig(resolvedType).submitLabel || 'Salvar e aplicar'}`;

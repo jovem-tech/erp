@@ -2439,7 +2439,15 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('id="orcamentoQuickItemModal"', false)
             ->assertSee('id="orcamentoQuickItemForm"', false)
             ->assertSee(route('servicos.quick.store'), false)
-            ->assertSee(route('estoque.quick.store'), false);
+            ->assertSee(route('estoque.quick.store'), false)
+            // O grupo do tipo que nao esta selecionado sai desabilitado, nao so
+            // oculto: a taxonomia obrigatoria da peca (Grupo/Categoria/
+            // Subcategoria) continuava valendo na validacao do form escondida e
+            // reprovava o submit do cadastro rapido de servico, que nunca
+            // chegava a postar.
+            ->assertSee('data-budget-quick-group="peca" hidden disabled', false)
+            ->assertSee('data-budget-quick-group="servico"', false)
+            ->assertDontSee('data-budget-quick-group="servico" hidden', false);
 
         Http::allowStrayRequests();
     }

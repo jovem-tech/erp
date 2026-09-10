@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.82.2.0 — 2026-09-10 08:33
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Cadastro rapido de servico no orcamento voltou a salvar: o botao nao postava nada. Os blocos de Servico e Peca do modal dividem o mesmo <form>, e o bloco do tipo nao escolhido ficava apenas oculto (hidden) — campo required escondido continua entrando na validacao do formulario, entao a taxonomia obrigatoria da peca (Grupo/Categoria/Subcategoria, vazia) reprovava o reportValidity() do submit e o POST /servicos/rapido nunca saia. Na tela o operador so via 'Preencha os campos obrigatorios antes de salvar', sem nenhum campo marcado, porque o invalido estava escondido (o Chrome registra 'An invalid form control is not focusable' no console e para por ali). Confirmado no nginx-access.log: nenhum POST para /servicos/rapido em toda a janela do log — a falha era 100% no cliente, o controller e o backend estavam certos. Os dois blocos viraram <fieldset> e passam a entrar desabilitados, nao so ocultos: fieldset disabled tira os controles da validacao e do FormData de uma vez, entao o POST de servico tambem deixa de carregar campo de peca vazio junto. No JS, setQuickGroupActive() substituiu os dois '.hidden =' soltos e aplica hidden+disabled em conjunto, no unico lugar que alterna os grupos. Os atributos sao montados em PHP (serviceGroupAttrs/partGroupAttrs) em vez de @if inline na tag, para o par 'hidden disabled' sair sempre com o mesmo espacamento no HTML e o teste poder afirmar em cima dele. Teste de regressao no DesktopFrontendTest exigindo o grupo inativo desabilitado. O cadastro rapido de peca nunca quebrou porque o bloco de servico nao tem nenhum campo obrigatorio.
+- **Arquivos:** frontends/desktop/resources/views/orcamentos/partials/quick-item-modal.blade.php,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php
+
 ## v5.82.0.0 — 2026-09-09 22:41
 - **Tier:** minor
 - **Autor/Agente:** Claude
