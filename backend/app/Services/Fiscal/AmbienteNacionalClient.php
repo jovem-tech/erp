@@ -28,7 +28,10 @@ use Throwable;
  */
 class AmbienteNacionalClient
 {
-    public function __construct(private readonly CertificadoPemTemporario $material) {}
+    public function __construct(
+        private readonly CertificadoPemTemporario $material,
+        private readonly AmbienteFiscal $ambiente,
+    ) {}
 
     /**
      * Transmite a DPS assinada e devolve o XML da NFS-e autorizada.
@@ -383,7 +386,9 @@ class AmbienteNacionalClient
 
     private function baseUrl(): string
     {
-        $ambiente = (int) config('fiscal.nfse.ambiente', 2);
+        // O ambiente vem do servico, nao do `config()` cru: a tela pode
+        // te-lo mudado, e o valor do banco tem precedencia sobre o `.env`.
+        $ambiente = $this->ambiente->atual();
         $urls = (array) config('fiscal.nfse.transmissao.urls', []);
         $url = trim((string) ($urls[$ambiente] ?? ''));
 

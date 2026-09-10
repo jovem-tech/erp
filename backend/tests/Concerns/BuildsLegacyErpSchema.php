@@ -905,6 +905,20 @@ trait BuildsLegacyErpSchema
             $table->dateTime('created_at')->nullable();
             $table->dateTime('updated_at')->nullable();
         });
+
+        // Trilha generica de "quem fez o que", com IP — e' onde o sistema
+        // registra atos que precisam de responsavel identificavel (trocar o
+        // ambiente de emissao fiscal, por exemplo). Sem ela no schema de teste,
+        // a auditoria nao tem como ser verificada.
+        Schema::create('logs', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('usuario_id')->nullable();
+            $table->string('acao', 100);
+            $table->text('descricao')->nullable();
+            $table->string('ip', 45)->nullable();
+            $table->string('user_agent', 255)->nullable();
+            $table->dateTime('created_at')->nullable();
+        });
     }
 
     private function createFinanceiroCartaoTables(): void

@@ -504,6 +504,8 @@ Route::prefix('v1')->group(function (): void {
         Route::post('fiscal/documentos/{documento}/emissao', [DocumentoFiscalController::class, 'registrarEmissao'])->name('api.v1.fiscal.documentos.emissao');
         Route::post('fiscal/documentos/{documento}/importar-xml', [DocumentoFiscalController::class, 'importarXml'])->name('api.v1.fiscal.documentos.importar_xml');
         Route::post('fiscal/documentos/{documento}/emitir', [DocumentoFiscalController::class, 'emitirPeloSistema'])->name('api.v1.fiscal.documentos.emitir');
+        Route::get('fiscal/ambiente', [DocumentoFiscalController::class, 'ambienteFiscal'])->name('api.v1.fiscal.ambiente');
+        Route::post('fiscal/ambiente', [DocumentoFiscalController::class, 'alterarAmbienteFiscal'])->name('api.v1.fiscal.ambiente.alterar');
         Route::post('fiscal/documentos/{documento}/rejeicao', [DocumentoFiscalController::class, 'registrarRejeicao'])->name('api.v1.fiscal.documentos.rejeicao');
         Route::post('fiscal/documentos/{documento}/cancelamento', [DocumentoFiscalController::class, 'cancelar'])->name('api.v1.fiscal.documentos.cancelamento');
         Route::post('fiscal/documentos/{documento}/arquivo', [DocumentoFiscalController::class, 'anexarArquivo'])->name('api.v1.fiscal.documentos.arquivo');

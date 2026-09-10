@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Models\DocumentoFiscal;
 use App\Models\Order;
 use App\Services\Fiscal\DocumentoFiscalService;
+use App\Services\Fiscal\AmbienteFiscal;
 use App\Services\Fiscal\CertificadoA1;
 use App\Services\Fiscal\EmissaoNfseService;
 use App\Services\Fiscal\NfseException;
@@ -111,8 +112,12 @@ class DocumentoFiscalController extends BaseApiController
      * Monta o rascunho da NFS-e da OS — idempotente: chamar de novo devolve o
      * mesmo rascunho, nunca um segundo.
      */
-    public function rascunhoDeOrdem(Request $request, int $order, CertificadoA1 $certificado): JsonResponse
-    {
+    public function rascunhoDeOrdem(
+        Request $request,
+        int $order,
+        CertificadoA1 $certificado,
+        AmbienteFiscal $ambiente
+    ): JsonResponse {
         $this->authorize('fiscal:criar');
 
         $ordem = Order::query()->findOrFail($order);
@@ -132,7 +137,7 @@ class DocumentoFiscalController extends BaseApiController
             // vai emitir. Operador que emite em producao achando que testava
             // gera documento fiscal de verdade, com obrigacao tributaria real.
             'emissao' => [
-                'ambiente' => (int) config('fiscal.nfse.ambiente', 2),
+                'ambiente' => $ambiente->atual(),
                 'disponivel' => $problemas === [],
                 'impedimento' => $problemas === [] ? null : implode(' ', $problemas),
             ],
@@ -216,6 +221,50 @@ class DocumentoFiscalController extends BaseApiController
         }
 
         return $this->success(['documento' => $this->mapear($registro)], request: $request);
+    }
+
+    /**
+     * Estado do ambiente de emissao — e o que impede ligar producao.
+     */
+    public function ambienteFiscal(Request $request, AmbienteFiscal $ambiente): JsonResponse
+    {
+        $this->authorize('fiscal:visualizar');
+
+        $impedimentos = $ambiente->impedimentos();
+
+        return $this->success([
+            'ambiente' => $ambiente->atual(),
+            'rotulo' => $ambiente->rotulo(),
+            'producao_disponivel' => $impedimentos === [],
+            'impedimentos' => $impedimentos,
+        ], request: $request);
+    }
+
+    /**
+     * Troca o ambiente de emissao.
+     *
+     * `fiscal:administrar`, e nao `fiscal:criar`: emitir gera UM documento;
+     * virar para producao faz TODA emissao seguinte valer de verdade.
+     */
+    public function alterarAmbienteFiscal(Request $request, AmbienteFiscal $ambiente): JsonResponse
+    {
+        $this->authorize('fiscal:administrar');
+
+        $validated = $request->validate([
+            'ambiente' => ['required', 'integer', 'in:1,2'],
+        ], [], ['ambiente' => 'ambiente de emissão']);
+
+        $novo = $ambiente->definir(
+            (int) $validated['ambiente'],
+            $this->authenticatedUser($request)?->id,
+            $request->ip(),
+            (string) $request->userAgent()
+        );
+
+        return $this->success([
+            'ambiente' => $novo,
+            'rotulo' => $ambiente->rotulo(),
+        ], request: $request);
     }
 
     public function registrarRejeicao(Request $request, int $documento): JsonResponse

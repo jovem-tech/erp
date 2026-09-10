@@ -49,6 +49,11 @@ class DpsXmlBuilderTest extends TestCase
 
         $this->cadastrarEmpresa();
         $this->instalarCertificado();
+
+        // Explicito, e nao herdado do `.env` da maquina: este teste afirma
+        // `<tpAmb>2</tpAmb>`, e um `.env` com producao ligada o derrubaria sem
+        // que nada no codigo estivesse errado.
+        config()->set('fiscal.nfse.ambiente', 2);
     }
 
     protected function tearDown(): void
@@ -326,7 +331,10 @@ class DpsXmlBuilderTest extends TestCase
 
     private function builder(): DpsXmlBuilder
     {
-        return new DpsXmlBuilder(new CertificadoA1(), app(CompanyProfileService::class));
+        // Resolvido pelo container: o builder passou a depender tambem do
+        // `AmbienteFiscal`, que decide o `tpAmb` lendo banco com fallback no
+        // `.env` — montar a mao aqui congelaria essa decisao.
+        return app(DpsXmlBuilder::class);
     }
 
     /**

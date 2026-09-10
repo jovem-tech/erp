@@ -1009,6 +1009,56 @@
                         Consultando o certificado…
                     </div>
 
+                    {{-- Ambiente de emissao. Vivia so' no `.env`, o que exigia
+                         terminal — contradizendo o desenho do resto do modulo,
+                         que existe para o dono do sistema operar sozinho. --}}
+                    @php $podeAdministrarFiscal = \App\Support\DesktopSession::can('configuracoes', 'editar'); @endphp
+
+                    <div class="surface-card p-3 mb-3">
+                        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                            <h4 class="surface-title fs-6 mb-0">Ambiente de emissão</h4>
+                            <span class="badge bg-secondary align-self-center" data-ambiente-badge>—</span>
+                        </div>
+
+                        <p class="surface-subtitle small mb-2" data-ambiente-descricao>
+                            Consultando…
+                        </p>
+
+                        <div class="alert alert-secondary py-2 px-3 small mb-3 d-none" data-ambiente-impedimentos></div>
+
+                        @if ($podeAdministrarFiscal)
+                            <div class="d-flex flex-wrap gap-2 align-items-end">
+                                <div class="flex-grow-1" data-ambiente-confirmacao-campo hidden>
+                                    <label class="form-label small mb-1" for="ambiente_confirmacao">
+                                        Digite <strong>PRODUCAO</strong> para confirmar
+                                    </label>
+                                    <input type="text" class="form-control" id="ambiente_confirmacao"
+                                           name="confirmacao" form="ambienteProducaoForm"
+                                           autocomplete="off" placeholder="PRODUCAO">
+                                </div>
+
+                                <button type="submit" class="btn btn-outline-danger" form="ambienteProducaoForm"
+                                        data-ambiente-ligar hidden
+                                        onclick="return confirm('Ligar PRODUÇÃO? A partir daqui toda nota emitida vale de verdade, com obrigação tributária.');">
+                                    Ligar produção
+                                </button>
+
+                                <button type="submit" class="btn btn-outline-secondary" form="ambienteHomologacaoForm"
+                                        data-ambiente-desligar hidden>
+                                    Voltar para homologação
+                                </button>
+                            </div>
+
+                            <p class="surface-subtitle small mt-2 mb-0">
+                                A troca fica registrada com usuário, IP e horário.
+                            </p>
+                        @else
+                            <p class="surface-subtitle small mb-0">
+                                Você não tem permissão para alterar o ambiente de emissão.
+                            </p>
+                        @endif
+                    </div>
+
                     @php $podeEditarCertificado = \App\Support\DesktopSession::can('configuracoes', 'editar'); @endphp
 
                     @if ($podeEditarCertificado)
@@ -1106,6 +1156,8 @@ php artisan fiscal:verificar-certificado</code></pre>
                  aninhado, e os controles do painel os alcancam por `form=`. --}}
             <form method="post" id="certificadoUploadForm" action="{{ route('fiscal.certificado.store') }}" enctype="multipart/form-data" class="d-none" data-no-page-loader="true">@csrf</form>
             <form method="post" id="certificadoRemoverForm" action="{{ route('fiscal.certificado.destroy') }}" class="d-none">@csrf @method('DELETE')</form>
+            <form method="post" id="ambienteProducaoForm" action="{{ route('fiscal.ambiente.alterar') }}" class="d-none">@csrf<input type="hidden" name="ambiente" value="1"></form>
+            <form method="post" id="ambienteHomologacaoForm" action="{{ route('fiscal.ambiente.alterar') }}" class="d-none">@csrf<input type="hidden" name="ambiente" value="2"></form>
 
             <form method="post" id="agendaGoogleCredentialsForm" action="{{ route('configurations.integrations.agenda-google.credentials') }}" class="d-none">@csrf</form>
             <form method="post" id="agendaGoogleManualForm" action="{{ route('configurations.integrations.agenda-google.connect-manual') }}" class="d-none">@csrf</form>
@@ -1225,6 +1277,42 @@ php artisan fiscal:verificar-certificado</code></pre>
                     .then((r) => r.json())
                     .then(function (dados) {
                         if (!dados.success) { throw new Error(dados.message || 'falhou'); }
+
+                        // ---- ambiente de emissao ----
+                        const amb = dados.ambiente || {};
+                        const ambBadge = document.querySelector('[data-ambiente-badge]');
+                        const ambDesc = document.querySelector('[data-ambiente-descricao]');
+                        const ambImped = document.querySelector('[data-ambiente-impedimentos]');
+                        const btnLigar = document.querySelector('[data-ambiente-ligar]');
+                        const btnDesligar = document.querySelector('[data-ambiente-desligar]');
+                        const campoConf = document.querySelector('[data-ambiente-confirmacao-campo]');
+
+                        if (ambBadge) {
+                            const producao = Number(amb.ambiente) === 1;
+
+                            ambBadge.className = producao
+                                ? 'badge bg-danger align-self-center'
+                                : 'badge bg-warning text-dark align-self-center';
+                            ambBadge.textContent = producao ? 'Produção' : 'Homologação';
+
+                            ambDesc.innerHTML = producao
+                                ? 'As notas emitidas <strong>valem de verdade</strong>, com obrigação tributária real.'
+                                : 'As notas emitidas são de <strong>teste</strong> e não valem para o cliente nem para o fisco.';
+
+                            // Só aparece o caminho que faz sentido: quem já está
+                            // em produção não precisa de botão para ligá-la.
+                            if (btnLigar) { btnLigar.hidden = producao; }
+                            if (campoConf) { campoConf.hidden = producao; }
+                            if (btnDesligar) { btnDesligar.hidden = !producao; }
+
+                            const impedimentos = amb.impedimentos || [];
+                            if (!producao && impedimentos.length > 0) {
+                                ambImped.classList.remove('d-none');
+                                ambImped.textContent = 'Produção indisponível: ' + impedimentos.join(' ');
+                                if (btnLigar) { btnLigar.hidden = true; }
+                                if (campoConf) { campoConf.hidden = true; }
+                            }
+                        }
 
                         const c = dados.certificado || {};
                         if (c.usavel) {

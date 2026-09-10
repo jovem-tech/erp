@@ -672,6 +672,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/fiscal/documentos/{documento}/emitir', [DocumentoFiscalController::class, 'emitirPeloSistema'])
         ->middleware('desktop.permission:os,editar')
         ->name('fiscal.documentos.emitir');
+    Route::post('/fiscal/ambiente', [ConfigurationController::class, 'alterarAmbienteFiscal'])
+        ->middleware('desktop.permission:configuracoes,editar')
+        ->name('fiscal.ambiente.alterar');
     Route::post('/fiscal/os/{order}/documento-fiscal/novo', [DocumentoFiscalController::class, 'novoDocumento'])
         ->middleware('desktop.permission:os,editar')
         ->name('fiscal.documentos.novo');

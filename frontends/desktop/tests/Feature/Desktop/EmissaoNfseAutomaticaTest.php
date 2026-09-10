@@ -174,6 +174,54 @@ class EmissaoNfseAutomaticaTest extends TestCase
         $this->assertStringContainsString('Competencia encerrada', $erro);
     }
 
+    public function test_ligar_producao_exige_digitar_a_palavra(): void
+    {
+        // Um checkbox marcado por engano passa a valer para TODA emissao
+        // seguinte. Digitar obriga a saber o que se esta fazendo.
+        $this->fakeApi([]);
+
+        $this->withSession($this->desktopSession(['configuracoes' => ['editar']]))
+            ->post('/fiscal/ambiente', ['ambiente' => 1, 'confirmacao' => 'sim'])
+            ->assertRedirect(route('configurations.integrations.index'))
+            ->assertSessionHas('error');
+
+        Http::assertNotSent(fn (ClienteHttpRequest $r): bool => str_contains($r->url(), '/fiscal/ambiente'));
+    }
+
+    public function test_com_a_palavra_certa_a_producao_e_ligada(): void
+    {
+        $this->fakeApi(['fiscal/ambiente' => ['ambiente' => 1, 'rotulo' => 'Produção']]);
+
+        $this->withSession($this->desktopSession(['configuracoes' => ['editar']]))
+            ->post('/fiscal/ambiente', ['ambiente' => 1, 'confirmacao' => 'PRODUCAO'])
+            ->assertRedirect(route('configurations.integrations.index'))
+            ->assertSessionHas('success');
+
+        Http::assertSent(fn (ClienteHttpRequest $r): bool => str_contains($r->url(), '/fiscal/ambiente')
+            && $r->method() === 'POST');
+    }
+
+    public function test_voltar_para_homologacao_nao_pede_confirmacao(): void
+    {
+        // Reduzir risco tem de ser o caminho mais facil dos dois.
+        $this->fakeApi(['fiscal/ambiente' => ['ambiente' => 2, 'rotulo' => 'Homologação']]);
+
+        $this->withSession($this->desktopSession(['configuracoes' => ['editar']]))
+            ->post('/fiscal/ambiente', ['ambiente' => 2])
+            ->assertRedirect(route('configurations.integrations.index'))
+            ->assertSessionHas('success');
+    }
+
+    public function test_quem_nao_edita_configuracoes_nao_troca_o_ambiente(): void
+    {
+        $this->fakeApi([]);
+
+        $this->withSession($this->desktopSession(['os' => ['editar']]))
+            ->post('/fiscal/ambiente', ['ambiente' => 2])
+            ->assertRedirect()
+            ->assertSessionHas('error', 'Você não tem permissão para acessar este recurso.');
+    }
+
     /**
      * @param  array<string, array<string, mixed>>  $rotas
      */
