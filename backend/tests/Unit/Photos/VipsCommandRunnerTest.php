@@ -8,6 +8,28 @@ use Tests\TestCase;
 
 class VipsCommandRunnerTest extends TestCase
 {
+    public function test_thumbnail_cli_options_support_current_and_legacy_vips_names(): void
+    {
+        $runner = new VipsCommandRunner;
+        $outputOption = new ReflectionMethod(VipsCommandRunner::class, 'thumbnailOutputOptionForHelp');
+        $profileOption = new ReflectionMethod(VipsCommandRunner::class, 'thumbnailProfileOptionForHelp');
+
+        $currentHelp = <<<'TXT'
+            --path=FORMAT                 output to path FORMAT
+            --output-profile=PROFILE      export with PROFILE
+            TXT;
+
+        $legacyHelp = <<<'TXT'
+            -o, --output=FORMAT           output to FORMAT
+            -e, --export-profile=PROFILE  export with PROFILE
+            TXT;
+
+        $this->assertSame('--path', $outputOption->invoke($runner, $currentHelp));
+        $this->assertSame('--output-profile', $profileOption->invoke($runner, $currentHelp));
+        $this->assertSame('--output', $outputOption->invoke($runner, $legacyHelp));
+        $this->assertSame('--export-profile', $profileOption->invoke($runner, $legacyHelp));
+    }
+
     public function test_codec_process_environment_does_not_inherit_application_secrets(): void
     {
         $originalSecret = getenv('OPERATIONAL_PHOTO_TEST_SECRET');

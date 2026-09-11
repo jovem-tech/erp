@@ -13,6 +13,8 @@ class VipsCommandRunner
 
     private bool $preflightCompleted = false;
 
+    private ?string $thumbnailHelp = null;
+
     public function header(string $sourcePath): string
     {
         return $this->run([
@@ -39,9 +41,9 @@ class VipsCommandRunner
             $sourcePath,
             '--size',
             sprintf('%dx%d>', $maxDimension, $maxDimension),
-            '--output-profile',
+            $this->thumbnailProfileOption(),
             'srgb',
-            '--path',
+            $this->thumbnailOutputOption(),
             $targetPath.$options,
         ], $timeoutSeconds);
 
@@ -141,6 +143,59 @@ class VipsCommandRunner
         }
 
         return $resolved;
+    }
+
+    private function thumbnailOutputOption(): string
+    {
+        return $this->thumbnailOutputOptionForHelp($this->thumbnailHelp());
+    }
+
+    private function thumbnailProfileOption(): string
+    {
+        return $this->thumbnailProfileOptionForHelp($this->thumbnailHelp());
+    }
+
+    private function thumbnailHelp(): string
+    {
+        if ($this->thumbnailHelp === null) {
+            $this->thumbnailHelp = $this->run([$this->executable('thumbnail_binary'), '--help']);
+        }
+
+        return $this->thumbnailHelp;
+    }
+
+    private function thumbnailOutputOptionForHelp(string $help): string
+    {
+        if (str_contains($help, '--path=')) {
+            return '--path';
+        }
+
+        if (str_contains($help, '--output=')) {
+            return '--output';
+        }
+
+        throw new OperationalPhotoException(
+            'PHOTO_PROCESSOR_UNAVAILABLE',
+            'A versão do vipsthumbnail não expõe a opção de saída esperada.',
+            503,
+        );
+    }
+
+    private function thumbnailProfileOptionForHelp(string $help): string
+    {
+        if (str_contains($help, '--output-profile=')) {
+            return '--output-profile';
+        }
+
+        if (str_contains($help, '--export-profile=')) {
+            return '--export-profile';
+        }
+
+        throw new OperationalPhotoException(
+            'PHOTO_PROCESSOR_UNAVAILABLE',
+            'A versão do vipsthumbnail não expõe a opção de perfil de cor esperada.',
+            503,
+        );
     }
 
     /** @param list<string> $arguments */
