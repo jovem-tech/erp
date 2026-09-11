@@ -369,18 +369,21 @@ class OrderController extends DesktopController
     {
         $validated = $request->validate([
             'q' => ['nullable', 'string', 'max:120'],
+            'cliente_id' => ['nullable', 'integer', 'min:0'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:30'],
         ]);
         $page = max(1, (int) ($validated['page'] ?? 1));
         $perPage = max(1, min(30, (int) ($validated['per_page'] ?? 15)));
+        $clientId = max(0, (int) ($validated['cliente_id'] ?? 0));
 
         try {
-            $result = $this->orcamentoService->linkableForOrder([
+            $result = $this->orcamentoService->linkableForOrder(array_filter([
                 'q' => trim((string) ($validated['q'] ?? '')),
+                'cliente_id' => $clientId,
                 'page' => $page,
                 'per_page' => $perPage,
-            ]);
+            ], static fn ($value): bool => $value !== '' && $value !== 0));
         } catch (ApiAuthenticationException $exception) {
             return $this->jsonFailure($exception->getMessage(), 401);
         } catch (ApiAuthorizationException $exception) {
@@ -849,10 +852,10 @@ class OrderController extends DesktopController
                 'max:1000',
             ],
             'fotos' => ['nullable', 'array', 'max:4'],
-            'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'fotos.*' => ['file', 'max:20480'],
             // Fotos do equipamento novo capturado (criação diferida na abertura de OS).
             'novo_equipamento_fotos' => ['nullable', 'required_with:novo_equipamento', 'array', 'min:1', 'max:4'],
-            'novo_equipamento_fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'novo_equipamento_fotos.*' => ['file', 'max:20480'],
         ], $this->entryChecklistValidationMessages(), [
             'cliente_id' => 'cliente',
             'equipamento_id' => 'equipamento',
@@ -960,10 +963,23 @@ class OrderController extends DesktopController
         $orderData = $this->orderService->find($order);
         $clientId = (int) data_get($orderData, 'cliente_id', data_get($orderData, 'cliente.id', 0));
         $equipmentId = (int) data_get($orderData, 'equipamento_id', data_get($orderData, 'equipamento.id', 0));
+        $documentosFiscais = [];
+
+        // O backend fiscal continua sendo a autoridade. A tela apenas consulta
+        // documentos que ja existem, sem criar rascunho ao abrir a OS.
+        if (DesktopSession::can('fiscal', 'visualizar')) {
+            $documentosFiscais = $this->documentoFiscalService->listar([
+                'os_id' => $order,
+                'tipo' => 'nfse',
+                'status' => 'emitido,cancelado',
+                'per_page' => 100,
+            ])['items'];
+        }
 
         return view('orders.show', [
             'pageTitle' => 'Detalhe da OS',
             'order' => $orderData,
+            'documentosFiscais' => $documentosFiscais,
             'newOrderClientUrl' => $clientId > 0
                 ? route('orders.create', ['cliente_id' => $clientId])
                 : null,
@@ -1243,10 +1259,10 @@ class OrderController extends DesktopController
                 'max:1000',
             ],
             'fotos' => ['nullable', 'array', 'max:4'],
-            'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'fotos.*' => ['file', 'max:20480'],
             // Fotos do equipamento novo capturado (criação diferida na abertura de OS).
             'novo_equipamento_fotos' => ['nullable', 'array', 'max:4'],
-            'novo_equipamento_fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'novo_equipamento_fotos.*' => ['file', 'max:20480'],
         ], $this->entryChecklistValidationMessages(), [
             'cliente_id' => 'cliente',
             'equipamento_id' => 'equipamento',
@@ -1621,6 +1637,23 @@ class OrderController extends DesktopController
             'pageTitle' => 'Pré-visualização da OS',
             'order' => $this->orderService->find($order),
         ]);
+    }
+
+    /**
+     * Espelho completo da OS em PDF, aberto em nova aba pelo menu Imprimir.
+     *
+     * Só faz o proxy do PDF que o backend gera na hora — nada é gravado no
+     * acervo documental da OS.
+     */
+    public function printOrder(Request $request, int $order): Response
+    {
+        $format = strtolower(trim((string) $request->query('formato', 'a4')));
+        $format = in_array($format, ['a4', '80mm'], true) ? $format : 'a4';
+
+        $file = $this->orderService->printOrder($order, $format);
+
+        return response($file['body'], $file['status'])
+            ->withHeaders($file['headers']);
     }
 
     /**

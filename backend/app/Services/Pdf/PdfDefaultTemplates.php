@@ -26,6 +26,7 @@ class PdfDefaultTemplates
             'os_comprovante_entrega' => ['nome' => 'Comprovante de entrega', 'schema' => self::entrega()],
             'os_devolucao_sem_reparo' => ['nome' => 'Devolução sem reparo', 'schema' => self::devolucao()],
             'os_encerramento' => ['nome' => 'Comprovante de encerramento', 'schema' => self::encerramento()],
+            'os_completa' => ['nome' => 'Ordem de serviço completa', 'schema' => self::osCompleta()],
             'venda_comprovante' => ['nome' => 'Comprovante de venda', 'schema' => self::vendaComprovante()],
             'caixa_fechamento' => ['nome' => 'Fechamento de caixa', 'schema' => self::caixaFechamento()],
             'venda_devolucao' => ['nome' => 'Comprovante de devolucao', 'schema' => self::vendaDevolucao()],
@@ -381,6 +382,116 @@ class PdfDefaultTemplates
                 ['rotulo' => 'Status da OS', 'valor' => '{{ os.status }}'],
                 ['rotulo' => 'Valor final', 'valor' => '{{ os.valor_final | moeda }}'],
             ]],
+        ];
+    }
+
+    /**
+     * Espelho completo da OS — o documento do botão "Imprimir" da tela.
+     *
+     * Único tipo que junta tudo numa folha só: atendimento, cliente,
+     * equipamento, defeito/diagnóstico/solução, acessórios, checklist de
+     * entrada, itens com total, orçamento vinculado, fotos e histórico.
+     *
+     * No cupom de 80 mm sai a versão curta: checklist, tabela de itens do
+     * orçamento, fotos, histórico e assinatura ficam só no A4 — em papel
+     * térmico eles viram metros de bobina sem servir para nada.
+     *
+     * @return array<string, mixed>
+     */
+    private static function osCompleta(): array
+    {
+        return [
+            'versao_schema' => 1,
+            'pagina' => self::pagina(),
+            'cabecalho' => self::cabecalho(),
+            'corpo' => [
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Dados do atendimento'],
+                ['tipo' => 'grade_campos', 'colunas' => 2, 'campos' => [
+                    ['rotulo' => 'Status', 'valor' => '{{ os.status }}'],
+                    ['rotulo' => 'Prioridade', 'valor' => '{{ os.prioridade }}'],
+                    ['rotulo' => 'Abertura', 'valor' => '{{ os.data_abertura | data_hora }}'],
+                    ['rotulo' => 'Previsão de entrega', 'valor' => '{{ os.data_previsao | data }}'],
+                    ['rotulo' => 'Entrega', 'valor' => '{{ os.data_entrega | data_hora }}'],
+                    ['rotulo' => 'Técnico responsável', 'valor' => '{{ os.tecnico_nome }}'],
+                ]],
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Cliente'],
+                ['tipo' => 'grade_campos', 'colunas' => 2, 'campos' => [
+                    ['rotulo' => 'Nome', 'valor' => '{{ cliente.nome }}'],
+                    ['rotulo' => 'CPF/CNPJ', 'valor' => '{{ cliente.documento | documento }}'],
+                    ['rotulo' => 'Telefone', 'valor' => '{{ cliente.telefone | telefone }}'],
+                    ['rotulo' => 'E-mail', 'valor' => '{{ cliente.email }}'],
+                    ['rotulo' => 'Endereço', 'valor' => '{{ cliente.endereco }}'],
+                ]],
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Equipamento'],
+                ['tipo' => 'grade_campos', 'colunas' => 2, 'campos' => [
+                    ['rotulo' => 'Equipamento', 'valor' => '{{ equipamento.descricao }}'],
+                    ['rotulo' => 'Nº de série', 'valor' => '{{ equipamento.serie }}'],
+                    ['rotulo' => 'Tipo', 'valor' => '{{ equipamento.tipo }}'],
+                    ['rotulo' => 'Marca', 'valor' => '{{ equipamento.marca }}'],
+                    ['rotulo' => 'Modelo', 'valor' => '{{ equipamento.modelo }}'],
+                ]],
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Defeito relatado'],
+                ['tipo' => 'paragrafo', 'texto' => '{{ os.relato_cliente }}'],
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Diagnóstico técnico'],
+                ['tipo' => 'paragrafo', 'texto' => '{{ os.diagnostico_tecnico }}'],
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Solução aplicada'],
+                ['tipo' => 'paragrafo', 'texto' => '{{ os.solucao_aplicada }}'],
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Acessórios recebidos'],
+                ['tipo' => 'texto_rico', 'html' => '{{ os.acessorios_html }}'],
+                ['tipo' => 'cabecalho_secao', 'visivel_em' => ['a4'], 'texto' => 'Checklist de entrada'],
+                ['tipo' => 'tabela', 'visivel_em' => ['a4'], 'fonte' => 'estado_fisico', 'vazio_texto' => 'Checklist de entrada não registrado.', 'colunas' => [
+                    ['campo' => 'item', 'rotulo' => 'Item', 'largura' => 30],
+                    ['campo' => 'status', 'rotulo' => 'Estado', 'largura' => 20],
+                    ['campo' => 'observacao', 'rotulo' => 'Observação'],
+                ]],
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Itens e serviços'],
+                ['tipo' => 'tabela', 'fonte' => 'itens', 'vazio_texto' => 'Nenhum item lançado na OS.', 'colunas' => [
+                    ['campo' => 'descricao', 'rotulo' => 'Descrição'],
+                    ['campo' => 'quantidade', 'rotulo' => 'Qtd', 'formato' => 'inteiro', 'alinhamento' => 'centro', 'largura' => 8],
+                    ['campo' => 'valor_unitario', 'rotulo' => 'Unit.', 'formato' => 'moeda', 'alinhamento' => 'direita', 'largura' => 16],
+                    ['campo' => 'valor_total', 'rotulo' => 'Total', 'formato' => 'moeda', 'alinhamento' => 'direita', 'largura' => 16],
+                ]],
+                ['tipo' => 'tabela_totais', 'linhas' => [
+                    ['rotulo' => 'VALOR FINAL DA OS', 'variavel' => 'os.valor_final', 'formato' => 'moeda', 'destaque' => true],
+                ]],
+                ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.numero', 'operador' => 'preenchido'], 'blocos' => [
+                    ['tipo' => 'cabecalho_secao', 'texto' => 'Orçamento vinculado'],
+                    ['tipo' => 'grade_campos', 'colunas' => 2, 'campos' => [
+                        ['rotulo' => 'Número', 'valor' => '{{ orcamento.numero }}'],
+                        ['rotulo' => 'Situação', 'valor' => '{{ orcamento.status }}'],
+                        ['rotulo' => 'Validade', 'valor' => '{{ orcamento.validade_data | data }}'],
+                        ['rotulo' => 'Total do orçamento', 'valor' => '{{ orcamento.total | moeda }}'],
+                    ]],
+                    ['tipo' => 'tabela', 'visivel_em' => ['a4'], 'fonte' => 'orcamento_itens', 'vazio_texto' => 'Orçamento sem itens detalhados.', 'colunas' => [
+                        ['campo' => 'descricao', 'rotulo' => 'Descrição'],
+                        ['campo' => 'quantidade', 'rotulo' => 'Qtd', 'alinhamento' => 'centro', 'largura' => 8],
+                        ['campo' => 'valor_unitario', 'rotulo' => 'Unit.', 'formato' => 'moeda', 'alinhamento' => 'direita', 'largura' => 16],
+                        ['campo' => 'valor_total', 'rotulo' => 'Total', 'formato' => 'moeda', 'alinhamento' => 'direita', 'largura' => 16],
+                    ]],
+                ]],
+                ['tipo' => 'condicional', 'se' => ['variavel' => 'os.garantia_dias', 'operador' => 'preenchido'], 'blocos' => [
+                    ['tipo' => 'condicional', 'se' => ['variavel' => 'os.garantia_validade', 'operador' => 'preenchido'], 'blocos' => [
+                        ['tipo' => 'observacoes', 'texto' => 'Garantia: {{ os.garantia_prazo }}, válida até {{ os.garantia_validade | data }}.'],
+                    ]],
+                    // Prazo cadastrado sem data de validade calculada — sem
+                    // este ramo o papel saía com um "válida até ." pendurado.
+                    ['tipo' => 'condicional', 'se' => ['variavel' => 'os.garantia_validade', 'operador' => 'vazio'], 'blocos' => [
+                        ['tipo' => 'observacoes', 'texto' => 'Garantia: {{ os.garantia_prazo }} a partir da entrega do equipamento.'],
+                    ]],
+                ]],
+                ['tipo' => 'condicional', 'visivel_em' => ['a4'], 'se' => ['variavel' => 'os.fotos_quantidade', 'operador' => 'diferente', 'valor' => '0'], 'blocos' => [
+                    ['tipo' => 'cabecalho_secao', 'texto' => 'Fotos da OS'],
+                    ['tipo' => 'fotos_entrada'],
+                ]],
+                ['tipo' => 'cabecalho_secao', 'visivel_em' => ['a4'], 'texto' => 'Histórico do atendimento'],
+                ['tipo' => 'tabela', 'visivel_em' => ['a4'], 'fonte' => 'historico', 'vazio_texto' => 'Sem eventos registrados.', 'colunas' => [
+                    ['campo' => 'data', 'rotulo' => 'Data', 'formato' => 'data_hora', 'largura' => 22],
+                    ['campo' => 'evento', 'rotulo' => 'Evento'],
+                    ['campo' => 'autor', 'rotulo' => 'Responsável', 'largura' => 24],
+                ]],
+                ['tipo' => 'assinatura', 'visivel_em' => ['a4'], 'rotulos' => ['{{ cliente.nome }} - Cliente', '{{ os.tecnico_nome }} - Técnico responsável'], 'linha_data' => true],
+            ],
+            'rodape' => self::rodape(),
         ];
     }
 

@@ -4,10 +4,13 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Models\EquipmentType;
 use App\Models\EstoqueCategoria;
+use App\Models\EstoqueReserva;
 use App\Models\EstoqueSubcategoria;
 use App\Models\Movimentacao;
 use App\Models\Peca;
 use App\Models\User;
+use App\Services\Estoque\EstoqueMovimentacaoService;
+use App\Services\Estoque\SaldoInsuficienteException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
@@ -18,6 +21,13 @@ use Throwable;
 
 class EstoqueController extends BaseApiController
 {
+    public function __construct(
+        // specs/040: `storeMovement()` era a quarta porta de escrita de saldo,
+        // e a unica sem lock. Agora entrada/saida passam pelo motor unico.
+        private readonly EstoqueMovimentacaoService $estoqueMovimentacaoService,
+    ) {
+    }
+
     /**
      * Colunas novas (`grupo`/`estoque_categoria`/`estoque_subcategoria`) vão
      * ao final, opcionais no import — casadas por nome contra a árvore ativa;
@@ -171,6 +181,121 @@ class EstoqueController extends BaseApiController
         ], request: $request);
     }
 
+    /**
+     * Pecas a comprar (specs/040).
+     *
+     * Consolida, sobre TODOS os orcamentos com reserva ativa, o que foi
+     * prometido ao cliente e nao existe na gaveta. E a outra metade do pedido
+     * do dono: "deve haver um jeito de saber se a peca esta disponivel no
+     * estoque ou precisa ser adquirida, encomendada".
+     *
+     * A conta e por peca e nao por orcamento de proposito — quem vai comprar
+     * precisa de UMA linha por peca com o total a adquirir, nao de N linhas
+     * para somar na mao.
+     */
+    public function toBuy(Request $request): JsonResponse
+    {
+        $this->authorize('estoque:visualizar');
+
+        $reservas = EstoqueReserva::query()
+            ->where('status', EstoqueReserva::STATUS_ATIVA)
+            ->selectRaw('peca_id, COALESCE(SUM(quantidade - quantidade_consumida), 0) as reservado')
+            ->groupBy('peca_id')
+            ->get()
+            ->mapWithKeys(static fn ($linha): array => [(int) $linha->peca_id => (float) $linha->reservado])
+            ->all();
+
+        if ($reservas === []) {
+            return $this->success(['pecas' => [], 'total_itens' => 0], request: $request);
+        }
+
+        $pecas = Peca::query()
+            ->whereIn('id', array_keys($reservas))
+            ->get()
+            ->keyBy('id');
+
+        // Quem segura cada peca: o operador precisa saber de qual cliente e de
+        // qual aparelho e a promessa antes de decidir a compra.
+        $porPeca = EstoqueReserva::query()
+            ->where('estoque_reservas.status', EstoqueReserva::STATUS_ATIVA)
+            ->whereIn('estoque_reservas.peca_id', array_keys($reservas))
+            ->leftJoin('orcamentos', 'orcamentos.id', '=', 'estoque_reservas.orcamento_id')
+            ->leftJoin('clientes', 'clientes.id', '=', 'orcamentos.cliente_id')
+            ->orderBy('estoque_reservas.peca_id')
+            ->orderBy('estoque_reservas.id')
+            ->get([
+                'estoque_reservas.peca_id',
+                'estoque_reservas.orcamento_id',
+                'estoque_reservas.os_id',
+                'estoque_reservas.quantidade',
+                'estoque_reservas.quantidade_consumida',
+                'estoque_reservas.expira_em',
+                'orcamentos.numero as orcamento_numero',
+                'orcamentos.status as orcamento_status',
+                'orcamentos.cliente_nome_avulso',
+                'clientes.nome_razao as cliente_nome',
+            ])
+            ->groupBy(static fn ($linha): int => (int) $linha->peca_id);
+
+        $itens = [];
+
+        foreach ($reservas as $pecaId => $reservado) {
+            $peca = $pecas->get($pecaId);
+
+            if (! $peca instanceof Peca) {
+                continue;
+            }
+
+            $saldo = round((float) ($peca->quantidade_atual ?? 0), 4);
+            $falta = round($reservado - $saldo, 4);
+
+            // Prometido dentro do que existe na gaveta nao e' compra.
+            if ($falta <= 0) {
+                continue;
+            }
+
+            $itens[] = [
+                'peca_id' => (int) $peca->id,
+                'codigo' => (string) ($peca->codigo ?? ''),
+                'nome' => (string) ($peca->nome ?? ''),
+                'unidade' => (string) ($peca->unidade ?? 'UN'),
+                'fornecedor' => (string) ($peca->fornecedor ?? ''),
+                'localizacao' => (string) ($peca->localizacao ?? ''),
+                'preco_custo' => (float) ($peca->preco_custo ?? 0),
+                'quantidade_atual' => $saldo,
+                'reservado' => round($reservado, 4),
+                'falta' => $falta,
+                // Custo estimado da compra, para o operador priorizar.
+                'custo_estimado' => round($falta * (float) ($peca->preco_custo ?? 0), 2),
+                'orcamentos' => $porPeca->get($pecaId, collect())
+                    ->map(static fn ($linha): array => [
+                        'orcamento_id' => (int) $linha->orcamento_id,
+                        'numero' => (string) ($linha->orcamento_numero ?? ''),
+                        'status' => (string) ($linha->orcamento_status ?? ''),
+                        'os_id' => $linha->os_id !== null ? (int) $linha->os_id : null,
+                        'cliente' => (string) ($linha->cliente_nome ?: $linha->cliente_nome_avulso ?: ''),
+                        'quantidade' => round(
+                            (float) $linha->quantidade - (float) $linha->quantidade_consumida,
+                            4
+                        ),
+                        'expira_em' => $linha->expira_em !== null
+                            ? Carbon::parse((string) $linha->expira_em)->toIso8601String()
+                            : null,
+                    ])
+                    ->values()
+                    ->all(),
+            ];
+        }
+
+        // Maior falta primeiro: e a peca que trava mais promessa.
+        usort($itens, static fn (array $a, array $b): int => $b['falta'] <=> $a['falta']);
+
+        return $this->success([
+            'pecas' => $itens,
+            'total_itens' => count($itens),
+        ], request: $request);
+    }
+
     public function movements(Request $request, int $peca): JsonResponse
     {
         $this->authorize('estoque:visualizar');
@@ -244,32 +369,86 @@ class EstoqueController extends BaseApiController
             'os_id' => ['nullable', 'integer', 'exists:os,id'],
         ]);
 
-        $newQuantity = (float) ($part->quantidade_atual ?? 0);
         $quantity = round((float) $validated['quantidade'], 4);
+        $tipo = (string) $validated['tipo'];
+        $permitirNegativo = $request->boolean('confirmar_saldo_negativo');
 
-        if ($validated['tipo'] === 'entrada') {
-            $newQuantity += $quantity;
-        } elseif ($validated['tipo'] === 'saida') {
-            $newQuantity -= $quantity;
-        } else {
-            $newQuantity = $quantity;
+        // specs/040 — este metodo era a QUARTA porta de escrita de saldo, e a
+        // unica ainda sem lock: lia `quantidade_atual`, calculava em PHP e
+        // gravava de volta, truncando em zero em silencio. Enquanto ele
+        // existisse assim, qualquer reserva era furavel por uma movimentacao
+        // manual. `entrada`/`saida` passam a ir pelo motor unico, que confere o
+        // DISPONIVEL (saldo menos reservado) e trava as linhas em ordem.
+        if ($tipo !== 'ajuste') {
+            try {
+                $this->estoqueMovimentacaoService->registrarLote(
+                    [[
+                        'peca_id' => (int) $part->id,
+                        'quantidade' => $quantity,
+                        'os_id' => isset($validated['os_id']) ? (int) $validated['os_id'] : null,
+                        'motivo' => $validated['motivo'] ?? null,
+                    ]],
+                    [
+                        'tipo' => $tipo,
+                        'motivo' => (string) ($validated['motivo'] ?? ''),
+                        'responsavel_id' => (int) $request->user()->id,
+                    ],
+                    $permitirNegativo
+                );
+            } catch (SaldoInsuficienteException $exception) {
+                return $this->error(
+                    $exception->getMessage(),
+                    422,
+                    'ESTOQUE_INSUFICIENTE',
+                    ['itens' => $exception->faltas()],
+                    request: $request
+                );
+            }
+
+            return $this->success([
+                'peca' => $this->mapPecaDetail($part->fresh() ?? $part),
+            ], request: $request);
         }
 
-        $newQuantity = round(max(0, $newQuantity), 4);
+        // `ajuste` fixa o saldo num valor absoluto — o motor nao suporta isso
+        // (ele so soma e subtrai) e a contagem de inventario e da 036. Fica
+        // aqui, mas nao pode mais atropelar reserva: contar 2 numa peca com 5
+        // prometidos deixaria promessa sem lastro.
+        $reservado = (float) ($part->quantidade_reservada ?? 0);
 
-        DB::transaction(static function () use ($part, $validated, $newQuantity, $request): void {
+        if ($quantity < $reservado && ! $permitirNegativo) {
+            return $this->error(
+                sprintf(
+                    'Esta peça tem %s reservada(s) para orçamento. Ajustar o saldo para %s deixaria reserva sem lastro.',
+                    rtrim(rtrim(number_format($reservado, 4, ',', '.'), '0'), ','),
+                    rtrim(rtrim(number_format($quantity, 4, ',', '.'), '0'), ',')
+                ),
+                422,
+                'ESTOQUE_AJUSTE_ABAIXO_DA_RESERVA',
+                ['itens' => [[
+                    'peca_id' => (int) $part->id,
+                    'codigo' => (string) ($part->codigo ?? ''),
+                    'nome' => (string) ($part->nome ?? ''),
+                    'disponivel' => $reservado,
+                    'solicitado' => $quantity,
+                ]]],
+                request: $request
+            );
+        }
+
+        DB::transaction(static function () use ($part, $validated, $quantity, $request): void {
             Movimentacao::query()->create([
                 'peca_id' => (int) $part->id,
                 'os_id' => isset($validated['os_id']) ? (int) $validated['os_id'] : null,
-                'tipo' => (string) $validated['tipo'],
-                'quantidade' => round((float) $validated['quantidade'], 4),
+                'tipo' => 'ajuste',
+                'quantidade' => $quantity,
                 'motivo' => $validated['motivo'] ?? null,
                 'responsavel_id' => (int) $request->user()->id,
                 'created_at' => now(),
             ]);
 
             $part->forceFill([
-                'quantidade_atual' => $newQuantity,
+                'quantidade_atual' => $quantity,
                 'updated_at' => now(),
             ])->save();
         });
@@ -306,7 +485,22 @@ class EstoqueController extends BaseApiController
             );
         }
 
-        $part->fill($this->validatedPayload($request, false));
+        // specs/040: saldo nao se edita por formulario de cadastro — se
+        // editasse, qualquer PATCH passaria por cima de uma reserva ativa e a
+        // reserva viraria teatro. Recusa explicita, e nao omissao silenciosa,
+        // pelo mesmo motivo que a 039 recusa `itens_estoque` no update: o
+        // cliente precisa saber que o campo foi ignorado.
+        if ($request->has('quantidade_atual')) {
+            return $this->error(
+                'A quantidade em estoque não pode ser alterada pelo cadastro da peça. Use a movimentação de estoque (entrada, saída ou ajuste).',
+                422,
+                'PART_QUANTITY_IMMUTABLE',
+                ['quantidade_atual' => ['Ajuste o saldo por movimentação de estoque.']],
+                request: $request
+            );
+        }
+
+        $part->fill($this->validatedPayload($request, false, false));
         $part->save();
 
         return $this->success([
@@ -461,7 +655,7 @@ class EstoqueController extends BaseApiController
     /**
      * @return array<string, mixed>
      */
-    private function validatedPayload(Request $request, bool $includeCode = false): array
+    private function validatedPayload(Request $request, bool $includeCode = false, bool $aceitaQuantidade = true): array
     {
         $rules = [
             'codigo_fabricante' => ['nullable', 'string', 'max:120'],
@@ -532,7 +726,12 @@ class EstoqueController extends BaseApiController
         $payload['localizacao'] = $this->normalizeText($validated['localizacao'] ?? null);
         $payload['preco_custo'] = $this->normalizeDecimal($validated['preco_custo'] ?? 0);
         $payload['preco_venda'] = $this->normalizeDecimal($validated['preco_venda'] ?? 0);
-        $payload['quantidade_atual'] = round((float) ($validated['quantidade_atual'] ?? 0), 4);
+        // specs/040: na EDICAO a chave nem entra no payload. Nao e so a reserva
+        // que isso protege — a regra era `nullable` com `?? 0`, entao um PATCH
+        // que apenas OMITISSE o campo zerava o saldo da peca em silencio.
+        if ($aceitaQuantidade) {
+            $payload['quantidade_atual'] = round((float) ($validated['quantidade_atual'] ?? 0), 4);
+        }
         $payload['estoque_minimo'] = round((float) ($validated['estoque_minimo'] ?? 0), 4);
         $payload['estoque_maximo'] = round((float) ($validated['estoque_maximo'] ?? 0), 4);
         $payload['observacoes'] = $this->normalizeText($validated['observacoes'] ?? null);
@@ -653,6 +852,13 @@ class EstoqueController extends BaseApiController
             // float, nao int: DECIMAL(14,4) desde 2026_08_27_000001. Truncar
             // aqui devolveria 1 para um saldo real de 1,25.
             'quantidade_atual' => (float) ($peca->quantidade_atual ?? 0),
+            // specs/040: o que o operador precisa ver e o DISPONIVEL — o saldo
+            // bruto menos o que ja esta prometido a algum orcamento enviado.
+            'quantidade_reservada' => (float) ($peca->quantidade_reservada ?? 0),
+            'quantidade_disponivel' => round(
+                (float) ($peca->quantidade_atual ?? 0) - (float) ($peca->quantidade_reservada ?? 0),
+                4
+            ),
             'estoque_minimo' => (float) ($peca->estoque_minimo ?? 0),
             'estoque_maximo' => (float) ($peca->estoque_maximo ?? 0),
             'ativo' => (bool) ($peca->ativo ?? false),

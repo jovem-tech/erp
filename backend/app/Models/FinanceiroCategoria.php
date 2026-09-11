@@ -27,6 +27,27 @@ class FinanceiroCategoria extends Model
         'updated_at' => 'datetime',
     ];
 
+    /**
+     * Acha a categoria do catálogo pelo nome digitado no lançamento.
+     *
+     * O match é case-insensitive porque o nome viaja como texto livre no
+     * payload; `tipo` aceita também `ambos`, que serve aos dois lados.
+     */
+    public static function matchByNome(string $nome, string $tipo): ?self
+    {
+        $nome = trim($nome);
+
+        if ($nome === '') {
+            return null;
+        }
+
+        return static::query()
+            ->whereRaw('LOWER(nome) = ?', [mb_strtolower($nome, 'UTF-8')])
+            ->whereIn('tipo', array_filter([$tipo, self::TIPO_AMBOS]))
+            ->with(['dre_grupo', 'dre_subgrupo'])
+            ->first();
+    }
+
     public function dre_grupo(): BelongsTo
     {
         return $this->belongsTo(FinanceiroDreGrupo::class, 'dre_grupo_id', 'id');

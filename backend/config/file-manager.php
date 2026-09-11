@@ -11,11 +11,15 @@ $hybridWriteCategories = array_values(array_filter(array_map(
         'company_login_background,company_logo'
     ))
 )));
+$authoritativeCategories = array_values(array_filter(array_map(
+    static fn (string $category): string => trim($category),
+    explode(',', (string) env('FILE_MANAGER_AUTHORITATIVE_CATEGORIES', 'financeiro_anexo'))
+)));
 $automaticSyncRoots = array_values(array_unique(array_filter(array_map(
     static fn (string $root): string => trim($root),
     explode(',', (string) env(
         'FILE_MANAGER_AUTOMATIC_SYNC_ROOTS',
-        'branding,equipment_photos,order_photos,order_files,budget_documents,signatures,chat,legacy_equipment_profiles,legacy_equipment_files,legacy_order_anomalies,legacy_order_state,legacy_order_accessories,legacy_order_checklists,legacy_order_documents,legacy_budgets,legacy_chat,legacy_whatsapp,legacy_users,legacy_system'
+        'branding,equipment_photos,order_photos,order_files,budget_documents,signatures,financeiro_anexos,chat,legacy_equipment_profiles,legacy_equipment_files,legacy_order_anomalies,legacy_order_state,legacy_order_accessories,legacy_order_checklists,legacy_order_documents,legacy_budgets,legacy_chat,legacy_whatsapp,legacy_users,legacy_system'
     ))
 ))));
 
@@ -23,6 +27,7 @@ return [
     'mode' => env('FILE_MANAGER_MODE', 'off'),
     'enabled_categories' => $enabledCategories,
     'hybrid_write_categories' => $hybridWriteCategories,
+    'authoritative_categories' => $authoritativeCategories,
     'storage' => [
         'disk' => env('FILE_MANAGER_DISK', 'local'),
         'root' => 'managed-files',
@@ -84,6 +89,7 @@ return [
             'signatures' => ['disk' => 'local', 'path' => 'private/assinaturas'],
             'user_profile_photos' => ['disk' => 'local', 'path' => 'private/usuarios'],
             'fiscal_documents' => ['disk' => 'local', 'path' => 'private/fiscal'],
+            'financeiro_anexos' => ['disk' => 'local', 'path' => 'private/financeiro'],
             'chat' => ['disk' => 'local', 'path' => 'chat-media'],
             'legacy_equipment_profiles' => ['disk' => 'legacy_public', 'path' => 'uploads/equipamentos_perfil'],
             'legacy_equipment_files' => ['disk' => 'legacy_public', 'path' => 'uploads/equipamentos'],
@@ -106,6 +112,7 @@ return [
         'scan_limit_per_root' => max(1, min(100_000, (int) env('FILE_MANAGER_AUTOMATIC_SYNC_SCAN_LIMIT', 10_000))),
         'catalog_limit_per_root' => max(1, min(10_000, (int) env('FILE_MANAGER_AUTOMATIC_SYNC_CATALOG_LIMIT', 10_000))),
         'domain_link_limit' => max(1, min(100_000, (int) env('FILE_MANAGER_AUTOMATIC_SYNC_DOMAIN_LINK_LIMIT', 10_000))),
+        'financeiro_anexo_limit' => max(1, min(10_000, (int) env('FILE_MANAGER_AUTOMATIC_SYNC_FINANCEIRO_ANEXO_LIMIT', 1_000))),
         'max_depth' => max(1, min(64, (int) env('FILE_MANAGER_AUTOMATIC_SYNC_MAX_DEPTH', 12))),
         'lock_seconds' => max(60, min(3600, (int) env('FILE_MANAGER_AUTOMATIC_SYNC_LOCK_SECONDS', 3600))),
     ],
@@ -118,6 +125,7 @@ return [
         'user_signature',
         'chat_message',
         'chat_attachment',
+        'financeiro',
     ],
     'policies' => [
         'company_login_background' => [
@@ -144,8 +152,9 @@ return [
                 'image/jpeg' => ['jpg', 'jpeg'],
                 'image/png' => ['png'],
                 'image/webp' => ['webp'],
+                'image/avif' => ['avif'],
             ],
-            'inline_mime_types' => ['image/jpeg', 'image/png', 'image/webp'],
+            'inline_mime_types' => ['image/jpeg', 'image/png', 'image/webp', 'image/avif'],
         ],
         'order_photo' => [
             'max_bytes' => 4 * 1024 * 1024,
@@ -153,8 +162,9 @@ return [
                 'image/jpeg' => ['jpg', 'jpeg'],
                 'image/png' => ['png'],
                 'image/webp' => ['webp'],
+                'image/avif' => ['avif'],
             ],
-            'inline_mime_types' => ['image/jpeg', 'image/png', 'image/webp'],
+            'inline_mime_types' => ['image/jpeg', 'image/png', 'image/webp', 'image/avif'],
         ],
         'order_pdf' => [
             'max_bytes' => 50 * 1024 * 1024,
@@ -198,6 +208,16 @@ return [
             'max_bytes' => 25 * 1024 * 1024,
             'mime_extensions' => config('chat.attachments.allowed_mime_extensions', []),
             'inline_mime_types' => config('chat.attachments.inline_mime_types', []),
+        ],
+        'financeiro_anexo' => [
+            'max_bytes' => 20 * 1024 * 1024,
+            'mime_extensions' => [
+                'application/pdf' => ['pdf'],
+                'image/jpeg' => ['jpg', 'jpeg'],
+                'image/png' => ['png'],
+                'image/webp' => ['webp'],
+            ],
+            'inline_mime_types' => ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'],
         ],
     ],
 ];

@@ -14,6 +14,7 @@ Este diretório concentra a documentação técnica do backend central Laravel, 
 - [Idempotência e confirmação segura na criação de OS](idempotencia-criacao-os.md)
 - [Inventário de arquivos funcionais](inventario-arquivos-funcionais.md)
 - [Mapa completo de migração e limpeza do frontend sistema-hml](mapa-migracao-legado-frontend-sistema-hml.md)
+- [Otimização de fotos operacionais](otimizacao-fotos-operacionais.md)
 - [Fluxo de OS mobile](ordens-mobile.md)
 
 ## O que estas fases entregam

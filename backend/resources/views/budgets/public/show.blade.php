@@ -8,6 +8,10 @@
         'rejeitado' => 'status-rejected',
         default => 'status-pending',
     };
+    // O flash 'success' tambem cobre rejeicao bem-sucedida (redirectWithResult
+    // usa o mesmo tipo pra ambas as acoes). So dispara confete quando o flash
+    // veio acompanhado do status ja aprovado.
+    $showConfetti = is_string($flashSuccess) && $flashSuccess !== '' && $statusClass === 'status-approved';
 @endphp
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -576,6 +580,79 @@
             </aside>
         </section>
     </main>
+    @if ($showConfetti)
+        <canvas id="confetti-canvas" aria-hidden="true" style="position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:9999;"></canvas>
+        <script>
+            (function () {
+                if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                    return;
+                }
+
+                var canvas = document.getElementById('confetti-canvas');
+                var ctx = canvas.getContext('2d');
+                var cores = ['#3868b0', '#15803d', '#f59e0b', '#dc2626', '#6f5afc'];
+                var duracaoMs = 3200;
+                var inicio = null;
+                var particulas = [];
+
+                function redimensionar() {
+                    canvas.width = window.innerWidth;
+                    canvas.height = window.innerHeight;
+                }
+
+                function criarParticulas(qtd) {
+                    for (var i = 0; i < qtd; i++) {
+                        particulas.push({
+                            x: Math.random() * canvas.width,
+                            y: -20 - Math.random() * canvas.height * 0.3,
+                            largura: 6 + Math.random() * 6,
+                            altura: 8 + Math.random() * 8,
+                            cor: cores[Math.floor(Math.random() * cores.length)],
+                            velocidadeY: 2 + Math.random() * 3,
+                            velocidadeX: -1.5 + Math.random() * 3,
+                            angulo: Math.random() * Math.PI,
+                            velocidadeAngulo: -0.2 + Math.random() * 0.4,
+                        });
+                    }
+                }
+
+                function passo(agora) {
+                    if (inicio === null) {
+                        inicio = agora;
+                    }
+                    var decorrido = agora - inicio;
+
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+                    for (var i = 0; i < particulas.length; i++) {
+                        var p = particulas[i];
+                        p.x += p.velocidadeX;
+                        p.y += p.velocidadeY;
+                        p.angulo += p.velocidadeAngulo;
+
+                        ctx.save();
+                        ctx.translate(p.x, p.y);
+                        ctx.rotate(p.angulo);
+                        ctx.fillStyle = p.cor;
+                        ctx.fillRect(-p.largura / 2, -p.altura / 2, p.largura, p.altura);
+                        ctx.restore();
+                    }
+
+                    if (decorrido < duracaoMs) {
+                        window.requestAnimationFrame(passo);
+                    } else {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        canvas.remove();
+                    }
+                }
+
+                redimensionar();
+                window.addEventListener('resize', redimensionar);
+                criarParticulas(160);
+                window.requestAnimationFrame(passo);
+            })();
+        </script>
+    @endif
     <script>
         (function () {
             var botoes = document.querySelectorAll('[data-copy]');

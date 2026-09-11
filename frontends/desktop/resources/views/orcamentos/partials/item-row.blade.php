@@ -103,10 +103,23 @@
                         class="form-select"
                         data-budget-item-reference
                         data-selected-reference="{{ $field('referencia_id') }}"
+                        {{-- specs/040: com busca remota o catálogo pré-carregado
+                             pode não conter a peça já salva (são só as 80
+                             primeiras). O rótulo vem do snapshot de descrição
+                             gravado no próprio item, senão o orçamento abriria
+                             com a referência em branco. --}}
+                        data-selected-label="{{ $field('descricao') }}"
                         @disabled($lockedForConvertedEdit)
                     >
                         <option value="">Selecione</option>
                     </select>
+                    {{-- specs/040: "esta peça está na gaveta ou precisa ser
+                         encomendada?". O JS preenche a partir do saldo que vem
+                         com a peça (catálogo ou busca remota); em serviço o
+                         bloco fica oculto. Sem `class=` fixo na mesma tag do
+                         @class() — dois atributos class e o navegador ignora o
+                         segundo. --}}
+                    <small data-budget-item-stock class="d-block mt-1" hidden></small>
                 </div>
 
                 <div class="budget-item-field budget-item-field-description">

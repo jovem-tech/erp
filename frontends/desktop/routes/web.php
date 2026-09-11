@@ -15,9 +15,11 @@ use App\Http\Controllers\ConfigurationController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DefectController;
 use App\Http\Controllers\DevolucaoController;
+use App\Http\Controllers\EquipmentCatalogController;
 use App\Http\Controllers\EquipmentController;
 use App\Http\Controllers\FavoriteController;
 use App\Http\Controllers\FileManagerController;
+use App\Http\Controllers\FinanceiroAnexoController;
 use App\Http\Controllers\FinanceiroCartaoController;
 use App\Http\Controllers\FinanceiroCartaoCreditoController;
 use App\Http\Controllers\FinanceiroCatalogController;
@@ -320,6 +322,11 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/orcamentos/clientes/buscar', [OrcamentoController::class, 'searchClients'])
         ->middleware('desktop.permission:orcamentos,criar|editar')
         ->name('orcamentos.clients.search');
+    // specs/040: busca remota de peca, com saldo/reservado/disponivel. Rota
+    // literal, antes de /orcamentos/{id}.
+    Route::get('/orcamentos/pecas/buscar', [OrcamentoController::class, 'searchParts'])
+        ->middleware('desktop.permission:orcamentos,criar|editar')
+        ->name('orcamentos.parts.search');
     Route::get('/orcamentos/cliente-contexto', [OrcamentoController::class, 'clientContext'])
         ->middleware('desktop.permission:orcamentos,criar|editar')
         ->name('orcamentos.client_context');
@@ -489,6 +496,9 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/os/{order}/preview', [OrderController::class, 'preview'])
         ->middleware('desktop.permission:os,visualizar')
         ->name('orders.preview');
+    Route::get('/os/{order}/imprimir', [OrderController::class, 'printOrder'])
+        ->middleware('desktop.permission:os,visualizar')
+        ->name('orders.print');
     Route::get('/os', [OrderController::class, 'index'])
         ->middleware('desktop.permission:os,visualizar')
         ->name('orders.index');
@@ -954,6 +964,18 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/financeiro/{financeiro}/cancelar', [FinanceiroController::class, 'cancel'])
         ->middleware('desktop.permission:financeiro,editar')
         ->name('financeiro.cancel');
+    Route::get('/financeiro/{financeiro}/anexos', [FinanceiroAnexoController::class, 'index'])
+        ->middleware('desktop.permission:financeiro,visualizar')
+        ->name('financeiro.anexos.index');
+    Route::post('/financeiro/{financeiro}/anexos', [FinanceiroAnexoController::class, 'store'])
+        ->middleware('desktop.permission:financeiro,editar')
+        ->name('financeiro.anexos.store');
+    Route::get('/financeiro/{financeiro}/anexos/{anexo}/download', [FinanceiroAnexoController::class, 'download'])
+        ->middleware('desktop.permission:financeiro,visualizar')
+        ->name('financeiro.anexos.download');
+    Route::delete('/financeiro/{financeiro}/anexos/{anexo}', [FinanceiroAnexoController::class, 'destroy'])
+        ->middleware('desktop.permission:financeiro,editar')
+        ->name('financeiro.anexos.destroy');
 
     Route::get('/conhecimento/defeitos-relatados', [ReportedDefectController::class, 'index'])
         ->middleware('desktop.permission:conhecimento,visualizar')
@@ -1260,6 +1282,11 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::delete('/estoque/subcategorias/{subcategoria}', [StockController::class, 'deactivateSubcategoria'])
         ->middleware('desktop.permission:estoque,excluir')
         ->name('estoque.subcategorias.delete');
+    // specs/040: precisa ficar no bloco de rotas LITERAIS, antes de
+    // /estoque/{part}/... — senao 'a-comprar' e capturado como id de peca.
+    Route::get('/estoque/a-comprar', [StockController::class, 'toBuy'])
+        ->middleware('desktop.permission:estoque,visualizar')
+        ->name('estoque.a-comprar');
     Route::get('/estoque/exportar-csv', [StockController::class, 'exportCsv'])
         ->middleware('desktop.permission:estoque,exportar')
         ->name('estoque.export.csv');
@@ -1349,6 +1376,43 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::get('/equipamentos/coletor/pareamentos/{code}/baixar/windows', [EquipmentController::class, 'downloadWindowsCollectorPackage'])
         ->middleware('desktop.permission:equipamentos,criar|editar')
         ->name('equipments.collector-pairings.download-windows');
+    // Catalogo de equipamentos (specs/044) — tela "Equipamentos" em Cadastros.
+    // Todas com 2+ segmentos apos "equipamentos/" (catalogo/...), entao nao
+    // colidem com o `/equipamentos/{equipment}` de 1 segmento mais abaixo.
+    Route::get('/equipamentos/catalogo', [EquipmentCatalogController::class, 'index'])
+        ->middleware('desktop.permission:equipamentos,visualizar')
+        ->name('equipments.catalog.index');
+    Route::get('/equipamentos/catalogo/ajuda', [EquipmentCatalogController::class, 'help'])
+        ->middleware('desktop.permission:equipamentos,visualizar')
+        ->name('equipments.catalog.help');
+    Route::get('/equipamentos/catalogo/exportar-csv', [EquipmentCatalogController::class, 'exportCsv'])
+        ->middleware('desktop.permission:equipamentos,exportar')
+        ->name('equipments.catalog.export.csv');
+    Route::get('/equipamentos/catalogo/modelo-importacao.csv', [EquipmentCatalogController::class, 'downloadCsvTemplate'])
+        ->middleware('desktop.permission:equipamentos,importar')
+        ->name('equipments.catalog.download-template');
+    Route::post('/equipamentos/catalogo/importar-lote', [EquipmentCatalogController::class, 'importCsv'])
+        ->middleware('desktop.permission:equipamentos,importar')
+        ->name('equipments.catalog.import');
+    Route::post('/equipamentos/catalogo/modelos', [EquipmentCatalogController::class, 'saveModel'])
+        ->middleware('desktop.permission:equipamentos,criar|editar')
+        ->name('equipments.catalog.models.save');
+    Route::patch('/equipamentos/catalogo/modelos/{model}/ativo', [EquipmentCatalogController::class, 'toggleModel'])
+        ->middleware('desktop.permission:equipamentos,editar')
+        ->name('equipments.catalog.models.toggle');
+    Route::post('/equipamentos/catalogo/marcas', [EquipmentCatalogController::class, 'saveBrand'])
+        ->middleware('desktop.permission:equipamentos,criar|editar')
+        ->name('equipments.catalog.brands.save');
+    Route::patch('/equipamentos/catalogo/marcas/{brand}/ativo', [EquipmentCatalogController::class, 'toggleBrand'])
+        ->middleware('desktop.permission:equipamentos,editar')
+        ->name('equipments.catalog.brands.toggle');
+    Route::post('/equipamentos/catalogo/tipos', [EquipmentCatalogController::class, 'saveType'])
+        ->middleware('desktop.permission:equipamentos,criar|editar')
+        ->name('equipments.catalog.types.save');
+    Route::patch('/equipamentos/catalogo/tipos/{type}/ativo', [EquipmentCatalogController::class, 'toggleType'])
+        ->middleware('desktop.permission:equipamentos,editar')
+        ->name('equipments.catalog.types.toggle');
+
     Route::get('/equipamentos/{equipment}/fotos/{photo}', [EquipmentController::class, 'photo'])
         ->middleware('desktop.permission:equipamentos,visualizar|editar')
         ->name('equipments.photos.show');

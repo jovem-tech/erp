@@ -319,6 +319,9 @@ class LegacyFileCatalogService
             'fiscal_documents' => in_array($extension, ['xml', 'pdf'], true)
                 ? FileCategory::FiscalDocument
                 : null,
+            'financeiro_anexos' => in_array($extension, [...self::IMAGE_EXTENSIONS, 'pdf'], true)
+                ? FileCategory::FinanceiroAnexo
+                : null,
             'legacy_users' => in_array($extension, self::IMAGE_EXTENSIONS, true)
                 ? FileCategory::UserProfilePhoto
                 : null,

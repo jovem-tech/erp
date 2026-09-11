@@ -8,6 +8,7 @@
 
         $photos = $order['fotos'] ?? [];
         $documents = $order['documentos'] ?? [];
+        $fiscalDocuments = is_array($documentosFiscais ?? null) ? $documentosFiscais : [];
 
         // Foto de perfil = foto principal do equipamento (equipamentos_fotos.is_principal).
         $equipmentPhoto = $order['equipamento_foto'] ?? null;
@@ -47,6 +48,8 @@
         $canEditOrder = \App\Support\DesktopSession::can('os', 'editar');
         $canCreateOrder = \App\Support\DesktopSession::can('os', 'criar');
         $canCreateBudget = \App\Support\DesktopSession::can('orcamentos', 'criar');
+        $canViewFiscal = \App\Support\DesktopSession::can('fiscal', 'visualizar');
+        $canCreateFiscal = \App\Support\DesktopSession::can('fiscal', 'criar');
         $canCloseOrder = $canEditOrder && ! $isEncerrada;
 
         $orcamento = $order['orcamento'] ?? null;
@@ -230,8 +233,11 @@
                         </a>
                     @endif
 
-                    <a href="{{ route('orders.preview', $order['id']) }}" target="_blank" rel="noreferrer" class="dropdown-item">
-                        <i class="bi bi-printer me-2"></i>Imprimir
+                    <a href="{{ route('orders.print', $order['id']) }}" target="_blank" rel="noopener" class="dropdown-item">
+                        <i class="bi bi-printer me-2"></i>Imprimir OS (A4)
+                    </a>
+                    <a href="{{ route('orders.print', ['order' => $order['id'], 'formato' => '80mm']) }}" target="_blank" rel="noopener" class="dropdown-item">
+                        <i class="bi bi-receipt-cutoff me-2"></i>Imprimir cupom (80mm)
                     </a>
 
                     @if ($isEncerrada)
@@ -565,11 +571,11 @@
                 <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
                     <h3 class="os-info-card-title mb-0"><span><i class="bi bi-file-earmark-text me-1"></i>Documentos</span></h3>
                     <div class="d-flex flex-wrap gap-2">
-                        @if ($canEditOrder)
+                        @if ($canEditOrder && $canCreateFiscal)
                             {{-- Emissao assistida (041/042): o sistema monta a nota, o
                                  operador emite no portal e volta para registrar. --}}
                             <a href="{{ route('fiscal.nota', $order['id']) }}" class="btn btn-soft btn-sm">
-                                <i class="bi bi-receipt me-2"></i>Emitir nota fiscal
+                                <i class="bi bi-receipt me-2"></i>{{ $fiscalDocuments !== [] ? 'Abrir nota fiscal' : 'Emitir nota fiscal' }}
                             </a>
                         @endif
                         <a href="{{ route('orders.documents.center', $order['id']) }}" class="btn btn-soft btn-sm">
@@ -577,6 +583,13 @@
                         </a>
                     </div>
                 </div>
+
+                @if ($canViewFiscal && $fiscalDocuments !== [])
+                    @include('orders._fiscal_documents', [
+                        'fiscalDocuments' => $fiscalDocuments,
+                        'canManageFiscal' => $canEditOrder && $canCreateFiscal,
+                    ])
+                @endif
 
                 @if ($documents !== [])
                     <div class="table-responsive">
@@ -607,7 +620,7 @@
                             </tbody>
                         </table>
                     </div>
-                @else
+                @elseif ($fiscalDocuments === [])
                     @include('layouts.partials.empty-state', [
                         'icon' => 'bi-file-earmark-x',
                         'title' => 'Sem documentos vinculados',

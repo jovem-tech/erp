@@ -104,8 +104,11 @@
                         </a>
                     @endif
 
-                    <a href="{{ route('orders.preview', $orderId) }}" target="_blank" rel="noreferrer" class="dropdown-item">
-                        <i class="bi bi-printer me-2"></i>Imprimir
+                    <a href="{{ route('orders.print', $orderId) }}" target="_blank" rel="noopener" class="dropdown-item">
+                        <i class="bi bi-printer me-2"></i>Imprimir OS (A4)
+                    </a>
+                    <a href="{{ route('orders.print', ['order' => $orderId, 'formato' => '80mm']) }}" target="_blank" rel="noopener" class="dropdown-item">
+                        <i class="bi bi-receipt-cutoff me-2"></i>Imprimir cupom (80mm)
                     </a>
 
                     @if ($isEncerrada)

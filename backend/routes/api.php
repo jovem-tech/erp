@@ -1,11 +1,12 @@
 <?php
 
-use App\Http\Controllers\Api\V1\AnexoXController;
 use App\Http\Controllers\Api\V1\AgendaController;
 use App\Http\Controllers\Api\V1\AgendaGoogleController;
+use App\Http\Controllers\Api\V1\AnexoXController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BackupController;
 use App\Http\Controllers\Api\V1\BudgetController;
+use App\Http\Controllers\Api\V1\CaixaController;
 use App\Http\Controllers\Api\V1\CatalogController;
 use App\Http\Controllers\Api\V1\Chat\AttachmentController;
 use App\Http\Controllers\Api\V1\Chat\ClientSearchController;
@@ -13,20 +14,19 @@ use App\Http\Controllers\Api\V1\Chat\ConversationController;
 use App\Http\Controllers\Api\V1\Chat\MessageController;
 use App\Http\Controllers\Api\V1\ChecklistModeloController;
 use App\Http\Controllers\Api\V1\ClientController;
-use App\Http\Controllers\Api\V1\DocumentoFiscalController;
-use App\Http\Controllers\Api\V1\FiscalController;
 use App\Http\Controllers\Api\V1\ConfigurationController;
 use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\DefeitoRelatadoController;
+use App\Http\Controllers\Api\V1\DocumentoFiscalController;
 use App\Http\Controllers\Api\V1\DocumentSignatureController;
 use App\Http\Controllers\Api\V1\EquipamentoDefeitoController;
+use App\Http\Controllers\Api\V1\EquipmentCatalogController;
 use App\Http\Controllers\Api\V1\EquipmentCollectorController;
 use App\Http\Controllers\Api\V1\EquipmentController;
 use App\Http\Controllers\Api\V1\EstoqueCatalogController;
 use App\Http\Controllers\Api\V1\EstoqueController;
 use App\Http\Controllers\Api\V1\FileManagerController;
-use App\Http\Controllers\Api\V1\InterBankingController;
-use App\Http\Controllers\Api\V1\InterCobrancaController;
+use App\Http\Controllers\Api\V1\FinanceiroAnexoController;
 use App\Http\Controllers\Api\V1\FinanceiroCartaoController;
 use App\Http\Controllers\Api\V1\FinanceiroCartaoCreditoController;
 use App\Http\Controllers\Api\V1\FinanceiroCatalogController;
@@ -35,17 +35,19 @@ use App\Http\Controllers\Api\V1\FinanceiroController;
 use App\Http\Controllers\Api\V1\FinanceiroMargemController;
 use App\Http\Controllers\Api\V1\FinanceiroPrecificacaoController;
 use App\Http\Controllers\Api\V1\FinanceiroReportController;
+use App\Http\Controllers\Api\V1\FiscalController;
 use App\Http\Controllers\Api\V1\GroupController;
 use App\Http\Controllers\Api\V1\HealthController;
+use App\Http\Controllers\Api\V1\InterBankingController;
+use App\Http\Controllers\Api\V1\InterCobrancaController;
 use App\Http\Controllers\Api\V1\KnowledgeController;
 use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\OrderController;
-use App\Http\Controllers\Api\V1\OrderStockController;
 use App\Http\Controllers\Api\V1\OrderStatusFlowController;
+use App\Http\Controllers\Api\V1\OrderStockController;
 use App\Http\Controllers\Api\V1\OsPdfTemplateController;
 use App\Http\Controllers\Api\V1\PdfTemplateEngineController;
 use App\Http\Controllers\Api\V1\PublicDocumentSignatureController;
-use App\Http\Controllers\Api\V1\CaixaController;
 use App\Http\Controllers\Api\V1\SaleController;
 use App\Http\Controllers\Api\V1\SaleReturnController;
 use App\Http\Controllers\Api\V1\ServicoController;
@@ -425,6 +427,15 @@ Route::prefix('v1')->group(function (): void {
                 Route::delete('/{financeiro}', [FinanceiroController::class, 'destroy'])->name('destroy');
                 Route::post('/{financeiro}/baixar', [FinanceiroController::class, 'pay'])->name('pay');
                 Route::post('/{financeiro}/cancelar', [FinanceiroController::class, 'cancel'])->name('cancel');
+
+                Route::get('/{financeiro}/anexos', [FinanceiroAnexoController::class, 'index'])
+                    ->whereNumber('financeiro')->name('anexos.index');
+                Route::post('/{financeiro}/anexos', [FinanceiroAnexoController::class, 'store'])
+                    ->whereNumber('financeiro')->name('anexos.store');
+                Route::get('/{financeiro}/anexos/{anexo}/download', [FinanceiroAnexoController::class, 'download'])
+                    ->whereNumber('financeiro')->whereNumber('anexo')->name('anexos.download');
+                Route::delete('/{financeiro}/anexos/{anexo}', [FinanceiroAnexoController::class, 'destroy'])
+                    ->whereNumber('financeiro')->whereNumber('anexo')->name('anexos.destroy');
             });
 
         Route::prefix('conversas')
@@ -452,8 +463,12 @@ Route::prefix('v1')->group(function (): void {
         Route::post('orders/status-batch', [OrderController::class, 'updateStatusBatch'])->name('api.v1.orders.status_batch');
         Route::get('orders/{order}', [OrderController::class, 'show'])->name('api.v1.orders.show');
         Route::get('orders/{order}/events', [OrderController::class, 'events'])->name('api.v1.orders.events.index');
-        Route::post('orders', [OrderController::class, 'store'])->name('api.v1.orders.store');
-        Route::match(['put', 'patch'], 'orders/{order}', [OrderController::class, 'update'])->name('api.v1.orders.update');
+        // Espelho completo da OS em PDF (?formato=a4|80mm) — botao Imprimir da tela.
+        Route::get('orders/{order}/imprimir', [OrderController::class, 'printOrder'])->name('api.v1.orders.print');
+        Route::post('orders', [OrderController::class, 'store'])->middleware('photo-upload-throttle')->name('api.v1.orders.store');
+        Route::match(['put', 'patch'], 'orders/{order}', [OrderController::class, 'update'])
+            ->middleware('photo-upload-throttle')
+            ->name('api.v1.orders.update');
         Route::get('orders/{order}/photos/{photo}', [OrderController::class, 'photo'])->name('api.v1.orders.photos.show');
         Route::get('orders/{order}/documents', [OrderController::class, 'documents'])->name('api.v1.orders.documents.index');
         Route::post('orders/{order}/documents/generate', [OrderController::class, 'generateDocuments'])->name('api.v1.orders.documents.generate');
@@ -544,6 +559,8 @@ Route::prefix('v1')->group(function (): void {
         Route::get('estoque/modelo-importacao.csv', [EstoqueController::class, 'downloadCsvTemplate'])->name('api.v1.estoque.csv_template');
         Route::post('estoque/importar-lote', [EstoqueController::class, 'importCsv'])->name('api.v1.estoque.import_csv');
         Route::get('estoque/baixo', [EstoqueController::class, 'lowStock'])->name('api.v1.estoque.low_stock');
+        // specs/040: o que foi prometido a orcamento e nao existe na gaveta.
+        Route::get('estoque/a-comprar', [EstoqueController::class, 'toBuy'])->name('api.v1.estoque.to_buy');
         Route::get('estoque', [EstoqueController::class, 'index'])->name('api.v1.estoque.index');
         Route::post('estoque', [EstoqueController::class, 'store'])->name('api.v1.estoque.store');
 
@@ -590,13 +607,32 @@ Route::prefix('v1')->group(function (): void {
         Route::get('equipments/models/suggestions', [EquipmentController::class, 'suggestModels'])->name('api.v1.equipments.models.suggestions');
         Route::post('equipments/brands', [EquipmentController::class, 'storeBrand'])->name('api.v1.equipments.brands.store');
         Route::post('equipments/models', [EquipmentController::class, 'storeModel'])->name('api.v1.equipments.models.store');
+
+        // Catalogo de equipamentos (specs/044) — tela "Equipamentos" em
+        // Cadastros. Todas as rotas abaixo tem 3+ segmentos apos "equipments/",
+        // entao nao colidem com o `equipments/{equipment}` de 2 segmentos mais
+        // abaixo (GET/PUT/PATCH) mesmo sem whereNumber.
+        Route::get('equipments/catalog/models', [EquipmentCatalogController::class, 'indexModels'])->name('api.v1.equipments.catalog.models.index');
+        Route::post('equipments/catalog/models', [EquipmentCatalogController::class, 'storeModel'])->name('api.v1.equipments.catalog.models.store');
+        Route::patch('equipments/catalog/models/{model}', [EquipmentCatalogController::class, 'updateModel'])->whereNumber('model')->name('api.v1.equipments.catalog.models.update');
+        Route::get('equipments/catalog/brands', [EquipmentCatalogController::class, 'indexBrands'])->name('api.v1.equipments.catalog.brands.index');
+        Route::post('equipments/catalog/brands', [EquipmentCatalogController::class, 'storeBrand'])->name('api.v1.equipments.catalog.brands.store');
+        Route::patch('equipments/catalog/brands/{brand}', [EquipmentCatalogController::class, 'updateBrand'])->whereNumber('brand')->name('api.v1.equipments.catalog.brands.update');
+        Route::get('equipments/catalog/types', [EquipmentCatalogController::class, 'indexTypes'])->name('api.v1.equipments.catalog.types.index');
+        Route::post('equipments/catalog/types', [EquipmentCatalogController::class, 'storeType'])->name('api.v1.equipments.catalog.types.store');
+        Route::patch('equipments/catalog/types/{type}', [EquipmentCatalogController::class, 'updateType'])->whereNumber('type')->name('api.v1.equipments.catalog.types.update');
+        Route::get('equipments/catalog/exportar-csv', [EquipmentCatalogController::class, 'exportCsv'])->name('api.v1.equipments.catalog.export_csv');
+        Route::get('equipments/catalog/modelo-importacao.csv', [EquipmentCatalogController::class, 'downloadCsvTemplate'])->name('api.v1.equipments.catalog.csv_template');
+        Route::post('equipments/catalog/importar-lote', [EquipmentCatalogController::class, 'importCsv'])->name('api.v1.equipments.catalog.import_csv');
         Route::get('equipments/collector/local-snapshot', [EquipmentController::class, 'localCollectorSnapshot'])->name('api.v1.equipments.collector.local_snapshot');
         Route::post('equipments/collector/local-collect', [EquipmentController::class, 'localCollectorCollect'])->name('api.v1.equipments.collector.local_collect');
         Route::post('equipments/collector-pairings', [EquipmentController::class, 'createCollectorPairing'])->name('api.v1.equipments.collector_pairings.store');
         Route::get('equipments/collector-pairings/{code}', [EquipmentController::class, 'showCollectorPairing'])->name('api.v1.equipments.collector_pairings.show');
         Route::get('equipments', [EquipmentController::class, 'index'])->name('api.v1.equipments.index');
-        Route::post('equipments', [EquipmentController::class, 'store'])->name('api.v1.equipments.store');
-        Route::match(['put', 'patch'], 'equipments/{equipment}', [EquipmentController::class, 'update'])->name('api.v1.equipments.update');
+        Route::post('equipments', [EquipmentController::class, 'store'])->middleware('photo-upload-throttle')->name('api.v1.equipments.store');
+        Route::match(['put', 'patch'], 'equipments/{equipment}', [EquipmentController::class, 'update'])
+            ->middleware('photo-upload-throttle')
+            ->name('api.v1.equipments.update');
         Route::post('equipments/{equipment}/reveal-password', [EquipmentController::class, 'revealPassword'])->name('api.v1.equipments.reveal_password');
         Route::get('equipments/{equipment}/photos/{photo}', [EquipmentController::class, 'photo'])->name('api.v1.equipments.photos.show');
         Route::get('equipments/{equipment}', [EquipmentController::class, 'show'])->name('api.v1.equipments.show');

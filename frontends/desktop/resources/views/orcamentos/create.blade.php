@@ -142,6 +142,7 @@
             })->values(),
             'equipmentBrandQuickStoreUrl' => ($canCreateEquipment ?? false) ? route('equipments.brands.quick.store') : '',
             'equipmentModelQuickStoreUrl' => ($canCreateEquipment ?? false) ? route('equipments.models.quick.store') : '',
+            'partSearchUrl' => route('orcamentos.parts.search'),
             'catalogs' => [
                 'services' => collect($form['services'] ?? [])->map(static function (array $service): array {
                     return [
@@ -157,6 +158,12 @@
                         'label' => trim((string) (($part['codigo'] ?? '') !== '' ? $part['codigo'] . ' - ' . ($part['nome'] ?? 'Peça') : ($part['nome'] ?? 'Peça'))),
                         'description' => trim((string) ($part['nome'] ?? '')),
                         'price' => (float) ($part['preco_venda'] ?? 0),
+                        // specs/040 — o saldo CHEGAVA aqui do backend e era
+                        // descartado neste mapeamento: o operador montava a
+                        // proposta sem ver estoque nenhum.
+                        'saldo' => (float) ($part['quantidade_atual'] ?? 0),
+                        'reservado' => (float) ($part['quantidade_reservada'] ?? 0),
+                        'disponivel' => (float) ($part['quantidade_disponivel'] ?? 0),
                     ];
                 })->values(),
             ],

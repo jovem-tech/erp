@@ -16,6 +16,7 @@ use App\Services\Integrations\EmailIntegrationSettingsService;
 use App\Services\Integrations\IntegrationSettingsService;
 use App\Services\Notifications\NotificationDispatchService;
 use App\Services\Orders\OrderDocumentCenterService;
+use App\Services\Estoque\EstoqueReservaService;
 use App\Services\Orders\OrderEventService;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -37,7 +38,9 @@ class BudgetApprovalService
         private readonly OrderDocumentCenterService $orderDocumentCenterService,
         private readonly NotificationDispatchService $notificationDispatchService,
         private readonly BudgetCommercialTermsService $budgetCommercialTermsService,
-        private readonly BudgetRevisionService $budgetRevisionService
+        private readonly BudgetRevisionService $budgetRevisionService,
+        // specs/040: toda transicao de status reconcilia a reserva de peca.
+        private readonly EstoqueReservaService $estoqueReservaService
     ) {
     }
 
@@ -240,6 +243,11 @@ class BudgetApprovalService
                 'enviado_em' => $dispatchOk ? $sendAt : null,
                 'atualizado_por' => (int) $user->id,
             ])->save();
+
+            // specs/040: reconcilia a reserva de peca com o status novo.
+            // Idempotente e derivada de (status, itens), entao nao importa por
+            // qual caminho a transicao chegou aqui.
+            $this->estoqueReservaService->sincronizar($budget, (int) $user->id);
 
             if ($previousStatus !== $targetStatus) {
                 $this->recordStatusHistory(
@@ -582,6 +590,11 @@ class BudgetApprovalService
                 'motivo_rejeicao' => null,
             ])->save();
 
+            // specs/040: reconcilia a reserva de peca com o status novo.
+            // Idempotente e derivada de (status, itens), entao nao importa por
+            // qual caminho a transicao chegou aqui.
+            $this->estoqueReservaService->sincronizar($budget, isset($ctx['usuario_id']) ? (int) $ctx['usuario_id'] : null);
+
             BudgetApproval::query()->create([
                 'orcamento_id' => (int) $budget->id,
                 'token_publico' => (string) ($budget->token_publico ?? ''),
@@ -679,6 +692,11 @@ class BudgetApprovalService
                 'motivo_rejeicao' => $decisionMessage,
             ])->save();
 
+            // specs/040: reconcilia a reserva de peca com o status novo.
+            // Idempotente e derivada de (status, itens), entao nao importa por
+            // qual caminho a transicao chegou aqui.
+            $this->estoqueReservaService->sincronizar($budget, isset($ctx['usuario_id']) ? (int) $ctx['usuario_id'] : null);
+
             BudgetApproval::query()->create([
                 'orcamento_id' => (int) $budget->id,
                 'token_publico' => (string) ($budget->token_publico ?? ''),
@@ -758,6 +776,11 @@ class BudgetApprovalService
                 'status' => Budget::STATUS_CANCELLED,
                 'cancelado_em' => $cancelledAt,
             ])->save();
+
+            // specs/040: reconcilia a reserva de peca com o status novo.
+            // Idempotente e derivada de (status, itens), entao nao importa por
+            // qual caminho a transicao chegou aqui.
+            $this->estoqueReservaService->sincronizar($budget, isset($ctx['usuario_id']) ? (int) $ctx['usuario_id'] : null);
 
             BudgetApproval::query()->create([
                 'orcamento_id' => (int) $budget->id,
@@ -1324,6 +1347,11 @@ class BudgetApprovalService
             $expiredAt = now();
 
             $budget->forceFill(['status' => Budget::STATUS_EXPIRED])->save();
+
+            // specs/040: reconcilia a reserva de peca com o status novo.
+            // Idempotente e derivada de (status, itens), entao nao importa por
+            // qual caminho a transicao chegou aqui.
+            $this->estoqueReservaService->sincronizar($budget, null);
 
             $this->recordStatusHistory(
                 $budget,

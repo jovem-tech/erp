@@ -2,9 +2,9 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-09-09T13:44:06-03:00`
-- Versao do sistema: `5.80.5`
-- Versao da API: `1.6.1`
+- Gerado em: `2026-09-11T16:55:04-03:00`
+- Versao do sistema: `5.87.0`
+- Versao da API: `1.7.0`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
 
@@ -72,6 +72,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/03-arquitetura-tecnica/mapa-migracao-legado-frontend-sistema-hml.md` - Mapa Completo de Migração e Limpeza do `frontend/sistema-hml`
 - `documentacao/03-arquitetura-tecnica/notificacoes-sino.md` - Notificações do Sino (desktop) — emissores, prazos e tempo real
 - `documentacao/03-arquitetura-tecnica/ordens-mobile.md` - Fluxo de OS Mobile
+- `documentacao/03-arquitetura-tecnica/otimizacao-fotos-operacionais.md` - Otimização de fotos operacionais
 
 ### `documentacao/04-governanca-ai`
 
@@ -221,7 +222,15 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-09-03-anexo-x-relatorio-mensal-receitas-brutas.md` - Anexo X — Relatório Mensal das Receitas Brutas do MEI (2026-09-03)
 - `documentacao/07-novas-implementacoes/2026-09-03-anexo-x-tela-do-ano-e-ajustes-auditados.md` - Anexo X: tela do ano, gráfico dos dois regimes e ajustes auditados (2026-09-03)
 - `documentacao/07-novas-implementacoes/2026-09-09-despesas-recorte-por-mes-da-baixa.md` - Despesas passam a listar também pelo mês da baixa, não só pelo vencimento
+- `documentacao/07-novas-implementacoes/2026-09-09-emissao-automatica-nfse-ambiente-nacional.md` - Emissão automática de NFS-e pelo Ambiente Nacional (2026-09-09)
 - `documentacao/07-novas-implementacoes/2026-09-09-mapa-os-gerado-do-catalogo.md` - Mapa da OS passa a ser gerado do catálogo vivo, com cronologia real
+- `documentacao/07-novas-implementacoes/2026-09-10-previsao-repasse-cartao-ancora-no-pagamento.md` - Previsão de repasse e taxa de cartão: âncora no dia do pagamento, com dia útil
+- `documentacao/07-novas-implementacoes/2026-09-10-reserva-peca-orcamento.md` - Reserva de peça de estoque vinculada ao orçamento (2026-09-10)
+- `documentacao/07-novas-implementacoes/2026-09-11-anexos-financeiros-gerenciador-arquivos.md` - Anexos financeiros no Gerenciador de Arquivos
+- `documentacao/07-novas-implementacoes/2026-09-11-catalogo-equipamentos-edicao-massa-mesclagem.md` - Catálogo de equipamentos: edição em massa por ID e mesclagem de duplicados (2026-09-11)
+- `documentacao/07-novas-implementacoes/2026-09-11-catalogo-equipamentos-tipos-marcas-modelos-csv.md` - Catálogo de equipamentos: tela de gestão + importação CSV (2026-09-11)
+- `documentacao/07-novas-implementacoes/2026-09-11-nfse-na-visualizacao-os.md` - NFS-e vinculada na visualização da OS
+- `documentacao/07-novas-implementacoes/2026-09-11-otimizacao-fotos-operacionais.md` - Fotos operacionais com meta de 400 KB
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 - `documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md` - Revisão de segurança — Fluxo de orçamento na assistência (com OS)
 
@@ -234,6 +243,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/10-deploy/manual-versionamento-e-deploy.md` - Manual de Publicação — Versionar e Deploy
 - `documentacao/10-deploy/operacao-backup-e-restauracao.md` - Operação — Backup e restauração
 - `documentacao/10-deploy/operacao-gerenciador-central-arquivos.md` - Operação do Gerenciador Central de Arquivos
+- `documentacao/10-deploy/operacao-otimizacao-fotos-operacionais.md` - Operação da otimização de fotos operacionais
 - `documentacao/10-deploy/workflow-git-multiambiente.md` - Fluxo Git Multiambiente — Sistema ERP
 
 ## Inventario de specs
@@ -277,7 +287,11 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/037-precificacao-integrada-ao-fluxo` - Precificação integrada ao fluxo | artefatos: spec, tasks
 - `specs/038-baixa-peca-na-os` - Baixa de peça na OS | artefatos: spec, tasks
 - `specs/039-entrada-estoque-no-lancamento` - Entrada de estoque no lançamento financeiro | artefatos: spec, tasks
+- `specs/040-reserva-peca-orcamento` - Reserva de peça de estoque vinculada ao orçamento | artefatos: spec, tasks
 - `specs/041-emissao-fiscal-nfse` - Emissão fiscal — NFS-e e prontidão de dados | artefatos: spec, tasks
 - `specs/042-anexo-x-receitas-brutas-mei` - Anexo X — Relatório Mensal das Receitas Brutas do MEI | artefatos: spec, tasks
 - `specs/043-anexo-x-tela-do-ano-e-ajustes` - Anexo X — tela do ano e ajustes auditados | artefatos: spec, tasks
+- `specs/044-catalogo-equipamentos-csv` - Catálogo de equipamentos (tipos → marcas → modelos) com importação CSV | artefatos: spec, tasks
+- `specs/045-catalogo-equipamentos-edicao-massa-mesclagem` - Catálogo de equipamentos — edição em massa por ID e mesclagem de duplicados | artefatos: spec, tasks
+- `specs/046-otimizacao-fotos-operacionais` - Especificação 046 - Otimização de fotos operacionais | artefatos: spec, plan, tasks
 

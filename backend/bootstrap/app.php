@@ -1,8 +1,10 @@
 <?php
 
+use App\Exceptions\OperationalPhotoException;
 use App\Http\Middleware\AuthorizeModuleAction;
 use App\Http\Middleware\ForceHttps;
 use App\Http\Middleware\SecurityHeaders;
+use App\Http\Middleware\ThrottleOperationalPhotoUploads;
 use App\Support\ApiResponse;
 use Dotenv\Dotenv;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -10,6 +12,7 @@ use Illuminate\Auth\AuthenticationException;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Exceptions\PostTooLargeException;
 use Illuminate\Http\Middleware\HandleCors;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -50,6 +53,7 @@ return Application::configure(basePath: $basePath)
         ]);
         $middleware->alias([
             'rbac' => AuthorizeModuleAction::class,
+            'photo-upload-throttle' => ThrottleOperationalPhotoUploads::class,
         ]);
         $middleware->append(ForceHttps::class);
         $middleware->append(SecurityHeaders::class);
@@ -60,6 +64,36 @@ return Application::configure(basePath: $basePath)
         $isApiRequest = static function (Request $request): bool {
             return $request->is('api/*') || $request->expectsJson();
         };
+
+        $exceptions->render(function (OperationalPhotoException $exception, Request $request) use ($isApiRequest) {
+            if (! $isApiRequest($request)) {
+                return null;
+            }
+
+            return ApiResponse::error(
+                $exception->getMessage(),
+                $exception->httpStatus,
+                $exception->errorCode,
+                null,
+                [],
+                $request,
+            );
+        });
+
+        $exceptions->render(function (PostTooLargeException $exception, Request $request) use ($isApiRequest) {
+            if (! $isApiRequest($request)) {
+                return null;
+            }
+
+            return ApiResponse::error(
+                'O envio excede o limite total permitido de 85 MB.',
+                413,
+                'PHOTO_PAYLOAD_TOO_LARGE',
+                null,
+                [],
+                $request,
+            );
+        });
 
         $exceptions->render(function (AuthenticationException $exception, Request $request) use ($isApiRequest) {
             if (! $isApiRequest($request)) {

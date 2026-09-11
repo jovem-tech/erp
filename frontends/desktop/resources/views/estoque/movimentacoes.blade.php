@@ -71,7 +71,7 @@
             </div>
         </div>
 
-        <form method="post" action="{{ route('estoque.movements.store', $part['id']) }}" class="desktop-form-grid">
+        <form method="post" action="{{ route('estoque.movements.store', $part['id']) }}" class="desktop-grid desktop-grid-three">
             @csrf
             <div>
                 <label for="tipo">Tipo</label>
@@ -95,13 +95,13 @@
                 @error('os_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
 
-            <div class="col-span-full">
+            <div class="desktop-grid-span-2">
                 <label for="motivo">Motivo</label>
                 <textarea id="motivo" name="motivo" class="form-control @error('motivo') is-invalid @enderror" rows="3" placeholder="Explique a movimentação">{{ old('motivo') }}</textarea>
                 @error('motivo')<div class="invalid-feedback">{{ $message }}</div>@enderror
             </div>
 
-            <div class="field-actions col-span-full">
+            <div class="field-actions desktop-grid-span-2">
                 <button type="submit" class="btn btn-primary flex-fill">
                     <i class="bi bi-arrow-left-right me-2"></i>
                     Registrar movimentação

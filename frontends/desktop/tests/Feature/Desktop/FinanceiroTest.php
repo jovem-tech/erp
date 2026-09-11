@@ -1061,6 +1061,130 @@ class FinanceiroTest extends TestCase
     }
 
     /**
+     * Compra de peça só existe quando há uma OS/venda — nunca é uma despesa
+     * que se repete todo mês independente de vender algo. O backend recusa
+     * dre_fixo_mensal=true pra essa categoria (FinanceiroService::resolveClassification());
+     * a tela precisa desabilitar a option pra não deixar escolher algo que o
+     * servidor vai rejeitar depois.
+     *
+     * A categoria aqui vai SEM cedilha de propósito: é assim que ela está
+     * gravada na produção (herança do ERP legado). A primeira versão desta
+     * trava comparava o nome com "Compra de peças" e por isso não valia
+     * justamente no banco real — agora o critério é o grupo DRE.
+     */
+    public function test_create_page_disables_despesa_fixa_option_for_compra_de_pecas(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'categorias' => [
+                        ['id' => 1, 'nome' => 'Energia', 'tipo' => 'pagar', 'dre_grupo' => ['id' => 3, 'nome' => 'Despesas Operacionais']],
+                        ['id' => 2, 'nome' => 'Compra de pecas', 'tipo' => 'pagar', 'dre_grupo' => ['id' => 4, 'nome' => 'Custo Direto (OS)']],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
+                ['_old_input' => ['tipo' => 'pagar', 'categoria' => 'Compra de pecas']]
+            ))
+            ->get('/financeiro/novo');
+
+        $response->assertOk();
+        $this->assertMatchesRegularExpression(
+            '/<option value="1"[^>]*\bdisabled\b[^>]*>Despesa fixa<\/option>/',
+            $response->getContent()
+        );
+    }
+
+    /**
+     * Com "Despesa fixa" desabilitada pra compra de peça, o link "alterar" fica
+     * sem função: a única outra opção do override é "Despesa variável", que já
+     * é o padrão da categoria — abrir o override não mudaria nada, só confunde.
+     */
+    public function test_create_page_hides_alterar_link_for_compra_de_pecas(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'categorias' => [
+                        ['id' => 1, 'nome' => 'Aluguel', 'tipo' => 'pagar', 'dre_grupo' => ['id' => 3, 'nome' => 'Despesas Operacionais'], 'dre_fixo_mensal_padrao' => true],
+                        ['id' => 2, 'nome' => 'Compra de pecas', 'tipo' => 'pagar', 'dre_grupo' => ['id' => 4, 'nome' => 'Custo Direto (OS)']],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $comPeca = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
+                ['_old_input' => ['tipo' => 'pagar', 'categoria' => 'Compra de pecas']]
+            ))
+            ->get('/financeiro/novo');
+
+        $comPeca->assertOk();
+        $this->assertMatchesRegularExpression(
+            '/<button[^>]*data-classificacao-alterar[^>]*\bd-none\b[^>]*>alterar<\/button>/',
+            $comPeca->getContent()
+        );
+
+        // Categoria FIXA por padrão continua com o link visível — o esconder
+        // não é uma regressão geral do recurso, só vale pra quem nunca pode
+        // ser fixa.
+        $semPeca = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
+                ['_old_input' => ['tipo' => 'pagar', 'categoria' => 'Aluguel']]
+            ))
+            ->get('/financeiro/novo');
+
+        $semPeca->assertOk();
+        $this->assertDoesNotMatchRegularExpression(
+            '/<button[^>]*data-classificacao-alterar[^>]*\bd-none\b[^>]*>alterar<\/button>/',
+            $semPeca->getContent()
+        );
+    }
+
+    /**
+     * A trava não é sobre grupo DRE — é sobre o padrão da categoria. "Compra
+     * de embalagens" não pertence a "Custo Direto (OS)" (nem tem grupo, no
+     * fixture) e ainda assim é variável por padrão, então "Despesa fixa"
+     * continua desabilitada e o "alterar" some — provando que a trava vale
+     * pra qualquer categoria variável, não só compra de peça.
+     */
+    public function test_create_page_hides_alterar_for_any_categoria_variavel_sem_ser_peca(): void
+    {
+        $this->fakeCatalogoComAluguel();
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['financeiro' => ['visualizar', 'criar']]),
+                ['_old_input' => ['tipo' => 'pagar', 'categoria' => 'Compra de embalagens']]
+            ))
+            ->get('/financeiro/novo');
+
+        $response->assertOk();
+        $this->assertMatchesRegularExpression(
+            '/<option value="1"[^>]*\bdisabled\b[^>]*>Despesa fixa<\/option>/',
+            $response->getContent()
+        );
+        $this->assertMatchesRegularExpression(
+            '/<button[^>]*data-classificacao-alterar[^>]*\bd-none\b[^>]*>alterar<\/button>/',
+            $response->getContent()
+        );
+    }
+
+    /**
      * Despesa fixa tem fornecedor: aluguel tem locador, internet tem provedora.
      *
      * Antes a seção de VÍNCULOS inteira sumia na despesa fixa, forçando o

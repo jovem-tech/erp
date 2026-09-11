@@ -545,7 +545,8 @@ class DocumentoFiscalTest extends TestCase
         ]))
             ->get('/os/10/baixa')
             ->assertOk()
-            ->assertSee('Este cliente não tem CPF/CNPJ cadastrado.')
+            ->assertSee('A NFS-e pode ser emitida sem identificar o tomador — dê preferência por gerar NFS-e com a identificação do tomador')
+            ->assertDontSee('A NFS-e exige identificar o tomador')
             // Apontar a falta sem oferecer o conserto vira reclamacao, nao acao.
             ->assertSee('Preencher CPF/CNPJ')
             ->assertSee(route('clients.edit', 77), false);
@@ -813,6 +814,114 @@ class DocumentoFiscalTest extends TestCase
             // A soma conta so' o emitido — cancelada nao virou receita.
             ->assertSee('R$ 420,00')
             ->assertSee('1 emitidas');
+    }
+
+    public function test_visualizacao_da_os_lista_nfse_emitida_vinculada(): void
+    {
+        $this->fakeApi([
+            'orders/10' => [
+                'order' => [
+                    'id' => 10,
+                    'numero_os' => 'OS2609001',
+                    'status' => 'entregue_reparado_pago',
+                    'status_nome' => 'Entregue - Reparado e Pago',
+                    'status_cor' => '#16a34a',
+                    'is_encerrada' => true,
+                    'cliente' => ['id' => 77, 'nome_razao' => 'João da Silva'],
+                    'equipamento' => ['id' => 30, 'resumo_tecnico' => 'Smartphone Teste'],
+                    'tecnico' => ['id' => 51, 'nome' => 'Técnico Banco'],
+                    'fotos' => [],
+                    'documentos' => [],
+                    'status_disponiveis' => [],
+                    'proximas_etapas' => [],
+                    'orcamento' => null,
+                ],
+            ],
+            'fiscal/documentos*' => [
+                'data' => ['documentos' => [
+                    $this->documento([
+                        'id' => 7,
+                        'status' => 'emitido',
+                        'numero' => '42',
+                        'serie' => '00001',
+                        'chave' => '33052082234129526000198000000000000226086919348703',
+                        'emitido_em' => '2026-09-09T21:05:49-03:00',
+                        'valor_xml' => 420.0,
+                        'tem_xml' => true,
+                        'tem_pdf' => false,
+                    ]),
+                ]],
+                'meta' => [
+                    'pagination' => ['current_page' => 1, 'per_page' => 100, 'total' => 1, 'last_page' => 1],
+                    'totais' => ['quantidade' => 1, 'emitidas' => 1, 'valor' => 420.0],
+                ],
+            ],
+        ]);
+
+        $this->withSession($this->desktopSession([
+            'os' => ['visualizar', 'editar'],
+            'fiscal' => ['visualizar', 'criar'],
+        ]))
+            ->get('/os/10')
+            ->assertOk()
+            ->assertSee('Notas fiscais (NFS-e)')
+            ->assertSee('NFS-e nº 42')
+            ->assertSee('série 00001')
+            ->assertSee('09/09/2026 21:05')
+            ->assertSee('R$ 420,00')
+            ->assertSee('Emitida')
+            ->assertSee('Abrir nota fiscal')
+            ->assertDontSee('Sem documentos vinculados')
+            ->assertSee(route('fiscal.documentos.arquivo.download', [7, 'xml']), false)
+            ->assertSee(route('fiscal.documentos.danfse', 7), false)
+            ->assertSee(route('fiscal.nota', 10), false);
+
+        Http::assertSent(static function (ClienteHttpRequest $request): bool {
+            if (! str_contains($request->url(), '/api/v1/fiscal/documentos?')) {
+                return false;
+            }
+
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            return (string) ($query['os_id'] ?? '') === '10'
+                && (string) ($query['tipo'] ?? '') === 'nfse'
+                && (string) ($query['status'] ?? '') === 'emitido,cancelado'
+                && (string) ($query['per_page'] ?? '') === '100';
+        });
+    }
+
+    public function test_visualizacao_da_os_nao_consulta_nem_expoe_nota_sem_permissao_fiscal(): void
+    {
+        $this->fakeApi([
+            'orders/10' => [
+                'order' => [
+                    'id' => 10,
+                    'numero_os' => 'OS2609001',
+                    'status' => 'entregue_reparado_pago',
+                    'status_nome' => 'Entregue - Reparado e Pago',
+                    'status_cor' => '#16a34a',
+                    'is_encerrada' => true,
+                    'cliente' => ['id' => 77, 'nome_razao' => 'João da Silva'],
+                    'equipamento' => ['id' => 30, 'resumo_tecnico' => 'Smartphone Teste'],
+                    'tecnico' => ['id' => 51, 'nome' => 'Técnico Banco'],
+                    'fotos' => [],
+                    'documentos' => [],
+                    'status_disponiveis' => [],
+                    'proximas_etapas' => [],
+                    'orcamento' => null,
+                ],
+            ],
+        ]);
+
+        $this->withSession($this->desktopSession(['os' => ['visualizar', 'editar']]))
+            ->get('/os/10')
+            ->assertOk()
+            ->assertDontSee('Notas fiscais (NFS-e)')
+            ->assertDontSee('Emitir nota fiscal');
+
+        Http::assertNotSent(static fn (ClienteHttpRequest $request): bool =>
+            str_contains($request->url(), '/api/v1/fiscal/documentos')
+        );
     }
 
     public function test_nota_sem_pdf_oferece_o_danfse_do_xml(): void

@@ -64,7 +64,14 @@ class SaleStockService
                 continue;
             }
 
-            $available = (float) ($part->quantidade_atual ?? 0);
+            // specs/040: o PDV vende do DISPONIVEL, nao do saldo bruto. Peca
+            // prometida a um orcamento enviado ao cliente nao esta a venda no
+            // balcao — e o mesmo furo que a reserva existe para fechar. A venda
+            // nao tem orcamento, entao nao ha reserva propria a somar de volta.
+            $available = round(
+                (float) ($part->quantidade_atual ?? 0) - (float) ($part->quantidade_reservada ?? 0),
+                4
+            );
 
             if ($available < $entry['quantidade']) {
                 $shortages[] = [
@@ -306,7 +313,14 @@ class SaleStockService
                 continue;
             }
 
-            $available = (float) ($part->quantidade_atual ?? 0);
+            // specs/040: o PDV vende do DISPONIVEL, nao do saldo bruto. Peca
+            // prometida a um orcamento enviado ao cliente nao esta a venda no
+            // balcao — e o mesmo furo que a reserva existe para fechar. A venda
+            // nao tem orcamento, entao nao ha reserva propria a somar de volta.
+            $available = round(
+                (float) ($part->quantidade_atual ?? 0) - (float) ($part->quantidade_reservada ?? 0),
+                4
+            );
 
             if ($available < $quantity) {
                 $shortages[] = [

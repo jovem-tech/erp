@@ -16,7 +16,11 @@ describe('StepPhotos', () => {
   it('no modo criação deixa claro que a etapa é opcional', () => {
     render(<StepPhotos mode="create" fotos={[]} onChangeFotos={vi.fn()} />);
 
-    expect(screen.getByText(/Opcional\. Até 4 fotos\./)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Opcional\. Até 4 fotos; origem de 20 MB, normalmente até 400 KB e no máximo 700 KB após otimização\./,
+      ),
+    ).toBeInTheDocument();
   });
 
   it('no modo edição avisa que as fotos novas somam às existentes', () => {

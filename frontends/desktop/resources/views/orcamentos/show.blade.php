@@ -375,6 +375,30 @@
             </div>
         </div>
 
+        @php
+            // specs/040 — o estado vem calculado do SERVIDOR (regra de negócio,
+            // e o desktop não tem banco). Aqui só se traduz para o operador.
+            $aEncomendar = collect($items)
+                ->filter(static fn ($linha): bool => in_array(
+                    (string) (($linha['disponibilidade']['estado'] ?? '')),
+                    ['a_encomendar', 'parcial'],
+                    true
+                ));
+        @endphp
+
+        @if ($aEncomendar->isNotEmpty())
+            <div class="alert alert-warning d-flex align-items-start gap-2">
+                <i class="bi bi-cart-plus mt-1"></i>
+                <div>
+                    <strong>{{ $aEncomendar->count() }} peça(s) precisam ser adquiridas.</strong>
+                    O estoque não cobre o que este orçamento promete.
+                    @if (\App\Support\DesktopSession::can('estoque', 'visualizar'))
+                        <a href="{{ route('estoque.a-comprar') }}">Ver peças a comprar</a>.
+                    @endif
+                </div>
+            </div>
+        @endif
+
         @if ($items !== [])
             <div class="table-responsive">
                 <table class="table table-stack align-middle">
@@ -401,6 +425,35 @@
                                 <div class="fw-semibold">{{ $item['descricao'] !== '' ? $item['descricao'] : 'Sem descrição' }}</div>
                                 @if (($item['observacoes'] ?? '') !== '')
                                     <small class="text-secondary d-block">{{ $item['observacoes'] }}</small>
+                                @endif
+                                @php
+                                    // `disponibilidade` é null em serviço e em peça
+                                    // digitada à mão (sem referência no cadastro):
+                                    // aí não há o que afirmar sobre estoque.
+                                    $disp = $item['disponibilidade'] ?? null;
+                                @endphp
+                                @if (is_array($disp))
+                                    @php
+                                        $estado = (string) ($disp['estado'] ?? '');
+                                        $rotulo = match ($estado) {
+                                            'em_estoque' => 'Em estoque',
+                                            'parcial' => 'Parcial',
+                                            default => 'A encomendar',
+                                        };
+                                        $cor = match ($estado) {
+                                            'em_estoque' => 'text-bg-success',
+                                            'parcial' => 'text-bg-warning',
+                                            default => 'text-bg-danger',
+                                        };
+                                    @endphp
+                                    <span class="badge {{ $cor }} mt-1">{{ $rotulo }}</span>
+                                    @if ((float) ($disp['falta'] ?? 0) > 0)
+                                        <small class="text-muted d-block mt-1">
+                                            Faltam {{ rtrim(rtrim(number_format((float) $disp['falta'], 4, ',', '.'), '0'), ',') }}
+                                            (em estoque: {{ rtrim(rtrim(number_format((float) ($disp['saldo'] ?? 0), 4, ',', '.'), '0'), ',') }},
+                                            reservado para outros: {{ rtrim(rtrim(number_format((float) ($disp['reservado_por_terceiros'] ?? 0), 4, ',', '.'), '0'), ',') }})
+                                        </small>
+                                    @endif
                                 @endif
                             </td>
                             <td data-label="Qtd">{{ number_format((float) ($item['quantidade'] ?? 0), 2, ',', '.') }}</td>

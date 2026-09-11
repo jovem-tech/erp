@@ -34,7 +34,7 @@
         'maxPhotos' => 4,
         'maxPhotoUploadBytes' => 2 * 1024 * 1024,
         'maxPhotoSourceBytes' => 20 * 1024 * 1024,
-        'maxPhotoSourcePixels' => 32000000,
+        'maxPhotoSourcePixels' => 60000000,
         'lockStatus' => $isEditing,
         'existingPhotosCount' => $existingPhotosCount,
     ]) !!};

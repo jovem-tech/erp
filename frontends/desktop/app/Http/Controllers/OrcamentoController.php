@@ -8,6 +8,7 @@ use App\Exceptions\ApiRequestException;
 use App\Services\ClientService;
 use App\Services\EquipmentService;
 use App\Services\OrcamentoService;
+use App\Services\StockService;
 use App\Support\DesktopSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -22,7 +23,9 @@ class OrcamentoController extends DesktopController
     public function __construct(
         private readonly OrcamentoService $orcamentoService,
         private readonly ClientService $clientService,
-        private readonly EquipmentService $equipmentService
+        private readonly EquipmentService $equipmentService,
+        // specs/040: busca remota de peca, com saldo e disponivel.
+        private readonly StockService $stockService
     ) {}
 
     public function index(Request $request): View
@@ -87,6 +90,79 @@ class OrcamentoController extends DesktopController
             'canCreateEquipment' => DesktopSession::can('equipamentos', 'criar'),
             'equipmentCatalog' => $this->equipmentCatalogForForm(),
             'isEditMode' => false,
+        ]);
+    }
+
+    /**
+     * Busca remota de peca para o seletor do item de orcamento (specs/040).
+     *
+     * Substitui o catalogo estatico de 80 pecas, que nao escalava e — pior —
+     * descartava o saldo no mapeamento, deixando o operador montar a proposta
+     * sem ver estoque nenhum. Mesmo formato e mesmo caminho de
+     * FinanceiroController::searchParts(), que ja fazia isso na entrada por
+     * compra (specs/039).
+     */
+    public function searchParts(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'q' => ['nullable', 'string', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:1', 'max:20'],
+        ]);
+
+        $search = trim((string) ($validated['q'] ?? ''));
+        $page = max(1, (int) ($validated['page'] ?? 1));
+        $perPage = max(1, min(20, (int) ($validated['per_page'] ?? 10)));
+
+        try {
+            $result = $this->stockService->paginate(array_filter([
+                'search' => $search,
+                'page' => $page,
+                'per_page' => $perPage,
+                // Peça encerrada não entra em proposta nova.
+                'status' => 'ativo',
+            ], static fn ($v): bool => $v !== '' && $v !== 0));
+        } catch (ApiAuthenticationException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 401);
+        } catch (ApiAuthorizationException $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 403);
+        } catch (ApiRequestException $e) {
+            $status = $e->statusCode() > 0 ? $e->statusCode() : 422;
+
+            return response()->json(['success' => false, 'message' => $e->getMessage()], $status);
+        }
+
+        $parts = array_map(static function (array $part): array {
+            $id = (int) ($part['id'] ?? 0);
+            $codigo = trim((string) ($part['codigo'] ?? ''));
+            $nome = trim((string) ($part['nome'] ?? ''));
+            $label = $codigo !== '' ? $codigo.' — '.$nome : $nome;
+
+            return [
+                'id' => $id,
+                'text' => $label !== '' ? $label : ('Peça #'.$id),
+                'codigo' => $codigo,
+                'nome' => $nome,
+                'unidade' => trim((string) ($part['unidade'] ?? 'UN')),
+                'categoria_efetiva' => trim((string) ($part['categoria_efetiva'] ?? '')),
+                'preco_custo' => (float) ($part['preco_custo'] ?? 0),
+                'preco_venda' => (float) ($part['preco_venda'] ?? 0),
+                'saldo' => (float) ($part['quantidade_atual'] ?? 0),
+                // O par que o badge do item usa: quanto ja esta prometido e
+                // quanto sobra de verdade.
+                'reservado' => (float) ($part['quantidade_reservada'] ?? 0),
+                'disponivel' => (float) ($part['quantidade_disponivel'] ?? 0),
+            ];
+        }, $result['items'] ?? []);
+
+        $pagination = $result['pagination'] ?? [];
+
+        return response()->json([
+            'success' => true,
+            'results' => $parts,
+            'pagination' => [
+                'more' => (int) ($pagination['current_page'] ?? 1) < (int) ($pagination['last_page'] ?? 1),
+            ],
         ]);
     }
 

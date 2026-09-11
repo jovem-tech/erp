@@ -1,5 +1,61 @@
 # Historico de versoes
 
+## v5.87.0.0 - 2026-09-11
+
+- novas fotos de OS e equipamento passam obrigatoriamente pelo
+  `OperationalPhotoOptimizer`, com meta de 400 KB e teto excepcional de 700 KB;
+- JPEG, PNG, WebP e AVIF seguros competem com a versão otimizada; HEIC/HEIF de iPhone
+  são normalizados para AVIF, com orientação/sRGB e remoção de metadados;
+- validação central rejeita MIME falso, arquivos corrompidos, sequências, animações,
+  RAW/DNG, mais de 60 MP e mais de 20 MB;
+- libvips roda em subprocesso com argumentos separados, ambiente sem segredos, timeout
+  de 12 segundos e preflight efetivo HEIC → AVIF;
+- limites HTTP/PHP, rate limit de 8 envios/minuto por usuário+IP, rollback de blobs,
+  suporte AVIF no gerenciador e derivação JPEG efêmera para PDF;
+- desktop e PWA aceitam HEIC/HEIF/AVIF e enviam o original quando o navegador não
+  consegue gerar preview;
+- amostra real: 20/20 fotos até 400 KB; HEIC de iPhone de 2,99 MB convertido para
+  647 KB sem perda visual relevante; nenhum dos 213 registros anteriores foi migrado.
+
+## v5.83.0.0 - 2026-09-10
+
+- nota tecnica criada em `documentacao/07-novas-implementacoes/2026-09-10-reserva-peca-orcamento.md`
+  (spec em `specs/040-reserva-peca-orcamento/`)
+- peca de orcamento ENVIADO ao cliente passa a ficar reservada para aquele
+  orcamento/equipamento e sai do disponivel de todos os outros caminhos (PDV, baixa de
+  OS, outros orcamentos), voltando ao estoque na rejeicao, cancelamento, vencimento ou
+  liberacao manual
+- ate aqui `orcamento_itens` apontava para `pecas` sem FK e sem nenhuma validacao de
+  saldo: dois orcamentos podiam prometer a mesma peca unica ao cliente
+- tabela nova `estoque_reservas` (a verdade, com ciclo de vida e vencimento) mais
+  `pecas.quantidade_reservada` como cache do somatorio, reescrito por soma absoluta
+  dentro do `lockForUpdate()` — auto-reparavel
+- `EstoqueReservaService::sincronizar()` reconcilia a partir de (status, itens) em vez de
+  espalhar `reservar()`/`liberar()` pelos oito pontos de transicao do orcamento
+- `Disponivel = saldo - reservado + reserva do PROPRIO orcamento`: sem o ultimo termo a
+  reserva bloquearia justamente a baixa que ela protegia
+- dois furos de escrita fechados: `EstoqueController::update()` recusa `quantidade_atual`
+  com 422 (matando de quebra o bug de um PATCH que apenas OMITISSE o campo zerar o saldo)
+  e `storeMovement()` roteia entrada/saida pelo motor unico
+- telas: badge Em estoque/Parcial/A encomendar no orcamento, busca remota paginada de
+  peca no lugar do catalogo estatico de 80, tela "Pecas a comprar" e colunas
+  Reservado/Disponivel no estoque
+- pendente: teste de concorrencia no grupo `mysql` (`lockForUpdate()` e no-op em SQLite)
+
+## v5.82.1.0 - 2026-09-10
+
+- nota tecnica criada em `documentacao/07-novas-implementacoes/2026-09-10-previsao-repasse-cartao-ancora-no-pagamento.md`
+- bug real de producao: previsao de repasse e taxa de cartao eram calculadas a partir do
+  dia em que a baixa foi digitada no sistema (`Carbon::now()`), nao do dia em que o
+  cliente efetivamente pagou — uma baixa lancada dias depois do pagamento empurrava o
+  repasse na mesma proporcao, e nao existia regra nenhuma de dia util (repasse podia cair
+  num domingo)
+- `FinanceiroCartaoService::simulate()` passa a ancorar no `data_pagamento` informado
+  (cai para hoje so quando nao informado) e rola para o proximo dia util quando o prazo
+  cai em sabado/domingo
+- corrigido de quebra: a taxa da baixa de OS nascia sem `data_competencia` e caia no mes
+  do repasse em vez do mes da venda (fallback de `Financeiro::scopeCompetenciaEntre`)
+
 ## v5.80.0.0 a v5.80.4.0 - 2026-09-09
 
 - nota tecnica criada em `documentacao/07-novas-implementacoes/2026-09-09-mapa-os-gerado-do-catalogo.md`

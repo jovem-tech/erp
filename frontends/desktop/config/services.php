@@ -37,7 +37,7 @@ return [
 
     'erp_api' => [
         'base_url' => rtrim((string) env('DESKTOP_API_BASE_URL', 'http://127.0.0.1:8000/api/v1'), '/'),
-        'timeout' => (int) env('DESKTOP_API_TIMEOUT', 15),
+        'timeout' => (int) env('DESKTOP_API_TIMEOUT', 75),
         'profile_sync_ttl' => (int) env('DESKTOP_PROFILE_SYNC_TTL', 300),
     ],
 

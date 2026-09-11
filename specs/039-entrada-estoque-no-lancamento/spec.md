@@ -30,6 +30,21 @@ Detalhe que reforça o argumento: a categoria seed `Compra de peças` nasce com
 de ativo; o custo só vira CMV quando a peça sai. O lado da saída ficou pronto na
 `038`. A entrada é a metade que faltava.
 
+> **Correção de 2026-09-10.** O parágrafo acima está certo em tese e errado na
+> prática: ele trata "comprou peça" como prova de que um ativo existe, quando a
+> prova é a **entrada de estoque**. Sem ela a peça foi comprada e aplicada no
+> mesmo período — `estoque final = 0`, e pelo `CMV = estoque inicial + compras -
+> estoque final` (CPC 16; Lei 6.404/76 art. 187) o custo pertence àquele mês. Como
+> as queries de DRE filtram `impacta_dre = 1` e o caminho alternativo ("Peças
+> aplicadas") depende de movimentação que nunca foi criada, o gasto sumia do
+> resultado para sempre.
+>
+> Passa a valer: `impacta_dre_padrao = true` no grupo "Custo Direto (OS)", e
+> `FinanceiroService::resolveClassification()` força `false` **só** quando a
+> compra gera entrada de estoque. A regra apenas subtrai impacto, nunca adiciona
+> — assim os dois caminhos são mutuamente exclusivos e o mesmo custo nunca conta
+> duas vezes.
+
 ## Objetivo
 
 Fazer a compra de peça ser **um formulário só**: o lançamento financeiro que

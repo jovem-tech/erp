@@ -3,9 +3,12 @@
 namespace App\Services\Orders;
 
 use App\DTO\Files\FileContext;
+use App\DTO\Photos\OptimizedOperationalPhoto;
 use App\Enums\Files\FileCategory;
 use App\Enums\Files\FileOrigin;
 use App\Events\OrderCreated;
+use App\Jobs\Orders\DeliverOrderOpeningDocumentJob;
+use App\Jobs\Orders\NotifyOrderStatusChangeJob;
 use App\Models\Budget;
 use App\Models\BudgetItem;
 use App\Models\BudgetStatusHistory;
@@ -15,8 +18,6 @@ use App\Models\Client;
 use App\Models\Equipment;
 use App\Models\Financeiro;
 use App\Models\FinanceiroMovimento;
-use App\Jobs\Orders\DeliverOrderOpeningDocumentJob;
-use App\Jobs\Orders\NotifyOrderStatusChangeJob;
 use App\Models\Order;
 use App\Models\OrderDocument;
 use App\Models\OrderEvent;
@@ -31,9 +32,11 @@ use App\Notifications\MobileNotification;
 use App\Services\Budgets\BudgetOrderSyncService;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
 use App\Services\EquipmentWorkflowService;
+use App\Services\Estoque\EstoqueReservaService;
 use App\Services\Files\LegacyCompatibleFileAdapter;
 use App\Services\Financeiro\OsMargemService;
 use App\Services\Integrations\IntegrationSettingsService;
+use App\Services\Photos\OperationalPhotoOptimizer;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
@@ -43,6 +46,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Throwable;
 
 class OrderWorkflowService
@@ -61,8 +65,8 @@ class OrderWorkflowService
     public const PENDING_BUDGET_SQL = '(os.orcamento_aprovado IS NULL OR os.orcamento_aprovado = 0) AND os.valor_total > 0';
 
     public const READY_PICKUP_SQL = "LOWER(TRIM(COALESCE(os.estado_fluxo, ''))) = 'pronto'"
-        . " OR (COALESCE(TRIM(os.estado_fluxo), '') = ''"
-        . " AND LOWER(TRIM(COALESCE(os.status, ''))) IN ('pronto', 'concluido', 'aguardando_retirada'))";
+        ." OR (COALESCE(TRIM(os.estado_fluxo), '') = ''"
+        ." AND LOWER(TRIM(COALESCE(os.status, ''))) IN ('pronto', 'concluido', 'aguardando_retirada'))";
 
     /**
      * Conjunto reduzido usado APENAS quando `os.busca_texto` ainda e' NULL.
@@ -112,7 +116,10 @@ class OrderWorkflowService
         private readonly OrderEventService $orderEventService,
         private readonly LegacyCompatibleFileAdapter $fileManagerAdapter,
         private readonly BudgetOrderSyncService $budgetOrderSyncService,
-        private readonly EquipmentWorkflowService $equipmentWorkflowService
+        private readonly EquipmentWorkflowService $equipmentWorkflowService,
+        private readonly OperationalPhotoOptimizer $photoOptimizer,
+        // specs/040: o vinculo com a OS desce para a linha da reserva.
+        private readonly EstoqueReservaService $estoqueReservaService
     ) {}
 
     /**
@@ -188,17 +195,17 @@ class OrderWorkflowService
         $staleDays = (int) ($filters['sem_movimento_dias'] ?? 0);
         if ($staleDays > 0) {
             $query->whereRaw(
-                self::STALE_REFERENCE_SQL . ' < ?',
+                self::STALE_REFERENCE_SQL.' < ?',
                 [now()->copy()->subDays($staleDays)->toDateTimeString()]
             );
         }
 
         if (filter_var($filters['orcamento_pendente'] ?? false, FILTER_VALIDATE_BOOL)) {
-            $query->whereRaw('(' . self::PENDING_BUDGET_SQL . ')');
+            $query->whereRaw('('.self::PENDING_BUDGET_SQL.')');
         }
 
         if (filter_var($filters['pronto_retirada'] ?? false, FILTER_VALIDATE_BOOL)) {
-            $query->whereRaw('(' . self::READY_PICKUP_SQL . ')');
+            $query->whereRaw('('.self::READY_PICKUP_SQL.')');
         }
 
         if (($filters['valor_min'] ?? '') !== '') {
@@ -819,92 +826,128 @@ class OrderWorkflowService
     }
 
     /**
-     * @param  array<int, UploadedFile>  $uploadedPhotos
+     * @param  list<OptimizedOperationalPhoto>  $uploadedPhotos
      * @return array<int, int>
      */
     private function storeOrderPhotos(Order $order, array $uploadedPhotos, string $tipo = 'recepcao'): array
     {
         $files = array_values(array_filter(
             $uploadedPhotos,
-            static fn ($file): bool => $file instanceof UploadedFile && $file->isValid()
+            static fn ($file): bool => $file instanceof OptimizedOperationalPhoto
         ));
 
         if ($files === []) {
             return [];
         }
 
-        $directory = 'private/os/'.(int) $order->id;
-        $createdPhotoIds = [];
+        $storagePaths = [];
+        $ownsTransaction = DB::transactionLevel() === 0;
+        if ($ownsTransaction) {
+            DB::beginTransaction();
+        }
 
-        foreach ($files as $index => $file) {
-            $extension = strtolower((string) ($file->getClientOriginalExtension() ?: $file->extension() ?: 'jpg'));
-            $filename = sprintf(
-                'os_%d_%s_%02d.%s',
-                (int) $order->id,
-                now()->format('YmdHisv'),
-                $index + 1,
-                $extension
-            );
+        try {
+            $directory = 'private/os/'.(int) $order->id;
+            $createdPhotoIds = [];
 
-            $storagePath = $directory.'/'.$filename;
-            $photo = null;
-
-            try {
-                $writtenPath = Storage::disk('local')->putFileAs($directory, $file, $filename);
-                if (! is_string($writtenPath) || $writtenPath !== $storagePath || ! Storage::disk('local')->exists($storagePath)) {
-                    throw new \RuntimeException('Falha ao persistir foto da ordem de servico.');
-                }
-
-                $photo = OrderPhoto::query()->create([
-                    'os_id' => (int) $order->id,
-                    'tipo' => $tipo !== '' ? $tipo : 'recepcao',
-                    'arquivo' => $storagePath,
-                    'created_at' => now(),
-                ]);
-
-                $this->fileManagerAdapter->synchronizeExisting(
-                    new FileContext(
-                        category: FileCategory::OrderPhoto,
-                        origin: FileOrigin::Upload,
-                        operationKey: 'order-photo:'.(int) $photo->id.':'.hash('sha256', $storagePath),
-                        subjectType: 'order',
-                        subjectId: (int) $order->id,
-                        relation: 'photo:'.(int) $photo->id
-                    ),
-                    'local',
-                    $storagePath,
-                    'os_fotos',
-                    'arquivo',
-                    (string) $photo->id
+            foreach ($files as $index => $file) {
+                $extension = $file->extension;
+                $filename = sprintf(
+                    'os_%d_%s.%s',
+                    (int) $order->id,
+                    Str::uuid()->toString(),
+                    $extension
                 );
-            } catch (Throwable $exception) {
-                $photo?->delete();
-                if (Storage::disk('local')->exists($storagePath)) {
-                    Storage::disk('local')->delete($storagePath);
+
+                $storagePath = $directory.'/'.$filename;
+                $photo = null;
+
+                try {
+                    $stream = fopen($file->path, 'rb');
+                    if ($stream === false) {
+                        throw new \RuntimeException('Falha ao abrir foto otimizada da ordem de servico.');
+                    }
+
+                    try {
+                        $written = Storage::disk('local')->put($storagePath, $stream);
+                    } finally {
+                        fclose($stream);
+                    }
+
+                    if (! $written || ! Storage::disk('local')->exists($storagePath)) {
+                        throw new \RuntimeException('Falha ao persistir foto da ordem de servico.');
+                    }
+                    $storagePaths[] = $storagePath;
+                    if (DB::transactionLevel() > 0) {
+                        DB::afterRollBack(static function () use ($storagePath): void {
+                            Storage::disk('local')->delete($storagePath);
+                        });
+                    }
+
+                    $photo = OrderPhoto::query()->create([
+                        'os_id' => (int) $order->id,
+                        'tipo' => $tipo !== '' ? $tipo : 'recepcao',
+                        'arquivo' => $storagePath,
+                        'created_at' => now(),
+                    ]);
+
+                    $this->fileManagerAdapter->synchronizeExisting(
+                        new FileContext(
+                            category: FileCategory::OrderPhoto,
+                            origin: FileOrigin::Upload,
+                            operationKey: 'order-photo:'.(int) $photo->id.':'.hash('sha256', $storagePath),
+                            subjectType: 'order',
+                            subjectId: (int) $order->id,
+                            relation: 'photo:'.(int) $photo->id
+                        ),
+                        'local',
+                        $storagePath,
+                        'os_fotos',
+                        'arquivo',
+                        (string) $photo->id
+                    );
+                } catch (Throwable $exception) {
+                    $photo?->delete();
+                    if (Storage::disk('local')->exists($storagePath)) {
+                        Storage::disk('local')->delete($storagePath);
+                    }
+
+                    throw $exception;
                 }
 
-                throw $exception;
+                $createdPhotoIds[] = (int) $photo->id;
             }
 
-            $createdPhotoIds[] = (int) $photo->id;
-        }
+            if ($createdPhotoIds !== []) {
+                $this->orderEventService->record(
+                    (int) $order->id,
+                    OrderEvent::CATEGORIA_REGISTRO,
+                    OrderEvent::TIPO_FOTOS_ADICIONADAS,
+                    'Fotos adicionadas',
+                    sprintf('%d foto(s) anexada(s) à OS.', count($createdPhotoIds)),
+                    [
+                        'quantidade' => count($createdPhotoIds),
+                        'foto_ids' => $createdPhotoIds,
+                        'tipo' => $tipo !== '' ? $tipo : 'recepcao',
+                    ]
+                );
+            }
 
-        if ($createdPhotoIds !== []) {
-            $this->orderEventService->record(
-                (int) $order->id,
-                OrderEvent::CATEGORIA_REGISTRO,
-                OrderEvent::TIPO_FOTOS_ADICIONADAS,
-                'Fotos adicionadas',
-                sprintf('%d foto(s) anexada(s) à OS.', count($createdPhotoIds)),
-                [
-                    'quantidade' => count($createdPhotoIds),
-                    'foto_ids' => $createdPhotoIds,
-                    'tipo' => $tipo !== '' ? $tipo : 'recepcao',
-                ]
-            );
-        }
+            if ($ownsTransaction) {
+                DB::commit();
+            }
 
-        return $createdPhotoIds;
+            return $createdPhotoIds;
+        } catch (Throwable $exception) {
+            if ($ownsTransaction && DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+            if ($storagePaths !== []) {
+                Storage::disk('local')->delete($storagePaths);
+            }
+
+            throw $exception;
+        }
     }
 
     public function updateStatus(
@@ -1228,8 +1271,8 @@ class OrderWorkflowService
      * validação) e diagnostico_tecnico/solucao_aplicada sempre null (não
      * fazem sentido compartilhados entre várias OS de uma vez).
      *
-     * @param array<int, int> $orderIds
-     * @param array{status: string, observacao?: ?string, comunicar_cliente?: bool} $payload
+     * @param  array<int, int>  $orderIds
+     * @param  array{status: string, observacao?: ?string, comunicar_cliente?: bool}  $payload
      * @return array{result: string, succeeded: array<int, array<string, mixed>>, failed: array<int, array<string, mixed>>, succeeded_count: int, failed_count: int, notificacoes_enviadas: int, notificacoes_solicitadas: int}
      */
     public function updateStatusBatch(array $orderIds, User $actor, array $payload): array
@@ -1278,6 +1321,7 @@ class OrderWorkflowService
                     'numero_os' => $numeroOs,
                     'reason' => (string) ($result['result'] ?? 'error'),
                 ];
+
                 continue;
             }
 
@@ -1441,6 +1485,13 @@ class OrderWorkflowService
         }
 
         $budget->forceFill($attributes)->save();
+
+        // specs/040: reconcilia a reserva de peca. Nao e so pelo status novo
+        // (`convertido` continua reservando) — e o `os_id`/`equipamento_id` que
+        // acabaram de ser preenchidos precisam descer para a linha da reserva,
+        // senao a tela de baixa da OS nao acha a reserva que ela mesma deve
+        // consumir.
+        $this->estoqueReservaService->sincronizar($budget, (int) $actor->id);
 
         // A garantia prometida no orçamento acompanha a OS desde o vínculo, e
         // a baixa só precisa confirmá-la. A validade fica para o encerramento,
@@ -1818,277 +1869,295 @@ class OrderWorkflowService
             ];
         }
 
+        $optimizedOrderPhotos = [];
+        $optimizedEquipmentPhotos = [];
         try {
-            $order = DB::transaction(function () use ($payload, $actor, $statusCode, $estadoFluxo, $now, $entryChecklistPlan, $linkBudgetId, $clientId, $equipmentId, $deferClient, $deferEquipment, $novoCliente, $novoEquipamento, $clienteAtualizacao, $equipamentoAtualizacao, $equipmentPhotos): Order {
-                // Cria cliente/equipamento novos DENTRO da transação (atômico): se
-                // qualquer passo abaixo falhar, o rollback desfaz também estes
-                // cadastros, e nada é persistido em aberturas de OS abandonadas.
-                if ($deferClient && is_array($novoCliente)) {
-                    $clientId = (int) $this->createDeferredClient($novoCliente)->id;
-                } elseif ($clientId > 0) {
-                    $existingClient = Client::query()->whereKey($clientId)->lockForUpdate()->first();
-                    if (! $existingClient instanceof Client) {
-                        throw new \RuntimeException('Cliente selecionado não encontrado.');
-                    }
-
-                    if (is_array($clienteAtualizacao)) {
-                        $existingClient->fill($clienteAtualizacao);
-                        $existingClient->updated_at = $now;
-                        $existingClient->save();
-                    }
-                }
-
-                if ($deferEquipment && is_array($novoEquipamento)) {
-                    // As fotos do equipamento novo são capturadas no navegador junto
-                    // com o cadastro e só persistem aqui, dentro da mesma transação
-                    // da OS — a foto obrigatória do equipamento nasce atômica.
-                    $equipment = $this->equipmentWorkflowService->createEquipment(
-                        array_merge($novoEquipamento, ['cliente_id' => $clientId]),
-                        $equipmentPhotos
-                    );
-                    $equipmentId = (int) $equipment->id;
-                } elseif ($equipmentId > 0) {
-                    $existingEquipment = Equipment::query()->whereKey($equipmentId)->lockForUpdate()->first();
-                    if (! $existingEquipment instanceof Equipment) {
-                        throw new \RuntimeException('Equipamento selecionado não encontrado.');
-                    }
-                    if ((int) $existingEquipment->cliente_id !== $clientId) {
-                        throw new \RuntimeException('O equipamento não pertence ao cliente selecionado.');
-                    }
-
-                    if (is_array($equipamentoAtualizacao)) {
-                        $this->equipmentWorkflowService->updateEquipment(
-                            $equipmentId,
-                            array_merge($equipamentoAtualizacao, ['cliente_id' => $clientId]),
-                            []
-                        );
-                    }
-
-                    if ((bool) ($existingEquipment->cadastro_pendente ?? false)) {
-                        // Sem foto aqui dentro so' acontece por corrida (a marca
-                        // entrou depois da checagem la' de cima): recusa, e o
-                        // rollback garante que nada da OS ficou pela metade.
-                        if ($equipmentPhotos === []) {
-                            throw new \RuntimeException('O cadastro deste equipamento ficou incompleto no orcamento. Anexe a foto do aparelho para completar antes de salvar a OS.');
-                        }
-
-                        $this->equipmentWorkflowService->completePendingRegistration($equipmentId, $equipmentPhotos);
-                    }
-                }
-
-                $payload['cliente_id'] = $clientId;
-                $payload['equipamento_id'] = $equipmentId;
-
-                $linkBudget = null;
-                if ($linkBudgetId > 0) {
-                    // A leitura, validação e conversão compartilham a transação e
-                    // o lock. Chaves idempotentes distintas não podem consumir a
-                    // mesma aprovação em duas OS concorrentes.
-                    $linkBudget = Budget::query()
-                        ->whereKey($linkBudgetId)
-                        ->lockForUpdate()
-                        ->first();
-                    $linkValidation = $this->validateBudgetForOrderLink(
-                        $linkBudget,
-                        $clientId,
-                        $equipmentId
-                    );
-
-                    if ($linkValidation !== null) {
-                        throw new OrderBudgetLinkException(
-                            (string) ($linkValidation['result'] ?? 'budget_link_invalid'),
-                            (string) ($linkValidation['message'] ?? 'O orçamento não pode ser convertido.')
-                        );
-                    }
-                }
-
-                // A numeração só é consumida depois de todas as validações que
-                // podem abortar a conversão. Assim uma disputa pelo mesmo
-                // orçamento não cria lacunas desnecessárias na sequência de OS.
-                $payload['numero_os'] = $this->orderNumberService->nextNumber();
-
-                /** @var Order $order */
-                $order = Order::query()->create($payload);
-
-                $this->createStatusHistory(
-                    (int) $order->id,
-                    null,
-                    $statusCode,
-                    $estadoFluxo,
-                    $actor,
-                    'OS criada pelo backend central.',
-                    $now,
-                    eventTipo: OrderEvent::TIPO_OS_CRIADA
-                );
-
-                if (is_array($entryChecklistPlan)) {
-                    $this->applyEntryChecklistSyncPlan((int) $order->id, $entryChecklistPlan, $now);
-                }
-
-                if ($linkBudget instanceof Budget) {
-                    $this->linkBudgetToOrder($linkBudget, $order, $actor, $now);
-                }
-
-                return $order;
-            });
-        } catch (OrderBudgetLinkException $exception) {
-            return [
-                'result' => $exception->resultCode(),
-                'message' => $exception->getMessage(),
-            ];
-        } catch (QueryException $exception) {
-            // A restricao UNIQUE e a autoridade final contra duas requisicoes
-            // simultaneas com a mesma chave. Se a concorrente venceu, devolve
-            // a OS que ela criou em vez de transformar o retry em erro 500.
-            if ($idempotencyKey !== '' && $requestFingerprint !== null) {
-                $replay = $this->resolveOrderCreationReplay($actor, $idempotencyKey, $requestFingerprint);
-                if ($replay !== null) {
-                    return $replay;
-                }
-            }
+            // CPU-intensive decoding and encoding stays outside the order DB lock.
+            $optimizedOrderPhotos = $this->photoOptimizer->optimizeMany($uploadedPhotos);
+            $optimizedEquipmentPhotos = $this->photoOptimizer->optimizeMany($equipmentPhotos);
+        } catch (Throwable $exception) {
+            $this->photoOptimizer->cleanupMany($optimizedOrderPhotos);
+            $this->photoOptimizer->cleanupMany($optimizedEquipmentPhotos);
 
             throw $exception;
-        } catch (\RuntimeException $exception) {
-            // Falha ao criar o cliente/equipamento novo dentro da transação
-            // (fluxo atômico): a transação faz rollback, nada é persistido.
-            report($exception);
-
-            return [
-                'result' => 'deferred_registration_failed',
-                'message' => $exception->getMessage(),
-            ];
         }
-
-        $warnings = [];
-
-        if ($uploadedPhotos !== []) {
-            try {
-                $this->storeOrderPhotos($order, $uploadedPhotos);
-            } catch (Throwable $exception) {
-                $this->logOrderPostCreationFailure($order, 'photos', $exception);
-                $warnings[] = $this->orderCreationWarning(
-                    'ORDER_PHOTOS_NOT_STORED',
-                    'A OS foi criada, mas uma ou mais fotos não puderam ser anexadas.'
-                );
-            }
-        }
-
-        // A geracao do PDF e o envio ao cliente saem daqui para a fila `documents`
-        // (DeliverOrderOpeningDocumentJob). Antes rodavam nesta requisicao, e o
-        // par "PDF em dois formatos + ate' duas tentativas de WhatsApp de 20s"
-        // fazia a abertura de OS segurar um worker do PHP-FPM por dezenas de
-        // segundos — com o pool do desktop pequeno, era o caminho mais curto
-        // para o sistema inteiro travar sob operacao intensa.
-        $createdOrder = $order;
 
         try {
-            $detailedOrder = $this->detailQuery()->find((int) $order->id);
-            if ($detailedOrder instanceof Order) {
-                $createdOrder = $detailedOrder;
+            try {
+                $order = DB::transaction(function () use ($payload, $actor, $statusCode, $estadoFluxo, $now, $entryChecklistPlan, $linkBudgetId, $clientId, $equipmentId, $deferClient, $deferEquipment, $novoCliente, $novoEquipamento, $clienteAtualizacao, $equipamentoAtualizacao, $optimizedEquipmentPhotos): Order {
+                    // Cria cliente/equipamento novos DENTRO da transação (atômico): se
+                    // qualquer passo abaixo falhar, o rollback desfaz também estes
+                    // cadastros, e nada é persistido em aberturas de OS abandonadas.
+                    if ($deferClient && is_array($novoCliente)) {
+                        $clientId = (int) $this->createDeferredClient($novoCliente)->id;
+                    } elseif ($clientId > 0) {
+                        $existingClient = Client::query()->whereKey($clientId)->lockForUpdate()->first();
+                        if (! $existingClient instanceof Client) {
+                            throw new \RuntimeException('Cliente selecionado não encontrado.');
+                        }
+
+                        if (is_array($clienteAtualizacao)) {
+                            $existingClient->fill($clienteAtualizacao);
+                            $existingClient->updated_at = $now;
+                            $existingClient->save();
+                        }
+                    }
+
+                    if ($deferEquipment && is_array($novoEquipamento)) {
+                        // As fotos do equipamento novo são capturadas no navegador junto
+                        // com o cadastro e só persistem aqui, dentro da mesma transação
+                        // da OS — a foto obrigatória do equipamento nasce atômica.
+                        $equipment = $this->equipmentWorkflowService->createEquipmentFromOptimizedPhotos(
+                            array_merge($novoEquipamento, ['cliente_id' => $clientId]),
+                            $optimizedEquipmentPhotos
+                        );
+                        $equipmentId = (int) $equipment->id;
+                    } elseif ($equipmentId > 0) {
+                        $existingEquipment = Equipment::query()->whereKey($equipmentId)->lockForUpdate()->first();
+                        if (! $existingEquipment instanceof Equipment) {
+                            throw new \RuntimeException('Equipamento selecionado não encontrado.');
+                        }
+                        if ((int) $existingEquipment->cliente_id !== $clientId) {
+                            throw new \RuntimeException('O equipamento não pertence ao cliente selecionado.');
+                        }
+
+                        if (is_array($equipamentoAtualizacao)) {
+                            $this->equipmentWorkflowService->updateEquipmentFromOptimizedPhotos(
+                                $equipmentId,
+                                array_merge($equipamentoAtualizacao, ['cliente_id' => $clientId]),
+                                []
+                            );
+                        }
+
+                        if ((bool) ($existingEquipment->cadastro_pendente ?? false)) {
+                            // Sem foto aqui dentro so' acontece por corrida (a marca
+                            // entrou depois da checagem la' de cima): recusa, e o
+                            // rollback garante que nada da OS ficou pela metade.
+                            if ($optimizedEquipmentPhotos === []) {
+                                throw new \RuntimeException('O cadastro deste equipamento ficou incompleto no orcamento. Anexe a foto do aparelho para completar antes de salvar a OS.');
+                            }
+
+                            $this->equipmentWorkflowService->completePendingRegistrationFromOptimizedPhotos($equipmentId, $optimizedEquipmentPhotos);
+                        }
+                    }
+
+                    $payload['cliente_id'] = $clientId;
+                    $payload['equipamento_id'] = $equipmentId;
+
+                    $linkBudget = null;
+                    if ($linkBudgetId > 0) {
+                        // A leitura, validação e conversão compartilham a transação e
+                        // o lock. Chaves idempotentes distintas não podem consumir a
+                        // mesma aprovação em duas OS concorrentes.
+                        $linkBudget = Budget::query()
+                            ->whereKey($linkBudgetId)
+                            ->lockForUpdate()
+                            ->first();
+                        $linkValidation = $this->validateBudgetForOrderLink(
+                            $linkBudget,
+                            $clientId,
+                            $equipmentId
+                        );
+
+                        if ($linkValidation !== null) {
+                            throw new OrderBudgetLinkException(
+                                (string) ($linkValidation['result'] ?? 'budget_link_invalid'),
+                                (string) ($linkValidation['message'] ?? 'O orçamento não pode ser convertido.')
+                            );
+                        }
+                    }
+
+                    // A numeração só é consumida depois de todas as validações que
+                    // podem abortar a conversão. Assim uma disputa pelo mesmo
+                    // orçamento não cria lacunas desnecessárias na sequência de OS.
+                    $payload['numero_os'] = $this->orderNumberService->nextNumber();
+
+                    /** @var Order $order */
+                    $order = Order::query()->create($payload);
+
+                    $this->createStatusHistory(
+                        (int) $order->id,
+                        null,
+                        $statusCode,
+                        $estadoFluxo,
+                        $actor,
+                        'OS criada pelo backend central.',
+                        $now,
+                        eventTipo: OrderEvent::TIPO_OS_CRIADA
+                    );
+
+                    if (is_array($entryChecklistPlan)) {
+                        $this->applyEntryChecklistSyncPlan((int) $order->id, $entryChecklistPlan, $now);
+                    }
+
+                    if ($linkBudget instanceof Budget) {
+                        $this->linkBudgetToOrder($linkBudget, $order, $actor, $now);
+                    }
+
+                    return $order;
+                });
+            } catch (OrderBudgetLinkException $exception) {
+                return [
+                    'result' => $exception->resultCode(),
+                    'message' => $exception->getMessage(),
+                ];
+            } catch (QueryException $exception) {
+                // A restricao UNIQUE e a autoridade final contra duas requisicoes
+                // simultaneas com a mesma chave. Se a concorrente venceu, devolve
+                // a OS que ela criou em vez de transformar o retry em erro 500.
+                if ($idempotencyKey !== '' && $requestFingerprint !== null) {
+                    $replay = $this->resolveOrderCreationReplay($actor, $idempotencyKey, $requestFingerprint);
+                    if ($replay !== null) {
+                        return $replay;
+                    }
+                }
+
+                throw $exception;
+            } catch (\RuntimeException $exception) {
+                // Falha ao criar o cliente/equipamento novo dentro da transação
+                // (fluxo atômico): a transação faz rollback, nada é persistido.
+                report($exception);
+
+                return [
+                    'result' => 'deferred_registration_failed',
+                    'message' => $exception->getMessage(),
+                ];
             }
-        } catch (Throwable $exception) {
-            $this->logOrderPostCreationFailure($order, 'detail_query', $exception);
-            $warnings[] = $this->orderCreationWarning(
-                'ORDER_DETAIL_DEFERRED',
-                'A OS foi criada, mas alguns detalhes serão carregados ao abrir o registro.'
-            );
-        }
 
-        $openingDelivery = [
-            'requested' => $shouldSendOpeningPdf,
-            'sent' => false,
-            'queued' => false,
-            'channel' => null,
-            'message' => '',
-        ];
+            $warnings = [];
 
-        if ($shouldSendOpeningPdf) {
-            // A ausencia de telefone e' conferida AQUI, e nao no job: e' leitura
-            // de banco (barata) cuja resposta o operador precisa ver ainda na
-            // tela de criacao, com o cliente na frente dele e o cadastro aberto
-            // para corrigir. So' o que custa caro — gerar o PDF e falar com o
-            // gateway de WhatsApp — e' que vai para a fila.
-            $openingPhone = $this->resolveClientNotificationPhone(
-                $createdOrder instanceof Order ? $createdOrder : $order
-            );
-
-            if ($openingPhone === '') {
-                $openingDelivery['message'] = 'Cliente sem telefone cadastrado para receber o PDF de abertura.';
-            } else {
+            if ($optimizedOrderPhotos !== []) {
                 try {
-                    DeliverOrderOpeningDocumentJob::dispatch((int) $order->id, (int) $actor->id);
-
-                    $openingDelivery['queued'] = true;
-                    $openingDelivery['channel'] = 'fila';
-                    $openingDelivery['message'] = 'O PDF de abertura esta sendo gerado e sera enviado ao cliente em instantes.';
+                    $this->storeOrderPhotos($order, $optimizedOrderPhotos);
                 } catch (Throwable $exception) {
-                    // Falha ao ENFILEIRAR (Redis fora, por exemplo) e' diferente
-                    // de falha ao entregar: aqui nada foi agendado, entao o
-                    // operador precisa saber que o cliente nao recebera nada.
-                    $this->logOrderPostCreationFailure($order, 'opening_document_dispatch', $exception);
-                    $openingDelivery['message'] = 'A OS foi criada, mas o envio do PDF ao cliente nao pode ser agendado.';
+                    $this->logOrderPostCreationFailure($order, 'photos', $exception);
                     $warnings[] = $this->orderCreationWarning(
-                        'ORDER_OPENING_DELIVERY_FAILED',
-                        (string) $openingDelivery['message']
+                        'ORDER_PHOTOS_NOT_STORED',
+                        'A OS foi criada, mas uma ou mais fotos não puderam ser anexadas.'
                     );
                 }
             }
-        }
 
-        if ($createdOrder instanceof Order) {
+            // A geracao do PDF e o envio ao cliente saem daqui para a fila `documents`
+            // (DeliverOrderOpeningDocumentJob). Antes rodavam nesta requisicao, e o
+            // par "PDF em dois formatos + ate' duas tentativas de WhatsApp de 20s"
+            // fazia a abertura de OS segurar um worker do PHP-FPM por dezenas de
+            // segundos — com o pool do desktop pequeno, era o caminho mais curto
+            // para o sistema inteiro travar sob operacao intensa.
+            $createdOrder = $order;
+
             try {
-                $this->sendOrderNotification(
-                    $createdOrder,
-                    $actor,
-                    'order.created',
-                    'Nova OS criada',
-                    'A OS '.$createdOrder->numero_os.' foi aberta para '.($createdOrder->client?->nome_razao ?? 'o cliente selecionado').'.',
-                    [
-                        'status_novo' => $statusCode,
-                        'estado_fluxo' => $estadoFluxo,
-                        'icon' => 'clipboard-plus',
-                    ]
-                );
+                $detailedOrder = $this->detailQuery()->find((int) $order->id);
+                if ($detailedOrder instanceof Order) {
+                    $createdOrder = $detailedOrder;
+                }
             } catch (Throwable $exception) {
-                $this->logOrderPostCreationFailure($order, 'internal_notification', $exception);
+                $this->logOrderPostCreationFailure($order, 'detail_query', $exception);
                 $warnings[] = $this->orderCreationWarning(
-                    'ORDER_NOTIFICATION_DEFERRED',
-                    'A OS foi criada, mas a notificação interna não pôde ser enviada.'
+                    'ORDER_DETAIL_DEFERRED',
+                    'A OS foi criada, mas alguns detalhes serão carregados ao abrir o registro.'
                 );
             }
 
-            try {
-                broadcast(new OrderCreated([
-                    'id' => (int) $createdOrder->id,
-                    'numero_os' => (string) ($createdOrder->numero_os ?? ''),
-                    'cliente_nome' => (string) ($createdOrder->client?->nome_razao ?? ''),
-                    'cliente_telefone' => (string) ($createdOrder->client?->telefone1 ?? ''),
-                    'equipamento_resumo' => (string) ($createdOrder->equipment?->resumo_tecnico ?? ''),
-                    'equipamento_serie' => (string) ($createdOrder->equipment?->numero_serie ?? ''),
-                    'status_nome' => (string) ($createdOrder->statusCatalog?->nome ?? ''),
-                    'status_cor' => (string) ($createdOrder->statusCatalog?->cor ?? '#64748b'),
-                    'proximas_etapas' => $this->mapNextStatusOptions($statusCode),
-                    'estado_fluxo' => (string) ($createdOrder->estado_fluxo ?? ''),
-                    'data_entrada' => $createdOrder->data_entrada?->format('d/m/Y') ?? '',
-                ]));
-            } catch (Throwable $exception) {
-                $this->logOrderPostCreationFailure($order, 'realtime_broadcast', $exception);
+            $openingDelivery = [
+                'requested' => $shouldSendOpeningPdf,
+                'sent' => false,
+                'queued' => false,
+                'channel' => null,
+                'message' => '',
+            ];
+
+            if ($shouldSendOpeningPdf) {
+                // A ausencia de telefone e' conferida AQUI, e nao no job: e' leitura
+                // de banco (barata) cuja resposta o operador precisa ver ainda na
+                // tela de criacao, com o cliente na frente dele e o cadastro aberto
+                // para corrigir. So' o que custa caro — gerar o PDF e falar com o
+                // gateway de WhatsApp — e' que vai para a fila.
+                $openingPhone = $this->resolveClientNotificationPhone(
+                    $createdOrder instanceof Order ? $createdOrder : $order
+                );
+
+                if ($openingPhone === '') {
+                    $openingDelivery['message'] = 'Cliente sem telefone cadastrado para receber o PDF de abertura.';
+                } else {
+                    try {
+                        DeliverOrderOpeningDocumentJob::dispatch((int) $order->id, (int) $actor->id);
+
+                        $openingDelivery['queued'] = true;
+                        $openingDelivery['channel'] = 'fila';
+                        $openingDelivery['message'] = 'O PDF de abertura esta sendo gerado e sera enviado ao cliente em instantes.';
+                    } catch (Throwable $exception) {
+                        // Falha ao ENFILEIRAR (Redis fora, por exemplo) e' diferente
+                        // de falha ao entregar: aqui nada foi agendado, entao o
+                        // operador precisa saber que o cliente nao recebera nada.
+                        $this->logOrderPostCreationFailure($order, 'opening_document_dispatch', $exception);
+                        $openingDelivery['message'] = 'A OS foi criada, mas o envio do PDF ao cliente nao pode ser agendado.';
+                        $warnings[] = $this->orderCreationWarning(
+                            'ORDER_OPENING_DELIVERY_FAILED',
+                            (string) $openingDelivery['message']
+                        );
+                    }
+                }
             }
+
+            if ($createdOrder instanceof Order) {
+                try {
+                    $this->sendOrderNotification(
+                        $createdOrder,
+                        $actor,
+                        'order.created',
+                        'Nova OS criada',
+                        'A OS '.$createdOrder->numero_os.' foi aberta para '.($createdOrder->client?->nome_razao ?? 'o cliente selecionado').'.',
+                        [
+                            'status_novo' => $statusCode,
+                            'estado_fluxo' => $estadoFluxo,
+                            'icon' => 'clipboard-plus',
+                        ]
+                    );
+                } catch (Throwable $exception) {
+                    $this->logOrderPostCreationFailure($order, 'internal_notification', $exception);
+                    $warnings[] = $this->orderCreationWarning(
+                        'ORDER_NOTIFICATION_DEFERRED',
+                        'A OS foi criada, mas a notificação interna não pôde ser enviada.'
+                    );
+                }
+
+                try {
+                    broadcast(new OrderCreated([
+                        'id' => (int) $createdOrder->id,
+                        'numero_os' => (string) ($createdOrder->numero_os ?? ''),
+                        'cliente_nome' => (string) ($createdOrder->client?->nome_razao ?? ''),
+                        'cliente_telefone' => (string) ($createdOrder->client?->telefone1 ?? ''),
+                        'equipamento_resumo' => (string) ($createdOrder->equipment?->resumo_tecnico ?? ''),
+                        'equipamento_serie' => (string) ($createdOrder->equipment?->numero_serie ?? ''),
+                        'status_nome' => (string) ($createdOrder->statusCatalog?->nome ?? ''),
+                        'status_cor' => (string) ($createdOrder->statusCatalog?->cor ?? '#64748b'),
+                        'proximas_etapas' => $this->mapNextStatusOptions($statusCode),
+                        'estado_fluxo' => (string) ($createdOrder->estado_fluxo ?? ''),
+                        'data_entrada' => $createdOrder->data_entrada?->format('d/m/Y') ?? '',
+                    ]));
+                } catch (Throwable $exception) {
+                    $this->logOrderPostCreationFailure($order, 'realtime_broadcast', $exception);
+                }
+            }
+
+            $mappedOrder = $this->mapCreatedOrderSafely($createdOrder, $warnings);
+
+            return [
+                'result' => 'ok',
+                'order' => $mappedOrder,
+                // Sempre nulo no retorno sincrono: quem gera o PDF agora e' o job. O
+                // desktop le 'opening_delivery.queued' para dizer ao operador que o
+                // documento esta a caminho.
+                'opening_document' => null,
+                'opening_delivery' => $openingDelivery,
+                'idempotent_replay' => false,
+                'warnings' => $warnings,
+            ];
+        } finally {
+            $this->photoOptimizer->cleanupMany($optimizedOrderPhotos);
+            $this->photoOptimizer->cleanupMany($optimizedEquipmentPhotos);
         }
-
-        $mappedOrder = $this->mapCreatedOrderSafely($createdOrder, $warnings);
-
-        return [
-            'result' => 'ok',
-            'order' => $mappedOrder,
-            // Sempre nulo no retorno sincrono: quem gera o PDF agora e' o job. O
-            // desktop le 'opening_delivery.queued' para dizer ao operador que o
-            // documento esta a caminho.
-            'opening_document' => null,
-            'opening_delivery' => $openingDelivery,
-            'idempotent_replay' => false,
-            'warnings' => $warnings,
-        ];
     }
 
     /**
@@ -2310,92 +2379,98 @@ class OrderWorkflowService
             }
         }
 
-        if ($payload !== [] || is_array($entryChecklistPlan)) {
-            DB::transaction(function () use ($orderId, $payload, $statusChanged, $previousStatus, $actor, $estadoFluxo, $entryChecklistPlan, $camposAlterados): void {
-                $now = Carbon::now();
+        $optimizedOrderPhotos = $this->photoOptimizer->optimizeMany($uploadedPhotos);
 
-                Order::query()
-                    ->whereKey($orderId)
-                    ->update(array_merge($payload, ['updated_at' => $now]));
+        try {
+            if ($payload !== [] || is_array($entryChecklistPlan)) {
+                DB::transaction(function () use ($orderId, $payload, $statusChanged, $previousStatus, $actor, $estadoFluxo, $entryChecklistPlan, $camposAlterados): void {
+                    $now = Carbon::now();
 
-                if ($statusChanged) {
-                    $this->createStatusHistory(
-                        $orderId,
-                        $previousStatus !== '' ? $previousStatus : null,
-                        (string) $payload['status'],
-                        $estadoFluxo,
-                        $actor,
-                        'OS atualizada pelo backend central.',
-                        $now
-                    );
-                }
+                    Order::query()
+                        ->whereKey($orderId)
+                        ->update(array_merge($payload, ['updated_at' => $now]));
 
-                if ($camposAlterados !== []) {
-                    $this->orderEventService->record(
-                        $orderId,
-                        OrderEvent::CATEGORIA_REGISTRO,
-                        OrderEvent::TIPO_OS_ATUALIZADA,
-                        'OS atualizada',
-                        'Campos alterados: '.implode(', ', array_keys($camposAlterados)).'.',
-                        ['campos' => $camposAlterados],
-                        (int) $actor->id,
-                        OrderEvent::ORIGEM_USUARIO,
-                        $now
-                    );
-                }
+                    if ($statusChanged) {
+                        $this->createStatusHistory(
+                            $orderId,
+                            $previousStatus !== '' ? $previousStatus : null,
+                            (string) $payload['status'],
+                            $estadoFluxo,
+                            $actor,
+                            'OS atualizada pelo backend central.',
+                            $now
+                        );
+                    }
 
-                if (is_array($entryChecklistPlan)) {
-                    $this->applyEntryChecklistSyncPlan($orderId, $entryChecklistPlan, $now);
-                }
-            });
-        }
+                    if ($camposAlterados !== []) {
+                        $this->orderEventService->record(
+                            $orderId,
+                            OrderEvent::CATEGORIA_REGISTRO,
+                            OrderEvent::TIPO_OS_ATUALIZADA,
+                            'OS atualizada',
+                            'Campos alterados: '.implode(', ', array_keys($camposAlterados)).'.',
+                            ['campos' => $camposAlterados],
+                            (int) $actor->id,
+                            OrderEvent::ORIGEM_USUARIO,
+                            $now
+                        );
+                    }
 
-        // Mesma regra de negocio de updateStatus() (ver comentario la): a
-        // edicao generica tambem pode setar um status de saida de fluxo (nao e
-        // um dos closureCodes(), bloqueados acima), entao precisa do mesmo
-        // gatilho de cancelamento automatico do orcamento vinculado.
-        if ($statusChanged && in_array((string) $payload['status'], OrderStatus::flowExitCodes(), true)) {
-            try {
-                $this->budgetOrderSyncService->cancelBudgetsForOrderFlowExit(
-                    $orderId,
-                    (int) $actor->id,
-                    (string) ($statusRow->nome ?? $payload['status'])
-                );
-            } catch (Throwable $exception) {
-                logger()->warning('[API V1][ORDERS] Falha ao cancelar orcamento por saida de fluxo da OS', [
-                    'order_id' => $orderId,
-                    'status_novo' => (string) $payload['status'],
-                    'message' => $exception->getMessage(),
-                ]);
+                    if (is_array($entryChecklistPlan)) {
+                        $this->applyEntryChecklistSyncPlan($orderId, $entryChecklistPlan, $now);
+                    }
+                });
             }
+
+            // Mesma regra de negocio de updateStatus() (ver comentario la): a
+            // edicao generica tambem pode setar um status de saida de fluxo (nao e
+            // um dos closureCodes(), bloqueados acima), entao precisa do mesmo
+            // gatilho de cancelamento automatico do orcamento vinculado.
+            if ($statusChanged && in_array((string) $payload['status'], OrderStatus::flowExitCodes(), true)) {
+                try {
+                    $this->budgetOrderSyncService->cancelBudgetsForOrderFlowExit(
+                        $orderId,
+                        (int) $actor->id,
+                        (string) ($statusRow->nome ?? $payload['status'])
+                    );
+                } catch (Throwable $exception) {
+                    logger()->warning('[API V1][ORDERS] Falha ao cancelar orcamento por saida de fluxo da OS', [
+                        'order_id' => $orderId,
+                        'status_novo' => (string) $payload['status'],
+                        'message' => $exception->getMessage(),
+                    ]);
+                }
+            }
+
+            if ($optimizedOrderPhotos !== []) {
+                $this->storeOrderPhotos($order, $optimizedOrderPhotos);
+            }
+
+            $updatedOrder = $this->detailQuery()->find($orderId);
+
+            if ($statusChanged && $updatedOrder instanceof Order) {
+                $this->sendOrderNotification(
+                    $updatedOrder,
+                    $actor,
+                    'order.updated',
+                    'OS atualizada',
+                    'A OS '.$updatedOrder->numero_os.' recebeu alterações de cadastro.',
+                    [
+                        'status_anterior' => $previousStatus !== '' ? $previousStatus : null,
+                        'status_novo' => (string) ($payload['status'] ?? $order->status),
+                        'estado_fluxo' => (string) ($payload['estado_fluxo'] ?? $order->estado_fluxo),
+                        'icon' => 'pencil-square',
+                    ]
+                );
+            }
+
+            return [
+                'result' => 'ok',
+                'order' => $updatedOrder instanceof Order ? $this->mapDetail($updatedOrder) : null,
+            ];
+        } finally {
+            $this->photoOptimizer->cleanupMany($optimizedOrderPhotos);
         }
-
-        if ($uploadedPhotos !== []) {
-            $this->storeOrderPhotos($order, $uploadedPhotos);
-        }
-
-        $updatedOrder = $this->detailQuery()->find($orderId);
-
-        if ($statusChanged && $updatedOrder instanceof Order) {
-            $this->sendOrderNotification(
-                $updatedOrder,
-                $actor,
-                'order.updated',
-                'OS atualizada',
-                'A OS '.$updatedOrder->numero_os.' recebeu alterações de cadastro.',
-                [
-                    'status_anterior' => $previousStatus !== '' ? $previousStatus : null,
-                    'status_novo' => (string) ($payload['status'] ?? $order->status),
-                    'estado_fluxo' => (string) ($payload['estado_fluxo'] ?? $order->estado_fluxo),
-                    'icon' => 'pencil-square',
-                ]
-            );
-        }
-
-        return [
-            'result' => 'ok',
-            'order' => $updatedOrder instanceof Order ? $this->mapDetail($updatedOrder) : null,
-        ];
     }
 
     /**

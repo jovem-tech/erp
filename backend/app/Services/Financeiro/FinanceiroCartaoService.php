@@ -5,8 +5,10 @@ namespace App\Services\Financeiro;
 use App\Models\FinanceiroCartaoBandeira;
 use App\Models\FinanceiroCartaoOperadora;
 use App\Models\FinanceiroCartaoTaxa;
+use DateTimeInterface;
 use Illuminate\Support\Carbon;
 use RuntimeException;
+use Throwable;
 
 class FinanceiroCartaoService
 {
@@ -54,7 +56,8 @@ class FinanceiroCartaoService
         $valorTaxa = round(($valorBruto * ($percentual / 100)) + $taxaFixa, 2);
         $valorLiquido = round($valorBruto - $valorTaxa, 2);
         $prazoRecebimentoDias = (int) ($taxa->prazo_recebimento_dias ?: ($operadora?->prazo_padrao_dias ?? 0));
-        $dataPrevista = Carbon::now()->addDays(max(0, $prazoRecebimentoDias))->toDateString();
+        $dataBase = $this->resolveBaseDate($payload);
+        $dataPrevista = $this->creditDate($dataBase, $prazoRecebimentoDias)->toDateString();
 
         return [
             'ok' => true,
@@ -67,6 +70,7 @@ class FinanceiroCartaoService
             'modalidade' => $modalidade,
             'modalidade_label' => $modalidade === FinanceiroCartaoTaxa::MODALIDADE_DEBITO ? 'Cartão de débito' : 'Cartão de crédito',
             'prazo_recebimento_dias' => $prazoRecebimentoDias,
+            'data_base_repasse' => $dataBase->toDateString(),
             'data_prevista_repasse' => $dataPrevista,
             'data_prevista_recebimento' => $dataPrevista,
             'data_credito_efetivo' => null,
@@ -76,6 +80,67 @@ class FinanceiroCartaoService
             'bandeira_nome' => (string) ($bandeira?->nome ?? ''),
             'taxa_id' => (int) $taxa->id,
         ];
+    }
+
+    /**
+     * Dia em que a venda no cartao foi PAGA — a ancora do prazo da operadora.
+     *
+     * Nao e' `now()`: quem digita a baixa no sistema nao decide quando a
+     * maquininha repassa. Uma OS entregue e paga no sabado 29/08 e' creditada
+     * D+prazo contado do dia 29, mesmo que a baixa so' seja lancada na segunda
+     * 31/08 — usar `now()` empurrava o repasse (e a taxa, que e' datada por
+     * ele) para tantos dias quanto o operador demorasse para dar baixa, e no
+     * caso real chegou a jogar a taxa para o mes seguinte enquanto a receita
+     * ficava no mes da venda.
+     *
+     * Fallback para hoje so' quando o chamador nao sabe a data do pagamento
+     * (a simulacao da tela, que roda antes de existir movimento).
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function resolveBaseDate(array $payload): Carbon
+    {
+        foreach (['data_base', 'data_pagamento', 'data_movimento'] as $key) {
+            $value = $payload[$key] ?? null;
+
+            if ($value instanceof DateTimeInterface) {
+                return Carbon::instance($value)->startOfDay();
+            }
+
+            if (! is_string($value) || trim($value) === '') {
+                continue;
+            }
+
+            try {
+                return Carbon::parse(trim($value))->startOfDay();
+            } catch (Throwable) {
+                continue;
+            }
+        }
+
+        return Carbon::now()->startOfDay();
+    }
+
+    /**
+     * Data do credito da operadora: prazo em dias CORRIDOS a partir do
+     * pagamento, rolando para o proximo dia util quando cair em fim de semana
+     * — e' assim que as adquirentes liquidam (nao existe repasse no sabado ou
+     * no domingo). Sabado 29/08 + D+1 = domingo 30/08, que vira segunda 31/08.
+     *
+     * Feriados nao entram: o sistema nao tem calendario de feriados, e chutar
+     * um seria pior que a previsao ficar um dia otimista — quando o dinheiro
+     * cai de fato, `data_credito_efetivo` (conciliacao da conta) sobrepoe esta
+     * previsao em todos os relatorios.
+     */
+    public function creditDate(Carbon $base, int $prazoDias): Carbon
+    {
+        $data = $base->copy()->startOfDay()->addDays(max(0, $prazoDias));
+
+        while ($data->isWeekend()) {
+            $data->addDay();
+        }
+
+        return $data;
     }
 
     public function normalizeModalidade(string $modalidade = '', string $formaPagamento = ''): string

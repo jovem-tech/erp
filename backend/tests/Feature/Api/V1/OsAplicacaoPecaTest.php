@@ -2,6 +2,9 @@
 
 namespace Tests\Feature\Api\V1;
 
+use App\Models\Budget;
+use App\Models\EstoqueReserva;
+use App\Services\Estoque\EstoqueReservaService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
@@ -50,6 +53,160 @@ class OsAplicacaoPecaTest extends TestCase
             'status' => 'aguardando_reparo',
             'valor_total' => 400,
             'valor_final' => 400,
+        ]);
+    }
+
+    /**
+     * Cria um orcamento APROVADO da OS com a peca dentro, e reconcilia a
+     * reserva — o mesmo caminho que dispatchForApproval/finalizeApproval usam.
+     */
+    private function orcamentoAprovadoComPeca(int $osId, int $pecaId, float $quantidade): int
+    {
+        $budgetId = $this->createBudgetRecord([
+            'numero' => 'ORC-RES-'.$osId.'-'.$pecaId,
+            'status' => Budget::STATUS_APPROVED,
+            'os_id' => $osId,
+            'aprovado_em' => now(),
+        ]);
+
+        $this->createBudgetItemRecord($budgetId, [
+            'tipo_item' => 'peca',
+            'referencia_id' => $pecaId,
+            'quantidade' => $quantidade,
+        ]);
+
+        app(EstoqueReservaService::class)->sincronizar(Budget::query()->findOrFail($budgetId));
+
+        return $budgetId;
+    }
+
+    /**
+     * specs/040 — o caso que decide se a reserva presta.
+     *
+     * Sem somar de volta a reserva do PROPRIO orcamento, a peca guardada para
+     * este aparelho bloquearia exatamente a baixa que ela existia para proteger.
+     */
+    public function test_reserva_do_proprio_orcamento_nao_bloqueia_a_propria_baixa(): void
+    {
+        Sanctum::actingAs($this->createUserRecord(['grupo_id' => 1]), ['*']);
+
+        $osId = $this->criarOs();
+        $pecaId = $this->createPecaRecord([
+            'codigo' => 'PC-RES-PROPRIA',
+            'quantidade_atual' => 2,
+        ]);
+
+        $this->orcamentoAprovadoComPeca($osId, $pecaId, 2);
+
+        // Reservou o saldo inteiro: para terceiros nao sobra nada.
+        $this->assertEqualsWithDelta(
+            2.0,
+            (float) DB::table('pecas')->where('id', $pecaId)->value('quantidade_reservada'),
+            0.0001
+        );
+
+        $this->postJson("/api/v1/orders/{$osId}/estoque/aplicar", [
+            'itens' => [['peca_id' => $pecaId, 'quantidade' => 2]],
+        ])->assertOk()->assertJsonPath('data.aplicacao.divergente', false);
+
+        // Peca saiu, e a reserva foi consumida junto — nao pode sobrar promessa
+        // pendurada sobre um saldo que ja foi embora.
+        $this->assertEqualsWithDelta(
+            0.0,
+            (float) DB::table('pecas')->where('id', $pecaId)->value('quantidade_atual'),
+            0.0001
+        );
+        $this->assertEqualsWithDelta(
+            0.0,
+            (float) DB::table('pecas')->where('id', $pecaId)->value('quantidade_reservada'),
+            0.0001
+        );
+        $this->assertDatabaseHas('estoque_reservas', [
+            'peca_id' => $pecaId,
+            'status' => EstoqueReserva::STATUS_CONSUMIDA,
+        ]);
+    }
+
+    /**
+     * specs/040 — reserva de OUTRO orcamento bloqueia, e a mensagem nomeia o
+     * ofensor (mesma regra da 038: erro que nao diz qual peca faltou obriga o
+     * tecnico a cacar linha por linha).
+     */
+    public function test_reserva_de_outro_orcamento_bloqueia_a_baixa(): void
+    {
+        Sanctum::actingAs($this->createUserRecord(['grupo_id' => 1]), ['*']);
+
+        $osId = $this->criarOs();
+        $pecaId = $this->createPecaRecord([
+            'codigo' => 'PC-RES-TERCEIRO',
+            'nome' => 'Tela LCD',
+            'quantidade_atual' => 1,
+        ]);
+
+        // Orcamento de OUTRO aparelho ja prometeu a unica peca ao cliente.
+        $outroBudget = $this->createBudgetRecord([
+            'numero' => 'ORC-OUTRO',
+            'status' => Budget::STATUS_WAITING_REPLY,
+        ]);
+        $this->createBudgetItemRecord($outroBudget, [
+            'tipo_item' => 'peca',
+            'referencia_id' => $pecaId,
+            'quantidade' => 1,
+        ]);
+        app(EstoqueReservaService::class)->sincronizar(Budget::query()->findOrFail($outroBudget));
+
+        $resposta = $this->postJson("/api/v1/orders/{$osId}/estoque/aplicar", [
+            'itens' => [['peca_id' => $pecaId, 'quantidade' => 1]],
+        ]);
+
+        // Mesmo contrato do saldo insuficiente comum (422 + OS_ESTOQUE_INSUFICIENTE):
+        // para quem esta na tela, "a peca nao esta disponivel" e um caso so,
+        // esteja ela vendida ou prometida a outro aparelho.
+        $resposta
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'OS_ESTOQUE_INSUFICIENTE')
+            ->assertJsonPath('error.details.itens.0.codigo', 'PC-RES-TERCEIRO')
+            ->assertJsonPath('error.details.itens.0.disponivel', 0.0);
+
+        // Transacao inteira voltou: nem movimento, nem baixa de saldo.
+        $this->assertDatabaseCount('movimentacoes', 0);
+        $this->assertEqualsWithDelta(
+            1.0,
+            (float) DB::table('pecas')->where('id', $pecaId)->value('quantidade_atual'),
+            0.0001
+        );
+    }
+
+    /**
+     * specs/040 — baixa parcial nao pode zerar a promessa do que ainda falta
+     * aplicar, nem contar o consumo duas vezes.
+     */
+    public function test_baixa_parcial_deixa_a_reserva_remanescente(): void
+    {
+        Sanctum::actingAs($this->createUserRecord(['grupo_id' => 1]), ['*']);
+
+        $osId = $this->criarOs();
+        $pecaId = $this->createPecaRecord([
+            'codigo' => 'PC-RES-PARCIAL',
+            'quantidade_atual' => 10,
+        ]);
+
+        $this->orcamentoAprovadoComPeca($osId, $pecaId, 3);
+
+        $this->postJson("/api/v1/orders/{$osId}/estoque/aplicar", [
+            'itens' => [['peca_id' => $pecaId, 'quantidade' => 1]],
+        ])->assertOk();
+
+        $this->assertEqualsWithDelta(
+            2.0,
+            (float) DB::table('pecas')->where('id', $pecaId)->value('quantidade_reservada'),
+            0.0001,
+            'Sobraram 2 por aplicar, e elas continuam prometidas.'
+        );
+        $this->assertDatabaseHas('estoque_reservas', [
+            'peca_id' => $pecaId,
+            'status' => EstoqueReserva::STATUS_ATIVA,
+            'quantidade_consumida' => 1,
         ]);
     }
 

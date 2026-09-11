@@ -9,7 +9,7 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Services\EquipmentWorkflowService;
 use App\Services\Orders\OrderWorkflowService;
-use Illuminate\Support\Carbon;
+use App\Services\Photos\OperationalPhotoPdfRenderer;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -26,15 +26,15 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
 {
     private const EQUIPMENT_PHOTO_MAX_BYTES = 2097152;
 
-    private const EQUIPMENT_PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+    private const EQUIPMENT_PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/avif'];
 
     private const ENTRY_PHOTOS_LIMIT = 4;
 
     public function __construct(
         private readonly EquipmentWorkflowService $equipmentWorkflowService,
-        private readonly OrderWorkflowService $orderWorkflowService
-    ) {
-    }
+        private readonly OrderWorkflowService $orderWorkflowService,
+        private readonly OperationalPhotoPdfRenderer $photoPdfRenderer,
+    ) {}
 
     public function build(array $subject, array $options = []): array
     {
@@ -58,7 +58,7 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
 
         return [
             'os' => [
-                'numero' => trim((string) ($order->numero_os ?? ('#' . $order->id))),
+                'numero' => trim((string) ($order->numero_os ?? ('#'.$order->id))),
                 'status' => (string) ($order->statusCatalog?->nome ?? $order->status ?? ''),
                 'prioridade' => $this->humanizePriority((string) ($order->prioridade ?? '')),
                 'data_abertura' => $order->data_abertura,
@@ -174,13 +174,18 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
             return '';
         }
 
-        $bytes = file_get_contents($absolutePath);
+        $bytes = $mimeType === 'image/avif'
+            ? $this->photoPdfRenderer->jpegBytes($absolutePath)
+            : file_get_contents($absolutePath);
+        if ($mimeType === 'image/avif') {
+            $mimeType = 'image/jpeg';
+        }
 
-        return $bytes === false ? '' : 'data:' . $mimeType . ';base64,' . base64_encode($bytes);
+        return ! is_string($bytes) || $bytes === '' ? '' : 'data:'.$mimeType.';base64,'.base64_encode($bytes);
     }
 
     /**
-     * @param array<string, mixed> $options
+     * @param  array<string, mixed>  $options
      */
     protected function shouldIncludeEquipmentPhoto(array $options): bool
     {
@@ -190,7 +195,7 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
     }
 
     /**
-     * @param array<string, mixed> $options
+     * @param  array<string, mixed>  $options
      */
     protected function shouldIncludeEntryPhotos(array $options): bool
     {
@@ -236,14 +241,19 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
                 continue;
             }
 
-            $bytes = file_get_contents($absolutePath);
-            if ($bytes === false) {
+            $bytes = $mimeType === 'image/avif'
+                ? $this->photoPdfRenderer->jpegBytes($absolutePath)
+                : file_get_contents($absolutePath);
+            if (! is_string($bytes) || $bytes === '') {
                 continue;
+            }
+            if ($mimeType === 'image/avif') {
+                $mimeType = 'image/jpeg';
             }
 
             ['bytes' => $bytes, 'mime' => $mimeType] = $this->rotateToLandscapeIfPortrait($bytes, $mimeType);
 
-            $dataUris[] = 'data:' . $mimeType . ';base64,' . base64_encode($bytes);
+            $dataUris[] = 'data:'.$mimeType.';base64,'.base64_encode($bytes);
         }
 
         return $dataUris;
@@ -425,10 +435,10 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
 
         $itemNameExpression = $itemNameSources === []
             ? "'Item do checklist'"
-            : 'COALESCE(' . implode(', ', $itemNameSources) . ", 'Item do checklist')";
+            : 'COALESCE('.implode(', ', $itemNameSources).", 'Item do checklist')";
 
         $items = $itemsQuery
-            ->selectRaw($itemNameExpression . ' as item_nome')
+            ->selectRaw($itemNameExpression.' as item_nome')
             ->addSelect([
                 'checklist_respostas.status',
                 'checklist_respostas.observacao',
@@ -451,7 +461,7 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
     }
 
     /**
-     * @param array<int, array<string, string>> $checklistItems
+     * @param  array<int, array<string, string>>  $checklistItems
      * @return array<int, string>
      */
     private function accessoriesList(string $rawAccessories, array $checklistItems): array
@@ -467,7 +477,7 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
 
                 $status = $this->humanizeChecklistStatus((string) ($checklistItem['status'] ?? ''));
                 $note = trim((string) ($checklistItem['observacao'] ?? ''));
-                $items[] = $label . ($status !== '' ? ' — ' . $status : '') . ($note !== '' ? ' (' . $note . ')' : '');
+                $items[] = $label.($status !== '' ? ' — '.$status : '').($note !== '' ? ' ('.$note.')' : '');
             }
         }
 
@@ -475,7 +485,7 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
     }
 
     /**
-     * @param array<int, string> $acessorios
+     * @param  array<int, string>  $acessorios
      */
     private function accessoriesHtml(array $acessorios): string
     {
@@ -485,14 +495,14 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
 
         $html = '<ul class="list">';
         foreach ($acessorios as $item) {
-            $html .= '<li>' . $this->escape($item) . '</li>';
+            $html .= '<li>'.$this->escape($item).'</li>';
         }
 
-        return $html . '</ul>';
+        return $html.'</ul>';
     }
 
     /**
-     * @param array{observacoes_estado: string, items: array<int, array<string, string>>} $checklistContext
+     * @param  array{observacoes_estado: string, items: array<int, array<string, string>>}  $checklistContext
      */
     private function stateHtml(array $checklistContext): string
     {
@@ -501,7 +511,7 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
 
         $blocks = '';
         if ($observacoes !== '') {
-            $blocks .= '<div class="info-box"><strong>Observações registradas:</strong><br>' . nl2br($this->escape($observacoes), false) . '</div>';
+            $blocks .= '<div class="info-box"><strong>Observações registradas:</strong><br>'.nl2br($this->escape($observacoes), false).'</div>';
         }
 
         if ($items === []) {
@@ -514,13 +524,13 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
         foreach ($items as $item) {
             $observacao = trim((string) ($item['observacao'] ?? ''));
             $blocks .= '<tr>';
-            $blocks .= '<td>' . $this->escape($item['item_nome'] ?? '') . '</td>';
-            $blocks .= '<td>' . $this->escape($this->humanizeChecklistStatus((string) ($item['status'] ?? ''))) . '</td>';
-            $blocks .= '<td>' . ($observacao !== '' ? nl2br($this->escape($observacao), false) : '<span class="muted">Sem observação</span>') . '</td>';
+            $blocks .= '<td>'.$this->escape($item['item_nome'] ?? '').'</td>';
+            $blocks .= '<td>'.$this->escape($this->humanizeChecklistStatus((string) ($item['status'] ?? ''))).'</td>';
+            $blocks .= '<td>'.($observacao !== '' ? nl2br($this->escape($observacao), false) : '<span class="muted">Sem observação</span>').'</td>';
             $blocks .= '</tr>';
         }
 
-        return $blocks . '</tbody></table>';
+        return $blocks.'</tbody></table>';
     }
 
     /**

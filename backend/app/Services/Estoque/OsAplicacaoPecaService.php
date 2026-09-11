@@ -30,6 +30,8 @@ class OsAplicacaoPecaService
     public function __construct(
         private readonly EstoqueMovimentacaoService $estoqueMovimentacaoService,
         private readonly OrderEventService $orderEventService,
+        // specs/040: a baixa consome a reserva que o orcamento aprovado criou.
+        private readonly EstoqueReservaService $estoqueReservaService,
     ) {
     }
 
@@ -56,10 +58,17 @@ class OsAplicacaoPecaService
                 ->whereNotNull('referencia_id')
                 ->get();
 
+            $pecaIds = $linhas->pluck('referencia_id')->filter()->unique()->map(static fn ($id): int => (int) $id)->all();
+
             $pecas = Peca::query()
-                ->whereIn('id', $linhas->pluck('referencia_id')->filter()->unique()->all())
+                ->whereIn('id', $pecaIds)
                 ->get()
                 ->keyBy('id');
+
+            // specs/040: o modal precisa separar "reservado para mim" de
+            // "reservado para outro orcamento". O primeiro nao atrapalha esta
+            // baixa; o segundo e o que pode faltar na gaveta.
+            $disponibilidade = $this->estoqueReservaService->disponibilidade($pecaIds, (int) $orcamento->id);
 
             foreach ($linhas as $linha) {
                 $pecaId = (int) $linha->referencia_id;
@@ -72,12 +81,27 @@ class OsAplicacaoPecaService
                 $orcada = round((float) ($linha->quantidade ?? 0), 4);
                 $baixada = round((float) ($jaBaixado[$pecaId] ?? 0), 4);
 
+                $saldos = $disponibilidade[$pecaId] ?? [
+                    'saldo' => 0.0,
+                    'reservado' => 0.0,
+                    'reservado_proprio' => 0.0,
+                    'disponivel' => 0.0,
+                ];
+
                 $itens[] = [
                     'peca_id' => $pecaId,
                     'codigo' => (string) ($peca->codigo ?? ''),
                     'nome' => (string) ($peca->nome ?? ''),
                     'unidade' => (string) ($peca->unidade ?? 'UN'),
                     'saldo_estoque' => round((float) ($peca->quantidade_atual ?? 0), 4),
+                    // Disponivel JA com a reserva deste orcamento somada de
+                    // volta: e contra este numero que a baixa e conferida.
+                    'saldo_disponivel' => (float) $saldos['disponivel'],
+                    'reservado_para_esta_os' => (float) $saldos['reservado_proprio'],
+                    'reservado_por_terceiros' => round(
+                        (float) $saldos['reservado'] - (float) $saldos['reservado_proprio'],
+                        4
+                    ),
                     'quantidade_orcada' => $orcada,
                     'quantidade_baixada' => $baixada,
                     // O que o modal ja vem preenchido: o que falta aplicar.
@@ -126,16 +150,28 @@ class OsAplicacaoPecaService
             return ['aplicadas' => 0, 'divergente' => false, 'faltas' => []];
         }
 
-        return DB::transaction(function () use ($order, $linhas, $actorId, $permitirNegativo): array {
+        // A reserva desta OS nasceu do orcamento aprovado dela. Informa-la ao
+        // motor faz a propria reserva voltar para o disponivel — senao a peca
+        // que o orcamento guardou bloquearia a baixa que ela protegia.
+        $orcamentoId = (int) ($this->orcamentoAprovado((int) $order->id)?->id ?? 0);
+
+        return DB::transaction(function () use ($order, $linhas, $actorId, $permitirNegativo, $orcamentoId): array {
             $resultado = $this->estoqueMovimentacaoService->registrarLote(
                 $linhas,
                 [
                     'tipo' => EstoqueMovimentacaoService::TIPO_SAIDA,
                     'motivo' => 'Aplicada na OS '.$order->numero_os,
                     'responsavel_id' => $actorId,
+                    'orcamento_id' => $orcamentoId,
                 ],
                 $permitirNegativo
             );
+
+            // Depois de registrarLote(), com o lock das linhas de `pecas` ainda
+            // de pe: o que saiu de verdade deixa de estar prometido.
+            if ($orcamentoId > 0) {
+                $this->estoqueReservaService->consumir($orcamentoId, $linhas);
+            }
 
             // A timeline da OS e onde isso tem de aparecer: quem aplicou, o que
             // aplicou e quando. Sem evento, a peca some do estoque e a OS nao

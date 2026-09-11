@@ -67,6 +67,45 @@ class FinanceiroCartaoTest extends TestCase
             ->assertJsonPath('data.simulation.bandeira_nome', 'Visa');
     }
 
+    /**
+     * O prazo da operadora conta do dia do PAGAMENTO, nao do dia em que alguem
+     * abriu a tela: uma baixa retroativa (venda de 29/08 digitada depois) tem
+     * que prever o repasse a partir de 29/08. E o credito nunca cai em fim de
+     * semana — rola para o proximo dia util.
+     */
+    public function test_simulator_anchors_transfer_on_informed_payment_date_and_skips_weekend(): void
+    {
+        $catalog = $this->seedCartaoCatalog();
+
+        Sanctum::actingAs($this->makeAdminUser(), ['*']);
+
+        // 29/08/2026 (sabado) + 30 dias corridos = 28/09/2026, uma segunda.
+        $this->postJson('/api/v1/financeiro/cartoes/simular', [
+            'valor_bruto' => 100.00,
+            'operadora_id' => $catalog['operadora_id'],
+            'bandeira_id' => $catalog['bandeira_id'],
+            'modalidade' => 'credito',
+            'parcelas' => 3,
+            'data_pagamento' => '2026-08-29',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.simulation.data_base_repasse', '2026-08-29')
+            ->assertJsonPath('data.simulation.data_prevista_repasse', '2026-09-28')
+            ->assertJsonPath('data.simulation.data_prevista_recebimento', '2026-09-28');
+
+        // 03/09/2026 (quinta) + 30 = 03/10, um sabado: vai para segunda 05/10.
+        $this->postJson('/api/v1/financeiro/cartoes/simular', [
+            'valor_bruto' => 100.00,
+            'operadora_id' => $catalog['operadora_id'],
+            'bandeira_id' => $catalog['bandeira_id'],
+            'modalidade' => 'credito',
+            'parcelas' => 3,
+            'data_pagamento' => '2026-09-03',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.simulation.data_prevista_repasse', '2026-10-05');
+    }
+
     public function test_operadora_bandeira_and_taxa_lifecycle_use_soft_deactivation(): void
     {
         Sanctum::actingAs($this->makeAdminUser(), ['*']);

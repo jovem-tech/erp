@@ -9,11 +9,15 @@ use App\Enums\Files\FileCategory;
 use App\Enums\Files\FileIntegrityStatus;
 use App\Enums\Files\FileLifecycleStatus;
 use App\Enums\Files\FileOrigin;
+use App\Models\Financeiro;
+use App\Models\FinanceiroAnexo;
 use App\Models\Files\ManagedFile;
 use App\Models\Files\ManagedFileEvent;
 use App\Services\Auth\RbacAuthorizationService;
+use App\Services\Files\FinanceiroAnexoCatalogService;
 use App\Services\Files\FileManagerFacade;
 use App\Services\Files\LegacyCompatibleFileAdapter;
+use App\Services\Files\ManagedFileDomainLifecycleService;
 use App\Services\Files\ManagedFilePurgeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -738,6 +742,59 @@ class FileManagerApiTest extends TestCase
             $this->assertSame($admin->id, $event->context_json['authorized_by'] ?? null);
             $this->assertSame('Solicitação operacional aprovada.', $event->context_json['reason'] ?? null);
         }
+    }
+
+    public function test_financial_attachment_restore_returns_conflict_when_parent_no_longer_exists(): void
+    {
+        config()->set('file-manager.mode', 'shadow');
+        config()->set('file-manager.enabled_categories', [FileCategory::FinanceiroAnexo->value]);
+        config()->set('file-manager.authoritative_categories', [FileCategory::FinanceiroAnexo->value]);
+        $this->grantGroupPermissions(1, [
+            'arquivos' => ['restaurar', 'administrar'],
+            'financeiro' => ['editar'],
+        ]);
+        $actor = $this->createUserRecord(['grupo_id' => 1, 'perfil' => 'atendente']);
+        $admin = $this->createUserRecord([
+            'grupo_id' => 1,
+            'perfil' => 'atendente',
+            'email' => 'supervisor.financeiro.restore@example.com',
+        ]);
+        $financeiro = Financeiro::query()->create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'categoria' => 'Energia',
+            'descricao' => 'Anexo a reter',
+            'valor' => 100,
+            'status' => Financeiro::STATUS_PENDENTE,
+            'data_vencimento' => now()->addDay()->toDateString(),
+        ]);
+        $path = 'private/financeiro/'.$financeiro->id.'/retido.pdf';
+        Storage::disk('local')->put($path, '%PDF-1.4 retido');
+        $anexo = FinanceiroAnexo::withoutEvents(fn () => FinanceiroAnexo::query()->create([
+            'financeiro_id' => $financeiro->id,
+            'nome_original' => 'retido.pdf',
+            'arquivo' => $path,
+            'mime' => 'application/pdf',
+            'tamanho_bytes' => Storage::disk('local')->size($path),
+            'hash_sha256' => hash('sha256', Storage::disk('local')->get($path)),
+            'usuario_id' => $actor->id,
+        ]));
+        $file = app(FinanceiroAnexoCatalogService::class)->synchronize($anexo);
+        $this->assertInstanceOf(ManagedFile::class, $file);
+        app(ManagedFileDomainLifecycleService::class)->trash(
+            $file,
+            (int) $actor->id,
+            'Exclusão do lançamento em teste.',
+            (int) $admin->id
+        );
+        $financeiro->delete();
+
+        Sanctum::actingAs($actor, ['*']);
+        $this->postAction($file->fresh(), 'restore', $admin)
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'FILE_STATE_CONFLICT');
+
+        $this->assertSame(FileLifecycleStatus::Trashed, $file->fresh()->lifecycle_status);
+        Storage::disk('local')->assertExists($path);
     }
 
     public function test_state_mutation_kill_switch_blocks_before_credentials_are_checked(): void

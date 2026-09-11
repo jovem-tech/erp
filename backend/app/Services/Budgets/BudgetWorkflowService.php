@@ -24,6 +24,7 @@ use App\Services\Financeiro\FinanceiroService;
 use App\Services\Financeiro\OsMargemService;
 use App\Services\Financeiro\PrecificacaoService;
 use App\Services\Notifications\NotificationDispatchService;
+use App\Services\Estoque\EstoqueReservaService;
 use App\Services\Orders\OrderEventService;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
@@ -42,7 +43,9 @@ class BudgetWorkflowService
         private readonly OsMargemService $osMargemService,
         private readonly BudgetCommercialTermsService $budgetCommercialTermsService,
         private readonly PrecificacaoService $precificacaoService,
-        private readonly BudgetRevisionService $budgetRevisionService
+        private readonly BudgetRevisionService $budgetRevisionService,
+        // specs/040: syncItems() reconcilia a reserva de peca.
+        private readonly EstoqueReservaService $estoqueReservaService
     ) {}
 
     /**
@@ -378,8 +381,12 @@ class BudgetWorkflowService
             ->values()
             ->all();
 
+        // Este catalogo continua limitado a 80 pecas de proposito: desde a
+        // specs/040 ele e apenas o PRE-CARREGAMENTO do seletor (rotulo da peca
+        // ja escolhida e primeiras opcoes). A busca de verdade e remota e
+        // paginada, em OrcamentoController::searchParts().
         $parts = Peca::query()
-            ->select(['id', 'codigo', 'nome', 'categoria', 'preco_custo', 'preco_venda', 'quantidade_atual', 'status'])
+            ->select(['id', 'codigo', 'nome', 'categoria', 'preco_custo', 'preco_venda', 'quantidade_atual', 'quantidade_reservada', 'status'])
             ->where('status', 'ativo')
             ->orderBy('nome')
             ->limit(80)
@@ -392,6 +399,14 @@ class BudgetWorkflowService
                 'preco_custo' => (float) ($peca->preco_custo ?? 0),
                 'preco_venda' => (float) ($peca->preco_venda ?? 0),
                 'quantidade_atual' => (float) ($peca->quantidade_atual ?? 0),
+                // specs/040 — antes o saldo vinha ate aqui e era DESCARTADO no
+                // mapeamento do create/edit.blade.php: o operador montava a
+                // proposta sem ver estoque nenhum.
+                'quantidade_reservada' => (float) ($peca->quantidade_reservada ?? 0),
+                'quantidade_disponivel' => round(
+                    (float) ($peca->quantidade_atual ?? 0) - (float) ($peca->quantidade_reservada ?? 0),
+                    4
+                ),
             ])
             ->values()
             ->all();
@@ -1470,12 +1485,72 @@ class BudgetWorkflowService
     /**
      * @return array<string, mixed>
      */
+    /**
+     * Este item de peca esta coberto pelo estoque, so em parte, ou nao esta?
+     *
+     * A conta e contra o disponivel para TERCEIROS mais a reserva deste proprio
+     * orcamento: a peca que ele ja guardou conta como coberta, senao o
+     * orcamento acusaria falta da peca que ele mesmo reservou.
+     *
+     * @param array<int, array<string, float>> $disponibilidade
+     * @return array<string, mixed>
+     */
+    private function disponibilidadeDoItem(BudgetItem $item, array $disponibilidade): ?array
+    {
+        if ((string) ($item->tipo_item ?? '') !== 'peca') {
+            return null;
+        }
+
+        $pecaId = (int) ($item->referencia_id ?? 0);
+        $saldos = $disponibilidade[$pecaId] ?? null;
+
+        // Item de peca digitado a mao (sem referencia no cadastro) ou apontando
+        // para peca excluida: nao da para afirmar nada sobre estoque.
+        if ($pecaId <= 0 || $saldos === null) {
+            return null;
+        }
+
+        $quantidade = round((float) ($item->quantidade ?? 0), 4);
+        $coberto = max(0.0, (float) $saldos['disponivel']);
+        $falta = max(0.0, round($quantidade - $coberto, 4));
+
+        return [
+            'estado' => match (true) {
+                $falta <= 0 => 'em_estoque',
+                $falta >= $quantidade => 'a_encomendar',
+                default => 'parcial',
+            },
+            'saldo' => (float) $saldos['saldo'],
+            'reservado_para_este' => (float) $saldos['reservado_proprio'],
+            'reservado_por_terceiros' => round(
+                (float) $saldos['reservado'] - (float) $saldos['reservado_proprio'],
+                4
+            ),
+            'disponivel' => (float) $saldos['disponivel'],
+            'falta' => $falta,
+        ];
+    }
+
     private function budgetDetail(Budget $budget): array
     {
         // Visibilidade de custo do usuario da requisicao (specs/037). Resolvida
         // uma vez aqui e capturada pelas arrow functions do mapeamento.
         $veCusto = VisibilidadeCusto::mostraNumero(
             VisibilidadeCusto::paraUsuario(auth()->user())
+        );
+
+        // specs/040: saldo/reservado das pecas deste orcamento, numa consulta
+        // so. `$budget->id` faz a reserva DELE voltar para o disponivel — a
+        // peca que ele mesmo guardou nao pode aparecer como falta.
+        $disponibilidadeItens = $this->estoqueReservaService->disponibilidade(
+            $budget->items
+                ->where('tipo_item', 'peca')
+                ->pluck('referencia_id')
+                ->filter()
+                ->unique()
+                ->map(static fn ($id): int => (int) $id)
+                ->all(),
+            (int) $budget->id
         );
 
         $client = $budget->client;
@@ -1585,6 +1660,10 @@ class BudgetWorkflowService
             ] : null,
             'itens' => $budget->items->sortBy('ordem')->values()->map(fn (BudgetItem $item): array => [
                 'id' => (int) $item->id,
+                // specs/040: "esta peca esta na gaveta ou precisa ser
+                // encomendada?" — calculado no SERVIDOR porque e regra de
+                // negocio e porque o desktop nao tem banco.
+                'disponibilidade' => $this->disponibilidadeDoItem($item, $disponibilidadeItens),
                 'tipo_item' => (string) ($item->tipo_item ?? 'servico'),
                 'referencia_id' => $item->referencia_id !== null ? (int) $item->referencia_id : null,
                 'descricao' => (string) ($item->descricao ?? ''),
@@ -2298,11 +2377,22 @@ class BudgetWorkflowService
             $order++;
         }
 
+        if ($normalizedItems !== []) {
+            BudgetItem::query()->insert($normalizedItems);
+        }
+
+        // specs/040: a reserva de peca vive aqui, e nao nos tres chamadores
+        // (createBudget/updateBudget/revisao), justamente porque este metodo e o
+        // unico ponto por onde os itens mudam. Como ele APAGA E REINSERE tudo, a
+        // reserva e reconciliada a partir do estado final — e por isso ela e
+        // chaveada por (orcamento_id, peca_id) e nunca por id de item.
+        //
+        // Tambem cobre a lista ficar vazia: sem itens, nao ha o que reservar.
+        $this->estoqueReservaService->sincronizar($budget);
+
         if ($normalizedItems === []) {
             return 0.0;
         }
-
-        BudgetItem::query()->insert($normalizedItems);
 
         return round(array_reduce($normalizedItems, static fn (float $carry, array $item): float => $carry + (float) ($item['total'] ?? 0), 0.0), 2);
     }

@@ -57,6 +57,11 @@ class SalePaymentService
                 'modalidade' => (string) ($payment['modalidade'] ?? ''),
                 'forma_pagamento' => $forma,
                 'parcelas' => max(1, (int) ($payment['parcelas'] ?? 1)),
+                // Mesma data que process() usa no movimento (normalizePayments()
+                // ja resolveu o fallback para a data da venda): sem ela o prazo
+                // da operadora era contado de `now()`, entao uma venda lancada
+                // com data retroativa previa o repasse dias depois do certo.
+                'data_pagamento' => $payment['data_pagamento'] ?? null,
             ]);
         }
 

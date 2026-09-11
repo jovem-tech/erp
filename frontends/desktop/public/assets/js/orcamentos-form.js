@@ -258,6 +258,11 @@
         ),
         description: normalizeText(part?.nome || part?.description || part?.label || ''),
         price: toNumber(part?.preco_venda ?? part?.price ?? 0),
+        // specs/040: o saldo vinha do backend e morria aqui. Sem ele nao ha
+        // como dizer se a peca esta na gaveta ou precisa ser encomendada.
+        saldo: toNumber(part?.quantidade_atual ?? part?.saldo ?? 0),
+        reservado: toNumber(part?.quantidade_reservada ?? part?.reservado ?? 0),
+        disponivel: toNumber(part?.quantidade_disponivel ?? part?.disponivel ?? 0),
     });
 
     const reinitReferenceSelect2 = (select) => {
@@ -1651,6 +1656,16 @@
         const reviewNotesContainer = document.querySelector('[data-budget-review-notes]');
         const reviewTermsContainer = document.querySelector('[data-budget-review-terms]');
         const reviewSubmitButtons = Array.from(document.querySelectorAll('[data-budget-review-submit]'));
+        // Checklist de conferência da revisão final: cada card do modal precisa
+        // ser marcado como verificado antes de qualquer botão de salvar liberar
+        // (mesmo gate da etapa Revisão da OS no mobile).
+        const reviewSectionCards = Array.from(document.querySelectorAll('[data-budget-review-section]'));
+        const reviewVerifyButtons = Array.from(document.querySelectorAll('[data-budget-review-verify]'));
+        const reviewEditButtons = Array.from(document.querySelectorAll('[data-budget-review-edit]'));
+        const reviewChecklistWarning = document.querySelector('[data-budget-review-checklist-warning]');
+        const reviewChecklistProgress = document.querySelector('[data-budget-review-checklist-progress]');
+        const reviewChecklistMessage = document.querySelector('[data-budget-review-checklist-message]');
+        const reviewChecklistMeterFill = document.querySelector('[data-budget-review-meter-fill]');
         const reviewChannelEmailOption = document.querySelector('[data-budget-channel-email-option]');
         const reviewChannelBothOption = document.querySelector('[data-budget-channel-both-option]');
         const reviewChannelNoEmailHint = document.querySelector('[data-budget-review-channel-no-email]');
@@ -1673,6 +1688,11 @@
             quickItemType: 'servico',
             quickItemSubmitting: false,
             reviewConfirmed: false,
+            // Blocos da revisão final já conferidos pelo operador e a última
+            // lista de pendências renderizada — juntos decidem o disabled dos
+            // botões de salvar sem precisar remontar o modal inteiro.
+            verifiedSections: {},
+            reviewPendencies: [],
             adminConfirmed: false,
             // Marca/modelo digitados que ainda não existem no catálogo só são
             // cadastrados de verdade no instante de salvar — ver
@@ -1710,6 +1730,112 @@
             itemsCount.innerHTML = `<i class="bi bi-list-check"></i>${count} item${count === 1 ? '' : 's'}`;
         };
 
+        /**
+         * specs/040 — busca remota de peca, paginada no servidor.
+         *
+         * O seletor era um <select> com um catalogo ESTATICO de 80 pecas: nao
+         * escalava (peca 81 simplesmente nao existia para quem orcava) e o
+         * saldo era descartado no mapeamento. Mesmo padrao ja usado pela
+         * entrada por compra da specs/039.
+         *
+         * Devolve false quando nao da para usar o modo remoto (sem jQuery/
+         * Select2, ou sem a rota) — ai o chamador cai no catalogo estatico, que
+         * continua carregado. Degradar para o comportamento antigo e melhor do
+         * que deixar o operador sem seletor nenhum.
+         */
+        const initRemotePartSelect = (select, row) => {
+            const url = normalizeText(config.partSearchUrl || '');
+
+            if (!(select instanceof HTMLSelectElement) || url === '') {
+                return false;
+            }
+
+            if (typeof window.jQuery === 'undefined' || !window.jQuery.fn || typeof window.jQuery.fn.select2 !== 'function') {
+                return false;
+            }
+
+            const $ = window.jQuery;
+
+            try {
+                if ($(select).data('select2')) {
+                    $(select).select2('destroy');
+                }
+            } catch (error) {
+                return false;
+            }
+
+            delete select.dataset.select2Ready;
+
+            const aplicarDadosNaOption = (option, dados) => {
+                if (!(option instanceof HTMLOptionElement)) {
+                    return;
+                }
+
+                option.dataset.description = String(dados.description ?? dados.nome ?? '');
+                option.dataset.price = String(dados.price ?? dados.preco_venda ?? 0);
+                option.dataset.saldo = String(dados.saldo ?? 0);
+                option.dataset.reservado = String(dados.reservado ?? 0);
+                option.dataset.disponivel = String(dados.disponivel ?? 0);
+            };
+
+            try {
+                $(select).select2({
+                    width: '100%',
+                    placeholder: 'Busque por código ou nome',
+                    allowClear: true,
+                    ajax: {
+                        url,
+                        dataType: 'json',
+                        delay: 250,
+                        data: (params) => ({ q: params.term || '', page: params.page || 1 }),
+                        processResults: (data) => ({
+                            results: (Array.isArray(data?.results) ? data.results : []).map((peca) => ({
+                                id: peca.id,
+                                text: peca.text,
+                                description: peca.nome,
+                                price: peca.preco_venda,
+                                saldo: peca.saldo,
+                                reservado: peca.reservado,
+                                disponivel: peca.disponivel,
+                            })),
+                            pagination: { more: Boolean(data?.pagination?.more) },
+                        }),
+                        cache: true,
+                    },
+                    // Disponibilidade visivel JA na lista: o operador decide
+                    // antes de escolher, nao depois.
+                    templateResult: (item) => {
+                        if (!item.id || typeof item.disponivel === 'undefined') {
+                            return item.text;
+                        }
+
+                        const disponivel = toNumber(item.disponivel);
+                        const marca = disponivel > 0
+                            ? `<span class="text-success">${disponivel} disponível</span>`
+                            : '<span class="text-danger">sem estoque</span>';
+
+                        return $(`<span>${$('<div>').text(item.text).html()} <small>(${marca})</small></span>`);
+                    },
+                });
+            } catch (error) {
+                return false;
+            }
+
+            // O Select2 nao escreve os campos extras no <option> que cria — sem
+            // isto o aviso de estoque e o preco nao teriam de onde ler.
+            $(select)
+                .off('select2:select.erpEstoque')
+                .on('select2:select.erpEstoque', (event) => {
+                    aplicarDadosNaOption(select.selectedOptions[0], event.params?.data || {});
+                    select.dataset.selectedReference = select.value;
+                    updateRowFromReference(row);
+                });
+
+            select.dataset.select2Ready = '1';
+
+            return true;
+        };
+
         const populateReferenceSelect = (row, keepSelected = true) => {
             const typeSelect = row.querySelector('[data-budget-item-type]');
             const referenceSelect = row.querySelector('[data-budget-item-reference]');
@@ -1729,12 +1855,69 @@
             emptyOption.textContent = 'Selecione';
             referenceSelect.appendChild(emptyOption);
 
+            // specs/040 — peca vai por busca remota. So a opcao JA escolhida e
+            // pre-renderizada, para o orcamento salvo abrir mostrando a peca
+            // mesmo quando ela nao esta entre as 80 do catalogo.
+            if (selectedType === 'peca') {
+                if (keepSelected && selectedReference !== '') {
+                    const doCatalogo = catalog.find((item) => String(item.id) === selectedReference);
+                    const option = document.createElement('option');
+
+                    option.value = selectedReference;
+                    option.selected = true;
+                    option.textContent = String(
+                        doCatalogo?.label
+                        || referenceSelect.dataset.selectedLabel
+                        || `Peça #${selectedReference}`
+                    );
+
+                    if (doCatalogo) {
+                        option.dataset.description = String(doCatalogo.description ?? '');
+                        option.dataset.price = String(doCatalogo.price ?? 0);
+                        option.dataset.saldo = String(doCatalogo.saldo ?? 0);
+                        option.dataset.reservado = String(doCatalogo.reservado ?? 0);
+                        option.dataset.disponivel = String(doCatalogo.disponivel ?? 0);
+                    }
+
+                    referenceSelect.appendChild(option);
+                    referenceSelect.value = selectedReference;
+                }
+
+                if (initRemotePartSelect(referenceSelect, row)) {
+                    referenceSelect.dataset.selectedReference = referenceSelect.value;
+                    updateRowFromReference(row);
+
+                    return;
+                }
+
+                // Modo remoto indisponivel: segue no catalogo estatico abaixo,
+                // que continua carregado justamente para este caso.
+                referenceSelect.innerHTML = '';
+                referenceSelect.appendChild(emptyOption);
+            } else if (typeof window.jQuery !== 'undefined' && window.jQuery.fn) {
+                // Trocou peca -> servico: solta o handler do modo remoto, senao
+                // ele continua vivo depois do re-init e reescreve a option de
+                // servico com dados de estoque que nao existem.
+                try {
+                    window.jQuery(referenceSelect).off('select2:select.erpEstoque');
+                } catch (error) {
+                    // Select nunca passou pelo modo remoto: nada a soltar.
+                }
+            }
+
             catalog.forEach((item) => {
                 const option = document.createElement('option');
                 option.value = String(item.id ?? '');
                 option.textContent = String(item.label ?? item.description ?? 'Item');
                 option.dataset.description = String(item.description ?? '');
                 option.dataset.price = String(item.price ?? 0);
+                // specs/040 — so peca tem estes; em servico ficam vazios e o
+                // aviso de estoque nao aparece.
+                if (selectedType === 'peca') {
+                    option.dataset.saldo = String(item.saldo ?? 0);
+                    option.dataset.reservado = String(item.reservado ?? 0);
+                    option.dataset.disponivel = String(item.disponivel ?? 0);
+                }
                 referenceSelect.appendChild(option);
             });
 
@@ -1853,6 +2036,25 @@
             quickItemErrors.classList.remove('d-none');
         };
 
+        // O grupo inativo precisa sair da validacao do form, nao so da tela:
+        // `required` em campo apenas oculto continua valendo, e a taxonomia
+        // obrigatoria da peca (Grupo/Categoria/Subcategoria) reprovava o
+        // reportValidity() do submit no cadastro rapido de SERVICO — o POST
+        // nunca saia e o operador so via "Preencha os campos obrigatorios",
+        // sem campo algum marcado, porque o invalido estava escondido.
+        // Fieldset disabled tira os controles da validacao e do FormData.
+        const setQuickGroupActive = (group, active) => {
+            if (!(group instanceof HTMLElement)) {
+                return;
+            }
+
+            group.hidden = !active;
+
+            if ('disabled' in group) {
+                group.disabled = !active;
+            }
+        };
+
         const updateQuickItemMode = (type) => {
             const resolvedType = getResolvedQuickType(type);
             state.quickItemType = resolvedType;
@@ -1886,13 +2088,8 @@
                     : 'Ex.: Troca de conector, limpeza interna...';
             }
 
-            if (quickItemServiceGroup instanceof HTMLElement) {
-                quickItemServiceGroup.hidden = resolvedType !== 'servico';
-            }
-
-            if (quickItemPartGroup instanceof HTMLElement) {
-                quickItemPartGroup.hidden = resolvedType !== 'peca';
-            }
+            setQuickGroupActive(quickItemServiceGroup, resolvedType === 'servico');
+            setQuickGroupActive(quickItemPartGroup, resolvedType === 'peca');
 
             if (quickItemSubmit instanceof HTMLButtonElement) {
                 quickItemSubmit.innerHTML = `<i class="bi bi-plus-circle me-2"></i>${getQuickCatalogConfig(resolvedType).submitLabel || 'Salvar e aplicar'}`;
@@ -2883,6 +3080,105 @@
             maximumFractionDigits: 2,
         }).format(toNumber(value));
 
+        // Sem cards marcados na view (Blade compilada antiga, por exemplo) o
+        // checklist simplesmente não se aplica: melhor cair no comportamento
+        // anterior do que travar o salvamento para sempre.
+        const isReviewChecklistComplete = () => reviewSectionCards.length === 0
+            || reviewSectionCards.every((card) => state.verifiedSections[card.dataset.budgetReviewSection] === true);
+
+        /**
+         * Aplica o duplo travamento dos botões do rodapé: pendência de campo
+         * obrigatório (regra antiga) somada ao checklist de conferência.
+         */
+        const syncReviewSubmitState = () => {
+            const checklistComplete = isReviewChecklistComplete();
+            const pendencies = state.reviewPendencies;
+
+            reviewSubmitButtons.forEach((button) => {
+                if (!(button instanceof HTMLButtonElement)) {
+                    return;
+                }
+
+                const requiresReadyState = !isEditMode
+                    || button.dataset.budgetReviewSubmit === 'send_for_approval';
+                const blockedByPendencies = requiresReadyState && pendencies.length > 0;
+
+                button.disabled = blockedByPendencies || !checklistComplete;
+
+                if (blockedByPendencies) {
+                    button.title = 'Resolva as pendências obrigatórias antes de concluir.';
+                } else if (!checklistComplete) {
+                    button.title = 'Verifique todos os blocos da revisão antes de concluir.';
+                } else {
+                    button.title = '';
+                }
+            });
+        };
+
+        const syncReviewChecklist = () => {
+            let verifiedCount = 0;
+
+            reviewSectionCards.forEach((card) => {
+                const key = card.dataset.budgetReviewSection;
+                const verified = state.verifiedSections[key] === true;
+
+                if (verified) {
+                    verifiedCount += 1;
+                }
+
+                card.classList.toggle('is-verified', verified);
+
+                const button = card.querySelector('[data-budget-review-verify]');
+
+                if (button instanceof HTMLButtonElement) {
+                    button.textContent = verified ? 'Verificado' : 'Verificar';
+                    button.setAttribute('aria-pressed', verified ? 'true' : 'false');
+                    button.disabled = verified;
+                    button.classList.toggle('btn-success', verified);
+                    button.classList.toggle('btn-outline-secondary', !verified);
+                }
+            });
+
+            const complete = verifiedCount === reviewSectionCards.length;
+
+            if (reviewChecklistProgress instanceof HTMLElement) {
+                reviewChecklistProgress.textContent = `${verifiedCount}/${reviewSectionCards.length}`;
+            }
+
+            // Barra fina que preenche conforme os blocos são verificados — feedback
+            // visual silencioso, sem repetir o título de cada card num chip clicável.
+            if (reviewChecklistMeterFill instanceof HTMLElement) {
+                const ratio = reviewSectionCards.length > 0 ? (verifiedCount / reviewSectionCards.length) * 100 : 0;
+                reviewChecklistMeterFill.style.width = `${ratio}%`;
+                reviewChecklistMeterFill.classList.toggle('is-complete', complete);
+            }
+
+            // Troca so o texto depois do contador: o <strong> e o marcador que a
+            // view e os testes conhecem, entao ele precisa sobreviver ao update.
+            if (reviewChecklistMessage instanceof HTMLElement && reviewChecklistProgress instanceof HTMLElement) {
+                while (reviewChecklistMessage.lastChild && reviewChecklistMessage.lastChild !== reviewChecklistProgress) {
+                    reviewChecklistMessage.removeChild(reviewChecklistMessage.lastChild);
+                }
+
+                reviewChecklistMessage.appendChild(document.createTextNode(complete
+                    ? ' blocos verificados — tudo conferido, pode salvar.'
+                    : ' blocos verificados — confira cada bloco para liberar o salvamento.'));
+            }
+
+            if (reviewChecklistWarning instanceof HTMLElement) {
+                reviewChecklistWarning.classList.toggle('is-complete', complete);
+            }
+
+            syncReviewSubmitState();
+        };
+
+        // Toda abertura do modal remonta o resumo do zero, então a conferência
+        // anterior não pode sobreviver: o operador confere o que está vendo agora.
+        const resetReviewChecklist = () => {
+            state.verifiedSections = {};
+            syncReviewChecklist();
+        };
+
         const renderReviewModal = () => {
             if (!(reviewModalElement instanceof HTMLElement)) {
                 return { pendencies: [] };
@@ -2965,18 +3261,78 @@
                 }
             }
 
-            reviewSubmitButtons.forEach((button) => {
-                if (!(button instanceof HTMLButtonElement)) {
-                    return;
-                }
-
-                const requiresReadyState = !isEditMode
-                    || button.dataset.budgetReviewSubmit === 'send_for_approval';
-                button.disabled = requiresReadyState && pendencies.length > 0;
-                button.title = button.disabled ? 'Resolva as pendências obrigatórias antes de concluir.' : '';
-            });
+            state.reviewPendencies = pendencies;
+            resetReviewChecklist();
 
             return { pendencies };
+        };
+
+        /**
+         * specs/040 — "Em estoque" / "Parcial" / "A encomendar" na linha do item.
+         *
+         * A conta e contra o DISPONIVEL (saldo menos o que ja esta prometido a
+         * outros orcamentos), nao contra o saldo bruto: peca reservada para
+         * outro aparelho nao esta disponivel para este.
+         *
+         * O servidor tambem calcula isso (BudgetWorkflowService::
+         * disponibilidadeDoItem) e e ele que vale no detalhe do orcamento; aqui
+         * e so o retorno imediato enquanto o operador monta a proposta.
+         */
+        const updateRowStockHint = (row) => {
+            const hint = row.querySelector('[data-budget-item-stock]');
+
+            if (!(hint instanceof HTMLElement)) {
+                return;
+            }
+
+            const typeSelect = row.querySelector('[data-budget-item-type]');
+            const referenceSelect = row.querySelector('[data-budget-item-reference]');
+            const quantityInput = row.querySelector('[data-budget-item-quantity]');
+            const option = referenceSelect instanceof HTMLSelectElement ? referenceSelect.selectedOptions[0] : null;
+
+            const isPart = typeSelect instanceof HTMLSelectElement && typeSelect.value === 'peca';
+            const hasStockData = option instanceof HTMLOptionElement
+                && option.value !== ''
+                && typeof option.dataset.disponivel !== 'undefined';
+
+            if (!isPart || !hasStockData) {
+                hint.hidden = true;
+                hint.textContent = '';
+                return;
+            }
+
+            const disponivel = toNumber(option.dataset.disponivel);
+            const saldo = toNumber(option.dataset.saldo);
+            const quantidade = quantityInput instanceof HTMLInputElement ? toNumber(quantityInput.value) : 0;
+            const pedido = quantidade > 0 ? quantidade : 1;
+            const coberto = Math.max(0, disponivel);
+            const falta = Math.max(0, Math.round((pedido - coberto) * 10000) / 10000);
+
+            const formatQtd = (valor) => {
+                const numero = Math.round(toNumber(valor) * 10000) / 10000;
+
+                return Number.isInteger(numero)
+                    ? String(numero)
+                    : String(numero).replace('.', ',');
+            };
+
+            let rotulo;
+            let classe;
+
+            if (falta <= 0) {
+                rotulo = `Em estoque (${formatQtd(coberto)} disponível)`;
+                classe = 'text-success';
+            } else if (falta >= pedido) {
+                rotulo = `A encomendar — faltam ${formatQtd(falta)} (em estoque: ${formatQtd(saldo)})`;
+                classe = 'text-danger';
+            } else {
+                rotulo = `Parcial — faltam ${formatQtd(falta)} de ${formatQtd(pedido)}`;
+                classe = 'text-warning';
+            }
+
+            hint.className = `d-block mt-1 ${classe}`;
+            hint.textContent = rotulo;
+            hint.hidden = false;
         };
 
         const updateRowFromReference = (row) => {
@@ -3001,6 +3357,7 @@
                 unitPriceInput.value = formatMoney(price);
             }
 
+            updateRowStockHint(row);
             updateRowTotal(row);
         };
 
@@ -3056,6 +3413,13 @@
             [quantityInput, unitPriceInput].forEach((input) => {
                 input?.addEventListener('input', () => updateSummary());
                 input?.addEventListener('change', () => updateSummary());
+            });
+
+            // specs/040: a quantidade muda o veredito. Pedir 5 de uma peca com
+            // 2 disponiveis tem de virar "Parcial" na hora, nao continuar
+            // dizendo "Em estoque" so porque a peca foi escolhida antes.
+            ['input', 'change'].forEach((evento) => {
+                quantityInput?.addEventListener(evento, () => updateRowStockHint(row));
             });
 
             removeButton?.addEventListener('click', () => {
@@ -3894,6 +4258,39 @@
             }
         });
 
+        reviewVerifyButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+                const key = button.dataset.budgetReviewVerify;
+
+                if (!key) {
+                    return;
+                }
+
+                state.verifiedSections[key] = true;
+                syncReviewChecklist();
+            });
+        });
+
+        // Editar devolve o operador para a aba do bloco e desmarca a conferência
+        // daquele bloco — o dado vai mudar, a verificação anterior não vale mais.
+        reviewEditButtons.forEach((button) => {
+            button.addEventListener('click', () => {
+                const key = button.dataset.budgetReviewEdit;
+
+                if (key) {
+                    delete state.verifiedSections[key];
+                }
+
+                getModal(reviewModalElement)?.hide();
+
+                if (button.dataset.budgetReviewTab) {
+                    switchTab(button.dataset.budgetReviewTab);
+                }
+
+                syncReviewChecklist();
+            });
+        });
+
         reviewSubmitButtons.forEach((button) => {
             if (!(button instanceof HTMLButtonElement)) {
                 return;
@@ -3903,6 +4300,11 @@
                 const mode = button.dataset.budgetReviewSubmit === 'send_for_approval'
                     ? 'send_for_approval'
                     : 'save_only';
+
+                if (!isReviewChecklistComplete()) {
+                    showAlert('warning', 'Revisão incompleta', 'Verifique todos os blocos da revisão antes de concluir o orçamento.');
+                    return;
+                }
 
                 if (button.disabled) {
                     showAlert('warning', 'Existem pendências', 'Resolva os campos obrigatórios antes de concluir o orçamento.');

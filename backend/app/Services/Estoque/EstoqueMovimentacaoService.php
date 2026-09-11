@@ -33,6 +33,14 @@ class EstoqueMovimentacaoService
 
     public const TIPO_ENTRADA = 'entrada';
 
+    public function __construct(
+        // specs/040: o que conta para "tem saldo?" deixou de ser
+        // `quantidade_atual` e passou a ser o DISPONIVEL — o que sobra depois do
+        // que ja esta prometido a algum orcamento.
+        private readonly EstoqueReservaService $estoqueReservaService,
+    ) {
+    }
+
     /**
      * Registra um lote de movimentos na mesma transacao e sob o mesmo lock.
      *
@@ -61,7 +69,7 @@ class EstoqueMovimentacaoService
                 ->keyBy('id');
 
             $faltas = $tipo === self::TIPO_SAIDA
-                ? $this->conferirFaltas($demanda, $pecas)
+                ? $this->conferirFaltas($demanda, $pecas, $this->orcamentoDoContexto($contexto))
                 : [];
 
             if ($faltas !== [] && ! $permitirNegativo) {
@@ -137,7 +145,7 @@ class EstoqueMovimentacaoService
      * @param array<int, array<string, mixed>> $linhas
      * @return array<int, array<string, mixed>>
      */
-    public function conferirDisponibilidade(array $linhas): array
+    public function conferirDisponibilidade(array $linhas, ?int $orcamentoId = null): array
     {
         $demanda = $this->agregarPorPeca($linhas);
 
@@ -147,7 +155,22 @@ class EstoqueMovimentacaoService
 
         $pecas = Peca::query()->whereIn('id', array_keys($demanda))->get()->keyBy('id');
 
-        return $this->conferirFaltas($demanda, $pecas);
+        return $this->conferirFaltas($demanda, $pecas, $orcamentoId);
+    }
+
+    /**
+     * Qual orcamento esta pedindo esta saida, se houver.
+     *
+     * A baixa de peca na OS informa o orcamento aprovado que originou o
+     * consumo; o PDV e o ajuste manual nao tem orcamento nenhum e passam null.
+     *
+     * @param array<string, mixed> $contexto
+     */
+    private function orcamentoDoContexto(array $contexto): ?int
+    {
+        $id = (int) ($contexto['orcamento_id'] ?? 0);
+
+        return $id > 0 ? $id : null;
     }
 
     /**
@@ -155,9 +178,17 @@ class EstoqueMovimentacaoService
      * @param \Illuminate\Support\Collection<int, Peca> $pecas
      * @return array<int, array<string, mixed>>
      */
-    private function conferirFaltas(array $demanda, $pecas): array
+    private function conferirFaltas(array $demanda, $pecas, ?int $orcamentoId = null): array
     {
         $faltas = [];
+
+        // Reserva DO PROPRIO orcamento volta para o disponivel. Sem isto a
+        // reserva bloquearia exatamente a baixa que ela protegia: o tecnico
+        // abriria a OS do orcamento que reservou a peca e levaria "sem saldo"
+        // por causa da promessa que aquele mesmo orcamento fez.
+        $proprias = $orcamentoId !== null && $orcamentoId > 0
+            ? $this->estoqueReservaService->reservadoDoOrcamento($orcamentoId, array_keys($demanda))
+            : [];
 
         foreach ($demanda as $pecaId => $quantidade) {
             $peca = $pecas->get($pecaId);
@@ -166,7 +197,12 @@ class EstoqueMovimentacaoService
                 continue;
             }
 
-            $disponivel = (float) ($peca->quantidade_atual ?? 0);
+            $disponivel = round(
+                (float) ($peca->quantidade_atual ?? 0)
+                - (float) ($peca->quantidade_reservada ?? 0)
+                + (float) ($proprias[$pecaId] ?? 0),
+                4
+            );
 
             if ($disponivel < $quantidade) {
                 $faltas[] = [

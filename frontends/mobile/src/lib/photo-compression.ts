@@ -1,3 +1,23 @@
+export const MAX_OPERATIONAL_PHOTO_SOURCE_BYTES = 20 * 1024 * 1024;
+
+const OPERATIONAL_PHOTO_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/avif',
+  'image/heic',
+  'image/heif',
+]);
+const OPERATIONAL_PHOTO_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'avif', 'heic', 'heif']);
+
+export function isOperationalPhotoFile(file: File): boolean {
+  const mime = file.type.toLowerCase();
+  const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
+
+  return OPERATIONAL_PHOTO_TYPES.has(mime)
+    || ((mime === '' || mime === 'application/octet-stream') && OPERATIONAL_PHOTO_EXTENSIONS.has(extension));
+}
+
 export const DEFAULT_COMPRESSION_OPTIONS = {
   maxDimension: 1920,
   maxBytes: 2 * 1024 * 1024,
@@ -46,7 +66,17 @@ export async function compressImageFile(file: File, options: CompressionOptions 
   const maxBytes = options.maxBytes ?? DEFAULT_COMPRESSION_OPTIONS.maxBytes;
   const qualitySteps = options.qualitySteps ?? DEFAULT_COMPRESSION_OPTIONS.qualitySteps;
 
-  const bitmap = await createImageBitmap(file);
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch (error) {
+    // Safari and older Chromium builds may not decode HEIC/HEIF (or AVIF)
+    // locally. Preserve the validated source so the backend can normalize it.
+    if (isOperationalPhotoFile(file)) {
+      return file;
+    }
+    throw error;
+  }
   const { width, height } = computeTargetSize(bitmap.width, bitmap.height, maxDimension);
 
   const canvas = document.createElement('canvas');

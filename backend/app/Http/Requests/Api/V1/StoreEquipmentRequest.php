@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\Api\V1;
 
+use App\Rules\OperationalPhotoUpload;
 use Illuminate\Validation\Rule;
 
 class StoreEquipmentRequest extends BaseApiFormRequest
@@ -53,7 +54,7 @@ class StoreEquipmentRequest extends BaseApiFormRequest
             'fotos' => $pendingRegistration
                 ? ['nullable', 'array', 'max:4']
                 : ['required', 'array', 'min:1', 'max:4'],
-            'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'fotos.*' => ['file', 'max:20480', new OperationalPhotoUpload],
         ];
     }
 

@@ -4,9 +4,12 @@ namespace App\Services\Files;
 
 use App\DTO\Files\FileDescriptor;
 use App\Enums\Files\FileCategory;
+use App\Services\Photos\OperationalPhotoInspector;
 
 class FilePolicyRegistry
 {
+    public function __construct(private readonly OperationalPhotoInspector $photoInspector) {}
+
     /**
      * @return array{extension: string, detected_mime_type: string, size_bytes: int}
      */
@@ -28,8 +31,7 @@ class FilePolicyRegistry
         }
 
         $extension = strtolower((string) pathinfo($descriptor->originalName, PATHINFO_EXTENSION));
-        $finfo = new \finfo(FILEINFO_MIME_TYPE);
-        $mimeType = $this->normalizeMimeType((string) (@$finfo->file($descriptor->sourcePath) ?: ''));
+        $mimeType = $this->normalizeMimeType(OperationalPhotoInspector::detectMimeType($descriptor->sourcePath));
         $allowed = is_array($policy['mime_extensions'] ?? null) ? $policy['mime_extensions'] : [];
 
         if ($extension === '' || ! in_array($extension, $allowed[$mimeType] ?? [], true)) {
@@ -65,6 +67,15 @@ class FilePolicyRegistry
 
     private function validateDecoder(string $sourcePath, string $mimeType): void
     {
+        if ($mimeType === 'image/avif') {
+            $metadata = $this->photoInspector->inspect($sourcePath);
+            if (($metadata->width * $metadata->height) > 40_000_000) {
+                throw new \InvalidArgumentException('Imagem invalida ou com dimensoes excessivas.');
+            }
+
+            return;
+        }
+
         if (str_starts_with($mimeType, 'image/')) {
             $dimensions = @getimagesize($sourcePath);
             if (! is_array($dimensions) || ($dimensions[0] * $dimensions[1]) > 40_000_000) {

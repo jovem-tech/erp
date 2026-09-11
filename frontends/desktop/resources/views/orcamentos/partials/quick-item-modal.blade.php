@@ -10,6 +10,11 @@
     $defaultAction = $serviceEnabled
         ? ($serviceQuick['store_url'] ?? '#')
         : ($partQuick['store_url'] ?? '#');
+
+    // Atributos montados aqui, e nao com @if inline na tag, para o par
+    // "hidden disabled" sair sempre com o mesmo espacamento no HTML.
+    $serviceGroupAttrs = $defaultQuickType === 'servico' ? '' : ' hidden disabled';
+    $partGroupAttrs = $defaultQuickType === 'peca' ? '' : ' hidden disabled';
 @endphp
 
 <div class="modal fade" id="orcamentoQuickItemModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false" data-budget-quick-modal>
@@ -63,7 +68,17 @@
                         >
                     </div>
 
-                    <div class="desktop-grid-span-2" data-budget-quick-group="servico" @if ($defaultQuickType !== 'servico') hidden @endif>
+                    {{--
+                        Grupo inativo entra oculto E desabilitado (fieldset,
+                        nao div): campo `required` so escondido continua
+                        entrando na validacao do form, entao a taxonomia
+                        obrigatoria da peca reprovava o reportValidity() do
+                        cadastro rapido de SERVICO — sem nada visivel na tela,
+                        porque o campo invalido estava escondido. Fieldset
+                        disabled tira os controles da validacao e do FormData
+                        de uma vez so.
+                    --}}
+                    <fieldset class="desktop-grid-span-2" data-budget-quick-group="servico"{!! $serviceGroupAttrs !!}>
                         <div class="desktop-grid desktop-grid-two">
                             <div>
                                 <label for="orcamentoQuickItemEquipmentType">Tipo de equipamento</label>
@@ -136,9 +151,9 @@
                                 ></textarea>
                             </div>
                         </div>
-                    </div>
+                    </fieldset>
 
-                    <div class="desktop-grid-span-2" data-budget-quick-group="peca" @if ($defaultQuickType !== 'peca') hidden @endif>
+                    <fieldset class="desktop-grid-span-2" data-budget-quick-group="peca"{!! $partGroupAttrs !!}>
                         <div class="desktop-grid desktop-grid-two">
                             <div>
                                 <label for="orcamentoQuickItemPartCode">Código</label>
@@ -295,7 +310,7 @@
                                 ></textarea>
                             </div>
                         </div>
-                    </div>
+                    </fieldset>
 
                     <div class="desktop-grid-span-2">
                         <div id="orcamentoQuickItemErrors" class="alert alert-danger d-none mb-0" role="alert"></div>

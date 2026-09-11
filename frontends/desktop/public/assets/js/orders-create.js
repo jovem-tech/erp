@@ -11,8 +11,19 @@
     const maxPhotos = Math.max(1, Number(config.maxPhotos || 4));
     const maxPhotoUploadBytes = Math.max(1, Number(config.maxPhotoUploadBytes || (2 * 1024 * 1024)));
     const maxPhotoSourceBytes = Math.max(maxPhotoUploadBytes, Number(config.maxPhotoSourceBytes || (20 * 1024 * 1024)));
-    const maxPhotoSourcePixels = Math.max(1, Number(config.maxPhotoSourcePixels || 32000000));
-    const acceptedPhotoTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+    const maxPhotoSourcePixels = Math.max(1, Number(config.maxPhotoSourcePixels || 60000000));
+    const acceptedPhotoTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/heic', 'image/heif']);
+    const acceptedPhotoExtensions = new Set(['jpg', 'jpeg', 'png', 'webp', 'avif', 'heic', 'heif']);
+    const photoExtension = (file) => String(file?.name || '').split('.').pop()?.toLowerCase() || '';
+    const isAcceptedPhoto = (file) => {
+        const mime = String(file?.type || '').toLowerCase();
+        if (acceptedPhotoTypes.has(mime)) {
+            return true;
+        }
+
+        return (mime === '' || mime === 'application/octet-stream')
+            && acceptedPhotoExtensions.has(photoExtension(file));
+    };
     const clientSearchUrl = String(config.clientSearchUrl || '').trim();
     const equipmentSearchUrl = String(config.equipmentSearchUrl || '').trim();
     const reportedDefectsSearchUrl = String(config.reportedDefectsSearchUrl || '').trim();
@@ -1660,7 +1671,7 @@
 
         const mime = String(value.type || '').toLowerCase();
         const size = Number(value.size || 0);
-        if (!acceptedPhotoTypes.has(mime) || size <= 0 || size > maxPhotoUploadBytes) {
+        if (!isAcceptedPhoto(value) || size <= 0 || size > maxPhotoSourceBytes) {
             return null;
         }
 
@@ -1969,23 +1980,30 @@
             return;
         }
 
-        els.photosPreview.innerHTML = state.photoEntries.map((entry, index) => `
+        els.photosPreview.innerHTML = state.photoEntries.map((entry, index) => {
+            const thumbnail = entry.previewable !== false
+                ? `<img src="${escapeHtml(entry.url)}" alt="${escapeHtml(entry.file.name)}">`
+                : `<div class="d-flex h-100 flex-column align-items-center justify-content-center gap-1 text-secondary"><i class="bi bi-file-earmark-image fs-3"></i><small>Prévia indisponível</small></div>`;
+            const cropControl = entry.previewable !== false
+                ? `<button type="button" class="btn btn-soft btn-sm align-self-start" data-order-photo-crop="${index}"><i class="bi bi-crop me-1"></i>Editar corte</button>`
+                : '<small>O servidor converterá esta foto.</small>';
+
+            return `
             <article class="order-create-photo-preview-item" data-order-photo-index="${index}">
                 <div class="order-create-photo-preview-thumb">
-                    <img src="${escapeHtml(entry.url)}" alt="${escapeHtml(entry.file.name)}">
+                    ${thumbnail}
                 </div>
                 <div class="order-create-photo-preview-meta">
                     <strong title="${escapeHtml(entry.file.name)}">${escapeHtml(entry.file.name)}</strong>
                     <small>${escapeHtml(Math.round(entry.file.size / 1024))} KB</small>
-                    <button type="button" class="btn btn-soft btn-sm align-self-start" data-order-photo-crop="${index}">
-                        <i class="bi bi-crop me-1"></i>Editar corte
-                    </button>
+                    ${cropControl}
                 </div>
                 <button type="button" class="order-create-photo-preview-remove" data-order-photo-remove="${index}" aria-label="Remover ${escapeHtml(entry.file.name)}">
                     <i class="bi bi-x-lg"></i>
                 </button>
             </article>
-        `).join('');
+        `;
+        }).join('');
     };
 
     const setPhotoCropConfirmState = (loading, ready = true) => {
@@ -2059,10 +2077,11 @@
         return null;
     };
 
-    const commitCroppedPhoto = (file, replaceIndex = null) => {
+    const commitCroppedPhoto = (file, replaceIndex = null, previewable = true) => {
         const entry = {
             file,
             url: URL.createObjectURL(file),
+            previewable,
         };
 
         if (Number.isInteger(replaceIndex) && replaceIndex >= 0 && replaceIndex < state.photoEntries.length) {
@@ -2094,7 +2113,7 @@
         }
 
         if ((els.photoCropImage.naturalWidth * els.photoCropImage.naturalHeight) > maxPhotoSourcePixels) {
-            showAlert('warning', 'Imagem muito grande', 'Escolha uma imagem de até 32 megapixels para evitar consumo excessivo de memória.');
+            showAlert('warning', 'Imagem muito grande', 'Escolha uma imagem de até 60 megapixels para evitar consumo excessivo de memória.');
             getModal(els.photoCropModal)?.hide();
             return;
         }
@@ -2138,9 +2157,12 @@
         const files = fileListToArray(incomingFiles);
 
         const validFiles = files.filter((file) => {
-            const fileType = String(file.type || '').toLowerCase();
-            if (!acceptedPhotoTypes.has(fileType)) {
+            if (!isAcceptedPhoto(file)) {
                 showToast('warning', `${file.name}: formato não suportado.`);
+                return false;
+            }
+            if (file.size <= 0) {
+                showToast('warning', `${file.name}: arquivo vazio.`);
                 return false;
             }
             if (file.size > maxPhotoSourceBytes) {
@@ -2286,7 +2308,10 @@
             if (cropSrc === '' || !state.activePhotoCrop) {
                 return;
             }
-            showAlert('error', 'Imagem inválida', 'O navegador não conseguiu abrir esta imagem.');
+
+            const pending = state.activePhotoCrop;
+            commitCroppedPhoto(pending.file, pending.replaceIndex, false);
+            showToast('info', `${pending.file.name}: prévia indisponível; o servidor fará a conversão segura.`);
             getModal(els.photoCropModal)?.hide();
         });
         els.photoCropModal?.addEventListener('shown.bs.modal', initializePhotoCropper);
@@ -3008,6 +3033,7 @@
                         q: String(params.term || '').trim(),
                         page: Number(params.page || 1),
                         per_page: 15,
+                        cliente_id: Number(els.clientSelect instanceof HTMLSelectElement ? els.clientSelect.value : 0) || 0,
                     }),
                     processResults: (response) => {
                         showFeedback('');
@@ -3043,16 +3069,18 @@
 
         // Fallback sem Select2: carrega uma página limitada e mantém o fluxo
         // funcional em vez de esconder silenciosamente o recurso.
-        let fallbackLoaded = false;
+        let fallbackLoadedForClientId = null;
         let fallbackLoading = false;
+        const currentClientId = () => Number(els.clientSelect instanceof HTMLSelectElement ? els.clientSelect.value : 0) || 0;
         picker.addEventListener('focus', async () => {
-            if (fallbackLoaded || fallbackLoading || searchUrl === '') {
+            const clientId = currentClientId();
+            if (fallbackLoadedForClientId === clientId || fallbackLoading || searchUrl === '') {
                 return;
             }
             fallbackLoading = true;
 
             try {
-                const response = await fetch(`${searchUrl}?page=1&per_page=30`, {
+                const response = await fetch(`${searchUrl}?page=1&per_page=30&cliente_id=${clientId}`, {
                     headers: { Accept: 'application/json' },
                     credentials: 'same-origin',
                 });
@@ -3061,13 +3089,14 @@
                     throw new Error(String(payload?.message || 'Não foi possível carregar os orçamentos.'));
                 }
 
+                picker.querySelectorAll('option[value]:not([value=""])').forEach((option) => option.remove());
                 (Array.isArray(payload?.results) ? payload.results : []).forEach((item) => {
                     const option = document.createElement('option');
                     option.value = String(item.id || '');
                     option.textContent = String(item.text || '');
                     picker.appendChild(option);
                 });
-                fallbackLoaded = true;
+                fallbackLoadedForClientId = clientId;
                 showFeedback('');
             } catch (error) {
                 showFeedback(String(error?.message || 'Não foi possível carregar os orçamentos.'));
@@ -3075,6 +3104,11 @@
                 fallbackLoading = false;
             }
         });
+        if (els.clientSelect instanceof HTMLSelectElement) {
+            els.clientSelect.addEventListener('change', () => {
+                fallbackLoadedForClientId = null;
+            });
+        }
 
         picker.addEventListener('change', () => {
             navigateToBudget(picker.value);

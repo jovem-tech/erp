@@ -40,7 +40,8 @@ class FinanceiroService
         private readonly FinanceiroCartaoCreditoService $financeiroCartaoCreditoService,
         private readonly FinanceiroContaService $financeiroContaService,
         private readonly OrderEventService $orderEventService,
-        private readonly EntradaPecaService $entradaPecaService
+        private readonly EntradaPecaService $entradaPecaService,
+        private readonly FinanceiroAnexoService $financeiroAnexoService
     ) {}
 
     /**
@@ -72,6 +73,9 @@ class FinanceiroService
                 // a despesa caiu, então precisa do nome (não só do id).
                 'cartaoCredito',
             ])
+            // Contagem de anexos por linha, sem N+1: alimenta o indicador
+            // "clipe" da listagem de despesas.
+            ->withCount('anexos')
             // Ordem de pagamento/recebimento efetivo, não de vencimento. Sem
             // data_pagamento (título ainda pendente) vai para o fim da lista —
             // NULL é o menor valor em ORDER BY DESC.
@@ -509,29 +513,39 @@ class FinanceiroService
 
     public function delete(Financeiro $financeiro): void
     {
-        // Snapshot ANTES do hard delete — e a unica chance de auditar o que saiu.
-        $osId = (int) ($financeiro->os_id ?? 0);
-        $snapshot = [
-            'financeiro_id' => (int) $financeiro->id,
-            'tipo' => (string) $financeiro->tipo,
-            'categoria' => (string) $financeiro->categoria,
-            'descricao' => (string) $financeiro->descricao,
-            'valor' => round((float) $financeiro->valor, 2),
-            'status' => (string) $financeiro->status,
-        ];
+        DB::transaction(function () use ($financeiro): void {
+            // Snapshot ANTES do hard delete — e a unica chance de auditar o que saiu.
+            $osId = (int) ($financeiro->os_id ?? 0);
+            $snapshot = [
+                'financeiro_id' => (int) $financeiro->id,
+                'tipo' => (string) $financeiro->tipo,
+                'categoria' => (string) $financeiro->categoria,
+                'descricao' => (string) $financeiro->descricao,
+                'valor' => round((float) $financeiro->valor, 2),
+                'status' => (string) $financeiro->status,
+            ];
 
-        $financeiro->delete();
+            $anexos = $financeiro->anexos()->with('managedFile')->orderBy('id')->get();
+            foreach ($anexos as $anexo) {
+                $this->financeiroAnexoService->prepararExclusaoDoLancamento(
+                    $anexo,
+                    Auth::id() !== null ? (int) Auth::id() : null
+                );
+            }
 
-        if ($osId > 0) {
-            $this->orderEventService->record(
-                $osId,
-                OrderEvent::CATEGORIA_FINANCEIRO,
-                OrderEvent::TIPO_TITULO_EXCLUIDO,
-                'Título financeiro excluído',
-                $snapshot['descricao'] !== '' ? $snapshot['descricao'] : null,
-                $snapshot
-            );
-        }
+            $financeiro->delete();
+
+            if ($osId > 0) {
+                $this->orderEventService->record(
+                    $osId,
+                    OrderEvent::CATEGORIA_FINANCEIRO,
+                    OrderEvent::TIPO_TITULO_EXCLUIDO,
+                    'Título financeiro excluído',
+                    $snapshot['descricao'] !== '' ? $snapshot['descricao'] : null,
+                    $snapshot
+                );
+            }
+        }, attempts: 3);
     }
 
     /**
@@ -950,6 +964,10 @@ class FinanceiroService
             'modalidade' => $payload['modalidade'] ?? null,
             'forma_pagamento' => $payload['forma_pagamento'] ?? null,
             'parcelas' => $payload['parcelas'] ?? 1,
+            // Ancora o prazo da operadora no dia do movimento, nao em `now()`:
+            // uma baixa lancada com data retroativa e' creditada a partir do
+            // dia em que o cliente pagou (ver FinanceiroCartaoService::creditDate()).
+            'data_pagamento' => $dataMovimento,
         ]);
 
         FinanceiroMovimentoCartao::query()->create([
@@ -1674,13 +1692,7 @@ class FinanceiroService
 
         $tipo = strtolower(trim((string) ($merged['tipo'] ?? '')));
         $categoriaNome = trim((string) ($merged['categoria'] ?? ''));
-        $categoriaConfig = $categoriaNome !== ''
-            ? FinanceiroCategoria::query()
-                ->whereRaw('LOWER(nome) = ?', [mb_strtolower($categoriaNome, 'UTF-8')])
-                ->whereIn('tipo', array_filter([$tipo, FinanceiroCategoria::TIPO_AMBOS]))
-                ->with(['dre_grupo', 'dre_subgrupo'])
-                ->first()
-            : null;
+        $categoriaConfig = FinanceiroCategoria::matchByNome($categoriaNome, $tipo);
 
         $resolved = $payload;
         // A conta identifica onde a baixa foi liquidada e pertence somente a
@@ -1716,6 +1728,32 @@ class FinanceiroService
             ? filter_var($payload['impacta_dre'], FILTER_VALIDATE_BOOL)
             : ($existing?->impacta_dre ?? (bool) ($categoriaConfig?->impacta_dre_padrao ?? true));
 
+        // Comprar peça QUE VAI PARA O ESTOQUE não é despesa: é troca de ativo
+        // (caixa vira estoque), então fica fora do DRE até a peça sair para uma
+        // OS — aí vira CMV pela linha "Peças aplicadas" (CPC 16 / Lei 6.404/76
+        // art. 187; `CMV = estoque inicial + compras - estoque final`).
+        //
+        // A entrada registrada é a ÚNICA evidência de que o ativo existe. Sem
+        // ela a peça foi consumida no próprio período (comprada e aplicada na
+        // bancada), e o custo pertence a este mês — era aqui que o dinheiro
+        // sumia: saía do caixa e não aparecia em DRE nenhum, nem depois.
+        //
+        // Só SUBTRAI impacto, nunca adiciona: o padrão da categoria manda no
+        // caso geral (e continua editável em Configurações financeiras). Se a
+        // regra tivesse de adicionar, todo caminho novo de criação que a
+        // esquecesse voltaria a perder o custo em silêncio.
+        $itensEstoque = $payload['itens_estoque'] ?? [];
+
+        if ($existing === null
+            && $tipo === Financeiro::TIPO_PAGAR
+            && ! array_key_exists('impacta_dre', $payload)
+            && $resolved['grupo_dre'] === Financeiro::GRUPO_DRE_CUSTO_DIRETO_OS
+            && is_array($itensEstoque)
+            && $itensEstoque !== []
+        ) {
+            $resolved['impacta_dre'] = false;
+        }
+
         $resolved['impacta_fluxo_caixa'] = array_key_exists('impacta_fluxo_caixa', $payload)
             ? filter_var($payload['impacta_fluxo_caixa'], FILTER_VALIDATE_BOOL)
             : ($existing?->impacta_fluxo_caixa ?? (bool) ($categoriaConfig?->impacta_fluxo_caixa_padrao ?? true));
@@ -1725,6 +1763,39 @@ class FinanceiroService
                 ? filter_var($payload['dre_fixo_mensal'], FILTER_VALIDATE_BOOL)
                 : ($existing?->dre_fixo_mensal ?? (bool) ($categoriaConfig?->dre_fixo_mensal_padrao ?? false)))
             : false;
+
+        // Só quem já é fixa POR PADRÃO pode virar fixa manualmente. Categoria
+        // variável (Compra de peças, Taxa de cartão, Devolução de venda,
+        // Impostos e taxas...) nunca vira fixa pelo override — se algo dessas
+        // categorias precisa ser tratado como fixo de verdade (ex.: DAS do
+        // MEI dentro de "Impostos e taxas"), o caminho certo é criar uma
+        // categoria própria com `dre_fixo_mensal_padrao = true` em
+        // Configurações financeiras, não forçar um lançamento avulso.
+        //
+        // Deriva do PADRÃO DA CATEGORIA, não de grupo nem de nome: grupo não
+        // distingue (Taxa de cartão e Impostos e taxas dividem "Despesas
+        // Operacionais", mas só a primeira nunca pode ser fixa) e nome já nos
+        // mordeu — o banco de produção grava "Compra de pecas" sem cedilha
+        // (herança do ERP legado). Categoria fora do catálogo (recém-digitada)
+        // cai no `?? false`: sem padrão gravado, não há como confirmar "fixa",
+        // então também é bloqueada — mesma regra de resolveClassification()
+        // duas linhas acima.
+        //
+        // Só barra quando o PRÓPRIO payload pede fixa explicitamente — não
+        // quando fixa vem de um registro antigo intocado (editar só a descrição
+        // não pode quebrar por causa de um valor legado).
+        $categoriaPadraoFixo = (bool) ($categoriaConfig?->dre_fixo_mensal_padrao ?? false);
+
+        if ($resolved['dre_fixo_mensal'] === true
+            && array_key_exists('dre_fixo_mensal', $payload)
+            && filter_var($payload['dre_fixo_mensal'], FILTER_VALIDATE_BOOL) === true
+            && ! $categoriaPadraoFixo
+        ) {
+            throw new RuntimeException(sprintf(
+                '%s não pode ser marcada como despesa fixa: por padrão ela é variável, e só categoria que já é fixa por padrão pode virar fixa manualmente.',
+                $resolved['categoria']
+            ));
+        }
 
         // Cartão de crédito da assistência (compra feita NO cartão, não
         // recebimento de cliente). Quando há cartão vinculado, o vencimento

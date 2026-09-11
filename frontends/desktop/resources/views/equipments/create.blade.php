@@ -544,7 +544,7 @@
                         @endforeach
                     </div>
                 @endif
-                <input type="file" name="fotos[]" id="equipmentPhotosInput" class="d-none" accept="image/png,image/jpeg,image/webp" multiple>
+                <input type="file" name="fotos[]" id="equipmentPhotosInput" class="d-none" accept="image/png,image/jpeg,image/webp,image/avif,image/heic,image/heif,.heic,.heif,.avif" multiple>
 
                 <div class="equipment-photo-toolbar">
                     <button type="button" class="btn btn-primary" id="equipmentPhotoGalleryButton">
@@ -555,7 +555,7 @@
                         <i class="bi bi-camera me-2"></i>
                         Capturar com câmera
                     </button>
-                    <span class="surface-subtitle mb-0">Limite de {{ $maxPhotos }} fotos com definição da principal no preview.</span>
+                    <span class="surface-subtitle mb-0">Até {{ $maxPhotos }} fotos e 20 MB por origem; normal até 400 KB e máximo excepcional de 700 KB no servidor.</span>
                 </div>
 
                 <div class="equipment-photo-required-note">

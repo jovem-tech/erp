@@ -1,9 +1,9 @@
 {
-    "generated_at": "2026-09-09T13:44:06-03:00",
+    "generated_at": "2026-09-11T16:55:04-03:00",
     "system": {
         "name": "sistema-erp",
-        "app_version": "5.80.5",
-        "api_version": "1.6.1",
+        "app_version": "5.87.0",
+        "api_version": "1.7.0",
         "production_target": "Ubuntu VPS",
         "development_target": "Ubuntu Server LAN - BANCADA-02 (192.168.1.100)"
     },
@@ -130,6 +130,10 @@
                 {
                     "file": "documentacao/03-arquitetura-tecnica/ordens-mobile.md",
                     "title": "Fluxo de OS Mobile"
+                },
+                {
+                    "file": "documentacao/03-arquitetura-tecnica/otimizacao-fotos-operacionais.md",
+                    "title": "Otimização de fotos operacionais"
                 }
             ]
         },
@@ -714,8 +718,40 @@
                     "title": "Despesas passam a listar também pelo mês da baixa, não só pelo vencimento"
                 },
                 {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-09-emissao-automatica-nfse-ambiente-nacional.md",
+                    "title": "Emissão automática de NFS-e pelo Ambiente Nacional (2026-09-09)"
+                },
+                {
                     "file": "documentacao/07-novas-implementacoes/2026-09-09-mapa-os-gerado-do-catalogo.md",
                     "title": "Mapa da OS passa a ser gerado do catálogo vivo, com cronologia real"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-10-previsao-repasse-cartao-ancora-no-pagamento.md",
+                    "title": "Previsão de repasse e taxa de cartão: âncora no dia do pagamento, com dia útil"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-10-reserva-peca-orcamento.md",
+                    "title": "Reserva de peça de estoque vinculada ao orçamento (2026-09-10)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-11-anexos-financeiros-gerenciador-arquivos.md",
+                    "title": "Anexos financeiros no Gerenciador de Arquivos"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-11-catalogo-equipamentos-edicao-massa-mesclagem.md",
+                    "title": "Catálogo de equipamentos: edição em massa por ID e mesclagem de duplicados (2026-09-11)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-11-catalogo-equipamentos-tipos-marcas-modelos-csv.md",
+                    "title": "Catálogo de equipamentos: tela de gestão + importação CSV (2026-09-11)"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-11-nfse-na-visualizacao-os.md",
+                    "title": "NFS-e vinculada na visualização da OS"
+                },
+                {
+                    "file": "documentacao/07-novas-implementacoes/2026-09-11-otimizacao-fotos-operacionais.md",
+                    "title": "Fotos operacionais com meta de 400 KB"
                 },
                 {
                     "file": "documentacao/07-novas-implementacoes/historico-de-versoes.md",
@@ -757,6 +793,10 @@
                 {
                     "file": "documentacao/10-deploy/operacao-gerenciador-central-arquivos.md",
                     "title": "Operação do Gerenciador Central de Arquivos"
+                },
+                {
+                    "file": "documentacao/10-deploy/operacao-otimizacao-fotos-operacionais.md",
+                    "title": "Operação da otimização de fotos operacionais"
                 },
                 {
                     "file": "documentacao/10-deploy/workflow-git-multiambiente.md",
@@ -1352,6 +1392,21 @@
             }
         },
         {
+            "directory": "specs/040-reserva-peca-orcamento",
+            "title": "Reserva de peça de estoque vinculada ao orçamento",
+            "artifacts": {
+                "spec": true,
+                "plan": false,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
             "directory": "specs/041-emissao-fiscal-nfse",
             "title": "Emissão fiscal — NFS-e e prontidão de dados",
             "artifacts": {
@@ -1387,6 +1442,51 @@
             "artifacts": {
                 "spec": true,
                 "plan": false,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/044-catalogo-equipamentos-csv",
+            "title": "Catálogo de equipamentos (tipos → marcas → modelos) com importação CSV",
+            "artifacts": {
+                "spec": true,
+                "plan": false,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/045-catalogo-equipamentos-edicao-massa-mesclagem",
+            "title": "Catálogo de equipamentos — edição em massa por ID e mesclagem de duplicados",
+            "artifacts": {
+                "spec": true,
+                "plan": false,
+                "tasks": true,
+                "research": false,
+                "quickstart": false,
+                "analysis": false,
+                "data_model": false,
+                "contracts": false,
+                "checklists": false
+            }
+        },
+        {
+            "directory": "specs/046-otimizacao-fotos-operacionais",
+            "title": "Especificação 046 - Otimização de fotos operacionais",
+            "artifacts": {
+                "spec": true,
+                "plan": true,
                 "tasks": true,
                 "research": false,
                 "quickstart": false,

@@ -1268,7 +1268,7 @@ export function StepEquipment({
                   onChange={onChangePendingNewEquipmentPhotos}
                   maxFiles={4}
                   disabled={disabled}
-                  helpText="Pelo menos 1 foto é obrigatória para cadastrar um equipamento novo."
+                  helpText="Pelo menos 1 foto é obrigatória. Origem de 20 MB; normal até 400 KB e máximo de 700 KB após otimização."
                 />
               ) : null}
 

@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\DTO\Files\FileContext;
+use App\DTO\Photos\OptimizedOperationalPhoto;
 use App\Enums\Files\FileCategory;
 use App\Enums\Files\FileOrigin;
 use App\Models\Client;
@@ -14,6 +15,7 @@ use App\Models\EquipmentPhoto;
 use App\Models\EquipmentType;
 use App\Models\User;
 use App\Services\Files\LegacyCompatibleFileAdapter;
+use App\Services\Photos\OperationalPhotoOptimizer;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
@@ -25,9 +27,11 @@ use RuntimeException;
 
 class EquipmentWorkflowService
 {
-    public function __construct(private readonly LegacyCompatibleFileAdapter $fileManagerAdapter) {}
-
-    private const BRAND_SCOPE_ANCHOR_MODEL_NAME = '__CATALOG_BRAND_SCOPE__';
+    public function __construct(
+        private readonly LegacyCompatibleFileAdapter $fileManagerAdapter,
+        private readonly EquipmentCatalogService $equipmentCatalogService,
+        private readonly OperationalPhotoOptimizer $photoOptimizer,
+    ) {}
 
     /**
      * @return array<string, mixed>
@@ -91,7 +95,7 @@ class EquipmentWorkflowService
                 ])
                 ->values()
                 ->all(),
-            'catalog_relations' => $this->catalogRelations(),
+            'catalog_relations' => $this->equipmentCatalogService->catalogRelations(),
             'desktop_defaults' => $defaults,
             'password_modes' => [
                 ['value' => 'desenho', 'label' => 'Desenho'],
@@ -121,175 +125,12 @@ class EquipmentWorkflowService
 
     public function createBrand(string $name, int $typeId): EquipmentBrand
     {
-        $normalized = $this->normalizeCatalogName($name);
-
-        if ($normalized === '') {
-            throw new RuntimeException('Informe um nome de marca valido.');
-        }
-
-        $brand = EquipmentBrand::query()->firstOrNew(['nome' => $normalized]);
-        $brand->nome = $normalized;
-        $brand->ativo = true;
-        if (! $brand->exists) {
-            $brand->created_at = now();
-        }
-        $brand->updated_at = now();
-        $brand->save();
-
-        $this->ensureBrandTypeCatalogScope($typeId, (int) $brand->id);
-
-        return $brand->fresh() ?? $brand;
+        return $this->equipmentCatalogService->createBrand($name, $typeId);
     }
 
     public function createModel(int $brandId, string $name, int $typeId): EquipmentModel
     {
-        if ($brandId <= 0) {
-            throw new RuntimeException('Selecione uma marca valida para o modelo.');
-        }
-
-        $brand = EquipmentBrand::query()->find($brandId);
-        if (! $brand instanceof EquipmentBrand) {
-            throw new RuntimeException('Marca informada nao foi encontrada.');
-        }
-
-        $normalized = $this->normalizeCatalogName($name);
-        if ($normalized === '') {
-            throw new RuntimeException('Informe um nome de modelo valido.');
-        }
-
-        $model = EquipmentModel::query()->firstOrNew([
-            'marca_id' => $brandId,
-            'nome' => $normalized,
-        ]);
-
-        $model->marca_id = $brandId;
-        $model->nome = $normalized;
-        $model->ativo = true;
-        if (! $model->exists) {
-            $model->created_at = now();
-        }
-        $model->updated_at = now();
-        $model->save();
-
-        $this->ensureModelTypeCatalogScope($typeId, $brandId, (int) $model->id);
-
-        return $model->fresh() ?? $model;
-    }
-
-    /**
-     * @return array<int, array{tipo_id:int,marca_id:int,modelo_id:int}>
-     */
-    private function catalogRelations(): array
-    {
-        if (! $this->hasCatalogRelationsTable()) {
-            return [];
-        }
-
-        return DB::table('equipamentos_catalogo_relacoes')
-            ->where('ativo', 1)
-            ->orderBy('tipo_id')
-            ->orderBy('marca_id')
-            ->orderBy('modelo_id')
-            ->get(['tipo_id', 'marca_id', 'modelo_id'])
-            ->map(static fn (object $relation): array => [
-                'tipo_id' => (int) ($relation->tipo_id ?? 0),
-                'marca_id' => (int) ($relation->marca_id ?? 0),
-                'modelo_id' => (int) ($relation->modelo_id ?? 0),
-            ])
-            ->values()
-            ->all();
-    }
-
-    private function ensureBrandTypeCatalogScope(int $typeId, int $brandId): void
-    {
-        if ($typeId <= 0 || $brandId <= 0 || ! $this->hasCatalogRelationsTable()) {
-            return;
-        }
-
-        if (! EquipmentType::query()->whereKey($typeId)->exists()) {
-            throw new RuntimeException('Tipo informado nao foi encontrado.');
-        }
-
-        if (! EquipmentBrand::query()->whereKey($brandId)->exists()) {
-            throw new RuntimeException('Marca informada nao foi encontrada.');
-        }
-
-        // A tabela legada exige `modelo_id` nao nulo. Mantemos uma ancora inativa
-        // para registrar o escopo `tipo -> marca` sem expor um modelo falso ao usuario.
-        $anchorModel = $this->ensureBrandScopeAnchorModel($brandId);
-
-        $this->ensureCatalogRelationRecord($typeId, $brandId, (int) $anchorModel->id);
-    }
-
-    private function ensureModelTypeCatalogScope(int $typeId, int $brandId, int $modelId): void
-    {
-        if ($typeId <= 0 || $brandId <= 0 || $modelId <= 0 || ! $this->hasCatalogRelationsTable()) {
-            return;
-        }
-
-        if (! EquipmentType::query()->whereKey($typeId)->exists()) {
-            throw new RuntimeException('Tipo informado nao foi encontrado.');
-        }
-
-        $model = EquipmentModel::query()->find($modelId);
-        if (! $model instanceof EquipmentModel || (int) $model->marca_id !== $brandId) {
-            throw new RuntimeException('Modelo informado nao pertence a marca selecionada.');
-        }
-
-        $this->ensureCatalogRelationRecord($typeId, $brandId, $modelId);
-    }
-
-    private function ensureCatalogRelationRecord(int $typeId, int $brandId, int $modelId): void
-    {
-        $existing = DB::table('equipamentos_catalogo_relacoes')
-            ->where('tipo_id', $typeId)
-            ->where('marca_id', $brandId)
-            ->where('modelo_id', $modelId)
-            ->first();
-
-        if ($existing !== null) {
-            DB::table('equipamentos_catalogo_relacoes')
-                ->where('id', $existing->id)
-                ->update([
-                    'ativo' => 1,
-                    'updated_at' => now(),
-                ]);
-
-            return;
-        }
-
-        DB::table('equipamentos_catalogo_relacoes')->insert([
-            'tipo_id' => $typeId,
-            'marca_id' => $brandId,
-            'modelo_id' => $modelId,
-            'ativo' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-    }
-
-    private function ensureBrandScopeAnchorModel(int $brandId): EquipmentModel
-    {
-        $anchor = EquipmentModel::query()->firstOrNew([
-            'marca_id' => $brandId,
-            'nome' => self::BRAND_SCOPE_ANCHOR_MODEL_NAME,
-        ]);
-
-        $anchor->marca_id = $brandId;
-        $anchor->nome = self::BRAND_SCOPE_ANCHOR_MODEL_NAME;
-        $anchor->ativo = false;
-        if (! $anchor->exists) {
-            $anchor->created_at = now();
-        }
-        $anchor->updated_at = now();
-        $anchor->save();
-
-        return $anchor->fresh() ?? $anchor;
-    }
-
-    private function hasCatalogRelationsTable(): bool
-    {
-        return DB::getSchemaBuilder()->hasTable('equipamentos_catalogo_relacoes');
+        return $this->equipmentCatalogService->createModel($brandId, $name, $typeId);
     }
 
     /**
@@ -562,6 +403,24 @@ class EquipmentWorkflowService
      */
     public function createEquipment(array $payload, array $uploadedFiles = []): Equipment
     {
+        $photos = $this->photoOptimizer->optimizeMany($uploadedFiles);
+
+        try {
+            return DB::transaction(fn (): Equipment => $this->createEquipmentFromOptimizedPhotos($payload, $photos));
+        } finally {
+            $this->photoOptimizer->cleanupMany($photos);
+        }
+    }
+
+    /**
+     * Internal entrypoint for callers that optimized photos before opening
+     * their own database transaction.
+     *
+     * @param  array<string, mixed>  $payload
+     * @param  list<OptimizedOperationalPhoto>  $uploadedFiles
+     */
+    public function createEquipmentFromOptimizedPhotos(array $payload, array $uploadedFiles = []): Equipment
+    {
         $pairing = null;
         $pairingCode = trim((string) ($payload['collector_pairing_code'] ?? ''));
         if ($pairingCode !== '') {
@@ -610,6 +469,21 @@ class EquipmentWorkflowService
      * @param  array<int, UploadedFile>  $uploadedFiles
      */
     public function updateEquipment(int $equipmentId, array $payload, array $uploadedFiles = []): Equipment
+    {
+        $photos = $this->photoOptimizer->optimizeMany($uploadedFiles);
+
+        try {
+            return DB::transaction(fn (): Equipment => $this->updateEquipmentFromOptimizedPhotos($equipmentId, $payload, $photos));
+        } finally {
+            $this->photoOptimizer->cleanupMany($photos);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  list<OptimizedOperationalPhoto>  $uploadedFiles
+     */
+    public function updateEquipmentFromOptimizedPhotos(int $equipmentId, array $payload, array $uploadedFiles = []): Equipment
     {
         $equipment = Equipment::query()
             ->with('photos')
@@ -685,6 +559,25 @@ class EquipmentWorkflowService
      */
     public function completePendingRegistration(int $equipmentId, array $uploadedFiles, ?int $primaryPhotoIndex = 0): Equipment
     {
+        $photos = $this->photoOptimizer->optimizeMany($uploadedFiles);
+
+        try {
+            return DB::transaction(fn (): Equipment => $this->completePendingRegistrationFromOptimizedPhotos(
+                $equipmentId,
+                $photos,
+                $primaryPhotoIndex,
+            ));
+        } finally {
+            $this->photoOptimizer->cleanupMany($photos);
+        }
+    }
+
+    /** @param list<OptimizedOperationalPhoto> $uploadedFiles */
+    public function completePendingRegistrationFromOptimizedPhotos(
+        int $equipmentId,
+        array $uploadedFiles,
+        ?int $primaryPhotoIndex = 0,
+    ): Equipment {
         $equipment = Equipment::query()->with('photos')->find($equipmentId);
 
         if (! $equipment instanceof Equipment) {
@@ -1018,7 +911,7 @@ class EquipmentWorkflowService
 
     /**
      * @param  array<string, mixed>  $payload
-     * @param  array<int, UploadedFile>  $uploadedFiles
+     * @param  list<OptimizedOperationalPhoto>  $uploadedFiles
      */
     private function syncEquipmentPhotos(Equipment $equipment, array $payload, array $uploadedFiles): void
     {
@@ -1106,11 +999,21 @@ class EquipmentWorkflowService
     {
         $relativePath = $this->normalizeStoredPath((string) ($photo->arquivo ?? ''));
 
-        if ($relativePath !== '') {
-            Storage::disk('local')->delete($relativePath);
+        $photo->delete();
+
+        if ($relativePath === '') {
+            return;
         }
 
-        $photo->delete();
+        if (DB::transactionLevel() > 0) {
+            DB::afterCommit(static function () use ($relativePath): void {
+                Storage::disk('local')->delete($relativePath);
+            });
+
+            return;
+        }
+
+        Storage::disk('local')->delete($relativePath);
     }
 
     private function ensureEquipmentPrimaryPhoto(int $equipmentId): void
@@ -1127,88 +1030,124 @@ class EquipmentWorkflowService
     }
 
     /**
-     * @param  array<int, UploadedFile>  $uploadedFiles
+     * @param  list<OptimizedOperationalPhoto>  $uploadedFiles
      */
     private function storePhotos(Equipment $equipment, array $uploadedFiles, ?int $primaryIndex = 0, bool $ensurePrimary = true): array
     {
         $files = array_values(array_filter(
             $uploadedFiles,
-            static fn ($file): bool => $file instanceof UploadedFile && $file->isValid()
+            static fn ($file): bool => $file instanceof OptimizedOperationalPhoto
         ));
 
         if ($files === []) {
             return [];
         }
 
-        $directory = 'private/equipamentos/'.$equipment->id;
-        $createdPhotoIds = [];
-
-        if ($primaryIndex !== null) {
-            $primaryIndex = max(0, min(count($files) - 1, $primaryIndex));
+        $storagePaths = [];
+        $ownsTransaction = DB::transactionLevel() === 0;
+        if ($ownsTransaction) {
+            DB::beginTransaction();
         }
 
-        foreach ($files as $index => $file) {
-            $extension = strtolower((string) ($file->getClientOriginalExtension() ?: $file->extension() ?: 'jpg'));
-            $filename = sprintf(
-                'equip_%d_%s_%02d.%s',
-                (int) $equipment->id,
-                now()->format('YmdHisv'),
-                $index + 1,
-                $extension
-            );
+        try {
+            $directory = 'private/equipamentos/'.$equipment->id;
+            $createdPhotoIds = [];
 
-            $storagePath = $directory.'/'.$filename;
-            $photo = null;
-
-            try {
-                $writtenPath = Storage::disk('local')->putFileAs($directory, $file, $filename);
-                if (! is_string($writtenPath) || $writtenPath !== $storagePath || ! Storage::disk('local')->exists($storagePath)) {
-                    throw new RuntimeException('Falha ao persistir foto do equipamento.');
-                }
-
-                $photo = EquipmentPhoto::query()->create([
-                    'equipamento_id' => $equipment->id,
-                    'arquivo' => $storagePath,
-                    'is_principal' => $primaryIndex !== null && $index === $primaryIndex ? 1 : 0,
-                    'created_at' => now(),
-                ]);
-
-                $this->fileManagerAdapter->synchronizeExisting(
-                    new FileContext(
-                        category: FileCategory::EquipmentPhoto,
-                        origin: FileOrigin::Upload,
-                        operationKey: 'equipment-photo:'.(int) $photo->id.':'.hash('sha256', $storagePath),
-                        subjectType: 'equipment',
-                        subjectId: (int) $equipment->id,
-                        relation: 'photo:'.(int) $photo->id
-                    ),
-                    'local',
-                    $storagePath,
-                    'equipamentos_fotos',
-                    'arquivo',
-                    (string) $photo->id
-                );
-            } catch (\Throwable $exception) {
-                $photo?->delete();
-                if (Storage::disk('local')->exists($storagePath)) {
-                    Storage::disk('local')->delete($storagePath);
-                }
-
-                throw $exception;
+            if ($primaryIndex !== null) {
+                $primaryIndex = max(0, min(count($files) - 1, $primaryIndex));
             }
 
-            $createdPhotoIds[] = (int) $photo->id;
-        }
+            foreach ($files as $index => $file) {
+                $extension = $file->extension;
+                $filename = sprintf(
+                    'equip_%d_%s.%s',
+                    (int) $equipment->id,
+                    Str::uuid()->toString(),
+                    $extension
+                );
 
-        if ($ensurePrimary && ! EquipmentPhoto::query()->where('equipamento_id', $equipment->id)->where('is_principal', 1)->exists()) {
-            EquipmentPhoto::query()
-                ->where('equipamento_id', $equipment->id)
-                ->orderBy('id')
-                ->limit(1)
-                ->update(['is_principal' => 1]);
-        }
+                $storagePath = $directory.'/'.$filename;
+                $photo = null;
 
-        return $createdPhotoIds;
+                try {
+                    $stream = fopen($file->path, 'rb');
+                    if ($stream === false) {
+                        throw new RuntimeException('Falha ao abrir foto otimizada do equipamento.');
+                    }
+
+                    try {
+                        $written = Storage::disk('local')->put($storagePath, $stream);
+                    } finally {
+                        fclose($stream);
+                    }
+
+                    if (! $written || ! Storage::disk('local')->exists($storagePath)) {
+                        throw new RuntimeException('Falha ao persistir foto do equipamento.');
+                    }
+                    $storagePaths[] = $storagePath;
+                    if (DB::transactionLevel() > 0) {
+                        DB::afterRollBack(static function () use ($storagePath): void {
+                            Storage::disk('local')->delete($storagePath);
+                        });
+                    }
+
+                    $photo = EquipmentPhoto::query()->create([
+                        'equipamento_id' => $equipment->id,
+                        'arquivo' => $storagePath,
+                        'is_principal' => $primaryIndex !== null && $index === $primaryIndex ? 1 : 0,
+                        'created_at' => now(),
+                    ]);
+
+                    $this->fileManagerAdapter->synchronizeExisting(
+                        new FileContext(
+                            category: FileCategory::EquipmentPhoto,
+                            origin: FileOrigin::Upload,
+                            operationKey: 'equipment-photo:'.(int) $photo->id.':'.hash('sha256', $storagePath),
+                            subjectType: 'equipment',
+                            subjectId: (int) $equipment->id,
+                            relation: 'photo:'.(int) $photo->id
+                        ),
+                        'local',
+                        $storagePath,
+                        'equipamentos_fotos',
+                        'arquivo',
+                        (string) $photo->id
+                    );
+                } catch (\Throwable $exception) {
+                    $photo?->delete();
+                    if (Storage::disk('local')->exists($storagePath)) {
+                        Storage::disk('local')->delete($storagePath);
+                    }
+
+                    throw $exception;
+                }
+
+                $createdPhotoIds[] = (int) $photo->id;
+            }
+
+            if ($ensurePrimary && ! EquipmentPhoto::query()->where('equipamento_id', $equipment->id)->where('is_principal', 1)->exists()) {
+                EquipmentPhoto::query()
+                    ->where('equipamento_id', $equipment->id)
+                    ->orderBy('id')
+                    ->limit(1)
+                    ->update(['is_principal' => 1]);
+            }
+
+            if ($ownsTransaction) {
+                DB::commit();
+            }
+
+            return $createdPhotoIds;
+        } catch (\Throwable $exception) {
+            if ($ownsTransaction && DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+            if ($storagePaths !== []) {
+                Storage::disk('local')->delete($storagePaths);
+            }
+
+            throw $exception;
+        }
     }
 
     /**
@@ -1698,18 +1637,6 @@ class EquipmentWorkflowService
         $mode = Str::slug($mode, '_');
 
         return in_array($mode, ['montado', 'oem'], true) ? $mode : null;
-    }
-
-    private function normalizeCatalogName(string $value): string
-    {
-        $value = trim($value);
-        if ($value === '') {
-            return '';
-        }
-
-        $value = preg_replace('/\s+/u', ' ', $value) ?? $value;
-
-        return mb_convert_case($value, MB_CASE_TITLE, 'UTF-8');
     }
 
     private function nullableString(mixed $value): ?string

@@ -175,6 +175,9 @@
                         <a href="{{ route('financeiro.edit', $id) }}" class="dropdown-item">
                             <i class="bi bi-pencil me-2"></i>Editar lançamento
                         </a>
+                        <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#anexoModal{{ $id }}">
+                            <i class="bi bi-paperclip me-2"></i>Anexar arquivo
+                        </button>
                     @endif
 
                     @if ($canPay)
@@ -655,6 +658,75 @@
     </div>
 
     <article class="surface-card mb-4">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-2">
+            <h3 class="surface-title fs-5 mb-0">
+                <i class="bi bi-paperclip me-2"></i>
+                Anexos
+            </h3>
+            @if ($canEditFinanceiro)
+                <button type="button" class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#anexoModal{{ $id }}">
+                    <i class="bi bi-upload me-1"></i>Anexar arquivo
+                </button>
+            @endif
+        </div>
+        @php $anexos = $lancamento['anexos'] ?? []; @endphp
+        @if ($anexos === [])
+            <p class="surface-subtitle mb-0">Nenhum arquivo anexado — boleto, fatura ou comprovante ainda não foi guardado aqui.</p>
+        @else
+            <ul class="list-unstyled mb-0">
+                @foreach ($anexos as $anexo)
+                    @php
+                        $anexoUrl = route('financeiro.anexos.download', [$id, $anexo['id']]);
+                        $anexoNome = $text($anexo['descricao'] ?? null, $anexo['nome_original'] ?? 'Arquivo');
+                        $anexoMime = (string) ($anexo['mime'] ?? '');
+                    @endphp
+                    <li class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                        <div>
+                            <span class="fw-semibold">
+                                <i class="bi bi-file-earmark-text me-1"></i>{{ $anexoNome }}
+                                @if (($anexo['management_status'] ?? 'pending') === 'pending')
+                                    <span class="badge text-bg-warning ms-1" title="O arquivo está seguro e será integrado automaticamente ao Gerenciador.">Sincronização pendente</span>
+                                @elseif (($anexo['management_status'] ?? null) === 'integrity_error')
+                                    <span class="badge text-bg-danger ms-1">Verificação necessária</span>
+                                @endif
+                            </span>
+                            <div class="small text-secondary">
+                                {{ number_format(((int) ($anexo['tamanho_bytes'] ?? 0)) / 1024, 0, ',', '.') }} KB ·
+                                {{ $text($anexo['uploaded_by']['nome'] ?? null, 'Usuário removido') }} ·
+                                {{ $date($anexo['created_at'] ?? null, true) }}
+                            </div>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="button" class="btn btn-sm btn-outline-light" title="Visualizar"
+                                    data-bs-toggle="modal" data-bs-target="#anexoPreviewModal"
+                                    data-anexo-url="{{ $anexoUrl }}" data-anexo-mime="{{ $anexoMime }}" data-anexo-nome="{{ $anexoNome }}">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                            <a href="{{ $anexoUrl }}" target="_blank" rel="noreferrer" class="btn btn-sm btn-outline-light" title="Abrir em nova aba">
+                                <i class="bi bi-box-arrow-up-right"></i>
+                            </a>
+                            @if ($canEditFinanceiro)
+                                <form method="post" action="{{ route('financeiro.anexos.destroy', [$id, $anexo['id']]) }}"
+                                      data-confirm="Mover este anexo para a lixeira do Gerenciador de Arquivos? Ele poderá ser restaurado durante o período de retenção." data-confirm-title="Mover anexo para a lixeira" data-confirm-button="Sim, mover">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Excluir">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            @endif
+                        </div>
+                    </li>
+                @endforeach
+            </ul>
+        @endif
+    </article>
+
+    @if ($anexos !== [])
+        @include('financeiro._anexo_preview_modal')
+    @endif
+
+    <article class="surface-card mb-4">
         <h3 class="surface-title fs-5 mb-2">
             <i class="bi bi-clock-history me-2"></i>
             Baixas e formas de pagamento
@@ -808,8 +880,41 @@
     </article>
 @endsection
 
-@if (($canPay && ! $isCartaoFatura) || ($canCancel && $osIsEncerrada && ! $isCartaoFatura) || ($canDeleteFinanceiro && ! $osIsEncerrada && ! $isCartaoFatura))
+@if ($canEditFinanceiro || $anexos !== [] || ($canPay && ! $isCartaoFatura) || ($canCancel && $osIsEncerrada && ! $isCartaoFatura) || ($canDeleteFinanceiro && ! $osIsEncerrada && ! $isCartaoFatura))
     @push('modals')
+        @if ($canEditFinanceiro)
+            <div class="modal fade" id="anexoModal{{ $id }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content">
+                        <form method="post" action="{{ route('financeiro.anexos.store', $id) }}"
+                              enctype="multipart/form-data" data-no-page-loader="true" data-form-anexo-financeiro>
+                            @csrf
+                            <div class="modal-header">
+                                <h5 class="modal-title">Anexar arquivo — Lançamento #{{ $id }}</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="mb-3">
+                                    <label class="form-label">Arquivo (PDF ou foto)</label>
+                                    <input type="file" name="arquivo" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.webp" required data-input-anexo-financeiro>
+                                </div>
+                                <div>
+                                    <label class="form-label">Descrição (opcional)</label>
+                                    <input type="text" name="descricao" class="form-control" maxlength="190" placeholder="Ex.: Boleto setembro/2026">
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancelar</button>
+                                <button type="submit" class="btn btn-primary" disabled data-botao-anexo-financeiro>
+                                    <i class="bi bi-upload me-1"></i>Anexar
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        @endif
+
         @if ($canCancel && $osIsEncerrada && ! $isCartaoFatura)
             @include('financeiro._cancel_reason_modal')
         @endif
@@ -919,6 +1024,9 @@
                 'contasFinanceiras' => $accountDataset ?? ['contas' => [], 'contas_padrao' => []],
             ]) !!};
         </script>
+        @if ($canEditFinanceiro || $anexos !== [])
+            <script src="{{ asset('assets/js/financeiro-anexos.js') }}?v={{ filemtime(public_path('assets/js/financeiro-anexos.js')) }}"></script>
+        @endif
         @if ($canPay && ! $isCartaoFatura)
             <script src="{{ asset('assets/js/financeiro-pay.js') }}?v={{ filemtime(public_path('assets/js/financeiro-pay.js')) }}"></script>
         @endif

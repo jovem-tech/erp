@@ -25,6 +25,9 @@ class Peca extends Model
         // migration 2026_08_27_000001 e um cast 'integer' truncaria 0,5 para
         // 0 em silencio, sem erro nenhum.
         'quantidade_atual' => 'decimal:4',
+        // Cache do somatorio de estoque_reservas (specs/040). Mesmo motivo do
+        // decimal:4 acima — reserva de 0,5 m de cabo e caso real.
+        'quantidade_reservada' => 'decimal:4',
         'estoque_minimo' => 'decimal:4',
         'estoque_maximo' => 'decimal:4',
         'ativo' => 'boolean',

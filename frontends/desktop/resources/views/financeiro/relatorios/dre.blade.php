@@ -95,8 +95,14 @@
                 <h3 class="surface-title mb-0">{{ $fmt($receita['receita_liquida'] ?? 0) }}</h3>
             </div>
             <div class="desktop-form-card text-center">
-                <p class="surface-subtitle mb-1">Despesas variáveis</p>
-                <h3 class="surface-title mb-0">{{ $fmt($gerencial['despesas_variaveis'] ?? 0) }}</h3>
+                {{-- Soma "Despesas Operacionais" variáveis + "Custo Direto (OS)".
+                     Só o primeiro grupo aparecia aqui, então uma compra de peça
+                     baixada no mês deixava o cartão em R$ 0,00 enquanto o mesmo
+                     valor já constava na demonstração contábil logo abaixo. --}}
+                <p class="surface-subtitle mb-1">Custos e despesas variáveis</p>
+                <h3 class="surface-title mb-0">
+                    {{ $fmt($gerencial['custos_variaveis_total'] ?? $gerencial['despesas_variaveis'] ?? 0) }}
+                </h3>
             </div>
             <div class="desktop-form-card text-center">
                 <p class="surface-subtitle mb-1">Custos fixos</p>

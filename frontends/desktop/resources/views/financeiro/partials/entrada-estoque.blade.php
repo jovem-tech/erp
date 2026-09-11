@@ -46,9 +46,18 @@
         <label class="form-check-label fw-semibold" for="financeiroEntradaEstoque">
             Esta compra dá entrada no estoque
         </label>
-        <small class="text-muted d-block">
-            As peças abaixo entram no estoque quando o lançamento for salvo. O custo informado
-            atualiza o custo de cadastro da peça.
+        {{-- Este switch decide ONDE o gasto aparece: peça que fica no estoque é
+             ativo (troca de caixa por mercadoria, fora do DRE até ser aplicada);
+             peça que vai direto para o serviço é custo deste mês. Os dois textos
+             alternam em financeiro-entrada-estoque.js. --}}
+        <small class="text-muted d-block" data-entrada-estoque-ajuda-ligada @class(['d-none' => ! $entradaLigada])>
+            As peças abaixo entram no estoque quando o lançamento for salvo (viram ativo) e o custo
+            informado atualiza o custo de cadastro da peça. No DRE o gasto só aparece quando a peça
+            for baixada numa OS.
+        </small>
+        <small class="text-muted d-block" data-entrada-estoque-ajuda-desligada @class(['d-none' => $entradaLigada])>
+            A peça foi direto para o serviço, sem passar pelo estoque: o custo entra no DRE deste mês.
+            Se ela vai ficar no estoque, ligue a entrada.
         </small>
     </div>
 

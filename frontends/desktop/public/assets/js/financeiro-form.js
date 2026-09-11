@@ -1154,8 +1154,18 @@
 
             const texto = els.classificacaoResumo.querySelector('[data-classificacao-texto]');
             const origem = els.classificacaoResumo.querySelector('[data-classificacao-origem]');
+            const alterar = els.classificacaoResumo.querySelector('[data-classificacao-alterar]');
 
             if (texto) { texto.textContent = resultado.fixa ? 'Despesa fixa' : 'Despesa variável'; }
+
+            // "Alterar" some pra compra de peça: com "Despesa fixa" desabilitada
+            // (ehCustoDiretoDeOs()) a única outra opção do select é "Despesa
+            // variável", que já É o padrão — abrir o override não muda nada,
+            // só confunde o operador com um link sem efeito nenhum.
+            if (alterar instanceof HTMLElement) {
+                alterar.classList.toggle('d-none', ehCustoDiretoDeOs());
+            }
+
             if (!origem) { return; }
 
             origem.textContent = {
@@ -1165,6 +1175,51 @@
             }[resultado.origem] ?? ` (padrão de ${resultado.categoria})`;
         };
 
+        // Dona única do "esta categoria é compra de peça?". Decide pelo GRUPO
+        // DRE e não pelo nome: o banco tem a categoria gravada como "Compra de
+        // pecas" (sem cedilha, herança do ERP legado), então comparar nome
+        // deixava as travas sem efeito exatamente onde precisavam valer.
+        const ehCustoDiretoDeOs = () => {
+            const categoriaNome = els.categoriaSelect instanceof HTMLSelectElement ? els.categoriaSelect.value : '';
+            const categorias = Array.isArray(config.categorias) ? config.categorias : [];
+            const categoria = categorias.find((c) => normalizeText(c?.nome) === normalizeText(categoriaNome));
+
+            return categoria?.dre_grupo?.nome === 'Custo Direto (OS)';
+        };
+
+        // Só quem já é fixa POR PADRÃO pode virar fixa manualmente — o backend
+        // recusa o resto (FinanceiroService::resolveClassification()).
+        // Categoria variável nunca vira fixa pelo override; sem isso o resumo
+        // mostrava "definido por você" e liberava "repetir nos próximos
+        // meses" — só pra o backend recusar o POST depois.
+        //
+        // Deriva do PADRÃO da categoria, não do grupo: grupo não distingue
+        // "Taxa de cartão" (nunca fixa) de "Impostos e taxas" (pode ser, ex.
+        // DAS do MEI) — as duas dividem "Despesas Operacionais". Categoria
+        // fora do catálogo (recém-digitada) também bloqueia: sem padrão
+        // gravado não há como confirmar "fixa".
+        const categoriaPermiteFixaManual = () => {
+            const categoriaNome = els.categoriaSelect instanceof HTMLSelectElement ? els.categoriaSelect.value : '';
+            const categorias = Array.isArray(config.categorias) ? config.categorias : [];
+            const categoria = categorias.find((c) => normalizeText(c?.nome) === normalizeText(categoriaNome));
+
+            return categoria?.dre_fixo_mensal_padrao === true;
+        };
+
+        const syncClassificacaoOverrideOptions = () => {
+            if (!(els.classificacaoOverride instanceof HTMLSelectElement)) { return; }
+
+            const bloqueiaFixo = !categoriaPermiteFixaManual();
+
+            const opcaoFixa = els.classificacaoOverride.querySelector('option[value="1"]');
+            if (!(opcaoFixa instanceof HTMLOptionElement)) { return; }
+
+            opcaoFixa.disabled = bloqueiaFixo;
+            if (bloqueiaFixo && els.classificacaoOverride.value === '1') {
+                els.classificacaoOverride.value = '';
+            }
+        };
+
         // OS vinculada e Cliente só fazem sentido, em "a pagar", quando a
         // despesa é compra de peça ligada a uma OS (categoria do grupo DRE
         // "Custo Direto (OS)") — para despesas operacionais genéricas
@@ -1172,13 +1227,7 @@
         const osClienteOcultos = () => {
             if (!els.tipoSelect) { return false; }
 
-            const isPagar = els.tipoSelect.value === 'pagar';
-            const categoriaNome = els.categoriaSelect instanceof HTMLSelectElement ? els.categoriaSelect.value : '';
-            const categorias = Array.isArray(config.categorias) ? config.categorias : [];
-            const categoria = categorias.find((c) => normalizeText(c?.nome) === normalizeText(categoriaNome));
-            const isPecaCategoria = categoria?.dre_grupo?.nome === 'Custo Direto (OS)';
-
-            return isPagar && !isPecaCategoria;
+            return els.tipoSelect.value === 'pagar' && !ehCustoDiretoDeOs();
         };
 
         /**
@@ -1275,6 +1324,7 @@
         // "repetir nos próximos 12 meses" visível e marcado num a receber.
         const sincronizarTudo = () => {
             syncClassificacaoVisibility();
+            syncClassificacaoOverrideOptions();
             syncOsClienteState();
             syncAvulsoVisibility();
             filterCategoriaOptions();
@@ -1306,7 +1356,7 @@
         bindChange(els.classificacaoOverride, () => { syncClassificacaoResumo(); syncRepetir(); });
 
         if (els.categoriaSelect instanceof HTMLSelectElement) {
-            const aoTrocarCategoria = () => { syncOsClienteState(); syncAvulsoVisibility(); syncClassificacaoResumo(); syncRepetir(); };
+            const aoTrocarCategoria = () => { syncClassificacaoOverrideOptions(); syncOsClienteState(); syncAvulsoVisibility(); syncClassificacaoResumo(); syncRepetir(); };
             els.categoriaSelect.addEventListener('change', aoTrocarCategoria);
             if (hasSelect2) {
                 $(els.categoriaSelect).on('change select2:select select2:unselect', aoTrocarCategoria);

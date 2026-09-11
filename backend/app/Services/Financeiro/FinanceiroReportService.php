@@ -590,7 +590,15 @@ class FinanceiroReportService
                     . 'o custo da peça pertence ao mês em que a OS foi entregue, '
                     . 'não ao mês em que o cliente pagou.',
                 'custos_fixos' => $custosFixos,
+                // `despesas_variaveis` conta SÓ "Despesas Operacionais"
+                // variáveis, e é lida pelo mobile e por testes — o significado
+                // dela não muda. A peça comprada mora em "Custo Direto (OS)",
+                // outro grupo, e por isso não aparecia em cartão nenhum apesar
+                // de estar no relatório logo abaixo. `custos_variaveis_total`
+                // é a soma dos dois, que é o número que a tela quer mostrar.
                 'despesas_variaveis' => $despesasVariaveis,
+                'custos_diretos_os' => round($custosDiretosTotal, 2),
+                'custos_variaveis_total' => round($despesasVariaveis + $custosDiretosTotal, 2),
             ];
         }
 

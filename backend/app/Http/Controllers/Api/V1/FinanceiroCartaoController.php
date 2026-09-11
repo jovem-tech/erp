@@ -81,6 +81,10 @@ class FinanceiroCartaoController extends BaseApiController
             'modalidade' => ['nullable', 'string', 'max:20'],
             'forma_pagamento' => ['nullable', 'string', 'max:30'],
             'parcelas' => ['nullable', 'integer', 'min:1', 'max:24'],
+            // Dia do pagamento: ancora do prazo de repasse. Opcional porque a
+            // simulacao da tela normalmente pergunta "se eu vender hoje"; quando
+            // a tela ja sabe a data (baixa retroativa), manda a data real.
+            'data_pagamento' => ['nullable', 'date'],
         ]);
 
         try {

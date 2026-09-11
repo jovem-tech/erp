@@ -91,7 +91,7 @@ class PdfTemplateRenderer
             // TODOS os documentos, inclusive modelos criados no editor — é
             // regra do motor, não de um template específico.
             if ($this->isHeading($block)) {
-                [$companionHtml, $nextIndex] = $this->renderKeepCompanion(
+                [$companionHtml, $nextIndex, $soltoHtml] = $this->renderKeepCompanion(
                     $blocks,
                     $index + 1,
                     $context,
@@ -100,7 +100,7 @@ class PdfTemplateRenderer
                     $depth
                 );
 
-                $html .= '<div class="pdfe-keep">'.$rendered.$companionHtml.'</div>';
+                $html .= '<div class="pdfe-keep">'.$rendered.$companionHtml.'</div>'.$soltoHtml;
                 $index = $nextIndex - 1;
 
                 continue;
@@ -167,6 +167,7 @@ class PdfTemplateRenderer
         int $depth
     ): array {
         $html = '';
+        $solto = '';
         $total = count($blocks);
         $temConteudo = false;
 
@@ -195,6 +196,16 @@ class PdfTemplateRenderer
                 continue;
             }
 
+            // Tabela longa já decidiu que pode (e deve) quebrar entre páginas
+            // — ela sai do grupo indivisível e viaja solta logo depois dele.
+            // Dentro do grupo, o page-break-inside:avoid do .pdfe-keep anulava
+            // essa decisão e empurrava a tabela inteira para a página
+            // seguinte, deixando meia página em branco antes dela.
+            if ($this->isSplittableTable($rendered)) {
+                $solto = $rendered;
+                break;
+            }
+
             $html .= $rendered;
 
             if (! $this->isHeading($block)) {
@@ -202,7 +213,15 @@ class PdfTemplateRenderer
             }
         }
 
-        return [$html, $index];
+        return [$html, $index, $solto];
+    }
+
+    /**
+     * Tabela que o renderTable marcou como longa (sem a classe pdfe-keep).
+     */
+    private function isSplittableTable(string $rendered): bool
+    {
+        return str_contains($rendered, 'class="pdfe-tabela"');
     }
 
     /**
@@ -227,7 +246,7 @@ class PdfTemplateRenderer
             'tabela_totais' => $this->renderTotalsTable($block, $context, $variableTypes),
             'lista' => $this->renderList($block, $context, $descriptor),
             'imagem' => $this->renderImage($block, $context),
-            'fotos_entrada' => $this->renderPhotoGallery($context),
+            'fotos_entrada' => $this->renderPhotoGallery($context, $formato),
             'grade_campos' => $this->renderFieldGrid($block, $context, $variableTypes, $formato),
             'texto_rico' => $this->partial('texto-rico', [
                 'html' => \App\Support\TemplateHtmlSanitizer::sanitize(
@@ -649,7 +668,13 @@ class PdfTemplateRenderer
      *
      * @param array<string, mixed> $context
      */
-    private function renderPhotoGallery(array $context): string
+    /**
+     * Galeria em grade fixa: 2 colunas no A4, 1 na bobina térmica.
+     *
+     * Fixa de propósito — dividir a largura pelo número de fotos fazia uma OS
+     * com uma única foto imprimir uma faixa da largura da página inteira.
+     */
+    private function renderPhotoGallery(array $context, string $formato = 'a4'): string
     {
         $fotos = $this->resolver->lookup('os.fotos_entrada', $context);
         $fotos = is_array($fotos)
@@ -663,7 +688,10 @@ class PdfTemplateRenderer
             return '';
         }
 
-        return $this->partial('fotos-entrada', ['fotos' => array_slice($fotos, 0, 4)]);
+        return $this->partial('fotos-entrada', [
+            'fotos' => array_slice($fotos, 0, 4),
+            'colunas' => $formato === '80mm' ? 1 : 2,
+        ]);
     }
 
     /**

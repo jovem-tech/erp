@@ -13,6 +13,19 @@
 
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
     const maxPhotos = Number(config.maxPhotos || 4);
+    const maxPhotoSourceBytes = 20 * 1024 * 1024;
+    const acceptedPhotoTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/heic', 'image/heif']);
+    const acceptedPhotoExtensions = new Set(['jpg', 'jpeg', 'png', 'webp', 'avif', 'heic', 'heif']);
+    const photoExtension = (file) => String(file?.name || '').split('.').pop()?.toLowerCase() || '';
+    const isAcceptedPhoto = (file) => {
+        const mime = String(file?.type || '').toLowerCase();
+        if (acceptedPhotoTypes.has(mime)) {
+            return true;
+        }
+
+        return (mime === '' || mime === 'application/octet-stream')
+            && acceptedPhotoExtensions.has(photoExtension(file));
+    };
     const isEditMode = Boolean(config.isEdit);
     const isEmbeddedMode = document.body.classList.contains('desktop-body-embedded');
 
@@ -27,6 +40,8 @@
         photoQueue: [],
         cropper: null,
         cropTargetFileName: '',
+        activeCropFile: null,
+        cropObjectUrl: '',
         activeStream: null,
         collectorTimer: null,
         collectorSnapshot: null,
@@ -1044,25 +1059,25 @@
 
         const primaryIndex = resolvePrimaryPhotoIndex();
 
-        els.photoGrid.innerHTML = state.photos.map((item, index) => `
-            <article class="equipment-photo-card ${index === primaryIndex ? 'is-primary' : ''}">
-                <a href="${escapeHtml(item.previewUrl)}"
-                    class="d-block"
-                    data-photo-viewer-trigger
-                    data-photo-viewer-group="equipment-editor-photos"
-                    data-photo-viewer-title="${escapeHtml(item.name || `Foto ${index + 1}`)}">
-                    <img src="${escapeHtml(item.previewUrl)}" alt="Preview ${index + 1}">
-                </a>
-                <div class="equipment-photo-card-body">
-                    <strong>${escapeHtml(item.name || `Foto ${index + 1}`)}</strong>
-                    <span>${escapeHtml(item.meta || 'Arquivo de imagem')}</span>
-                </div>
-                <div class="equipment-photo-card-actions">
-                    <button type="button" class="btn btn-sm btn-outline-primary" data-photo-primary="${index}">Principal</button>
-                    <button type="button" class="btn btn-sm btn-outline-danger" data-photo-remove="${index}">Remover</button>
-                </div>
-            </article>
-        `).join('');
+        els.photoGrid.innerHTML = state.photos.map((item, index) => {
+            const preview = item.previewable !== false
+                ? `<a href="${escapeHtml(item.previewUrl)}" class="d-block" data-photo-viewer-trigger data-photo-viewer-group="equipment-editor-photos" data-photo-viewer-title="${escapeHtml(item.name || `Foto ${index + 1}`)}"><img src="${escapeHtml(item.previewUrl)}" alt="Preview ${index + 1}"></a>`
+                : '<div class="equipment-photo-empty"><i class="bi bi-file-earmark-image"></i><span>Prévia indisponível</span></div>';
+
+            return `
+                <article class="equipment-photo-card ${index === primaryIndex ? 'is-primary' : ''}">
+                    ${preview}
+                    <div class="equipment-photo-card-body">
+                        <strong>${escapeHtml(item.name || `Foto ${index + 1}`)}</strong>
+                        <span>${escapeHtml(item.meta || 'Arquivo de imagem')}</span>
+                    </div>
+                    <div class="equipment-photo-card-actions">
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-photo-primary="${index}">Principal</button>
+                        <button type="button" class="btn btn-sm btn-outline-danger" data-photo-remove="${index}">Remover</button>
+                    </div>
+                </article>
+            `;
+        }).join('');
 
         els.photoGrid.querySelectorAll('[data-photo-primary]').forEach((button) => {
             button.addEventListener('click', () => {
@@ -1153,7 +1168,7 @@
         image.src = URL.createObjectURL(file);
     };
 
-    const addPhotoFile = (file) => {
+    const addPhotoFile = (file, previewable = true) => {
         if (!(file instanceof File)) {
             return;
         }
@@ -1169,12 +1184,13 @@
             previewUrl: URL.createObjectURL(file),
             name: file.name,
             meta: `${Math.round(file.size / 1024)} KB`,
+            previewable,
         });
 
         syncPhotoInput();
         renderPhotos();
 
-        if (state.photos.length === 1) {
+        if (state.photos.length === 1 && previewable) {
             applyDominantColor(file);
         }
     };
@@ -1186,10 +1202,23 @@
         }
 
         state.cropTargetFileName = file.name;
-        els.cropImage.src = URL.createObjectURL(file);
+        state.activeCropFile = file;
+        state.cropObjectUrl = URL.createObjectURL(file);
+        els.cropImage.src = state.cropObjectUrl;
 
         const modal = getModal(els.cropModal);
         modal?.show();
+
+        els.cropImage.onerror = () => {
+            if (!(state.activeCropFile instanceof File)) {
+                return;
+            }
+
+            addPhotoFile(state.activeCropFile, false);
+            showAlert('info', 'Prévia indisponível', 'A foto será enviada no formato original e convertida com segurança pelo servidor.');
+            state.activeCropFile = null;
+            modal?.hide();
+        };
 
         els.cropImage.onload = () => {
             state.cropper?.destroy?.();
@@ -1592,7 +1621,20 @@
         els.photoGalleryButton?.addEventListener('click', () => els.photosInput?.click());
         els.photosInput?.addEventListener('change', (event) => {
             const files = Array.from(event.target.files || []);
-            state.photoQueue.push(...files);
+            const validFiles = files.filter((file) => {
+                if (!isAcceptedPhoto(file)) {
+                    showAlert('warning', 'Formato não suportado', `${file.name}: use JPEG, PNG, WebP, AVIF, HEIC ou HEIF.`);
+                    return false;
+                }
+                if (file.size <= 0 || file.size > maxPhotoSourceBytes) {
+                    showAlert('warning', 'Arquivo muito grande', `${file.name}: a origem deve ter até 20 MB.`);
+                    return false;
+                }
+
+                return true;
+            });
+            const availableSlots = Math.max(0, maxPhotos - state.photos.length - state.photoQueue.length);
+            state.photoQueue.push(...validFiles.slice(0, availableSlots));
             event.target.value = '';
             if (!state.cropper) {
                 processPhotoQueue();
@@ -1607,6 +1649,14 @@
         els.cropModal?.addEventListener('hidden.bs.modal', () => {
             state.cropper?.destroy?.();
             state.cropper = null;
+            state.activeCropFile = null;
+            if (state.cropObjectUrl !== '') {
+                URL.revokeObjectURL(state.cropObjectUrl);
+                state.cropObjectUrl = '';
+            }
+            if (els.cropImage instanceof HTMLImageElement) {
+                els.cropImage.removeAttribute('src');
+            }
             if (state.photoQueue.length > 0) {
                 processPhotoQueue();
             }

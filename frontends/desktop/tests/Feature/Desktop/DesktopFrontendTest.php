@@ -2214,6 +2214,20 @@ class DesktopFrontendTest extends TestCase
         $this->assertStringContainsString('O total final do orçamento deve ser maior que zero.', $script);
     }
 
+    public function test_orcamentos_form_script_blocks_saving_until_every_review_section_is_verified(): void
+    {
+        $script = file_get_contents(public_path('assets/js/orcamentos-form.js'));
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('const isReviewChecklistComplete = () =>', $script);
+        $this->assertStringContainsString('const syncReviewChecklist = () =>', $script);
+        $this->assertStringContainsString('const resetReviewChecklist = () =>', $script);
+        $this->assertStringContainsString('state.verifiedSections', $script);
+        $this->assertStringContainsString('button.disabled = blockedByPendencies || !checklistComplete;', $script);
+        $this->assertStringContainsString('Verifique todos os blocos da revisão antes de concluir.', $script);
+        $this->assertStringContainsString('Verifique todos os blocos da revisão antes de concluir o orçamento.', $script);
+    }
+
     public function test_orcamentos_create_page_renders_review_modal_for_save_decision(): void
     {
         Http::preventStrayRequests();
@@ -2282,7 +2296,17 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('data-budget-review-submit="save_only"', false)
             ->assertSee('data-budget-review-submit="send_for_approval"', false)
             ->assertSee('Salvar sem enviar', false)
-            ->assertSee('Salvar e enviar para aprovacao', false);
+            ->assertSee('Salvar e enviar para aprovacao', false)
+            ->assertSee('data-budget-review-section="cliente"', false)
+            ->assertSee('data-budget-review-section="notas"', false)
+            ->assertSee('data-budget-review-section="contexto"', false)
+            ->assertSee('data-budget-review-section="condicoes"', false)
+            ->assertSee('data-budget-review-section="itens"', false)
+            ->assertSee('data-budget-review-section="totais"', false)
+            ->assertSee('data-budget-review-verify="cliente"', false)
+            ->assertSee('data-budget-review-edit="itens" data-budget-review-tab="financeiro"', false)
+            ->assertSee('data-budget-review-checklist-warning', false)
+            ->assertSee('data-budget-review-checklist-progress', false);
 
         Http::allowStrayRequests();
     }
@@ -2439,7 +2463,15 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('id="orcamentoQuickItemModal"', false)
             ->assertSee('id="orcamentoQuickItemForm"', false)
             ->assertSee(route('servicos.quick.store'), false)
-            ->assertSee(route('estoque.quick.store'), false);
+            ->assertSee(route('estoque.quick.store'), false)
+            // O grupo do tipo que nao esta selecionado sai desabilitado, nao so
+            // oculto: a taxonomia obrigatoria da peca (Grupo/Categoria/
+            // Subcategoria) continuava valendo na validacao do form escondida e
+            // reprovava o submit do cadastro rapido de servico, que nunca
+            // chegava a postar.
+            ->assertSee('data-budget-quick-group="peca" hidden disabled', false)
+            ->assertSee('data-budget-quick-group="servico"', false)
+            ->assertDontSee('data-budget-quick-group="servico" hidden', false);
 
         Http::allowStrayRequests();
     }
@@ -3801,7 +3833,11 @@ class DesktopFrontendTest extends TestCase
         $response
             ->assertOk()
             ->assertSee('id="orcamentoValidadeData"', false)
-            ->assertSee('value="2026-07-13"', false);
+            ->assertSee('value="2026-07-13"', false)
+            ->assertSee('data-budget-review-section="cliente"', false)
+            ->assertSee('data-budget-review-section="totais"', false)
+            ->assertSee('data-budget-review-verify="totais"', false)
+            ->assertSee('data-budget-review-checklist-warning', false);
 
         Http::allowStrayRequests();
     }
@@ -5843,6 +5879,62 @@ class DesktopFrontendTest extends TestCase
         });
     }
 
+    public function test_nova_os_linkable_budget_search_scopes_by_selected_client(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orcamentos/vinculaveis-os*' => Http::response([
+                'status' => 'success',
+                'data' => ['budgets' => []],
+                'error' => null,
+                'meta' => ['pagination' => []],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'os' => ['criar'],
+                'orcamentos' => ['converter_os'],
+            ]))
+            ->getJson('/os/orcamentos-vinculaveis/buscar?q=&cliente_id=42&page=1&per_page=15');
+
+        $response->assertOk();
+
+        // O cliente ja escolhido na OS precisa restringir a busca aos
+        // orcamentos dele: sem isso, o tecnico consegue vincular orcamento de
+        // outro cliente pelo seletor (a API central ainda barra no submit,
+        // mas a lista jamais deveria oferecer a opcao errada).
+        Http::assertSent(static function ($request): bool {
+            return str_contains($request->url(), '/api/v1/orcamentos/vinculaveis-os')
+                && str_contains($request->url(), 'cliente_id=42');
+        });
+    }
+
+    public function test_nova_os_linkable_budget_search_omits_client_filter_when_no_client_selected(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orcamentos/vinculaveis-os*' => Http::response([
+                'status' => 'success',
+                'data' => ['budgets' => []],
+                'error' => null,
+                'meta' => ['pagination' => []],
+            ]),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession([
+                'os' => ['criar'],
+                'orcamentos' => ['converter_os'],
+            ]))
+            ->getJson('/os/orcamentos-vinculaveis/buscar?q=&cliente_id=0&page=1&per_page=15');
+
+        $response->assertOk();
+
+        Http::assertSent(static function ($request): bool {
+            return str_contains($request->url(), '/api/v1/orcamentos/vinculaveis-os')
+                && ! str_contains($request->url(), 'cliente_id');
+        });
+    }
+
     public function test_nova_os_rejects_budget_link_without_conversion_permission_before_api_call(): void
     {
         Http::preventStrayRequests();
@@ -7046,6 +7138,84 @@ class DesktopFrontendTest extends TestCase
         });
     }
 
+    public function test_orders_show_page_offers_both_print_formats(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/501' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'order' => [
+                        'id' => 501,
+                        'numero_os' => 'OS26070009',
+                        'status' => 'em_execucao',
+                        'status_nome' => 'Em execução do serviço',
+                        'status_cor' => '#64748b',
+                        'is_encerrada' => false,
+                        'cliente' => ['id' => 201, 'nome_razao' => 'Cliente Alpha'],
+                        'equipamento' => ['id' => 301, 'resumo_tecnico' => 'Notebook Acer Nitro 5'],
+                        'tecnico' => ['id' => 51, 'nome' => 'Tecnico Banco'],
+                        'fotos' => [],
+                        'documentos' => [],
+                        'status_disponiveis' => [],
+                        'proximas_etapas' => [],
+                        'orcamento' => null,
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession($this->desktopSession(['dashboard' => ['visualizar'], 'os' => ['visualizar']]))
+            ->get('/os/501');
+
+        $response
+            ->assertOk()
+            ->assertSee('Imprimir OS (A4)')
+            ->assertSee('Imprimir cupom (80mm)')
+            ->assertSee(route('orders.print', 501), false)
+            ->assertSee(route('orders.print', ['order' => 501, 'formato' => '80mm']), false)
+            // Até 2026-09-10 o item "Imprimir" abria a tela de pré-visualização,
+            // que não tem CSS de impressão nem cabeçalho da empresa.
+            ->assertDontSee(route('orders.preview', 501), false);
+    }
+
+    public function test_order_print_is_proxied_as_inline_pdf_in_both_formats(): void
+    {
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/501/imprimir*' => Http::response(
+                '%PDF-1.4 os completa',
+                200,
+                [
+                    'Content-Type' => 'application/pdf',
+                    'Content-Disposition' => 'inline; filename="OS-OS26070009.pdf"',
+                    'Cache-Control' => 'private, no-store',
+                ]
+            ),
+        ]));
+
+        foreach (['a4', '80mm'] as $formato) {
+            $this
+                ->withSession($this->desktopSession(['os' => ['visualizar']]))
+                ->get('/os/501/imprimir?formato='.$formato)
+                ->assertOk()
+                ->assertHeader('Content-Type', 'application/pdf')
+                ->assertSee('%PDF-1.4 os completa', false);
+        }
+
+        // Formato desconhecido não vaza para a API: cai no A4.
+        $this
+            ->withSession($this->desktopSession(['os' => ['visualizar']]))
+            ->get('/os/501/imprimir?formato=cartaz')
+            ->assertOk();
+
+        Http::assertSent(static function ($request): bool {
+            return str_contains($request->url(), '/api/v1/orders/501/imprimir')
+                && str_contains($request->url(), 'formato=a4');
+        });
+    }
+
     public function test_orders_show_page_renders_summary_grid_and_full_width_operational_cards(): void
     {
         Http::fake(array_merge($this->notificationsFixture(), [
@@ -7711,7 +7881,8 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('orderPhotoCropModal', false)
             ->assertSee('data-order-photo-crop-confirm', false)
             ->assertSee('data-order-photo-crop-action="rotate-left"', false)
-            ->assertSee('Cada imagem será cortada antes do envio')
+            ->assertSee('Máximo de 4 fotos por envio e 20 MB por origem. No servidor, o normal é até 400 KB e o máximo excepcional é 700 KB.')
+            ->assertSee('O recorte é pré-comprimido para economizar o envio; o servidor aplica a política final de 400/700 KB.')
             ->assertSee('Alterar status', false)
             ->assertSee('Testes finais')
             ->assertSee('Aguardando peças')

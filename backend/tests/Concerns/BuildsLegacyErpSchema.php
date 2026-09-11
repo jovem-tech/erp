@@ -49,6 +49,7 @@ trait BuildsLegacyErpSchema
             'os_status_transicoes',
             'os_status',
             'os',
+            'estoque_reservas',
             'orcamento_aprovacoes',
             'orcamento_envios',
             'orcamento_status_historico',
@@ -124,6 +125,7 @@ trait BuildsLegacyErpSchema
         $this->createOrderItemsTable();
         $this->createChecklistTables();
         $this->createBudgetTables();
+        $this->createEstoqueReservasTable();
         $this->seedEquipmentCatalog();
         $this->seedPrecificacaoCatalog();
     }
@@ -574,6 +576,38 @@ trait BuildsLegacyErpSchema
             'observacoes' => 'Peça criada para testes',
             'ativo' => 1,
             'status' => 'ativo',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ], $overrides));
+    }
+
+    /**
+     * Reserva de peça presa a um orçamento — specs/040.
+     *
+     * `quantidade_reservada` da peça NÃO é atualizada aqui de propósito: quem
+     * mantém o cache é EstoqueReservaService::recalcular(), e um teste que
+     * insere a reserva na mão precisa poder verificar que o serviço reconcilia
+     * o cache sozinho. Para montar um cenário já consistente, passe
+     * `quantidade_reservada` no createPecaRecord() correspondente.
+     *
+     * @param  array<string, mixed>  $overrides
+     */
+    protected function createEstoqueReservaRecord(array $overrides = []): int
+    {
+        return (int) DB::table('estoque_reservas')->insertGetId(array_merge([
+            'peca_id' => 1,
+            'orcamento_id' => 1,
+            'os_id' => null,
+            'equipamento_id' => null,
+            'quantidade' => 1,
+            'quantidade_consumida' => 0,
+            'status' => 'ativa',
+            'origem' => 'orcamento',
+            'expira_em' => null,
+            'liberacao_manual' => 0,
+            'liberada_em' => null,
+            'liberada_por' => null,
+            'motivo_liberacao' => null,
             'created_at' => now(),
             'updated_at' => now(),
         ], $overrides));
@@ -1110,6 +1144,10 @@ trait BuildsLegacyErpSchema
             // Espelha 2026_08_27_000001_widen_stock_quantities_to_decimal:
             // insumo se mede em fracao (0,5 m de cabo), e INT impediria isso.
             $table->decimal('quantidade_atual', 14, 4)->default(0);
+            // Espelha 2026_09_10_000002: cache do somatorio de estoque_reservas.
+            // Nasce 0, e e o que faz a suite de vendas existente continuar
+            // passando sem uma linha alterada — nenhum teste antigo reserva.
+            $table->decimal('quantidade_reservada', 14, 4)->default(0);
             $table->decimal('estoque_minimo', 14, 4)->default(0);
             $table->decimal('estoque_maximo', 14, 4)->default(0);
             $table->text('observacoes')->nullable();
@@ -1200,6 +1238,44 @@ trait BuildsLegacyErpSchema
             $table->string('motivo', 255)->nullable();
             $table->unsignedBigInteger('responsavel_id')->nullable();
             $table->dateTime('created_at')->nullable();
+        });
+    }
+
+    /**
+     * Espelha 2026_09_10_000001_create_estoque_reservas_table.php (specs/040).
+     *
+     * Roda depois de createBudgetTables(): a tabela referencia `pecas` E
+     * `orcamentos`. Como em createMovimentacoesTable(), os vinculos ficam sem
+     * FK e como `unsignedBigInteger` — o trait usa `$table->id()` em `pecas`
+     * (bigint) enquanto a producao tem `int`, e declarar a FK aqui so criaria
+     * uma divergencia que nao existe no banco real.
+     *
+     * A UNIQUE, essa sim, precisa estar: e ela que garante uma linha por
+     * (orcamento, peca), e ha teste que depende disso.
+     */
+    private function createEstoqueReservasTable(): void
+    {
+        Schema::create('estoque_reservas', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('peca_id');
+            $table->unsignedBigInteger('orcamento_id');
+            $table->unsignedBigInteger('os_id')->nullable();
+            $table->unsignedBigInteger('equipamento_id')->nullable();
+            $table->decimal('quantidade', 14, 4)->default(0);
+            $table->decimal('quantidade_consumida', 14, 4)->default(0);
+            $table->string('status', 20)->default('ativa');
+            $table->string('origem', 30)->default('orcamento');
+            $table->dateTime('expira_em')->nullable();
+            $table->boolean('liberacao_manual')->default(false);
+            $table->dateTime('liberada_em')->nullable();
+            $table->unsignedBigInteger('liberada_por')->nullable();
+            $table->string('motivo_liberacao', 255)->nullable();
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
+
+            $table->unique(['orcamento_id', 'peca_id'], 'uk_reserva_orcamento_peca');
+            $table->index(['peca_id', 'status'], 'idx_reserva_peca_status');
+            $table->index(['status', 'expira_em'], 'idx_reserva_status_expira');
         });
     }
 

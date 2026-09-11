@@ -2,6 +2,8 @@
 
 namespace App\Services\Files;
 
+use Illuminate\Filesystem\FilesystemAdapter;
+
 final class FilePathGuard
 {
     public static function normalizeRelativePath(string $path): string
@@ -43,5 +45,36 @@ final class FilePathGuard
         }
 
         return $name;
+    }
+
+    public static function assertContainedRegularFile(
+        FilesystemAdapter $disk,
+        string $storagePath,
+        string $allowedPrefix
+    ): string {
+        $storagePath = self::normalizeRelativePath($storagePath);
+        $allowedPrefix = self::normalizeRelativePath($allowedPrefix);
+        if ($storagePath === $allowedPrefix || ! str_starts_with($storagePath, $allowedPrefix.'/')) {
+            throw new \RuntimeException('Arquivo fora do namespace autorizado.');
+        }
+
+        $unresolved = $disk->path($storagePath);
+        if (is_link($unresolved)) {
+            throw new \RuntimeException('Acesso a link simbólico recusado.');
+        }
+
+        $root = realpath($disk->path($allowedPrefix));
+        $candidate = realpath($unresolved);
+        if (! is_string($root) || ! is_string($candidate) || ! is_file($candidate)) {
+            throw new \RuntimeException('Arquivo físico não encontrado.');
+        }
+
+        $root = rtrim(str_replace('\\', '/', $root), '/').'/';
+        $candidate = str_replace('\\', '/', $candidate);
+        if (! str_starts_with($candidate, $root)) {
+            throw new \RuntimeException('Arquivo físico fora da raiz autorizada.');
+        }
+
+        return $candidate;
     }
 }
