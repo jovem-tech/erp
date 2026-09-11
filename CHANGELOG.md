@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.87.0.1 — 2026-09-11 19:37
+- **Tier:** hotfix
+- **Autor/Agente:** Codex
+- **Descrição:** Compatibiliza o otimizador de fotos com o vipsthumbnail 8.15 da VPS
+- **Arquivos:** backend/app/Services/Photos/VipsCommandRunner.php,backend/tests/Unit/Photos/VipsCommandRunnerTest.php
+
 ## v5.87.0.0 — 2026-09-11 16:54
 - **Tier:** minor
 - **Autor/Agente:** Codex

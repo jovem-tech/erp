@@ -2,7 +2,7 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-09-11T16:55:04-03:00`
+- Gerado em: `2026-09-11T19:37:23-03:00`
 - Versao do sistema: `5.87.0`
 - Versao da API: `1.7.0`
 - Ambiente oficial de producao: `Ubuntu VPS`
