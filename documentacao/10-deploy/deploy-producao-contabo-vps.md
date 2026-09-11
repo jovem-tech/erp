@@ -1,6 +1,8 @@
 # Runbook de Producao — VPS Contabo (subdominios + dados reais)
 
-**Ambiente:** VPS Contabo `161.97.93.120`, Ubuntu 24.04, MySQL 8.0, PHP 8.3, Nginx.
+**Ambiente atual:** VPS Contabo `161.97.93.120`, Ubuntu 24.04, MySQL 8.0, PHP 8.3, Nginx.
+**Alvo de migracao:** Ubuntu 26.04 LTS, MySQL 8.x, PHP 8.5, Nginx, mantendo o mesmo
+runbook operacional e os mesmos scripts versionados.
 **Status:** producao real desde 2026-07-05, em paralelo ao sistema legado.
 **Complementa:** [deploy-producao-lan-ubuntu.md](deploy-producao-lan-ubuntu.md) (fundamentos
 e tabela geral de problemas). Este documento cobre o que e' **especifico da Contabo**:
@@ -34,9 +36,12 @@ subdominio tem certificado Let's Encrypt proprio.
 
 1. **Backup** do banco de producao (`mysqldump --single-transaction --routines --triggers
    --events sistema_hml | gzip`), verificado com `gzip -t`.
-2. **Pacotes:** instalar apenas o que faltar (Redis, Supervisor, `php8.3-redis`,
-   `php8.3-sqlite3`, `intl`, `bcmath`, `gd`, `zip`, `mbstring`, `xml`, `curl`, `mysql`).
-   Reload do `php8.3-fpm` afeta o legado por ~1s (aceitavel).
+2. **Pacotes:** instalar apenas o que faltar (Redis, Supervisor, extensoes PHP da versao
+   instalada e dependencias nativas das fotos: `libvips-tools`,
+   `libheif-plugin-aomdec`, `libheif-plugin-aomenc` e
+   `libheif-plugin-libde265`). No Ubuntu 24.04 atual a base usa PHP 8.3; no Ubuntu
+   26.04 o runbook usa PHP 8.5. O script de producao detecta `php8.5-fpm`,
+   `php8.4-fpm` ou `php8.3-fpm` ao recarregar o servico.
 3. **Codigo** em `/var/www/sistema-erp`; **`chown -R www-data:www-data`** todo o diretorio
    (senao `vendor/` fica sem leitura para o FPM e worker/reverb entram em BACKOFF).
 4. **`.env`** (segredos gerados; ler senhas de arquivo, nunca embutir literal em comando):
@@ -63,7 +68,14 @@ subdominio tem certificado Let's Encrypt proprio.
    de `storage`/`bootstrap/cache`; SQLite do desktop + `migrate`.
 9. **Supervisor** (2 queue workers + Reverb) e **cron** do scheduler.
 10. **TLS + Nginx** por subdominio (ver secao abaixo).
-11. **Caches:** `config:cache`, `route:cache`, `view:cache` (o `require channels.php` no
+11. **Fotos operacionais:** o deploy chama
+    `scripts/bash/install-operational-photo-dependencies.sh --no-preflight` depois do
+    `git pull`, prepara
+    `backend/storage/app/private/operational-photo-tmp` como `www-data:www-data` `0700`
+    e executa `sudo -u www-data php artisan photos:preflight` somente apos atualizar
+    dependencias PHP/caches do backend. Se retornar `PHOTO_PROCESSOR_UNAVAILABLE`, o
+    deploy deve parar; nao grave foto original como fallback.
+12. **Caches:** `config:cache`, `route:cache`, `view:cache` (o `require channels.php` no
     AppServiceProvider ja permite `route:cache` sem quebrar broadcasting).
 
 ## TLS e Nginx por subdominio
@@ -90,6 +102,10 @@ Para cada subdominio (`erp`, `api-erp`, `app`):
   acesso fisico — a rede de seguranca e' o console web da Contabo).
 - **VERSION:** ao deployar so arquivos de codigo, enviar `VERSION`/`CHANGELOG` junto,
   senao o rodape mostra versao defasada. Ideal: publicar no GitHub e deployar por `git pull`.
+- **Fotos no formato de iPhone/AVIF:** desde a spec 046, a VPS precisa ter `vips`,
+  `vipsthumbnail` e `vipsheader` disponiveis. A versao `5.87.0.1+` detecta as opcoes de
+  CLI do `vipsthumbnail` em bases diferentes (`8.15` na VPS atual e `8.18` no Ubuntu
+  26.04). Sempre validar com `sudo -u www-data php artisan photos:preflight`.
 - **PWA sem opcao de instalar no celular:** validar primeiro
   `https://app.jovemtech.eco.br/manifest.webmanifest`, `/sw.js`, `/icon-192.png` e
   `/icon-512.png`, todos em HTTPS e com MIME correto. No iOS a instalacao e feita
@@ -99,7 +115,7 @@ Para cada subdominio (`erp`, `api-erp`, `app`):
   overwritten by merge":** acontece quando ha arquivos **nao versionados** na VPS
   (copiados manualmente, sobra de teste direto no servidor, ou de um deploy antigo
   anterior ao git) no mesmo caminho de um arquivo que o commit remoto esta trazendo —
-  o `deploy-producao.sh` aborta no passo `[2/5]` **antes** de tocar em codigo/banco
+  o `deploy-producao.sh` aborta no passo `[2/8]` **antes** de tocar em codigo/banco
   (o backup do passo `[1/5]` ja foi feito e fica valido). Resolver movendo os arquivos
   conflitantes para fora do caminho (nunca apagar direto, sao untracked e nao tem
   copia em nenhum lugar alem do disco):
@@ -123,6 +139,7 @@ curl -sI https://app.jovemtech.eco.br/manifest.webmanifest                      
 curl -sI https://app.jovemtech.eco.br/sw.js                                           # 200 + JavaScript + no-cache
 curl -sI https://app.jovemtech.eco.br/icon-192.png                                    # 200 + image/png
 curl -sI https://app.jovemtech.eco.br/icon-512.png                                    # 200 + image/png
+cd /var/www/sistema-erp/backend && sudo -u www-data php artisan photos:preflight       # PHOTO_PROCESSOR_OK
 curl -s -X POST https://api-erp.jovemtech.eco.br/api/v1/auth/login -H 'Content-Type: application/json' \
   -d '{"email":"x@x.com","password":"errada123"}'                                    # AUTH_INVALID_CREDENTIALS
 # broadcasting com token real: 200 (com route:cache ativo)

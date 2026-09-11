@@ -140,9 +140,12 @@ cd /var/www/sistema-erp
 ```
 
 O script (`documentacao/10-deploy/deploy-producao-contabo-vps.md` descreve o runbook
-completo) faz, nesta ordem: backup do banco → `git fetch` + `checkout main` +
-`pull --ff-only` → `composer install` + `migrate` + rebuild de caches (backend e
-desktop) → reload do PHP-FPM e restart do Supervisor.
+completo) faz, nesta ordem: backup do banco -> `git fetch` + `checkout main` +
+`pull --ff-only` -> instala dependencias nativas de fotos operacionais
+(`libvips-tools` e plugins `libheif-*`) -> testa/compila o PWA mobile ->
+`composer install` + `migrate` + rebuild de caches (backend e desktop) -> executa
+`photos:preflight` como `www-data` -> reload do PHP-FPM detectado
+(`php8.5-fpm`, `php8.4-fpm` ou `php8.3-fpm`) e restart do Supervisor.
 
 ### 4. Atualizar o ambiente de dev a qualquer momento
 

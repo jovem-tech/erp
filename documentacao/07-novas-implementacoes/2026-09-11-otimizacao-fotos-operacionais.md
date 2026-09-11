@@ -26,3 +26,9 @@ Para produção, cada VPS precisa receber `libvips-tools`, `libheif-plugin-aomde
 permissão `0700` e executa o preflight como `www-data`. Se `vips`, `vipsthumbnail`,
 `vipsheader` ou os codecs não estiverem disponíveis, o upload falha fechado com
 `PHOTO_PROCESSOR_UNAVAILABLE`.
+
+O deploy de produção chama o instalador com `--no-preflight` depois do `git pull` e roda
+`php artisan photos:preflight` apenas após atualizar dependências PHP e caches do backend.
+Isso evita o falso erro `There are no commands defined in the "photos" namespace` em VPS
+que ainda esteja com código antigo. A aplicação também detecta diferenças de opções entre
+`vipsthumbnail` 8.15 e 8.18 antes de gerar AVIF.

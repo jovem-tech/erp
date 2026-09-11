@@ -48,6 +48,10 @@ até 2560 px e dentro do limite absoluto.
 - Executar `sudo -u www-data php artisan photos:preflight` no deploy antes de liberar
   tráfego, garantindo que o diretório temporário privado funcione com o mesmo usuário do
   PHP-FPM.
+- Em `deploy-producao.sh`, instalar esses pacotes com
+  `scripts/bash/install-operational-photo-dependencies.sh --no-preflight` depois do
+  `git pull` e executar o preflight final somente depois do `composer install` e rebuild
+  de caches do backend.
 - Configurar PHP com 20 MB por arquivo e 85 MB por POST; Nginx com 85 MB e timeout de
   75 segundos.
 - Rollback de código não exige rollback de dados, pois AVIF permanece suportado pelo

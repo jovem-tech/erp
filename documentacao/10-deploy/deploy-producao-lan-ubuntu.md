@@ -84,6 +84,7 @@ atende à restrição. Instalação:
 sudo apt-get update
 sudo apt-get install -y software-properties-common ca-certificates curl unzip git \
   nginx mysql-server redis-server supervisor poppler-utils \
+  libvips-tools libheif-plugin-aomdec libheif-plugin-aomenc libheif-plugin-libde265 \
   php8.5-fpm php8.5-cli php8.5-mysql php8.5-mbstring php8.5-xml php8.5-curl \
   php8.5-zip php8.5-bcmath php8.5-gd php8.5-intl php8.5-redis php8.5-common \
   php8.5-sqlite3
@@ -98,6 +99,12 @@ sudo apt-get install -y software-properties-common ca-certificates curl unzip gi
 > `/usr/bin/pdftocairo`. Sem essa dependência, as miniaturas PDF retornam HTTP
 > `503`, embora o arquivo original possa continuar disponível para preview e
 > download.
+
+> **Fotos operacionais:** `libvips-tools` e os plugins `libheif-*` são obrigatórios
+> para otimizar fotos de OS/equipamentos, aceitar HEIC de iPhone e gravar AVIF. Em
+> Ubuntu 26.04 os pacotes continuam disponíveis nos repositórios oficiais; a aplicação
+> valida os binários `/usr/bin/vips`, `/usr/bin/vipsthumbnail` e `/usr/bin/vipsheader`.
+> Sem essa stack, uploads de fotos falham fechado com `PHOTO_PROCESSOR_UNAVAILABLE`.
 
 Composer e Node:
 
@@ -153,6 +160,30 @@ cd /var/www/sistema-erp/backend
 mkdir -p bootstrap/cache
 composer install --no-dev --optimize-autoloader --no-interaction
 ```
+
+### 3.4.1 Dependências nativas das fotos operacionais
+
+Após o código estar presente no servidor, execute o instalador versionado. Ele é
+idempotente, prepara o diretório temporário privado como `www-data:www-data` e valida
+leitura HEIC + escrita AVIF:
+
+```bash
+cd /var/www/sistema-erp
+sudo ./scripts/bash/install-operational-photo-dependencies.sh
+```
+
+Validação manual esperada:
+
+```bash
+command -v vips vipsthumbnail vipsheader
+cd /var/www/sistema-erp/backend
+sudo -u www-data php artisan photos:preflight
+# PHOTO_PROCESSOR_OK: libvips com leitura HEIC/HEIF e escrita AVIF disponível.
+```
+
+O preflight deve rodar como `www-data`, o mesmo usuário dos pools PHP-FPM. Rodar como
+`root` pode mascarar problema de permissão no diretório
+`backend/storage/app/private/operational-photo-tmp`.
 
 ### 3.5 Banco de dados MySQL
 
@@ -264,6 +295,8 @@ sudo find backend/storage -type d -exec chmod 775 {} \;
 sudo find backend/storage -type f -exec chmod 664 {} \;
 sudo chmod 2775 backend/storage/logs
 sudo chmod -R 775 backend/bootstrap/cache
+sudo install -d -o www-data -g www-data -m 0700 \
+  backend/storage/app/private/operational-photo-tmp
 
 # permite ao usuario de deploy rodar artisan sem sudo:
 sudo usermod -aG www-data administrador   # (relogar o SSH para valer)
@@ -333,6 +366,9 @@ server {
     root /var/www/sistema-erp/backend/public;
     index index.php index.html;
 
+    client_max_body_size 85M;
+    client_body_timeout 75s;
+
     access_log /var/www/sistema-erp/backend/storage/logs/nginx-access.log;
     error_log  /var/www/sistema-erp/backend/storage/logs/nginx-error.log;
 
@@ -343,6 +379,7 @@ server {
         fastcgi_pass unix:/run/php/php8.5-fpm.sock;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         fastcgi_param HTTPS on;
+        fastcgi_read_timeout 75s;
     }
 
     location ~ /\. { deny all; }
@@ -495,6 +532,8 @@ curl -sk -o /dev/null -w '%{http_code}\n' https://<IP>:8443/login  # 200
 # servicos
 sudo supervisorctl status    # todos RUNNING
 redis-cli -a '<senha>' ping  # PONG
+# fotos operacionais
+cd /var/www/sistema-erp/backend && sudo -u www-data php artisan photos:preflight
 ```
 
 Funcional (navegador): login no desktop → dashboard com contadores reais →
@@ -517,6 +556,9 @@ sem erros de CORS/500.
 | 10 | desktop: `could not find driver (sqlite)` | extensão não instalada | `apt install php8.5-sqlite3` |
 | 11 | fotos/logo 404 após corrigir o 500 | dump não carrega arquivos físicos | copiar `storage/app` + uploads legados; `LEGACY_PUBLIC_PATH` |
 | 12 | miniaturas de PDF retornam 503 | `poppler-utils` ausente ou feature desabilitada | instalar `poppler-utils`, validar `pdftocairo` como `www-data`, habilitar a flag e recriar o cache de configuração |
+| 13 | `There are no commands defined in the "photos" namespace` | código antigo ainda não contém a spec 046 | fazer deploy da versão nova antes de rodar `photos:preflight` |
+| 14 | `PHOTO_PROCESSOR_UNAVAILABLE` com `vips` ausente | faltou `libvips-tools` | instalar `libvips-tools` e os plugins `libheif-*` pelo script versionado |
+| 15 | preflight falha na VPS, mas passa no dev | diferença de CLI entre `vipsthumbnail` 8.15 e 8.18 | usar versão `5.87.0.1+`, que detecta `--output`/`--path` e `--export-profile`/`--output-profile` automaticamente |
 
 ## 7. Pendências conhecidas (não configuradas neste deploy)
 

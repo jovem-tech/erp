@@ -23,6 +23,9 @@ Ubuntu, mantendo o mesmo contrato funcional do ambiente local.
 - O socket do FPM é `/run/php/php8.5-fpm.sock` — os templates de Nginx referenciam
   8.3 e precisam de ajuste no deploy.
 - `php8.5-sqlite3` é obrigatório para o frontend desktop (preferências em SQLite).
+- Fotos operacionais exigem `libvips-tools` e codecs HEIC/AVIF (`libheif-plugin-aomdec`,
+  `libheif-plugin-aomenc`, `libheif-plugin-libde265`). Sem isso o backend falha fechado
+  com `PHOTO_PROCESSOR_UNAVAILABLE`.
 - MySQL 8.4 rejeita dumps de MariaDB que definem valores para colunas
   `GENERATED ALWAYS AS ... STORED` — ver correção no runbook de deploy.
 
@@ -50,6 +53,29 @@ Ubuntu, mantendo o mesmo contrato funcional do ambiente local.
 - `infra/linux/supervisor-reverb.conf`
 - `infra/linux/cron-scheduler.example`
 - `scripts/bash/validate-prod-env.sh`
+- `scripts/bash/install-operational-photo-dependencies.sh`
+
+## Fotos operacionais
+
+Todo servidor que recebe uploads de fotos de OS/equipamento precisa validar a pilha
+nativa antes de aceitar trafego real:
+
+```bash
+cd /var/www/sistema-erp
+sudo ./scripts/bash/install-operational-photo-dependencies.sh
+
+cd /var/www/sistema-erp/backend
+sudo -u www-data php artisan photos:preflight
+```
+
+O resultado esperado é `PHOTO_PROCESSOR_OK`. Rode como `www-data`, nao como `root`, para
+validar o mesmo diretório temporário privado usado pelo PHP-FPM:
+`backend/storage/app/private/operational-photo-tmp`.
+
+O deploy de producao chama esse instalador com `--no-preflight` logo depois do `git pull`
+e executa o preflight final somente depois de atualizar dependências PHP e caches do
+backend. No reload, o script detecta automaticamente `php8.5-fpm`, `php8.4-fpm` ou
+`php8.3-fpm`, o que cobre a VPS atual e a migracao para Ubuntu 26.
 
 ## Runbook completo
 

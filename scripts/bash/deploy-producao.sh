@@ -5,10 +5,12 @@
 # /var/www/sistema-erp. O deploy:
 #   1. impede execucoes concorrentes e cria backup consistente do banco;
 #   2. atualiza `main` apenas por fast-forward;
-#   3. testa e compila o PWA mobile em um release imutavel;
-#   4. atualiza backend e desktop;
-#   5. ativa o PWA por troca atomica de symlink;
-#   6. executa health checks e faz rollback automatico do PWA se necessario.
+#   3. instala dependencias nativas obrigatorias;
+#   4. testa e compila o PWA mobile em um release imutavel;
+#   5. atualiza o backend;
+#   6. atualiza o desktop;
+#   7. recarrega servicos, ativa o PWA e atualiza o Supervisor;
+#   8. executa health checks e faz rollback automatico do PWA se necessario.
 #
 # Ver documentacao/10-deploy/workflow-git-multiambiente.md e
 # documentacao/10-deploy/deploy-producao-contabo-vps.md.
@@ -19,6 +21,7 @@ umask 022
 readonly REPO_ROOT="/var/www/sistema-erp"
 readonly BACKUP_DIR="/var/backups/sistema-erp"
 readonly DEPLOY_LOCK="/var/lock/sistema-erp-deploy.lock"
+readonly PHOTO_DEPS_SCRIPT="${REPO_ROOT}/scripts/bash/install-operational-photo-dependencies.sh"
 
 readonly MOBILE_ROOT="/var/www/sistema-erp-mobile"
 readonly MOBILE_RELEASES_DIR="${MOBILE_ROOT}/releases"
@@ -51,6 +54,39 @@ die() {
 
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "comando obrigatorio ausente: $1"
+}
+
+detect_php_fpm_service() {
+  local candidate
+
+  for candidate in php8.5-fpm php8.4-fpm php8.3-fpm; do
+    if systemctl status "$candidate" >/dev/null 2>&1; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  die "nenhum servico PHP-FPM suportado encontrado"
+}
+
+reload_php_fpm() {
+  local service
+
+  service="$(detect_php_fpm_service)"
+  systemctl reload "$service"
+  printf 'PHP-FPM recarregado: %s\n' "$service"
+}
+
+install_operational_photo_dependencies() {
+  [[ -f "$PHOTO_DEPS_SCRIPT" ]] \
+    || die "instalador de fotos operacionais ausente: $PHOTO_DEPS_SCRIPT"
+
+  bash "$PHOTO_DEPS_SCRIPT" --no-preflight
+}
+
+preflight_operational_photos() {
+  cd "${REPO_ROOT}/backend"
+  runuser -u www-data -- php artisan photos:preflight
 }
 
 is_managed_release() {
@@ -227,7 +263,7 @@ if [[ -n "$(git status --porcelain --untracked-files=normal)" ]]; then
   die "a arvore de trabalho da VPS precisa estar limpa antes do deploy"
 fi
 
-log "[1/7] Backup do banco antes do deploy"
+log "[1/8] Backup do banco antes do deploy"
 install -d -o root -g root -m 0700 "$BACKUP_DIR"
 
 DB_PASSWORD_LINE="$(grep -m1 '^DB_PASSWORD=' backend/.env || true)"
@@ -262,10 +298,13 @@ cleanup_mysql_credentials
 MYSQL_CREDENTIALS_FILE=""
 printf 'backup ok: %s\n' "${BACKUP_DIR}/pre-deploy-${STAMP}.sql.gz"
 
-log "[2/7] Atualizando codigo (main, fast-forward apenas)"
+log "[2/8] Atualizando codigo (main, fast-forward apenas)"
 git fetch origin
 git checkout main
 git pull --ff-only origin main
+
+log "[3/8] Dependencias nativas de fotos operacionais"
+install_operational_photo_dependencies
 
 [[ -f "$MOBILE_ENV_FILE" ]] || die "arquivo de ambiente mobile ausente: $MOBILE_ENV_FILE"
 [[ -f "$MOBILE_SUPERVISOR_SOURCE" ]] \
@@ -282,7 +321,7 @@ grep -Eq '^NEXT_PUBLIC_APP_URL="?https://app\.jovemtech\.eco\.br"?$' \
 COMMIT_SHA="$(git rev-parse --short=12 HEAD)"
 MOBILE_NEW_RELEASE="${MOBILE_RELEASES_DIR}/${STAMP}_${COMMIT_SHA}"
 
-log "[3/7] Testando e compilando PWA mobile"
+log "[4/8] Testando e compilando PWA mobile"
 install -d -o root -g root -m 0755 "$MOBILE_ROOT"
 install -d -o www-data -g www-data -m 0750 \
   "$MOBILE_RELEASES_DIR" \
@@ -322,13 +361,14 @@ run_mobile_pnpm test
 NODE_ENV=production run_mobile_pnpm build
 [[ -s .next/BUILD_ID ]] || die "build mobile nao gerou .next/BUILD_ID"
 
-log "[4/7] Backend"
+log "[5/8] Backend"
 cd "${REPO_ROOT}/backend"
 composer install --no-dev --optimize-autoloader
 php artisan migrate --force
 rebuild_laravel_caches "${REPO_ROOT}/backend"
+preflight_operational_photos
 
-log "[5/7] Desktop"
+log "[6/8] Desktop"
 cd "${REPO_ROOT}/frontends/desktop"
 composer install --no-dev --optimize-autoloader
 if [[ -f package-lock.json ]]; then
@@ -338,8 +378,8 @@ npm run build
 php artisan migrate --force
 rebuild_laravel_caches "${REPO_ROOT}/frontends/desktop"
 
-log "[6/7] Ativando servicos"
-systemctl reload php8.3-fpm
+log "[7/8] Ativando servicos"
+reload_php_fpm
 supervisorctl restart 'erp-queue-worker:*'
 supervisorctl restart erp-reverb
 
@@ -355,7 +395,7 @@ supervisorctl reread
 supervisorctl update
 supervisorctl restart sistema-erp-mobile
 
-log "[7/7] Health checks e limpeza"
+log "[8/8] Health checks e limpeza"
 wait_for_mobile_health
 
 curl \

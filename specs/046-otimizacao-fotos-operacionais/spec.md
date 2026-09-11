@@ -46,6 +46,19 @@ ler etiquetas, números de série, telas e pequenos defeitos físicos.
 - Limitar uploads com fotos a oito requisições por minuto por usuário e IP.
 - Remover temporários, blobs novos e registros parciais em qualquer falha.
 
+## Requisitos de infraestrutura
+
+- Instalar `libvips-tools`, `libheif-plugin-aomdec`, `libheif-plugin-aomenc` e
+  `libheif-plugin-libde265` em todo servidor que processe uploads.
+- Validar `/usr/bin/vips`, `/usr/bin/vipsthumbnail` e `/usr/bin/vipsheader` no deploy.
+- Criar `backend/storage/app/private/operational-photo-tmp` como `www-data:www-data`
+  com permissão `0700`.
+- Executar `sudo -u www-data php artisan photos:preflight` antes de liberar tráfego.
+- Em deploy automatizado, instalar dependências nativas após o `git pull` e executar
+  o preflight final somente depois de atualizar dependências PHP/caches do backend.
+- Configurar upload de 20 MB por arquivo, POST de 85 MB e timeout total de 75 segundos
+  em PHP-FPM/Nginx.
+
 ## Compatibilidade
 
 - Manter rotas, autenticação, ordem das fotos, foto principal e campos multipart
@@ -72,4 +85,3 @@ ler etiquetas, números de série, telas e pequenos defeitos físicos.
 - Migração retroativa do acervo.
 - Armazenamento de Live Photo/MOV, RAW/DNG ou imagens animadas.
 - Derivadas permanentes e CDN de imagens nesta entrega.
-
