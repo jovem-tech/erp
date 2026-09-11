@@ -38,6 +38,11 @@ sudo -u www-data php artisan photos:preflight
 O deploy deve ser interrompido se o preflight retornar
 `PHOTO_PROCESSOR_UNAVAILABLE`. Não habilite fallback que grave a origem sem inspeção.
 
+No deploy automatizado da VPS, `deploy-producao.sh` chama esse instalador com
+`--no-preflight` logo depois do `git pull`, porque o comando `photos:preflight` só existe
+em versões que já contêm a spec 046. O preflight final roda depois de `composer install`
+e rebuild dos caches do backend.
+
 ## Dependências PHP do deploy
 
 Depois de atualizar código ou dependências PHP, regenere autoload/cache dos dois
@@ -82,8 +87,9 @@ o mesmo caminho temporário privado do PHP-FPM.
 - Aplicação: 20 MB, 60 MP, quatro fotos por grupo e 12 segundos por foto.
 
 Use `infra/linux/php-fpm-operational-photo-limits.conf.example` como referência. Na VPS
-atual, os pools são `erp-backend` e `erp-desktop` em PHP-FPM `8.5`; em outros ambientes,
-adapte o caminho e o nome da unidade à versão instalada.
+atual os pools dedicados são `erp-backend` e `erp-desktop`; na migração Ubuntu 26 a base
+esperada é PHP-FPM `8.5`. O script de produção detecta automaticamente `php8.5-fpm`,
+`php8.4-fpm` ou `php8.3-fpm` ao recarregar serviços.
 
 Após alterar configuração:
 
@@ -93,6 +99,13 @@ sudo systemctl reload php8.5-fpm
 sudo nginx -t
 sudo systemctl reload nginx
 ```
+
+## Compatibilidade de versões do libvips
+
+A VPS atual já apresentou `vipsthumbnail` 8.15, enquanto o ambiente Ubuntu 26 usa linha
+8.18. Essas versões usam nomes diferentes para algumas opções de CLI. A aplicação
+detecta as opções disponíveis em runtime antes de gerar AVIF, mas o preflight continua
+sendo obrigatório para provar que leitura HEIC/HEIF e escrita AVIF funcionam no host.
 
 ## Verificação pós-deploy
 

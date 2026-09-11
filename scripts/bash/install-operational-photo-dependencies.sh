@@ -1,6 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+RUN_PREFLIGHT=1
+
+case "${1:-}" in
+  --no-preflight)
+    RUN_PREFLIGHT=0
+    shift
+    ;;
+  -h|--help)
+    echo "Uso: $0 [--no-preflight]" >&2
+    exit 0
+    ;;
+esac
+
+if [[ "$#" -gt 0 ]]; then
+  echo "Uso: $0 [--no-preflight]" >&2
+  exit 1
+fi
+
 if [[ "${EUID}" -ne 0 ]]; then
   echo "Execute como root: sudo $0" >&2
   exit 1
@@ -18,6 +36,10 @@ photo_tmp_dir=/var/www/sistema-erp/backend/storage/app/private/operational-photo
 mkdir -p "${photo_tmp_dir}"
 chown -R www-data:www-data "${photo_tmp_dir}"
 chmod 0700 "${photo_tmp_dir}"
+
+if [[ "${RUN_PREFLIGHT}" -eq 0 ]]; then
+  exit 0
+fi
 
 if command -v runuser >/dev/null 2>&1; then
   runuser -u www-data -- php /var/www/sistema-erp/backend/artisan photos:preflight

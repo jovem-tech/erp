@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.87.1.0 — 2026-09-11 20:08
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Alinha deploy e documentacao das dependencias nativas das fotos operacionais
+- **Arquivos:** documentacao/02-infraestrutura-ambientes/linux-vps.md,documentacao/07-novas-implementacoes/2026-09-11-otimizacao-fotos-operacionais.md,documentacao/10-deploy/deploy-producao-contabo-vps.md,documentacao/10-deploy/deploy-producao-lan-ubuntu.md,documentacao/10-deploy/manual-versionamento-e-deploy.md,documentacao/10-deploy/operacao-otimizacao-fotos-operacionais.md,documentacao/10-deploy/workflow-git-multiambiente.md,scripts/bash/deploy-producao.sh,scripts/bash/install-operational-photo-dependencies.sh,specs/046-otimizacao-fotos-operacionais/plan.md,specs/046-otimizacao-fotos-operacionais/spec.md
+
 ## v5.87.0.1 — 2026-09-11 19:37
 - **Tier:** hotfix
 - **Autor/Agente:** Codex

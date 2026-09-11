@@ -13,7 +13,7 @@ Ver também `workflow-git-multiambiente.md` (fluxo completo de branches) e
 |---|---|---|
 | 1. Versionar | Registra a mudança em `VERSION` e `CHANGELOG.md` | dev · `192.168.1.100` |
 | 2. Publicar | Commita, envia `develop` ao GitHub e promove para `main` | dev · `192.168.1.100` |
-| 3. Atualizar a VPS | Baixa o `main`, faz backup, migra o banco e reinicia os serviços | VPS · `161.97.93.120` |
+| 3. Atualizar a VPS | Baixa o `main`, faz backup, instala deps nativas, valida fotos, migra e reinicia serviços | VPS · `161.97.93.120` |
 
 Só o passo 3 muda a produção de fato. Os passos 1 e 2 rodam no ambiente de dev.
 
@@ -73,11 +73,13 @@ Sem perguntas no meio — o script faz, nesta ordem:
 
 - Backup do banco (`/var/backups/sistema-erp/`)
 - Atualização do código (`git pull` de `main`, sempre fast-forward)
-- Instalação de dependências e migrações do banco
+- Instalação das dependências nativas de fotos operacionais (`libvips-tools` e plugins `libheif-*`)
+- Instalação de dependências PHP/Node e migrações do banco
+- Preflight obrigatório das fotos como `www-data` (`php artisan photos:preflight`)
 - Rebuild de cache e reinício do PHP-FPM/Supervisor
 
-Termina com `DEPLOY_OK (a1b2c3d)`. Abra o sistema no navegador e confira se a tela que
-motivou a mudança está do jeito esperado.
+Termina com `DEPLOY_OK (a1b2c3d, PWA=/var/www/sistema-erp-mobile/current...)`. Abra o
+sistema no navegador e confira se a tela que motivou a mudança está do jeito esperado.
 
 ## Se algo der errado
 
@@ -100,6 +102,18 @@ local. O script segue direto para publicar/promover o que já estava commitado.
 (`versionar.sh`) foi esquecida antes da Parte 2. Pode continuar, mas o ideal é
 cancelar, rodar `versionar.sh` e repetir a Parte 2 depois.
 
+**`PHOTO_PROCESSOR_UNAVAILABLE` no deploy da VPS** — falta `libvips`/codec HEIC/AVIF ou
+o preflight nao conseguiu usar o diretório temporário privado como `www-data`. Rode:
+
+```bash
+cd /var/www/sistema-erp
+sudo ./scripts/bash/install-operational-photo-dependencies.sh
+```
+
+O resultado esperado é `PHOTO_PROCESSOR_OK`. Se aparecer
+`There are no commands defined in the "photos" namespace`, o codigo da VPS ainda esta
+antigo; atualize pela `main` antes de rodar o preflight.
+
 ## Cartão-resumo
 
 ```bash
@@ -111,4 +125,8 @@ cancelar, rodar `versionar.sh` e repetir a Parte 2 depois.
 
 # 3. Atualizar a VPS — na VPS, o único que de fato muda a produção
 ./scripts/bash/deploy-producao.sh
+
+# Verificação específica das fotos operacionais, quando necessário
+cd /var/www/sistema-erp/backend
+sudo -u www-data php artisan photos:preflight
 ```
