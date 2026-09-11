@@ -44,7 +44,7 @@
             </div>
 
             <div class="modal-footer">
-                <span class="text-secondary small me-auto">O recorte será convertido para JPEG e limitado a 2 MB.</span>
+                <span class="text-secondary small me-auto">O recorte é pré-comprimido para economizar o envio; o servidor aplica a política final de 400/700 KB.</span>
                 <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancelar</button>
                 <button type="button" class="btn btn-primary" data-order-photo-crop-confirm disabled>
                     <i class="bi bi-check2-circle me-2"></i>Usar recorte

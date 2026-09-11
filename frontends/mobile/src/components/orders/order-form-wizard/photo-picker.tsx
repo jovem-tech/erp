@@ -1,8 +1,31 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { compressImageFile } from '@/lib/photo-compression';
+import {
+  compressImageFile,
+  isOperationalPhotoFile,
+  MAX_OPERATIONAL_PHOTO_SOURCE_BYTES,
+} from '@/lib/photo-compression';
 import { FieldLabel } from '@/components/ui/field-label';
+
+function LocalPhotoPreview({ file, url, index }: { file: File; url: string; index: number }) {
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => setFailed(false), [url]);
+
+  if (failed) {
+    return (
+      <div className="photo-grid__fallback">
+        <strong>{file.name}</strong>
+        <span>{Math.max(1, Math.round(file.size / 1024))} KB</span>
+        <span>Conversão no servidor</span>
+      </div>
+    );
+  }
+
+  // eslint-disable-next-line @next/next/no-img-element -- preview de blob local, sem otimização do Next
+  return <img src={url} alt={`Foto ${index + 1}`} onError={() => setFailed(true)} />;
+}
 
 type PhotoPickerProps = {
   label: string;
@@ -58,7 +81,25 @@ export function PhotoPicker({
     setError(null);
 
     try {
-      const compressed = await Promise.all(files.slice(0, remainingSlots).map((file) => compressImageFile(file)));
+      const candidates = files.slice(0, remainingSlots);
+      const invalidFormat = candidates.find((file) => !isOperationalPhotoFile(file));
+      if (invalidFormat) {
+        setError(`${invalidFormat.name}: use JPEG, PNG, WebP, AVIF, HEIC ou HEIF.`);
+        return;
+      }
+      const invalidSize = candidates.find(
+        (file) => file.size <= 0 || file.size > MAX_OPERATIONAL_PHOTO_SOURCE_BYTES
+      );
+      if (invalidSize) {
+        setError(`${invalidSize.name}: a foto original deve ter até 20 MB.`);
+        return;
+      }
+
+      const compressed: File[] = [];
+      for (const file of candidates) {
+        // eslint-disable-next-line no-await-in-loop -- limita pico de memória em celulares
+        compressed.push(await compressImageFile(file));
+      }
       onChange([...value, ...compressed]);
     } catch {
       setError('Não foi possível processar a(s) foto(s). Tente novamente.');
@@ -169,10 +210,7 @@ export function PhotoPicker({
       <div className="photo-grid">
         {value.map((file, index) => (
           <div className="photo-grid__item" key={`${file.name}-${index}`}>
-            {previewUrls[index] ? (
-              // eslint-disable-next-line @next/next/no-img-element -- preview de blob local, sem otimização do Next
-              <img src={previewUrls[index]} alt={`Foto ${index + 1}`} />
-            ) : null}
+            {previewUrls[index] ? <LocalPhotoPreview file={file} url={previewUrls[index]} index={index} /> : null}
             <button
               type="button"
               className="photo-grid__remove"
@@ -219,7 +257,7 @@ export function PhotoPicker({
       <input
         ref={inputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,.heic,.heif,.avif"
         multiple
         hidden
         onChange={(event) => handleFiles(event.target.files)}

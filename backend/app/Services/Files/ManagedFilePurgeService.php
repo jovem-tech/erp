@@ -3,8 +3,10 @@
 namespace App\Services\Files;
 
 use App\Enums\Files\FileLifecycleStatus;
+use App\Enums\Files\FileCategory;
 use App\Enums\Files\ManagedFileAction;
 use App\Models\Files\ManagedFile;
+use App\Models\FinanceiroAnexo;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -14,7 +16,8 @@ class ManagedFilePurgeService
 {
     public function __construct(
         private readonly ManagedFileEventRecorder $events,
-        private readonly PdfThumbnailService $pdfThumbnails
+        private readonly PdfThumbnailService $pdfThumbnails,
+        private readonly FileManagerConfiguration $configuration
     ) {}
 
     public function purge(
@@ -66,6 +69,17 @@ class ManagedFilePurgeService
                             'lifecycle_status' => FileLifecycleStatus::Purged,
                             'purged_at' => now(),
                         ])->save();
+
+                        if (
+                            (string) $locked->category === FileCategory::FinanceiroAnexo->value
+                            && $this->configuration->isAuthoritativeCategory(FileCategory::FinanceiroAnexo)
+                        ) {
+                            FinanceiroAnexo::withTrashed()
+                                ->where('managed_file_uuid', (string) $locked->uuid)
+                                ->lockForUpdate()
+                                ->get()
+                                ->each(static fn (FinanceiroAnexo $anexo) => $anexo->forceDelete());
+                        }
 
                         $this->events->record(
                             ManagedFileAction::Purged,

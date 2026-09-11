@@ -56,6 +56,21 @@ class StockService
     }
 
     /**
+     * Pecas prometidas a orcamento que nao existem na gaveta (specs/040).
+     *
+     * @return array{pecas: array<int, array<string, mixed>>, total_itens: int}
+     */
+    public function toBuy(): array
+    {
+        $response = $this->apiClient->get('/estoque/a-comprar');
+
+        return [
+            'pecas' => $response['data']['pecas'] ?? [],
+            'total_itens' => (int) ($response['data']['total_itens'] ?? 0),
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function movements(int $id): array

@@ -33,7 +33,7 @@ export function StepPhotos({ mode, fotos, onChangeFotos, disabled = false }: Ste
         helpText={
           mode === 'edit'
             ? 'Fotos novas serão adicionadas às já existentes na OS — nenhuma foto anterior é removida aqui.'
-            : 'Opcional. Até 4 fotos.'
+            : 'Opcional. Até 4 fotos; origem de 20 MB, normalmente até 400 KB e no máximo 700 KB após otimização.'
         }
       />
     </section>

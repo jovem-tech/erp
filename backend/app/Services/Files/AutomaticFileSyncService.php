@@ -20,7 +20,8 @@ class AutomaticFileSyncService
         private readonly FileManagerConfiguration $configuration,
         private readonly FileScanService $scanner,
         private readonly LegacyFileCatalogService $catalog,
-        private readonly DomainFileLinkReconciliationService $domainLinks
+        private readonly DomainFileLinkReconciliationService $domainLinks,
+        private readonly FinanceiroAnexoReconciliationService $financeiroAnexos
     ) {}
 
     /**
@@ -75,6 +76,7 @@ class AutomaticFileSyncService
                 'partial_roots' => 0,
                 'failed_roots' => 0,
                 'domain_links' => [],
+                'financeiro_anexos' => [],
                 'roots' => [],
             ];
 
@@ -98,6 +100,11 @@ class AutomaticFileSyncService
                 true,
                 (int) config('file-manager.automatic_sync.domain_link_limit', 10_000)
             );
+            $result['financeiro_anexos'] = $this->financeiroAnexos->reconcile(
+                true,
+                (int) config('file-manager.automatic_sync.financeiro_anexo_limit', 1_000)
+            );
+            $result['failed'] += (int) ($result['financeiro_anexos']['failed'] ?? 0);
 
             if ($result['failed'] > 0 || $result['failed_roots'] > 0 || $result['partial_roots'] > 0) {
                 $result['status'] = 'completed_with_errors';
@@ -288,6 +295,7 @@ class AutomaticFileSyncService
                 'partial_roots' => (int) $result['partial_roots'],
                 'failed_roots' => (int) $result['failed_roots'],
                 'domain_links' => (array) ($result['domain_links'] ?? []),
+                'financeiro_anexos' => (array) ($result['financeiro_anexos'] ?? []),
                 'roots' => $result['roots'],
             ],
         ])->save();

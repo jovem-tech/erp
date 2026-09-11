@@ -2,20 +2,19 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Exceptions\OperationalPhotoException;
 use App\Http\Requests\Api\V1\RevealEquipmentPasswordRequest;
 use App\Http\Requests\Api\V1\StoreEquipmentBrandRequest;
 use App\Http\Requests\Api\V1\StoreEquipmentModelRequest;
 use App\Http\Requests\Api\V1\StoreEquipmentRequest;
 use App\Http\Requests\Api\V1\UpdateEquipmentRequest;
 use App\Models\Equipment;
-use App\Models\EquipmentBrand;
 use App\Models\EquipmentCollectorPairing;
-use App\Models\EquipmentModel;
 use App\Models\EquipmentPhoto;
 use App\Models\User;
-use App\Support\ConstantTimeCredentialCheck;
 use App\Services\Auth\RbacAuthorizationService;
 use App\Services\EquipmentWorkflowService;
+use App\Support\ConstantTimeCredentialCheck;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -28,8 +27,7 @@ class EquipmentController extends BaseApiController
     public function __construct(
         private readonly EquipmentWorkflowService $equipmentWorkflowService,
         private readonly RbacAuthorizationService $rbacAuthorizationService
-    ) {
-    }
+    ) {}
 
     public function formData(Request $request): JsonResponse
     {
@@ -154,7 +152,7 @@ class EquipmentController extends BaseApiController
 
         return response($package['content'], Response::HTTP_OK, [
             'Content-Type' => $package['mime'],
-            'Content-Disposition' => 'attachment; filename="' . $package['filename'] . '"',
+            'Content-Disposition' => 'attachment; filename="'.$package['filename'].'"',
         ]);
     }
 
@@ -229,7 +227,7 @@ class EquipmentController extends BaseApiController
         }
 
         if ($search !== '') {
-            $term = '%' . mb_strtolower($search) . '%';
+            $term = '%'.mb_strtolower($search).'%';
             $query->where(static function ($builder) use ($term): void {
                 $builder
                     ->whereRaw('LOWER(COALESCE(resumo_tecnico, \'\')) LIKE ?', [$term])
@@ -288,6 +286,14 @@ class EquipmentController extends BaseApiController
                 $validated,
                 is_array($files) ? $files : []
             );
+        } catch (OperationalPhotoException $exception) {
+            return $this->error(
+                $exception->getMessage(),
+                $exception->httpStatus,
+                $exception->errorCode,
+                null,
+                request: $request,
+            );
         } catch (Throwable $exception) {
             report($exception);
 
@@ -317,6 +323,14 @@ class EquipmentController extends BaseApiController
                 $equipment,
                 $validated,
                 is_array($files) ? $files : []
+            );
+        } catch (OperationalPhotoException $exception) {
+            return $this->error(
+                $exception->getMessage(),
+                $exception->httpStatus,
+                $exception->errorCode,
+                null,
+                request: $request,
             );
         } catch (Throwable $exception) {
             report($exception);
@@ -395,7 +409,7 @@ class EquipmentController extends BaseApiController
         $adminEmail = mb_strtolower(trim((string) $validated['admin_email']));
         $adminPassword = (string) $validated['admin_password'];
 
-        $throttleKey = 'equipment-password-reveal-admin-auth:' . $adminEmail . '|' . $request->ip();
+        $throttleKey = 'equipment-password-reveal-admin-auth:'.$adminEmail.'|'.$request->ip();
         if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
             return $this->error(
                 'Muitas tentativas de verificação de administrador. Aguarde um pouco e tente novamente.',
@@ -484,7 +498,7 @@ class EquipmentController extends BaseApiController
 
         return response()->file($file['absolute_path'], [
             'Content-Type' => $file['mime_type'],
-            'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
+            'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
             'X-Content-Type-Options' => 'nosniff',
             'Content-Security-Policy' => "default-src 'none'; base-uri 'none'; sandbox",
         ]);

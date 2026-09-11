@@ -9,9 +9,11 @@ use App\Contracts\Files\PdfThumbnailRenderer;
 use App\Enums\Files\FileManagerMode;
 use App\Models\Client;
 use App\Models\Equipment;
+use App\Models\FinanceiroAnexo;
 use App\Models\Order;
 use App\Models\OrderDocumentFile;
 use App\Models\User;
+use App\Observers\FinanceiroAnexoObserver;
 use App\Observers\OrderDocumentFileObserver;
 use App\Observers\OrderSearchIndexObserver;
 use App\Services\Agenda\Sources\AgendaSourceRegistry;
@@ -29,6 +31,7 @@ use App\Services\Company\CompanyProfileService;
 use App\Services\Files\Authorizers\ChatAttachmentFileAuthorizer;
 use App\Services\Files\Authorizers\ConfigurationFileAuthorizer;
 use App\Services\Files\Authorizers\EquipmentFileAuthorizer;
+use App\Services\Files\Authorizers\FinanceiroFileAuthorizer;
 use App\Services\Files\Authorizers\OrderFileAuthorizer;
 use App\Services\Files\Authorizers\UserProfilePhotoFileAuthorizer;
 use App\Services\Files\Authorizers\UserSignatureFileAuthorizer;
@@ -116,7 +119,9 @@ class AppServiceProvider extends ServiceProvider
         $fileAuthorizers->register('user_signature', app(UserSignatureFileAuthorizer::class));
         $fileAuthorizers->register('user', app(UserProfilePhotoFileAuthorizer::class));
         $fileAuthorizers->register('chat_attachment', app(ChatAttachmentFileAuthorizer::class));
+        $fileAuthorizers->register('financeiro', app(FinanceiroFileAuthorizer::class));
         OrderDocumentFile::observe(app(OrderDocumentFileObserver::class));
+        FinanceiroAnexo::observe(app(FinanceiroAnexoObserver::class));
 
         // Indice de busca da OS (os.busca_texto). Registrado como listener de
         // `saved` em vez de ::observe() porque o mesmo objeto atende tres

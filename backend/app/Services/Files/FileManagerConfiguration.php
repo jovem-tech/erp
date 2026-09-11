@@ -58,6 +58,12 @@ class FileManagerConfiguration
             }
         }
 
+        foreach ((array) config('file-manager.authoritative_categories', []) as $category) {
+            if (FileCategory::tryFrom((string) $category) === null) {
+                $errors[] = 'unknown_authoritative_category:'.(string) $category;
+            }
+        }
+
         foreach ((array) config('file-manager.storage.legacy_read_disks', []) as $legacyDisk) {
             if (! is_array(config('filesystems.disks.'.(string) $legacyDisk))) {
                 $errors[] = 'legacy_disk_not_configured:'.(string) $legacyDisk;
@@ -153,6 +159,13 @@ class FileManagerConfiguration
     public function isHybridWriteCategory(FileCategory $category): bool
     {
         return in_array($category->value, (array) config('file-manager.hybrid_write_categories', []), true);
+    }
+
+    public function isAuthoritativeCategory(FileCategory $category): bool
+    {
+        return $this->mode() !== FileManagerMode::Off
+            && $this->isCategoryEnabled($category)
+            && in_array($category->value, (array) config('file-manager.authoritative_categories', []), true);
     }
 
     public function isLegacyReadDiskAllowed(string $disk): bool

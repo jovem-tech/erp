@@ -5,10 +5,12 @@ import { PhotoPicker } from '@/components/orders/order-form-wizard/photo-picker'
 
 vi.mock('@/lib/photo-compression', () => ({
   compressImageFile: vi.fn(async (file: File) => file),
+  isOperationalPhotoFile: vi.fn(() => true),
+  MAX_OPERATIONAL_PHOTO_SOURCE_BYTES: 20 * 1024 * 1024,
 }));
 
-function buildFile(name: string): File {
-  return new File(['conteudo'], name, { type: 'image/jpeg' });
+function buildFile(name: string, type = 'image/jpeg'): File {
+  return new File(['conteudo'], name, { type });
 }
 
 describe('PhotoPicker', () => {
@@ -59,6 +61,28 @@ describe('PhotoPicker', () => {
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
 
     expect(input.getAttribute('capture')).toBeNull();
+  });
+
+  it('aceita HEIC de iPhone mesmo quando a prévia depende do backend', async () => {
+    const onChange = vi.fn();
+    render(<PhotoPicker label="Fotos" value={[]} onChange={onChange} maxFiles={4} />);
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = buildFile('IMG_0042.HEIC', 'image/heic');
+
+    await userEvent.upload(input, file);
+
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith([file]));
+  });
+
+  it('declara todos os formatos operacionais no seletor', () => {
+    render(<PhotoPicker label="Fotos" value={[]} onChange={vi.fn()} maxFiles={4} />);
+
+    const accept = (document.querySelector('input[type="file"]') as HTMLInputElement).accept;
+
+    expect(accept).toContain('image/avif');
+    expect(accept).toContain('.heic');
+    expect(accept).toContain('.heif');
   });
 
   it('remove um arquivo pelo índice', async () => {

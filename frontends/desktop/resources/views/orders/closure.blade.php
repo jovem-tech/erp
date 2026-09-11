@@ -599,8 +599,11 @@
                     </a>
                 @endif
 
-                <a href="{{ route('orders.preview', $orderId) }}" target="_blank" rel="noreferrer" class="dropdown-item">
-                    <i class="bi bi-printer me-2"></i>Imprimir
+                <a href="{{ route('orders.print', $orderId) }}" target="_blank" rel="noopener" class="dropdown-item">
+                    <i class="bi bi-printer me-2"></i>Imprimir OS (A4)
+                </a>
+                <a href="{{ route('orders.print', ['order' => $orderId, 'formato' => '80mm']) }}" target="_blank" rel="noopener" class="dropdown-item">
+                    <i class="bi bi-receipt-cutoff me-2"></i>Imprimir cupom (80mm)
                 </a>
 
                 @if ($isEncerradaHeader)
@@ -738,8 +741,7 @@
                     <span>
                         <i class="bi bi-exclamation-triangle me-1"></i>
                         <strong>Este cliente não tem CPF/CNPJ cadastrado.</strong>
-                        A NFS-e exige identificar o tomador — dá para encerrar a OS assim mesmo,
-                        mas a nota só sai depois de completar o cadastro.
+                        A NFS-e pode ser emitida sem identificar o tomador — dê preferência por gerar NFS-e com a identificação do tomador
                     </span>
                     @if ($clienteId > 0 && $podeEditarCliente)
                         {{-- Outra aba de proposito: a baixa e' um formulario

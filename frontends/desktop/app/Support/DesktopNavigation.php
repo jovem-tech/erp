@@ -235,6 +235,20 @@ class DesktopNavigation
                         'module' => 'fornecedores',
                         'icon' => 'bi-truck',
                     ],
+                    // Catalogo de tipos/marcas/modelos (specs/044) — puramente
+                    // consultivo, sem vinculo direto com OS/orcamento; so'
+                    // padroniza os selects que OS/orcamento ja usavam. Fica
+                    // ANTES do item oculto de "Aparelhos / Equip." abaixo (mesmo
+                    // modulo `equipamentos`): quem so' tem
+                    // `equipamentos:visualizar` cai aqui como destino de
+                    // fallback do firstAllowedRouteName(), nao mais na lista de
+                    // aparelhos de cliente.
+                    [
+                        'label' => 'Equipamentos',
+                        'route' => 'equipments.catalog.index',
+                        'module' => 'equipamentos',
+                        'icon' => 'bi-phone',
+                    ],
                     // Aparelhos/equipamentos não tem entrada visível: o cadastro é
                     // estritamente derivado do cliente, então a listagem é acessada
                     // pelo "Mais ações" de Clientes (e o caminho inverso, pelo "Mais

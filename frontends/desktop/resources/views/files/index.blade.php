@@ -67,6 +67,7 @@
             'budget_pdf' => 'Orçamentos em PDF',
             'order_pdf' => 'Documentos de OS',
             'chat_attachment' => 'Anexos do chat',
+            'financeiro_anexo' => 'Anexos financeiros',
         ];
         $categoryIcons = [
             'company_login_background' => 'bi-image',
@@ -78,6 +79,7 @@
             'user_signature' => 'bi-pen',
             'user_profile_photo' => 'bi-person-square',
             'chat_attachment' => 'bi-paperclip',
+            'financeiro_anexo' => 'bi-cash-coin',
         ];
         $statusLabels = [
             'active' => 'Ativo', 'archived' => 'Arquivado', 'trashed' => 'Na lixeira', 'purged' => 'Excluído definitivamente',

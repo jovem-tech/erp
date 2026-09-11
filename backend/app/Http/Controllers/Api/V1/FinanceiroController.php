@@ -66,6 +66,8 @@ class FinanceiroController extends BaseApiController
             'movimentos.cartao.operadora',
             'movimentos.cartao.bandeira',
             'movimentos.conta',
+            'anexos.uploadedBy',
+            'anexos.managedFile',
         ]);
 
         $lancamento = $financeiro->toArray();

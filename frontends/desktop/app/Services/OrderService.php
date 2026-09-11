@@ -371,6 +371,17 @@ class OrderService
     }
 
     /**
+     * Espelho completo da OS em PDF (botão Imprimir). Gerado na hora pelo
+     * backend, sem passar pelo acervo documental.
+     *
+     * @return array{body: string, headers: array<string, string>, status: int}
+     */
+    public function printOrder(int $orderId, string $format = 'a4'): array
+    {
+        return $this->apiClient->download('/orders/'.$orderId.'/imprimir', ['formato' => $format]);
+    }
+
+    /**
      * @return array{body: string, headers: array<string, string>, status: int}
      */
     public function downloadDocumentFile(int $orderId, int $documentId, string $format): array

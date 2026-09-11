@@ -208,8 +208,11 @@
                         </a>
                     @endif
 
-                    <a href="{{ route('orders.preview', $orderId) }}" target="_blank" rel="noreferrer" class="dropdown-item">
-                        <i class="bi bi-printer me-2"></i>Imprimir
+                    <a href="{{ route('orders.print', $orderId) }}" target="_blank" rel="noopener" class="dropdown-item">
+                        <i class="bi bi-printer me-2"></i>Imprimir OS (A4)
+                    </a>
+                    <a href="{{ route('orders.print', ['order' => $orderId, 'formato' => '80mm']) }}" target="_blank" rel="noopener" class="dropdown-item">
+                        <i class="bi bi-receipt-cutoff me-2"></i>Imprimir cupom (80mm)
                     </a>
 
                     @if ($isEncerrada)
@@ -498,7 +501,9 @@
                                 </select>
                                 <small class="text-secondary d-block mt-1">
                                     Exibe todos os status, exceto cancelados, rejeitados e os já vinculados ou convertidos.
-                                    Pesquise por número, cliente ou equipamento. A troca pede confirmação se este formulário já tiver alterações.
+                                    Com um cliente selecionado acima, mostra somente os orçamentos dele; pesquise por número ou equipamento.
+                                    Sem cliente selecionado, pesquise também por cliente para começar a OS a partir do orçamento.
+                                    A troca pede confirmação se este formulário já tiver alterações.
                                 </small>
                                 <small class="text-danger d-none mt-1" data-order-link-budget-feedback role="alert"></small>
                             </div>
@@ -847,13 +852,13 @@
                             id="orderPhotos"
                             name="fotos[]"
                             class="d-none @error('fotos') is-invalid @enderror @error('fotos.*') is-invalid @enderror"
-                            accept="image/jpeg,image/png,image/webp"
+                            accept="image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,.heic,.heif,.avif"
                             multiple
                             data-order-create-photos-input
                         >
 
                         <div class="order-create-photo-preview-grid" data-order-create-photos-preview></div>
-                        <div class="text-secondary small mt-2">Máximo de 4 fotos por envio. Cada imagem será cortada antes do envio e o arquivo final terá até 2 MB.</div>
+                        <div class="text-secondary small mt-2">Máximo de 4 fotos por envio e 20 MB por origem. No servidor, o normal é até 400 KB e o máximo excepcional é 700 KB.</div>
                         @error('fotos')<div class="invalid-feedback d-block mt-2">{{ $message }}</div>@enderror
                         @error('fotos.*')<div class="invalid-feedback d-block mt-2">{{ $message }}</div>@enderror
                     </div>

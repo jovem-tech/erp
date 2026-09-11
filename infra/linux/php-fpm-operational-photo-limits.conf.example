@@ -1,0 +1,6 @@
+; Apply these directives inside both the erp-backend and erp-desktop pools.
+; Four 20 MB photos plus multipart overhead fit below the 85 MB request cap.
+php_admin_value[upload_max_filesize] = 20M
+php_admin_value[post_max_size] = 85M
+php_admin_value[max_execution_time] = 75
+request_terminate_timeout = 75s

@@ -1118,18 +1118,25 @@
     </div>
 
     <div class="modal fade" id="orcamentoReviewModal" tabindex="-1" aria-labelledby="orcamentoReviewModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable budget-review-dialog">
             <div class="modal-content modal-shell budget-review-modal">
                 <div class="modal-header border-0 pb-0">
                     <div>
-                        <p class="desktop-eyebrow mb-2">Revisao final</p>
-                        <h4 id="orcamentoReviewModalLabel" class="surface-title fs-4 mb-1">Confirmar salvamento do orcamento</h4>
-                        <p class="surface-subtitle mb-0">Revise os dados, confira as pendencias e escolha entre salvar ou enviar para aprovacao.</p>
+                        <p class="desktop-eyebrow mb-1">Revisao final</p>
+                        <h4 id="orcamentoReviewModalLabel" class="surface-title fs-5 mb-0">Confirmar salvamento do orcamento</h4>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
                 </div>
 
                 <div class="modal-body">
+                    <div class="budget-review-progress" data-budget-review-checklist-warning>
+                        <div class="budget-review-progress-info">
+                            <i class="bi bi-shield-check"></i>
+                            <span data-budget-review-checklist-message><strong data-budget-review-checklist-progress>0/6</strong> blocos verificados — confira cada bloco para liberar o salvamento.</span>
+                        </div>
+                        <div class="budget-review-meter"><span data-budget-review-meter-fill style="width: 0%"></span></div>
+                    </div>
+
                     <div class="budget-review-pendencies d-none" data-budget-review-pendencies-wrapper>
                         <div class="budget-review-pendencies-head">
                             <i class="bi bi-exclamation-triangle"></i>
@@ -1142,79 +1149,96 @@
                     </div>
 
                     <div class="budget-review-grid">
-                        <div class="budget-review-col">
-                            <section class="budget-review-card">
-                                <div class="budget-review-card-head">
-                                    <h5>Cliente e contato</h5>
-                                    <span class="desktop-chip">Comercial</span>
+                        <section class="budget-review-card" data-budget-review-section="cliente">
+                            <div class="budget-review-card-head">
+                                <h5>Cliente e contato</h5>
+                                <div class="budget-review-card-actions">
+                                    <button type="button" class="btn btn-sm btn-outline-light" data-budget-review-edit="cliente" data-budget-review-tab="cliente">Editar</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-budget-review-verify="cliente" aria-pressed="false">Verificar</button>
                                 </div>
-                                <div class="budget-review-list" data-budget-review-client></div>
-                            </section>
+                            </div>
+                            <div class="budget-review-list" data-budget-review-client></div>
+                        </section>
 
-                            <section class="budget-review-card">
-                                <div class="budget-review-card-head">
-                                    <h5>Observacoes e condicoes</h5>
-                                    <span class="desktop-chip">Complementos</span>
-                                </div>
-                                <div class="budget-review-notes" data-budget-review-notes></div>
-                            </section>
-                        </div>
-
-                        <section class="budget-review-card">
+                        <section class="budget-review-card" data-budget-review-section="contexto">
                             <div class="budget-review-card-head">
                                 <h5>Equipamento e contexto</h5>
-                                <span class="desktop-chip">Operacional</span>
+                                <div class="budget-review-card-actions">
+                                    <button type="button" class="btn btn-sm btn-outline-light" data-budget-review-edit="contexto" data-budget-review-tab="equipamento">Editar</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-budget-review-verify="contexto" aria-pressed="false">Verificar</button>
+                                </div>
                             </div>
                             <div class="budget-review-list" data-budget-review-context></div>
                         </section>
+
+                        <section class="budget-review-card" data-budget-review-section="totais">
+                            <div class="budget-review-card-head">
+                                <h5>Resultado financeiro</h5>
+                                <div class="budget-review-card-actions">
+                                    <button type="button" class="btn btn-sm btn-outline-light" data-budget-review-edit="totais" data-budget-review-tab="financeiro">Editar</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-budget-review-verify="totais" aria-pressed="false">Verificar</button>
+                                </div>
+                            </div>
+                            <div class="budget-review-totals" data-budget-review-totals></div>
+                        </section>
+
+                        <section class="budget-review-card" data-budget-review-section="condicoes">
+                            <div class="budget-review-card-head">
+                                <h5>Condicoes comerciais</h5>
+                                <div class="budget-review-card-actions">
+                                    <button type="button" class="btn btn-sm btn-outline-light" data-budget-review-edit="condicoes" data-budget-review-tab="financeiro">Editar</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-budget-review-verify="condicoes" aria-pressed="false">Verificar</button>
+                                </div>
+                            </div>
+                            <div class="budget-review-list" data-budget-review-terms></div>
+                        </section>
+
+                        <section class="budget-review-card" data-budget-review-section="notas">
+                            <div class="budget-review-card-head">
+                                <h5>Observacoes e condicoes</h5>
+                                <div class="budget-review-card-actions">
+                                    <button type="button" class="btn btn-sm btn-outline-light" data-budget-review-edit="notas" data-budget-review-tab="operacional">Editar</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-budget-review-verify="notas" aria-pressed="false">Verificar</button>
+                                </div>
+                            </div>
+                            <div class="budget-review-notes" data-budget-review-notes></div>
+                        </section>
+
+                        <section class="budget-review-card" data-budget-review-channel-wrapper>
+                            <div class="budget-review-card-head">
+                                <h5>Meio de envio da proposta</h5>
+                                <span class="budget-review-channel-hint">Usado apenas ao enviar para aprovação.</span>
+                            </div>
+                            <div class="d-flex flex-wrap gap-3" data-budget-review-channel-options>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="canal_envio" id="orcamentoCanalWhatsapp" value="whatsapp" data-budget-channel-option checked>
+                                    <label class="form-check-label" for="orcamentoCanalWhatsapp">WhatsApp</label>
+                                </div>
+                                <div class="form-check d-none" data-budget-channel-email-option>
+                                    <input class="form-check-input" type="radio" name="canal_envio" id="orcamentoCanalEmail" value="email" data-budget-channel-option>
+                                    <label class="form-check-label" for="orcamentoCanalEmail">E-mail</label>
+                                </div>
+                                <div class="form-check d-none" data-budget-channel-both-option>
+                                    <input class="form-check-input" type="radio" name="canal_envio" id="orcamentoCanalAmbos" value="ambos" data-budget-channel-option>
+                                    <label class="form-check-label" for="orcamentoCanalAmbos">WhatsApp e e-mail</label>
+                                </div>
+                            </div>
+                            <p class="text-secondary small mb-0 mt-2" data-budget-review-channel-no-email>Informe um e-mail de contato para habilitar o envio por e-mail.</p>
+                        </section>
+
+                        <section class="budget-review-card" data-budget-review-section="itens">
+                            <div class="budget-review-card-head">
+                                <h5>Itens do orcamento</h5>
+                                <span class="desktop-chip" data-budget-review-items-count>0 itens</span>
+                                <div class="budget-review-card-actions">
+                                    <button type="button" class="btn btn-sm btn-outline-light" data-budget-review-edit="itens" data-budget-review-tab="financeiro">Editar</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" data-budget-review-verify="itens" aria-pressed="false">Verificar</button>
+                                </div>
+                            </div>
+                            <div class="budget-review-items" data-budget-review-items></div>
+                        </section>
                     </div>
 
-                    <section class="budget-review-card">
-                        <div class="budget-review-card-head">
-                            <h5>Condicoes comerciais</h5>
-                            <span class="desktop-chip">Transparencia ao cliente</span>
-                        </div>
-                        <div class="budget-review-list" data-budget-review-terms></div>
-                    </section>
-
-                    <section class="budget-review-card">
-                        <div class="budget-review-card-head">
-                            <h5>Itens do orcamento</h5>
-                            <span class="desktop-chip" data-budget-review-items-count>0 itens</span>
-                        </div>
-                        <div class="budget-review-items" data-budget-review-items></div>
-                    </section>
-
-                    <section class="budget-review-card budget-review-grid-bottom">
-                        <div class="budget-review-card-head">
-                            <h5>Resultado financeiro</h5>
-                            <span class="budget-summary-result-pill">Resultado final</span>
-                        </div>
-                        <div class="budget-review-totals" data-budget-review-totals></div>
-                    </section>
-
-                    <section class="budget-review-card" data-budget-review-channel-wrapper>
-                        <div class="budget-review-card-head">
-                            <h5>Meio de envio da proposta</h5>
-                            <span class="desktop-chip">Aprovação do cliente</span>
-                        </div>
-                        <p class="text-secondary small mb-2">Usado apenas ao enviar para aprovação — escolha por onde o cliente vai receber o PDF e o link de aprovação.</p>
-                        <div class="d-flex flex-wrap gap-3" data-budget-review-channel-options>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="canal_envio" id="orcamentoCanalWhatsapp" value="whatsapp" data-budget-channel-option checked>
-                                <label class="form-check-label" for="orcamentoCanalWhatsapp">WhatsApp</label>
-                            </div>
-                            <div class="form-check d-none" data-budget-channel-email-option>
-                                <input class="form-check-input" type="radio" name="canal_envio" id="orcamentoCanalEmail" value="email" data-budget-channel-option>
-                                <label class="form-check-label" for="orcamentoCanalEmail">E-mail</label>
-                            </div>
-                            <div class="form-check d-none" data-budget-channel-both-option>
-                                <input class="form-check-input" type="radio" name="canal_envio" id="orcamentoCanalAmbos" value="ambos" data-budget-channel-option>
-                                <label class="form-check-label" for="orcamentoCanalAmbos">WhatsApp e e-mail</label>
-                            </div>
-                        </div>
-                        <p class="text-secondary small mb-0 mt-2" data-budget-review-channel-no-email>Informe um e-mail de contato para habilitar o envio por e-mail.</p>
-                    </section>
                 </div>
 
                 <div class="modal-footer border-0 pt-0">

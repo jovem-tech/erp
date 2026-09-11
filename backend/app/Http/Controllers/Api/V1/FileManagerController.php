@@ -21,6 +21,7 @@ use App\Services\Files\FileStateMachine;
 use App\Services\Files\FileTrashRetentionPolicy;
 use App\Services\Files\ManagedFileArchiveService;
 use App\Services\Files\ManagedFileDeliveryService;
+use App\Services\Files\ManagedFileDomainLifecycleService;
 use App\Services\Files\ManagedFilePurgeService;
 use App\Services\Files\PdfThumbnailService;
 use Carbon\CarbonImmutable;
@@ -43,6 +44,7 @@ class FileManagerController extends BaseApiController
         private readonly PdfThumbnailService $pdfThumbnails,
         private readonly ManagedFileArchiveService $archives,
         private readonly FileStateMachine $states,
+        private readonly ManagedFileDomainLifecycleService $domainLifecycle,
         private readonly ManagedFilePurgeService $purger,
         private readonly FileTrashRetentionPolicy $trashRetention,
         private readonly AdminCredentialVerifier $adminVerifier,
@@ -379,7 +381,7 @@ class FileManagerController extends BaseApiController
 
         try {
             $trashed = DB::transaction(function () use ($files, $actor, $admin, $reason): array {
-                return $files->map(fn (ManagedFile $file): string => (string) $this->states
+                return $files->map(fn (ManagedFile $file): string => (string) $this->domainLifecycle
                     ->trash($file, (int) $actor->id, $reason, (int) $admin->id)
                     ->uuid)
                     ->all();
@@ -440,7 +442,7 @@ class FileManagerController extends BaseApiController
 
         try {
             $restored = DB::transaction(function () use ($files, $actor, $admin, $reason): array {
-                return $files->map(fn (ManagedFile $file): string => (string) $this->states
+                return $files->map(fn (ManagedFile $file): string => (string) $this->domainLifecycle
                     ->restore($file, (int) $actor->id, $reason, (int) $admin->id)
                     ->uuid)
                     ->all();
@@ -730,7 +732,7 @@ class FileManagerController extends BaseApiController
         try {
             $updated = match ($action) {
                 'archive' => $this->states->archive($file, (int) $actor->id, $reason, (int) $admin->id),
-                'restore' => $this->states->restore($file, (int) $actor->id, $reason, (int) $admin->id),
+                'restore' => $this->domainLifecycle->restore($file, (int) $actor->id, $reason, (int) $admin->id),
                 'quarantine' => $this->states->quarantine($file, $reason, (int) $actor->id, (int) $admin->id),
                 'release' => $this->states->releaseFromQuarantine(
                     $file,

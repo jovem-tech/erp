@@ -6,6 +6,7 @@ use App\Models\PdfTemplate;
 use App\Services\Pdf\Contexts\BudgetPdfContextFactory;
 use App\Services\Pdf\Contexts\CaixaPdfContextFactory;
 use App\Services\Pdf\Contexts\OrderClosurePdfContextFactory;
+use App\Services\Pdf\Contexts\OrderCompletePdfContextFactory;
 use App\Services\Pdf\Contexts\OrderPdfContextFactory;
 use App\Services\Pdf\Contexts\SalePdfContextFactory;
 use App\Services\Pdf\Contexts\SaleReturnPdfContextFactory;
@@ -265,6 +266,49 @@ class PdfTemplateRegistry
                 ]),
                 'message_template_code' => 'entrega_concluida',
                 'automatic_triggers' => ['baixa_os'],
+            ],
+            // Espelho completo da OS para impressão sob demanda (botão
+            // "Imprimir" da tela da OS). `legacy_tipo` nulo e sem gatilho
+            // automático de propósito: é reimpressão do estado atual, não
+            // entra no acervo da Central Documental (que lê a constante
+            // própria OrderDocumentCenterService::DOCUMENT_TYPES) nem gera
+            // versão arquivada. Aparece na tela Modelos PDF para edição.
+            'os_completa' => [
+                'codigo' => 'os_completa',
+                'nome' => 'Ordem de serviço completa',
+                'descricao' => 'Espelho completo da OS para impressão: cliente, equipamento, defeito e solução, checklist de entrada, itens, orçamento, fotos e histórico.',
+                'legacy_tipo' => null,
+                'context_factory' => OrderCompletePdfContextFactory::class,
+                'variables' => array_merge($orderVariables, [
+                    // Contador escalar só deste tipo: é o que permite
+                    // condicionar a seção de fotos (o motor não sabe
+                    // condicionar em cima de uma coleção).
+                    'os.fotos_quantidade' => 'inteiro',
+                    'orcamento.numero' => 'string',
+                    'orcamento.status' => 'string',
+                    'orcamento.validade_data' => 'data',
+                    'orcamento.subtotal' => 'moeda',
+                    'orcamento.desconto' => 'moeda',
+                    'orcamento.total' => 'moeda',
+                ]),
+                // `orcamento_itens` é coleção separada de propósito: `itens`
+                // já carrega os itens lançados na própria OS, e os dois
+                // precisam poder aparecer lado a lado no mesmo documento.
+                'collections' => array_merge(self::ORDER_COLLECTIONS, [
+                    'orcamento_itens' => [
+                        'descricao' => 'string',
+                        'quantidade' => 'inteiro',
+                        'valor_unitario' => 'moeda',
+                        'valor_total' => 'moeda',
+                    ],
+                    'historico' => [
+                        'data' => 'data_hora',
+                        'evento' => 'string',
+                        'autor' => 'string',
+                    ],
+                ]),
+                'message_template_code' => null,
+                'automatic_triggers' => [],
             ],
             // Venda de balcão — specs/027-vendas-balcao-pdv.
             // `legacy_tipo` nulo e sem gatilho automático de propósito: o

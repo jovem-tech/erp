@@ -48,6 +48,38 @@ class FinanceiroReportTest extends TestCase
     }
 
     /**
+     * O cartao soma "Despesas Operacionais" variaveis + "Custo Direto (OS)".
+     * Antes lia so `despesas_variaveis`, entao uma compra de peca baixada no mes
+     * deixava o cartao em R$ 0,00 enquanto o mesmo valor ja constava na
+     * demonstracao contabil logo abaixo, na mesma tela.
+     */
+    public function test_dre_caixa_card_de_variaveis_soma_custo_direto(): void
+    {
+        $payload = $this->fakeDrePayload('caixa');
+        $payload['gerencial']['despesas_variaveis'] = 60;
+        $payload['gerencial']['custos_diretos_os'] = 400;
+        $payload['gerencial']['custos_variaveis_total'] = 460;
+
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/relatorios/dre-caixa*' => Http::response([
+                'status' => 'success',
+                'data' => ['dre' => $payload],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar']]))
+            ->get('/financeiro/relatorios/dre-caixa?mes=2026-06');
+
+        $response->assertOk()
+            ->assertSee('Custos e despesas variáveis')
+            ->assertSee('R$ 460,00');
+    }
+
+    /**
      * Ticket medio no card e a quebra por origem junto de cada linha da
      * receita: reparo e balcao tem tickets que nao se parecem (aqui R$ 400,00
      * contra R$ 50,00) e o numero combinado sozinho esconde qual dos dois

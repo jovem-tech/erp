@@ -51,6 +51,16 @@
     $categoriaPadraoFixo = is_array($catAtual)
         ? (bool) ($catAtual['dre_fixo_mensal_padrao'] ?? false)
         : null; // null = categoria nova ou fora do catálogo
+    // Só quem já é fixa POR PADRÃO pode virar fixa manualmente — o backend
+    // recusa o resto (resolveClassification()). Categoria nova (fora do
+    // catálogo, `$categoriaPadraoFixo === null`) também bloqueia: sem padrão
+    // gravado não há como confirmar "fixa", mesma regra do backend.
+    //
+    // Critério é o PADRÃO da categoria, não grupo nem nome: grupo não
+    // distingue "Taxa de cartão" (nunca fixa) de "Impostos e taxas" (pode ser,
+    // ex. DAS do MEI) — as duas dividem "Despesas Operacionais". Nome já nos
+    // mordeu: o banco grava "Compra de pecas" sem cedilha (herança do legado).
+    $bloqueiaFixoOverride = $categoriaPadraoFixo !== true;
     // Espelha a precedência do backend: override > gravado > categoria > false.
     $classificacaoEfetiva = $tipo === 'pagar' && (
         $dreFixoOverride !== ''
@@ -131,7 +141,7 @@
          sobre o padrão da categoria, então trocar a categoria NÃO reclassifica.
          O JS lê isto para a linha de resumo dizer "(deste lançamento)" em vez
          de prometer uma mudança que o servidor ignora. --}}
-    <form method="post" action="{{ $formAction }}" class="desktop-form-stack" id="financeiroForm"
+    <form method="post" action="{{ $formAction }}" enctype="multipart/form-data" class="desktop-form-stack" id="financeiroForm"
           data-classificacao-salva="{{ $classificacaoSalva }}">
         @csrf
         @php
@@ -222,7 +232,11 @@
                 <div id="financeiroClassificacaoResumo" @class(['d-none' => ! $mostraClassificacaoResumo])>
                     <small class="text-muted d-block mt-1">
                         Classificação: <strong data-classificacao-texto>{{ $classificacaoEfetiva ? 'Despesa fixa' : 'Despesa variável' }}</strong><span data-classificacao-origem>{{ $classificacaoOrigemTexto }}</span>
-                        <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-classificacao-alterar>alterar</button>
+                        {{-- Some quando a categoria é variável por padrão: com
+                             "Despesa fixa" desabilitada no override, a única
+                             outra opção é "Despesa variável" — que já é o
+                             padrão. Abrir o override não mudaria nada. --}}
+                        <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-classificacao-alterar @class(['d-none' => $bloqueiaFixoOverride])>alterar</button>
                     </small>
                 </div>
 
@@ -231,15 +245,18 @@
                      tela degrada sem JavaScript. Fechado => disabled => não
                      viaja => o backend aplica o padrão da categoria. --}}
                 <div id="financeiroClassificacaoOverrideWrapper" @class(['mt-2', 'd-none' => $dreFixoOverride === ''])>
-                    <x-campo-label for="financeiroClassificacaoOverride" ajuda="É o campo que decide se a despesa entra no <strong>ponto de equilíbrio</strong> e no cálculo do custo-hora. <strong>Fixa</strong>: existe todo mês, você fazendo 1 ou 100 OS — aluguel, luz, internet, DAS do MEI, o seu pró-labore. <strong>Variável</strong>: só existe quando há venda — peça comprada para a OS, comissão, taxa de cartão.<span class='tip-exemplo'>Em branco: usa o padrão da categoria escolhida — mostrado logo acima.</span>">Classificação no DRE</x-campo-label>
+                    <x-campo-label for="financeiroClassificacaoOverride" ajuda="É o campo que decide se a despesa entra no <strong>ponto de equilíbrio</strong> e no cálculo do custo-hora. <strong>Fixa</strong>: existe todo mês, você fazendo 1 ou 100 OS — aluguel, luz, internet, DAS do MEI, o seu pró-labore. <strong>Variável</strong>: só existe quando há venda — peça comprada para a OS, comissão, taxa de cartão. Só categoria que já é fixa por padrão pode virar fixa aqui — categoria variável nunca vira fixa manualmente.<span class='tip-exemplo'>Em branco: usa o padrão da categoria escolhida — mostrado logo acima.</span>">Classificação no DRE</x-campo-label>
                     <select id="financeiroClassificacaoOverride"
                             name="dre_fixo_mensal"
                             class="form-select"
                             @disabled($dreFixoOverride === '')>
                         <option value="" @selected($dreFixoOverride === '')>Usar o padrão da categoria</option>
-                        <option value="1" @selected($dreFixoOverride === '1')>Despesa fixa</option>
+                        <option value="1" @selected($dreFixoOverride === '1' && ! $bloqueiaFixoOverride) @disabled($bloqueiaFixoOverride)>Despesa fixa</option>
                         <option value="0" @selected($dreFixoOverride === '0')>Despesa variável</option>
                     </select>
+                    @if ($bloqueiaFixoOverride)
+                        <small class="text-muted d-block mt-1">Esta categoria é variável por padrão, então não pode ser marcada como despesa fixa.</small>
+                    @endif
                 </div>
             </div>
 
@@ -590,6 +607,28 @@
             <label for="financeiroObservacoes" class="visually-hidden">Observações</label>
             <textarea id="financeiroObservacoes" name="observacoes" class="form-control" rows="3" placeholder="Anotações internas sobre este lançamento (opcional).">{{ old('observacoes', $lancamento['observacoes'] ?? '') }}</textarea>
         </div>
+
+        @if (empty($lancamento['id'] ?? null))
+            <div class="desktop-form-section">
+                <div class="desktop-form-section-title">
+                    <i class="bi bi-paperclip"></i>
+                    <span>ANEXO</span>
+                </div>
+                <p class="text-secondary small mb-2">
+                    Opcional: já anexe o boleto, comprovante ou cheque deste lançamento — evita ter que voltar depois para procurar o arquivo.
+                </p>
+                <div class="desktop-grid desktop-grid-two">
+                    <div>
+                        <label class="form-label" for="financeiroAnexoArquivo">Arquivo (PDF ou foto)</label>
+                        <input type="file" id="financeiroAnexoArquivo" name="anexo" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.webp">
+                    </div>
+                    <div>
+                        <label class="form-label" for="financeiroAnexoDescricao">Descrição do anexo (opcional)</label>
+                        <input type="text" id="financeiroAnexoDescricao" name="anexo_descricao" class="form-control" maxlength="190" placeholder="Ex.: Boleto setembro/2026">
+                    </div>
+                </div>
+            </div>
+        @endif
 
         <div class="desktop-form-actions">
             <a href="{{ $cancelUrl }}" class="btn btn-outline-light">Cancelar</a>

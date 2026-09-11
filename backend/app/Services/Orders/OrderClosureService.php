@@ -224,7 +224,7 @@ class OrderClosureService
         // Simula os recebimentos em cartao ANTES da transacao: falha rapido sem
         // efeito colateral nenhum se a combinacao operadora/bandeira/parcelas
         // nao tiver taxa ativa configurada.
-        $simulation = $this->simulateCardPayments($recebimentos);
+        $simulation = $this->simulateCardPayments($recebimentos, $dataEntrega);
         if (! $simulation['ok']) {
             return ['result' => $simulation['result'], 'message' => $simulation['message']];
         }
@@ -577,12 +577,6 @@ class OrderClosureService
             return ['result' => 'invalid_receipts'];
         }
 
-        $simulation = $this->simulateCardPayments($recebimentos);
-        if (! $simulation['ok']) {
-            return ['result' => $simulation['result'], 'message' => $simulation['message']];
-        }
-        $recebimentos = $simulation['recebimentos'];
-
         $observacao = trim((string) ($payload['observacao'] ?? ''));
         $equipamentoEntregue = filter_var($payload['equipamento_entregue'] ?? false, FILTER_VALIDATE_BOOL);
         $dataEntrega = $equipamentoEntregue ? $this->normalizeDate($payload['data_entrega'] ?? null) : null;
@@ -591,8 +585,16 @@ class OrderClosureService
             return ['result' => 'invalid_date'];
         }
 
+        // Resolvida antes da simulacao de proposito: e' a data que ancora o
+        // prazo de repasse da operadora (ver simulateCardPayments()).
         $dataReferencia = $dataEntrega ?? Carbon::now()->toDateString();
         $classificacao = trim((string) ($payload['classificacao_baixa'] ?? 'adiantamento'));
+
+        $simulation = $this->simulateCardPayments($recebimentos, $dataReferencia);
+        if (! $simulation['ok']) {
+            return ['result' => $simulation['result'], 'message' => $simulation['message']];
+        }
+        $recebimentos = $simulation['recebimentos'];
 
         try {
             $result = DB::transaction(function () use (
@@ -1279,10 +1281,15 @@ class OrderClosureService
      * colateral nenhum, se a combinação operadora/bandeira/parcelas não tiver
      * taxa ativa configurada.
      *
+     * O $dataReferencia e' a mesma data que processReceipts() usa para o
+     * movimento: sem ela a simulacao ancorava o prazo da operadora em `now()`,
+     * ou seja, no dia em que o operador digitou a baixa, e nao no dia em que o
+     * cliente pagou.
+     *
      * @param array<int, array<string, mixed>> $recebimentos
      * @return array{ok: true, recebimentos: array<int, array<string, mixed>>}|array{ok: false, result: string, message: string}
      */
-    private function simulateCardPayments(array $recebimentos): array
+    private function simulateCardPayments(array $recebimentos, string $dataReferencia): array
     {
         foreach ($recebimentos as $index => $recebimento) {
             if (! $this->isCardPayment($recebimento['forma_pagamento'])) {
@@ -1297,6 +1304,7 @@ class OrderClosureService
                     'modalidade' => $recebimento['modalidade'],
                     'forma_pagamento' => $recebimento['forma_pagamento'],
                     'parcelas' => $recebimento['parcelas'],
+                    'data_pagamento' => $recebimento['data_pagamento'] ?? $dataReferencia,
                 ]);
             } catch (Throwable $exception) {
                 return ['ok' => false, 'result' => 'invalid_card_payment', 'message' => $exception->getMessage()];
@@ -1320,9 +1328,16 @@ class OrderClosureService
         $titulo = $this->ensureReceivableTitle($order, $dataReferencia);
 
         foreach ($recebimentos as $recebimento) {
+            // Resolvida uma vez so': a data do movimento e a competencia do
+            // cartao TEM que ser a mesma. A tela da baixa nao manda
+            // data_pagamento por recebimento (o campo e' opcional), e o
+            // registro do cartao gravava competencia NULA nesses casos
+            // enquanto o movimento ia datado com a data de entrega.
+            $dataMovimento = $recebimento['data_pagamento'] ?? $dataReferencia;
+
             $movementSummary = $this->financeiroService->registerMovement($titulo, [
                 'valor_movimento' => $recebimento['valor'],
-                'data_movimento' => $recebimento['data_pagamento'] ?? $dataReferencia,
+                'data_movimento' => $dataMovimento,
                 'forma_pagamento' => $recebimento['forma_pagamento'] !== '' ? $recebimento['forma_pagamento'] : null,
                 'conta_financeira_id' => $recebimento['conta_financeira_id'] ?? null,
                 'observacoes' => $recebimento['observacoes'] !== '' ? $recebimento['observacoes'] : null,
@@ -1331,7 +1346,7 @@ class OrderClosureService
             $movementId = (int) ($movementSummary['movement_id'] ?? 0);
 
             if ($movementId > 0 && isset($recebimento['simulation'])) {
-                $this->registerCardMovementMeta($movementId, $recebimento['simulation'], $recebimento);
+                $this->registerCardMovementMeta($movementId, $recebimento['simulation'], $recebimento, $dataMovimento);
                 $this->registerCardFeeExpense($order, $recebimento['simulation'], $movementId);
             }
         }
@@ -1411,8 +1426,12 @@ class OrderClosureService
      * @param array<string, mixed> $simulation
      * @param array<string, mixed> $recebimento
      */
-    private function registerCardMovementMeta(int $movementId, array $simulation, array $recebimento): void
-    {
+    private function registerCardMovementMeta(
+        int $movementId,
+        array $simulation,
+        array $recebimento,
+        string $dataMovimento
+    ): void {
         FinanceiroMovimentoCartao::query()->create([
             'movimento_id' => $movementId,
             'operadora_id' => $simulation['operadora_id'] ?? null,
@@ -1426,7 +1445,7 @@ class OrderClosureService
             'valor_taxa' => round((float) ($simulation['valor_taxa'] ?? 0), 2),
             'valor_liquido' => round((float) ($simulation['valor_liquido'] ?? 0), 2),
             'prazo_recebimento_dias' => (int) ($simulation['prazo_recebimento_dias'] ?? 0),
-            'data_competencia' => $recebimento['data_pagamento'] ?? null,
+            'data_competencia' => $dataMovimento,
             'data_prevista_repasse' => $simulation['data_prevista_repasse'] ?? null,
             'data_prevista_recebimento' => $simulation['data_prevista_recebimento'] ?? null,
             'data_credito_efetivo' => $simulation['data_credito_efetivo'] ?? null,
@@ -1491,8 +1510,17 @@ class OrderClosureService
             'status' => Financeiro::STATUS_PAGO,
             'origem_tipo' => 'os_recebimento_cartao',
             'origem_id' => $movementId,
+            // Caixa no dia do repasse (a operadora desconta a taxa quando
+            // credita o liquido), mas COMPETENCIA no dia do pagamento — sem
+            // data_competencia o DRE cai no fallback para data_vencimento
+            // (Financeiro::scopeCompetenciaEntre) e a taxa era reconhecida no
+            // mes do repasse: venda paga em 29/08 com repasse em 01/09 deixava
+            // agosto com a receita bruta e sem o custo da maquininha. Mesma
+            // competencia que a irma FinanceiroService::registerCardFeeExpense()
+            // ja usava.
             'data_vencimento' => $simulation['data_prevista_repasse'] ?? null,
             'data_pagamento' => $simulation['data_prevista_repasse'] ?? null,
+            'data_competencia' => $simulation['data_base_repasse'] ?? null,
             'forma_pagamento' => ($simulation['modalidade'] ?? '') === 'debito' ? 'cartao_debito' : 'cartao_credito',
             'observacoes' => 'Despesa criada automaticamente na baixa da OS para registrar o custo líquido da operadora.',
             // Sem grupo/subgrupo a despesa ficava invisivel no DRE: o

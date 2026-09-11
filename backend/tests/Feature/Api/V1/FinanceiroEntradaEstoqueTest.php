@@ -182,6 +182,103 @@ class FinanceiroEntradaEstoqueTest extends TestCase
     }
 
     /**
+     * A peca que FICA no estoque e ativo, nao despesa: troca de caixa por
+     * mercadoria, fora do DRE ate ser aplicada numa OS (CPC 16 / Lei 6.404/76
+     * art. 187). A entrada registrada e a prova de que esse ativo existe.
+     */
+    public function test_compra_com_entrada_de_estoque_fica_fora_do_dre(): void
+    {
+        Sanctum::actingAs($this->createUserRecord(['grupo_id' => 1]), ['*']);
+
+        $peca = $this->createPecaRecord(['codigo' => 'PC-DRE-1', 'quantidade_atual' => 0]);
+
+        $this->postJson('/api/v1/financeiro', $this->payloadCompra([
+            ['peca_id' => $peca, 'quantidade' => 2, 'custo_unitario' => 100],
+        ]))->assertCreated();
+
+        $this->assertFalse((bool) Financeiro::query()->value('impacta_dre'));
+    }
+
+    /**
+     * Sem entrada de estoque nao existe ativo nenhum — a peca foi comprada e
+     * aplicada no mesmo periodo, entao o custo pertence a este mes. Era aqui
+     * que o dinheiro sumia: saia do caixa e nao aparecia em DRE nenhum.
+     */
+    public function test_compra_sem_entrada_de_estoque_entra_no_dre(): void
+    {
+        Sanctum::actingAs($this->createUserRecord(['grupo_id' => 1]), ['*']);
+
+        $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'pagar',
+            'categoria' => 'Compra de peças',
+            'descricao' => 'Tela comprada direto para a OS',
+            'valor' => 400.00,
+            'data_vencimento' => now()->toDateString(),
+        ])->assertCreated();
+
+        $lancamento = Financeiro::query()->first();
+
+        $this->assertTrue((bool) $lancamento->impacta_dre);
+        $this->assertSame('Custo Direto (OS)', $lancamento->grupo_dre);
+
+        // Chega ao relatorio pela linha que ja existia e vivia zerada.
+        $this->getJson('/api/v1/financeiro/relatorios/dre?mes=' . now()->format('Y-m'))
+            ->assertOk()
+            ->assertJsonPath('data.dre.gerencial.custos_variaveis.custos_diretos_os', 400.0);
+    }
+
+    /**
+     * A regra vale por lancamento, nao por categoria: a mesma "Compra de pecas"
+     * cai dos dois lados conforme haja ou nao entrada de estoque.
+     */
+    public function test_parcelada_com_entrada_marca_todas_as_parcelas_fora_do_dre(): void
+    {
+        Sanctum::actingAs($this->createUserRecord(['grupo_id' => 1]), ['*']);
+
+        $peca = $this->createPecaRecord(['codigo' => 'PC-DRE-2', 'quantidade_atual' => 0]);
+        $cartaoId = DB::table('financeiro_cartoes_credito')->insertGetId([
+            'nome' => 'Cartão da oficina',
+            'dia_fechamento' => 10,
+            'dia_vencimento' => 20,
+            'ativo' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->postJson('/api/v1/financeiro', $this->payloadCompra(
+            [['peca_id' => $peca, 'quantidade' => 4, 'custo_unitario' => 25]],
+            [
+                'valor' => 300.00,
+                'forma_pagamento' => 'cartao_credito',
+                'cartao_credito_id' => $cartaoId,
+                'data_compra' => now()->toDateString(),
+                'parcelas' => 3,
+            ]
+        ))->assertCreated();
+
+        $this->assertSame(3, Financeiro::query()->count());
+        $this->assertSame(0, Financeiro::query()->where('impacta_dre', true)->count());
+    }
+
+    /**
+     * A regra e um padrao, nao uma trava: quem manda `impacta_dre` explicito
+     * (integracao, importacao) continua no comando.
+     */
+    public function test_impacta_dre_explicito_vence_a_regra(): void
+    {
+        Sanctum::actingAs($this->createUserRecord(['grupo_id' => 1]), ['*']);
+
+        $peca = $this->createPecaRecord(['codigo' => 'PC-DRE-3', 'quantidade_atual' => 0]);
+
+        $this->postJson('/api/v1/financeiro', $this->payloadCompra(
+            [['peca_id' => $peca, 'quantidade' => 1, 'custo_unitario' => 50]],
+            ['impacta_dre' => true]
+        ))->assertCreated();
+
+        $this->assertTrue((bool) Financeiro::query()->value('impacta_dre'));
+    }
+
+    /**
      * Rollback A — o lancamento falha, nenhuma entrada sobra.
      */
     public function test_falha_ao_criar_lancamento_nao_deixa_entrada_gravada(): void
@@ -346,6 +443,45 @@ class FinanceiroEntradaEstoqueTest extends TestCase
             ->assertJsonPath('error.code', 'FINANCEIRO_DELETE_BLOCKED_ENTRADA_ESTOQUE');
 
         $this->assertSame(1, Financeiro::query()->count());
+    }
+
+    /**
+     * Backfill do historico (migration 2026_09_10_000005). Ela e chamada a mao
+     * porque `movimentacoes` e legada: nas migrations reais a tabela ainda nao
+     * existe e a guarda faz a migration sair cedo — o schema so nasce depois,
+     * em BuildsLegacyErpSchema.
+     */
+    public function test_backfill_reativa_o_dre_so_na_compra_sem_entrada(): void
+    {
+        $base = [
+            'tipo' => 'pagar',
+            'grupo_dre' => 'Custo Direto (OS)',
+            'categoria' => 'Compra de peças',
+            'valor' => 100.00,
+            'data_vencimento' => now()->toDateString(),
+            'impacta_dre' => false,
+            'impacta_fluxo_caixa' => true,
+        ];
+
+        $semEntrada = Financeiro::create($base + ['descricao' => 'Peça direto para a OS', 'status' => 'pendente']);
+        $comEntrada = Financeiro::create($base + ['descricao' => 'Peça para o estoque', 'status' => 'pendente']);
+        $cancelado = Financeiro::create($base + ['descricao' => 'Peça cancelada', 'status' => 'cancelado']);
+
+        $peca = $this->createPecaRecord(['codigo' => 'PC-BF-1', 'quantidade_atual' => 0]);
+
+        foreach ([[$comEntrada->id, 'entrada'], [$cancelado->id, 'entrada'], [$cancelado->id, 'saida']] as [$financeiroId, $tipo]) {
+            $this->createMovimentacaoRecord([
+                'peca_id' => $peca,
+                'financeiro_id' => $financeiroId,
+                'tipo' => $tipo,
+            ]);
+        }
+
+        (require database_path('migrations/2026_09_10_000005_backfill_impacta_dre_compra_pecas.php'))->up();
+
+        $this->assertTrue((bool) $semEntrada->fresh()->impacta_dre, 'Compra sem entrada tem de voltar ao DRE.');
+        $this->assertFalse((bool) $comEntrada->fresh()->impacta_dre, 'Compra que virou estoque continua fora do DRE.');
+        $this->assertFalse((bool) $cancelado->fresh()->impacta_dre, 'Cancelado nao entra em relatorio nenhum.');
     }
 
     /**

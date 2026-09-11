@@ -112,6 +112,42 @@ class StockController extends DesktopController
         ]);
     }
 
+    /**
+     * Pecas a comprar (specs/040).
+     *
+     * Consolida a falta de TODOS os orcamentos com reserva ativa. E onde o
+     * operador descobre o que precisa encomendar sem abrir orcamento por
+     * orcamento.
+     */
+    public function toBuy(): View
+    {
+        $lista = ['pecas' => [], 'total_itens' => 0];
+        $erro = null;
+
+        try {
+            $lista = $this->stockService->toBuy();
+        } catch (ApiAuthenticationException $exception) {
+            return view('estoque.a-comprar', [
+                'pageTitle' => 'Peças a comprar',
+                'parts' => [],
+                'totalItens' => 0,
+                'error' => $exception->getMessage(),
+            ]);
+        } catch (ApiRequestException $exception) {
+            $erro = $exception->getMessage();
+        } catch (Throwable $exception) {
+            report($exception);
+            $erro = 'Não foi possível carregar as peças a comprar agora.';
+        }
+
+        return view('estoque.a-comprar', [
+            'pageTitle' => 'Peças a comprar',
+            'parts' => $lista['pecas'],
+            'totalItens' => $lista['total_itens'],
+            'error' => $erro,
+        ]);
+    }
+
     public function create(): View
     {
         return view('estoque.form', [
@@ -321,7 +357,7 @@ class StockController extends DesktopController
 
     public function update(Request $request, int $part): RedirectResponse
     {
-        $payload = $this->validatedPartPayload($request);
+        $payload = $this->validatedPartPayload($request, false);
 
         try {
             $updated = $this->stockService->update($part, $payload);
@@ -655,7 +691,14 @@ class StockController extends DesktopController
     /**
      * @return array<string, mixed>
      */
-    private function validatedPartPayload(Request $request): array
+    /**
+     * @param bool $aceitaQuantidade specs/040: na EDICAO o saldo nao vai no
+     *        payload. A API recusa `quantidade_atual` no PATCH com 422 —
+     *        editar o cadastro nao pode reescrever saldo por cima de uma
+     *        reserva, e a regra antiga (`nullable` com `?? 0`) ainda zerava a
+     *        peca quando o campo vinha ausente.
+     */
+    private function validatedPartPayload(Request $request, bool $aceitaQuantidade = true): array
     {
         $request->replace($this->normalizeMoneyPayload(
             $request->all(),
@@ -695,7 +738,7 @@ class StockController extends DesktopController
             'unidade_tributavel' => ['nullable', 'string', 'max:6'],
         ]);
 
-        return [
+        $payload = [
             'codigo' => trim((string) ($validated['codigo'] ?? '')),
             'codigo_fabricante' => trim((string) ($validated['codigo_fabricante'] ?? '')),
             'nome' => trim((string) ($validated['nome'] ?? '')),
@@ -707,7 +750,6 @@ class StockController extends DesktopController
             'localizacao' => trim((string) ($validated['localizacao'] ?? '')),
             'preco_custo' => (float) ($validated['preco_custo'] ?? 0),
             'preco_venda' => (float) ($validated['preco_venda'] ?? 0),
-            'quantidade_atual' => round((float) ($validated['quantidade_atual'] ?? 0), 4),
             'estoque_minimo' => round((float) ($validated['estoque_minimo'] ?? 0), 4),
             'estoque_maximo' => round((float) ($validated['estoque_maximo'] ?? 0), 4),
             'status' => trim((string) ($validated['status'] ?? 'ativo')),
@@ -723,6 +765,14 @@ class StockController extends DesktopController
             'csosn' => trim((string) ($validated['csosn'] ?? '')),
             'unidade_tributavel' => trim((string) ($validated['unidade_tributavel'] ?? '')),
         ];
+
+        // Cadastro NOVO ainda aceita quantidade inicial (é a carga do estoque);
+        // edição, não — ver o docblock deste método.
+        if ($aceitaQuantidade) {
+            $payload['quantidade_atual'] = round((float) ($validated['quantidade_atual'] ?? 0), 4);
+        }
+
+        return $payload;
     }
 
     /**

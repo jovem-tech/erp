@@ -296,6 +296,11 @@ class Financeiro extends Model
         return $this->hasMany(FinanceiroMovimento::class, 'financeiro_id', 'id');
     }
 
+    public function anexos(): HasMany
+    {
+        return $this->hasMany(FinanceiroAnexo::class, 'financeiro_id', 'id')->latest('id');
+    }
+
     public function origemMovimento(): BelongsTo
     {
         return $this->belongsTo(FinanceiroMovimento::class, 'origem_id', 'id');

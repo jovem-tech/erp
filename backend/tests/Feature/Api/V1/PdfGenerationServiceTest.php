@@ -409,6 +409,54 @@ class PdfGenerationServiceTest extends TestCase
      * Espelha o seed da migration 2026_07_18_000011 (o sqlite dos testes não
      * roda as migrations do MySQL legado).
      */
+    public function test_long_table_leaves_the_heading_keep_group_so_it_can_split(): void
+    {
+        $renderer = app(PdfTemplateRenderer::class);
+        $descriptor = ['variables' => [], 'collections' => []];
+
+        $schemaCom = static fn (int $linhas): array => [
+            'pagina' => ['papel' => 'a4'],
+            'cabecalho' => [],
+            'corpo' => [
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Histórico do atendimento'],
+                [
+                    'tipo' => 'tabela',
+                    'colunas' => [['campo' => 'evento', 'rotulo' => 'Evento']],
+                    'linhas_estaticas' => array_fill(0, $linhas, ['Status alterado']),
+                ],
+            ],
+            'rodape' => [],
+        ];
+
+        // Tabela curta viaja dentro do grupo, colada ao cabeçalho — assim o
+        // cabeçalho nunca fica sozinho no pé da página.
+        $curta = $this->semQuebras($renderer->render($schemaCom(3), [], $descriptor));
+        $this->assertStringContainsString(
+            '<div class="pdfe-keep"><div class="pdfe-secao" style="text-align: left;">Histórico do atendimento</div><table class="pdfe-tabela pdfe-keep">',
+            $curta
+        );
+
+        // Tabela longa sai do grupo: o grupo fecha logo depois do cabeçalho e
+        // ela vem solta atrás. Dentro do grupo, o page-break-inside:avoid do
+        // .pdfe-keep anulava a decisão do renderTable de deixá-la quebrar, e a
+        // tabela inteira era empurrada para a página seguinte — meia página em
+        // branco antes dela.
+        $longa = $this->semQuebras($renderer->render($schemaCom(20), [], $descriptor));
+        $this->assertStringContainsString(
+            'Histórico do atendimento</div></div><table class="pdfe-tabela">',
+            $longa
+        );
+        $this->assertStringNotContainsString('pdfe-tabela pdfe-keep', $longa);
+    }
+
+    /**
+     * Compara markup sem depender da indentação do Blade.
+     */
+    private function semQuebras(string $html): string
+    {
+        return (string) preg_replace('/>\s+</', '><', $html);
+    }
+
     private function seedPdfEngineTemplates(): void
     {
         $now = now();

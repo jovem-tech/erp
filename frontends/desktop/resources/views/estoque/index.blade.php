@@ -62,6 +62,16 @@
                 </a>
             @endif
 
+            {{--
+                Peças a comprar (specs/040). Onde o operador está quando pensa
+                "o que preciso encomendar?" é esta tela — o dado nasce da
+                reserva do orçamento, mas a pergunta é de estoque.
+            --}}
+            <a href="{{ route('estoque.a-comprar') }}" class="btn btn-outline-primary">
+                <i class="bi bi-cart-plus me-2"></i>
+                Peças a comprar
+            </a>
+
             <x-list-actions label="Mais ações" size="" :favoritable="true">
                 <li>
                     <a href="{{ route('estoque.help') }}" class="dropdown-item">
@@ -204,6 +214,8 @@
                         <th>Custo</th>
                         <th>Venda</th>
                         <th>Qtd.</th>
+                        <th>Reservado</th>
+                        <th>Disponível</th>
                         <th>Mín.</th>
                         <th>Status</th>
                         <th class="text-end">Ações</th>
@@ -223,6 +235,8 @@
                                 'preco_custo' => 0,
                                 'preco_venda' => 0,
                                 'quantidade_atual' => 0,
+                                'quantidade_reservada' => 0,
+                                'quantidade_disponivel' => 0,
                                 'estoque_minimo' => 0,
                                 'status' => 'ativo',
                                 'ativo' => true,
@@ -247,6 +261,21 @@
                             <td data-label="Custo">R$ {{ number_format((float) ($part['preco_custo'] ?? 0), 2, ',', '.') }}</td>
                             <td data-label="Venda">R$ {{ number_format((float) ($part['preco_venda'] ?? 0), 2, ',', '.') }}</td>
                             <td data-label="Qtd.">{{ $qtd($part['quantidade_atual'] ?? 0) }}</td>
+                            {{-- specs/040: Reservado é o que já está prometido a
+                                 algum orçamento enviado ao cliente; Disponível é
+                                 o que sobra de verdade para vender ou aplicar. --}}
+                            <td data-label="Reservado">
+                                @if ((float) ($part['quantidade_reservada'] ?? 0) > 0)
+                                    <span class="badge text-bg-secondary">{{ $qtd($part['quantidade_reservada']) }}</span>
+                                @else
+                                    -
+                                @endif
+                            </td>
+                            <td data-label="Disponível">
+                                <span @class(['fw-semibold', 'text-danger' => (float) ($part['quantidade_disponivel'] ?? 0) <= 0])>
+                                    {{ $qtd($part['quantidade_disponivel'] ?? 0) }}
+                                </span>
+                            </td>
                             <td data-label="Mín.">{{ $qtd($part['estoque_minimo'] ?? 0) }}</td>
                             <td data-label="Status">
                                 @include('layouts.partials.status-pill', [

@@ -7,6 +7,7 @@ use App\Models\FinanceiroMovimento;
 use App\Models\FinanceiroCartaoCredito;
 use App\Models\FinanceiroMovimentoCartao;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
 use Tests\Concerns\BuildsLegacyErpSchema;
@@ -1063,6 +1064,11 @@ class FinanceiroReportTest extends TestCase
 
     public function test_taxa_de_cartao_nao_aparece_na_entrada_projetada(): void
     {
+        // Relogio travado numa quinta-feira: D+30 cai em sabado (10/10/2026) e
+        // a operadora so' credita na segunda (12/10). Sem travar, o resultado
+        // dependeria do dia em que a suite roda.
+        Carbon::setTestNow(Carbon::parse('2026-09-10 09:00:00'));
+
         $admin = $this->createUserRecord(['grupo_id' => 1]);
         $clienteId = $this->createClientRecord();
         Sanctum::actingAs($admin, ['*']);
@@ -1108,7 +1114,7 @@ class FinanceiroReportTest extends TestCase
             'parcelas' => 1,
         ])->assertOk();
 
-        $dataRepasse = now()->copy()->addDays(30);
+        $dataRepasse = Carbon::parse('2026-10-12');
 
         $response = $this->getJson('/api/v1/financeiro/relatorios/fluxo-caixa?mes=' . $dataRepasse->format('Y-m'));
         $response->assertOk();
@@ -1287,6 +1293,10 @@ class FinanceiroReportTest extends TestCase
 
     public function test_saldo_liquido_reconhece_o_valor_liquido_no_dia_do_pouso_nao_no_dia_da_venda(): void
     {
+        // Mesmo motivo do teste da entrada projetada: D+30 de 10/09/2026 cai
+        // num sabado e rola para segunda 12/10.
+        Carbon::setTestNow(Carbon::parse('2026-09-10 09:00:00'));
+
         $admin = $this->createUserRecord(['grupo_id' => 1]);
         $clienteId = $this->createClientRecord();
         Sanctum::actingAs($admin, ['*']);
@@ -1331,7 +1341,7 @@ class FinanceiroReportTest extends TestCase
             'parcelas' => 1,
         ])->assertOk();
 
-        $dataRepasse = now()->copy()->addDays(30);
+        $dataRepasse = Carbon::parse('2026-10-12');
 
         // No mês da venda: entradas_realizadas/saldo_realizado continuam
         // brutos (inalterados), mas saldo_liquido NÃO se move — nada pousou
@@ -1690,5 +1700,64 @@ class FinanceiroReportTest extends TestCase
         $response->assertJsonPath('data.dre.gerencial.disponivel', false);
         $this->assertNotEmpty($response->json('data.dre.gerencial.motivo'));
         $this->assertNull($response->json('data.dre.gerencial.margem_contribuicao'));
+    }
+
+    /**
+     * `despesas_variaveis` conta so "Despesas Operacionais" e e lida pelo mobile
+     * — o significado dela nao muda. A peca comprada mora em "Custo Direto (OS)",
+     * outro grupo, e por isso nao aparecia em cartao nenhum apesar de constar na
+     * demonstracao contabil logo abaixo, na mesma tela.
+     */
+    public function test_dre_caixa_soma_custo_direto_no_total_de_variaveis(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $taxa = Financeiro::create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'avulso' => true,
+            'categoria' => 'Impostos e taxas',
+            'descricao' => 'Taxa sobre venda',
+            'valor' => 60,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now(),
+            'data_competencia' => now(),
+            'grupo_dre' => 'Despesas Operacionais',
+            'subgrupo_dre' => 'Taxas e impostos',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+            'dre_fixo_mensal' => false,
+        ]);
+
+        $peca = Financeiro::create([
+            'tipo' => Financeiro::TIPO_PAGAR,
+            'avulso' => true,
+            'categoria' => 'Compra de peças',
+            'descricao' => 'Tela comprada direto para a OS',
+            'valor' => 400,
+            'status' => Financeiro::STATUS_PAGO,
+            'data_vencimento' => now(),
+            'data_competencia' => now(),
+            'grupo_dre' => 'Custo Direto (OS)',
+            'subgrupo_dre' => 'Compra emergencial de peças',
+            'impacta_dre' => true,
+            'impacta_fluxo_caixa' => true,
+            'dre_fixo_mensal' => false,
+        ]);
+
+        foreach ([$taxa->id => 60, $peca->id => 400] as $financeiroId => $valor) {
+            FinanceiroMovimento::create([
+                'financeiro_id' => $financeiroId,
+                'tipo_movimento' => FinanceiroMovimento::TIPO_SAIDA,
+                'data_movimento' => now(),
+                'valor_movimento' => $valor,
+            ]);
+        }
+
+        $response = $this->getJson('/api/v1/financeiro/relatorios/dre-caixa?mes=' . now()->format('Y-m'))->assertOk();
+
+        $response->assertJsonPath('data.dre.gerencial.despesas_variaveis', 60.0)
+            ->assertJsonPath('data.dre.gerencial.custos_diretos_os', 400.0)
+            ->assertJsonPath('data.dre.gerencial.custos_variaveis_total', 460.0);
     }
 }

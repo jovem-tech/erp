@@ -402,6 +402,136 @@ class FinanceiroTest extends TestCase
         $this->assertSame(1, Financeiro::query()->where('descricao', 'Peça avulsa não deve repetir')->count());
     }
 
+    public function test_compra_de_pecas_nao_pode_ser_marcada_como_despesa_fixa(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $response = $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'pagar',
+            'categoria' => 'Compra de peças',
+            'descricao' => 'Peça marcada como fixa por engano',
+            'valor' => 80.00,
+            'data_vencimento' => now()->toDateString(),
+            'dre_fixo_mensal' => true,
+        ]);
+
+        $response->assertStatus(422)->assertJsonPath('error.code', 'FINANCEIRO_SAVE_FAILED');
+        $this->assertSame(0, Financeiro::query()->where('descricao', 'Peça marcada como fixa por engano')->count());
+    }
+
+    /**
+     * A trava tem de valer pelo PADRAO da categoria, nunca pelo nome.
+     *
+     * O banco de producao herdou do ERP legado os nomes sem acento — la a
+     * categoria e "Compra de pecas", nao "Compra de peças". A primeira versao
+     * desta regra comparava o nome e por isso nao disparava exatamente onde
+     * precisava: dava pra marcar despesa fixa, e com ela vinha o "repetir nos
+     * proximos 12 meses", que geraria 11 compras de peca fantasmas.
+     */
+    public function test_trava_de_despesa_fixa_vale_para_categoria_de_peca_sem_acento(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $grupoId = (int) DB::table('financeiro_dre_grupos')->where('nome', 'Custo Direto (OS)')->value('id');
+
+        DB::table('financeiro_categorias')->insert([
+            'nome' => 'Compra de pecas',
+            'tipo' => 'pagar',
+            'dre_grupo_id' => $grupoId,
+            'impacta_dre_padrao' => true,
+            'impacta_fluxo_caixa_padrao' => true,
+            'dre_fixo_mensal_padrao' => false,
+            'ativo' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'pagar',
+            'categoria' => 'Compra de pecas',
+            'descricao' => 'Display marcado como fixo por engano',
+            'valor' => 250.00,
+            'data_vencimento' => now()->toDateString(),
+            'dre_fixo_mensal' => true,
+        ])->assertStatus(422)->assertJsonPath('error.code', 'FINANCEIRO_SAVE_FAILED');
+
+        $this->assertSame(0, Financeiro::query()->where('descricao', 'Display marcado como fixo por engano')->count());
+    }
+
+    /**
+     * A regra generaliza pra qualquer categoria variável, não só "Compra de
+     * peças" — e o critério é o PADRÃO, não o grupo DRE. "Devolução de venda"
+     * divide "Despesas Operacionais" com categorias que SÃO fixas por padrão
+     * (Aluguel, Energia...); se o critério fosse grupo, não daria pra separar
+     * as duas. Uma devolução só existe quando uma venda é desfeita — nunca é
+     * um custo recorrente independente de vender algo.
+     */
+    public function test_categoria_variavel_generica_nao_pode_ser_marcada_como_fixa(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        // "Devolução de venda" já vem do seed com dre_fixo_mensal_padrao=false
+        // e grupo "Despesas Operacionais" (specs/029, mesma migration que
+        // cadastra a categoria).
+        $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'pagar',
+            'categoria' => 'Devolução de venda',
+            'descricao' => 'Devolução marcada como fixa por engano',
+            'valor' => 30.00,
+            'data_vencimento' => now()->toDateString(),
+            'dre_fixo_mensal' => true,
+        ])->assertStatus(422)->assertJsonPath('error.code', 'FINANCEIRO_SAVE_FAILED');
+
+        $this->assertSame(0, Financeiro::query()->where('descricao', 'Devolução marcada como fixa por engano')->count());
+    }
+
+    /**
+     * Categoria fora do catálogo (recém-digitada, sem padrão gravado) também
+     * bloqueia: sem `dre_fixo_mensal_padrao` para confirmar, o sistema não tem
+     * como saber que ela "já é fixa por padrão" — mesma regra que já se aplica
+     * à classificação em si (`?? false`), agora aplicada à trava.
+     */
+    public function test_categoria_nova_fora_do_catalogo_tambem_bloqueia_fixa(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'pagar',
+            'categoria' => 'Categoria Digitada Na Hora',
+            'descricao' => 'Categoria nova marcada como fixa',
+            'valor' => 45.00,
+            'data_vencimento' => now()->toDateString(),
+            'dre_fixo_mensal' => true,
+        ])->assertStatus(422)->assertJsonPath('error.code', 'FINANCEIRO_SAVE_FAILED');
+    }
+
+    /**
+     * A trava não pode bloquear o caso legítimo: categoria que já É fixa por
+     * padrão continua podendo ser confirmada como fixa manualmente (ainda que
+     * redundante, não é erro).
+     */
+    public function test_categoria_fixa_por_padrao_aceita_override_para_fixa(): void
+    {
+        $admin = $this->createUserRecord(['grupo_id' => 1]);
+        Sanctum::actingAs($admin, ['*']);
+
+        // "Aluguel" já vem do seed com dre_fixo_mensal_padrao=true.
+        $response = $this->postJson('/api/v1/financeiro', [
+            'tipo' => 'pagar',
+            'categoria' => 'Aluguel',
+            'descricao' => 'Aluguel confirmado como fixo',
+            'valor' => 1200.00,
+            'data_vencimento' => now()->toDateString(),
+            'dre_fixo_mensal' => true,
+        ])->assertCreated();
+
+        $response->assertJsonPath('data.lancamento.dre_fixo_mensal', true);
+    }
+
     public function test_repetir_proximos_meses_ignorado_para_tipo_receber(): void
     {
         $admin = $this->createUserRecord(['grupo_id' => 1]);

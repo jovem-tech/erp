@@ -24,6 +24,7 @@ class DomainFileLinkReconciliationService
         FileCategory::EquipmentPhoto->value,
         FileCategory::OrderPhoto->value,
         FileCategory::OrderPdf->value,
+        FileCategory::FinanceiroAnexo->value,
     ];
 
     public function __construct(
@@ -72,6 +73,7 @@ class DomainFileLinkReconciliationService
         $this->collectOrderPhotoProposals($fileIndex, $proposals, $counters, $limit);
         $this->collectOrderDocumentFileProposals($fileIndex, $proposals, $counters, $limit);
         $this->collectOrderDocumentProposals($fileIndex, $proposals, $counters, $limit);
+        $this->collectFinanceiroAnexoProposals($fileIndex, $proposals, $counters, $limit);
 
         foreach ($proposals as $fileId => $fileProposals) {
             /** @var ManagedFile|null $file */
@@ -251,6 +253,36 @@ class DomainFileLinkReconciliationService
                 (int) $row->os_id,
                 'document:'.(int) $row->id,
                 'os_documentos',
+                (int) $row->id,
+                $row->created_at ?? null
+            );
+        }
+    }
+
+    /** @param array<string, int> $fileIndex @param array<int, array<string, array<string, mixed>>> $proposals @param array<string, int> $counters */
+    private function collectFinanceiroAnexoProposals(array $fileIndex, array &$proposals, array &$counters, int $limit): void
+    {
+        if (! $this->hasSource('financeiro_anexos', ['id', 'financeiro_id', 'arquivo'])) {
+            return;
+        }
+
+        $rows = DB::table('financeiro_anexos')
+            ->orderBy('id')
+            ->limit($limit)
+            ->get(['id', 'financeiro_id', 'arquivo', 'created_at']);
+
+        foreach ($rows as $row) {
+            $normalized = $this->normalizeSourcePath((string) $row->arquivo);
+            $this->propose(
+                $fileIndex,
+                $proposals,
+                $counters,
+                FileCategory::FinanceiroAnexo->value,
+                $normalized === null ? [] : [['disk' => 'local', 'path' => $normalized]],
+                'financeiro',
+                (int) $row->financeiro_id,
+                'anexo:'.(int) $row->id,
+                'financeiro_anexos',
                 (int) $row->id,
                 $row->created_at ?? null
             );

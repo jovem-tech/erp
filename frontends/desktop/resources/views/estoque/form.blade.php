@@ -183,8 +183,18 @@
             <div class="desktop-grid-span-2 desktop-grid desktop-grid-three">
                 <div>
                     <label for="quantidade_atual">Quantidade atual</label>
-                    <input type="number" id="quantidade_atual" name="quantidade_atual" class="form-control @error('quantidade_atual') is-invalid @enderror" value="{{ old('quantidade_atual', $part['quantidade_atual']) }}" min="0" step="any">
+                    {{-- specs/040: na edição o saldo é somente leitura. Editar o
+                         cadastro não pode reescrever estoque por cima de uma
+                         reserva, e a API recusa `quantidade_atual` no PATCH.
+                         O caminho certo é a movimentação, que passa pelo motor
+                         único (com lock e conferência de disponível). --}}
+                    <input type="number" id="quantidade_atual" name="quantidade_atual" class="form-control @error('quantidade_atual') is-invalid @enderror" value="{{ old('quantidade_atual', $part['quantidade_atual']) }}" min="0" step="any" @if ($isEdit) readonly @endif>
                     @error('quantidade_atual')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                    @if ($isEdit)
+                        <small class="text-muted d-block mt-1">
+                            Ajuste o saldo por <a href="{{ route('estoque.movements', $part['id']) }}">movimentação de estoque</a>.
+                        </small>
+                    @endif
                 </div>
 
                 <div>

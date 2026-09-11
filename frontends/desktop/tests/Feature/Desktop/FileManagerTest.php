@@ -103,6 +103,39 @@ class FileManagerTest extends TestCase
             && str_contains($request->url(), 'category=company_logo'));
     }
 
+    public function test_financeiro_anexo_category_card_appears_once_a_file_is_catalogued(): void
+    {
+        Http::fake([
+            '*/api/v1/file-manager/dashboard*' => Http::response($this->success([
+                'totals' => [
+                    'files' => 1, 'bytes' => 2048, 'quarantined' => 0, 'trashed' => 0,
+                    'integrity_issues' => 0, 'open_findings' => 0,
+                ],
+                'by_category' => [[
+                    'category' => 'financeiro_anexo',
+                    'file_count' => 1,
+                    'total_bytes' => 2048,
+                ]],
+                'operation' => [
+                    'mode' => 'shadow', 'enabled_categories' => ['financeiro_anexo'], 'observing' => true,
+                    'cataloging_new_files' => true, 'central_writes_enabled' => false, 'scanner_enabled' => false,
+                ],
+                'state_mutations_enabled' => false,
+                'last_scan_run' => null,
+            ])),
+            '*/api/v1/files*' => Http::response($this->success([], ['pagination' => [
+                'current_page' => 1, 'per_page' => 25, 'total' => 0, 'last_page' => 1,
+            ]])),
+            '*/api/v1/file-manager/findings*' => Http::response($this->success([])),
+        ]);
+
+        $this->withSession($this->desktopSession())
+            ->get('/arquivos')
+            ->assertOk()
+            ->assertSee('Anexos financeiros')
+            ->assertSee('bi-cash-coin', false);
+    }
+
     public function test_invalid_step_up_returns_inline_safe_error_without_logging_out_or_flashing_password(): void
     {
         Http::fake([

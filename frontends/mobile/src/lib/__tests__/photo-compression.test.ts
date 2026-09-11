@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { pickQualityForSize } from '@/lib/photo-compression';
+import { describe, expect, it, vi } from 'vitest';
+import { compressImageFile, pickQualityForSize } from '@/lib/photo-compression';
 
 describe('pickQualityForSize', () => {
   const maxBytes = 2 * 1024 * 1024;
@@ -21,5 +21,16 @@ describe('pickQualityForSize', () => {
 
   it('aceita um tamanho exatamente igual ao limite', () => {
     expect(pickQualityForSize([maxBytes], maxBytes)).toBe(0);
+  });
+
+  it('preserva HEIC quando o navegador não consegue decodificar a prévia', async () => {
+    vi.stubGlobal('createImageBitmap', vi.fn().mockRejectedValue(new Error('unsupported')));
+    const file = new File(['heic'], 'IMG_0042.HEIC', { type: 'image/heic' });
+
+    try {
+      await expect(compressImageFile(file)).resolves.toBe(file);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

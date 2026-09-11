@@ -6,6 +6,7 @@ use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiAuthorizationException;
 use App\Exceptions\ApiRequestException;
 use App\Services\ClientService;
+use App\Services\FinanceiroAnexoService;
 use App\Services\FinanceiroService;
 use App\Services\OrderService;
 use App\Services\StockService;
@@ -21,6 +22,7 @@ class FinanceiroController extends DesktopController
 {
     public function __construct(
         private readonly FinanceiroService $financeiroService,
+        private readonly FinanceiroAnexoService $financeiroAnexoService,
         private readonly ClientService $clientService,
         private readonly OrderService $orderService,
         private readonly SupplierService $supplierService,
@@ -496,9 +498,19 @@ class FinanceiroController extends DesktopController
     public function store(Request $request): RedirectResponse
     {
         $payload = $this->validatedPayload($request);
+        $this->recusarUploadQuebrado($request, 'anexo');
+
+        $anexoValidado = $request->validate([
+            'anexo' => ['nullable', 'file', 'max:20480', 'mimes:pdf,jpg,jpeg,png,webp'],
+            'anexo_descricao' => ['nullable', 'string', 'max:190'],
+        ], [
+            'anexo.mimes' => 'O anexo precisa ser um PDF ou uma foto (jpg, png ou webp).',
+        ], ['anexo' => 'anexo', 'anexo_descricao' => 'descrição do anexo']);
+
+        $lancamento = [];
 
         try {
-            $this->financeiroService->create($payload);
+            $lancamento = $this->financeiroService->create($payload);
         } catch (ApiAuthenticationException $exception) {
             return redirect()->route('login')->with('error', $exception->getMessage());
         } catch (ApiAuthorizationException $exception) {
@@ -524,6 +536,23 @@ class FinanceiroController extends DesktopController
         $mensagem = $payload['repetir_proximos_meses'] ?? false
             ? 'Lançamento criado com sucesso, com mais 11 lançamentos futuros gerados (um por mês, pendentes).'
             : 'Lançamento criado com sucesso.';
+
+        // O anexo é opcional e vem DEPOIS do lançamento já existir (o
+        // upload precisa do id real) — se ele falhar, o registro criado não
+        // pode se perder por causa disso; só avisa que faltou anexar.
+        if ($request->hasFile('anexo')) {
+            $novoId = (int) ($lancamento['id'] ?? 0);
+
+            if ($novoId > 0) {
+                try {
+                    $this->financeiroAnexoService->anexar($novoId, $request->file('anexo'), $anexoValidado['anexo_descricao'] ?? null);
+                    $mensagem .= ' Anexo salvo.';
+                } catch (Throwable $exception) {
+                    report($exception);
+                    $mensagem .= ' O lançamento foi criado, mas o anexo não pôde ser salvo — anexe novamente pela listagem.';
+                }
+            }
+        }
 
         return redirect()
             ->to($this->successTarget($request, null))
@@ -940,5 +969,29 @@ class FinanceiroController extends DesktopController
         }
 
         return $errors;
+    }
+
+    /**
+     * Distingue "nenhum arquivo escolhido" de "o upload chegou e falhou no
+     * servidor" (tmp indisponível, limite do pool, disco cheio) — sem isso o
+     * Laravel trata os dois casos como arquivo ausente e a mensagem de erro
+     * engana o operador. Mesma guarda de DocumentoFiscalController/FinanceiroAnexoController.
+     */
+    private function recusarUploadQuebrado(Request $request, string $campo): void
+    {
+        $arquivo = $request->file($campo);
+
+        if ($arquivo === null || $arquivo->isValid()) {
+            return;
+        }
+
+        throw ValidationException::withMessages([
+            $campo => sprintf(
+                'O arquivo chegou ao servidor, mas o envio falhou: %s (código %d). '
+                .'Não é problema do arquivo — é configuração do servidor.',
+                $arquivo->getErrorMessage(),
+                $arquivo->getError()
+            ),
+        ]);
     }
 }

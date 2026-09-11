@@ -21,15 +21,16 @@ use App\Services\Channels\Whatsapp\WhatsappMessagingService;
 use App\Services\Files\LegacyCompatibleFileAdapter;
 use App\Services\Orders\OrderClosureService;
 use App\Services\Pdf\PdfDefaultTemplates;
+use App\Services\Photos\OperationalPhotoInspector;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Mockery\MockInterface;
@@ -1924,7 +1925,7 @@ class OrderFlowTest extends TestCase
     {
         $this->mock(MobileInboxChannel::class, function (MockInterface $mock): void {
             $mock->shouldReceive('send')
-                ->andThrow(new \RuntimeException('Falha simulada no canal de notificações.'));
+                ->andThrow(new RuntimeException('Falha simulada no canal de notificações.'));
         });
 
         [$manager, $technician, $clientId, $equipmentId] = $this->seedManagerCreateContext();
@@ -2005,10 +2006,15 @@ class OrderFlowTest extends TestCase
 
         config()->set('file-manager.mode', 'off');
 
+        $storedMime = OperationalPhotoInspector::detectMimeType(
+            Storage::disk('local')->path((string) $photo->arquivo)
+        );
+        $this->assertContains($storedMime, ['image/jpeg', 'image/png', 'image/webp', 'image/avif']);
+
         $this->withHeader('Authorization', 'Bearer '.$token)
             ->get("/api/v1/orders/{$orderId}/photos/{$photo->id}")
             ->assertOk()
-            ->assertHeader('Content-Type', 'image/jpeg');
+            ->assertHeader('Content-Type', $storedMime);
     }
 
     public function test_admin_create_order_generates_opening_pdf_and_document_route_serves_private_file(): void
@@ -3081,7 +3087,7 @@ class OrderFlowTest extends TestCase
         $token = $this->loginAndGetToken($manager->email);
 
         $this->mock(WhatsappMessagingService::class, function ($mock): void {
-            $mock->shouldReceive('sendSystemMessage')->andThrow(new \RuntimeException('Falha simulada de integração.'));
+            $mock->shouldReceive('sendSystemMessage')->andThrow(new RuntimeException('Falha simulada de integração.'));
         });
 
         $response = $this->withHeader('Authorization', 'Bearer '.$token)
@@ -3152,6 +3158,63 @@ class OrderFlowTest extends TestCase
             'origem_tipo' => 'os_recebimento_cartao',
             'origem_id' => $movimento->id,
         ]);
+    }
+
+    /**
+     * Cenario real de producao: OS entregue e paga no sabado 29/08/2026, com a
+     * baixa so' digitada na segunda 31/08 e operadora que credita em D+1.
+     *
+     * O repasse (e a taxa, que e' datada por ele) sairam em 01/09 — 31/08 (dia
+     * da digitacao) + 1 — em vez de 31/08, que e' 29/08 + 1 rolado do domingo
+     * para o proximo dia util. Alem de errar a previsao de caixa, isso jogava a
+     * taxa para setembro enquanto a receita bruta ficava em agosto.
+     */
+    public function test_close_anchors_card_transfer_on_payment_date_and_next_business_day(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-08-31 09:00:00'));
+
+        [$manager, $orderId] = $this->seedManagerOrderForUpdate();
+        DB::table('os')->where('id', $orderId)->update(['valor_final' => 200.00]);
+        $card = $this->seedCardRate([
+            'operadora' => ['prazo_padrao_dias' => 1],
+            'taxa' => ['prazo_recebimento_dias' => 1],
+        ]);
+        $token = $this->loginAndGetToken($manager->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson("/api/v1/orders/{$orderId}/closure", [
+                'encerrar_como' => 'entregue_reparado_pago',
+                'data_entrega' => '2026-08-29',
+                'recebimentos' => [
+                    [
+                        'valor' => 200.00,
+                        'forma_pagamento' => 'cartao_credito',
+                        'operadora_id' => $card['operadora_id'],
+                        'modalidade' => 'credito',
+                        'parcelas' => 1,
+                    ],
+                ],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.order.status', 'entregue_reparado_pago');
+
+        $titulo = DB::table('financeiro')->where('os_id', $orderId)->where('tipo', 'receber')->first();
+        $movimento = DB::table('financeiro_movimentos')->where('financeiro_id', $titulo->id)->first();
+        $cartao = DB::table('financeiro_movimentos_cartao')->where('movimento_id', $movimento->id)->first();
+        $taxa = DB::table('financeiro')->where('os_id', $orderId)->where('tipo', 'pagar')->first();
+
+        // O cliente pagou no dia da entrega, nao no dia da baixa.
+        $this->assertSame('2026-08-29', Carbon::parse($movimento->data_movimento)->toDateString());
+        $this->assertSame('2026-08-29', Carbon::parse($cartao->data_competencia)->toDateString());
+
+        // D+1 de sabado cai no domingo: a operadora so' credita na segunda.
+        $this->assertSame('2026-08-31', Carbon::parse($cartao->data_prevista_repasse)->toDateString());
+        $this->assertSame('2026-08-31', Carbon::parse($cartao->data_prevista_recebimento)->toDateString());
+
+        // A taxa acompanha o repasse no caixa e a venda na competencia.
+        $this->assertSame('2026-08-31', Carbon::parse($taxa->data_vencimento)->toDateString());
+        $this->assertSame('2026-08-31', Carbon::parse($taxa->data_pagamento)->toDateString());
+        $this->assertSame('2026-08-29', Carbon::parse($taxa->data_competencia)->toDateString());
     }
 
     public function test_close_rejects_card_payment_without_matching_rate(): void

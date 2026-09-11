@@ -48,6 +48,16 @@ class BudgetCommercialTermsAssetsTest extends TestCase
             ['data-budget-pix-key'],
             // Destino na revisão final.
             ['data-budget-review-terms'],
+            // Checklist de conferência da revisão final: sem estes marcadores o
+            // gate de salvamento some da tela ou o JS deixa de encontrá-lo.
+            ['data-budget-review-section'],
+            ['data-budget-review-verify'],
+            ['data-budget-review-edit'],
+            ['data-budget-review-checklist-warning'],
+            ['data-budget-review-checklist-progress'],
+            ['data-budget-review-checklist-message'],
+            ['data-budget-review-meter'],
+            ['data-budget-review-meter-fill'],
         ];
     }
 

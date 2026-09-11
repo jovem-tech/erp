@@ -15,6 +15,125 @@ use Tests\TestCase;
  */
 class EstoqueTest extends TestCase
 {
+    /**
+     * @param array<int, array<string, mixed>> $pecas
+     */
+    private function fakeToBuy(array $pecas): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/estoque/a-comprar' => Http::response([
+                'status' => 'success',
+                'data' => ['pecas' => $pecas, 'total_itens' => count($pecas)],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+    }
+
+    /**
+     * specs/040 — a tela que responde "o que preciso encomendar?".
+     */
+    public function test_pecas_a_comprar_lista_a_falta_e_quem_segura_a_peca(): void
+    {
+        $this->fakeToBuy([[
+            'peca_id' => 7,
+            'codigo' => 'PC-FALTA',
+            'nome' => 'Tela LCD',
+            'unidade' => 'UN',
+            'fornecedor' => 'Distribuidora X',
+            'preco_custo' => 90.0,
+            'quantidade_atual' => 1.0,
+            'reservado' => 4.0,
+            'falta' => 3.0,
+            'custo_estimado' => 270.0,
+            'orcamentos' => [
+                ['orcamento_id' => 11, 'numero' => 'ORC-0011', 'status' => 'aguardando_resposta', 'os_id' => null, 'cliente' => 'Maria Souza', 'quantidade' => 3.0, 'expira_em' => null],
+            ],
+        ]]);
+
+        $this
+            ->withSession($this->desktopSession(['estoque' => ['visualizar']]))
+            ->get('/estoque/a-comprar')
+            ->assertOk()
+            ->assertSee('Tela LCD')
+            ->assertSee('PC-FALTA')
+            ->assertSee('Distribuidora X')
+            // Falta e custo estimado são o que decide a compra.
+            ->assertSee('270,00')
+            // Drill-down: de quem é a promessa travada.
+            ->assertSee('ORC-0011')
+            ->assertSee('Maria Souza');
+    }
+
+    public function test_pecas_a_comprar_sem_pendencia_diz_que_esta_tudo_coberto(): void
+    {
+        $this->fakeToBuy([]);
+
+        $this
+            ->withSession($this->desktopSession(['estoque' => ['visualizar']]))
+            ->get('/estoque/a-comprar')
+            ->assertOk()
+            ->assertSee('Nenhuma peça em falta');
+    }
+
+    public function test_pecas_a_comprar_exige_permissao_de_estoque(): void
+    {
+        $this
+            ->withSession($this->desktopSession(['os' => ['visualizar']]))
+            ->get('/estoque/a-comprar')
+            ->assertRedirect();
+    }
+
+    /**
+     * specs/040 — o seletor de peca do orcamento passou de catalogo estatico de
+     * 80 itens (que descartava o saldo) para busca remota com disponibilidade.
+     */
+    public function test_busca_remota_de_peca_do_orcamento_devolve_disponibilidade(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/estoque*' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'pecas' => [[
+                        'id' => 9,
+                        'codigo' => 'PC-TELA',
+                        'nome' => 'Tela LCD',
+                        'unidade' => 'UN',
+                        'preco_custo' => 90.0,
+                        'preco_venda' => 190.0,
+                        'quantidade_atual' => 5.0,
+                        'quantidade_reservada' => 4.0,
+                        'quantidade_disponivel' => 1.0,
+                    ]],
+                ],
+                'error' => null,
+                'meta' => ['pagination' => ['current_page' => 1, 'per_page' => 10, 'total' => 1, 'last_page' => 1, 'from' => 1, 'to' => 1]],
+            ], 200),
+        ]);
+
+        $this
+            ->withSession($this->desktopSession(['orcamentos' => ['criar']]))
+            ->getJson('/orcamentos/pecas/buscar?q=tela')
+            ->assertOk()
+            ->assertJsonPath('results.0.id', 9)
+            ->assertJsonPath('results.0.text', 'PC-TELA — Tela LCD')
+            ->assertJsonPath('results.0.saldo', 5)
+            // O par que decide o badge: 4 já prometidas, sobra 1.
+            ->assertJsonPath('results.0.reservado', 4)
+            ->assertJsonPath('results.0.disponivel', 1)
+            ->assertJsonPath('pagination.more', false);
+    }
+
+    public function test_busca_remota_de_peca_exige_permissao_de_orcamento(): void
+    {
+        $this
+            ->withSession($this->desktopSession(['os' => ['visualizar']]))
+            ->get('/orcamentos/pecas/buscar?q=tela')
+            ->assertRedirect();
+    }
+
     public function test_listagem_exibe_quantidade_fracionada_sem_truncar(): void
     {
         Http::fake([

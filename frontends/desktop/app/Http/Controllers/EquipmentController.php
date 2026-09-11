@@ -654,7 +654,7 @@ class EquipmentController extends DesktopController
             'fotos' => $isUpdate || $pendingRegistration
                 ? ['nullable', 'array', 'max:4']
                 : ['required', 'array', 'min:1', 'max:4'],
-            'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'fotos.*' => ['file', 'max:20480'],
         ], [
             'marca_id.required' => 'Selecione uma marca para o equipamento.',
             'modelo_id.required' => 'Selecione um modelo para o equipamento.',

@@ -235,6 +235,12 @@
       — que devolveria zero linhas e pareceria "não há notas"
       ⚠️ a busca normaliza o termo antes de comparar com `chave` e
       `tomador_documento`, que são guardados sem pontuação
+- [x] **NFS-e na visualização da OS** — o card "Documentos" consulta
+      `GET /fiscal/documentos` por `os_id`, sem criar rascunho, e lista número,
+      série, chave, emissão, valor, situação e atalhos autenticados para XML,
+      PDF/DANFSe. O histórico inclui emitidas e canceladas, mas só é consultado
+      e exibido com `fiscal:visualizar`; a ação de emissão também exige
+      `fiscal:criar` no frontend, alinhada à autoridade do backend
 - [ ] Tipo `nota_fiscal` na Central de Documentos da OS
 - [ ] **Alinhar o gate do desktop ao módulo `fiscal`** — as rotas fiscais do
       desktop ainda exigem `os,visualizar`/`os,editar`, enquanto o backend já

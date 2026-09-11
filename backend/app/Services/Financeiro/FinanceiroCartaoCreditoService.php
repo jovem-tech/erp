@@ -4,6 +4,7 @@ namespace App\Services\Financeiro;
 
 use App\Models\Financeiro;
 use App\Models\FinanceiroCartaoCredito;
+use App\Models\FinanceiroCategoria;
 use App\Models\FinanceiroFormaPagamento;
 use App\Models\FinanceiroMovimento;
 use Carbon\CarbonImmutable;
@@ -822,6 +823,15 @@ class FinanceiroCartaoCreditoService
         return DB::transaction(function () use ($cartao, $dataVencimento, $dataCompra, $payload, $baixa): Financeiro {
             $valor = round((float) ($payload['valor'] ?? 0), 2);
 
+            // Sem grupo/subgrupo a despesa some do DRE mesmo com impacta_dre=1:
+            // todo bloco do relatório busca POR GRUPO (Despesas Operacionais,
+            // Custo Direto (OS)...), e quem fica com grupo nulo não cai em
+            // nenhum deles.
+            $categoria = FinanceiroCategoria::matchByNome(
+                (string) $payload['categoria'],
+                Financeiro::TIPO_PAGAR
+            );
+
             $despesa = Financeiro::create([
                 'tipo' => Financeiro::TIPO_PAGAR,
                 'avulso' => true,
@@ -839,6 +849,8 @@ class FinanceiroCartaoCreditoService
                 'data_competencia' => $dataCompra,
                 'data_pagamento' => $baixa['data_movimento'],
                 'forma_pagamento' => $baixa['forma_pagamento_enum'],
+                'grupo_dre' => $categoria?->dre_grupo?->nome,
+                'subgrupo_dre' => $categoria?->dre_subgrupo?->nome,
                 'dre_fixo_mensal' => filter_var($payload['dre_fixo_mensal'] ?? false, FILTER_VALIDATE_BOOL),
                 'impacta_dre' => true,
                 'impacta_fluxo_caixa' => true,

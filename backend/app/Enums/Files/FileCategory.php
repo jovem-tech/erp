@@ -16,4 +16,8 @@ enum FileCategory: string
     // XML e DANFSe baixados do portal (spec 041, fase 042). O XML e' o que a
     // lei manda guardar por 5 anos.
     case FiscalDocument = 'fiscal_document';
+    // Boleto/fatura/comprovante anexado a um lancamento financeiro, para o
+    // operador achar o documento na hora de pagar sem procurar em portais
+    // externos.
+    case FinanceiroAnexo = 'financeiro_anexo';
 }

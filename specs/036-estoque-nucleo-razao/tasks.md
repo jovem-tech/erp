@@ -25,7 +25,13 @@
       (motor único, lock ordenado, agregação por peça). Falta só o custo médio.
 - [ ] `CustoMedioCalculator` + teste unitário das 4 bordas
 - [ ] `SaleStockService` como fachada (testes de venda intocados)
-- [ ] Fechar `update()` / `store()` / `importCsv()`
+- [~] Fechar `update()` / `store()` / `importCsv()`
+      `update()` **fechado pela `040`** (recusa `quantidade_atual` com 422; de
+      quebra matou o bug de o PATCH que omitia o campo zerar o saldo). E
+      `EstoqueController::storeMovement()` deixou de ser a quarta porta sem
+      lock: `entrada`/`saida` passam pelo motor único. Faltam `store()` e
+      `importCsv()` — peça nova não tem reserva, então lá o risco é saldo
+      errado, não reserva furada.
 - [ ] `Peca::scopeEstoqueBaixo()` unificando os 4 lugares
 - [ ] Telas: razão global, localizações, colunas novas
 - [ ] Teste de concorrência no grupo `mysql`

@@ -1,7 +1,7 @@
 ﻿openapi: 3.0.3
 info:
   title: Sistema ERP API
-  version: 1.6.1
+  version: 1.7.0
   description: |
     Contrato técnico oficial da API v1 do backend central do Sistema ERP.
 
@@ -2214,7 +2214,11 @@ components:
             Obrigatório quando `novo_equipamento` for informado; enviado somente no POST
             final da OS. Também aceito para um `equipamento_id` existente cujo cadastro
             esteja pendente (orçado sem foto): as fotos completam o cadastro dentro da
-            mesma transação da OS.
+            mesma transação da OS. Aceita JPEG, PNG, WebP, AVIF, HEIC e HEIF, com até
+            20 MB e 60 megapixels por imagem. Novas fotos são normalizadas no backend,
+            têm metadados removidos e buscam até 400 KB; excepcionalmente podem atingir
+            700 KB para preservar detalhes técnicos. Arquivos animados, multiframe,
+            RAW/DNG, vídeos, MIME falso ou corrompidos são rejeitados.
           items:
             type: string
             format: binary
@@ -2255,6 +2259,13 @@ components:
           type: array
           nullable: true
           maxItems: 4
+          description: >-
+            Fotos operacionais JPEG, PNG, WebP, AVIF, HEIC ou HEIF, com até 20 MB e
+            60 megapixels por imagem. O processamento central remove metadados,
+            normaliza orientação e cor e busca até 400 KB, admitindo até 700 KB quando
+            necessário para preservar detalhes técnicos. Uma origem segura e menor
+            que a versão AVIF é preservada sem aumento. Arquivos animados, multiframe,
+            RAW/DNG, vídeos, MIME falso ou corrompidos são rejeitados.
           items:
             type: string
             format: binary
@@ -2848,6 +2859,48 @@ components:
           type: string
           format: date
           nullable: true
+        anexos:
+          type: array
+          items:
+            $ref: "#/components/schemas/FinanceiroAnexo"
+
+    FinanceiroAnexo:
+      type: object
+      description: Metadados públicos do anexo; caminhos físicos, hash e UUID interno do catálogo não são expostos.
+      required: [id, financeiro_id, nome_original, mime, tamanho_bytes, management_status]
+      properties:
+        id:
+          type: integer
+        financeiro_id:
+          type: integer
+        nome_original:
+          type: string
+          maxLength: 255
+        descricao:
+          type: string
+          maxLength: 190
+          nullable: true
+        mime:
+          type: string
+          enum: [application/pdf, image/jpeg, image/png, image/webp]
+        tamanho_bytes:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 20971520
+        usuario_id:
+          type: integer
+          nullable: true
+        management_status:
+          type: string
+          enum: [pending, active, trashed, purged, integrity_error]
+          description: Estado derivado do vínculo com o Gerenciador de Arquivos.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
 
     FinanceiroUpsertRequest:
       type: object
@@ -3080,8 +3133,17 @@ components:
           type: string
         prazo_recebimento_dias:
           type: integer
+        data_base_repasse:
+          type: string
+          description: >-
+            Data usada como âncora do prazo (o `data_pagamento` informado, ou hoje
+            quando omitido).
         data_prevista_recebimento:
           type: string
+          description: >-
+            `data_base_repasse` + prazo em dias corridos, rolado para o próximo dia
+            útil quando cair em sábado ou domingo (a operadora não credita em fim de
+            semana).
         data_prevista_repasse:
           type: string
         data_credito_efetivo:
@@ -3570,7 +3632,15 @@ components:
           schema:
             $ref: "#/components/schemas/ApiError"
     ValidationError:
-      description: Dados inválidos ou regra de entrada rejeitada.
+      description: >-
+        Dados inválidos ou regra de entrada rejeitada. Fotos podem retornar
+        `PHOTO_FORMAT_UNSUPPORTED` ou `PHOTO_CANNOT_MEET_POLICY`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    PayloadTooLarge:
+      description: Upload excede os limites HTTP configurados (até 20 MB por foto e 85 MB por requisição).
       content:
         application/json:
           schema:
@@ -3582,7 +3652,13 @@ components:
           schema:
             $ref: "#/components/schemas/ApiError"
     TooManyRequests:
-      description: Limite de requisições excedido.
+      description: Limite excedido; uploads de fotos permitem 8 requisições por minuto por usuário e IP.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    PhotoProcessorUnavailable:
+      description: Processador de imagens indisponível (`PHOTO_PROCESSOR_UNAVAILABLE`).
       content:
         application/json:
           schema:
@@ -4596,6 +4672,174 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
+  /financeiro/{financeiro}/anexos:
+    get:
+      tags:
+        - Financeiro
+      summary: Listar anexos ativos do lançamento financeiro.
+      parameters:
+        - name: financeiro
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Anexos ativos com o estado derivado do Gerenciador de Arquivos.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          anexos:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/FinanceiroAnexo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags:
+        - Financeiro
+      summary: Anexar PDF ou imagem ao lançamento financeiro.
+      description: O upload é preservado com estado pending quando a catalogação estiver temporariamente indisponível.
+      parameters:
+        - name: financeiro
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [arquivo]
+              properties:
+                arquivo:
+                  type: string
+                  format: binary
+                  description: PDF, JPEG, PNG ou WebP de até 20 MiB, validado pelo MIME real.
+                descricao:
+                  type: string
+                  maxLength: 190
+                  nullable: true
+      responses:
+        "201":
+          description: Anexo persistido; management_status informa se a catalogação já foi concluída.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          anexo:
+                            $ref: "#/components/schemas/FinanceiroAnexo"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /financeiro/{financeiro}/anexos/{anexo}/download:
+    get:
+      tags:
+        - Financeiro
+      summary: Visualizar ou baixar um anexo financeiro ativo.
+      parameters:
+        - name: financeiro
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: anexo
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Conteúdo privado do anexo.
+          headers:
+            X-Content-Type-Options:
+              schema:
+                type: string
+                enum: [nosniff]
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /financeiro/{financeiro}/anexos/{anexo}:
+    delete:
+      tags:
+        - Financeiro
+      summary: Mover anexo financeiro para a lixeira.
+      description: O binário permanece retido no Gerenciador de Arquivos; a restauração é exclusivamente administrativa.
+      parameters:
+        - name: financeiro
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: anexo
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Anexo movido para a lixeira.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Conflito de ciclo de vida do arquivo.
+
   /financeiro/{financeiro}/cancelar:
     post:
       tags:
@@ -4833,6 +5077,13 @@ paths:
                   type: string
                 parcelas:
                   type: integer
+                data_pagamento:
+                  type: string
+                  format: date
+                  description: >-
+                    Dia em que o pagamento foi (ou será) recebido — ancora o prazo de
+                    repasse da operadora. Opcional: sem ela, usa a data de hoje (uma
+                    baixa retroativa deve informar a data real do pagamento, não hoje).
       responses:
         "200":
           description: Resultado da simulação.
@@ -6229,6 +6480,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/ValidationError"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/PhotoProcessorUnavailable"
         "500":
           $ref: "#/components/responses/ServerError"
 
@@ -6308,6 +6565,12 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/PhotoProcessorUnavailable"
     patch:
       tags:
         - Ordens
@@ -6327,6 +6590,12 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/PhotoProcessorUnavailable"
 
   /orders/{order}/photos/{photo}:
     get:
@@ -6349,6 +6618,10 @@ paths:
                 type: string
                 format: binary
             image/webp:
+              schema:
+                type: string
+                format: binary
+            image/avif:
               schema:
                 type: string
                 format: binary
@@ -6971,6 +7244,28 @@ paths:
           $ref: "#/components/responses/ValidationError"
         "500":
           $ref: "#/components/responses/ServerError"
+
+  # NOTA: o modulo /estoque/* nunca foi documentado neste arquivo (lacuna
+  # anterior a specs/040 — sao 14 rotas em backend/routes/api.php sem entrada
+  # aqui). Este path e o endpoint novo da 040; os demais continuam pendentes.
+  /estoque/a-comprar:
+    get:
+      tags:
+        - Estoque
+      summary: Peças prometidas em orçamento que não existem no estoque.
+      description: >
+        Consolida, por peça, a falta somada sobre todos os orçamentos com
+        reserva ativa (specs/040). `falta` = reservado − quantidade_atual, e só
+        entram as peças com falta maior que zero. Cada linha traz os orçamentos
+        que seguram a peça, para o operador saber de qual cliente e aparelho é a
+        promessa antes de decidir a compra. Exige `estoque:visualizar`.
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /orcamentos:
     get:
@@ -8932,6 +9227,349 @@ paths:
         "422":
           $ref: "#/components/responses/ValidationError"
 
+  /equipments/catalog/models:
+    get:
+      tags:
+        - Equipamentos
+      summary: Listar modelos do catalogo de equipamentos, paginado e filtravel por tipo/marca/status/busca.
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: tipo_id
+          in: query
+          schema:
+            type: integer
+        - name: marca_id
+          in: query
+          schema:
+            type: integer
+        - name: ativo
+          in: query
+          schema:
+            type: string
+            enum: ["", "0", "1"]
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Equipamentos
+      summary: Criar modelo no catalogo de equipamentos (tela Cadastros > Equipamentos), preservando o casing digitado.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tipo_id
+                - marca_id
+                - nome
+              properties:
+                tipo_id:
+                  type: integer
+                  minimum: 1
+                marca_id:
+                  type: integer
+                  minimum: 1
+                nome:
+                  type: string
+                  example: iPhone 15 Pro Max
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /equipments/catalog/models/{model}:
+    patch:
+      tags:
+        - Equipamentos
+      summary: Renomear e/ou ativar-desativar um modelo do catalogo. Nunca exclui de verdade.
+      parameters:
+        - name: model
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nome:
+                  type: string
+                  nullable: true
+                ativo:
+                  type: boolean
+                  nullable: true
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /equipments/catalog/brands:
+    get:
+      tags:
+        - Equipamentos
+      summary: Listar marcas do catalogo de equipamentos com contagem de modelos ativos e tipos vinculados.
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: tipo_id
+          in: query
+          schema:
+            type: integer
+        - name: ativo
+          in: query
+          schema:
+            type: string
+            enum: ["", "0", "1"]
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Equipamentos
+      summary: Criar marca no catalogo de equipamentos ja vinculada a um tipo, preservando o casing digitado.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tipo_id
+                - nome
+              properties:
+                tipo_id:
+                  type: integer
+                  minimum: 1
+                nome:
+                  type: string
+                  example: Xiaomi
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /equipments/catalog/brands/{brand}:
+    patch:
+      tags:
+        - Equipamentos
+      summary: Renomear e/ou ativar-desativar uma marca do catalogo. Nunca exclui de verdade.
+      parameters:
+        - name: brand
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nome:
+                  type: string
+                  nullable: true
+                ativo:
+                  type: boolean
+                  nullable: true
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /equipments/catalog/types:
+    get:
+      tags:
+        - Equipamentos
+      summary: Listar tipos de equipamento (catalogo compartilhado com Estoque, Servicos, Checklists e Base de defeitos) com contagem de marcas e modelos.
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    post:
+      tags:
+        - Equipamentos
+      summary: Criar tipo de equipamento no catalogo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - nome
+              properties:
+                nome:
+                  type: string
+                  example: Smartwatch
+      responses:
+        "201":
+          $ref: "#/components/responses/Created"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /equipments/catalog/types/{type}:
+    patch:
+      tags:
+        - Equipamentos
+      summary: Renomear e/ou ativar-desativar um tipo de equipamento. Compartilhado com outras telas — desativar aqui tambem o esconde la. Nunca exclui de verdade.
+      parameters:
+        - name: type
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                nome:
+                  type: string
+                  nullable: true
+                ativo:
+                  type: boolean
+                  nullable: true
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /equipments/catalog/exportar-csv:
+    get:
+      tags:
+        - Equipamentos
+      summary: >-
+        Exportar o catalogo de equipamentos em CSV
+        (id;tipo;marca;modelo;ativo;mesclar_com_id), uma linha por relacao
+        tipo-marca-modelo. `id` e' o id do modelo (vazio nas linhas so' de
+        marca) e `mesclar_com_id` sai sempre vazio — sao as duas colunas para
+        editar em massa e mesclar duplicados ao reimportar o arquivo.
+      responses:
+        "200":
+          description: Arquivo CSV (text/csv; charset=UTF-8) com BOM UTF-8.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /equipments/catalog/modelo-importacao.csv:
+    get:
+      tags:
+        - Equipamentos
+      summary: Baixar o modelo de CSV para importacao em lote do catalogo de equipamentos.
+      responses:
+        "200":
+          description: Arquivo CSV (text/csv; charset=UTF-8) com BOM UTF-8.
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /equipments/catalog/importar-lote:
+    post:
+      tags:
+        - Equipamentos
+      summary: >-
+        Importar em lote tipo;marca;modelo;ativo (upsert aditivo — cria o que
+        nao existe, atualiza casing e reativa o que ja existe, nunca desativa
+        o que ficou fora do arquivo; so' desativa com `ativo=0` explicito na
+        linha). Tipo inexistente rejeita so' a linha, com motivo no relatorio.
+        Duas colunas opcionais habilitam edicao em massa: `id` mira o registro
+        exato (deixa de casar por nome) para renomear/reativar/desativar; com
+        `mesclar_com_id` tambem preenchido a linha vira uma mesclagem — todo
+        aparelho/orcamento que apontava para o id da linha passa a apontar
+        para o id de `mesclar_com_id` (mesma marca, alvo ativo), e o perdedor
+        e' desativado (nunca excluido). Resposta traz `mesclados` e
+        `mesclagens` (lista `{de, para}`) alem dos campos ja existentes.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - arquivo
+              properties:
+                arquivo:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          $ref: "#/components/responses/Success"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
   /equipments/collector-pairings:
     post:
       tags:
@@ -9102,7 +9740,14 @@ paths:
                     Ignorado quando `fotos` já vem no mesmo cadastro.
                 fotos:
                   type: array
-                  description: Obrigatório, com ao menos um item, exceto quando `cadastro_pendente` for verdadeiro.
+                  description: >-
+                    Obrigatório, com ao menos um item, exceto quando `cadastro_pendente`
+                    for verdadeiro. Aceita JPEG, PNG, WebP, AVIF, HEIC e HEIF, com até
+                    20 MB e 60 megapixels por imagem. O backend remove metadados e busca
+                    até 400 KB, admitindo até 700 KB para preservar detalhes técnicos.
+                    Origens seguras menores que o AVIF são preservadas; animações,
+                    sequências, RAW/DNG, vídeos, MIME falso e arquivos corrompidos são
+                    rejeitados.
                   maxItems: 4
                   items:
                     type: string
@@ -9116,6 +9761,12 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/ValidationError"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/PhotoProcessorUnavailable"
 
   /equipments/{equipment}/reveal-password:
     post:
@@ -9299,6 +9950,10 @@ paths:
                   type: array
                   minItems: 0
                   maxItems: 4
+                  description: >-
+                    Novas fotos seguem a política operacional: JPEG, PNG, WebP, AVIF,
+                    HEIC ou HEIF; até 20 MB e 60 megapixels por imagem; meta de 400 KB
+                    e limite absoluto de 700 KB após normalização no backend.
                   items:
                     type: string
                     format: binary
@@ -9313,6 +9968,12 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/PhotoProcessorUnavailable"
     patch:
       tags:
         - Equipamentos
@@ -9434,6 +10095,10 @@ paths:
                   type: array
                   minItems: 0
                   maxItems: 4
+                  description: >-
+                    Novas fotos seguem a política operacional: JPEG, PNG, WebP, AVIF,
+                    HEIC ou HEIF; até 20 MB e 60 megapixels por imagem; meta de 400 KB
+                    e limite absoluto de 700 KB após normalização no backend.
                   items:
                     type: string
                     format: binary
@@ -9448,6 +10113,12 @@ paths:
           $ref: "#/components/responses/NotFound"
         "422":
           $ref: "#/components/responses/ValidationError"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "503":
+          $ref: "#/components/responses/PhotoProcessorUnavailable"
 
   /equipments/{equipment}/photos/{photo}:
     get:
@@ -9460,6 +10131,23 @@ paths:
       responses:
         "200":
           description: Binário da foto com `Content-Type` adequado.
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+            image/avif:
+              schema:
+                type: string
+                format: binary
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":

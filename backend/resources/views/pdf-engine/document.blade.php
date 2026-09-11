@@ -245,15 +245,19 @@
         .pdfe-assinatura .data-assinatura { height: {{ $isThermal ? '11px' : '13px' }}; line-height: {{ $isThermal ? '11px' : '13px' }}; }
         .pdfe-imagem { margin-bottom: 6px; }
         table.pdfe-galeria-fotos { width: 100%; border-collapse: collapse; margin: 4px 0 8px; }
-        table.pdfe-galeria-fotos td { padding: 0 4px; vertical-align: top; }
+        table.pdfe-galeria-fotos td { padding: 4px; vertical-align: top; }
         table.pdfe-galeria-fotos td:first-child { padding-left: 0; }
         table.pdfe-galeria-fotos td:last-child { padding-right: 0; }
         .pdfe-galeria-fotos-item {
             width: 100%;
-            height: 130px;
+            height: {{ $isThermal ? '120px' : '170px' }};
             background-repeat: no-repeat;
             background-position: center;
-            background-size: cover;
+            /* contain, nunca cover: a foto do equipamento serve pra provar o
+               estado em que ele entrou — recortar as bordas pra preencher a
+               caixa é justamente perder a evidência. */
+            background-size: contain;
+            background-color: #f5f8fb;
             border: 1px solid #d7e3ef;
             border-radius: 4px;
         }

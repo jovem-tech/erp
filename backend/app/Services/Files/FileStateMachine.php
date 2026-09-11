@@ -32,14 +32,15 @@ class FileStateMachine
         ManagedFile $file,
         ?int $actorId = null,
         ?string $reason = null,
-        ?int $authorizedBy = null
+        ?int $authorizedBy = null,
+        array $context = []
     ): ManagedFile {
         return $this->transitionLifecycle(
             $file,
             FileLifecycleStatus::Active,
             $actorId,
             ManagedFileAction::Restored,
-            $this->auditContext($reason, $authorizedBy)
+            array_merge($this->auditContext($reason, $authorizedBy), $context)
         );
     }
 
@@ -47,14 +48,15 @@ class FileStateMachine
         ManagedFile $file,
         ?int $actorId = null,
         ?string $reason = null,
-        ?int $authorizedBy = null
+        ?int $authorizedBy = null,
+        array $context = []
     ): ManagedFile {
         return $this->transitionLifecycle(
             $file,
             FileLifecycleStatus::Trashed,
             $actorId,
             ManagedFileAction::Trashed,
-            $this->auditContext($reason, $authorizedBy)
+            array_merge($this->auditContext($reason, $authorizedBy), $context)
         );
     }
 

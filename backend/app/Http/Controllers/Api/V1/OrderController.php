@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Services\Auth\AdminCredentialVerifier;
 use App\Services\Orders\OrderClosureService;
 use App\Services\Orders\OrderDocumentCenterService;
+use App\Services\Orders\OrderPrintService;
 use App\Services\Orders\OrderWorkflowService;
 use App\Services\Signatures\DocumentSignatureWorkflowService;
 use Illuminate\Http\JsonResponse;
@@ -24,7 +25,9 @@ use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Throwable;
 
 class OrderController extends BaseApiController
 {
@@ -32,6 +35,7 @@ class OrderController extends BaseApiController
         private readonly OrderWorkflowService $orderWorkflowService,
         private readonly OrderClosureService $orderClosureService,
         private readonly OrderDocumentCenterService $orderDocumentCenterService,
+        private readonly OrderPrintService $orderPrintService,
         private readonly AdminCredentialVerifier $adminCredentialVerifier,
         private readonly DocumentSignatureWorkflowService $documentSignatureWorkflowService
     ) {}
@@ -897,6 +901,55 @@ class OrderController extends BaseApiController
                 'documents' => $result['documents'] ?? [],
             ], request: $request),
         ]);
+    }
+
+    /**
+     * Espelho completo da OS em PDF, para o botão Imprimir da tela.
+     *
+     * Sempre gerado na hora, com os dados atuais da OS: `?formato=a4` (padrão)
+     * ou `?formato=80mm` para o cupom do balcão.
+     */
+    public function printOrder(Request $request, int $order): Response|JsonResponse
+    {
+        $this->authorize('os:visualizar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $model = Order::query()->find($order);
+        if (! $model instanceof Order) {
+            return $this->error('OS não encontrada.', 404, 'ORDER_NOT_FOUND', null, request: $request);
+        }
+
+        if (! $this->orderWorkflowService->canAccessOrder($user, $model)) {
+            return $this->error(
+                'Você não tem permissão para acessar esta OS.',
+                403,
+                'ORDER_FORBIDDEN',
+                null,
+                request: $request
+            );
+        }
+
+        try {
+            return $this->orderPrintService->stream(
+                $model,
+                (string) $request->query('formato', 'a4'),
+                $user
+            );
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return $this->error(
+                'Não foi possível gerar a impressão desta OS.',
+                422,
+                'OS_IMPRESSAO_INDISPONIVEL',
+                null,
+                request: $request
+            );
+        }
     }
 
     public function updateStatus(UpdateOrderStatusRequest $request, int $order): JsonResponse

@@ -121,4 +121,7 @@
     <script src="{{ asset('assets/js/financeiro-pay.js') }}?v={{ filemtime(public_path('assets/js/financeiro-pay.js')) }}"></script>
     <script src="{{ asset('assets/js/financeiro-cancel-reason-modal.js') }}?v={{ filemtime(public_path('assets/js/financeiro-cancel-reason-modal.js')) }}"></script>
     <script src="{{ asset('assets/js/financeiro-delete-admin-modal.js') }}?v={{ filemtime(public_path('assets/js/financeiro-delete-admin-modal.js')) }}"></script>
+    @if (\App\Support\DesktopSession::can('financeiro', 'visualizar'))
+        <script src="{{ asset('assets/js/financeiro-anexos.js') }}?v={{ filemtime(public_path('assets/js/financeiro-anexos.js')) }}"></script>
+    @endif
 @endsection

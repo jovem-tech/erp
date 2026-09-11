@@ -101,6 +101,11 @@
                             @if ($origemTrilha !== [])
                                 <small class="text-secondary d-block">{{ implode(' | ', $origemTrilha) }}</small>
                             @endif
+                            @if ((int) ($lancamento['anexos_count'] ?? 0) > 0)
+                                <span class="badge rounded-pill text-bg-secondary mt-1" title="{{ (int) $lancamento['anexos_count'] }} anexo(s)">
+                                    <i class="bi bi-paperclip"></i> {{ (int) $lancamento['anexos_count'] }}
+                                </span>
+                            @endif
                             @if ($cartaoLancamento !== null)
                                 {{-- Deixa explícito que esta despesa só é quitada
                                      junto com a fatura do cartão. --}}
@@ -149,6 +154,26 @@
                                         Detalhes
                                     </a>
                                 </li>
+
+                                @if (\App\Support\DesktopSession::can('financeiro', 'visualizar'))
+                                    <li>
+                                        <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#anexosListModal"
+                                                data-financeiro-id="{{ $id }}" data-financeiro-descricao="Anexos — Lançamento #{{ $id }} — {{ $lancamento['categoria'] ?? 'Sem categoria' }}">
+                                            <i class="bi bi-paperclip me-2"></i>
+                                            Ver anexos
+                                        </button>
+                                    </li>
+                                @endif
+
+                                @if (\App\Support\DesktopSession::can('financeiro', 'editar'))
+                                    <li>
+                                        <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#anexoQuickModal"
+                                                data-financeiro-id="{{ $id }}" data-financeiro-descricao="Lançamento #{{ $id }} — {{ $lancamento['categoria'] ?? 'Sem categoria' }}">
+                                            <i class="bi bi-upload me-2"></i>
+                                            Anexar arquivo
+                                        </button>
+                                    </li>
+                                @endif
 
                                 @if (! $isReciboFatura && \App\Support\DesktopSession::can('financeiro', 'editar'))
                                     <li>
@@ -403,3 +428,10 @@
 
 @include('financeiro._cancel_reason_modal')
 @include('financeiro._delete_admin_modal')
+@if (\App\Support\DesktopSession::can('financeiro', 'visualizar'))
+    @include('financeiro._anexos_list_modal')
+    @include('financeiro._anexo_preview_modal')
+@endif
+@if (\App\Support\DesktopSession::can('financeiro', 'editar'))
+    @include('financeiro._quick_anexo_modal')
+@endif

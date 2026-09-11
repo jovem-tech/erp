@@ -86,6 +86,16 @@
     const sincronizarCorpo = () => {
         corpo.classList.toggle('d-none', !chk.checked);
 
+        // O switch decide se o gasto é ativo (estoque) ou custo do mês — a ajuda
+        // tem de acompanhar, senão o operador muda a classificação contábil do
+        // lançamento sem perceber.
+        secao
+            ?.querySelector('[data-entrada-estoque-ajuda-ligada]')
+            ?.classList.toggle('d-none', !chk.checked);
+        secao
+            ?.querySelector('[data-entrada-estoque-ajuda-desligada]')
+            ?.classList.toggle('d-none', chk.checked);
+
         // Uma linha em branco de cortesia: seção ligada e tabela vazia é um
         // convite a clicar em "Adicionar peça" sem motivo.
         if (chk.checked && linhas.querySelectorAll('[data-linha]').length === 0) {

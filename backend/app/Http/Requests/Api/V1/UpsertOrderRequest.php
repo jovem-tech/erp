@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1;
 
 use App\Models\OrderStatus;
+use App\Rules\OperationalPhotoUpload;
 use App\Support\Documento;
 use Illuminate\Validation\Rule;
 
@@ -104,10 +105,10 @@ class UpsertOrderRequest extends BaseApiFormRequest
             'orcamento_id' => ['nullable', 'integer', 'min:1', Rule::exists('orcamentos', 'id')],
             'tecnico_id' => ['nullable', 'integer', 'min:1', Rule::exists('usuarios', 'id')],
             'fotos' => ['nullable', 'array', 'max:4'],
-            'fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'fotos.*' => ['file', 'max:20480', new OperationalPhotoUpload],
             // Fotos do equipamento novo (criação diferida na abertura de OS).
             'novo_equipamento_fotos' => ['nullable', 'required_with:novo_equipamento', 'array', 'min:1', 'max:4'],
-            'novo_equipamento_fotos.*' => ['file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'novo_equipamento_fotos.*' => ['file', 'max:20480', new OperationalPhotoUpload],
             'status' => [$this->isMethod('post') ? 'nullable' : 'sometimes', 'string', 'max:80', Rule::in(OrderStatus::activeCodes())],
             'estado_fluxo' => ['nullable', 'string', 'max:40'],
             'prioridade' => ['nullable', 'string', Rule::in(['baixa', 'normal', 'alta', 'urgente'])],
