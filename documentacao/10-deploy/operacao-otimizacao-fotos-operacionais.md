@@ -118,6 +118,20 @@ sendo obrigatório para provar que leitura HEIC/HEIF e escrita AVIF funcionam no
 7. Em uma amostra representativa, confirme pelo menos 90% até 400 KB e todas as
    aceitas até 700 KB, com inspeção lado a lado de detalhes técnicos.
 
+## Nomes exibidos no gerenciador
+
+O caminho físico continua aleatório e imutável para evitar colisões e exposição de
+dados no storage. Para novas fotos, o nome lógico exibido e usado no download segue:
+
+- Foto de equipamento: `{tipo}_{marca}{modelo}-{cliente}` e, a partir da segunda foto,
+  sufixo sequencial `_02`, `_03` etc.
+- Foto anexada à OS: `os_{numero}_{cliente}_{tipo}` e, a partir da segunda foto,
+  sufixo sequencial `_02`, `_03` etc.
+
+A extensão é sempre a do MIME realmente armazenado (`.avif`, `.jpg`, `.png` ou
+`.webp`). Caracteres de controle, separadores de caminho e pontuação insegura são
+sanitizados. Fotos antigas não são renomeadas nem regravadas.
+
 ## Rollback
 
 Reverta a aplicação e os arquivos de configuração, valide Nginx/PHP e recarregue os

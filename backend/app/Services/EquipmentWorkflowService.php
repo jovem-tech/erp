@@ -15,6 +15,7 @@ use App\Models\EquipmentPhoto;
 use App\Models\EquipmentType;
 use App\Models\User;
 use App\Services\Files\LegacyCompatibleFileAdapter;
+use App\Services\Photos\OperationalPhotoFileName;
 use App\Services\Photos\OperationalPhotoOptimizer;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\UploadedFile;
@@ -1052,6 +1053,8 @@ class EquipmentWorkflowService
         try {
             $directory = 'private/equipamentos/'.$equipment->id;
             $createdPhotoIds = [];
+            $equipment->loadMissing(['client', 'type', 'brand', 'model']);
+            $sequence = (int) EquipmentPhoto::query()->where('equipamento_id', $equipment->id)->count();
 
             if ($primaryIndex !== null) {
                 $primaryIndex = max(0, min(count($files) - 1, $primaryIndex));
@@ -1059,6 +1062,14 @@ class EquipmentWorkflowService
 
             foreach ($files as $index => $file) {
                 $extension = $file->extension;
+                $logicalName = OperationalPhotoFileName::forEquipment(
+                    (string) ($equipment->type?->nome ?? ''),
+                    (string) ($equipment->brand?->nome ?? ''),
+                    (string) ($equipment->model?->nome ?? ''),
+                    (string) ($equipment->client?->nome_razao ?? ''),
+                    $extension,
+                    $sequence + $index + 1,
+                );
                 $filename = sprintf(
                     'equip_%d_%s.%s',
                     (int) $equipment->id,
@@ -1111,7 +1122,8 @@ class EquipmentWorkflowService
                         $storagePath,
                         'equipamentos_fotos',
                         'arquivo',
-                        (string) $photo->id
+                        (string) $photo->id,
+                        $logicalName,
                     );
                 } catch (\Throwable $exception) {
                     $photo?->delete();
