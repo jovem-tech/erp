@@ -28,7 +28,8 @@ class LegacyCompatibleFileAdapter
         string $storagePath,
         ?string $sourceTable = null,
         ?string $sourceColumn = null,
-        ?string $sourceRecordId = null
+        ?string $sourceRecordId = null,
+        ?string $logicalName = null,
     ): ?ManagedFile {
         $mode = $this->configuration->mode();
         if ($mode === FileManagerMode::Off || ! $this->configuration->isCategoryEnabled($context->category)) {
@@ -45,7 +46,7 @@ class LegacyCompatibleFileAdapter
                 $this->configuration->assertCanWrite($context->category);
             }
 
-            $file = $this->catalogExisting($context, $diskName, $storagePath);
+            $file = $this->catalogExisting($context, $diskName, $storagePath, $logicalName);
             $this->legacyResolver->addAlias(
                 $file,
                 $diskName,
@@ -79,7 +80,8 @@ class LegacyCompatibleFileAdapter
     private function catalogExisting(
         FileContext $context,
         string $diskName,
-        string $storagePath
+        string $storagePath,
+        ?string $logicalName = null,
     ): ManagedFile {
         if (! $this->configuration->isLegacyReadDiskAllowed($diskName)) {
             throw new \InvalidArgumentException('Disco compativel nao autorizado.');
@@ -93,7 +95,8 @@ class LegacyCompatibleFileAdapter
 
         $absolutePath = $disk->path($storagePath);
         $mimeType = (string) ($disk->mimeType($storagePath) ?: 'application/octet-stream');
-        $descriptor = new FileDescriptor($absolutePath, basename($storagePath), $mimeType);
+        $originalName = trim((string) $logicalName) !== '' ? (string) $logicalName : basename($storagePath);
+        $descriptor = new FileDescriptor($absolutePath, $originalName, $mimeType);
         $validated = $this->policies->validate($descriptor, $context->category);
         $sha256 = hash_file('sha256', $absolutePath);
         if (! is_string($sha256)) {
@@ -103,7 +106,7 @@ class LegacyCompatibleFileAdapter
         return $this->catalog->register($descriptor, $context, new StoredFileResult(
             disk: $diskName,
             storageKey: $storagePath,
-            safeDownloadName: FilePathGuard::safeFileName(basename($storagePath), $validated['extension']),
+            safeDownloadName: FilePathGuard::safeFileName($originalName, $validated['extension']),
             extension: $validated['extension'],
             detectedMimeType: $validated['detected_mime_type'],
             sizeBytes: $validated['size_bytes'],

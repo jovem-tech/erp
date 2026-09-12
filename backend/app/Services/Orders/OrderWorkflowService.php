@@ -33,6 +33,7 @@ use App\Services\Budgets\BudgetOrderSyncService;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
 use App\Services\EquipmentWorkflowService;
 use App\Services\Estoque\EstoqueReservaService;
+use App\Services\Photos\OperationalPhotoFileName;
 use App\Services\Files\LegacyCompatibleFileAdapter;
 use App\Services\Financeiro\OsMargemService;
 use App\Services\Integrations\IntegrationSettingsService;
@@ -849,9 +850,18 @@ class OrderWorkflowService
         try {
             $directory = 'private/os/'.(int) $order->id;
             $createdPhotoIds = [];
+            $order->loadMissing(['client']);
+            $sequence = (int) OrderPhoto::query()->where('os_id', $order->id)->count();
 
             foreach ($files as $index => $file) {
                 $extension = $file->extension;
+                $logicalName = OperationalPhotoFileName::forOrder(
+                    (string) ($order->numero_os ?? $order->id),
+                    (string) ($order->client?->nome_razao ?? ''),
+                    $tipo !== '' ? $tipo : 'recepcao',
+                    $extension,
+                    $sequence + $index + 1,
+                );
                 $filename = sprintf(
                     'os_%d_%s.%s',
                     (int) $order->id,
@@ -904,7 +914,8 @@ class OrderWorkflowService
                         $storagePath,
                         'os_fotos',
                         'arquivo',
-                        (string) $photo->id
+                        (string) $photo->id,
+                        $logicalName,
                     );
                 } catch (Throwable $exception) {
                     $photo?->delete();

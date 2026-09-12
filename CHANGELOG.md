@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.87.2.0 — 2026-09-11 21:14
+- **Tier:** patch
+- **Autor/Agente:** Codex
+- **Descrição:** Nomeia fotos operacionais por contexto no gerenciador
+- **Arquivos:** backend/app/Services/EquipmentWorkflowService.php,backend/app/Services/Files/LegacyCompatibleFileAdapter.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/app/Services/Photos/OperationalPhotoFileName.php,backend/tests/Unit/Photos/OperationalPhotoFileNameTest.php,documentacao/10-deploy/operacao-otimizacao-fotos-operacionais.md,specs/046-otimizacao-fotos-operacionais/spec.md
+
 ## v5.87.1.0 — 2026-09-11 20:08
 - **Tier:** patch
 - **Autor/Agente:** Codex

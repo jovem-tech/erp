@@ -32,6 +32,11 @@ ler etiquetas, números de série, telas e pequenos defeitos físicos.
   tamanho menor ou igual ao candidato AVIF. Em empate, preservar a origem.
 - Nunca armazenar HEIC ou HEIF como origem; normalizá-los para AVIF.
 - Persistir MIME verdadeiro, tamanho, SHA-256 e nome físico aleatório.
+- Registrar também um nome lógico seguro para exibição/download: equipamento em
+  `{tipo}_{marca}{modelo}-{cliente}` e OS em `os_{numero}_{cliente}_{tipo}`, com
+  sufixo sequencial apenas quando houver mais de uma foto no mesmo grupo.
+- Nunca usar o nome lógico como caminho físico; ele deve passar por sanitização e
+  manter a extensão do MIME realmente armazenado.
 - Converter AVIF temporariamente para JPEG de até 1920 px/Q85 durante a geração de
   PDF e eliminar a derivação ao terminar.
 
@@ -65,6 +70,8 @@ ler etiquetas, números de série, telas e pequenos defeitos físicos.
   `fotos` e `novo_equipamento_fotos`.
 - Manter leitura das fotos antigas JPEG, PNG e WebP e adicionar AVIF ao gerenciador.
 - Não migrar, recomprimir ou renomear o acervo existente.
+- Fotos novas podem ter nome lógico diferente do nome físico aleatório; a mudança
+  não renomeia nem recalcula registros antigos.
 - Manter a pré-compressão nos frontends apenas como economia de tráfego; o backend é
   a autoridade de validação e armazenamento.
 
