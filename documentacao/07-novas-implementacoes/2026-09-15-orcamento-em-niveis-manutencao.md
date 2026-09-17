@@ -194,6 +194,48 @@ continuam iguais); tudo autocontido, ícones em SVG inline (glifo de fonte já f
   telefone/logo, parcela + diferença) e o teste da landing ajustado (1 botão cheio, 2 contornados,
   6 segmentos). Verificado em 1200px e 390px com um orçamento descartável (apagado depois).
 
+## Revisão de hierarquia do hero (2026-09-17)
+
+Análise crítica de design sobre o hero de 2026-09-16 achou três problemas reais: quase metade do
+card ficava vazia à direita (tudo concentrado à esquerda), o botão verde do WhatsApp competia em
+peso visual com a ação principal da página (escolher uma opção), e o texto do badge (`--muted`
+sobre o fundo do pill) ficava em ~4,6:1 de contraste — dentro do AA, mas raspando o limite pra um
+dado que carrega nº do orçamento e validade. `show.blade.php`, mesmo ramo `$showOptions`:
+
+- **Grid de duas colunas** (`hero-landing-grid`): conteúdo à esquerda, marca (logo + nome) à
+  direita — o vazio à direita vira composição em vez de sobra. No celular colapsa pra uma coluna
+  só, com a marca numa linha compacta acima da saudação.
+- **Nome fantasia em duas linhas quando tem 3+ palavras**: as 2 primeiras como marca (`Jovem
+  Tech`), o resto como subtítulo menor (`Celulares e Informática`) — heurística de posição, não
+  um campo novo (nome fantasia continua sendo um texto só no cadastro da empresa). Nome de 1–2
+  palavras fica numa linha só, sem quebra vazia.
+- **WhatsApp deixa de ser o elemento mais forte do hero**: o botão verde cheio (`.btn-whatsapp`)
+  sai da linha dos badges e passa a existir só no rodapé das opções (`opcoes.blade.php`, onde já
+  vivia); no hero vira um link/selo curto ("Precisa de ajuda?") ao lado de "Ver detalhes do
+  atendimento" — mesmo verde, mesma pílula, mas sem o destaque que roubava a cena da escolha de
+  manutenção.
+- **"Quem cuidou da análise" removido do hero** (nome do técnico + avatar de inicial): reduzia o
+  aproveitamento vertical sem ganho proporcional de confiança frente aos outros elementos.
+  `technician_name` continua sendo calculado em `publicBudgetPayload()` (outros consumidores podem
+  precisar), só a exibição saiu.
+- **Contraste do pill**: `color: var(--muted)` → `var(--text)`, saindo de ~4,6:1 para
+  folgadamente acima do mínimo AA.
+- Testes: `test_public_landing_shows_greeting_technician_logo_and_whatsapp` virou
+  `test_public_landing_shows_greeting_logo_and_whatsapp` (sem setup de técnico, que não é mais
+  coberto) + `assertDontSee('Quem cuidou da análise')`. Renderizado via Chrome headless (teste
+  temporário que só salvava o HTML, removido em seguida) em 1366px e 390px, com e sem "Ver
+  detalhes" aberto.
+
+## Selo de NFS-e na faixa de confiança (2026-09-17)
+
+Ver `2026-09-17-selo-nota-fiscal-orcamento-publico.md` para o detalhe completo (migration, checkbox
+no desktop, integração com o limite do MEI). Aqui só o que mudou nesta página: a faixa de
+confiança (`opcoes.blade.php`, a mesma seção descrita em "Landing de venda" acima) ganhou um
+quarto card condicional — "Emissão de nota fiscal de serviço (NFS-e) em qualquer opção
+escolhida." — que só aparece quando o orçamento marca a opção **e** a empresa (se MEI) ainda não
+passou do teto anual de faturamento; a decisão é do backend (`BudgetApprovalService`), a view só
+lê o resultado.
+
 ## O que isto NÃO faz (v2, se os dados justificarem)
 
 Procedência estruturada da peça, corte por valor de mercado do aparelho,

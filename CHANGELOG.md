@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v5.89.0.0 — 2026-09-17 10:32
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Cabecalho da landing publica do orcamento reorganizado (marca a direita, WhatsApp deixa de dominar o hero, avatar do tecnico removido, contraste do badge corrigido) e novo selo de emissao de NFS-e na landing, condicionado ao teto anual de faturamento do MEI via AnexoXService::limiteAnualAtingido(); checkbox de nota fiscal no orcamento com texto de ajuda mostrando quanto falta pro limite; corrige bug latente onde entrega_domicilio nao se aplicava a orcamento convertido
+- **Arquivos:** backend/database/migrations/2026_09_17_000001_add_emite_nota_fiscal_to_orcamentos.php,backend/app/Models/Budget.php,backend/app/Http/Requests/Api/V1/UpsertBudgetRequest.php,backend/app/Services/Budgets/BudgetWorkflowService.php,backend/app/Services/Budgets/BudgetApprovalService.php,backend/app/Services/Fiscal/AnexoXService.php,backend/resources/views/budgets/public/show.blade.php,backend/resources/views/budgets/public/partials/opcoes.blade.php,backend/tests/Concerns/BuildsLegacyErpSchema.php,backend/tests/Feature/Api/V1/BudgetMaintenanceLevelsTest.php,frontends/desktop/app/Http/Controllers/OrcamentoController.php,frontends/desktop/resources/views/orcamentos/form.blade.php,documentacao/07-novas-implementacoes/2026-09-15-orcamento-em-niveis-manutencao.md,documentacao/07-novas-implementacoes/2026-09-17-selo-nota-fiscal-orcamento-publico.md
+
 ## v5.88.0.0 — 2026-09-15 13:38
 - **Tier:** minor
 - **Autor/Agente:** Claude
