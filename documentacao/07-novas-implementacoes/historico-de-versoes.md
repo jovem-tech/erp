@@ -1,5 +1,31 @@
 # Historico de versoes
 
+## v5.88.0.0 - 2026-09-15
+
+- Central Documental da OS e PDF do orçamento deixam de gravar o binário de cada
+  versão: gerar grava um snapshot (`os_documento_snapshots`, JSON de ~5 KB com os
+  dados da emissão e o template usado) e o PDF é renderizado sob demanda pelo
+  `DocumentBytesResolver` (disco → cache → snapshot → dados atuais);
+- só assinatura formal (`pendencia_sessao`, `pendencia_reautenticada`, `cliente_link`)
+  persiste em disco; a rubrica automática de emissão é reidratada no render;
+- **todo PDF gerado (persistido ou efêmero) respeita um teto de 80 KB**
+  (`document-rendering.max_bytes`): subsetting de fonte no dompdf, fotos e logo via
+  libvips, galeria com `<img>` em vez de `background-image`, e Ghostscript acima do
+  teto (`/screen`, escalando para recodificação JPEG a 55 dpi/Q18 se preciso) — o
+  pior caso do sistema (5 fotos: equipamento + 4 de entrada), antes 2,3 MB, caiu
+  para ~77 KB; documento sem foto fica em ~48 KB; acima do teto mesmo assim, entrega
+  o menor resultado possível e loga um aviso, nunca bloqueia a emissão;
+- envio WhatsApp/e-mail, ZIP, link público, impressão, abertura via inbox, orçamento
+  público e miniatura funcionam sem arquivo em disco; ZIP de download virou temporário;
+  PDFs sob demanda somem do gerenciador `/arquivos`;
+- modo `dual` (padrão) grava disco e snapshot para validação com
+  `documents:snapshot-check`; `snapshot` liga o comportamento final;
+- comandos `documents:purge-render-cache` (agendado 02:20) e
+  `documents:purge-legacy-binaries` (expurgo do passivo, nunca toca fiscal, assinatura
+  formal ou `legal_hold`);
+- dependência nativa nova: `ghostscript` (opcional, com fallback); migration aplicada
+  com `--path`; runbook em `10-deploy/operacao-documentos-sob-demanda.md`, spec 047.
+
 ## v5.87.0.0 - 2026-09-11
 
 - novas fotos de OS e equipamento passam obrigatoriamente pelo

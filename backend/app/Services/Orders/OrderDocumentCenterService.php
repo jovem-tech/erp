@@ -4,7 +4,6 @@ namespace App\Services\Orders;
 
 use App\Jobs\ProcessOrderDocumentSendJob;
 use App\Models\Budget;
-use App\Models\Files\ManagedFile;
 use App\Models\Order;
 use App\Models\OrderDocument;
 use App\Models\OrderDocumentFile;
@@ -18,8 +17,12 @@ use App\Models\User;
 use App\Models\UserSignature;
 use App\Models\WhatsappTemplate;
 use App\Services\Budgets\BudgetPdfService;
-use App\Services\Files\PdfThumbnailService;
 use App\Services\Integrations\IntegrationSettingsService;
+use App\Services\Orders\Documents\DocumentBytesResolver;
+use App\Services\Orders\Documents\DocumentPersistencePolicy;
+use App\Services\Orders\Documents\OrderDocumentThumbnailService;
+use App\Services\Orders\Documents\OrderDocumentVersionWriter;
+use App\Services\Orders\Documents\ResolvedDocumentFile;
 use App\Services\Pdf\PdfGenerationService;
 use App\Services\Pdf\PdfTemplateRegistry;
 use Illuminate\Database\Eloquent\Model;
@@ -29,7 +32,6 @@ use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\Storage;
 use Throwable;
 use ZipArchive;
 
@@ -100,7 +102,10 @@ class OrderDocumentCenterService
         private readonly IntegrationSettingsService $integrationSettingsService,
         private readonly PdfGenerationService $pdfGenerationService,
         private readonly PdfTemplateRegistry $pdfTemplateRegistry,
-        private readonly PdfThumbnailService $pdfThumbnailService
+        private readonly DocumentBytesResolver $bytesResolver,
+        private readonly DocumentPersistencePolicy $persistencePolicy,
+        private readonly OrderDocumentVersionWriter $versionWriter,
+        private readonly OrderDocumentThumbnailService $thumbnailService
     ) {}
 
     /**
@@ -712,16 +717,22 @@ class OrderDocumentCenterService
         }
 
         $zipName = 'documentos-cliente-'.$this->slug((string) ($order->numero_os ?? ('os-'.$order->id))).'-'.now()->format('YmdHis').'.zip';
-        $relativePath = 'private/os_documentos/'.(int) $order->id.'/zip/'.$zipName;
-        $absolutePath = Storage::disk('local')->path($relativePath);
-        $directory = dirname($absolutePath);
 
-        if (! is_dir($directory)) {
-            mkdir($directory, 0775, true);
+        // Pacote temporário fora do acervo: antes ficava em
+        // private/os_documentos/{os}/zip/ e nunca era apagado. O controller
+        // entrega com deleteFileAfterSend (mesmo padrão do gerenciador).
+        $absolutePath = tempnam(storage_path('framework/cache'), 'osdocs-');
+        if (! is_string($absolutePath)) {
+            return [
+                'result' => 'error',
+                'message' => 'Não foi possível montar o pacote ZIP agora.',
+            ];
         }
 
         $zip = new ZipArchive;
         if ($zip->open($absolutePath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            @unlink($absolutePath);
+
             return [
                 'result' => 'error',
                 'message' => 'Não foi possível montar o pacote ZIP agora.',
@@ -735,10 +746,14 @@ class OrderDocumentCenterService
                 continue;
             }
 
-            $zip->addFile(
-                (string) ($file['file']['absolute_path'] ?? ''),
-                $this->safeZipEntryName($document, $format, $index)
-            );
+            /** @var ResolvedDocumentFile $resolved */
+            $resolved = $file['file']['resolved'];
+            $bytes = $resolved->bytes();
+            if ($bytes === '') {
+                continue;
+            }
+
+            $zip->addFromString($this->safeZipEntryName($document, $format, $index), $bytes);
             $index++;
         }
 
@@ -747,9 +762,9 @@ class OrderDocumentCenterService
         return [
             'result' => 'ok',
             'file' => [
-                'relative_path' => $relativePath,
                 'absolute_path' => $absolutePath,
                 'file_name' => $zipName,
+                'temporary' => true,
             ],
         ];
     }
@@ -804,50 +819,52 @@ class OrderDocumentCenterService
 
     /**
      * Resolve a miniatura da primeira página sem ampliar o acesso do usuário ao
-     * gerenciador global de arquivos. A autorização continua vinculada à OS e
-     * o PdfThumbnailService preserva os controles de estado, caminho e cache.
+     * gerenciador global de arquivos: a autorização continua vinculada à OS e
+     * o PNG é cacheado pela chave do render (não depende de managed_files —
+     * documento sob demanda não é catalogado lá).
      *
      * @return array<string, mixed>
      */
     public function resolveThumbnailForActor(int $orderId, int $documentId, User $actor): array
     {
-        $resolved = $this->resolveFileForActor($orderId, $documentId, 'a4', $actor);
+        $context = $this->resolveAuthorizedOrder($orderId, $actor);
+        if (($context['result'] ?? 'error') !== 'ok') {
+            return $context;
+        }
+
+        /** @var Order $order */
+        $order = $context['order'];
+        $document = OrderDocument::query()
+            ->with(['files', 'snapshot'])
+            ->where('os_id', $orderId)
+            ->whereKey($documentId)
+            ->first();
+
+        if (! $document instanceof OrderDocument) {
+            return ['result' => 'not_found'];
+        }
+
+        if (! $this->bytesResolver->isAvailable($order, $document, 'a4')) {
+            return ['result' => 'missing_file'];
+        }
+
+        $resolved = $this->resolveDocumentFilePayload($order, $document, 'a4');
         if (($resolved['result'] ?? 'error') !== 'ok') {
             return $resolved;
         }
 
-        $file = is_array($resolved['file'] ?? null) ? $resolved['file'] : [];
-        if (strtolower((string) ($file['mime_type'] ?? '')) !== 'application/pdf') {
+        /** @var ResolvedDocumentFile $file */
+        $file = $resolved['file']['resolved'];
+        if (strtolower($file->mimeType) !== 'application/pdf') {
             return [
                 'result' => 'unsupported',
                 'message' => 'Miniatura disponível apenas para documentos PDF.',
             ];
         }
 
-        if (! Schema::hasTable('managed_files')) {
-            return ['result' => 'missing_file'];
-        }
-
-        $managedFile = null;
-        $managedFileUuid = trim((string) ($file['managed_file_uuid'] ?? ''));
-        if ($managedFileUuid !== '') {
-            $managedFile = ManagedFile::query()->where('uuid', $managedFileUuid)->first();
-        }
-
-        if (! $managedFile instanceof ManagedFile) {
-            $managedFile = ManagedFile::query()
-                ->where('storage_disk', 'local')
-                ->where('storage_key', (string) ($file['relative_path'] ?? ''))
-                ->first();
-        }
-
-        if (! $managedFile instanceof ManagedFile) {
-            return ['result' => 'missing_file'];
-        }
-
         return [
             'result' => 'ok',
-            'thumbnail' => $this->pdfThumbnailService->firstPage($managedFile),
+            'thumbnail' => $this->thumbnailService->firstPage($document, $file, $this->bytesResolver->renderCacheKey($document, 'a4')),
         ];
     }
 
@@ -857,7 +874,7 @@ class OrderDocumentCenterService
     public function syncAfterBudgetDispatch(
         int $orderId,
         int $budgetId,
-        string $absolutePath,
+        array|string $pdf,
         User $actor,
         ?string $approvalLink = null,
         array $engineResult = []
@@ -868,48 +885,66 @@ class OrderDocumentCenterService
                 return;
             }
 
-            if (! is_file($absolutePath)) {
+            // Compatibilidade: chamadores antigos passavam o caminho absoluto
+            // (ou só absolute_path no array); o BudgetPdfService agora devolve
+            // bytes + resultado do motor.
+            if (is_string($pdf)) {
+                $pdf = ['absolute_path' => $pdf];
+            }
+
+            $bytes = (string) ($pdf['bytes'] ?? '');
+            $absolutePath = (string) ($pdf['absolute_path'] ?? '');
+            if ($bytes === '' && $absolutePath !== '' && is_file($absolutePath)) {
+                $read = file_get_contents($absolutePath);
+                $bytes = is_string($read) ? $read : '';
+            }
+            if ($bytes === '') {
                 return;
             }
 
-            $bytes = file_get_contents($absolutePath);
-            if ($bytes === false) {
-                return;
+            if ($engineResult === [] && is_array($pdf['engine_result'] ?? null)) {
+                $engineResult = $pdf['engine_result'];
             }
 
-            $documentFiles = [
+            $renders = [
                 'a4' => [
                     'bytes' => $bytes,
                     'mime' => 'application/pdf',
+                    'engine' => $engineResult,
                 ],
             ];
 
-            // O PDF A4 já foi gerado e enviado ao cliente. A indisponibilidade
-            // de um template térmico opcional não pode impedir que essa versão
-            // canônica seja registrada no acervo da OS.
-            try {
-                $thermalBytes = $this->renderGenericPdfBytes($order, 'orcamento', '80mm', [
-                    'budget_id' => $budgetId,
-                    'approval_link' => $approvalLink,
-                ]);
-                if ($thermalBytes !== '') {
-                    $documentFiles['80mm'] = [
-                        'bytes' => $thermalBytes,
-                        'mime' => 'application/pdf',
-                    ];
+            // O PDF A4 já foi gerado e enviado ao cliente. Sem snapshot (motor
+            // antigo), o térmico é emitido junto; a indisponibilidade de um
+            // template térmico opcional não pode impedir o registro da versão
+            // canônica no acervo da OS.
+            if (! is_array($engineResult['snapshot'] ?? null) || (bool) config('document-rendering.eager_80mm', false)) {
+                try {
+                    $thermalBytes = $this->renderGenericPdfBytes($order, 'orcamento', '80mm', [
+                        'budget_id' => $budgetId,
+                        'approval_link' => $approvalLink,
+                        'skip_engine_audit' => true,
+                    ]);
+                    if ($thermalBytes !== '') {
+                        $renders['80mm'] = [
+                            'bytes' => $thermalBytes,
+                            'mime' => 'application/pdf',
+                        ];
+                    }
+                } catch (Throwable $exception) {
+                    report($exception);
                 }
-            } catch (Throwable $exception) {
-                report($exception);
             }
 
-            $this->persistDocumentVersion(
+            $this->persistRenderedVersion(
                 $order,
                 'orcamento',
-                $documentFiles,
+                $renders,
                 $actor,
                 [
                     'template_codigo' => 'os_orcamento',
                     'idempotency_key' => 'budget:'.$budgetId.':dispatch',
+                    'generation_options' => is_array($pdf['generation_options'] ?? null) ? $pdf['generation_options'] : [],
                     'metadata' => array_merge(
                         [
                             'budget_id' => $budgetId,
@@ -1067,7 +1102,7 @@ class OrderDocumentCenterService
         $this->syncAfterBudgetDispatch(
             (int) $order->id,
             (int) $budgetRow->id,
-            (string) ($pdf['absolute_path'] ?? ''),
+            $pdf,
             $actor,
             $approvalLink,
             is_array($pdf['engine_result'] ?? null) ? $pdf['engine_result'] : []
@@ -1093,32 +1128,44 @@ class OrderDocumentCenterService
     private function generateGenericOrderDocument(Order $order, User $actor, string $type, array $options = []): array
     {
         $options['actor'] = $actor;
-        $a4Bytes = $this->renderGenericPdfBytes($order, $type, 'a4', $options);
-        $thermalBytes = $this->renderGenericPdfBytes($order, $type, '80mm', $options);
+        $options['capture_snapshot'] = true;
+        $options['render_profile'] = $this->persistencePolicy->renderProfile($options);
 
-        $persisted = $this->persistDocumentVersion(
+        $a4Bytes = $this->renderGenericPdfBytes($order, $type, 'a4', $options);
+        $engineResult = $this->lastEngineResults[$type] ?? [];
+
+        $renders = [
+            'a4' => [
+                'bytes' => $a4Bytes,
+                'mime' => 'application/pdf',
+                'engine' => $engineResult,
+            ],
+        ];
+
+        // O térmico é renderizado sob demanda a partir do mesmo snapshot;
+        // só se emite junto quando o operador pediu (eager_80mm).
+        if ((bool) config('document-rendering.eager_80mm', false) || ! is_array($engineResult['snapshot'] ?? null)) {
+            $renders['80mm'] = [
+                'bytes' => $this->renderGenericPdfBytes($order, $type, '80mm', $options),
+                'mime' => 'application/pdf',
+            ];
+        }
+
+        $persisted = $this->persistRenderedVersion(
             $order,
             $type,
-            [
-                'a4' => [
-                    'bytes' => $a4Bytes,
-                    'mime' => 'application/pdf',
-                ],
-                '80mm' => [
-                    'bytes' => $thermalBytes,
-                    'mime' => 'application/pdf',
-                ],
-            ],
+            $renders,
             $actor,
             [
                 'template_codigo' => (string) ($this->pdfTemplateRegistry->codeForLegacyType($type) ?? $type),
+                'generation_options' => $options,
                 'metadata' => array_merge(
                     [
                         'generated_from' => 'order_document_center',
                         'layout_padrao' => 'a4',
                     ],
-                    isset($this->lastEngineResults[$type])
-                        ? PdfGenerationService::auditMetadata($this->lastEngineResults[$type], 'order_document_center')
+                    $engineResult !== []
+                        ? PdfGenerationService::auditMetadata($engineResult, 'order_document_center')
                         : []
                 ),
             ]
@@ -1132,30 +1179,31 @@ class OrderDocumentCenterService
         ];
     }
 
+    /**
+     * Garante as linhas de os_documento_arquivos (a4 e 80mm) de uma versão.
+     * Não grava nada em disco: o 80mm que não existe é renderizado sob
+     * demanda pelo resolver (snapshot, ou dados atuais no legado).
+     */
     private function ensureStoredFormats(Order $order, OrderDocument $document, string $type): void
     {
         if (! Schema::hasTable('os_documento_arquivos')) {
             return;
         }
 
-        $a4 = $this->resolveDocumentFilePayload($order, $document, 'a4');
-        if (($a4['result'] ?? 'error') !== 'ok') {
+        $a4Path = trim((string) ($document->arquivo ?? ''));
+        if ($a4Path === '') {
             return;
         }
 
-        $a4File = $a4['file'];
-        $a4Bytes = is_file((string) ($a4File['absolute_path'] ?? ''))
-            ? file_get_contents((string) ($a4File['absolute_path'] ?? ''))
-            : false;
-
-        if (is_string($a4Bytes) && ! $this->hasFormatRecord((int) $document->id, 'a4')) {
+        if (! $this->hasFormatRecord((int) $document->id, 'a4')) {
+            $a4 = $this->bytesResolver->diskFile($document, 'a4');
             OrderDocumentFile::query()->create([
                 'documento_id' => (int) $document->id,
                 'formato' => 'a4',
-                'arquivo' => (string) ($a4File['relative_path'] ?? $document->arquivo ?? ''),
-                'mime' => (string) ($a4File['mime_type'] ?? 'application/pdf'),
-                'tamanho_bytes' => strlen($a4Bytes),
-                'hash_sha256' => hash('sha256', $a4Bytes),
+                'arquivo' => $a4Path,
+                'mime' => 'application/pdf',
+                'tamanho_bytes' => $a4 !== null ? $a4->size() : null,
+                'hash_sha256' => $a4 !== null ? $a4->sha256() : ($document->hash_sha256 ?: null),
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -1165,174 +1213,31 @@ class OrderDocumentCenterService
             return;
         }
 
-        $thermalBytes = $this->renderGenericPdfBytes($order, $type, '80mm');
-        $relativePath = 'private/os_documentos/'.(int) $order->id.'/'.$type.'_'.$this->slug((string) ($order->numero_os ?? ('os-'.$order->id))).'_v'.(int) ($document->versao ?? 1).'_80mm.pdf';
-
-        Storage::disk('local')->put($relativePath, $thermalBytes);
-
         OrderDocumentFile::query()->create([
             'documento_id' => (int) $document->id,
             'formato' => '80mm',
-            'arquivo' => $relativePath,
+            'arquivo' => (string) preg_replace('/_a4\.pdf$/i', '_80mm.pdf', $a4Path),
             'mime' => 'application/pdf',
-            'tamanho_bytes' => strlen($thermalBytes),
-            'hash_sha256' => hash('sha256', $thermalBytes),
+            'tamanho_bytes' => null,
+            'hash_sha256' => null,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
     }
 
     /**
-     * @param  array<string, array<string, string>>  $files
+     * Registra uma nova versão documental (snapshot sempre; binário só quando
+     * a policy manda). Abertura, encerramento e orçamento chamam isto —
+     * o miolo vive em OrderDocumentVersionWriter para não criar dependência
+     * circular com esses serviços.
+     *
+     * @param  array<string, array{bytes: string, mime?: string, engine?: array<string, mixed>}>  $renders
      * @param  array<string, mixed>  $options
      * @return array<string, mixed>
      */
-    private function persistDocumentVersion(Order $order, string $type, array $files, User $actor, array $options = []): array
+    public function persistRenderedVersion(Order $order, string $type, array $renders, ?User $actor, array $options = []): array
     {
-        $a4Bytes = (string) ($files['a4']['bytes'] ?? '');
-        if ($a4Bytes === '') {
-            return [
-                'ok' => false,
-                'message' => 'O layout A4 é obrigatório para registrar a versão documental.',
-            ];
-        }
-
-        $templateCode = trim((string) ($options['template_codigo'] ?? ''));
-        $idempotencyKey = trim((string) ($options['idempotency_key'] ?? ''));
-        $metadata = is_array($options['metadata'] ?? null) ? $options['metadata'] : [];
-
-        if ($idempotencyKey !== '' && Schema::hasColumn('os_documentos', 'idempotency_key')) {
-            $existing = OrderDocument::query()
-                ->where('os_id', (int) $order->id)
-                ->where('tipo_documento', $type)
-                ->where('idempotency_key', $idempotencyKey)
-                ->orderByDesc('id')
-                ->first();
-
-            if ($existing instanceof OrderDocument) {
-                return [
-                    'ok' => true,
-                    'document_id' => (int) $existing->id,
-                    'message' => 'Versão documental reaproveitada por idempotência.',
-                ];
-            }
-        }
-
-        $baseSlug = $this->slug((string) ($order->numero_os ?? ('os-'.$order->id)));
-
-        try {
-            /** @var array{document: OrderDocument} $persisted */
-            $persisted = DB::transaction(function () use ($order, $type, $files, $actor, $templateCode, $idempotencyKey, $metadata, $baseSlug): array {
-                $version = max(
-                    1,
-                    ((int) DB::table('os_documentos')
-                        ->where('os_id', (int) $order->id)
-                        ->where('tipo_documento', $type)
-                        ->lockForUpdate()
-                        ->max('versao')) + 1
-                );
-
-                $preparedFiles = [];
-                foreach ($files as $format => $file) {
-                    $normalizedFormat = $this->normalizeFormat((string) $format);
-                    $bytes = (string) ($file['bytes'] ?? '');
-                    if ($bytes === '') {
-                        continue;
-                    }
-
-                    $relativePath = 'private/os_documentos/'.(int) $order->id.'/'.$type.'_'.$baseSlug.'_v'.$version.'_'.$normalizedFormat.'.pdf';
-                    Storage::disk('local')->put($relativePath, $bytes);
-
-                    $preparedFiles[$normalizedFormat] = [
-                        'relative_path' => $relativePath,
-                        'mime' => (string) ($file['mime'] ?? 'application/pdf'),
-                        'bytes' => $bytes,
-                    ];
-                }
-
-                $documentPayload = [
-                    'os_id' => (int) $order->id,
-                    'tipo_documento' => $type,
-                    'arquivo' => (string) ($preparedFiles['a4']['relative_path'] ?? ''),
-                    'versao' => $version,
-                    'hash_sha1' => sha1((string) ($preparedFiles['a4']['bytes'] ?? '')),
-                    'gerado_por' => (int) $actor->id,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-
-                if (Schema::hasColumn('os_documentos', 'hash_sha256')) {
-                    $documentPayload['hash_sha256'] = hash('sha256', (string) ($preparedFiles['a4']['bytes'] ?? ''));
-                }
-
-                if (Schema::hasColumn('os_documentos', 'template_codigo')) {
-                    $documentPayload['template_codigo'] = $templateCode !== '' ? $templateCode : null;
-                }
-
-                if (Schema::hasColumn('os_documentos', 'idempotency_key')) {
-                    $documentPayload['idempotency_key'] = $idempotencyKey !== '' ? $idempotencyKey : null;
-                }
-
-                if (Schema::hasColumn('os_documentos', 'metadados_json')) {
-                    // O cast 'array' do model já serializa — passar o array
-                    // direto (json_encode manual aqui dupla-codificava e o
-                    // metadado voltava como string ao ler).
-                    $documentPayload['metadados_json'] = $metadata;
-                }
-
-                /** @var OrderDocument $document */
-                $document = OrderDocument::query()->create($documentPayload);
-
-                if (Schema::hasTable('os_documento_arquivos')) {
-                    foreach ($preparedFiles as $format => $file) {
-                        OrderDocumentFile::query()->create([
-                            'documento_id' => (int) $document->id,
-                            'formato' => $format,
-                            'arquivo' => (string) $file['relative_path'],
-                            'mime' => (string) $file['mime'],
-                            'tamanho_bytes' => strlen((string) $file['bytes']),
-                            'hash_sha256' => hash('sha256', (string) $file['bytes']),
-                            'created_at' => now(),
-                            'updated_at' => now(),
-                        ]);
-                    }
-                }
-
-                return [
-                    'document' => $document,
-                ];
-            });
-        } catch (Throwable $exception) {
-            report($exception);
-
-            return [
-                'ok' => false,
-                'message' => 'Falha ao persistir a nova versão documental.',
-            ];
-        }
-
-        /** @var OrderDocument $document */
-        $document = $persisted['document'];
-
-        $this->recordOrderEvent(
-            (int) $order->id,
-            'documento',
-            'documento_cliente_gerado',
-            'Documento do cliente gerado',
-            'Uma nova versão documental foi registrada para a OS.',
-            [
-                'documento_id' => (int) $document->id,
-                'tipo_documento' => $type,
-                'versao' => (int) ($document->versao ?? 1),
-            ],
-            (int) $actor->id
-        );
-
-        return [
-            'ok' => true,
-            'document_id' => (int) $document->id,
-            'message' => 'Documento gerado com sucesso.',
-        ];
+        return $this->versionWriter->persist($order, $type, $renders, $actor, $options);
     }
 
     /**
@@ -1366,7 +1271,14 @@ class OrderDocumentCenterService
     private function loadDocuments(int $orderId): Collection
     {
         return OrderDocument::query()
-            ->with(['generatedBy', 'signedBy', 'files'])
+            ->with([
+                'generatedBy',
+                'signedBy',
+                'files',
+                // Só a existência/identidade do snapshot: o JSON (KBs por
+                // versão) fica fora da listagem; quem renderiza recarrega.
+                'snapshot' => fn ($query) => $query->select(['id', 'documento_id', 'hash_snapshot', 'template_versao_id', 'hash_schema', 'formatos']),
+            ])
             ->where('os_id', $orderId)
             ->orderBy('tipo_documento')
             ->orderByDesc('versao')
@@ -1497,64 +1409,66 @@ class OrderDocumentCenterService
     }
 
     /**
+     * Entrega o formato pedido desta versão pelo DocumentBytesResolver
+     * (disco -> cache -> snapshot -> dados atuais). O array devolvido mantém
+     * as chaves antigas (relative_path, absolute_path, filename, mime_type,
+     * managed_file_uuid) e acrescenta `resolved` (ResolvedDocumentFile) —
+     * absolute_path fica vazio quando o PDF é renderizado sob demanda, então
+     * todo consumidor usa `resolved->bytes()`.
+     *
      * @return array<string, mixed>
      */
     private function resolveDocumentFilePayload(Order $order, OrderDocument $document, string $format): array
     {
-        $normalizedFormat = $this->normalizeFormat($format);
-        $fileRecord = $document->relationLoaded('files')
-            ? $document->files->first(fn (OrderDocumentFile $file): bool => (string) $file->formato === $normalizedFormat)
-            : OrderDocumentFile::query()
-                ->where('documento_id', (int) $document->id)
-                ->where('formato', $normalizedFormat)
-                ->first();
+        $result = $this->bytesResolver->resolve($order, $document, $format, [
+            'live_render' => fn (string $layout): ?string => $this->renderLegacyDocumentLive($order, $document, $layout),
+        ]);
 
-        if ($normalizedFormat === 'a4') {
-            $relativePath = trim((string) ($document->arquivo ?? ''));
-            $file = $this->resolveLocalManagedFile($relativePath);
-            if ($file === null) {
-                return ['result' => 'missing_file'];
-            }
-
-            $file['managed_file_uuid'] = $fileRecord instanceof OrderDocumentFile
-                ? trim((string) ($fileRecord->managed_file_uuid ?? ''))
-                : '';
-
-            return ['result' => 'ok', 'file' => $file];
+        if (($result['result'] ?? 'error') !== 'ok' || ! ($result['file'] ?? null) instanceof ResolvedDocumentFile) {
+            return ['result' => (string) ($result['result'] ?? 'missing_file')];
         }
 
-        if (! $fileRecord instanceof OrderDocumentFile) {
-            return ['result' => 'missing_file'];
-        }
-
-        $file = $this->resolveLocalManagedFile((string) ($fileRecord->arquivo ?? ''));
-        if ($file === null) {
-            return ['result' => 'missing_file'];
-        }
-
-        $file['managed_file_uuid'] = trim((string) ($fileRecord->managed_file_uuid ?? ''));
-
-        return ['result' => 'ok', 'file' => $file];
+        return ['result' => 'ok', 'file' => $result['file']->toLegacyArray()];
     }
 
     /**
-     * @return array<string, string>|null
+     * Reconstituição de documento antigo (sem snapshot, binário expurgado)
+     * com os dados atuais da OS. Usa a rubrica de quem assinou na época
+     * quando ainda existe; senão sai sem rubrica em vez de bloquear a leitura.
      */
-    private function resolveLocalManagedFile(string $relativePath): ?array
+    private function renderLegacyDocumentLive(Order $order, OrderDocument $document, string $layout): ?string
     {
-        $relativePath = ltrim(str_replace('\\', '/', trim($relativePath)), '/');
-        if ($relativePath === '' || str_contains($relativePath, '..') || ! Storage::disk('local')->exists($relativePath)) {
-            return null;
+        $metadata = is_array($document->metadados_json ?? null) ? $document->metadados_json : [];
+        $options = [
+            'budget_id' => (int) ($metadata['budget_id'] ?? 0),
+            'skip_engine_audit' => true,
+        ];
+
+        $signer = (int) ($document->assinado_por ?? 0) > 0 ? User::query()->find((int) $document->assinado_por) : null;
+        if ($signer instanceof User) {
+            $options['signature_signer'] = $signer;
+            $options['signature_method'] = (string) ($document->metodo_assinatura ?? 'sessao');
+            $options['signature_signed_at'] = $document->assinado_em ?? $document->created_at;
+        } else {
+            $options['unsigned_review'] = true;
         }
 
-        $mime = trim((string) Storage::disk('local')->mimeType($relativePath));
+        try {
+            $bytes = $this->renderViaPdfEngine($order, (string) $document->tipo_documento, $layout, $options);
+            if ($bytes === null && $signer instanceof User) {
+                $bytes = $this->renderViaPdfEngine($order, (string) $document->tipo_documento, $layout, [
+                    'budget_id' => $options['budget_id'],
+                    'skip_engine_audit' => true,
+                    'unsigned_review' => true,
+                ]);
+            }
 
-        return [
-            'relative_path' => $relativePath,
-            'absolute_path' => Storage::disk('local')->path($relativePath),
-            'filename' => basename($relativePath),
-            'mime_type' => $mime !== '' ? $mime : 'application/pdf',
-        ];
+            return $bytes;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return null;
+        }
     }
 
     /**
@@ -1702,8 +1616,9 @@ class OrderDocumentCenterService
         $files = [];
 
         foreach (['a4', '80mm'] as $format) {
-            $resolved = $this->resolveDocumentFilePayload($order, $document, $format);
-            if (($resolved['result'] ?? 'error') !== 'ok') {
+            // isAvailable() não renderiza: listagem do link público não pode
+            // custar um render por formato.
+            if (! $this->bytesResolver->isAvailable($order, $document, $format)) {
                 continue;
             }
 
@@ -1787,6 +1702,15 @@ class OrderDocumentCenterService
         if (is_array($options['customer_signature'] ?? null)) {
             $generationOptions['customer_signature'] = $options['customer_signature'];
         }
+        if ((bool) ($options['unsigned_review'] ?? false)) {
+            $generationOptions['unsigned_review'] = true;
+        }
+        if ((bool) ($options['capture_snapshot'] ?? false)) {
+            $generationOptions['capture_snapshot'] = true;
+        }
+        if (isset($options['render_profile'])) {
+            $generationOptions['render_profile'] = (string) $options['render_profile'];
+        }
 
         $result = $this->pdfGenerationService->generate($codigo, $subject, $generationOptions);
 
@@ -1800,7 +1724,9 @@ class OrderDocumentCenterService
             return null;
         }
 
-        if ($layout !== '80mm') {
+        // Reconstituições (live) não podem sobrescrever a auditoria da
+        // emissão em andamento.
+        if ($layout !== '80mm' && ! (bool) ($options['skip_engine_audit'] ?? false)) {
             $this->lastEngineResults[$type] = $result;
         }
 
@@ -2024,13 +1950,23 @@ class OrderDocumentCenterService
 
         foreach ($files as $index => $file) {
             $caption = $index === 0 ? $message : '';
-            $result = $this->integrationSettingsService->sendDirectMedia(
-                $phone,
-                (string) ($file['absolute_path'] ?? ''),
-                'document',
-                $caption !== '' ? $caption : null,
-                (string) ($file['filename'] ?? null)
-            );
+            $resolved = $file['resolved'] ?? null;
+            $result = $resolved instanceof ResolvedDocumentFile
+                ? $this->integrationSettingsService->sendDirectMediaBytes(
+                    $phone,
+                    $resolved->bytes(),
+                    (string) ($file['mime_type'] ?? 'application/pdf'),
+                    'document',
+                    $caption !== '' ? $caption : null,
+                    (string) ($file['filename'] ?? null)
+                )
+                : $this->integrationSettingsService->sendDirectMedia(
+                    $phone,
+                    (string) ($file['absolute_path'] ?? ''),
+                    'document',
+                    $caption !== '' ? $caption : null,
+                    (string) ($file['filename'] ?? null)
+                );
 
             if (! ($result['ok'] ?? false)) {
                 return [
@@ -2076,6 +2012,15 @@ class OrderDocumentCenterService
                 $mail->to($email)->subject($subject);
 
                 foreach ($files as $file) {
+                    $resolved = $file['resolved'] ?? null;
+                    if ($resolved instanceof ResolvedDocumentFile) {
+                        $mail->attachData($resolved->bytes(), (string) ($file['filename'] ?? 'documento.pdf'), [
+                            'mime' => (string) ($file['mime_type'] ?? 'application/pdf'),
+                        ]);
+
+                        continue;
+                    }
+
                     $mail->attach((string) ($file['absolute_path'] ?? ''), [
                         'as' => (string) ($file['filename'] ?? 'documento.pdf'),
                         'mime' => (string) ($file['mime_type'] ?? 'application/pdf'),
@@ -2120,6 +2065,7 @@ class OrderDocumentCenterService
 
             $file = $result['file'];
             $files[] = [
+                'resolved' => $file['resolved'],
                 'absolute_path' => (string) ($file['absolute_path'] ?? ''),
                 'filename' => $this->safeZipEntryName($document, $format, count($files) + 1),
                 'mime_type' => (string) ($file['mime_type'] ?? 'application/pdf'),
@@ -2151,6 +2097,13 @@ class OrderDocumentCenterService
 
         $totalBytes = 0;
         foreach ($files as $file) {
+            $resolved = $file['resolved'] ?? null;
+            if ($resolved instanceof ResolvedDocumentFile) {
+                $totalBytes += $resolved->size();
+
+                continue;
+            }
+
             $absolutePath = (string) ($file['absolute_path'] ?? '');
             if ($absolutePath !== '' && is_file($absolutePath)) {
                 $totalBytes += filesize($absolutePath) ?: 0;
@@ -2347,14 +2300,19 @@ class OrderDocumentCenterService
     {
         $availableFormats = [];
         foreach (['a4', '80mm'] as $format) {
-            $resolved = $this->resolveDocumentFilePayload($order, $document, $format);
+            // isAvailable() é barato de propósito: o catálogo lista todas as
+            // versões de todos os tipos, e render sob demanda aqui viraria
+            // um loop de segundos ao abrir a Central Documental.
+            $available = $this->bytesResolver->isAvailable($order, $document, $format);
             $availableFormats[$format] = [
-                'available' => ($resolved['result'] ?? 'error') === 'ok',
-                'url' => ($resolved['result'] ?? 'error') === 'ok'
+                'available' => $available,
+                'url' => $available
                     ? '/api/v1/orders/'.(int) $order->id.'/documents/'.(int) $document->id.'/files/'.$format
                     : null,
             ];
         }
+
+        $metadata = is_array($document->metadados_json ?? null) ? $document->metadados_json : [];
 
         $templateCode = $this->resolveTemplateCodeForDocumentType((string) ($document->tipo_documento ?? ''));
 
@@ -2380,6 +2338,7 @@ class OrderDocumentCenterService
                 ],
             ],
             'files' => $availableFormats,
+            'storage' => (string) ($metadata['armazenamento'] ?? ($this->bytesResolver->diskFile($document, 'a4') !== null ? 'disco' : 'snapshot')),
             'template_code' => $templateCode,
             'suggested_message' => $this->buildDefaultOutboundMessage($order, collect([$document]), $templateCode),
             'legacy_file' => (string) ($document->arquivo ?? ''),

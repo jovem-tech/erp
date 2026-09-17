@@ -1342,6 +1342,10 @@ class OrderController extends DesktopController
             'recebimentos.*.bandeira_id' => ['nullable', 'integer'],
             'recebimentos.*.modalidade' => ['nullable', 'string'],
             'recebimentos.*.parcelas' => ['nullable', 'integer'],
+            'desconto_tipo' => ['nullable', 'string', 'in:valor,percentual'],
+            'desconto_valor' => ['nullable', 'numeric', 'min:0'],
+            'desconto_percentual' => ['nullable', 'numeric', 'min:0', 'max:100'],
+            'desconto_motivo' => ['nullable', 'string', 'max:255'],
         ], [], [
             'encerrar_como' => 'forma de encerramento',
             'data_entrega' => 'data de entrega',
@@ -1369,6 +1373,10 @@ class OrderController extends DesktopController
             'agendar_retorno' => $isBaixa && $request->boolean('agendar_retorno'),
             'retorno_data' => $validated['retorno_data'] ?? null,
             'recebimentos' => $validated['recebimentos'] ?? [],
+            'desconto_tipo' => $validated['desconto_tipo'] ?? null,
+            'desconto_valor' => $validated['desconto_valor'] ?? null,
+            'desconto_percentual' => $validated['desconto_percentual'] ?? null,
+            'desconto_motivo' => $validated['desconto_motivo'] ?? null,
         ], static fn ($value): bool => $value !== null && $value !== '');
 
         $result = $this->orderService->close($order, $payload);

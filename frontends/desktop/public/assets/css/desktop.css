@@ -3519,7 +3519,7 @@ a {
 }
 
 .budget-item-line-primary {
-    grid-template-columns: 96px minmax(280px, 1.45fr) minmax(240px, 1fr);
+    grid-template-columns: 96px 118px minmax(280px, 1.45fr) minmax(240px, 1fr);
     align-items: start;
 }
 
@@ -3709,6 +3709,132 @@ a {
     font-size: 1.08rem;
     font-weight: 900;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+}
+
+/* Condições comerciais por opção de manutenção (dentro do card de condições). */
+.budget-terms-levels {
+    padding: 0.85rem 1rem;
+    border-radius: 14px;
+    border: 1px dashed rgba(56, 104, 176, 0.28);
+    background: rgba(56, 104, 176, 0.04);
+}
+
+.budget-terms-levels[open] {
+    border-style: solid;
+    background: rgba(255, 255, 255, 0.85);
+}
+
+.budget-terms-levels-summary {
+    cursor: pointer;
+    color: var(--desktop-heading);
+    font-weight: 800;
+    list-style: none;
+}
+
+.budget-terms-levels-summary::-webkit-details-marker {
+    display: none;
+}
+
+.budget-terms-levels-summary::after {
+    content: "";
+    display: inline-block;
+    margin-left: 0.5rem;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid currentColor;
+    vertical-align: middle;
+    transition: transform 0.15s ease;
+}
+
+.budget-terms-levels[open] > .budget-terms-levels-summary::after {
+    transform: rotate(180deg);
+}
+
+.budget-terms-level {
+    padding: 0.85rem 1rem;
+    border-radius: 12px;
+    border: 1px solid rgba(56, 104, 176, 0.16);
+    background: rgba(248, 250, 252, 0.9);
+}
+
+.budget-terms-level + .budget-terms-level {
+    margin-top: 0.75rem;
+}
+
+.budget-terms-level-name {
+    color: var(--desktop-heading);
+    font-weight: 800;
+}
+
+/* Níveis de manutenção no resumo financeiro (Básica / Avançada / Completa). */
+.budget-levels-summary {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(56, 104, 176, 0.12);
+}
+
+.budget-levels-summary-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 0.85rem 1.25rem;
+    margin-bottom: 0.85rem;
+}
+
+.budget-levels-recommended {
+    min-width: 240px;
+}
+
+.budget-levels-recommended label {
+    display: block;
+    color: var(--desktop-heading);
+    font-weight: 800;
+}
+
+.budget-levels-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.budget-level-card {
+    display: grid;
+    gap: 0.2rem;
+    padding: 0.85rem 1rem;
+    border-radius: 14px;
+    border: 1px solid rgba(56, 104, 176, 0.16);
+    background: rgba(255, 255, 255, 0.85);
+}
+
+.budget-level-card.is-recommended {
+    border-color: rgba(111, 90, 252, 0.45);
+    box-shadow: 0 10px 24px rgba(111, 90, 252, 0.12);
+}
+
+.budget-level-card-name {
+    color: var(--desktop-heading);
+    font-weight: 800;
+}
+
+.budget-level-card-subtitle,
+.budget-level-card-count {
+    color: var(--desktop-text-muted);
+    font-size: 0.82rem;
+}
+
+.budget-level-card-total {
+    color: var(--desktop-primary);
+    font-size: 1.15rem;
+    font-weight: 900;
+}
+
+@media (max-width: 768px) {
+    .budget-levels-grid {
+        grid-template-columns: 1fr;
+    }
 }
 
 .budget-item-field-total .form-control {
@@ -4003,7 +4129,7 @@ a {
 
 @media (max-width: 1480px) {
     .budget-item-line-primary {
-        grid-template-columns: 96px minmax(260px, 1.35fr) minmax(220px, 1fr);
+        grid-template-columns: 96px 112px minmax(260px, 1.35fr) minmax(220px, 1fr);
         align-items: start;
     }
 
@@ -4015,7 +4141,7 @@ a {
 
 @media (max-width: 1180px) {
     .budget-item-line-primary {
-        grid-template-columns: 104px minmax(0, 1fr);
+        grid-template-columns: 104px 112px minmax(0, 1fr);
     }
 
     .budget-item-field-description {
@@ -4062,7 +4188,6 @@ a {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .budget-item-field-type,
     .budget-item-field-reference,
     .budget-item-field-description,
     .budget-item-field-actions {
@@ -4082,6 +4207,7 @@ a {
     }
 
     .budget-item-field-type,
+    .budget-item-field-level,
     .budget-item-field-reference,
     .budget-item-field-description,
     .budget-item-field-actions {

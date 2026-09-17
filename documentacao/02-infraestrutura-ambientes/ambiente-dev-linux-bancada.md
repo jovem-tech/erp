@@ -66,7 +66,11 @@ o desktop faz chamadas server-to-server para a API, e um pool unico pequeno
 - editar via **VS Code Remote-SSH** conectado em `administrador@192.168.1.100`
   (a GUI local do Ubuntu deixa de ser necessaria);
 - o codigo esta em `/var/www/sistema-erp` como repositorio git completo;
-- rodar testes: `cd backend && php artisan test` (dev-deps instaladas);
+- rodar testes: `cd backend && php artisan test` (dev-deps instaladas). Se o checkout
+  passou pelo `deploy-producao.sh`, o `vendor/` foi instalado com `--no-dev` e o comando
+  `test` some (`Command "test" is not defined`): rode `composer install` (respeita o
+  `composer.lock`) antes; o próximo deploy volta ao `--no-dev`. Os testes de documentos
+  usam `pdftotext` (`poppler-utils`) — faz skip se ausente;
 - lint: `./vendor/bin/pint`;
 - versionamento: `./scripts/bump-version.sh` conforme `VERSIONING.md`.
 

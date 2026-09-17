@@ -6,6 +6,7 @@ use App\Models\Budget;
 use App\Models\BudgetItem;
 use App\Models\Order;
 use App\Services\Budgets\BudgetCommercialTermsService;
+use App\Support\BudgetTotals;
 
 /**
  * Contexto do documento de orçamento: tudo do OrderPdfContextFactory
@@ -32,6 +33,8 @@ class BudgetPdfContextFactory extends OrderPdfContextFactory
             'paymentMethods',
         ]);
 
+        $this->imageRefs = [];
+
         $context = [];
         if ($budget->order instanceof Order) {
             $context = parent::build(['order' => $budget->order], $options);
@@ -55,18 +58,42 @@ class BudgetPdfContextFactory extends OrderPdfContextFactory
                     'modelo' => (string) ($budget->equipment?->model?->nome ?? ''),
                     'serie' => (string) ($budget->equipment?->numero_serie ?? ''),
                     'foto_principal_base64' => $this->shouldIncludeEquipmentPhoto($options)
-                        ? $this->equipmentPhotoBase64($budget->equipment)
+                        ? $this->equipmentPhotoBase64($budget->equipment, $this->photoProfile($options))
                         : '',
                 ],
                 'acessorios' => [],
                 'estado_fisico' => [],
+                '_refs' => ['imagens' => $this->imageRefs],
             ];
         }
 
-        // Condições comerciais (formas aceitas, chave Pix, parcelamento e
-        // garantia) vêm do mesmo serviço que alimenta a tela e o link público:
-        // o cliente lê exatamente o mesmo texto nos três lugares.
-        $terms = app(BudgetCommercialTermsService::class)->forBudget($budget);
+        // Níveis de manutenção. Antes da decisão, `nivel` (vindo da página
+        // pública: ?opcao=N) projeta itens e totais daquela opção sem gravar
+        // nada; depois da aprovação a lista já é o escopo e `nivel_aprovado`
+        // nomeia a opção. Orçamento comum: tudo vazio, PDF idêntico ao de hoje.
+        $projectedLevel = null;
+        if ($budget->hasTiers()) {
+            $candidate = Budget::normalizeLevel($options['nivel'] ?? null);
+            $projectedLevel = $candidate !== null && $candidate <= $budget->maxLevel() ? $candidate : null;
+        }
+
+        // Condições comerciais (formas aceitas, chave Pix, parcelamento,
+        // garantia, entrega e diferenciais) vêm do mesmo serviço que alimenta
+        // a tela e o link público, já resolvidas para a opção projetada (ou
+        // para o nível aprovado): o cliente lê o mesmo texto nos três lugares.
+        $terms = app(BudgetCommercialTermsService::class)->forBudget($budget, $projectedLevel);
+        $projectedTotals = $projectedLevel !== null
+            ? (BudgetTotals::perLevel($budget)[$projectedLevel - 1] ?? null)
+            : null;
+        $items = $projectedLevel !== null
+            ? BudgetTotals::itemsForLevel($budget, $projectedLevel)
+            : $budget->items;
+        $opcaoTexto = Budget::levelLabel($projectedLevel ?? Budget::normalizeLevel($budget->nivel_aprovado));
+        $approvalLink = trim((string) ($options['approval_link'] ?? ''));
+        if ($approvalLink !== '' && $projectedLevel !== null) {
+            // O botão do PDF da opção cai direto no passo 2 daquela opção.
+            $approvalLink .= (str_contains($approvalLink, '?') ? '&' : '?').'opcao='.$projectedLevel;
+        }
 
         $context['orcamento'] = [
             'numero' => trim((string) ($budget->numero ?? ('ORC-' . (int) $budget->id))),
@@ -83,9 +110,10 @@ class BudgetPdfContextFactory extends OrderPdfContextFactory
             'prazo_execucao' => (string) ($budget->prazo_execucao ?? ''),
             'condicoes' => (string) ($budget->condicoes ?? ''),
             'observacoes' => (string) ($budget->observacoes ?? ''),
-            'subtotal' => (float) ($budget->subtotal ?? 0),
-            'desconto' => (float) ($budget->desconto ?? 0),
-            'total' => (float) ($budget->total ?? 0),
+            'subtotal' => (float) ($projectedTotals['subtotal'] ?? $budget->subtotal ?? 0),
+            'desconto' => (float) ($projectedTotals['desconto'] ?? $budget->desconto ?? 0),
+            'total' => (float) ($projectedTotals['total'] ?? $budget->total ?? 0),
+            'opcao_texto' => $opcaoTexto,
             // Orçamento vencido, ou já decidido (aprovado/pendente de OS): nos dois
             // casos não faz sentido convidar o cliente a "aprovar ou recusar" de
             // novo — no vencido porque o link já devolve 410, no já decidido
@@ -94,19 +122,26 @@ class BudgetPdfContextFactory extends OrderPdfContextFactory
             // do resto — vale para qualquer modelo, não só o padrão.
             'link_aprovacao' => ($budget->publicLinkExpired() || in_array((string) $budget->status, Budget::approvedForOrderLinkStatuses(), true))
                 ? ''
-                : trim((string) ($options['approval_link'] ?? '')),
+                : $approvalLink,
             'formas_pagamento' => (string) $terms['formas_pagamento_texto'],
             'chaves_pix' => (string) $terms['chaves_pix_texto'],
             'parcelamento' => (string) $terms['parcelamento_texto'],
             'garantia_dias' => $terms['garantia_dias'],
             'garantia_prazo' => (string) $terms['garantia_label'],
             'garantia_texto' => (string) $terms['garantia_texto'],
+            'entrega_domicilio_texto' => (string) $terms['entrega_domicilio_texto'],
+            'beneficios_texto' => (string) $terms['beneficios_texto'],
             'condicoes_comerciais' => (string) $terms['resumo'],
         ];
 
         $context['formas_pagamento'] = array_map(
             static fn (array $forma): array => ['nome' => $forma['nome']],
             $terms['formas_pagamento']
+        );
+
+        $context['beneficios'] = array_map(
+            static fn (string $descricao): array => ['descricao' => $descricao],
+            $terms['beneficios']
         );
 
         $context['chaves_pix'] = array_map(
@@ -121,10 +156,11 @@ class BudgetPdfContextFactory extends OrderPdfContextFactory
 
         // A coleção `itens` do documento de orçamento são os itens comerciais
         // do orçamento, não os itens operacionais da OS.
-        $context['itens'] = $budget->items
+        $context['itens'] = $items
             ->map(static fn (BudgetItem $item): array => [
                 'tipo' => (string) ($item->tipo_item ?? ''),
                 'descricao' => (string) ($item->descricao ?? ''),
+                'nivel' => (string) (Budget::normalizeLevel($item->nivel_minimo) ?? Budget::NIVEL_MINIMO),
                 // float, nao int: orcamento_itens.quantidade sempre foi decimal.
                 // Com (int), um orcamento de 1,5 h de servico imprimia "1" no PDF
                 // que o cliente assina — divergindo do valor total, que usava a

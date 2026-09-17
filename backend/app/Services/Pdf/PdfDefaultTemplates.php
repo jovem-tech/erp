@@ -545,6 +545,8 @@ class PdfDefaultTemplates
                     ['rotulo' => 'Equipamento', 'valor' => '{{ equipamento.descricao }}'],
                     ['rotulo' => 'Orçamento', 'valor' => '{{ orcamento.numero }}'],
                 ]],
+                ...self::blocoOpcaoManutencao(),
+                ...self::blocoBeneficiosOpcao(),
                 ['tipo' => 'cabecalho_secao', 'texto' => 'Itens do orçamento'],
                 ['tipo' => 'tabela', 'fonte' => 'itens', 'repetir_cabecalho' => true, 'vazio_texto' => 'Nenhum item lançado neste orçamento.', 'colunas' => [
                     ['campo' => 'descricao', 'rotulo' => 'Descrição'],
@@ -569,6 +571,63 @@ class PdfDefaultTemplates
                 ...self::blocosAprovacaoOnline(),
             ],
             'rodape' => self::rodape(),
+        ];
+    }
+
+    /**
+     * Orçamento em níveis de manutenção: nomeia a opção que o documento
+     * representa (a que o cliente está olhando na página, ou a aprovada).
+     * Orçamento comum deixa `orcamento.opcao_texto` vazio e o bloco some —
+     * o PDF de sempre não muda um milímetro.
+     *
+     * Público porque a migration que leva o bloco aos modelos já publicados
+     * usa exatamente esta definição.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function blocoOpcaoManutencao(): array
+    {
+        return [
+            ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.opcao_texto', 'operador' => 'preenchido'], 'blocos' => [
+                ['tipo' => 'campo', 'rotulo' => 'Opção de manutenção', 'valor' => '{{ orcamento.opcao_texto }}'],
+            ]],
+        ];
+    }
+
+    /**
+     * Diferenciais da opção de manutenção (ex.: "instalação expressa"):
+     * lista curta logo abaixo do nome da opção. Vazio em orçamento comum ou
+     * em opção sem diferencial — o bloco some.
+     *
+     * Público pelo mesmo motivo de blocoOpcaoManutencao(): a migration que
+     * leva o bloco aos modelos já publicados usa esta definição.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function blocoBeneficiosOpcao(): array
+    {
+        return [
+            ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.beneficios_texto', 'operador' => 'preenchido'], 'blocos' => [
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Diferenciais desta opção'],
+                ['tipo' => 'lista', 'fonte' => 'beneficios', 'campo' => 'descricao'],
+            ]],
+        ];
+    }
+
+    /**
+     * Entrega em domicílio: parágrafo ao lado da garantia, só quando a opção
+     * (ou o orçamento) inclui. Público pelo mesmo motivo dos demais blocos
+     * de condições comerciais.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public static function blocoEntregaDomicilio(): array
+    {
+        return [
+            ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.entrega_domicilio_texto', 'operador' => 'preenchido'], 'blocos' => [
+                ['tipo' => 'cabecalho_secao', 'texto' => 'Entrega'],
+                ['tipo' => 'paragrafo', 'texto' => '{{ orcamento.entrega_domicilio_texto }}'],
+            ]],
         ];
     }
 
@@ -633,6 +692,7 @@ class PdfDefaultTemplates
                 ['tipo' => 'cabecalho_secao', 'texto' => 'Garantia'],
                 ['tipo' => 'paragrafo', 'texto' => '{{ orcamento.garantia_texto }}'],
             ]],
+            ...self::blocoEntregaDomicilio(),
         ];
     }
 

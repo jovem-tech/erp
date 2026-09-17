@@ -176,6 +176,25 @@
         const fiscalTabIndicator = document.querySelector('[data-step-indicator="3"]');
         const confirmacaoTabIndicator = document.querySelector('[data-step-indicator="4"]');
 
+        // Desconto concedido nesta baixa (opcional; o bloco só existe no DOM
+        // quando o ator tem a permissão os:administrar E há saldo em aberto —
+        // ver closure.blade.php). Mesmo padrão %/valor fixo do orçamento
+        // (orcamentos-form.js), simplificado para um único controle (não há
+        // linhas de item aqui).
+        const discountRoot = document.getElementById('closureDiscountBlock');
+        const discountDisplayInput = document.querySelector('[data-closure-discount-display]');
+        const discountTypeInput = document.querySelector('[data-closure-discount-type]');
+        const discountAmountInput = document.querySelector('[data-closure-discount-amount]');
+        const discountPercentInput = document.querySelector('[data-closure-discount-percent]');
+        const discountPreviewInput = document.querySelector('[data-closure-discount-preview]');
+        const discountPreviewWrapper = document.querySelector('[data-closure-discount-preview-wrapper]');
+        const discountMotivoInput = document.querySelector('[data-closure-discount-motivo]');
+        const discountModeButtons = Array.from(document.querySelectorAll('[data-closure-discount-option]'));
+        const hasDiscountControl = discountDisplayInput instanceof HTMLInputElement
+            && discountTypeInput instanceof HTMLInputElement
+            && discountAmountInput instanceof HTMLInputElement
+            && discountPercentInput instanceof HTMLInputElement;
+
         // Confirmação é sempre a última etapa. Era 3 e virou 4 quando a etapa
         // Fiscal entrou; a constante existe para o número não voltar a ficar
         // espalhado pelo arquivo.
@@ -372,6 +391,20 @@
                 updateEmptyHint();
                 recalcTotals();
             }
+
+            // Encerramento sem cobrança nunca desconta nada — o backend já força
+            // isso (ver OrderClosureService::close()); aqui é só esconder o
+            // controle e zerar o valor pra não sugerir algo que será ignorado.
+            if (discountRoot instanceof HTMLElement) {
+                discountRoot.classList.toggle('d-none', hide);
+                if (hide && hasDiscountControl) {
+                    discountAmountInput.value = '0';
+                    discountPercentInput.value = '0';
+                    renderDiscountDisplay(0, 0);
+                    syncDiscountPreview(0);
+                    recalcTotals();
+                }
+            }
         };
 
         const updateReceiveAllBalanceButtonState = (saldoRestante) => {
@@ -456,6 +489,92 @@
             }
         };
 
+        const roundCurrency = (value) => Math.round((Number(value) || 0) * 100) / 100;
+        const roundPercent = (value) => Math.round((Number(value) || 0) * 10000) / 10000;
+        const resolveDiscountMode = (value) => (String(value ?? '').trim() === 'percentual' ? 'percentual' : 'valor');
+        const calculatePercentAmount = (base, percent) => roundCurrency((Math.max(0, base) * Math.max(0, percent)) / 100);
+        const calculateAmountPercent = (base, amount) => (base <= 0 ? 0 : roundPercent((Math.max(0, amount) / base) * 100));
+
+        // Base do desconto: o valor final da OS ANTES desta baixa (o mesmo que
+        // o backend usa em resolveClosureDiscount()) — nunca o saldo em aberto,
+        // que já pode estar reduzido por recebimentos anteriores.
+        const getDiscountBase = () => Number(config.valorFinal) || 0;
+
+        const syncDiscountModeButtons = () => {
+            if (!hasDiscountControl) return;
+            const mode = resolveDiscountMode(discountTypeInput.value);
+            discountModeButtons.forEach((button) => {
+                const active = button.dataset.closureDiscountOption === mode;
+                button.classList.toggle('is-active', active);
+                button.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+        };
+
+        const syncDiscountPreview = (amount) => {
+            if (!hasDiscountControl) return;
+            if (discountPreviewInput instanceof HTMLInputElement) {
+                discountPreviewInput.value = `R$ ${formatMoney(amount)}`;
+            }
+            if (discountPreviewWrapper instanceof HTMLElement) {
+                discountPreviewWrapper.hidden = resolveDiscountMode(discountTypeInput.value) !== 'percentual';
+            }
+        };
+
+        const renderDiscountDisplay = (amount, percent) => {
+            if (!hasDiscountControl) return;
+            discountDisplayInput.value = resolveDiscountMode(discountTypeInput.value) === 'percentual'
+                ? `${formatMoney(percent)}%`
+                : `R$ ${formatMoney(amount)}`;
+        };
+
+        // Lê o display (mascarado, R$ ou %) e regrava os campos ocultos
+        // canônicos — chamado no blur do display e ao trocar o toggle R$/%.
+        // recalcTotals() só LÊ os campos ocultos (nunca recalcula a partir do
+        // display), então o valor usado no resto da tela é sempre o último
+        // canônico sincronizado aqui.
+        const syncDiscountControl = ({ readDisplay = true } = {}) => {
+            if (!hasDiscountControl) return { amount: 0, percent: 0 };
+
+            const base = getDiscountBase();
+            const mode = resolveDiscountMode(discountTypeInput.value);
+            let amount = Math.max(0, Number(discountAmountInput.value) || 0);
+            let percent = Math.max(0, Number(discountPercentInput.value) || 0);
+
+            if (mode === 'percentual') {
+                if (readDisplay) percent = roundPercent(Math.max(0, parseMoney(discountDisplayInput.value)));
+                amount = calculatePercentAmount(base, percent);
+            } else {
+                if (readDisplay) amount = roundCurrency(Math.max(0, parseMoney(discountDisplayInput.value)));
+                percent = calculateAmountPercent(base, amount);
+            }
+
+            discountAmountInput.value = amount.toFixed(2);
+            discountPercentInput.value = (mode === 'percentual' ? percent : 0).toFixed(4);
+            syncDiscountModeButtons();
+            syncDiscountPreview(amount);
+            renderDiscountDisplay(amount, mode === 'percentual' ? percent : calculateAmountPercent(base, amount));
+
+            return { amount, percent };
+        };
+
+        const switchDiscountMode = () => {
+            if (!hasDiscountControl) return;
+            const base = getDiscountBase();
+            const mode = resolveDiscountMode(discountTypeInput.value);
+
+            if (mode === 'percentual') {
+                const amount = roundCurrency(Math.max(0, Number(discountAmountInput.value) || 0));
+                discountPercentInput.value = calculateAmountPercent(base, amount).toFixed(4);
+            } else {
+                const percent = roundPercent(Math.max(0, Number(discountPercentInput.value) || 0));
+                discountAmountInput.value = calculatePercentAmount(base, percent).toFixed(2);
+            }
+
+            syncDiscountControl({ readDisplay: false });
+        };
+
+        const getDiscountAmount = () => (hasDiscountControl ? Math.max(0, Number(discountAmountInput.value) || 0) : 0);
+
         const recalcTotals = () => {
             let totalRecebido = 0;
             let totalTaxas = 0;
@@ -487,9 +606,13 @@
                 if (fee) totalTaxas += fee.taxa;
             });
 
+            const descontoAmount = getDiscountAmount();
+            const valorFinalEfetivo = Math.max(0, (Number(config.valorFinal) || 0) - descontoAmount);
+            const valorAbertoEfetivo = Math.max(0, (Number(config.valorAberto) || 0) - descontoAmount);
+
             const liquido = totalRecebido - totalTaxas;
-            const lucro = (Number(config.valorFinal) || 0) - (Number(config.custoTotal) || 0) - totalTaxas;
-            const saldoRestante = Math.max(0, (Number(config.valorAberto) || 0) - totalRecebido);
+            const lucro = valorFinalEfetivo - (Number(config.custoTotal) || 0) - totalTaxas;
+            const saldoRestante = Math.max(0, valorAbertoEfetivo - totalRecebido);
 
             // Painel financeiro esquerdo (etapa 2)
             setText('closureFinSummaryAction', `R$ ${formatMoney(totalRecebido)}`);
@@ -498,7 +621,16 @@
             setText('closureFinSummaryNet', `R$ ${formatMoney(liquido)}`);
             setText('closureFinSummaryProfit', `R$ ${formatMoney(lucro)}`);
 
+            const discountSummaryWrap = document.getElementById('closureFinSummaryDiscountWrap');
+            if (discountSummaryWrap instanceof HTMLElement) {
+                discountSummaryWrap.hidden = descontoAmount <= 0.009;
+            }
+            if (descontoAmount > 0.009) {
+                setText('closureFinSummaryDiscount', `R$ ${formatMoney(descontoAmount)}`);
+            }
+
             // Cards de métrica (etapa 2 direita)
+            setText('closureMetricValorOs', `R$ ${formatMoney(valorFinalEfetivo)}`);
             setText('closureMetricValorAberto', `R$ ${formatMoney(saldoRestante)}`);
             setText('closureMetricValorBaixa', `R$ ${formatMoney(totalRecebido)}`);
 
@@ -513,7 +645,7 @@
 
             updateReceiveAllBalanceButtonState(saldoRestante);
 
-            return { totalRecebido, totalTaxas, saldoRestante, liquido, lucro };
+            return { totalRecebido, totalTaxas, saldoRestante, liquido, lucro, descontoAmount };
         };
 
         const validateReceiptRow = (row) => {
@@ -564,10 +696,22 @@
                 errors.push('Adicione ao menos um recebimento para registrar o adiantamento/sinal.');
             }
 
-            const { totalRecebido } = recalcTotals();
+            const { totalRecebido, descontoAmount } = recalcTotals();
             const valorAberto = Number(config.valorAberto) || 0;
             if (totalRecebido - valorAberto > 0.009) {
                 errors.push(`O total lançado (R$ ${formatMoney(totalRecebido)}) é maior que o saldo em aberto (R$ ${formatMoney(valorAberto)}).`);
+            }
+
+            // Desconto: nunca pode exceder o saldo em aberto ANTES desta ação
+            // (mesma regra validada em OrderClosureService::resolveClosureDiscount()
+            // no backend) e exige motivo quando houver valor.
+            if (descontoAmount > 0.009) {
+                if (descontoAmount - valorAberto > 0.009) {
+                    errors.push(`O desconto informado (R$ ${formatMoney(descontoAmount)}) é maior que o saldo em aberto (R$ ${formatMoney(valorAberto)}).`);
+                }
+                if (!(discountMotivoInput instanceof HTMLElement) || discountMotivoInput.value.trim() === '') {
+                    errors.push('Informe o motivo do desconto concedido.');
+                }
             }
 
             // Encerrar como "Equipamento Entregue" exige algum valor recebido — de
@@ -616,8 +760,16 @@
         };
 
         const updateConfirmStep = () => {
-            const { totalRecebido, totalTaxas, saldoRestante, liquido, lucro } = recalcTotals();
+            const { totalRecebido, totalTaxas, saldoRestante, liquido, lucro, descontoAmount } = recalcTotals();
             updateFinancialSummary(saldoRestante);
+
+            const confirmDiscount = document.getElementById('closureConfirmDiscount');
+            if (confirmDiscount instanceof HTMLElement) {
+                confirmDiscount.hidden = descontoAmount <= 0.009;
+                if (descontoAmount > 0.009) {
+                    confirmDiscount.textContent = `Desconto concedido: R$ ${formatMoney(descontoAmount)}`;
+                }
+            }
 
             const { tipoLabel, statusLabel } = resolveStatusLabel(saldoRestante);
             // Em modo Adiantamento/Sinal o campo #dataEntrega fica com o valor
@@ -801,23 +953,34 @@
         });
 
         // A garantia so' e' conhecida depois que o operador escolhe no campo
-        // da etapa 1 — a textarea nasce com a sugestão (ver closure.blade.php),
-        // mas precisa reagir se o operador trocar o prazo antes de copiar.
-        const atualizarGarantiaNaDiscriminacao = () => {
+        // da etapa 1, e o desconto depois que ele preenche o bloco na etapa 2
+        // — a textarea nasce só com a base (ver closure.blade.php), e precisa
+        // reagir se qualquer um dos dois mudar antes de copiar. Mesma ordem do
+        // texto que DiscriminacaoNfseBuilder::corpo() monta no backend depois
+        // de fechada (garantia, depois desconto), pra nunca divergir.
+        const rebuildDiscriminacao = () => {
             const campo = document.getElementById('closureDiscriminacao');
-            const selectGarantia = document.getElementById('garantiaDias');
-            if (!(campo instanceof HTMLTextAreaElement) || !(selectGarantia instanceof HTMLSelectElement)) return;
+            if (!(campo instanceof HTMLTextAreaElement)) return;
 
             const base = campo.dataset.discriminacaoBase ?? campo.value;
-            const opcaoSelecionada = selectGarantia.options[selectGarantia.selectedIndex] ?? null;
-            const rotulo = opcaoSelecionada && opcaoSelecionada.value !== '' ? opcaoSelecionada.text.trim() : '';
+            let texto = base;
 
-            campo.value = rotulo !== ''
-                ? `${base} Período de garantia do serviço e insumos: ${rotulo}.`
-                : base;
+            const selectGarantia = document.getElementById('garantiaDias');
+            if (selectGarantia instanceof HTMLSelectElement) {
+                const opcaoSelecionada = selectGarantia.options[selectGarantia.selectedIndex] ?? null;
+                const rotulo = opcaoSelecionada && opcaoSelecionada.value !== '' ? opcaoSelecionada.text.trim() : '';
+                if (rotulo !== '') texto += ` Período de garantia do serviço e insumos: ${rotulo}.`;
+            }
+
+            const descontoAmount = getDiscountAmount();
+            if (descontoAmount > 0.009) {
+                texto += ` Desconto concedido: R$ ${formatMoney(descontoAmount)}.`;
+            }
+
+            campo.value = texto;
         };
 
-        document.getElementById('garantiaDias')?.addEventListener('change', atualizarGarantiaNaDiscriminacao);
+        document.getElementById('garantiaDias')?.addEventListener('change', rebuildDiscriminacao);
 
         document.querySelector('[data-copiar-discriminacao-baixa]')?.addEventListener('click', function () {
             const campo = document.getElementById('closureDiscriminacao');
@@ -1024,6 +1187,45 @@
                 submitButton.disabled = !confirmacaoCheckbox.checked;
             }
         });
+
+        // Desconto concedido nesta baixa: blur do display re-sincroniza os
+        // campos ocultos (mesmo padrão de bindAdjustmentControl em
+        // orcamentos-form.js) e os botões R$/% trocam o modo preservando o
+        // valor equivalente na outra unidade.
+        if (hasDiscountControl) {
+            discountDisplayInput.type = 'text';
+            discountDisplayInput.inputMode = 'decimal';
+            discountDisplayInput.autocomplete = 'off';
+            discountDisplayInput.spellcheck = false;
+
+            discountDisplayInput.addEventListener('focus', () => {
+                window.requestAnimationFrame(() => discountDisplayInput.select());
+            });
+            discountDisplayInput.addEventListener('blur', () => {
+                syncDiscountControl({ readDisplay: true });
+                recalcTotals();
+                rebuildDiscriminacao();
+                clearStepError();
+            });
+
+            discountModeButtons.forEach((button) => {
+                button.addEventListener('click', () => {
+                    const nextMode = resolveDiscountMode(button.dataset.closureDiscountOption);
+                    if (resolveDiscountMode(discountTypeInput.value) === nextMode) return;
+
+                    discountTypeInput.value = nextMode;
+                    switchDiscountMode();
+                    recalcTotals();
+                    rebuildDiscriminacao();
+                });
+            });
+
+            discountMotivoInput?.addEventListener('input', clearStepError);
+
+            // Sincroniza a partir dos campos ocultos (podem vir preenchidos por
+            // old() após um redirect de validação) em vez de zerar tudo.
+            syncDiscountControl({ readDisplay: false });
+        }
 
         // Estado inicial: reconstrói recebimentos anteriores (retorno de validação).
         // Nunca insere automaticamente o saldo total numa linha — isso só deve

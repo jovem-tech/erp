@@ -175,6 +175,15 @@ class PdfTemplateRegistry
                     'orcamento.garantia_texto' => 'string',
                     // Bloco único com tudo acima + o texto livre complementar.
                     'orcamento.condicoes_comerciais' => 'string',
+                    // Níveis de manutenção: nome da opção que o documento
+                    // representa (a que o cliente está olhando, ou a aprovada).
+                    // Vazio em orçamento comum.
+                    'orcamento.opcao_texto' => 'string',
+                    // Condições que podem variar por opção: entrega em
+                    // domicílio (texto pronto, vazio quando não inclui) e
+                    // diferenciais da opção (uma linha por item).
+                    'orcamento.entrega_domicilio_texto' => 'string',
+                    'orcamento.beneficios_texto' => 'string',
                 ]),
                 'collections' => array_merge(self::ORDER_COLLECTIONS, [
                     'itens' => [
@@ -186,6 +195,9 @@ class PdfTemplateRegistry
                         'acrescimo' => 'moeda',
                         'valor_total' => 'moeda',
                         'observacoes' => 'string',
+                        // Nível de manutenção a partir do qual o item entra
+                        // (1, 2 ou 3) — para modelos personalizados.
+                        'nivel' => 'string',
                     ],
                     'formas_pagamento' => [
                         'nome' => 'string',
@@ -195,6 +207,9 @@ class PdfTemplateRegistry
                         'chave' => 'string',
                         'titular' => 'string',
                         'instituicao' => 'string',
+                    ],
+                    'beneficios' => [
+                        'descricao' => 'string',
                     ],
                 ]),
                 'message_template_code' => 'orcamento_enviado',

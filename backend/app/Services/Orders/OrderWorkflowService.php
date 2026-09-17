@@ -657,6 +657,40 @@ class OrderWorkflowService
             ->limit(max(1, $limit))
             ->get(['id', 'arquivo', 'tipo']);
 
+        return $this->resolvePhotoFiles($photos);
+    }
+
+    /**
+     * Mesma resolução de resolveEntryPhotosForPdf(), mas para as fotos que um
+     * snapshot documental referenciou por id — o re-render de "v1" precisa
+     * das mesmas fotos daquela emissão, não das N primeiras de hoje.
+     *
+     * @param  array<int, int>  $photoIds
+     * @return array<int, array<string, mixed>>
+     */
+    public function resolveEntryPhotoFilesByIds(int $orderId, array $photoIds): array
+    {
+        $photoIds = array_values(array_unique(array_filter(array_map('intval', $photoIds))));
+        if ($orderId <= 0 || $photoIds === []) {
+            return [];
+        }
+
+        $photos = OrderPhoto::query()
+            ->where('os_id', $orderId)
+            ->whereIn('id', $photoIds)
+            ->get(['id', 'arquivo', 'tipo'])
+            ->sortBy(static fn (OrderPhoto $photo): int => (int) array_search((int) $photo->id, $photoIds, true))
+            ->values();
+
+        return $this->resolvePhotoFiles($photos);
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, OrderPhoto>  $photos
+     * @return array<int, array<string, mixed>>
+     */
+    private function resolvePhotoFiles($photos): array
+    {
         $resolved = [];
         foreach ($photos as $photo) {
             $file = $this->resolveManagedPhotoFile((string) ($photo->arquivo ?? ''));
@@ -665,6 +699,7 @@ class OrderWorkflowService
             }
 
             if (is_array($file)) {
+                $file['photo_id'] = (int) $photo->id;
                 $resolved[] = $file;
             }
         }
@@ -4720,6 +4755,7 @@ class OrderWorkflowService
             'document_id' => isset($result['document_id']) ? (int) $result['document_id'] : null,
             'relative_path' => (string) ($result['relative_path'] ?? ''),
             'absolute_path' => (string) ($result['absolute_path'] ?? ''),
+            'bytes' => (string) ($result['bytes'] ?? ''),
             'file_name' => (string) ($result['file_name'] ?? ''),
             'message' => (string) ($result['message'] ?? ''),
             'skipped' => (bool) ($result['skipped'] ?? false),
@@ -4741,8 +4777,15 @@ class OrderWorkflowService
             ];
         }
 
+        // O comprovante é renderizado sob demanda: chega como bytes. Caminho
+        // em disco só existe quando a policy persistiu (assinatura formal).
+        $bytes = (string) ($openingDocument['bytes'] ?? '');
         $absolutePath = trim((string) ($openingDocument['absolute_path'] ?? ''));
-        if ($absolutePath === '' || ! is_file($absolutePath)) {
+        if ($bytes === '' && $absolutePath !== '' && is_file($absolutePath)) {
+            $read = file_get_contents($absolutePath);
+            $bytes = is_string($read) ? $read : '';
+        }
+        if ($bytes === '') {
             return [
                 'requested' => true,
                 'sent' => false,
@@ -4773,8 +4816,44 @@ class OrderWorkflowService
         $clientName = trim((string) ($order->client?->nome_razao ?? ''));
         $message = $this->renderOpeningClientMessage($order);
         $fileName = trim((string) ($openingDocument['file_name'] ?? ''));
-        $fileName = $fileName !== '' ? $fileName : basename($absolutePath);
-        $attachment = new UploadedFile($absolutePath, $fileName, 'application/pdf', null, true);
+        $fileName = $fileName !== '' ? $fileName : ('OS-'.(string) ($order->numero_os ?? $order->id).'-abertura.pdf');
+
+        // O inbox (WhatsappMessagingService) exige UploadedFile com caminho:
+        // materializa um temporário só pelo tempo do envio.
+        $temporaryPath = $absolutePath !== '' && is_file($absolutePath) ? null : $this->materializeTemporaryPdf($bytes);
+        $attachmentPath = $temporaryPath ?? $absolutePath;
+
+        try {
+            return $this->dispatchOpeningDocument($order, $phone, $clientName, $message, $fileName, $attachmentPath, $bytes);
+        } finally {
+            if ($temporaryPath !== null && is_file($temporaryPath)) {
+                @unlink($temporaryPath);
+            }
+        }
+    }
+
+    private function materializeTemporaryPdf(string $bytes): string
+    {
+        $directory = (string) config('document-rendering.temp_directory', storage_path('framework/cache/pdf-tmp'));
+        if (! is_dir($directory) && ! @mkdir($directory, 0700, true) && ! is_dir($directory)) {
+            throw new \RuntimeException('Não foi possível reservar o diretório temporário do PDF.');
+        }
+
+        $path = tempnam($directory, 'abertura-');
+        if (! is_string($path) || file_put_contents($path, $bytes) === false) {
+            throw new \RuntimeException('Não foi possível materializar o PDF temporário.');
+        }
+        @chmod($path, 0600);
+
+        return $path;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function dispatchOpeningDocument(Order $order, string $phone, string $clientName, string $message, string $fileName, string $attachmentPath, string $bytes): array
+    {
+        $attachment = new UploadedFile($attachmentPath, $fileName, 'application/pdf', null, true);
 
         try {
             $result = $this->whatsappMessagingService->sendSystemMessage(
@@ -4814,9 +4893,10 @@ class OrderWorkflowService
         }
 
         try {
-            $direct = $this->integrationSettingsService->sendDirectMedia(
+            $direct = $this->integrationSettingsService->sendDirectMediaBytes(
                 $phone,
-                $absolutePath,
+                $bytes,
+                'application/pdf',
                 'document',
                 $message,
                 $fileName

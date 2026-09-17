@@ -3,6 +3,7 @@
 namespace App\Services\Pdf\Contexts;
 
 use App\Services\Company\CompanyProfileService;
+use App\Services\Photos\OperationalPhotoPdfRenderer;
 use Illuminate\Support\Facades\Cache;
 
 /**
@@ -19,8 +20,18 @@ class CompanyContextProvider
 
     private const LOGO_MAX_BYTES = 1048576; // 1 MB — acima disso, pula com warning
 
+    // O template exibe a logo a no máximo 150pt de largura (~150 CSS px) —
+    // ver PdfDefaultTemplates 'largura_max' e PdfTemplateRenderer::renderImage.
+    // A fonte cadastrada podia ter centenas de KB (697x800 px medido em
+    // produção = 38 KB sozinha, quase metade do teto de 80 KB do documento
+    // inteiro) sem nenhum ganho visual acima disso.
+    private const LOGO_DISPLAY_MAX_DIMENSION = 300;
+
+    private const LOGO_DISPLAY_QUALITY = 70;
+
     public function __construct(
-        private readonly CompanyProfileService $companyProfileService
+        private readonly CompanyProfileService $companyProfileService,
+        private readonly OperationalPhotoPdfRenderer $photoPdfRenderer
     ) {
     }
 
@@ -73,6 +84,11 @@ class CompanyContextProvider
         ];
     }
 
+    public function logoDataUri(): string
+    {
+        return $this->logoBase64();
+    }
+
     /**
      * Data URI (base64) da logo, ou string vazia quando não houver logo,
      * arquivo grande demais ou formato não rasterizável.
@@ -100,15 +116,52 @@ class CompanyContextProvider
                 return '';
             }
 
+            $mime = (string) ($logo['mime_type'] ?? 'image/png');
+            $rendered = $this->photoPdfRenderer->forPdf(
+                $absolutePath,
+                $mime,
+                self::LOGO_DISPLAY_MAX_DIMENSION,
+                self::LOGO_DISPLAY_QUALITY
+            );
+            if (is_array($rendered) && $rendered['bytes'] !== '') {
+                return 'data:' . $rendered['mime'] . ';base64,' . base64_encode($rendered['bytes']);
+            }
+
+            // vips indisponível: embute a fonte como está (pior caso já
+            // coberto pelo teto de tamanho aplicado no PDF inteiro).
             $bytes = file_get_contents($absolutePath);
             if ($bytes === false) {
                 return '';
             }
 
-            $mime = (string) ($logo['mime_type'] ?? 'image/png');
-
             return 'data:' . $mime . ';base64,' . base64_encode($bytes);
         });
+    }
+
+    /**
+     * Referência da logo para o snapshot documental (no lugar do base64).
+     * O re-render reembute a logo atual; se o hash mudou desde a emissão,
+     * quem hidrata registra a divergência.
+     *
+     * @return array{tipo: string, arquivo: string, sha256: string}|null
+     */
+    public function logoReference(): ?array
+    {
+        $logo = $this->companyProfileService->resolveLogoFile();
+        if (! is_array($logo)) {
+            return null;
+        }
+
+        $absolutePath = (string) ($logo['absolute_path'] ?? '');
+        if ($absolutePath === '' || ! is_file($absolutePath)) {
+            return null;
+        }
+
+        return [
+            'tipo' => 'company_logo',
+            'arquivo' => basename($absolutePath),
+            'sha256' => (string) hash_file('sha256', $absolutePath),
+        ];
     }
 
     public static function forgetLogoCache(): void

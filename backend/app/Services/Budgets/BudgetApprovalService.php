@@ -4,6 +4,7 @@ namespace App\Services\Budgets;
 
 use App\Models\Budget;
 use App\Models\BudgetApproval;
+use App\Models\BudgetItem;
 use App\Models\BudgetSend;
 use App\Models\BudgetStatusHistory;
 use App\Models\Order;
@@ -17,7 +18,11 @@ use App\Services\Integrations\IntegrationSettingsService;
 use App\Services\Notifications\NotificationDispatchService;
 use App\Services\Orders\OrderDocumentCenterService;
 use App\Services\Estoque\EstoqueReservaService;
+use App\Services\Fiscal\AnexoXService;
 use App\Services\Orders\OrderEventService;
+use App\Services\Pdf\Contexts\CompanyContextProvider;
+use App\Support\BudgetTotals;
+use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
@@ -40,7 +45,9 @@ class BudgetApprovalService
         private readonly BudgetCommercialTermsService $budgetCommercialTermsService,
         private readonly BudgetRevisionService $budgetRevisionService,
         // specs/040: toda transicao de status reconcilia a reserva de peca.
-        private readonly EstoqueReservaService $estoqueReservaService
+        private readonly EstoqueReservaService $estoqueReservaService,
+        private readonly CompanyContextProvider $companyContextProvider,
+        private readonly AnexoXService $anexoXService
     ) {
     }
 
@@ -101,13 +108,22 @@ class BudgetApprovalService
 
         $token = $this->ensurePublicToken($budget);
         $approvalLink = $this->publicUrl($token);
-        $pdf = $this->budgetPdfService->generate($budget, $approvalLink, ['actor' => $user]);
 
-        if (! ($pdf['ok'] ?? false)) {
-            return [
-                'result' => 'dispatch_failed',
-                'message' => (string) ($pdf['message'] ?? 'Falha ao gerar o PDF do orçamento.'),
-            ];
+        // Orçamento com níveis de manutenção: não existe "o PDF" antes de o
+        // cliente escolher a opção na página — o envio vai como texto + link
+        // e o documento definitivo nasce na aprovação (finalizeApproval).
+        // Reenvio de consulta (já decidido) segue com o PDF, como sempre.
+        $withPdf = $isResolved || ! $budget->hasTiers();
+        $pdf = null;
+        if ($withPdf) {
+            $pdf = $this->budgetPdfService->generate($budget, $approvalLink, ['actor' => $user]);
+
+            if (! ($pdf['ok'] ?? false)) {
+                return [
+                    'result' => 'dispatch_failed',
+                    'message' => (string) ($pdf['message'] ?? 'Falha ao gerar o PDF do orçamento.'),
+                ];
+            }
         }
 
         $companyName = $this->companyName();
@@ -149,7 +165,7 @@ class BudgetApprovalService
             $expiry = $this->resolveTokenExpiry($budget);
 
             $osId = (int) ($budget->os_id ?? 0);
-            if ($osId > 0) {
+            if ($osId > 0 && $pdf !== null) {
                 $this->orderEventService->record(
                     $osId,
                     OrderEvent::CATEGORIA_DOCUMENTO,
@@ -273,12 +289,12 @@ class BudgetApprovalService
             }
         });
 
-        if ((int) ($budget->os_id ?? 0) > 0) {
+        if ((int) ($budget->os_id ?? 0) > 0 && $pdf !== null) {
             try {
                 $this->orderDocumentCenterService->syncAfterBudgetDispatch(
                     (int) $budget->os_id,
                     (int) $budget->id,
-                    (string) ($pdf['absolute_path'] ?? ''),
+                    $pdf,
                     $user,
                     $approvalLink,
                     is_array($pdf['engine_result'] ?? null) ? $pdf['engine_result'] : []
@@ -309,7 +325,7 @@ class BudgetApprovalService
     /**
      * @return array<string, mixed>
      */
-    public function publicViewData(string $token): array
+    public function publicViewData(string $token, ?int $opcao = null): array
     {
         $budget = $this->findByToken($token);
 
@@ -327,14 +343,14 @@ class BudgetApprovalService
 
         return [
             'result' => 'ok',
-            'budget' => $this->publicBudgetPayload($budget),
+            'budget' => $this->publicBudgetPayload($budget, $opcao),
         ];
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function approveByToken(string $token, ?string $response, ?string $ipAddress, ?string $userAgent): array
+    public function approveByToken(string $token, ?string $response, ?string $ipAddress, ?string $userAgent, ?int $nivel = null): array
     {
         $budget = $this->findByToken($token);
 
@@ -362,25 +378,40 @@ class BudgetApprovalService
             ];
         }
 
-        $decisionMessage = trim((string) $response) !== '' ? trim((string) $response) : 'Aprovado pelo cliente.';
+        $levelError = $this->levelDecisionError($budget, $nivel);
+        if ($levelError !== null) {
+            return $levelError;
+        }
 
+        $decisionMessage = trim((string) $response) !== '' ? trim((string) $response) : 'Aprovado pelo cliente.';
+        $decisionMessage = $this->decisionMessageWithLevel($budget, $decisionMessage, $nivel);
+
+        // Valor e opção nas mensagens são resolvidos DENTRO do funil, depois
+        // que o nível escolhido já podou os itens e recalculou o total —
+        // senão a aprovação da Básica anunciaria o valor da Completa.
         $this->finalizeApproval($budget, $decisionMessage, [
             'origem' => 'link_publico',
             'usuario_id' => null,
             'usuario_nome' => 'Cliente',
+            'nivel' => $nivel,
             'approval_observacao' => 'Aprovação registrada pelo link público do orçamento.',
             'history_observacao' => 'Cliente aprovou o orçamento pelo link público.',
             'history_origem' => 'cliente',
             'ip' => $ipAddress,
             'ua' => $userAgent,
             'event_titulo' => 'Orçamento aprovado pelo cliente',
-            'event_descricao' => sprintf('Cliente aprovou o orçamento %s pelo link público.', $budget->numero),
+            'event_descricao' => static fn (Budget $budget, string $nivelLabel): string => sprintf(
+                'Cliente aprovou o orçamento %s pelo link público%s.',
+                $budget->numero,
+                $nivelLabel !== '' ? ' ('.$nivelLabel.')' : ''
+            ),
             'event_origem' => OrderEvent::ORIGEM_CLIENTE,
             'notif_title' => 'Orçamento aprovado pelo cliente',
-            'notif_body' => sprintf(
-                'O cliente aprovou o orçamento %s (R$ %s).',
+            'notif_body' => static fn (Budget $budget, string $nivelLabel): string => sprintf(
+                'O cliente aprovou o orçamento %s (R$ %s)%s.',
                 $budget->numero,
-                number_format((float) $budget->total, 2, ',', '.')
+                number_format((float) $budget->total, 2, ',', '.'),
+                $nivelLabel !== '' ? ' — '.$nivelLabel : ''
             ),
         ]);
 
@@ -453,7 +484,7 @@ class BudgetApprovalService
      *
      * @return array<string, mixed>
      */
-    public function approveByStaff(int $budgetId, User $actor, ?string $note): array
+    public function approveByStaff(int $budgetId, User $actor, ?string $note, ?int $nivel = null): array
     {
         $budget = $this->loadBudget($budgetId);
         if (! $budget instanceof Budget) {
@@ -465,28 +496,41 @@ class BudgetApprovalService
             return ['result' => 'already_resolved', 'message' => 'Este orçamento já está aprovado.'];
         }
 
+        $levelError = $this->levelDecisionError($budget, $nivel);
+        if ($levelError !== null) {
+            return $levelError;
+        }
+
         $decisionMessage = trim((string) $note) !== ''
             ? trim((string) $note)
             : 'Cliente aprovou o orçamento por outros meios (registrado pelo técnico).';
+        $decisionMessage = $this->decisionMessageWithLevel($budget, $decisionMessage, $nivel);
         $actorName = trim((string) ($actor->nome ?? '')) ?: 'Técnico';
 
         $newStatus = $this->finalizeApproval($budget, $decisionMessage, [
             'origem' => 'painel',
             'usuario_id' => (int) $actor->id,
             'usuario_nome' => $actorName,
+            'nivel' => $nivel,
             'approval_observacao' => 'Aprovação registrada pelo técnico (cliente aprovou por outros meios).',
             'history_observacao' => 'Técnico registrou a aprovação do cliente (outros meios).',
             'history_origem' => 'tecnico',
             'ip' => null,
             'ua' => null,
             'event_titulo' => 'Orçamento aprovado (registrado pelo técnico)',
-            'event_descricao' => sprintf('%s registrou a aprovação do orçamento %s (outros meios).', $actorName, $budget->numero),
+            'event_descricao' => static fn (Budget $budget, string $nivelLabel): string => sprintf(
+                '%s registrou a aprovação do orçamento %s (outros meios%s).',
+                $actorName,
+                $budget->numero,
+                $nivelLabel !== '' ? ' — '.$nivelLabel : ''
+            ),
             'event_origem' => OrderEvent::ORIGEM_USUARIO,
             'notif_title' => 'Orçamento aprovado (registrado pelo técnico)',
-            'notif_body' => sprintf(
-                'O orçamento %s foi aprovado (R$ %s).',
+            'notif_body' => static fn (Budget $budget, string $nivelLabel): string => sprintf(
+                'O orçamento %s foi aprovado (R$ %s)%s.',
                 $budget->numero,
-                number_format((float) $budget->total, 2, ',', '.')
+                number_format((float) $budget->total, 2, ',', '.'),
+                $nivelLabel !== '' ? ' — '.$nivelLabel : ''
             ),
         ]);
 
@@ -550,8 +594,18 @@ class BudgetApprovalService
         }
 
         $status = trim((string) ($budget->status ?? ''));
-        if (in_array($status, [Budget::STATUS_CONVERTED, Budget::STATUS_CANCELLED], true)) {
+        if (in_array($status, [
+            Budget::STATUS_APPROVED,
+            Budget::STATUS_PENDING_OS,
+            Budget::STATUS_CONVERTED,
+            Budget::STATUS_REJECTED,
+            Budget::STATUS_CANCELLED,
+        ], true)) {
             return ['result' => 'already_resolved', 'message' => 'Este orçamento não pode ser cancelado no status atual.'];
+        }
+
+        if ($this->orderIsSettled($budget)) {
+            return ['result' => 'already_resolved', 'message' => 'A OS vinculada a este orçamento já está encerrada e não pode mais ser afetada por esta ação.'];
         }
 
         $decisionMessage = trim((string) $reason) !== ''
@@ -577,11 +631,27 @@ class BudgetApprovalService
     private function finalizeApproval(Budget $budget, string $decisionMessage, array $ctx): string
     {
         $approvedStatus = $this->approvedStatus($budget);
+        $nivel = Budget::normalizeLevel($ctx['nivel'] ?? null);
+        $levelApplied = false;
 
-        DB::transaction(function () use ($budget, $approvedStatus, $decisionMessage, $ctx): void {
+        DB::transaction(function () use ($budget, $approvedStatus, $decisionMessage, $ctx, $nivel, &$levelApplied): void {
             $budget->refresh();
             $previousStatus = (string) ($budget->status ?? Budget::STATUS_DRAFT);
             $approvedAt = now();
+
+            // Níveis de manutenção: a escolha do cliente vira o escopo ANTES de
+            // qualquer efeito colateral. A OS (financeiro, baixa de peça,
+            // fechamento) e a reserva de estoque leem os itens ao vivo, então
+            // os itens acima do nível escolhido saem da lista aqui — o que foi
+            // oferecido fica no snapshot da auditoria. Orçamento comum (tudo
+            // nível 1) passa reto, como sempre passou.
+            $snapshot = null;
+            if ($nivel !== null && $budget->hasTiers()) {
+                $snapshot = BudgetTotals::perLevel($budget);
+                $this->applyApprovedLevel($budget, $nivel);
+                $levelApplied = true;
+            }
+            $nivelLabel = $levelApplied ? Budget::levelLabel($nivel) : '';
 
             $budget->forceFill([
                 'status' => $approvedStatus,
@@ -603,6 +673,8 @@ class BudgetApprovalService
                 'usuario_id' => $ctx['usuario_id'] ?? null,
                 'usuario_nome' => (string) $ctx['usuario_nome'],
                 'resposta_cliente' => $decisionMessage,
+                'nivel' => $levelApplied ? $nivel : null,
+                'niveis_snapshot' => $snapshot,
                 'observacao' => (string) $ctx['approval_observacao'],
                 'ip_origem' => $ctx['ip'] ?? null,
                 'user_agent' => ($ctx['ua'] ?? null) !== null ? Str::limit((string) $ctx['ua'], 255, '') : null,
@@ -625,11 +697,12 @@ class BudgetApprovalService
                     OrderEvent::CATEGORIA_ORCAMENTO,
                     OrderEvent::TIPO_ORCAMENTO_APROVADO,
                     (string) $ctx['event_titulo'],
-                    (string) $ctx['event_descricao'],
+                    $this->contextText($ctx['event_descricao'], $budget, $nivelLabel),
                     [
                         'orcamento_id' => (int) $budget->id,
                         'numero' => (string) $budget->numero,
                         'resposta_cliente' => $decisionMessage,
+                        'nivel' => $levelApplied ? $nivel : null,
                         'ip_origem' => $ctx['ip'] ?? null,
                         'user_agent' => $ctx['ua'] ?? null,
                     ],
@@ -651,7 +724,7 @@ class BudgetApprovalService
                 [
                     'kind' => 'orcamento.approved',
                     'title' => (string) $ctx['notif_title'],
-                    'body' => (string) $ctx['notif_body'],
+                    'body' => $this->contextText($ctx['notif_body'], $budget, $nivelLabel),
                     'route' => '/orcamentos/' . (int) $budget->id,
                     'icon' => 'receipt',
                     'orcamento_id' => (int) $budget->id,
@@ -670,7 +743,107 @@ class BudgetApprovalService
             }
         });
 
+        // Orçamento com níveis não teve PDF no envio (o cliente escolhia a
+        // opção na página): o documento definitivo nasce agora, com o escopo
+        // aprovado. Fora da transação e sem nunca desfazer a aprovação — a
+        // rota pública regenera sob demanda se isto falhar.
+        if ($levelApplied) {
+            $this->persistApprovedLevelPdf($budget, isset($ctx['usuario_id']) ? (int) $ctx['usuario_id'] : null);
+        }
+
         return $approvedStatus;
+    }
+
+    /**
+     * Orçamento com níveis exige a opção escolhida; sem níveis, ignora.
+     *
+     * @return array{result: string, message: string}|null
+     */
+    private function levelDecisionError(Budget $budget, ?int $nivel): ?array
+    {
+        if (! $budget->hasTiers()) {
+            return null;
+        }
+
+        if ($nivel === null || $nivel < Budget::NIVEL_MINIMO || $nivel > $budget->maxLevel()) {
+            return [
+                'result' => 'invalid_level',
+                'message' => 'Escolha a opção de manutenção para aprovar esta proposta.',
+            ];
+        }
+
+        return null;
+    }
+
+    private function decisionMessageWithLevel(Budget $budget, string $decisionMessage, ?int $nivel): string
+    {
+        if ($nivel === null || ! $budget->hasTiers()) {
+            return $decisionMessage;
+        }
+
+        return sprintf('%s. Opção escolhida: %s.', rtrim($decisionMessage, '. '), Budget::levelLabel($nivel));
+    }
+
+    /**
+     * Poda os itens acima do nível escolhido e recalcula o total. Só delete e
+     * soma: nada é reprecificado (a cotação gravada em cada linha fica como
+     * está, igual ao que cotacaoCongelada() garante para orçamento fechado).
+     * As condições comerciais do nível escolhido viram as do orçamento pelo
+     * mesmo motivo (OS, baixa e revisão leem as colunas base direto).
+     */
+    private function applyApprovedLevel(Budget $budget, int $nivel): void
+    {
+        BudgetItem::query()
+            ->where('orcamento_id', (int) $budget->id)
+            ->where('nivel_minimo', '>', $nivel)
+            ->delete();
+
+        $this->budgetCommercialTermsService->collapseApprovedLevel($budget, $nivel);
+
+        $budget->forceFill(['nivel_aprovado' => $nivel])->save();
+        BudgetTotals::recalculate($budget);
+        $budget->refresh();
+    }
+
+    /**
+     * Texto de evento/notificação: string pronta, ou closure que recebe o
+     * orçamento já com o nível aplicado (valor certo) e o rótulo da opção.
+     */
+    private function contextText(mixed $value, Budget $budget, string $nivelLabel): string
+    {
+        return $value instanceof Closure ? (string) $value($budget, $nivelLabel) : (string) $value;
+    }
+
+    private function persistApprovedLevelPdf(Budget $budget, ?int $actorId): void
+    {
+        try {
+            $budget->refresh();
+
+            $actor = $actorId !== null && $actorId > 0 ? User::query()->whereKey($actorId)->first() : null;
+            if (! $actor instanceof User) {
+                $actor = User::query()->whereKey((int) ($budget->criado_por ?? 0))->where('ativo', true)->first();
+            }
+
+            $pdf = $this->budgetPdfService->generate($budget, '', $actor instanceof User ? ['actor' => $actor] : []);
+            if (! ($pdf['ok'] ?? false)) {
+                return;
+            }
+
+            $this->syncOrderForDispatch($budget, (string) ($pdf['relative_path'] ?? ''));
+
+            if ((int) ($budget->os_id ?? 0) > 0 && $actor instanceof User) {
+                $this->orderDocumentCenterService->syncAfterBudgetDispatch(
+                    (int) $budget->os_id,
+                    (int) $budget->id,
+                    $pdf,
+                    $actor,
+                    null,
+                    is_array($pdf['engine_result'] ?? null) ? $pdf['engine_result'] : []
+                );
+            }
+        } catch (Throwable $exception) {
+            report($exception);
+        }
     }
 
     /**
@@ -858,9 +1031,9 @@ class BudgetApprovalService
     }
 
     /**
-     * @return array{ok: bool, absolute_path?: string, relative_path?: string, file_name?: string, message?: string}
+     * @return array{ok: bool, bytes?: string, absolute_path?: string, relative_path?: string, file_name?: string, message?: string}
      */
-    public function regeneratePdfByToken(string $token): array
+    public function regeneratePdfByToken(string $token, ?int $opcao = null): array
     {
         $budget = $this->findByToken($token);
 
@@ -883,10 +1056,17 @@ class BudgetApprovalService
 
         $actor = User::query()->whereKey((int) ($budget->criado_por ?? 0))->where('ativo', true)->first();
 
+        // Orçamento com níveis: o PDF baixado na página é o da opção que o
+        // cliente está olhando (projeção, nada gravado). Fora do fluxo de
+        // escolha o parâmetro é ignorado.
+        $nivel = $budget->hasTiers() && $opcao !== null && $opcao <= $budget->maxLevel()
+            ? Budget::normalizeLevel($opcao)
+            : null;
+
         return $this->budgetPdfService->generate(
             $budget,
             $this->publicUrl((string) ($budget->token_publico ?? '')),
-            $actor instanceof User ? ['actor' => $actor] : []
+            ($actor instanceof User ? ['actor' => $actor] : []) + ($nivel !== null ? ['nivel' => $nivel] : [])
         );
     }
 
@@ -905,7 +1085,7 @@ class BudgetApprovalService
         }
 
         return Budget::query()
-            ->with(['client', 'equipment', 'order', 'items'])
+            ->with(['client', 'equipment', 'order', 'items', 'responsible', 'creator'])
             ->where('token_publico', $normalized)
             ->first();
     }
@@ -1009,18 +1189,21 @@ class BudgetApprovalService
     /**
      * @return array{ok: bool, provider: string, destino: string, mensagem: string, erro: ?string}
      */
-    private function dispatchWhatsappApproval(Budget $budget, string $companyName, string $approvalLink, array $pdf, bool $isResolved = false): array
+    private function dispatchWhatsappApproval(Budget $budget, string $companyName, string $approvalLink, ?array $pdf, bool $isResolved = false): array
     {
         $destinationPhone = $this->resolveDestinationPhone($budget);
-        $caption = $this->buildWhatsappCaption($budget, $companyName, $approvalLink, $isResolved);
+        $caption = $this->buildWhatsappCaption($budget, $companyName, $approvalLink, $isResolved, $pdf !== null);
 
-        $dispatch = $this->integrationSettingsService->sendDirectMedia(
-            $destinationPhone,
-            (string) ($pdf['absolute_path'] ?? ''),
-            'document',
-            $caption,
-            (string) ($pdf['file_name'] ?? null)
-        );
+        $dispatch = $pdf === null
+            ? $this->integrationSettingsService->sendDirectMessage($destinationPhone, $caption)
+            : $this->integrationSettingsService->sendDirectMediaBytes(
+                $destinationPhone,
+                $this->pdfBytes($pdf),
+                'application/pdf',
+                'document',
+                $caption,
+                (string) ($pdf['file_name'] ?? null)
+            );
 
         $ok = (bool) ($dispatch['ok'] ?? false);
 
@@ -1036,11 +1219,11 @@ class BudgetApprovalService
     /**
      * @return array{ok: bool, provider: string, destino: string, mensagem: string, erro: ?string}
      */
-    private function dispatchEmailApproval(Budget $budget, string $companyName, string $approvalLink, array $pdf, bool $isResolved = false): array
+    private function dispatchEmailApproval(Budget $budget, string $companyName, string $approvalLink, ?array $pdf, bool $isResolved = false): array
     {
         $destinationEmail = $this->resolveDestinationEmail($budget);
         $subject = $this->buildEmailSubject($budget, $companyName, $isResolved);
-        $body = $this->buildEmailBody($budget, $companyName, $approvalLink, $isResolved);
+        $body = $this->buildEmailBody($budget, $companyName, $approvalLink, $isResolved, $pdf !== null);
 
         if (! $this->emailIntegrationSettingsService->operationalMailerAvailable()) {
             return [
@@ -1058,10 +1241,9 @@ class BudgetApprovalService
                 function ($mail) use ($destinationEmail, $subject, $pdf): void {
                     $mail->to($destinationEmail)->subject($subject);
 
-                    $absolutePath = (string) ($pdf['absolute_path'] ?? '');
-                    if ($absolutePath !== '') {
-                        $mail->attach($absolutePath, [
-                            'as' => (string) ($pdf['file_name'] ?? 'orcamento.pdf'),
+                    $bytes = $pdf !== null ? $this->pdfBytes($pdf) : '';
+                    if ($bytes !== '') {
+                        $mail->attachData($bytes, (string) ($pdf['file_name'] ?? 'orcamento.pdf'), [
                             'mime' => 'application/pdf',
                         ]);
                     }
@@ -1088,6 +1270,29 @@ class BudgetApprovalService
         ];
     }
 
+    /**
+     * Bytes do PDF gerado (BudgetPdfService devolve bytes; chamadores antigos
+     * ainda podem trazer só absolute_path).
+     *
+     * @param  array<string, mixed>  $pdf
+     */
+    private function pdfBytes(array $pdf): string
+    {
+        $bytes = (string) ($pdf['bytes'] ?? '');
+        if ($bytes !== '') {
+            return $bytes;
+        }
+
+        $absolutePath = (string) ($pdf['absolute_path'] ?? '');
+        if ($absolutePath !== '' && is_file($absolutePath)) {
+            $read = file_get_contents($absolutePath);
+
+            return is_string($read) ? $read : '';
+        }
+
+        return '';
+    }
+
     private function buildEmailSubject(Budget $budget, string $companyName, bool $isResolved = false): string
     {
         $numero = trim((string) ($budget->numero ?? ('ORC-'.(int) $budget->id)));
@@ -1095,11 +1300,24 @@ class BudgetApprovalService
         return $companyName.' - Orçamento '.$numero.($isResolved ? ' (aprovado)' : '');
     }
 
-    private function buildEmailBody(Budget $budget, string $companyName, string $approvalLink, bool $isResolved = false): string
+    private function buildEmailBody(Budget $budget, string $companyName, string $approvalLink, bool $isResolved = false, bool $withPdf = true): string
     {
         $numero = trim((string) ($budget->numero ?? ('ORC-'.(int) $budget->id)));
         $cliente = $this->resolveDisplayClientName($budget);
         $total = 'R$ '.number_format((float) ($budget->total ?? 0), 2, ',', '.');
+
+        if (! $withPdf) {
+            return sprintf(
+                '<p>%s</p><p>Preparamos <strong>%d opções de manutenção</strong>%s para o orçamento <strong>%s</strong>%s.</p><p>Acesse o link abaixo, compare as opções e escolha a que preferir:</p><p><a href="%s">%s</a></p>',
+                e($companyName),
+                $budget->maxLevel(),
+                $this->equipmentMention($budget) !== '' ? ' para o seu '.e($this->equipmentMention($budget)) : '',
+                e($numero),
+                $cliente !== '' ? ' de '.e($cliente) : '',
+                e($approvalLink),
+                e($approvalLink)
+            );
+        }
 
         return sprintf(
             '<p>%s</p><p>Segue o orçamento <strong>%s</strong>%s%s.</p><p>Total da proposta: <strong>%s</strong>.</p><p>%s</p><p><a href="%s">%s</a></p>',
@@ -1182,11 +1400,23 @@ class BudgetApprovalService
         ])->save();
     }
 
-    private function buildWhatsappCaption(Budget $budget, string $companyName, string $approvalLink, bool $isResolved = false): string
+    private function buildWhatsappCaption(Budget $budget, string $companyName, string $approvalLink, bool $isResolved = false, bool $withPdf = true): string
     {
         $numero = trim((string) ($budget->numero ?? ('ORC-' . (int) $budget->id)));
         $cliente = $this->resolveDisplayClientName($budget);
         $total = 'R$ ' . number_format((float) ($budget->total ?? 0), 2, ',', '.');
+
+        if (! $withPdf) {
+            $equipamento = $this->equipmentMention($budget);
+
+            return trim(
+                $companyName . "\n\n"
+                . 'Preparamos ' . $budget->maxLevel() . ' opções de manutenção' . ($equipamento !== '' ? ' para o seu ' . $equipamento : '')
+                . ' (orçamento ' . $numero . ($cliente !== '' ? ', ' . $cliente : '') . ").\n\n"
+                . "Acesse o link, compare as opções e escolha a que preferir:\n"
+                . $approvalLink
+            );
+        }
 
         return trim(
             $companyName . "\n\n"
@@ -1197,6 +1427,24 @@ class BudgetApprovalService
                 : 'Analise o PDF em anexo e responda a proposta pelo link abaixo:') . "\n"
             . $approvalLink
         );
+    }
+
+    /**
+     * "seu Smartphone Samsung Galaxy": o que der para montar do equipamento
+     * cadastrado ou eventual; vazio quando o orçamento não envolve aparelho.
+     */
+    private function equipmentMention(Budget $budget): string
+    {
+        $resumo = trim((string) ($budget->equipment?->resumo_tecnico ?? ''));
+        if ($resumo !== '') {
+            return $resumo;
+        }
+
+        return trim(implode(' ', array_filter([
+            trim((string) ($budget->equipamento_tipo_avulso ?? '')),
+            trim((string) ($budget->equipamento_marca_avulso ?? '')),
+            trim((string) ($budget->equipamento_modelo_avulso ?? '')),
+        ], static fn (string $part): bool => $part !== '')));
     }
 
     private function resolveDestinationPhone(Budget $budget): string
@@ -1245,6 +1493,58 @@ class BudgetApprovalService
         $name = trim((string) ($settings['empresa_razao_social'] ?? ''));
 
         return $name !== '' ? $name : 'Sistema ERP';
+    }
+
+    private function companyPhone(): string
+    {
+        $payload = $this->companyProfileService->payload();
+        $settings = is_array($payload['settings'] ?? null) ? $payload['settings'] : [];
+
+        return trim((string) ($settings['empresa_telefone'] ?? ''));
+    }
+
+    /**
+     * Link "fale com a gente" da página pública. Usa o telefone da empresa
+     * (única chave de contato cadastrada) com uma mensagem pronta citando o
+     * orçamento; vazio quando não há telefone — a página esconde o botão.
+     */
+    private function companyWhatsappUrl(Budget $budget): string
+    {
+        $digits = ltrim($this->phoneNumberNormalizationService->normalize($this->companyPhone()), '+');
+        if (strlen($digits) < 12) {
+            return '';
+        }
+
+        $numero = trim((string) ($budget->numero ?? ''));
+        $texto = $numero !== ''
+            ? sprintf('Olá! Estou vendo o orçamento %s e tenho uma dúvida.', $numero)
+            : 'Olá! Estou vendo o orçamento que vocês me enviaram e tenho uma dúvida.';
+
+        return 'https://wa.me/'.$digits.'?text='.rawurlencode($texto);
+    }
+
+    private function companyLogoDataUri(): string
+    {
+        try {
+            return $this->companyContextProvider->logoDataUri();
+        } catch (Throwable) {
+            return '';
+        }
+    }
+
+    /**
+     * Primeiro nome em Title Case ("MARIA JOSÉ" → "Maria"); vazio sem nome.
+     */
+    private function firstName(string $fullName): string
+    {
+        $fullName = trim($fullName);
+        if ($fullName === '') {
+            return '';
+        }
+
+        $first = (string) preg_split('/\s+/u', $fullName)[0];
+
+        return mb_convert_case(mb_strtolower($first, 'UTF-8'), MB_CASE_TITLE, 'UTF-8');
     }
 
     private function resolveDisplayClientName(Budget $budget): string
@@ -1481,11 +1781,57 @@ class BudgetApprovalService
     /**
      * @return array<string, mixed>
      */
-    private function publicBudgetPayload(Budget $budget): array
+    private function publicBudgetPayload(Budget $budget, ?int $opcao = null): array
     {
         $status = trim((string) ($budget->status ?? Budget::STATUS_DRAFT));
         $expired = $this->tokenExpired($budget);
         $canRespond = ! $expired && ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_REJECTED], true);
+
+        // Níveis de manutenção: enquanto o cliente pode responder, a página
+        // vira uma escolha em dois passos — a landing com as opções e, com
+        // `?opcao=N`, o orçamento daquela opção (itens e totais projetados,
+        // nada gravado). Depois da decisão a lista já é o escopo contratado.
+        $hasTiers = $budget->hasTiers();
+        $selectedLevel = $hasTiers && $canRespond && $opcao !== null && $opcao <= $budget->maxLevel()
+            ? Budget::normalizeLevel($opcao)
+            : null;
+        $levels = $hasTiers ? BudgetTotals::perLevel($budget) : [];
+        $selectedTotals = $selectedLevel !== null ? ($levels[$selectedLevel - 1] ?? null) : null;
+        $items = $selectedLevel !== null
+            ? BudgetTotals::itemsForLevel($budget, $selectedLevel)
+            : $budget->items->sortBy('ordem')->values();
+
+        // Condições comerciais por opção: cada cartão da landing carrega as
+        // suas, e `condicoes_comerciais_layout` diz, campo a campo, se o valor
+        // é o mesmo em todas as opções (dito uma vez, no rodapé) ou varia
+        // (dito dentro de cada cartão). O diff olha TODOS os níveis, não só
+        // os cartões que a view decide exibir — esconder uma diferença real
+        // seria o erro que esta regra existe para evitar.
+        $levelTerms = $hasTiers ? $this->budgetCommercialTermsService->forEachLevel($budget) : [];
+        foreach ($levels as $index => $level) {
+            $levels[$index]['condicoes_comerciais'] = $levelTerms[(int) ($level['nivel'] ?? 0)] ?? null;
+        }
+        $termsLayout = [];
+        foreach ([
+            'garantia' => 'garantia_label',
+            'formas_pagamento' => 'formas_pagamento_texto',
+            'parcelamento' => 'parcelamento_texto',
+            'entrega_domicilio' => 'entrega_domicilio_label',
+        ] as $chave => $campo) {
+            $compartilhado = count($levelTerms) <= 1
+                || ! BudgetCommercialTermsService::diffAcrossLevels(array_values($levelTerms), $campo);
+            $primeiro = $levelTerms !== [] ? reset($levelTerms) : [];
+            $termsLayout[$chave] = [
+                'modo' => $compartilhado ? 'compartilhado' : 'por_opcao',
+                'valor' => $compartilhado ? (string) ($primeiro[$campo] ?? '') : '',
+            ];
+        }
+
+        // Selo "emite nota fiscal" na landing: só quando o orçamento marca a
+        // opção E a empresa (se MEI) ainda não estourou o teto anual — acima
+        // do limite a promessa deixa de ser garantida, então o selo some por
+        // completo em vez de arriscar prometer o que pode não sair.
+        $mostrarSeloNotaFiscal = (bool) $budget->emite_nota_fiscal && ! $this->anexoXService->limiteAnualAtingido();
 
         return [
             'id' => (int) $budget->id,
@@ -1495,6 +1841,13 @@ class BudgetApprovalService
             'status' => $status,
             'status_label' => Budget::statusLabel($status),
             'company_name' => $this->companyName(),
+            // Landing dos níveis fala com uma pessoa, assinada por uma pessoa:
+            // primeiro nome do cliente, quem analisou, logo e um canal direto.
+            'client_first_name' => $this->firstName($this->resolveDisplayClientName($budget)),
+            'technician_name' => trim((string) ($budget->responsible?->nome ?? $budget->creator?->nome ?? '')),
+            'company_logo_data_uri' => $this->companyLogoDataUri(),
+            'company_phone' => $this->companyPhone(),
+            'company_whatsapp_url' => $this->companyWhatsappUrl($budget),
             'client_name' => $this->resolveDisplayClientName($budget),
             'equipment_name' => trim((string) ($budget->equipment?->resumo_tecnico ?? '')),
             'order_number' => trim((string) ($budget->order?->numero_os ?? '')),
@@ -1504,17 +1857,26 @@ class BudgetApprovalService
             'token_expira_em' => $budget->token_expira_em instanceof Carbon ? $budget->token_expira_em->format('d/m/Y H:i') : '',
             'expired' => $expired,
             'can_respond' => $canRespond,
-            'subtotal' => round((float) ($budget->subtotal ?? 0), 2),
-            'desconto' => round((float) ($budget->desconto ?? 0), 2),
-            'acrescimo' => round((float) ($budget->acrescimo ?? 0), 2),
-            'total' => round((float) ($budget->total ?? 0), 2),
+            'subtotal' => round((float) ($selectedTotals['subtotal'] ?? $budget->subtotal ?? 0), 2),
+            'desconto' => round((float) ($selectedTotals['desconto'] ?? $budget->desconto ?? 0), 2),
+            'acrescimo' => round((float) ($selectedTotals['acrescimo'] ?? $budget->acrescimo ?? 0), 2),
+            'total' => round((float) ($selectedTotals['total'] ?? $budget->total ?? 0), 2),
             'motivo_rejeicao' => trim((string) ($budget->motivo_rejeicao ?? '')),
+            'has_tiers' => $hasTiers,
+            'niveis' => $levels,
+            'nivel_maximo' => $budget->maxLevel(),
+            'nivel_recomendado' => Budget::normalizeLevel($budget->nivel_recomendado),
+            'opcao_selecionada' => $selectedLevel,
+            'opcao_selecionada_label' => Budget::levelLabel($selectedLevel),
+            'nivel_aprovado' => Budget::normalizeLevel($budget->nivel_aprovado),
+            'nivel_aprovado_label' => Budget::levelLabel(Budget::normalizeLevel($budget->nivel_aprovado)),
             // O cliente aprova sabendo como paga e por quanto tempo tem
-            // garantia: mesmas condições que saem no PDF.
-            'condicoes_comerciais' => $this->budgetCommercialTermsService->forBudget($budget),
-            'items' => $budget->items
-                ->sortBy('ordem')
-                ->values()
+            // garantia: mesmas condições que saem no PDF (as da opção em
+            // exibição; depois da decisão, as do nível aprovado).
+            'condicoes_comerciais' => $this->budgetCommercialTermsService->forBudget($budget, $selectedLevel),
+            'condicoes_comerciais_layout' => $termsLayout,
+            'mostrar_selo_nota_fiscal' => $mostrarSeloNotaFiscal,
+            'items' => $items
                 ->map(static fn ($item): array => [
                     'descricao' => trim((string) ($item->descricao ?? '')),
                     'tipo_item' => trim((string) ($item->tipo_item ?? '')),
@@ -1523,6 +1885,7 @@ class BudgetApprovalService
                     'desconto' => (float) ($item->desconto ?? 0),
                     'acrescimo' => (float) ($item->acrescimo ?? 0),
                     'total' => (float) ($item->total ?? 0),
+                    'nivel_minimo' => Budget::normalizeLevel($item->nivel_minimo) ?? Budget::NIVEL_MINIMO,
                     'observacoes' => trim((string) ($item->observacoes ?? '')),
                 ])->all(),
         ];

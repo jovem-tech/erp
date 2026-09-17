@@ -11,6 +11,7 @@ Este diretorio concentra os guias operacionais para subir, validar e publicar o 
 - [Operação do Gerenciador Central de Arquivos](operacao-gerenciador-central-arquivos.md) — flags, sincronização, miniaturas, diagnóstico, incidentes e rollback.
 - [Operação de Backup e Restauração](operacao-backup-e-restauracao.md) — provisionamento, frase secreta, agenda, retenção, catálogo unificado e o procedimento de restaurar **sem o sistema no ar**.
 - [Operação da otimização de fotos](operacao-otimizacao-fotos-operacionais.md) — codecs, preflight, limites, verificação e rollback.
+- [Operação dos documentos PDF sob demanda](operacao-documentos-sob-demanda.md) — snapshot por versão, modo `dual`→`snapshot`, Ghostscript, cache de render, purga do passivo e diagnóstico.
 - [Manual de inicializacao local no Windows com XAMPP](manual-inicializacao-local-windows-xampp.md) — *historico/descontinuado para desenvolvimento*.
 
 ## Escopo desta pasta

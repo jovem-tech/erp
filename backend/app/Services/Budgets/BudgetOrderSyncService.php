@@ -60,10 +60,12 @@ class BudgetOrderSyncService
             return;
         }
 
-        // OS cancelada só é reaberta quando o orçamento volta a um estado ativo.
+        // OS cancelada só é reaberta quando o orçamento volta a um estado ativo. OS
+        // encerrada por entrega (grupo_macro=encerrado) também nunca deve ser
+        // sobrescrita por um orçamento que virou cancelado/rejeitado depois do fato.
         if (
-            ($currentStatus === 'cancelado' || $currentFlowState === 'cancelado')
-            && $targetStatus === 'cancelado'
+            $targetStatus === 'cancelado'
+            && ($currentStatus === 'cancelado' || $currentFlowState === 'cancelado' || $currentFlowState === OrderStatus::CLOSURE_MACRO_GROUP)
         ) {
             return;
         }

@@ -8,6 +8,8 @@ use App\Models\User;
 use App\Models\UserSignature;
 use App\Services\Pdf\Contexts\CompanyContextProvider;
 use App\Services\Pdf\Contexts\PdfContextFactoryInterface;
+use App\Services\Pdf\Snapshots\DocumentSnapshotHydrator;
+use App\Services\Pdf\Snapshots\DocumentSnapshotSerializer;
 use App\Services\Signatures\SignatureImageService;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Carbon;
@@ -32,7 +34,10 @@ class PdfGenerationService
         private readonly PdfTemplateRegistry $registry,
         private readonly PdfTemplateRenderer $renderer,
         private readonly CompanyContextProvider $companyContextProvider,
-        private readonly SignatureImageService $signatureImageService
+        private readonly SignatureImageService $signatureImageService,
+        private readonly DocumentSnapshotSerializer $snapshotSerializer,
+        private readonly DocumentSnapshotHydrator $snapshotHydrator,
+        private readonly PdfCompressionService $compressionService
     ) {
     }
 
@@ -52,8 +57,9 @@ class PdfGenerationService
 
     /**
      * @param array<string, mixed> $subject ex.: ['order' => Order] | ['budget' => Budget]
-     * @param array<string, mixed> $options formato (a4|80mm), actor (User), approval_link, dados do encerramento...
-     * @return array{ok: bool, bytes?: string, template_id?: int, template_versao?: int, hash_schema?: string, tipo_codigo?: string, message?: string}
+     * @param array<string, mixed> $options formato (a4|80mm), actor (User), approval_link, dados do encerramento,
+     *                                      render_profile (padrao|assinado), capture_snapshot (bool)...
+     * @return array{ok: bool, bytes?: string, template_id?: int, template_versao?: int, hash_schema?: string, tipo_codigo?: string, snapshot?: array<string, mixed>, hash_snapshot?: string, message?: string}
      */
     public function generate(string $tipoCodigo, array $subject, array $options = []): array
     {
@@ -115,48 +121,10 @@ class PdfGenerationService
             }
             $context['assinaturas'] = $signatureMetadata['context'];
 
-            $formato = strtolower(trim((string) ($options['formato'] ?? 'a4'))) === '80mm' ? '80mm' : 'a4';
+            $formato = self::normalizeFormat($options['formato'] ?? null);
             $startedAt = microtime(true);
 
-            $html = $this->renderer->render($schema, $context, $descriptor, $formato);
-
-            // Marcadores de paginação são aplicados via canvas (page_text) —
-            // removidos do HTML para não imprimirem literalmente.
-            $hasPageMarkers = str_contains($html, '{PAGE_NUM}') || str_contains($html, '{PAGE_COUNT}');
-            if ($hasPageMarkers) {
-                $html = str_replace(['Página {PAGE_NUM} de {PAGE_COUNT}', '{PAGE_NUM}', '{PAGE_COUNT}'], '', $html);
-            }
-
-            $pagina = is_array($schema['pagina'] ?? null) ? $schema['pagina'] : [];
-            $orientation = strtolower(trim((string) ($pagina['orientacao'] ?? 'retrato'))) === 'paisagem' ? 'landscape' : 'portrait';
-
-            $pdf = Pdf::loadHTML($html)
-                ->setOption('isRemoteEnabled', false)
-                ->setOption('isPhpEnabled', false);
-
-            if ($formato === '80mm') {
-                $pdf->setPaper([0, 0, 226.77, 1200], 'portrait');
-            } else {
-                $pdf->setPaper('a4', $orientation);
-            }
-
-            $dompdf = $pdf->getDomPDF();
-            $dompdf->render();
-
-            if ($hasPageMarkers && $formato === 'a4') {
-                $canvas = $dompdf->getCanvas();
-                $font = $dompdf->getFontMetrics()->getFont('DejaVu Sans');
-                $canvas->page_text(
-                    $canvas->get_width() / 2 - 40,
-                    $canvas->get_height() - 10,
-                    'Página {PAGE_NUM} de {PAGE_COUNT}',
-                    $font,
-                    8,
-                    [0.28, 0.33, 0.41]
-                );
-            }
-
-            $bytes = (string) $dompdf->output();
+            $bytes = $this->renderPdfBytes($schema, $context, $descriptor, $formato);
 
             $elapsed = microtime(true) - $startedAt;
             if ($elapsed > self::MAX_RENDER_SECONDS_WARNING) {
@@ -168,7 +136,7 @@ class PdfGenerationService
                 ]);
             }
 
-            return [
+            $result = [
                 'ok' => true,
                 'bytes' => $bytes,
                 'template_id' => (int) $versao->template_id,
@@ -177,6 +145,22 @@ class PdfGenerationService
                 'tipo_codigo' => $tipoCodigo,
                 'assinatura' => $signatureMetadata['audit'],
             ];
+
+            if ((bool) ($options['capture_snapshot'] ?? false)) {
+                $snapshot = $this->snapshotSerializer->fromEngineContext(
+                    $context,
+                    $descriptor,
+                    $versao,
+                    $signatureMetadata['audit'],
+                    self::renderProfileDescriptor($options),
+                    $this->companyContextProvider->logoReference(),
+                    is_array($options['customer_signature'] ?? null) ? $options['customer_signature'] : null
+                );
+                $result['snapshot'] = $snapshot;
+                $result['hash_snapshot'] = DocumentSnapshotSerializer::canonicalHash($snapshot);
+            }
+
+            return $result;
         } catch (Throwable $exception) {
             report($exception);
 
@@ -223,49 +207,164 @@ class PdfGenerationService
                 'versao_template' => 'rascunho',
             ];
 
-            $formato = strtolower(trim((string) ($options['formato'] ?? 'a4'))) === '80mm' ? '80mm' : 'a4';
-            $html = $this->renderer->render($schema, $context, $descriptor, $formato);
+            $formato = self::normalizeFormat($options['formato'] ?? null);
 
-            $hasPageMarkers = str_contains($html, '{PAGE_NUM}') || str_contains($html, '{PAGE_COUNT}');
-            if ($hasPageMarkers) {
-                $html = str_replace(['Página {PAGE_NUM} de {PAGE_COUNT}', '{PAGE_NUM}', '{PAGE_COUNT}'], '', $html);
-            }
-
-            $pagina = is_array($schema['pagina'] ?? null) ? $schema['pagina'] : [];
-            $orientation = strtolower(trim((string) ($pagina['orientacao'] ?? 'retrato'))) === 'paisagem' ? 'landscape' : 'portrait';
-
-            $pdf = Pdf::loadHTML($html)
-                ->setOption('isRemoteEnabled', false)
-                ->setOption('isPhpEnabled', false);
-
-            if ($formato === '80mm') {
-                $pdf->setPaper([0, 0, 226.77, 1200], 'portrait');
-            } else {
-                $pdf->setPaper('a4', $orientation);
-            }
-
-            $dompdf = $pdf->getDomPDF();
-            $dompdf->render();
-
-            if ($hasPageMarkers && $formato === 'a4') {
-                $canvas = $dompdf->getCanvas();
-                $font = $dompdf->getFontMetrics()->getFont('DejaVu Sans');
-                $canvas->page_text(
-                    $canvas->get_width() / 2 - 40,
-                    $canvas->get_height() - 10,
-                    'Página {PAGE_NUM} de {PAGE_COUNT}',
-                    $font,
-                    8,
-                    [0.28, 0.33, 0.41]
-                );
-            }
-
-            return ['ok' => true, 'bytes' => (string) $dompdf->output()];
+            return ['ok' => true, 'bytes' => $this->renderPdfBytes($schema, $context, $descriptor, $formato)];
         } catch (Throwable $exception) {
             report($exception);
 
             return ['ok' => false, 'message' => 'Falha ao renderizar a prévia do documento.'];
         }
+    }
+
+    /**
+     * Re-render de uma versão documental a partir do snapshot gravado na
+     * emissão. Pina a versão de template usada na época (cai para a
+     * publicada se ela sumiu, anotando divergência), reidrata imagens e
+     * rubricas por referência e NÃO aplica as regras de emissão (assinatura
+     * obrigatória etc.) — isto é leitura, não emissão.
+     *
+     * @param array<string, mixed> $envelope
+     * @param array<string, mixed> $options
+     * @return array{ok: bool, bytes?: string, divergencias?: array<int, string>, message?: string}
+     */
+    public function renderSnapshot(array $envelope, string $formato, array $options = []): array
+    {
+        $tipoCodigo = trim((string) ($envelope['tipo_codigo'] ?? ''));
+        $descriptor = $tipoCodigo !== '' ? $this->registry->get($tipoCodigo) : null;
+        if ($descriptor === null) {
+            return ['ok' => false, 'message' => sprintf('Tipo documental desconhecido no snapshot: "%s".', $tipoCodigo)];
+        }
+
+        $divergencias = [];
+        $versaoId = (int) ($envelope['template']['versao_id'] ?? 0);
+        $versao = $versaoId > 0 ? PdfTemplateVersao::query()->find($versaoId) : null;
+        if (! $versao instanceof PdfTemplateVersao) {
+            $versao = $this->resolvePublishedVersion($tipoCodigo);
+            $divergencias[] = 'template_original_indisponivel';
+        }
+        if (! $versao instanceof PdfTemplateVersao) {
+            return ['ok' => false, 'message' => sprintf('Nenhum template disponível para re-renderizar "%s".', $tipoCodigo)];
+        }
+
+        $schema = $this->cachedSchema($versao);
+        if ($schema === []) {
+            return ['ok' => false, 'message' => 'Schema vazio/ inválido no template do snapshot.'];
+        }
+
+        try {
+            $hydrated = $this->snapshotHydrator->toRenderContext($envelope, $descriptor, $this->imageTokens($schema));
+            $context = $hydrated['context'];
+            $divergencias = array_values(array_unique(array_merge($divergencias, $hydrated['divergencias'])));
+
+            $bytes = $this->renderPdfBytes($schema, $context, $descriptor, self::normalizeFormat($formato));
+
+            return [
+                'ok' => true,
+                'bytes' => $bytes,
+                'divergencias' => $divergencias,
+                'template_id' => (int) $versao->template_id,
+                'template_versao' => (int) $versao->versao,
+                'hash_schema' => (string) ($versao->hash_schema ?? ''),
+            ];
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return ['ok' => false, 'message' => 'Falha ao re-renderizar o documento a partir do snapshot.'];
+        }
+    }
+
+    /**
+     * Descritor do perfil de compressão de fotos usado na emissão, gravado
+     * no snapshot para o re-render reproduzir o mesmo resultado.
+     *
+     * @param array<string, mixed> $options
+     * @return array{perfil: string, foto_max_dim: int, foto_qualidade: int}
+     */
+    public static function renderProfileDescriptor(array $options): array
+    {
+        $name = trim((string) ($options['render_profile'] ?? 'padrao')) ?: 'padrao';
+        $profile = config('document-rendering.photos.'.$name);
+        if (! is_array($profile)) {
+            $name = 'padrao';
+            $profile = (array) config('document-rendering.photos.padrao', []);
+        }
+
+        return [
+            'perfil' => $name,
+            'foto_max_dim' => (int) ($profile['max_dimension'] ?? 1400),
+            'foto_qualidade' => (int) ($profile['quality'] ?? 72),
+        ];
+    }
+
+    public static function normalizeFormat(mixed $formato): string
+    {
+        return strtolower(trim((string) ($formato ?? 'a4'))) === '80mm' ? '80mm' : 'a4';
+    }
+
+    /**
+     * Miolo único do dompdf: HTML dos blocos -> papel -> render -> numeração
+     * de páginas via canvas -> bytes. Usado pela emissão, pela prévia do
+     * editor e pelo re-render a partir de snapshot.
+     *
+     * @param array<string, mixed> $schema
+     * @param array<string, mixed> $context
+     * @param array<string, mixed> $descriptor
+     */
+    private function renderPdfBytes(array $schema, array $context, array $descriptor, string $formato): string
+    {
+        $html = $this->renderer->render($schema, $context, $descriptor, $formato);
+
+        // Marcadores de paginação são aplicados via canvas (page_text) —
+        // removidos do HTML para não imprimirem literalmente.
+        $hasPageMarkers = str_contains($html, '{PAGE_NUM}') || str_contains($html, '{PAGE_COUNT}');
+        if ($hasPageMarkers) {
+            $html = str_replace(['Página {PAGE_NUM} de {PAGE_COUNT}', '{PAGE_NUM}', '{PAGE_COUNT}'], '', $html);
+        }
+
+        $pagina = is_array($schema['pagina'] ?? null) ? $schema['pagina'] : [];
+        $orientation = strtolower(trim((string) ($pagina['orientacao'] ?? 'retrato'))) === 'paisagem' ? 'landscape' : 'portrait';
+
+        $pdf = Pdf::loadHTML($html)
+            ->setOption('isRemoteEnabled', false)
+            ->setOption('isPhpEnabled', false)
+            // Sem subsetting o dompdf embute as DejaVu inteiras (~1,4 MB de
+            // TTF) em todo documento — um cupom 80mm sem foto pesava 800 KB.
+            ->setOption('isFontSubsettingEnabled', (bool) config('document-rendering.font_subsetting', true));
+
+        if ($formato === '80mm') {
+            $pdf->setPaper([0, 0, 226.77, 1200], 'portrait');
+        } else {
+            $pdf->setPaper('a4', $orientation);
+        }
+
+        $dompdf = $pdf->getDomPDF();
+        $dompdf->render();
+
+        if ($hasPageMarkers && $formato === 'a4') {
+            $canvas = $dompdf->getCanvas();
+            $font = $dompdf->getFontMetrics()->getFont('DejaVu Sans');
+            $canvas->page_text(
+                $canvas->get_width() / 2 - 40,
+                $canvas->get_height() - 10,
+                'Página {PAGE_NUM} de {PAGE_COUNT}',
+                $font,
+                8,
+                [0.28, 0.33, 0.41]
+            );
+        }
+
+        $bytes = (string) $dompdf->output();
+
+        // Teto de tamanho aplicado a TODO PDF gerado (emissão, prévia e
+        // re-render de snapshot) — só chama o Ghostscript quando necessário,
+        // então documentos já pequenos (sem foto) não pagam esse custo.
+        $maxBytes = (int) config('document-rendering.max_bytes', 0);
+        if ($maxBytes > 0 && strlen($bytes) > $maxBytes) {
+            $bytes = $this->compressionService->compress($bytes, $maxBytes);
+        }
+
+        return $bytes;
     }
 
     /**

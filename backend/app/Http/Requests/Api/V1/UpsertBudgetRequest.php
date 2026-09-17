@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Api\V1;
 
 use App\Models\Budget;
+use App\Services\Budgets\BudgetCommercialTermsService;
 use Illuminate\Validation\Rule;
 
 class UpsertBudgetRequest extends BaseApiFormRequest
@@ -74,6 +75,24 @@ class UpsertBudgetRequest extends BaseApiFormRequest
             'formas_pagamento.*' => ['string', 'max:40'],
             'garantia_dias' => ['nullable', 'integer', Rule::in(array_keys(Budget::WARRANTY_TERMS))],
             'parcelas_sem_juros' => ['nullable', 'integer', 'min:2', 'max:'.Budget::MAX_INTEREST_FREE_INSTALLMENTS],
+            'entrega_domicilio' => ['nullable', 'boolean'],
+            // Sem dimensão "por nível" (ver migration): emissão de NFS-e não
+            // muda conforme a opção de manutenção escolhida.
+            'emite_nota_fiscal' => ['nullable', 'boolean'],
+            // Níveis de manutenção: o recomendado é só uma sugestão visual;
+            // o aprovado nasce exclusivamente da decisão do cliente.
+            'nivel_recomendado' => ['nullable', 'integer', 'between:'.Budget::NIVEL_MINIMO.','.Budget::NIVEL_MAXIMO],
+            'nivel_aprovado' => ['prohibited'],
+            // Condições comerciais por nível (chave = nível). Campo nulo/ausente
+            // herda o do orçamento; nível fora de 1..3 é ignorado no serviço.
+            'niveis_condicoes' => ['nullable', 'array'],
+            'niveis_condicoes.*.garantia_dias' => ['nullable', 'integer', Rule::in(array_keys(Budget::WARRANTY_TERMS))],
+            'niveis_condicoes.*.parcelas_sem_juros' => ['nullable', 'integer', 'min:2', 'max:'.Budget::MAX_INTEREST_FREE_INSTALLMENTS],
+            'niveis_condicoes.*.entrega_domicilio' => ['nullable', 'boolean'],
+            'niveis_condicoes.*.formas_pagamento' => ['nullable', 'array'],
+            'niveis_condicoes.*.formas_pagamento.*' => ['string', 'max:40'],
+            'niveis_condicoes.*.beneficios' => ['nullable', 'array', 'max:'.BudgetCommercialTermsService::MAX_BENEFICIOS_POR_NIVEL],
+            'niveis_condicoes.*.beneficios.*' => ['nullable', 'string', 'max:120'],
             'token_publico' => ['prohibited'],
             'token_expira_em' => ['prohibited'],
             'enviado_em' => ['prohibited'],
@@ -97,6 +116,7 @@ class UpsertBudgetRequest extends BaseApiFormRequest
             'itens.*.acrescimo_percentual' => ['nullable', 'numeric', 'min:0'],
             'itens.*.total' => ['nullable', 'numeric', 'min:0'],
             'itens.*.ordem' => ['nullable', 'integer', 'min:0'],
+            'itens.*.nivel_minimo' => ['nullable', 'integer', 'between:'.Budget::NIVEL_MINIMO.','.Budget::NIVEL_MAXIMO],
             'itens.*.observacoes' => ['nullable', 'string'],
             // Só usados quando a OS vinculada já está encerrada — ver
             // BudgetWorkflowService::isOrderClosed()/AdminCredentialVerifier.

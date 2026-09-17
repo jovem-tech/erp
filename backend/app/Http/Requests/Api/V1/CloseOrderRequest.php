@@ -133,6 +133,36 @@ class CloseOrderRequest extends BaseApiFormRequest
                 FinanceiroCartaoTaxa::MODALIDADE_DEBITO,
             ])],
             'recebimentos.*.parcelas' => ['nullable', 'integer', 'min:1', 'max:99'],
+
+            // Desconto concedido ao cliente nesta baixa (% ou valor fixo — ver
+            // App\Support\BudgetTotals::adjustment(), mesma matemática do
+            // orçamento). A obrigatoriedade do motivo quando o valor calculado
+            // for > 0, o teto do saldo em aberto e a permissão `os:administrar`
+            // são regras de negócio que dependem do valor final e do saldo já
+            // recebido — validadas em OrderClosureService::close(), não aqui.
+            'desconto_tipo' => [
+                'nullable',
+                'string',
+                Rule::in([Budget::ADJUSTMENT_MODE_VALUE, Budget::ADJUSTMENT_MODE_PERCENT]),
+            ],
+            'desconto_percentual' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                'max:100',
+                Rule::requiredIf($this->input('desconto_tipo') === Budget::ADJUSTMENT_MODE_PERCENT),
+            ],
+            'desconto_valor' => [
+                'nullable',
+                'numeric',
+                'min:0',
+                Rule::requiredIf($this->input('desconto_tipo') === Budget::ADJUSTMENT_MODE_VALUE),
+            ],
+            'desconto_motivo' => [
+                'nullable',
+                'string',
+                'max:255',
+            ],
         ];
     }
 

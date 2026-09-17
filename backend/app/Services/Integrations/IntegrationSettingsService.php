@@ -429,6 +429,46 @@ class IntegrationSettingsService
             return $this->failureResponse('Arquivo de mídia não encontrado para envio.');
         }
 
+        $rawMedia = file_get_contents($absoluteFilePath);
+        if ($rawMedia === false) {
+            return $this->failureResponse('Não foi possível ler o arquivo de mídia para envio.');
+        }
+
+        return $this->sendDirectMediaBytes(
+            $phone,
+            $rawMedia,
+            $this->detectMimeType($absoluteFilePath),
+            $mediaType,
+            $caption,
+            trim((string) ($fileName ?? '')) !== '' ? (string) $fileName : basename($absoluteFilePath)
+        );
+    }
+
+    /**
+     * Mesmo envio, sem exigir arquivo em disco — os documentos da OS são
+     * renderizados sob demanda e chegam aqui como bytes.
+     *
+     * @return array<string, mixed>
+     */
+    public function sendDirectMediaBytes(
+        string $phone,
+        string $bytes,
+        string $mimeType,
+        string $mediaType,
+        ?string $caption = null,
+        ?string $fileName = null
+    ): array {
+        $phone = trim($phone);
+        $mediaType = trim($mediaType);
+
+        if ($phone === '') {
+            return $this->failureResponse('Telefone do destinatário não informado.');
+        }
+
+        if ($bytes === '') {
+            return $this->failureResponse('Arquivo de mídia não encontrado para envio.');
+        }
+
         if (! in_array($mediaType, ['image', 'audio', 'video', 'document'], true)) {
             return $this->failureResponse('Tipo de mídia inválido para envio.');
         }
@@ -437,7 +477,7 @@ class IntegrationSettingsService
         $provider = $this->resolveDirectProvider($settings);
 
         if ($provider === 'evolution') {
-            return $this->sendEvolutionMedia($settings, $phone, $absoluteFilePath, $mediaType, $caption, $fileName);
+            return $this->sendEvolutionMedia($settings, $phone, $bytes, $mimeType, $mediaType, $caption, $fileName);
         }
 
         return $this->failureResponse('Envio de mídia disponível apenas via Evolution API nesta fase.', [
@@ -888,7 +928,8 @@ class IntegrationSettingsService
     private function sendEvolutionMedia(
         array $settings,
         string $phone,
-        string $absoluteFilePath,
+        string $rawMedia,
+        string $mimeType,
         string $mediaType,
         ?string $caption = null,
         ?string $fileName = null
@@ -903,12 +944,7 @@ class IntegrationSettingsService
 
         $resolvedFileName = trim((string) ($fileName ?? ''));
         if ($resolvedFileName === '') {
-            $resolvedFileName = basename($absoluteFilePath);
-        }
-
-        $rawMedia = file_get_contents($absoluteFilePath);
-        if ($rawMedia === false) {
-            return $this->failureResponse('Não foi possível ler o arquivo de mídia para envio.');
+            $resolvedFileName = 'arquivo';
         }
 
         // A Evolution API espera o arquivo em base64 no corpo JSON; envio multipart retorna erro 500.
@@ -917,7 +953,7 @@ class IntegrationSettingsService
             ->post(rtrim($baseUrl, '/') . '/message/sendMedia/' . rawurlencode($instance), array_filter([
                 'number' => $this->normalizePhone($phone),
                 'mediatype' => $mediaType,
-                'mimetype' => $this->detectMimeType($absoluteFilePath),
+                'mimetype' => trim($mimeType) !== '' ? trim($mimeType) : 'application/octet-stream',
                 'caption' => trim((string) ($caption ?? '')),
                 'media' => base64_encode($rawMedia),
                 'fileName' => $resolvedFileName,

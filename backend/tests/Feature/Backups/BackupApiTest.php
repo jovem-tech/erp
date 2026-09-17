@@ -173,7 +173,10 @@ class BackupApiTest extends TestCase
             'ativo' => 1,
         ]);
 
-        foreach (['baixar', 'restaurar', 'administrar'] as $index => $slug) {
+        // 'administrar' nao entra aqui: ja' faz parte do catalogo global
+        // semeado por seedRbacCatalog() (BuildsLegacyErpSchema) — inserir de
+        // novo violaria a unique constraint de `permissoes.slug`.
+        foreach (['baixar', 'restaurar'] as $index => $slug) {
             DB::table('permissoes')->insert([
                 'id' => 30 + $index,
                 'nome' => ucfirst($slug),

@@ -32,9 +32,13 @@ class VipsCommandRunner
         string $format,
         ?float $timeoutSeconds = null,
     ): void {
-        $options = $format === 'avif'
-            ? sprintf('[Q=%d,effort=%d,keep=none]', $quality, (int) config('operational-photos.avif_effort', 4))
-            : sprintf('[Q=%d,optimize_coding,interlace,keep=none]', $quality);
+        // PNG preserva o canal alfa (o jpegsave achataria a transparência
+        // contra preto); a compressão do PNG é sem perda, então Q não se aplica.
+        $options = match ($format) {
+            'avif' => sprintf('[Q=%d,effort=%d,keep=none]', $quality, (int) config('operational-photos.avif_effort', 4)),
+            'png' => '[compression=9,keep=none]',
+            default => sprintf('[Q=%d,optimize_coding,interlace,keep=none]', $quality),
+        };
 
         $this->run([
             $this->executable('thumbnail_binary'),

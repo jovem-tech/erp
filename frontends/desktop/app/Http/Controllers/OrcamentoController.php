@@ -581,10 +581,15 @@ class OrcamentoController extends DesktopController
 
     public function approve(Request $request, int $orcamento): RedirectResponse
     {
+        // Orçamento com níveis de manutenção: a opção que o cliente escolheu
+        // por outros meios vem do select do confirm (ver show.blade.php).
+        $nivel = $request->integer('nivel');
+        $nivel = $nivel >= 1 && $nivel <= 3 ? $nivel : null;
+
         return $this->handleStaffDecision(
             $request,
             $orcamento,
-            fn (?string $note) => $this->orcamentoService->approve($orcamento, $note),
+            fn (?string $note) => $this->orcamentoService->approve($orcamento, $note, $nivel),
             'observacao',
             'Aprovação registrada com sucesso.'
         );
@@ -777,6 +782,23 @@ class OrcamentoController extends DesktopController
             'formas_pagamento.*' => ['nullable', 'string', 'max:40'],
             'garantia_dias' => ['nullable', 'integer', Rule::in([90, 180, 365, 730])],
             'parcelas_sem_juros' => ['nullable', 'integer', 'min:2', 'max:24'],
+            'entrega_domicilio' => ['nullable', 'boolean'],
+            // Sem entrada em niveis_condicoes.*: emissão de NFS-e não varia
+            // por opção de manutenção, então não tem override por nível.
+            'emite_nota_fiscal' => ['nullable', 'boolean'],
+            // Níveis de manutenção: recomendação é opcional; o backend descarta
+            // quando o orçamento não tem níveis.
+            'nivel_recomendado' => ['nullable', 'integer', Rule::in([1, 2, 3])],
+            // Condições por opção de manutenção (chave = nível). Campo vazio
+            // herda o padrão; entrega é tri-state ('' herda, '1' sim, '0' não);
+            // diferenciais chegam como textarea "um por linha".
+            'niveis_condicoes' => ['nullable', 'array'],
+            'niveis_condicoes.*.garantia_dias' => ['nullable', 'integer', Rule::in([90, 180, 365, 730])],
+            'niveis_condicoes.*.parcelas_sem_juros' => ['nullable', 'integer', 'min:2', 'max:24'],
+            'niveis_condicoes.*.entrega_domicilio' => ['nullable', Rule::in(['0', '1', 0, 1])],
+            'niveis_condicoes.*.formas_pagamento' => ['nullable', 'array'],
+            'niveis_condicoes.*.formas_pagamento.*' => ['nullable', 'string', 'max:40'],
+            'niveis_condicoes.*.beneficios' => ['nullable', 'string', 'max:1500'],
             'subtotal' => ['nullable', 'numeric'],
             'desconto' => ['nullable', 'numeric'],
             'desconto_tipo' => ['nullable', 'string', Rule::in(['valor', 'percentual'])],
@@ -809,6 +831,7 @@ class OrcamentoController extends DesktopController
             'itens.*.acrescimo_percentual' => ['nullable', 'numeric', 'min:0'],
             'itens.*.observacoes' => ['nullable', 'string'],
             'itens.*.modo_precificacao' => ['nullable', 'string', 'max:50'],
+            'itens.*.nivel_minimo' => ['nullable', 'integer', Rule::in([1, 2, 3])],
             // Só usados quando a OS vinculada está encerrada — ver
             // orcamentos/_admin_confirm_modal.blade.php.
             'admin_email' => ['nullable', 'string'],
@@ -843,6 +866,7 @@ class OrcamentoController extends DesktopController
             'formas_pagamento' => 'formas de pagamento aceitas',
             'garantia_dias' => 'garantia',
             'parcelas_sem_juros' => 'parcelamento sem juros',
+            'nivel_recomendado' => 'opção recomendada',
             'subtotal' => 'subtotal',
             'desconto' => 'desconto',
             'desconto_tipo' => 'tipo do desconto',
@@ -865,11 +889,59 @@ class OrcamentoController extends DesktopController
             ->values()
             ->all();
 
+        // Campo travado (orçamento convertido em modo revisão) não é enviado
+        // e não pode virar false por engano: só normaliza quando veio.
+        if (array_key_exists('entrega_domicilio', $validated)) {
+            $validated['entrega_domicilio'] = filter_var($validated['entrega_domicilio'], FILTER_VALIDATE_BOOLEAN);
+        }
+
+        if (array_key_exists('emite_nota_fiscal', $validated)) {
+            $validated['emite_nota_fiscal'] = filter_var($validated['emite_nota_fiscal'], FILTER_VALIDATE_BOOLEAN);
+        }
+
+        if (array_key_exists('niveis_condicoes', $validated)) {
+            $validated['niveis_condicoes'] = collect(is_array($validated['niveis_condicoes']) ? $validated['niveis_condicoes'] : [])
+                ->map(function (mixed $linha): array {
+                    $linha = is_array($linha) ? $linha : [];
+                    $linha['formas_pagamento'] = collect($linha['formas_pagamento'] ?? [])
+                        ->map(static fn ($code): string => trim((string) $code))
+                        ->filter(static fn (string $code): bool => $code !== '')
+                        ->unique()
+                        ->values()
+                        ->all();
+                    $entrega = $linha['entrega_domicilio'] ?? null;
+                    $linha['entrega_domicilio'] = $entrega === null || $entrega === ''
+                        ? null
+                        : (string) $entrega === '1';
+                    $linha['beneficios'] = $this->splitTextLines((string) ($linha['beneficios'] ?? ''));
+
+                    return $linha;
+                })
+                ->all();
+        }
+
         if ($requireComplete) {
             $this->ensureCompleteBudgetFinancials($validated);
         }
 
         return $validated;
+    }
+
+    /**
+     * Textarea "um por linha" → lista sem vazios (mesma ideia de
+     * OrderPdfContextFactory::splitTextList no backend, sem quebrar em vírgula
+     * — um diferencial pode ter vírgula no texto).
+     *
+     * @return array<int, string>
+     */
+    private function splitTextLines(string $value): array
+    {
+        $lines = preg_split('/\r\n|\r|\n/', trim($value)) ?: [];
+
+        return array_values(array_filter(
+            array_map(static fn (string $line): string => trim($line), $lines),
+            static fn (string $line): bool => $line !== ''
+        ));
     }
 
     /**

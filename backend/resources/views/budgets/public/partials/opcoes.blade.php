@@ -1,0 +1,280 @@
+{{-- Passo 1 do orçamento com níveis de manutenção: o cliente compara as
+     opções e escolhe uma. Só então (?opcao=N) vê o orçamento daquela opção,
+     com o PDF montado para ela, e decide. Nada é gravado até a aprovação.
+
+     Cartão no espírito de tabela de preços: nome, preço, uma linha, botão e
+     só então a lista de itens — dá para decidir sem rolar a lista inteira.
+     A lista é incremental ("inclui tudo da anterior, mais…"); a cumulativa
+     completa fica a um toque em "Ver os N itens incluídos". --}}
+@php
+    $rawOptions = is_array($budget['niveis'] ?? null) ? $budget['niveis'] : [];
+
+    // Nível sem nenhum item próprio fica idêntico ao vizinho de baixo (mesmo
+    // preço, mesma lista) — mostrar os dois ao cliente só gera a pergunta
+    // "por que pagar mais por uma opção igual?". O nível mais alto nunca cai
+    // aqui: por definição ele é quem define `nivel_maximo`, então sempre tem
+    // ao menos um item exclusivo.
+    $options = array_values(array_filter(
+        $rawOptions,
+        static fn (array $option): bool => ($option['itens_novos'] ?? []) !== []
+    ));
+    if ($options === []) {
+        $options = $rawOptions; // nunca deveria zerar, mas não deixa a landing em branco.
+    }
+
+    // Sem recomendação manual (ou a recomendada era justamente a que sumiu no
+    // filtro acima): sugere o nível do meio como pista visual, com um selo
+    // mais discreto ("Mais escolhida") — pra não parecer que um humano
+    // decidiu aquilo, já que foi só um palpite do sistema.
+    $hasManualRecommendation = collect($options)->contains(static fn (array $option): bool => ! empty($option['recomendado']));
+    if (! $hasManualRecommendation && count($options) > 1) {
+        $suggestedIndex = (int) round((count($options) - 1) / 2);
+        $options[$suggestedIndex]['recomendado'] = true;
+        $options[$suggestedIndex]['sugerido_automaticamente'] = true;
+    }
+
+    // Condições comerciais: o serviço já decidiu, campo a campo, se o valor é
+    // igual em todas as opções (dito uma vez no rodapé) ou varia (dito dentro
+    // de cada cartão, para a comparação entre colunas ser honesta).
+    $termsLayout = is_array($budget['condicoes_comerciais_layout'] ?? null) ? $budget['condicoes_comerciais_layout'] : [];
+    $termShared = static fn (string $campo): string => ($termsLayout[$campo]['modo'] ?? 'compartilhado') === 'compartilhado'
+        ? trim((string) ($termsLayout[$campo]['valor'] ?? ''))
+        : '';
+    $termPerOption = static fn (string $campo): bool => ($termsLayout[$campo]['modo'] ?? 'compartilhado') === 'por_opcao';
+    $optionValidity = trim((string) ($budget['validade_data'] ?? ''));
+    $optionToken = (string) request()->route('token');
+    // Prévia curta por cartão; o resto (e o herdado) abre em "Ver os N itens".
+    $optionPreviewLimit = 3;
+    // Nos cartões, "Manutenção" já está implícito pelo título da seção — o
+    // nome próprio (Básica/Avançada/Completa) basta e cabe melhor no mobile.
+    // Fora daqui (passo 2, WhatsApp, auditoria, PDF) o rótulo completo
+    // continua, pois lá ele aparece sem esse contexto ao redor.
+    $shortLabel = static fn (string $label): string => str_starts_with($label, 'Manutenção ')
+        ? substr($label, strlen('Manutenção '))
+        : $label;
+    // Medidor de cobertura: segmentos = maior nível oferecido (2 ou 3).
+    $optionLevels = array_map(static fn (array $option): int => (int) ($option['nivel'] ?? 1), $options ?: [['nivel' => 1]]);
+    $optionCoverageMax = max(1, (int) max($optionLevels));
+    $optionCoverageMin = min($optionLevels);
+    $whatsappUrl = (string) ($budget['company_whatsapp_url'] ?? '');
+@endphp
+<section class="options-intro">
+    <p class="eyebrow">Escolha a opção de manutenção</p>
+    <h2 class="options-title">Qual cuidado faz mais sentido para você?</h2>
+    <p class="helper">
+        Preparamos {{ count($options) }} opções com cobertura crescente — cada uma inclui tudo da anterior.
+        Compare o que muda e escolha com calma: você vê o orçamento detalhado antes de aprovar.
+    </p>
+</section>
+
+<section class="options-grid">
+    @foreach ($options as $index => $option)
+        @php
+            $optionLevel = (int) ($option['nivel'] ?? 0);
+            $optionLabel = (string) ($option['label'] ?? '');
+            $optionAll = is_array($option['itens'] ?? null) ? $option['itens'] : [];
+            $optionNew = is_array($option['itens_novos'] ?? null) ? $option['itens_novos'] : $optionAll;
+            $optionPreview = array_slice($optionNew, 0, $optionPreviewLimit);
+            $optionHasMore = count($optionAll) > count($optionPreview);
+            $previousLabel = $index > 0 ? (string) ($options[$index - 1]['label'] ?? '') : '';
+            $optionUrl = route('budgets.public.show', ['token' => $optionToken, 'opcao' => $optionLevel]);
+        @endphp
+        @php
+            $isAutoSuggested = ! empty($option['sugerido_automaticamente']);
+            $isRecommended = ! empty($option['recomendado']) && ! $isAutoSuggested;
+            $isFeatured = $isRecommended || $isAutoSuggested;
+            // Identidade visual de cada degrau da escada — sinal à parte do
+            // selo de recomendado/mais escolhida (que agora é um badge
+            // flutuante, não a cor do cabeçalho; ver CSS .option-badge).
+            $isPremiumTier = $optionLevel === $optionCoverageMax && count($options) > 1;
+            $isBasicTier = $optionLevel === $optionCoverageMin && count($options) > 1;
+            $isMidTier = ! $isPremiumTier && ! $isBasicTier && count($options) > 1;
+            $optionTerms = is_array($option['condicoes_comerciais'] ?? null) ? $option['condicoes_comerciais'] : [];
+            $optionTotal = (float) ($option['total'] ?? 0);
+            // "ou 7x de R$ 163,71 sem juros": a parcela daquela opção (o
+            // parcelamento pode variar por nível) — o número grande deixa de
+            // assustar. Convenção de loja: sem "aprox.".
+            $optionInstallments = (int) ($optionTerms['parcelas_sem_juros'] ?? 0);
+            $optionInstallmentValue = $optionInstallments > 1 && $optionTotal > 0 ? round($optionTotal / $optionInstallments, 2) : null;
+            // Âncora de upsell: quanto a mais em relação ao cartão anterior visível.
+            $previousTotal = $index > 0 ? (float) ($options[$index - 1]['total'] ?? 0) : 0.0;
+            $optionDelta = $index > 0 && $optionTotal - $previousTotal > 0.009 ? $optionTotal - $previousTotal : null;
+            $optionIcon = match ($optionLevel) { 1 => 'wrench', 2 => 'shield', default => 'sparkles' };
+        @endphp
+        <article class="card option-card {{ $isRecommended ? 'is-recommended' : ($isAutoSuggested ? 'is-suggested' : '') }} {{ $isPremiumTier ? 'is-premium' : '' }} {{ $isBasicTier ? 'is-basic' : '' }} {{ $isMidTier ? 'is-mid' : '' }}">
+            @if ($isRecommended)
+                <span class="option-badge">Recomendado</span>
+            @elseif ($isAutoSuggested)
+                <span class="option-badge option-badge-auto">Mais escolhida</span>
+            @endif
+            {{-- Cada bloco abaixo é um "slot" de linha do subgrid (telas largas):
+                 todo cartão precisa ter os mesmos 8 filhos diretos, na mesma
+                 ordem, mesmo quando o conteúdo de um deles fica vazio —
+                 senão a linha de um nível deixa de alinhar com a dos outros. --}}
+            <div class="option-header">
+                <span class="option-icon" aria-hidden="true">{!! $icon($optionIcon, 20) !!}</span>
+                <div>
+                    <h3 class="option-name">{{ $shortLabel($optionLabel) }}</h3>
+                    @if (($option['subtitle'] ?? '') !== '')
+                        <p class="option-tagline">{{ $option['subtitle'] }}</p>
+                    @endif
+                </div>
+            </div>
+            <div class="coverage" role="img" aria-label="Cobertura {{ $optionLevel }} de {{ $optionCoverageMax }}">
+                @for ($segment = 1; $segment <= $optionCoverageMax; $segment++)
+                    <span class="coverage-segment {{ $segment <= $optionLevel ? 'is-filled' : '' }}"></span>
+                @endfor
+            </div>
+            <div class="option-price">
+                <div class="option-total">{{ $formatMoney($optionTotal) }}</div>
+                @if ($optionInstallmentValue !== null)
+                    <p class="option-installment">ou {{ $optionInstallments }}x de {{ $formatMoney($optionInstallmentValue) }} sem juros</p>
+                @endif
+                @if ($optionDelta !== null && $previousLabel !== '')
+                    <p class="option-delta">+ {{ $formatMoney($optionDelta) }} em relação à {{ $shortLabel($previousLabel) }}</p>
+                @endif
+            </div>
+            <a class="btn {{ $isFeatured ? 'btn-primary' : 'btn-outline-primary' }} option-cta" href="{{ $optionUrl }}">Escolher esta opção<span class="visually-hidden"> — {{ $optionLabel !== '' ? $optionLabel : ('opção ' . $optionLevel) }}</span></a>
+
+            <div class="option-list-block">
+                <hr class="option-divider">
+                <p class="option-list-heading">
+                    @if ($index === 0 || $previousLabel === '')
+                        Inclui
+                    @else
+                        Inclui tudo da {{ $shortLabel($previousLabel) }}, mais
+                    @endif
+                </p>
+            </div>
+            <ul class="option-list">
+                @forelse ($optionPreview as $descricao)
+                    <li>{{ $descricao }}</li>
+                @empty
+                    <li class="option-list-empty">Nenhum item adicional nesta opção.</li>
+                @endforelse
+            </ul>
+            <div class="option-more-slot">
+                @if ($optionHasMore)
+                    <details class="option-more">
+                        <summary>Ver os {{ count($optionAll) }} itens incluídos</summary>
+                        <ul class="option-list">
+                            @foreach ($optionAll as $descricao)
+                                <li>{{ $descricao }}</li>
+                            @endforeach
+                        </ul>
+                    </details>
+                @endif
+            </div>
+
+            @php
+                $optionPerks = [];
+                if ($termPerOption('entrega_domicilio') && ! empty($optionTerms['entrega_domicilio'])) {
+                    $optionPerks[] = ['truck', (string) ($optionTerms['entrega_domicilio_label'] ?? 'Entrega no seu endereço')];
+                }
+                foreach (is_array($optionTerms['beneficios'] ?? null) ? $optionTerms['beneficios'] : [] as $beneficio) {
+                    $optionPerks[] = ['gift', (string) $beneficio];
+                }
+                if ($termPerOption('garantia') && ($optionTerms['garantia_label'] ?? '') !== '') {
+                    $optionPerks[] = ['shield', 'Garantia de '.$optionTerms['garantia_label']];
+                }
+                if ($termPerOption('parcelamento') && ($optionTerms['parcelamento_texto'] ?? '') !== '') {
+                    $optionPerks[] = ['card', rtrim((string) $optionTerms['parcelamento_texto'], '.')];
+                }
+                if ($termPerOption('formas_pagamento') && ($optionTerms['formas_pagamento_texto'] ?? '') !== '') {
+                    $optionPerks[] = ['wallet', 'Pagamento: '.$optionTerms['formas_pagamento_texto']];
+                }
+            @endphp
+            <div class="option-perks-slot">
+                @if ($optionPerks !== [])
+                    <p class="option-list-heading option-perks-heading">Vantagens desta opção</p>
+                    <ul class="option-list option-perks">
+                        @foreach ($optionPerks as [$perkIcon, $perkText])
+                            <li><span class="perk-icon" aria-hidden="true">{!! $icon($perkIcon, 16) !!}</span><span>{{ $perkText }}</span></li>
+                        @endforeach
+                    </ul>
+                @endif
+            </div>
+        </article>
+    @endforeach
+</section>
+
+@if ($optionValidity !== '')
+    <p class="helper options-validity">
+        Este orçamento é válido até {{ $optionValidity }}. Depois dessa data, os valores podem ser reajustados.
+    </p>
+@endif
+
+@php
+    $sharedGarantia = $termShared('garantia');
+    $sharedFormas = $termShared('formas_pagamento');
+    $sharedParcelamento = $termShared('parcelamento');
+    $sharedEntrega = $termShared('entrega_domicilio');
+    $anyGarantia = collect($options)->contains(static fn (array $option): bool => (($option['condicoes_comerciais']['garantia_label'] ?? '') !== ''));
+
+    // Faixa de confiança: o que vale para todas as opções (dito uma vez) +
+    // duas garantias do próprio processo. Frases das condições compartilhadas
+    // são as mesmas de antes — só mudam de lugar.
+    $trustItems = [];
+    if ($sharedGarantia !== '') {
+        $trustItems[] = ['shield', 'Garantia de '.$sharedGarantia.' em qualquer opção escolhida.'];
+    } elseif ($anyGarantia) {
+        $trustItems[] = ['shield', 'Garantia em todas as opções — veja o prazo em cada uma.'];
+    }
+    if ($sharedEntrega !== '') {
+        $trustItems[] = ['truck', 'Entrega do equipamento no seu endereço em qualquer opção.'];
+    }
+    if ($sharedParcelamento !== '') {
+        $trustItems[] = ['card', $sharedParcelamento];
+    }
+    // Selo de NFS-e: computado no backend (BudgetApprovalService), já
+    // combinando a marcação do orçamento com o teto de faturamento do MEI —
+    // aqui só lê o resultado, sem repetir a regra.
+    if (($budget['mostrar_selo_nota_fiscal'] ?? false) === true) {
+        $trustItems[] = ['receipt', 'Emissão de nota fiscal de serviço (NFS-e) em qualquer opção escolhida.'];
+    }
+    $trustItems[] = ['lock', 'Peças e mão de obra já incluídas no valor de cada opção.'];
+    $trustItems[] = ['eye', 'Você aprova só depois de ver o orçamento completo.'];
+@endphp
+<section class="trust-strip" aria-label="Por que escolher com tranquilidade">
+    @foreach ($trustItems as [$trustIcon, $trustText])
+        <div class="trust-item">
+            <span class="trust-icon" aria-hidden="true">{!! $icon($trustIcon, 20) !!}</span>
+            <span>{{ $trustText }}</span>
+        </div>
+    @endforeach
+</section>
+
+<section class="card options-footer">
+    @if ($sharedFormas !== '')
+        <p class="helper">Formas de pagamento: {{ $sharedFormas }}.</p>
+    @endif
+
+    <div class="footer-cta">
+        <div>
+            <p class="footer-cta-title">Ficou com alguma dúvida?</p>
+            <p class="helper">Fale com a gente antes de decidir — sem compromisso.</p>
+        </div>
+        @if ($whatsappUrl !== '')
+            <a class="btn-whatsapp" href="{{ $whatsappUrl }}" target="_blank" rel="noopener">{!! $icon('whatsapp', 18) !!}Falar com a gente no WhatsApp</a>
+        @endif
+    </div>
+
+    <details class="options-reject">
+        <summary>Nenhuma das opções serve? Recusar proposta</summary>
+        <form
+            id="formRejeitarProposta"
+            method="post"
+            action="{{ route('budgets.public.reject', ['token' => $optionToken]) }}"
+        >
+            @csrf
+            <label class="meta-label" for="motivoRejeicao">Se desejar, informe o motivo da rejeição</label>
+            <textarea id="motivoRejeicao" name="motivo_rejeicao" placeholder="Ex.: vou avaliar outra alternativa, preciso rever o valor, não autorizo neste momento..."></textarea>
+            @error('motivo_rejeicao')
+                <p class="helper danger-text">{{ $message }}</p>
+            @enderror
+            <div class="decision-actions">
+                <button type="submit" class="btn btn-danger">Rejeitar proposta</button>
+            </div>
+        </form>
+    </details>
+</section>

@@ -11,6 +11,12 @@
         $histories = is_array($budget['historico'] ?? null) ? $budget['historico'] : [];
         $sends = is_array($budget['envios'] ?? null) ? $budget['envios'] : [];
         $approvals = is_array($budget['aprovacoes'] ?? null) ? $budget['aprovacoes'] : [];
+        // Níveis de manutenção: `niveis` só vem enquanto há opção a escolher;
+        // depois da decisão a lista já é o escopo e `nivel_aprovado_label`
+        // diz o que o cliente escolheu.
+        $levels = is_array($budget['niveis'] ?? null) ? $budget['niveis'] : [];
+        $hasTiers = ! empty($budget['has_tiers']) && $levels !== [];
+        $approvedLevelLabel = trim((string) ($budget['nivel_aprovado_label'] ?? ''));
         $budgetId = (int) ($budget['id'] ?? 0);
         $canConvertBudgetToOrder = \App\Support\DesktopSession::can('orcamentos', 'converter_os')
             && \App\Support\DesktopSession::can('os', 'criar');
@@ -71,6 +77,17 @@
                 <span class="desktop-chip">{{ $budget['tipo_label'] ?? 'Orçamento prévio' }}</span>
                 <span class="desktop-chip">{{ $budget['origem_label'] ?? 'Manual' }}</span>
                 <span class="desktop-chip">Versão {{ (int) ($budget['versao'] ?? 1) }}</span>
+                @if ($approvedLevelLabel !== '')
+                    <span class="desktop-chip desktop-chip-success">
+                        <i class="bi bi-layers"></i>
+                        Opção aprovada: {{ $approvedLevelLabel }}
+                    </span>
+                @elseif ($hasTiers)
+                    <span class="desktop-chip">
+                        <i class="bi bi-layers"></i>
+                        {{ count($levels) }} opções de manutenção
+                    </span>
+                @endif
                 @if (! empty($budget['is_revision']) && ! empty($budget['revision_base']))
                     <a href="{{ route('orcamentos.show', $budget['revision_base']['id']) }}" class="desktop-chip">
                         <i class="bi bi-arrow-repeat"></i>
@@ -171,8 +188,35 @@
                 @endif
 
                 @if (! empty($budget['can_approve']))
-                    <form method="post" action="{{ route('orcamentos.approve', $budgetId) }}" data-confirm="Registrar que o cliente aprovou este orçamento por outros meios (telefone, presencial, etc.)?" data-confirm-title="Aprovar orçamento" data-confirm-button="Sim, registrar aprovação" data-confirm-icon="question">
+                    @php
+                        // SweetAlert2 espera {valor: rótulo}, como o seletor de canal.
+                        $levelChoiceOptions = [];
+                        foreach ($levels as $level) {
+                            $levelChoiceOptions[(string) ($level['nivel'] ?? '')] = ($level['label'] ?? '')
+                                . ' — R$ ' . number_format((float) ($level['total'] ?? 0), 2, ',', '.')
+                                . (! empty($level['recomendado']) ? ' (recomendada)' : '');
+                        }
+                        $recommendedChoice = (string) ($budget['nivel_recomendado'] ?? '');
+                        $defaultLevelChoice = $recommendedChoice !== '' ? $recommendedChoice : (string) (array_key_first($levelChoiceOptions) ?? '');
+                    @endphp
+                    <form
+                        method="post"
+                        action="{{ route('orcamentos.approve', $budgetId) }}"
+                        data-confirm="{{ $hasTiers ? 'Registrar que o cliente aprovou este orçamento por outros meios (telefone, presencial, etc.)? Informe a opção de manutenção escolhida.' : 'Registrar que o cliente aprovou este orçamento por outros meios (telefone, presencial, etc.)?' }}"
+                        data-confirm-title="Aprovar orçamento"
+                        data-confirm-button="Sim, registrar aprovação"
+                        data-confirm-icon="question"
+                        @if ($hasTiers)
+                            data-confirm-input="select"
+                            data-confirm-input-label="Opção escolhida pelo cliente"
+                            data-confirm-input-options="{{ json_encode($levelChoiceOptions, JSON_UNESCAPED_UNICODE) }}"
+                            data-confirm-input-value="{{ $defaultLevelChoice }}"
+                        @endif
+                    >
                         @csrf
+                        @if ($hasTiers)
+                            <input type="hidden" name="nivel" value="{{ $defaultLevelChoice }}" data-confirm-value>
+                        @endif
                         <button type="submit" class="dropdown-item text-success">
                             <i class="bi bi-check2-circle me-2"></i>Aprovar (outros meios)
                         </button>
@@ -233,11 +277,32 @@
         </article>
 
         <article class="summary-card is-highlight">
-            <span class="summary-card-eyebrow">Total</span>
+            <span class="summary-card-eyebrow">{{ $hasTiers ? 'Total (opção completa)' : 'Total' }}</span>
             <div class="summary-card-value">R$ {{ $budget['total_formatado'] ?? number_format((float) ($budget['total'] ?? 0), 2, ',', '.') }}</div>
             <div class="summary-card-meta">Subtotal: R$ {{ number_format((float) ($budget['subtotal'] ?? 0), 2, ',', '.') }}</div>
         </article>
     </section>
+
+    @if ($hasTiers)
+        <section class="surface-card mb-4">
+            <div class="surface-card-header align-items-start mb-3">
+                <div>
+                    <p class="desktop-eyebrow mb-2">Opções de manutenção</p>
+                    <h2 class="surface-title fs-5 mb-1">O cliente escolhe uma destas opções na página de aprovação</h2>
+                    <p class="surface-subtitle mb-0">Cada opção inclui tudo da anterior. Ao aprovar, o orçamento passa a conter só os itens da opção escolhida.</p>
+                </div>
+            </div>
+            <div class="desktop-grid desktop-grid-three">
+                @foreach ($levels as $level)
+                    <article class="summary-card {{ ! empty($level['recomendado']) ? 'is-highlight' : '' }}">
+                        <span class="summary-card-eyebrow">{{ $level['label'] ?? '' }}{{ ! empty($level['recomendado']) ? ' · Recomendada' : '' }}</span>
+                        <div class="summary-card-value">R$ {{ number_format((float) ($level['total'] ?? 0), 2, ',', '.') }}</div>
+                        <div class="summary-card-meta">{{ (int) ($level['itens_count'] ?? 0) }} {{ (int) ($level['itens_count'] ?? 0) === 1 ? 'item' : 'itens' }}{{ ($level['subtitle'] ?? '') !== '' ? ' · ' . $level['subtitle'] : '' }}</div>
+                    </article>
+                @endforeach
+            </div>
+        </section>
+    @endif
 
     <section class="desktop-grid desktop-grid-two mb-4">
         <article class="surface-card">
@@ -343,10 +408,57 @@
                     <span>{{ ($terms['garantia_label'] ?? '') !== '' ? $terms['garantia_label'] : 'Sem garantia definida' }}</span>
                 </div>
 
+                <div class="detail-item">
+                    <strong>Entrega</strong>
+                    <span>{{ ! empty($terms['entrega_domicilio']) ? 'No endereço do cliente, sem custo adicional' : 'Retirada na assistência' }}</span>
+                </div>
+
+                @php $termBenefits = is_array($terms['beneficios'] ?? null) ? $terms['beneficios'] : []; @endphp
+                @if ($termBenefits !== [])
+                    <div class="detail-item"><strong>Diferenciais</strong><span>{{ implode(' · ', $termBenefits) }}</span></div>
+                @endif
+
                 @if (($terms['complemento'] ?? '') !== '')
                     <div class="detail-item"><strong>Observações</strong><p class="mb-0">{{ $terms['complemento'] }}</p></div>
                 @endif
             </div>
+
+            @php
+                $levelTermOverrides = is_array($budget['niveis_condicoes'] ?? null) ? $budget['niveis_condicoes'] : [];
+                $levelLabels = collect(is_array($budget['niveis'] ?? null) ? $budget['niveis'] : [])->pluck('label', 'nivel');
+            @endphp
+            @if ($levelTermOverrides !== [] && ($budget['has_tiers'] ?? false))
+                {{-- Só o que foi personalizado por opção; o resto herda o padrão acima. --}}
+                <p class="fw-semibold mt-3 mb-2">Personalizado por opção de manutenção</p>
+                <div class="detail-list">
+                    @foreach ($levelTermOverrides as $nivel => $override)
+                        @php
+                            $partes = [];
+                            if (($override['garantia_dias'] ?? null) !== null) {
+                                $partes[] = 'Garantia: '.(($override['garantia_label'] ?? '') !== '' ? $override['garantia_label'] : ((int) $override['garantia_dias'].' dias'));
+                            }
+                            if (($override['parcelas_sem_juros'] ?? null) !== null) {
+                                $partes[] = 'Em até '.(int) $override['parcelas_sem_juros'].'x sem juros';
+                            }
+                            if (($override['entrega_domicilio'] ?? null) !== null) {
+                                $partes[] = $override['entrega_domicilio'] ? 'Com entrega no endereço' : 'Sem entrega';
+                            }
+                            if (! empty($override['formas_pagamento'])) {
+                                $partes[] = 'Pagamento: '.implode(', ', $override['formas_pagamento']);
+                            }
+                            if (! empty($override['beneficios'])) {
+                                $partes[] = 'Diferenciais: '.implode(' · ', $override['beneficios']);
+                            }
+                        @endphp
+                        @if ($partes !== [])
+                            <div class="detail-item">
+                                <strong>{{ $levelLabels[(int) $nivel] ?? ('Opção '.$nivel) }}</strong>
+                                <span>{{ implode(' · ', $partes) }}</span>
+                            </div>
+                        @endif
+                    @endforeach
+                </div>
+            @endif
         @else
             <p class="text-secondary mb-0">
                 Nenhuma condição comercial registrada. Edite o orçamento para marcar formas de pagamento e prazo de garantia.
@@ -405,6 +517,9 @@
                     <thead>
                     <tr>
                         <th>Tipo</th>
+                        @if ($hasTiers)
+                            <th>Nível</th>
+                        @endif
                         <th>Descrição</th>
                         <th>Qtd</th>
                         <th>Valor unit.</th>
@@ -421,6 +536,11 @@
                     @foreach ($items as $item)
                         <tr>
                             <td data-label="Tipo">{{ ucfirst((string) ($item['tipo_item'] ?? 'servico')) }}</td>
+                            @if ($hasTiers)
+                                <td data-label="Nível">
+                                    <span class="desktop-chip">{{ str_replace('Manutenção ', '', (string) ($levels[max(0, (int) ($item['nivel_minimo'] ?? 1) - 1)]['label'] ?? ('Nível ' . (int) ($item['nivel_minimo'] ?? 1)))) }}</span>
+                                </td>
+                            @endif
                             <td data-label="Descrição">
                                 <div class="fw-semibold">{{ $item['descricao'] !== '' ? $item['descricao'] : 'Sem descrição' }}</div>
                                 @if (($item['observacoes'] ?? '') !== '')

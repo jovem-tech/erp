@@ -100,6 +100,7 @@ class PublicDocumentSignatureController extends BaseApiController
                     'customer_signature' => [
                         'data_uri' => $drawing['data_uri'],
                         'hash_sha256' => $drawing['hash_sha256'],
+                        'path' => (string) ($drawing['path'] ?? ''),
                         'name' => trim((string) $validated['name']),
                         'signed_at' => $signedAt,
                     ],

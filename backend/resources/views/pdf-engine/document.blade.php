@@ -251,15 +251,21 @@
         .pdfe-galeria-fotos-item {
             width: 100%;
             height: {{ $isThermal ? '120px' : '170px' }};
-            background-repeat: no-repeat;
-            background-position: center;
-            /* contain, nunca cover: a foto do equipamento serve pra provar o
-               estado em que ele entrou — recortar as bordas pra preencher a
-               caixa é justamente perder a evidência. */
-            background-size: contain;
+            text-align: center;
+            overflow: hidden;
             background-color: #f5f8fb;
             border: 1px solid #d7e3ef;
             border-radius: 4px;
+        }
+        /* <img> com max-width/max-height = "contain", nunca cover: a foto do
+           equipamento serve pra provar o estado em que ele entrou — recortar
+           as bordas pra preencher a caixa é justamente perder a evidência.
+           Era background-image, mas o dompdf rasteriza background via GD num
+           bitmap do tamanho da caixa (96 dpi, ~45 KB por foto, sem respeitar
+           a compressão do original); <img> embute o JPEG como está. */
+        .pdfe-galeria-fotos-item img {
+            max-width: 100%;
+            max-height: {{ $isThermal ? '118px' : '168px' }};
         }
         .muted { color: #526071; }
         .empty-box, .info-box {

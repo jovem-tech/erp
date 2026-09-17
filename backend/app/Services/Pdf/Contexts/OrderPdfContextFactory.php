@@ -30,6 +30,15 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
 
     private const ENTRY_PHOTOS_LIMIT = 4;
 
+    /**
+     * Referências (id/caminho/mime) de cada imagem embutida no contexto,
+     * preenchidas durante build(). Vão para o snapshot da versão documental
+     * no lugar do base64, e a hidratação reembute a partir delas.
+     *
+     * @var array<string, mixed>
+     */
+    protected array $imageRefs = [];
+
     public function __construct(
         private readonly EquipmentWorkflowService $equipmentWorkflowService,
         private readonly OrderWorkflowService $orderWorkflowService,
@@ -38,6 +47,8 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
 
     public function build(array $subject, array $options = []): array
     {
+        $this->imageRefs = [];
+
         $order = $this->resolveOrder($subject);
         if (! $order instanceof Order) {
             return [];
@@ -80,7 +91,7 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
                 'acessorios_html' => $this->accessoriesHtml($acessorios),
                 'estado_fisico_html' => $this->stateHtml($checklist),
                 'fotos_entrada' => $this->shouldIncludeEntryPhotos($options)
-                    ? $this->entryPhotosBase64((int) $order->id)
+                    ? $this->entryPhotosBase64((int) $order->id, $this->photoProfile($options))
                     : [],
             ],
             'cliente' => [
@@ -97,7 +108,7 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
                 'modelo' => (string) ($order->equipment?->model?->nome ?? ''),
                 'serie' => (string) ($order->equipment?->numero_serie ?? ''),
                 'foto_principal_base64' => $this->shouldIncludeEquipmentPhoto($options)
-                    ? $this->equipmentPhotoBase64($order->equipment)
+                    ? $this->equipmentPhotoBase64($order->equipment, $this->photoProfile($options))
                     : '',
             ],
             'itens' => $this->orderItems($order),
@@ -113,6 +124,7 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
                 ],
                 $checklist['items']
             ),
+            '_refs' => ['imagens' => $this->imageRefs],
         ];
     }
 
@@ -132,7 +144,7 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
      * Converte somente a foto principal autorizada pelo serviço de equipamentos.
      * URLs e caminhos vindos do template nunca são aceitos pelo motor de PDF.
      */
-    protected function equipmentPhotoBase64(?Equipment $equipment): string
+    protected function equipmentPhotoBase64(?Equipment $equipment, array $profile = []): string
     {
         if (! $equipment instanceof Equipment || (int) $equipment->id <= 0) {
             return '';
@@ -174,14 +186,69 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
             return '';
         }
 
-        $bytes = $mimeType === 'image/avif'
-            ? $this->photoPdfRenderer->jpegBytes($absolutePath)
-            : file_get_contents($absolutePath);
-        if ($mimeType === 'image/avif') {
-            $mimeType = 'image/jpeg';
+        ['bytes' => $bytes, 'mime' => $mimeType] = $this->photoBytesForPdf($absolutePath, $mimeType, $profile);
+        if (! is_string($bytes) || $bytes === '') {
+            return '';
         }
 
-        return ! is_string($bytes) || $bytes === '' ? '' : 'data:'.$mimeType.';base64,'.base64_encode($bytes);
+        $this->imageRefs['equipamento.foto_principal_base64'] = [
+            'tipo' => 'equipment_photo',
+            'equipamento_id' => (int) $equipment->id,
+            'foto_id' => (int) $photo->id,
+        ];
+
+        return 'data:'.$mimeType.';base64,'.base64_encode($bytes);
+    }
+
+    /**
+     * Perfil de compressão das fotos embutidas (document-rendering.photos).
+     * O binário persistido (assinatura formal) usa o perfil 'assinado';
+     * o render efêmero/cache usa 'padrao'.
+     *
+     * @param  array<string, mixed>  $options
+     * @return array{max_dimension: int, quality: int}
+     */
+    protected function photoProfile(array $options): array
+    {
+        $name = trim((string) ($options['render_profile'] ?? 'padrao')) ?: 'padrao';
+        $profile = config('document-rendering.photos.'.$name);
+        if (! is_array($profile)) {
+            $profile = (array) config('document-rendering.photos.padrao', []);
+        }
+
+        return [
+            'max_dimension' => max(200, (int) ($profile['max_dimension'] ?? 1400)),
+            'quality' => min(95, max(30, (int) ($profile['quality'] ?? 72))),
+        ];
+    }
+
+    /**
+     * Toda foto passa pelo libvips no perfil pedido — é o que impede um
+     * laudo de pesar 2 MB por causa de quatro fotos de celular em resolução
+     * original. Se o vips falhar, JPEG/PNG/WebP entram como estão (limite
+     * de tamanho já checado pelo chamador); AVIF sem vips é omitido, pois o
+     * dompdf não o decodifica.
+     *
+     * @param  array{max_dimension?: int, quality?: int}  $profile
+     * @return array{bytes: string|false|null, mime: string}
+     */
+    protected function photoBytesForPdf(string $absolutePath, string $mimeType, array $profile): array
+    {
+        $rendered = $this->photoPdfRenderer->forPdf(
+            $absolutePath,
+            $mimeType,
+            (int) ($profile['max_dimension'] ?? 1400),
+            (int) ($profile['quality'] ?? 72),
+        );
+        if (is_array($rendered)) {
+            return $rendered;
+        }
+
+        if ($mimeType === 'image/avif') {
+            return ['bytes' => null, 'mime' => 'image/jpeg'];
+        }
+
+        return ['bytes' => file_get_contents($absolutePath), 'mime' => $mimeType];
     }
 
     /**
@@ -213,11 +280,22 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
      *
      * @return array<int, string>
      */
-    protected function entryPhotosBase64(int $orderId): array
+    protected function entryPhotosBase64(int $orderId, array $profile = []): array
     {
         $photos = $this->orderWorkflowService->resolveEntryPhotosForPdf($orderId, self::ENTRY_PHOTOS_LIMIT);
 
+        return $this->entryPhotoDataUris($orderId, $photos, $profile);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $photos  saída de resolveEntryPhotosForPdf/ByIds
+     * @param  array<string, mixed>  $profile
+     * @return array<int, string>
+     */
+    public function entryPhotoDataUris(int $orderId, array $photos, array $profile = []): array
+    {
         $dataUris = [];
+        $refs = [];
         foreach ($photos as $photo) {
             $absolutePath = (string) ($photo['absolute_path'] ?? '');
             $mimeType = strtolower((string) ($photo['mime_type'] ?? ''));
@@ -241,22 +319,94 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
                 continue;
             }
 
-            $bytes = $mimeType === 'image/avif'
-                ? $this->photoPdfRenderer->jpegBytes($absolutePath)
-                : file_get_contents($absolutePath);
+            ['bytes' => $bytes, 'mime' => $mimeType] = $this->photoBytesForPdf($absolutePath, $mimeType, $profile);
             if (! is_string($bytes) || $bytes === '') {
                 continue;
             }
-            if ($mimeType === 'image/avif') {
-                $mimeType = 'image/jpeg';
-            }
 
-            ['bytes' => $bytes, 'mime' => $mimeType] = $this->rotateToLandscapeIfPortrait($bytes, $mimeType);
+            ['bytes' => $bytes, 'mime' => $mimeType] = $this->rotateToLandscapeIfPortrait(
+                $bytes,
+                $mimeType,
+                (int) ($profile['quality'] ?? 72)
+            );
 
             $dataUris[] = 'data:'.$mimeType.';base64,'.base64_encode($bytes);
+            $refs[] = [
+                'tipo' => 'order_photo',
+                'os_id' => $orderId,
+                'foto_id' => (int) ($photo['photo_id'] ?? 0),
+            ];
+        }
+
+        if ($refs !== []) {
+            $this->imageRefs['os.fotos_entrada'] = $refs;
         }
 
         return $dataUris;
+    }
+
+    /**
+     * Reembute a foto principal do equipamento a partir da referência gravada
+     * no snapshot (mesmo perfil de compressão da emissão).
+     *
+     * @param  array<string, mixed>  $ref
+     * @param  array<string, mixed>  $profile
+     */
+    public function equipmentPhotoFromRef(array $ref, array $profile = []): string
+    {
+        $equipmentId = (int) ($ref['equipamento_id'] ?? 0);
+        $photoId = (int) ($ref['foto_id'] ?? 0);
+        if ($equipmentId <= 0 || $photoId <= 0) {
+            return '';
+        }
+
+        $access = $this->equipmentWorkflowService->resolvePhotoAccess($equipmentId, $photoId);
+        $file = is_array($access['file'] ?? null) ? $access['file'] : [];
+        $absolutePath = (string) ($file['absolute_path'] ?? '');
+        $mimeType = strtolower((string) ($file['mime_type'] ?? ''));
+
+        if (
+            ($access['result'] ?? null) !== 'ok'
+            || $absolutePath === ''
+            || ! is_file($absolutePath)
+            || ! in_array($mimeType, self::EQUIPMENT_PHOTO_MIME_TYPES, true)
+        ) {
+            return '';
+        }
+
+        $size = filesize($absolutePath);
+        if ($size === false || $size <= 0 || $size > self::EQUIPMENT_PHOTO_MAX_BYTES) {
+            return '';
+        }
+
+        ['bytes' => $bytes, 'mime' => $mimeType] = $this->photoBytesForPdf($absolutePath, $mimeType, $profile);
+
+        return ! is_string($bytes) || $bytes === '' ? '' : 'data:'.$mimeType.';base64,'.base64_encode($bytes);
+    }
+
+    /**
+     * Reembute as fotos de entrada referenciadas no snapshot, na ordem da
+     * emissão. Foto apagada desde então é simplesmente omitida.
+     *
+     * @param  array<int, array<string, mixed>>  $refs
+     * @param  array<string, mixed>  $profile
+     * @return array<int, string>
+     */
+    public function entryPhotosFromRefs(array $refs, array $profile = []): array
+    {
+        $orderId = 0;
+        $ids = [];
+        foreach ($refs as $ref) {
+            if (! is_array($ref)) {
+                continue;
+            }
+            $orderId = $orderId > 0 ? $orderId : (int) ($ref['os_id'] ?? 0);
+            $ids[] = (int) ($ref['foto_id'] ?? 0);
+        }
+
+        $photos = $this->orderWorkflowService->resolveEntryPhotoFilesByIds($orderId, $ids);
+
+        return $this->entryPhotoDataUris($orderId, $photos, $profile);
     }
 
     /**
@@ -269,7 +419,7 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
      *
      * @return array{bytes: string, mime: string}
      */
-    private function rotateToLandscapeIfPortrait(string $bytes, string $mimeType): array
+    private function rotateToLandscapeIfPortrait(string $bytes, string $mimeType, int $jpegQuality = 72): array
     {
         $original = ['bytes' => $bytes, 'mime' => $mimeType];
 
@@ -299,11 +449,13 @@ class OrderPdfContextFactory implements PdfContextFactoryInterface
             imagesavealpha($rotated, true);
         }
 
+        // Re-encoda na qualidade do perfil: a 90 fixo o GD desfazia a
+        // compressão que o vips acabou de aplicar.
         ob_start();
         $encoded = match ($mimeType) {
             'image/png' => imagepng($rotated),
-            'image/webp' => function_exists('imagewebp') ? imagewebp($rotated) : imagejpeg($rotated, null, 90),
-            default => imagejpeg($rotated, null, 90),
+            'image/webp' => function_exists('imagewebp') ? imagewebp($rotated) : imagejpeg($rotated, null, $jpegQuality),
+            default => imagejpeg($rotated, null, $jpegQuality),
         };
         $output = ob_get_clean();
 

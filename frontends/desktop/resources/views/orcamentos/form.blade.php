@@ -45,6 +45,36 @@
         : [];
     $selectedWarrantyDays = (string) old('garantia_dias', $budget['garantia_dias'] ?? '');
     $selectedInstallments = (string) old('parcelas_sem_juros', $budget['parcelas_sem_juros'] ?? '');
+    $selectedDelivery = (bool) old('entrega_domicilio', $budget['entrega_domicilio'] ?? false);
+    $selectedNotaFiscal = (bool) old('emite_nota_fiscal', $budget['emite_nota_fiscal'] ?? false);
+    // Quanto falta pro teto do MEI: ajuda a decidir o checkbox acima sem abrir
+    // o relatório fiscal à parte. null fora do MEI (o teto nem existe) ou se
+    // o backend não conseguiu apurar — nesses casos cai no texto genérico.
+    $meiLimite = is_array($form['mei_limite_nota_fiscal'] ?? null) ? $form['mei_limite_nota_fiscal'] : null;
+    $notaFiscalHelperText = 'Aparece na página pública em qualquer opção de manutenção.';
+    if ($meiLimite !== null) {
+        $notaFiscalHelperText .= ($meiLimite['faixa'] ?? 'dentro') === 'dentro'
+            ? sprintf(
+                ' Faltam R$ %s para o limite anual do MEI (%s%% usado) — passando disso, o selo some sozinho da página pública.',
+                number_format((float) $meiLimite['restante'], 2, ',', '.'),
+                number_format((float) $meiLimite['percentual'], 1, ',', '.')
+            )
+            : ' A empresa já passou do limite anual do MEI — mesmo marcado, o selo não aparece na página pública.';
+    } else {
+        $notaFiscalHelperText .= ' Some sozinho se a empresa atingir o limite de faturamento do MEI.';
+    }
+
+    // Condições por opção de manutenção: o que está GRAVADO por nível (não o
+    // efetivo) — só o personalizado aparece marcado; o resto fica em "herdar".
+    $levelTermOverrides = old('niveis_condicoes', $budget['niveis_condicoes'] ?? []);
+    $levelTermOverrides = is_array($levelTermOverrides) ? $levelTermOverrides : [];
+    $termLevelOptions = is_array($form['niveis'] ?? null) ? $form['niveis'] : [];
+    $levelTermsLocked = (int) ($budget['nivel_aprovado'] ?? 0) > 0;
+    $levelOverride = static function (int $nivel, string $campo) use ($levelTermOverrides): mixed {
+        $linha = $levelTermOverrides[$nivel] ?? $levelTermOverrides[(string) $nivel] ?? null;
+
+        return is_array($linha) ? ($linha[$campo] ?? null) : null;
+    };
 
     $parseMoney = static function (mixed $value): float {
         if ($value === null || $value === '') {
@@ -807,7 +837,7 @@
                 @include('orcamentos.partials.item-row', ['index' => '__INDEX__', 'item' => [], 'quickCatalogs' => $quickCatalogs, 'lockedForConvertedEdit' => $lockedForConvertedEdit])
             </template>
 
-            <section class="budget-terms-card mb-4" data-budget-terms aria-labelledby="orcamentoCondicoesTitulo">
+            <section class="budget-terms-card mb-4" data-budget-terms data-budget-terms-scope aria-labelledby="orcamentoCondicoesTitulo">
                 <div class="surface-card-header align-items-start mb-3">
                     <div>
                         <p class="desktop-eyebrow mb-2">Transparência</p>
@@ -875,6 +905,23 @@
                             @endforeach
                         </select>
                         <small class="text-muted d-block mt-1">Contada a partir da entrega do equipamento. Acompanha a OS na baixa.</small>
+
+                        {{-- Marcador "0" antes do checkbox: desmarcado chega como
+                             false em vez de campo ausente (que preservaria o valor
+                             anterior). Travado, nada é enviado e o backend não toca. --}}
+                        <input type="hidden" name="entrega_domicilio" value="0" @disabled($convertedFieldLocked('entrega_domicilio'))>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" name="entrega_domicilio" value="1" id="orcamentoEntregaDomicilio" @checked($selectedDelivery) @disabled($convertedFieldLocked('entrega_domicilio'))>
+                            <label class="form-check-label" for="orcamentoEntregaDomicilio">Inclui entrega do equipamento no endereço do cliente</label>
+                        </div>
+                        <small class="text-muted d-block">Sem custo adicional para o cliente; combine o endereço na baixa da OS.</small>
+
+                        <input type="hidden" name="emite_nota_fiscal" value="0" @disabled($convertedFieldLocked('emite_nota_fiscal'))>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" name="emite_nota_fiscal" value="1" id="orcamentoEmiteNotaFiscal" @checked($selectedNotaFiscal) @disabled($convertedFieldLocked('emite_nota_fiscal'))>
+                            <label class="form-check-label" for="orcamentoEmiteNotaFiscal">Emite nota fiscal de serviço (NFS-e) para este orçamento</label>
+                        </div>
+                        <small class="text-muted d-block">{{ $notaFiscalHelperText }}</small>
                     </div>
                 </div>
 
@@ -894,6 +941,103 @@
                         </p>
                     @endforelse
                 </div>
+
+                {{-- Condições por opção de manutenção: aparece só quando algum
+                     item está em nível 2 ou 3 (o JS controla, junto com o resumo
+                     de opções). Campo em "herdar" usa o padrão acima; depois de
+                     aprovado não há mais opções e o bloco some de vez. --}}
+                <details class="budget-terms-levels mt-3" data-budget-terms-levels data-budget-levels-locked="{{ $levelTermsLocked ? '1' : '0' }}" hidden>
+                    <summary class="budget-terms-levels-summary">
+                        <i class="bi bi-sliders me-2" aria-hidden="true"></i>Personalizar condições por opção de manutenção <span class="text-secondary fw-normal">(opcional)</span>
+                    </summary>
+                    <p class="text-secondary small mt-2 mb-3">
+                        Por padrão, todas as opções usam a garantia, o parcelamento, as formas de pagamento e a entrega definidos acima.
+                        Abra uma opção abaixo só se ela precisar de uma condição diferente — ou de um diferencial extra
+                        (ex.: "instalação expressa", "película de brinde").
+                    </p>
+
+                    @foreach ($termLevelOptions as $levelOption)
+                        @php
+                            $nivel = (int) ($levelOption['value'] ?? 0);
+                            $levelCodes = $levelOverride($nivel, 'formas_pagamento');
+                            $levelCodes = is_array($levelCodes) ? array_map(static fn ($code): string => (string) $code, $levelCodes) : [];
+                            $levelInstallments = (string) ($levelOverride($nivel, 'parcelas_sem_juros') ?? '');
+                            $levelWarranty = (string) ($levelOverride($nivel, 'garantia_dias') ?? '');
+                            $levelDeliveryRaw = $levelOverride($nivel, 'entrega_domicilio');
+                            $levelDelivery = $levelDeliveryRaw === null || $levelDeliveryRaw === '' ? '' : ((bool) $levelDeliveryRaw || $levelDeliveryRaw === '1' ? '1' : '0');
+                            $levelBenefits = $levelOverride($nivel, 'beneficios');
+                            $levelBenefits = is_array($levelBenefits) ? implode("\n", $levelBenefits) : (string) ($levelBenefits ?? '');
+                        @endphp
+                        <div class="budget-terms-level" data-budget-terms-scope data-budget-terms-level-card="{{ $nivel }}" hidden>
+                            <p class="budget-terms-level-name mb-2">
+                                {{ $levelOption['label'] ?? '' }}
+                                <span class="text-secondary fw-normal small">— {{ $levelOption['subtitle'] ?? '' }}</span>
+                            </p>
+
+                            <div class="mb-2">
+                                <label class="form-label mb-1">Formas de pagamento nesta opção</label>
+                                @foreach ($paymentMethodOptions as $option)
+                                    <div class="form-check form-check-inline">
+                                        <input
+                                            class="form-check-input"
+                                            type="checkbox"
+                                            name="niveis_condicoes[{{ $nivel }}][formas_pagamento][]"
+                                            value="{{ $option['codigo'] }}"
+                                            id="orcamentoNivel{{ $nivel }}Forma{{ $option['id'] }}"
+                                            data-budget-payment-method
+                                            data-installments="{{ ($option['aceita_parcelamento'] ?? false) ? '1' : '0' }}"
+                                            data-pix="{{ ($option['is_pix'] ?? false) ? '1' : '0' }}"
+                                            {{ in_array((string) $option['codigo'], $levelCodes, true) ? 'checked' : '' }}
+                                            @disabled($levelTermsLocked || $lockedForConvertedEdit)
+                                        >
+                                        <label class="form-check-label" for="orcamentoNivel{{ $nivel }}Forma{{ $option['id'] }}">{{ $option['nome'] }}</label>
+                                    </div>
+                                @endforeach
+                                <small class="text-muted d-block mt-1">Tudo desmarcado = as mesmas formas definidas acima.</small>
+                            </div>
+
+                            <div class="desktop-grid desktop-grid-two">
+                                <div data-budget-installments-wrapper class="{{ $levelInstallments !== '' ? '' : 'd-none' }}">
+                                    <label for="orcamentoNivel{{ $nivel }}Parcelas">Parcelamento sem juros nesta opção</label>
+                                    <select id="orcamentoNivel{{ $nivel }}Parcelas" name="niveis_condicoes[{{ $nivel }}][parcelas_sem_juros]" class="form-select" data-budget-installments @disabled($levelTermsLocked || $lockedForConvertedEdit)>
+                                        <option value="">Herdar do padrão acima</option>
+                                        @for ($parcela = 2; $parcela <= $maxInstallments; $parcela++)
+                                            <option value="{{ $parcela }}" {{ $levelInstallments === (string) $parcela ? 'selected' : '' }}>
+                                                Em até {{ $parcela }}x sem juros
+                                            </option>
+                                        @endfor
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label for="orcamentoNivel{{ $nivel }}Garantia">Garantia nesta opção</label>
+                                    <select id="orcamentoNivel{{ $nivel }}Garantia" name="niveis_condicoes[{{ $nivel }}][garantia_dias]" class="form-select" @disabled($levelTermsLocked || $lockedForConvertedEdit)>
+                                        <option value="">Herdar do padrão acima</option>
+                                        @foreach ($warrantyOptions as $option)
+                                            <option value="{{ $option['value'] }}" {{ $levelWarranty === (string) $option['value'] ? 'selected' : '' }}>
+                                                {{ $option['label'] }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label for="orcamentoNivel{{ $nivel }}Entrega">Entrega no endereço do cliente</label>
+                                    <select id="orcamentoNivel{{ $nivel }}Entrega" name="niveis_condicoes[{{ $nivel }}][entrega_domicilio]" class="form-select" @disabled($levelTermsLocked || $lockedForConvertedEdit)>
+                                        <option value="" @selected($levelDelivery === '')>Herdar do padrão acima</option>
+                                        <option value="1" @selected($levelDelivery === '1')>Sim, incluir entrega</option>
+                                        <option value="0" @selected($levelDelivery === '0')>Não incluir entrega</option>
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label for="orcamentoNivel{{ $nivel }}Beneficios">Diferenciais desta opção <span class="text-secondary fw-normal">(um por linha)</span></label>
+                                    <textarea id="orcamentoNivel{{ $nivel }}Beneficios" name="niveis_condicoes[{{ $nivel }}][beneficios]" class="form-control" rows="2" placeholder="Ex.: instalação expressa&#10;película de brinde" @disabled($levelTermsLocked || $lockedForConvertedEdit)>{{ $levelBenefits }}</textarea>
+                                </div>
+                            </div>
+                        </div>
+                    @endforeach
+                </details>
 
                 <div class="mt-3">
                     <label for="orcamentoCondicoes">Observações complementares</label>
@@ -1021,6 +1165,45 @@
                     <div class="budget-summary-total-field">
                         <label for="orcamentoTotal">Total final</label>
                         <input type="text" id="orcamentoTotal" name="total" class="form-control" value="{{ old('total', $budget['total'] ?? 0) }}" readonly data-budget-total data-budget-money inputmode="decimal" autocomplete="off">
+                    </div>
+                </div>
+
+                @php
+                    $levelOptions = is_array($form['niveis'] ?? null) ? $form['niveis'] : [];
+                    $recommendedLevel = (int) old('nivel_recomendado', $budget['nivel_recomendado'] ?? 0);
+                    // Depois de aprovado, a lista já é o escopo contratado: não
+                    // há mais opções a oferecer, o bloco fica escondido de vez.
+                    $levelsLocked = (int) ($budget['nivel_aprovado'] ?? 0) > 0;
+                @endphp
+                {{-- Níveis de manutenção: aparece só quando algum item está em
+                     nível 2 ou 3 (o JS controla). O total final acima continua
+                     sendo o escopo máximo — é o que fica gravado até o cliente
+                     escolher a opção na página pública. --}}
+                <div class="budget-levels-summary" data-budget-levels-summary data-budget-levels-locked="{{ $levelsLocked ? '1' : '0' }}" hidden>
+                    <div class="budget-levels-summary-head">
+                        <div>
+                            <p class="desktop-eyebrow mb-1">Opções de manutenção</p>
+                            <p class="surface-subtitle mb-0">O cliente compara as opções na página de aprovação e escolhe uma. Cada opção inclui tudo da anterior; o total final acima é o da opção completa.</p>
+                        </div>
+                        <div class="budget-levels-recommended">
+                            <label for="orcamentoNivelRecomendado" class="mb-1">Recomendar ao cliente</label>
+                            <select id="orcamentoNivelRecomendado" name="nivel_recomendado" class="form-select" data-budget-level-recommended @disabled($lockedForConvertedEdit)>
+                                <option value="" @selected($recommendedLevel <= 0)>Sem recomendação</option>
+                                @foreach ($levelOptions as $levelOption)
+                                    <option value="{{ (int) ($levelOption['value'] ?? 0) }}" @selected($recommendedLevel === (int) ($levelOption['value'] ?? 0))>{{ $levelOption['label'] ?? '' }}</option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+                    <div class="budget-levels-grid" data-budget-levels-grid>
+                        @foreach ($levelOptions as $levelOption)
+                            <div class="budget-level-card" data-budget-level-card="{{ (int) ($levelOption['value'] ?? 0) }}" hidden>
+                                <span class="budget-level-card-name">{{ $levelOption['label'] ?? '' }}</span>
+                                <span class="budget-level-card-subtitle">{{ $levelOption['subtitle'] ?? '' }}</span>
+                                <strong class="budget-level-card-total" data-budget-level-total>R$ 0,00</strong>
+                                <span class="budget-level-card-count" data-budget-level-count>0 itens</span>
+                            </div>
+                        @endforeach
                     </div>
                 </div>
             </section>

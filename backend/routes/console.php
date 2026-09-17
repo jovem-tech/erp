@@ -152,6 +152,14 @@ if ((bool) config('file-manager.automatic_sync.enabled', false)) {
         ->withoutOverlapping(60);
 }
 
+// Cache dos PDFs renderizados sob demanda (Central Documental): TTL + teto de
+// tamanho. Descartável — o pior caso é um re-render a partir do snapshot.
+Schedule::command('documents:purge-render-cache')
+    ->dailyAt('02:20')
+    ->name('document-render-cache-retention')
+    ->onOneServer()
+    ->withoutOverlapping(30);
+
 Schedule::command('file-manager:purge-trash')
     ->dailyAt('02:30')
     ->name('file-manager-trash-retention')

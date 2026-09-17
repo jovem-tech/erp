@@ -11,6 +11,7 @@ use App\Services\Files\FileStateMachine;
 use App\Services\Files\LegacyCompatibleFileAdapter;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 
 class OrderDocumentFileObserver
 {
@@ -25,6 +26,13 @@ class OrderDocumentFileObserver
         $orderId = (int) ($documentFile->document?->os_id ?? 0);
         $storagePath = trim((string) ($documentFile->arquivo ?? ''));
         if ($orderId <= 0 || $storagePath === '') {
+            return;
+        }
+
+        // Versão renderizada sob demanda (snapshot): não há binário e o
+        // gerenciador só cataloga o que ocupa disco — sem este guard ele
+        // registraria um managed_file "ausente" para cada documento.
+        if (! Storage::disk('local')->exists($storagePath)) {
             return;
         }
 

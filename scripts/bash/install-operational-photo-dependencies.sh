@@ -25,11 +25,15 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 apt-get update
+# ghostscript: compressao maxima do PDF assinado (documentos sob demanda,
+# config/document-rendering.php). Sem ele a aplicacao grava o PDF como saiu
+# do dompdf e loga um aviso — nao quebra, mas perde a compressao.
 apt-get install -y --no-install-recommends \
   libvips-tools \
   libheif-plugin-aomdec \
   libheif-plugin-aomenc \
-  libheif-plugin-libde265
+  libheif-plugin-libde265 \
+  ghostscript
 
 photo_tmp_dir=/var/www/sistema-erp/backend/storage/app/private/operational-photo-tmp
 

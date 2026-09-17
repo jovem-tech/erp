@@ -169,9 +169,12 @@ class OrcamentoService
     /**
      * @return array<string, mixed>
      */
-    public function approve(int $id, ?string $observacao = null): array
+    public function approve(int $id, ?string $observacao = null, ?int $nivel = null): array
     {
-        $response = $this->apiClient->post('/orcamentos/'.$id.'/aprovar', ['observacao' => $observacao]);
+        $response = $this->apiClient->post(
+            '/orcamentos/'.$id.'/aprovar',
+            ['observacao' => $observacao] + ($nivel !== null ? ['nivel' => $nivel] : [])
+        );
 
         return $response['data'] ?? [];
     }

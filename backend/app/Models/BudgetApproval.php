@@ -19,6 +19,8 @@ class BudgetApproval extends Model
         'id' => 'integer',
         'orcamento_id' => 'integer',
         'usuario_id' => 'integer',
+        'nivel' => 'integer',
+        'niveis_snapshot' => 'array',
         'created_at' => 'datetime',
     ];
 
