@@ -4,7 +4,6 @@ namespace App\Services\Budgets;
 
 use App\Models\Budget;
 use App\Services\Pdf\PdfGenerationService;
-use Illuminate\Support\Facades\Storage;
 use Throwable;
 
 class BudgetPdfService
@@ -15,7 +14,13 @@ class BudgetPdfService
     }
 
     /**
-     * @return array{ok: bool, absolute_path?: string, relative_path?: string, file_name?: string, engine_result?: array<string, mixed>, message?: string}
+     * Renderiza o PDF do orçamento (A4) pelo motor central, com snapshot.
+     * Não grava nada em disco: o envio ao cliente usa `bytes`, o link
+     * público regenera sob demanda e o acervo da OS registra a versão via
+     * OrderDocumentCenterService::syncAfterBudgetDispatch(). `relative_path`
+     * é só o nome lógico (compatibilidade com orcamento_envios.documento_path).
+     *
+     * @return array{ok: bool, bytes?: string, absolute_path?: string, relative_path?: string, file_name?: string, engine_result?: array<string, mixed>, generation_options?: array<string, mixed>, message?: string}
      */
     public function generate(Budget $budget, string $approvalLink, array $options = []): array
     {
@@ -24,9 +29,7 @@ class BudgetPdfService
 
             $numero = trim((string) ($budget->numero ?? ('ORC-' . (int) $budget->id)));
             $version = max(1, (int) ($budget->versao ?? 1));
-            $directory = 'private/orcamentos/' . (int) $budget->id;
-            $relativePath = $directory . '/orcamento_' . $this->slug($numero) . '_v' . $version . '.pdf';
-            $absolutePath = Storage::disk('local')->path($relativePath);
+            $relativePath = 'private/orcamentos/' . (int) $budget->id . '/orcamento_' . $this->slug($numero) . '_v' . $version . '.pdf';
 
             // O template publicado no motor central é a única fonte do PDF.
             // Falhar explicitamente evita emitir um documento com layout
@@ -34,6 +37,7 @@ class BudgetPdfService
             $engineResult = $this->pdfGenerationService->generate('os_orcamento', ['budget' => $budget], array_merge($options, [
                 'approval_link' => $approvalLink,
                 'formato' => 'a4',
+                'capture_snapshot' => true,
             ]));
 
             if (! ($engineResult['ok'] ?? false)) {
@@ -43,14 +47,14 @@ class BudgetPdfService
                 ];
             }
 
-            Storage::disk('local')->put($relativePath, (string) $engineResult['bytes']);
-
             return [
                 'ok' => true,
-                'absolute_path' => $absolutePath,
+                'bytes' => (string) $engineResult['bytes'],
+                'absolute_path' => '',
                 'relative_path' => $relativePath,
                 'file_name' => 'Orcamento-' . $numero . '.pdf',
                 'engine_result' => $engineResult,
+                'generation_options' => $options,
             ];
         } catch (Throwable $exception) {
             report($exception);

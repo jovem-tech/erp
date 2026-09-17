@@ -2725,25 +2725,116 @@
             return total;
         };
 
+        const getRowLevel = (row) => {
+            const levelSelect = row.querySelector('[data-budget-item-level]');
+            const level = levelSelect instanceof HTMLSelectElement ? parseInt(levelSelect.value, 10) : 1;
+
+            return Number.isFinite(level) && level >= 1 && level <= 3 ? level : 1;
+        };
+
+        /**
+         * Níveis de manutenção (cumulativos): a opção N soma os itens com
+         * nível <= N e aplica o MESMO ajuste global do orçamento — percentual
+         * sobre o subtotal da opção, valor fixo integral — exatamente a regra
+         * de BudgetTotals::perLevel no backend. A última opção bate com o
+         * total final gravado.
+         */
+        const updateLevelsSummary = (rowTotals, globalDiscount, globalAddition) => {
+            const summary = document.querySelector('[data-budget-levels-summary]');
+            if (!(summary instanceof HTMLElement)) {
+                return;
+            }
+
+            const locked = summary.dataset.budgetLevelsLocked === '1';
+            const maxLevel = rowTotals.reduce((max, entry) => Math.max(max, entry.level), 1);
+            const hasTiers = !locked && maxLevel > 1;
+            const recommendedSelect = summary.querySelector('[data-budget-level-recommended]');
+
+            summary.hidden = !hasTiers;
+
+            // Condições por opção (no card de condições comerciais) seguem a
+            // mesma regra: só existem enquanto há mais de um nível a oferecer.
+            const termsLevels = document.querySelector('[data-budget-terms-levels]');
+            if (termsLevels instanceof HTMLElement) {
+                const termsLocked = termsLevels.dataset.budgetLevelsLocked === '1';
+                termsLevels.hidden = termsLocked || !hasTiers;
+                termsLevels.querySelectorAll('[data-budget-terms-level-card]').forEach((card) => {
+                    if (!(card instanceof HTMLElement)) {
+                        return;
+                    }
+                    const level = parseInt(card.dataset.budgetTermsLevelCard ?? '0', 10);
+                    card.hidden = !(level >= 1 && level <= maxLevel);
+                });
+            }
+
+            if (!hasTiers) {
+                if (recommendedSelect instanceof HTMLSelectElement && recommendedSelect.value !== '') {
+                    recommendedSelect.value = '';
+                }
+                return;
+            }
+
+            if (recommendedSelect instanceof HTMLSelectElement && parseInt(recommendedSelect.value, 10) > maxLevel) {
+                recommendedSelect.value = '';
+            }
+            const recommended = recommendedSelect instanceof HTMLSelectElement ? parseInt(recommendedSelect.value, 10) : 0;
+
+            summary.querySelectorAll('[data-budget-level-card]').forEach((card) => {
+                if (!(card instanceof HTMLElement)) {
+                    return;
+                }
+
+                const level = parseInt(card.dataset.budgetLevelCard ?? '0', 10);
+                card.hidden = !(level >= 1 && level <= maxLevel);
+                if (card.hidden) {
+                    return;
+                }
+
+                const included = rowTotals.filter((entry) => entry.level <= level);
+                const levelSubtotal = roundCurrency(included.reduce((sum, entry) => sum + entry.total, 0));
+                const discount = globalDiscount.mode === 'percentual'
+                    ? calculatePercentAmount(levelSubtotal, globalDiscount.percent)
+                    : globalDiscount.amount;
+                const addition = globalAddition.mode === 'percentual'
+                    ? calculatePercentAmount(levelSubtotal, globalAddition.percent)
+                    : globalAddition.amount;
+                const levelTotal = roundCurrency(Math.max(0, levelSubtotal - discount + addition));
+
+                const totalNode = card.querySelector('[data-budget-level-total]');
+                const countNode = card.querySelector('[data-budget-level-count]');
+                if (totalNode instanceof HTMLElement) {
+                    totalNode.textContent = formatMoney(levelTotal);
+                }
+                if (countNode instanceof HTMLElement) {
+                    countNode.textContent = `${included.length} ${included.length === 1 ? 'item' : 'itens'}`;
+                }
+                card.classList.toggle('is-recommended', recommended === level);
+            });
+        };
+
         const updateSummary = () => {
             let subtotal = 0;
+            const rowTotals = [];
 
             itemsBody.querySelectorAll('[data-budget-item-row]').forEach((row) => {
-                subtotal += updateRowTotal(row);
+                const rowTotal = updateRowTotal(row);
+                subtotal += rowTotal;
+                rowTotals.push({ level: getRowLevel(row), total: rowTotal });
             });
 
             if (subtotalInput instanceof HTMLInputElement) {
                 subtotalInput.value = formatMoney(subtotal);
             }
 
-            const discount = syncAdjustmentControl(getGlobalDiscountControl(), subtotal, { readDisplay: true }).amount;
-            const addition = syncAdjustmentControl(getGlobalAdditionControl(), subtotal, { readDisplay: true }).amount;
-            const total = roundCurrency(subtotal - discount + addition);
+            const globalDiscount = syncAdjustmentControl(getGlobalDiscountControl(), subtotal, { readDisplay: true });
+            const globalAddition = syncAdjustmentControl(getGlobalAdditionControl(), subtotal, { readDisplay: true });
+            const total = roundCurrency(subtotal - globalDiscount.amount + globalAddition.amount);
 
             if (totalInput instanceof HTMLInputElement) {
                 totalInput.value = formatMoney(total);
             }
 
+            updateLevelsSummary(rowTotals, globalDiscount, globalAddition);
             updateItemsCount();
             saveDraftDebounced();
             syncPrimaryAction();
@@ -2838,6 +2929,7 @@
                     index: index + 1,
                     type,
                     typeLabel: type === 'peca' ? 'Peca' : 'Servico',
+                    level: getRowLevel(row),
                     referenceLabel,
                     description,
                     quantity,
@@ -2883,8 +2975,29 @@
                 globalDiscount,
                 globalAddition,
                 items,
+                levels: collectReviewLevels(),
                 phoneDigits: digits,
             };
+        };
+
+        /**
+         * Opções de manutenção como o resumo financeiro já as calculou
+         * (cards visíveis), para a revisão final mostrar os três totais.
+         */
+        const collectReviewLevels = () => {
+            const summary = document.querySelector('[data-budget-levels-summary]');
+            if (!(summary instanceof HTMLElement) || summary.hidden) {
+                return [];
+            }
+
+            return Array.from(summary.querySelectorAll('[data-budget-level-card]'))
+                .filter((card) => card instanceof HTMLElement && !card.hidden)
+                .map((card) => ({
+                    label: normalizeText(card.querySelector('.budget-level-card-name')?.textContent),
+                    total: normalizeText(card.querySelector('[data-budget-level-total]')?.textContent),
+                    count: normalizeText(card.querySelector('[data-budget-level-count]')?.textContent),
+                    recommended: card.classList.contains('is-recommended'),
+                }));
         };
 
         const collectReviewPendencies = (snapshot) => {
@@ -3024,12 +3137,15 @@
                 return '<div class="budget-review-empty">Nenhum item preenchido ate o momento.</div>';
             }
 
+            const hasTiers = items.some((item) => (item.level ?? 1) > 1);
+            const levelName = (level) => ({ 1: 'Basica', 2: 'Avancada', 3: 'Completa' })[level] ?? `Nivel ${level}`;
+
             return items.map((item) => `
                 <article class="budget-review-item">
                     <div class="budget-review-item-head">
                         <div>
                             <strong>${escapeHtml(item.description !== '' ? item.description : 'Item sem descricao')}</strong>
-                            <span>${escapeHtml(item.typeLabel)}${item.referenceLabel !== '' ? ` • ${escapeHtml(item.referenceLabel)}` : ''}</span>
+                            <span>${escapeHtml(item.typeLabel)}${item.referenceLabel !== '' ? ` • ${escapeHtml(item.referenceLabel)}` : ''}${hasTiers ? ` • a partir da ${escapeHtml(levelName(item.level ?? 1))}` : ''}</span>
                         </div>
                         <strong>${escapeHtml(formatMoney(item.total))}</strong>
                     </div>
@@ -3049,6 +3165,10 @@
             { label: 'Desconto geral', value: formatAdjustmentSummary(snapshot.globalDiscount) },
             { label: 'Acrescimo geral', value: formatAdjustmentSummary(snapshot.globalAddition) },
             { label: 'Total final', value: formatMoney(snapshot.total) },
+            ...(Array.isArray(snapshot.levels) ? snapshot.levels : []).map((level) => ({
+                label: `${level.label}${level.recommended ? ' (recomendada)' : ''} • ${level.count}`,
+                value: level.total,
+            })),
         ]);
 
         const renderReviewNotes = (snapshot) => {
@@ -3415,6 +3535,8 @@
                 input?.addEventListener('change', () => updateSummary());
             });
 
+            row.querySelector('[data-budget-item-level]')?.addEventListener('change', () => updateSummary());
+
             // specs/040: a quantidade muda o veredito. Pedir 5 de uma peca com
             // 2 disponiveis tem de virar "Parcial" na hora, nao continuar
             // dizendo "Em estoque" so porque a peca foi escolhida antes.
@@ -3468,10 +3590,12 @@
                 acrescimo_percentual: 0,
                 observacoes: '',
                 modo_precificacao: 'manual',
+                nivel_minimo: 1,
                 ...data,
             };
 
             const typeSelect = row.querySelector('[data-budget-item-type]');
+            const levelSelect = row.querySelector('[data-budget-item-level]');
             const referenceSelect = row.querySelector('[data-budget-item-reference]');
             const descriptionInput = row.querySelector('[data-budget-item-description]');
             const quantityInput = row.querySelector('[data-budget-item-quantity]');
@@ -3491,6 +3615,11 @@
 
             if (typeSelect instanceof HTMLSelectElement) {
                 typeSelect.value = String(fields.tipo_item || 'servico');
+            }
+            if (levelSelect instanceof HTMLSelectElement) {
+                // Rascunhos antigos (sem nivel_minimo) caem no nível 1.
+                const level = parseInt(String(fields.nivel_minimo ?? 1), 10);
+                levelSelect.value = String(Number.isFinite(level) && level >= 1 && level <= 3 ? level : 1);
             }
             if (referenceSelect instanceof HTMLSelectElement) {
                 referenceSelect.dataset.selectedReference = String(fields.referencia_id || '');
@@ -3613,6 +3742,7 @@
                     acrescimo_percentual: additionPercentInput instanceof HTMLInputElement ? additionPercentInput.value : '',
                     observacoes: notesInput instanceof HTMLTextAreaElement ? notesInput.value : '',
                     modo_precificacao: modeInput instanceof HTMLInputElement ? modeInput.value : 'manual',
+                    nivel_minimo: getRowLevel(row),
                 });
             });
 
@@ -3687,7 +3817,11 @@
                     return;
                 }
 
-                const field = form.querySelector(`[name="${CSS.escape(name)}"]`);
+                // Checkbox com marcador oculto de mesmo nome (ex.: entrega_domicilio,
+                // envolve_equipamento): restaura o checkbox, não o marcador — senão o
+                // valor volta certo no envio mas a caixa aparece desmarcada.
+                const field = form.querySelector(`input[type="checkbox"][name="${CSS.escape(name)}"]`)
+                    || form.querySelector(`[name="${CSS.escape(name)}"]`);
 
                 if (!(field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement)) {
                     return;
@@ -4598,24 +4732,37 @@
     // Condições comerciais: parcelamento só existe acompanhando um cartão
     // parcelável, e as chaves Pix só aparecem quando o Pix é aceito. Bloco
     // independente do resto do formulário — não depende do estado dos itens.
+    //
+    // Escopos: o card base ([data-budget-terms]) e cada opção de manutenção
+    // ([data-budget-terms-level-card]). Uma opção sem forma marcada herda as
+    // formas do card base, então o parcelamento dela segue os cartões da base.
     document.addEventListener('DOMContentLoaded', () => {
-        const terms = document.querySelector('[data-budget-terms]');
+        const base = document.querySelector('[data-budget-terms]');
 
-        if (!(terms instanceof HTMLElement)) {
+        if (!(base instanceof HTMLElement)) {
             return;
         }
 
-        const checkboxes = Array.from(terms.querySelectorAll('[data-budget-payment-method]'));
-        const installmentsWrapper = terms.querySelector('[data-budget-installments-wrapper]');
-        const installmentsSelect = terms.querySelector('[data-budget-installments]');
-        const pixPreview = terms.querySelector('[data-budget-pix-preview]');
+        const scopes = [base, ...Array.from(document.querySelectorAll('[data-budget-terms-level-card]'))]
+            .filter((scope) => scope instanceof HTMLElement);
 
-        const isChecked = (attribute) => checkboxes.some(
+        const ownCheckboxes = (scope) => Array.from(scope.querySelectorAll('[data-budget-payment-method]'))
+            .filter((input) => input.closest('[data-budget-terms-scope]') === scope);
+
+        const hasChecked = (inputs, attribute) => inputs.some(
             (input) => input.checked && input.getAttribute(attribute) === '1'
         );
 
-        const syncTerms = () => {
-            const allowsInstallments = isChecked('data-installments');
+        const baseCheckboxes = ownCheckboxes(base);
+
+        const syncScope = (scope) => {
+            const checkboxes = scope === base ? baseCheckboxes : ownCheckboxes(scope);
+            const inherits = scope !== base && !checkboxes.some((input) => input.checked);
+            const effective = inherits ? baseCheckboxes : checkboxes;
+            const allowsInstallments = hasChecked(effective, 'data-installments');
+            const installmentsWrapper = scope.querySelector('[data-budget-installments-wrapper]');
+            const installmentsSelect = scope.querySelector('[data-budget-installments]');
+            const pixPreview = scope.querySelector('[data-budget-pix-preview]');
 
             if (installmentsWrapper instanceof HTMLElement) {
                 installmentsWrapper.classList.toggle('d-none', !allowsInstallments);
@@ -4628,11 +4775,15 @@
             }
 
             if (pixPreview instanceof HTMLElement) {
-                pixPreview.classList.toggle('d-none', !isChecked('data-pix'));
+                pixPreview.classList.toggle('d-none', !hasChecked(effective, 'data-pix'));
             }
         };
 
-        checkboxes.forEach((input) => input.addEventListener('change', syncTerms));
-        syncTerms();
+        const syncAll = () => scopes.forEach(syncScope);
+
+        scopes.forEach((scope) => {
+            ownCheckboxes(scope).forEach((input) => input.addEventListener('change', syncAll));
+        });
+        syncAll();
     });
 })();

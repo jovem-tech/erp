@@ -786,7 +786,7 @@ class BudgetFlowTest extends TestCase
                 ]);
         });
         $this->mock(IntegrationSettingsService::class, function ($mock): void {
-            $mock->shouldReceive('sendDirectMedia')
+            $mock->shouldReceive('sendDirectMediaBytes')
                 ->once()
                 ->andReturn([
                     'ok' => true,
@@ -905,7 +905,7 @@ class BudgetFlowTest extends TestCase
                 ]);
         });
         $this->mock(IntegrationSettingsService::class, function ($mock): void {
-            $mock->shouldReceive('sendDirectMedia')
+            $mock->shouldReceive('sendDirectMediaBytes')
                 ->once()
                 ->andReturn([
                     'ok' => true,
@@ -1064,7 +1064,7 @@ class BudgetFlowTest extends TestCase
                 ]);
         });
         $this->mock(IntegrationSettingsService::class, function ($mock): void {
-            $mock->shouldReceive('sendDirectMedia')
+            $mock->shouldReceive('sendDirectMediaBytes')
                 ->once()
                 ->andReturn([
                     'ok' => true,
@@ -1191,15 +1191,16 @@ class BudgetFlowTest extends TestCase
             'total' => 150.00,
         ]);
 
-        Storage::fake('local');
-        Storage::disk('local')->put('testing/orcamento-publico.pdf', '%PDF-1.4 orçamento público');
+        // O PDF do orçamento não fica em disco: o link público entrega os
+        // bytes renderizados sob demanda.
         $this->mock(BudgetPdfService::class, function ($mock): void {
             $mock->shouldReceive('generate')
                 ->once()
                 ->andReturn([
                     'ok' => true,
-                    'absolute_path' => Storage::disk('local')->path('testing/orcamento-publico.pdf'),
-                    'relative_path' => 'testing/orcamento-publico.pdf',
+                    'bytes' => '%PDF-1.4 orçamento público',
+                    'absolute_path' => '',
+                    'relative_path' => 'private/orcamentos/1/orcamento-publico.pdf',
                     'file_name' => 'Orcamento-publico.pdf',
                 ]);
         });
@@ -1208,6 +1209,8 @@ class BudgetFlowTest extends TestCase
 
         $response->assertOk();
         $this->assertSame('application/pdf', $response->headers->get('content-type'));
+        $this->assertStringContainsString('attachment; filename="Orcamento-publico.pdf"', (string) $response->headers->get('content-disposition'));
+        $this->assertSame('%PDF-1.4 orçamento público', $response->getContent());
     }
 
     public function test_public_budget_route_allows_client_rejection(): void
@@ -1744,6 +1747,98 @@ class BudgetFlowTest extends TestCase
             ])
             ->assertStatus(429)
             ->assertJsonPath('error.code', 'BUDGET_ADMIN_AUTH_RATE_LIMITED');
+    }
+
+    public function test_cancelling_approved_budget_on_open_order_is_blocked(): void
+    {
+        $actor = $this->createUserRecord([
+            'nome' => 'Atendente',
+            'email' => 'atendente.cancel-approved-open@example.com',
+            'perfil' => 'atendente',
+            'grupo_id' => 1,
+        ]);
+
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Orçamento Aprovado']);
+        $equipmentId = $this->createEquipmentRecord($clientId, ['resumo_tecnico' => 'Notebook em atendimento']);
+        $orderId = $this->createOrderRecord([
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'numero_os' => 'OS26060201',
+        ]);
+        $budgetId = $this->createBudgetRecord([
+            'os_id' => $orderId,
+            'cliente_id' => $clientId,
+            'equipamento_id' => $equipmentId,
+            'status' => 'aprovado',
+            'origem' => 'os',
+            'subtotal' => 80.00,
+            'total' => 80.00,
+        ]);
+
+        $token = $this->loginAndGetToken($actor->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orcamentos/'.$budgetId.'/cancelar', [
+                'motivo' => 'Tentativa indevida de cancelamento.',
+            ])
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BUDGET_DECISION_CONFLICT');
+
+        $this->assertDatabaseHas('orcamentos', ['id' => $budgetId, 'status' => 'aprovado']);
+        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'triagem']);
+    }
+
+    public function test_cancelling_approved_budget_on_closed_order_is_blocked_and_does_not_alter_order(): void
+    {
+        $actor = $this->createUserRecord([
+            'nome' => 'Atendente',
+            'email' => 'atendente.cancel-approved-closed@example.com',
+            'perfil' => 'atendente',
+            'grupo_id' => 1,
+        ]);
+
+        [$orderId, $budgetId] = $this->createClosedOrderWithBudgetAndPayment();
+
+        $token = $this->loginAndGetToken($actor->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orcamentos/'.$budgetId.'/cancelar', [
+                'motivo' => 'Tentativa indevida de cancelamento.',
+            ])
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BUDGET_DECISION_CONFLICT');
+
+        $this->assertDatabaseHas('orcamentos', ['id' => $budgetId, 'status' => 'aprovado']);
+        $this->assertDatabaseHas('os', ['id' => $orderId, 'status' => 'entregue_reparado_pago', 'estado_fluxo' => 'encerrado']);
+    }
+
+    public function test_cancelling_rejected_budget_is_blocked(): void
+    {
+        $actor = $this->createUserRecord([
+            'nome' => 'Atendente',
+            'email' => 'atendente.cancel-rejected@example.com',
+            'perfil' => 'atendente',
+            'grupo_id' => 1,
+        ]);
+
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Orçamento Rejeitado']);
+        $budgetId = $this->createBudgetRecord([
+            'cliente_id' => $clientId,
+            'status' => 'rejeitado',
+            'subtotal' => 45.00,
+            'total' => 45.00,
+        ]);
+
+        $token = $this->loginAndGetToken($actor->email);
+
+        $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orcamentos/'.$budgetId.'/cancelar', [
+                'motivo' => 'Tentativa indevida de cancelamento.',
+            ])
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'BUDGET_DECISION_CONFLICT');
+
+        $this->assertDatabaseHas('orcamentos', ['id' => $budgetId, 'status' => 'rejeitado']);
     }
 
     public function test_updating_approved_budget_total_on_open_order_triggers_resend_for_client_approval(): void

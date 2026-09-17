@@ -4,11 +4,11 @@
      imprimia uma faixa da largura da página inteira.
      Fotos retrato já chegam giradas pra paisagem (OrderPdfContextFactory::
      rotateToLandscapeIfPortrait) — aqui só exibe, sempre sem cortar nada:
-     tabela pra alinhar (dompdf não suporta flex) e background-image +
-     background-size:contain (não "cover") pra mostrar a foto inteira,
-     centralizada, dentro da caixa. As células vazias da última linha são
-     emitidas para a foto sozinha não esticar sobre a linha toda. Fontes já
-     validadas/em base64 pelo renderer. --}}
+     tabela pra alinhar (dompdf não suporta flex) e <img> com max-width/
+     max-height (equivale a "contain", não "cover") pra mostrar a foto
+     inteira, centralizada, dentro da caixa de altura fixa. As células vazias
+     da última linha são emitidas para a foto sozinha não esticar sobre a
+     linha toda. Fontes já validadas/em base64 pelo renderer. --}}
 @php
     $colunas = max(1, (int) ($colunas ?? 2));
     $linhas = array_chunk($fotos, $colunas);
@@ -20,7 +20,7 @@
         <tr>
             @foreach ($linha as $foto)
                 <td style="width: {{ $larguraCelula }}%;">
-                    <div class="pdfe-galeria-fotos-item" style="background-image: url('{{ $foto }}');"></div>
+                    <div class="pdfe-galeria-fotos-item"><img src="{{ $foto }}" alt=""></div>
                 </td>
             @endforeach
             @for ($vazia = count($linha); $vazia < $colunas; $vazia++)

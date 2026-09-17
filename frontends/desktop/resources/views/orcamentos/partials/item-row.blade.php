@@ -6,6 +6,17 @@
     $canQuickCreateAny = $canQuickCreateService || $canQuickCreatePart;
     $indexKey = (string) ($index ?? 0);
     $typeId = 'orcamentoItemType-' . $indexKey;
+    $levelId = 'orcamentoItemLevel-' . $indexKey;
+    // Níveis de manutenção (cumulativos): a partir de qual opção o item
+    // entra. Rótulos vêm do backend (formData.niveis); o fallback cobre o
+    // template de linha nova quando o form não trouxe o catálogo.
+    $levelOptions = is_array($form['niveis'] ?? null) && ($form['niveis'] ?? []) !== []
+        ? $form['niveis']
+        : [
+            ['value' => 1, 'label' => 'Manutenção Básica'],
+            ['value' => 2, 'label' => 'Manutenção Avançada'],
+            ['value' => 3, 'label' => 'Manutenção Completa'],
+        ];
     $referenceId = 'orcamentoItemReference-' . $indexKey;
     $descriptionId = 'orcamentoItemDescription-' . $indexKey;
     $quantityId = 'orcamentoItemQuantity-' . $indexKey;
@@ -93,6 +104,22 @@
                         <option value="peca" @selected((string) $field('tipo_item') === 'peca')>Peça</option>
                     </select>
                     <input type="hidden" name="itens[{{ $indexKey }}][modo_precificacao]" value="{{ $field('modo_precificacao', 'manual') }}" data-budget-item-mode @disabled($lockedForConvertedEdit)>
+                </div>
+
+                <div class="budget-item-field budget-item-field-level">
+                    <label for="{{ $levelId }}" class="budget-item-field-label">Nível</label>
+                    <select
+                        id="{{ $levelId }}"
+                        name="itens[{{ $indexKey }}][nivel_minimo]"
+                        class="form-select"
+                        data-budget-item-level
+                        title="A partir de qual opção de manutenção este item entra. Os níveis são cumulativos: a Avançada inclui a Básica, a Completa inclui as duas."
+                        @disabled($lockedForConvertedEdit)
+                    >
+                        @foreach ($levelOptions as $levelOption)
+                            <option value="{{ (int) ($levelOption['value'] ?? 1) }}" @selected((int) $field('nivel_minimo', 1) === (int) ($levelOption['value'] ?? 1))>{{ str_replace('Manutenção ', '', (string) ($levelOption['label'] ?? '')) }}</option>
+                        @endforeach
+                    </select>
                 </div>
 
                 <div class="budget-item-field budget-item-field-reference">

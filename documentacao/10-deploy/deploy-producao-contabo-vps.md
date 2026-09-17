@@ -37,9 +37,11 @@ subdominio tem certificado Let's Encrypt proprio.
 1. **Backup** do banco de producao (`mysqldump --single-transaction --routines --triggers
    --events sistema_hml | gzip`), verificado com `gzip -t`.
 2. **Pacotes:** instalar apenas o que faltar (Redis, Supervisor, extensoes PHP da versao
-   instalada e dependencias nativas das fotos: `libvips-tools`,
+   instalada, dependencias nativas das fotos: `libvips-tools`,
    `libheif-plugin-aomdec`, `libheif-plugin-aomenc` e
-   `libheif-plugin-libde265`). No Ubuntu 24.04 atual a base usa PHP 8.3; no Ubuntu
+   `libheif-plugin-libde265`, e `ghostscript` para a compressao do PDF assinado —
+   o instalador versionado `scripts/bash/install-operational-photo-dependencies.sh`
+   cobre todos). No Ubuntu 24.04 atual a base usa PHP 8.3; no Ubuntu
    26.04 o runbook usa PHP 8.5. O script de producao detecta `php8.5-fpm`,
    `php8.4-fpm` ou `php8.3-fpm` ao recarregar o servico.
 3. **Codigo** em `/var/www/sistema-erp`; **`chown -R www-data:www-data`** todo o diretorio

@@ -17,12 +17,14 @@ use App\Models\OrderEvent;
 use App\Models\OrderStatus;
 use App\Models\Peca;
 use App\Models\Servico;
+use App\Support\BudgetTotals;
 use App\Support\ModoPrecificacao;
 use App\Support\VisibilidadeCusto;
 use App\Models\User;
 use App\Services\Financeiro\FinanceiroService;
 use App\Services\Financeiro\OsMargemService;
 use App\Services\Financeiro\PrecificacaoService;
+use App\Services\Fiscal\AnexoXService;
 use App\Services\Notifications\NotificationDispatchService;
 use App\Services\Estoque\EstoqueReservaService;
 use App\Services\Orders\OrderEventService;
@@ -45,7 +47,8 @@ class BudgetWorkflowService
         private readonly PrecificacaoService $precificacaoService,
         private readonly BudgetRevisionService $budgetRevisionService,
         // specs/040: syncItems() reconcilia a reserva de peca.
-        private readonly EstoqueReservaService $estoqueReservaService
+        private readonly EstoqueReservaService $estoqueReservaService,
+        private readonly AnexoXService $anexoXService
     ) {}
 
     /**
@@ -444,7 +447,42 @@ class BudgetWorkflowService
             'type_options' => Budget::typeOptions(),
             'origin_options' => Budget::originOptions(),
             'condicoes_comerciais_catalogo' => $this->budgetCommercialTermsService->catalog(),
+            'niveis' => Budget::levelOptions(),
             'default_validity_days' => 10,
+            // Ajuda a decidir o checkbox de nota fiscal: quanto falta para o
+            // teto do MEI, sem o operador ter que abrir o relatório fiscal à
+            // parte. null fora do MEI (o teto não existe) — ver
+            // meiLimiteResumo().
+            'mei_limite_nota_fiscal' => $this->meiLimiteResumo(),
+        ];
+    }
+
+    /**
+     * Resumo do teto do MEI para o formulário de orçamento (checkbox de nota
+     * fiscal). Mesma fonte que o Anexo X usa (`AnexoXService::acumuladoAnual`),
+     * só que aqui é decoração de formulário: qualquer falha vira "sem dado"
+     * em vez de quebrar a tela de orçamento por causa de um extra.
+     *
+     * @return array{acumulado: float, limite: float, restante: float, percentual: float, faixa: string}|null
+     */
+    private function meiLimiteResumo(): ?array
+    {
+        try {
+            $resumo = $this->anexoXService->acumuladoAnual(now()->format('Y-m'));
+        } catch (\Throwable) {
+            return null;
+        }
+
+        if ($resumo === null) {
+            return null;
+        }
+
+        return [
+            'acumulado' => (float) $resumo['acumulado'],
+            'limite' => (float) $resumo['limite'],
+            'restante' => (float) $resumo['restante'],
+            'percentual' => (float) $resumo['percentual_do_limite'],
+            'faixa' => (string) $resumo['faixa'],
         ];
     }
 
@@ -620,6 +658,7 @@ class BudgetWorkflowService
             unset(
                 $budgetAttributes['itens'],
                 $budgetAttributes['formas_pagamento'],
+                $budgetAttributes['niveis_condicoes'],
                 $budgetAttributes['admin_email'],
                 $budgetAttributes['admin_password'],
                 $budgetAttributes['propor_revisao']
@@ -667,6 +706,8 @@ class BudgetWorkflowService
                 ->normalizeWarrantyDays($budgetAttributes['garantia_dias'] ?? null);
             $budget->parcelas_sem_juros = $this->budgetCommercialTermsService
                 ->normalizeInstallments($budgetAttributes['parcelas_sem_juros'] ?? null, $paymentCodes);
+            $budget->entrega_domicilio = (bool) filter_var($budgetAttributes['entrega_domicilio'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            $budget->emite_nota_fiscal = (bool) filter_var($budgetAttributes['emite_nota_fiscal'] ?? false, FILTER_VALIDATE_BOOLEAN);
             $budget->total = 0;
             $budget->save();
 
@@ -676,6 +717,11 @@ class BudgetWorkflowService
                 ? $this->syncItems($budget, is_array($attributes['itens'] ?? null) ? $attributes['itens'] : [])
                 : null;
             $this->recalculateBudgetFinancials($budget, $itemsSubtotal, $budgetAttributes['subtotal'] ?? null);
+            $this->syncRecommendedLevel($budget);
+            $this->budgetCommercialTermsService->syncLevelOverrides(
+                $budget,
+                is_array($attributes['niveis_condicoes'] ?? null) ? $attributes['niveis_condicoes'] : []
+            );
             $this->recordStatusHistory(
                 $budget,
                 null,
@@ -755,6 +801,7 @@ class BudgetWorkflowService
             unset(
                 $budgetAttributes['itens'],
                 $budgetAttributes['formas_pagamento'],
+                $budgetAttributes['niveis_condicoes'],
                 $budgetAttributes['admin_email'],
                 $budgetAttributes['admin_password'],
                 $budgetAttributes['propor_revisao']
@@ -821,12 +868,22 @@ class BudgetWorkflowService
                 );
             }
 
+            if (array_key_exists('entrega_domicilio', $budgetAttributes)) {
+                $budget->entrega_domicilio = (bool) filter_var($budgetAttributes['entrega_domicilio'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            }
+
+            if (array_key_exists('emite_nota_fiscal', $budgetAttributes)) {
+                $budget->emite_nota_fiscal = (bool) filter_var($budgetAttributes['emite_nota_fiscal'] ?? false, FILTER_VALIDATE_BOOLEAN);
+            }
+
             $budget->total = $previousTotal;
             $budget->save();
 
             if (array_key_exists('formas_pagamento', $attributes)) {
                 $this->budgetCommercialTermsService->syncPaymentMethods($budget, $paymentCodes);
             }
+
+            $previousItemsFingerprint = $this->itemsFingerprint($budget);
 
             $itemsSubtotal = null;
             if (array_key_exists('itens', $attributes)) {
@@ -836,6 +893,42 @@ class BudgetWorkflowService
             $this->recalculateBudgetFinancials($budget, $itemsSubtotal, $budgetAttributes['subtotal'] ?? $budget->subtotal);
 
             $totalChanged = abs((float) $budget->total - $previousTotal) > 0.009;
+            $itemsChanged = array_key_exists('itens', $attributes)
+                && $this->itemsFingerprint($budget) !== $previousItemsFingerprint;
+
+            // Orçamento já decidido (aprovado, ou pendente de abertura de OS
+            // quando avulso — Budget::approvedForOrderLinkStatuses()) e o
+            // valor OU os próprios itens/níveis mudaram: o escopo que o
+            // cliente aceitou pode não ser mais o mesmo, então volta a exigir
+            // aprovação e libera nivel_aprovado para o cliente poder
+            // reconsiderar o nível (Budget::hasTiers() volta a true). Isso
+            // precisa acontecer ANTES de syncRecommendedLevel() logo abaixo,
+            // senão ele vê hasTiers() ainda preso ao nível antigo e apaga a
+            // recomendação. Reenviar de fato (gerar link/PDF novo) continua
+            // sendo uma ação manual do atendente — "Reenviar para aprovação"
+            // já aparece sozinho com o status reenviar_orcamento em
+            // orcamentos/show.blade.php. Só sobrescreve status/nível se nada
+            // mais no payload já tiver mudado o status explicitamente.
+            $reopensClientDecision = ! $osClosed
+                && ($totalChanged || $itemsChanged)
+                && in_array($previousStatus, Budget::approvedForOrderLinkStatuses(), true)
+                && $budget->status === $previousStatus;
+
+            if ($reopensClientDecision) {
+                $budget->status = Budget::STATUS_RESEND;
+                $budget->nivel_aprovado = null;
+            }
+
+            $this->syncRecommendedLevel($budget);
+            // Mesmo critério do payload parcial: só mexe nas condições por
+            // nível quando elas vieram na requisição.
+            if (array_key_exists('niveis_condicoes', $attributes)) {
+                $this->budgetCommercialTermsService->syncLevelOverrides(
+                    $budget,
+                    is_array($attributes['niveis_condicoes']) ? $attributes['niveis_condicoes'] : []
+                );
+            }
+
             $financialAdjustment = null;
 
             if ($osClosed && $totalChanged && $order instanceof Order) {
@@ -844,18 +937,7 @@ class BudgetWorkflowService
                 // registrados) precisam refletir o valor corrigido — senão o
                 // financeiro fica dessincronizado da realidade.
                 $financialAdjustment = $this->correctClosedOrderFinancials($order, (float) $budget->total);
-            } elseif (
-                ! $osClosed
-                && $totalChanged
-                && $previousStatus === Budget::STATUS_APPROVED
-                && $budget->status === $previousStatus
-            ) {
-                // OS ainda aberta e o valor mudou depois de já aprovado pelo
-                // cliente: volta a exigir aprovação (reenviar_orcamento já
-                // aparece automaticamente com o botão "Reenviar para
-                // aprovação" em orcamentos/show.blade.php). Só sobrescreve o
-                // status se nada mais no payload já tiver mudado explicitamente.
-                $budget->status = Budget::STATUS_RESEND;
+            } elseif ($reopensClientDecision) {
                 $budget->save();
             }
 
@@ -1085,6 +1167,17 @@ class BudgetWorkflowService
                 $attributes['parcelas_sem_juros'] ?? $budget->parcelas_sem_juros,
                 $currentCodes
             );
+        }
+
+        // `entrega_domicilio`/`emite_nota_fiscal` estão em CONVERTED_EDITABLE_
+        // FIELDS (passam na validação de campo permitido lá em cima) mas até
+        // aqui não tinham aplicação neste bloco — mudar o checkbox num
+        // orçamento convertido silenciosamente não gravava nada.
+        if (array_key_exists('entrega_domicilio', $attributes)) {
+            $budget->entrega_domicilio = (bool) filter_var($attributes['entrega_domicilio'], FILTER_VALIDATE_BOOLEAN);
+        }
+        if (array_key_exists('emite_nota_fiscal', $attributes)) {
+            $budget->emite_nota_fiscal = (bool) filter_var($attributes['emite_nota_fiscal'], FILTER_VALIDATE_BOOLEAN);
         }
 
         $budget->atualizado_por = (int) $user->id;
@@ -1454,6 +1547,8 @@ class BudgetWorkflowService
             'acrescimo_percentual' => $budget->acrescimo_percentual !== null ? round((float) $budget->acrescimo_percentual, 4) : null,
             'total' => round((float) ($budget->total ?? 0), 2),
             'total_formatado' => number_format((float) ($budget->total ?? 0), 2, ',', '.'),
+            'nivel_aprovado' => Budget::normalizeLevel($budget->nivel_aprovado),
+            'nivel_aprovado_label' => Budget::levelLabel(Budget::normalizeLevel($budget->nivel_aprovado)),
             'updated_at' => optional($budget->updated_at)->format('d/m/Y H:i'),
             'created_at' => optional($budget->created_at)->format('d/m/Y H:i'),
             // Convertido também pode ser editado agora (edição limitada — ver
@@ -1463,7 +1558,13 @@ class BudgetWorkflowService
             'can_delete' => in_array($status, [Budget::STATUS_DRAFT, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
             'can_approve' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
             'can_reject' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
-            'can_cancel' => ! in_array($status, [Budget::STATUS_CONVERTED, Budget::STATUS_CANCELLED], true),
+            'can_cancel' => ! in_array($status, [
+                Budget::STATUS_APPROVED,
+                Budget::STATUS_PENDING_OS,
+                Budget::STATUS_CONVERTED,
+                Budget::STATUS_REJECTED,
+                Budget::STATUS_CANCELLED,
+            ], true) && ! $this->budgetApprovalService->orderIsSettled($budget),
             'can_generate_os' => $this->isLinkableForOrder($budget),
             'can_send_approval' => $canSendApproval,
             'can_send_client_view' => $canSendClientView,
@@ -1620,7 +1721,21 @@ class BudgetWorkflowService
             'garantia_dias' => $budget->garantia_dias !== null ? (int) $budget->garantia_dias : null,
             'garantia_label' => Budget::warrantyLabel($budget->garantia_dias),
             'parcelas_sem_juros' => $budget->parcelas_sem_juros !== null ? (int) $budget->parcelas_sem_juros : null,
+            'entrega_domicilio' => (bool) $budget->entrega_domicilio,
+            'emite_nota_fiscal' => (bool) $budget->emite_nota_fiscal,
             'condicoes_comerciais' => $this->budgetCommercialTermsService->forBudget($budget),
+            // Níveis de manutenção: `niveis` só vem preenchido enquanto há
+            // opção a escolher; depois da aprovação a lista de itens já é o
+            // escopo contratado e `nivel_aprovado` diz qual foi a escolha.
+            'has_tiers' => $budget->hasTiers(),
+            'nivel_maximo' => $budget->maxLevel(),
+            'niveis' => BudgetTotals::perLevel($budget),
+            // O que está GRAVADO por nível (não o efetivo) — é o que o
+            // formulário usa para marcar o que foi personalizado.
+            'niveis_condicoes' => $this->budgetCommercialTermsService->overridesFor($budget),
+            'nivel_recomendado' => Budget::normalizeLevel($budget->nivel_recomendado),
+            'nivel_aprovado' => Budget::normalizeLevel($budget->nivel_aprovado),
+            'nivel_aprovado_label' => Budget::levelLabel(Budget::normalizeLevel($budget->nivel_aprovado)),
             'numero_os' => (string) ($order?->numero_os ?? ''),
             'cliente' => $client ? [
                 'id' => (int) $client->id,
@@ -1676,6 +1791,7 @@ class BudgetWorkflowService
                 'acrescimo_tipo' => $this->resolveAdjustmentMode($item->acrescimo_tipo),
                 'acrescimo_percentual' => $item->acrescimo_percentual !== null ? round((float) $item->acrescimo_percentual, 4) : null,
                 'total' => (float) ($item->total ?? 0),
+                'nivel_minimo' => Budget::normalizeLevel($item->nivel_minimo) ?? Budget::NIVEL_MINIMO,
                 'observacoes' => (string) ($item->observacoes ?? ''),
                 // `valor_recomendado` e `modo_precificacao` valem para todos: o
                 // primeiro e o piso (quem vende precisa saber que passou dele) e
@@ -1712,6 +1828,8 @@ class BudgetWorkflowService
                 'usuario_nome' => (string) ($approval->usuario_nome ?? ($approval->user?->nome ?? '')),
                 'resposta_cliente' => (string) ($approval->resposta_cliente ?? ''),
                 'observacao' => (string) ($approval->observacao ?? ''),
+                'nivel' => Budget::normalizeLevel($approval->nivel),
+                'nivel_label' => Budget::levelLabel(Budget::normalizeLevel($approval->nivel)),
                 'created_at' => optional($approval->created_at)->format('d/m/Y H:i'),
             ])->all(),
             'envios' => $budget->sends->sortByDesc('created_at')->take(10)->values()->map(static fn (BudgetSend $send): array => [
@@ -1737,7 +1855,13 @@ class BudgetWorkflowService
             'can_send_client_view' => $canSendClientView,
             'can_approve' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
             'can_reject' => ! in_array($status, [Budget::STATUS_APPROVED, Budget::STATUS_PENDING_OS, Budget::STATUS_CONVERTED, Budget::STATUS_REJECTED, Budget::STATUS_CANCELLED], true),
-            'can_cancel' => ! in_array($status, [Budget::STATUS_CONVERTED, Budget::STATUS_CANCELLED], true),
+            'can_cancel' => ! in_array($status, [
+                Budget::STATUS_APPROVED,
+                Budget::STATUS_PENDING_OS,
+                Budget::STATUS_CONVERTED,
+                Budget::STATUS_REJECTED,
+                Budget::STATUS_CANCELLED,
+            ], true) && ! $this->budgetApprovalService->orderIsSettled($budget),
             'can_generate_os' => $this->isLinkableForOrder($budget),
             'has_registered_client' => $client !== null,
             'link_publico' => $publicLink,
@@ -2079,64 +2203,17 @@ class BudgetWorkflowService
 
     private function resolveMoney(mixed $value): float
     {
-        if ($value === null || $value === '') {
-            return 0.0;
-        }
-
-        $normalized = (string) $value;
-        $normalized = str_replace(['R$', '%', ' '], '', $normalized);
-
-        if (str_contains($normalized, ',')) {
-            $normalized = str_replace('.', '', $normalized);
-            $normalized = str_replace(',', '.', $normalized);
-        }
-
-        return round((float) $normalized, 2);
+        return BudgetTotals::money($value);
     }
 
     private function resolveDecimal(mixed $value, int $scale = 4): float
     {
-        if ($value === null || $value === '') {
-            return 0.0;
-        }
-
-        $normalized = preg_replace('/[^\d,.\-]/u', '', trim((string) $value)) ?? '';
-        if ($normalized === '' || $normalized === '-' || $normalized === '.' || $normalized === ',') {
-            return 0.0;
-        }
-
-        $lastComma = strrpos($normalized, ',');
-        $lastDot = strrpos($normalized, '.');
-
-        if ($lastComma !== false && $lastDot !== false) {
-            if ($lastComma > $lastDot) {
-                $normalized = str_replace('.', '', $normalized);
-                $normalized = str_replace(',', '.', $normalized);
-            } else {
-                $normalized = str_replace(',', '', $normalized);
-            }
-        } elseif ($lastComma !== false) {
-            $normalized = str_replace('.', '', $normalized);
-            $normalized = str_replace(',', '.', $normalized);
-        } elseif ($lastDot !== false) {
-            $parts = explode('.', $normalized);
-            $lastPart = (string) end($parts);
-
-            if (count($parts) > 2 || strlen($lastPart) === 3) {
-                $normalized = str_replace('.', '', $normalized);
-            }
-        }
-
-        return round((float) $normalized, $scale);
+        return BudgetTotals::decimal($value, $scale);
     }
 
     private function resolveAdjustmentMode(mixed $value, string $fallback = Budget::ADJUSTMENT_MODE_VALUE): string
     {
-        $mode = strtolower(trim((string) $value));
-
-        return in_array($mode, [Budget::ADJUSTMENT_MODE_VALUE, Budget::ADJUSTMENT_MODE_PERCENT], true)
-            ? $mode
-            : $fallback;
+        return BudgetTotals::adjustmentMode($value, $fallback);
     }
 
     /**
@@ -2144,73 +2221,36 @@ class BudgetWorkflowService
      */
     private function resolveAdjustment(float $base, mixed $type, mixed $percentual, mixed $amount): array
     {
-        $mode = $this->resolveAdjustmentMode($type);
-        $percent = $mode === Budget::ADJUSTMENT_MODE_PERCENT
-            ? max(0, $this->resolveDecimal($percentual, 4))
-            : null;
-
-        if ($mode === Budget::ADJUSTMENT_MODE_PERCENT) {
-            return [
-                'mode' => $mode,
-                'percent' => $percent,
-                'amount' => round($base * (($percent ?? 0) / 100), 2),
-            ];
-        }
-
-        return [
-            'mode' => $mode,
-            'percent' => null,
-            'amount' => max(0, $this->resolveMoney($amount)),
-        ];
+        return BudgetTotals::adjustment($base, $type, $percentual, $amount);
     }
 
-    private function sumBudgetItems(int $budgetId): float
-    {
-        return round((float) BudgetItem::query()
-            ->where('orcamento_id', $budgetId)
-            ->sum('total'), 2);
-    }
-
-    private function budgetHasItems(int $budgetId): bool
-    {
-        return BudgetItem::query()
-            ->where('orcamento_id', $budgetId)
-            ->exists();
-    }
-
+    /**
+     * A matemática mora em BudgetTotals (o funil de aprovação também precisa
+     * dela ao aplicar o nível escolhido, e não pode injetar este serviço).
+     */
     private function recalculateBudgetFinancials(Budget $budget, ?float $itemsSubtotal = null, mixed $subtotalFallback = null): void
     {
-        $subtotal = $itemsSubtotal;
+        BudgetTotals::recalculate($budget, $itemsSubtotal, $subtotalFallback);
+    }
 
-        if ($subtotal === null) {
-            $subtotal = $this->budgetHasItems((int) $budget->id)
-                ? $this->sumBudgetItems((int) $budget->id)
-                : $this->resolveMoney($subtotalFallback ?? $budget->subtotal);
+    /**
+     * O nível recomendado só faz sentido enquanto há níveis para escolher e
+     * dentro dos níveis que os itens realmente formam — fora disso é ruído
+     * gravado (badge "Recomendado" apontando para uma opção que não existe).
+     */
+    private function syncRecommendedLevel(Budget $budget): void
+    {
+        $budget->unsetRelation('items');
+
+        $current = Budget::normalizeLevel($budget->nivel_recomendado);
+        $nivel = $current;
+        if ($nivel !== null && (! $budget->hasTiers() || $nivel > $budget->maxLevel())) {
+            $nivel = null;
         }
 
-        $discount = $this->resolveAdjustment(
-            $subtotal,
-            $budget->desconto_tipo,
-            $budget->desconto_percentual,
-            $budget->desconto
-        );
-        $addition = $this->resolveAdjustment(
-            $subtotal,
-            $budget->acrescimo_tipo,
-            $budget->acrescimo_percentual,
-            $budget->acrescimo
-        );
-
-        $budget->updateQuietly([
-            'subtotal' => round($subtotal, 2),
-            'desconto' => round($discount['amount'], 2),
-            'desconto_tipo' => $discount['mode'],
-            'desconto_percentual' => $discount['percent'],
-            'acrescimo' => round($addition['amount'], 2),
-            'acrescimo_tipo' => $addition['mode'],
-            'acrescimo_percentual' => $addition['percent'],
-            'total' => round(max(0, $subtotal - $discount['amount'] + $addition['amount']), 2),
-        ]);
+        if ($nivel !== $current || ($budget->nivel_recomendado !== null && $current === null)) {
+            $budget->updateQuietly(['nivel_recomendado' => $nivel]);
+        }
     }
 
     /**
@@ -2348,6 +2388,7 @@ class BudgetWorkflowService
                 'acrescimo_percentual' => $addition['percent'],
                 'total' => round($total, 2),
                 'ordem' => (int) ($item['ordem'] ?? $order),
+                'nivel_minimo' => Budget::normalizeLevel($item['nivel_minimo'] ?? null) ?? Budget::NIVEL_MINIMO,
                 'observacoes' => $observacoes,
                 'preco_custo_referencia' => $custoReferencia,
                 'preco_venda_referencia' => $vendaReferencia,
@@ -2395,6 +2436,27 @@ class BudgetWorkflowService
         }
 
         return round(array_reduce($normalizedItems, static fn (float $carry, array $item): float => $carry + (float) ($item['total'] ?? 0), 0.0), 2);
+    }
+
+    /**
+     * Assinatura dos itens (conteúdo + nível), usada só para detectar se
+     * syncItems() de fato mudou algo — não serve para nada além disso.
+     */
+    private function itemsFingerprint(Budget $budget): string
+    {
+        return $budget->items
+            ->sortBy('ordem')
+            ->map(static fn (BudgetItem $item): string => implode('|', [
+                $item->tipo_item,
+                (string) ($item->referencia_id ?? ''),
+                $item->descricao,
+                (string) $item->quantidade,
+                (string) $item->valor_unitario,
+                (string) $item->desconto,
+                (string) $item->acrescimo,
+                (string) $item->nivel_minimo,
+            ]))
+            ->implode(';');
     }
 
     /**

@@ -52,6 +52,25 @@ class Budget extends Model
     public const MAX_INTEREST_FREE_INSTALLMENTS = 24;
 
     /**
+     * Níveis de manutenção (cumulativos): cada item diz a partir de qual
+     * nível entra (`orcamento_itens.nivel_minimo`) e o nível N é a projeção
+     * "itens com nivel_minimo <= N". Um orçamento cujos itens são todos de
+     * nível 1 é um orçamento comum — nada de níveis aparece para o cliente.
+     */
+    public const NIVEL_MINIMO = 1;
+
+    public const NIVEL_MAXIMO = 3;
+
+    /**
+     * @var array<int, array{label: string, subtitle: string}>
+     */
+    public const NIVEIS = [
+        1 => ['label' => 'Manutenção Básica', 'subtitle' => 'Volta a funcionar'],
+        2 => ['label' => 'Manutenção Avançada', 'subtitle' => 'Corrige e previne'],
+        3 => ['label' => 'Manutenção Completa', 'subtitle' => 'Como novo'],
+    ];
+
+    /**
      * Campos operacionais (não financeiros, não ligados a quem é o cliente)
      * que podem ser editados diretamente num orçamento já `convertido`, sem
      * disparar uma nova revisão/aprovação. Ver BudgetWorkflowService::
@@ -82,6 +101,8 @@ class Budget extends Model
         'equipamento_cor_rgb',
         'formas_pagamento',
         'parcelas_sem_juros',
+        'entrega_domicilio',
+        'emite_nota_fiscal',
     ];
 
     /**
@@ -130,6 +151,10 @@ class Budget extends Model
         'validade_dias' => 'integer',
         'garantia_dias' => 'integer',
         'parcelas_sem_juros' => 'integer',
+        'entrega_domicilio' => 'boolean',
+        'emite_nota_fiscal' => 'boolean',
+        'nivel_recomendado' => 'integer',
+        'nivel_aprovado' => 'integer',
         'subtotal' => 'float',
         'desconto' => 'float',
         'desconto_percentual' => 'float',
@@ -254,6 +279,59 @@ class Budget extends Model
         $value = trim((string) $value);
 
         return self::statusLabels()[$value] ?? ($value !== '' ? ucfirst(str_replace('_', ' ', $value)) : 'Rascunho');
+    }
+
+    /**
+     * @return array<int, array{value: int, label: string, subtitle: string}>
+     */
+    public static function levelOptions(): array
+    {
+        $options = [];
+        foreach (self::NIVEIS as $nivel => $meta) {
+            $options[] = ['value' => $nivel, 'label' => $meta['label'], 'subtitle' => $meta['subtitle']];
+        }
+
+        return $options;
+    }
+
+    public static function levelLabel(?int $nivel): string
+    {
+        return $nivel !== null ? (string) (self::NIVEIS[$nivel]['label'] ?? ('Nível '.$nivel)) : '';
+    }
+
+    /**
+     * Normaliza um nível vindo de fora (request, payload, coluna): inteiro
+     * dentro de [NIVEL_MINIMO, NIVEL_MAXIMO], senão null.
+     */
+    public static function normalizeLevel(mixed $value): ?int
+    {
+        if ($value === null || $value === '' || ! is_numeric($value)) {
+            return null;
+        }
+
+        $nivel = (int) $value;
+
+        return $nivel >= self::NIVEL_MINIMO && $nivel <= self::NIVEL_MAXIMO ? $nivel : null;
+    }
+
+    /**
+     * Maior nível presente nos itens (1 quando não há itens).
+     */
+    public function maxLevel(): int
+    {
+        $max = (int) $this->items->max(static fn (BudgetItem $item): int => (int) ($item->nivel_minimo ?? 1));
+
+        return max(self::NIVEL_MINIMO, min(self::NIVEL_MAXIMO, $max));
+    }
+
+    /**
+     * Há mais de um nível para o cliente escolher? Falso para orçamento
+     * comum (tudo nível 1) e também depois da aprovação, quando a lista já
+     * virou o escopo contratado.
+     */
+    public function hasTiers(): bool
+    {
+        return $this->nivel_aprovado === null && $this->maxLevel() > self::NIVEL_MINIMO;
     }
 
     /**
@@ -424,6 +502,20 @@ class Budget extends Model
     public function paymentMethods(): HasMany
     {
         return $this->hasMany(BudgetPaymentMethod::class, 'orcamento_id', 'id');
+    }
+
+    /**
+     * Condições comerciais sobrescritas por nível de manutenção (só os
+     * níveis que personalizam algo). Ver BudgetCommercialTermsService.
+     */
+    public function levelTerms(): HasMany
+    {
+        return $this->hasMany(BudgetLevelTerms::class, 'orcamento_id', 'id');
+    }
+
+    public function levelPaymentMethods(): HasMany
+    {
+        return $this->hasMany(BudgetLevelPaymentMethod::class, 'orcamento_id', 'id');
     }
 
     public function histories(): HasMany

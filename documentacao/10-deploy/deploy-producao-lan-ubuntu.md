@@ -83,7 +83,7 @@ atende à restrição. Instalação:
 ```bash
 sudo apt-get update
 sudo apt-get install -y software-properties-common ca-certificates curl unzip git \
-  nginx mysql-server redis-server supervisor poppler-utils \
+  nginx mysql-server redis-server supervisor poppler-utils ghostscript \
   libvips-tools libheif-plugin-aomdec libheif-plugin-aomenc libheif-plugin-libde265 \
   php8.5-fpm php8.5-cli php8.5-mysql php8.5-mbstring php8.5-xml php8.5-curl \
   php8.5-zip php8.5-bcmath php8.5-gd php8.5-intl php8.5-redis php8.5-common \
@@ -105,6 +105,13 @@ sudo apt-get install -y software-properties-common ca-certificates curl unzip gi
 > Ubuntu 26.04 os pacotes continuam disponíveis nos repositórios oficiais; a aplicação
 > valida os binários `/usr/bin/vips`, `/usr/bin/vipsthumbnail` e `/usr/bin/vipsheader`.
 > Sem essa stack, uploads de fotos falham fechado com `PHOTO_PROCESSOR_UNAVAILABLE`.
+
+> **Documentos PDF sob demanda (v5.88+):** `ghostscript` (`/usr/bin/gs`) comprime o PDF
+> que fica em disco por assinatura formal; `poppler-utils` também fornece `pdftotext`,
+> usado por `documents:snapshot-check`. Sem `gs` nada quebra — o PDF assinado é gravado
+> sem a compressão extra e o log registra um aviso. O instalador
+> `scripts/bash/install-operational-photo-dependencies.sh` (chamado pelo deploy) já
+> inclui o pacote. Ver [operação dos documentos sob demanda](operacao-documentos-sob-demanda.md).
 
 Composer e Node:
 
@@ -559,6 +566,10 @@ sem erros de CORS/500.
 | 13 | `There are no commands defined in the "photos" namespace` | código antigo ainda não contém a spec 046 | fazer deploy da versão nova antes de rodar `photos:preflight` |
 | 14 | `PHOTO_PROCESSOR_UNAVAILABLE` com `vips` ausente | faltou `libvips-tools` | instalar `libvips-tools` e os plugins `libheif-*` pelo script versionado |
 | 15 | preflight falha na VPS, mas passa no dev | diferença de CLI entre `vipsthumbnail` 8.15 e 8.18 | usar versão `5.87.0.1+`, que detecta `--output`/`--path` e `--export-profile`/`--output-profile` automaticamente |
+| 16 | log com `Ghostscript indisponível; PDF emitido sem compressão extra` | faltou `ghostscript` | `apt install ghostscript` (ou rodar o instalador versionado); PDFs continuam sendo emitidos, só ficam maiores |
+| 17 | `os_documento_snapshots` não existe / erro ao gerar documento após deploy da v5.88 | `migrate` geral bloqueado pela migration do chat | `php artisan migrate --path=database/migrations/2026_09_15_000001_create_os_documento_snapshots_table.php --force` |
+| 18 | log com `PDF acima do teto mesmo após compressão máxima` | documento com muitas fotos (5, o máximo do sistema) chegou perto do teto de 80 KB | normal ocasionalmente (best-effort); se for sistemático, checar se `gs` está mesmo rodando (item 19) |
+| 19 | Ghostscript "funciona" mas o PDF nunca fica menor (nenhum log de erro) | AppArmor confina `/usr/bin/gs` (Ubuntu ships `/etc/apparmor.d/gs`) a escrever só em `/tmp`, `/var/tmp` ou `$HOME` do usuário do processo — um diretório do projeto é negado pelo kernel, sem aparecer no log da aplicação | confirmar com `journalctl -k \| grep 'apparmor.*profile="gs"'`; a correção (gravar os temporários do gs sempre em `sys_get_temp_dir()`) já está no código — se reaparecer, alguém reintroduziu `document-rendering.temp_directory` na chamada do Ghostscript |
 
 ## 7. Pendências conhecidas (não configuradas neste deploy)
 

@@ -42,6 +42,7 @@ trait BuildsLegacyErpSchema
             'os_documento_link_itens',
             'os_documento_links',
             'os_documento_envios',
+            'os_documento_snapshots',
             'os_documento_arquivos',
             'os_documentos',
             'os_fotos',
@@ -53,6 +54,8 @@ trait BuildsLegacyErpSchema
             'orcamento_aprovacoes',
             'orcamento_envios',
             'orcamento_status_historico',
+            'orcamento_nivel_formas_pagamento',
+            'orcamento_nivel_condicoes',
             'orcamento_formas_pagamento',
             'orcamento_itens',
             'orcamentos',
@@ -121,6 +124,7 @@ trait BuildsLegacyErpSchema
         $this->createOrderPhotosTable();
         $this->createOrderDocumentsTable();
         $this->createOrderDocumentSupportTables();
+        $this->createOrderDocumentSnapshotsTable();
         $this->createDocumentSignatureTables();
         $this->createOrderItemsTable();
         $this->createChecklistTables();
@@ -184,6 +188,11 @@ trait BuildsLegacyErpSchema
             ['id' => 8, 'nome' => 'Converter orçamento em OS', 'slug' => 'converter_os'],
             // Agenda: separa "ver a minha agenda" de "ver a de todo mundo".
             ['id' => 9, 'nome' => 'Ver de todos os responsáveis', 'slug' => 'ver_todos'],
+            // Espelha o catálogo global de produção: reusada por módulos que
+            // precisam de um poder "a mais" sem inventar slug novo (ex.:
+            // fiscal:administrar, os:administrar — ver
+            // 2026_09_15_000002_seed_os_administrar_permission.php).
+            ['id' => 10, 'nome' => 'Administrar', 'slug' => 'administrar'],
         ]);
     }
 
@@ -1589,6 +1598,15 @@ trait BuildsLegacyErpSchema
             $table->decimal('valor_pecas', 10, 2)->default(0);
             $table->decimal('valor_total', 10, 2)->default(0);
             $table->decimal('desconto', 10, 2)->default(0);
+            // Espelha 2026_09_15_000001_add_desconto_baixa_to_os: desconto
+            // concedido no fechamento da OS, registrado à parte de `desconto`
+            // (que é reescrito por inteiro a cada sync de orçamento).
+            $table->decimal('desconto_baixa', 10, 2)->default(0);
+            $table->string('desconto_baixa_tipo', 20)->default('valor');
+            $table->decimal('desconto_baixa_percentual', 8, 4)->nullable();
+            $table->string('desconto_baixa_motivo', 255)->nullable();
+            $table->unsignedBigInteger('desconto_baixa_concedido_por')->nullable();
+            $table->dateTime('desconto_baixa_concedido_em')->nullable();
             $table->decimal('valor_final', 10, 2)->default(0);
             $table->boolean('orcamento_aprovado')->default(false);
             $table->dateTime('data_aprovacao')->nullable();
@@ -1748,6 +1766,30 @@ trait BuildsLegacyErpSchema
             $table->foreign('gerado_por')->references('id')->on('usuarios')->nullOnDelete();
             $table->foreign('assinado_por')->references('id')->on('usuarios')->nullOnDelete();
             $table->foreign('arquivado_por')->references('id')->on('usuarios')->nullOnDelete();
+        });
+    }
+
+    // Espelho de 2026_09_15_000001_create_os_documento_snapshots_table.
+    private function createOrderDocumentSnapshotsTable(): void
+    {
+        Schema::create('os_documento_snapshots', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('documento_id');
+            $table->unsignedSmallInteger('versao_formato')->default(1);
+            $table->string('tipo_codigo', 80);
+            $table->unsignedBigInteger('template_id')->nullable();
+            $table->unsignedBigInteger('template_versao_id')->nullable();
+            $table->unsignedInteger('template_versao')->nullable();
+            $table->string('hash_schema', 64)->nullable();
+            $table->string('hash_snapshot', 64);
+            $table->string('formatos', 40)->default('a4,80mm');
+            $table->unsignedInteger('tamanho_bytes')->default(0);
+            $table->longText('snapshot_json');
+            $table->dateTime('created_at')->nullable();
+            $table->dateTime('updated_at')->nullable();
+            $table->unique('documento_id', 'ux_os_doc_snapshots_documento');
+            $table->index('hash_snapshot', 'ix_os_doc_snapshots_hash');
+            $table->foreign('documento_id')->references('id')->on('os_documentos')->cascadeOnDelete();
         });
     }
 
@@ -2087,6 +2129,7 @@ trait BuildsLegacyErpSchema
             'acrescimo_percentual' => null,
             'total' => 100.00,
             'ordem' => 1,
+            'nivel_minimo' => 1,
             'observacoes' => null,
             'preco_custo_referencia' => 0,
             'preco_venda_referencia' => 100.00,
@@ -2164,6 +2207,12 @@ trait BuildsLegacyErpSchema
             $table->string('prazo_execucao', 120)->nullable();
             $table->unsignedSmallInteger('garantia_dias')->nullable();
             $table->unsignedTinyInteger('parcelas_sem_juros')->nullable();
+            $table->boolean('entrega_domicilio')->default(false);
+            // Espelha 2026_09_17_000001_add_emite_nota_fiscal_to_orcamentos.
+            $table->boolean('emite_nota_fiscal')->default(false);
+            // Espelha 2026_09_15_000002_add_niveis_manutencao_to_orcamentos_tables.
+            $table->unsignedTinyInteger('nivel_recomendado')->nullable();
+            $table->unsignedTinyInteger('nivel_aprovado')->nullable();
             $table->text('observacoes')->nullable();
             $table->text('condicoes')->nullable();
             $table->string('token_publico', 80)->nullable()->unique();
@@ -2201,6 +2250,8 @@ trait BuildsLegacyErpSchema
             $table->decimal('acrescimo_percentual', 8, 4)->nullable();
             $table->decimal('total', 12, 2)->default(0);
             $table->integer('ordem')->default(0);
+            // Espelha 2026_09_15_000002_add_niveis_manutencao_to_orcamentos_tables.
+            $table->unsignedTinyInteger('nivel_minimo')->default(1);
             $table->text('observacoes')->nullable();
             $table->decimal('preco_custo_referencia', 12, 2)->default(0);
             $table->decimal('preco_venda_referencia', 12, 2)->default(0);
@@ -2226,6 +2277,36 @@ trait BuildsLegacyErpSchema
             $table->timestamps();
 
             $table->unique(['orcamento_id', 'forma_codigo']);
+            $table->foreign('orcamento_id')->references('id')->on('orcamentos')->cascadeOnDelete();
+        });
+
+        // Espelha 2026_09_16_000001_create_orcamento_nivel_condicoes_tables.
+        Schema::create('orcamento_nivel_condicoes', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('orcamento_id');
+            $table->unsignedTinyInteger('nivel');
+            $table->unsignedSmallInteger('garantia_dias')->nullable();
+            $table->unsignedTinyInteger('parcelas_sem_juros')->nullable();
+            $table->boolean('entrega_domicilio')->nullable();
+            $table->json('beneficios')->nullable();
+            $table->timestamps();
+
+            $table->unique(['orcamento_id', 'nivel']);
+            $table->foreign('orcamento_id')->references('id')->on('orcamentos')->cascadeOnDelete();
+        });
+
+        Schema::create('orcamento_nivel_formas_pagamento', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('orcamento_id');
+            $table->unsignedTinyInteger('nivel');
+            $table->unsignedBigInteger('forma_pagamento_id')->nullable();
+            $table->string('forma_codigo', 40);
+            $table->string('forma_nome', 60);
+            $table->boolean('is_cartao')->default(false);
+            $table->integer('ordem')->default(0);
+            $table->timestamps();
+
+            $table->unique(['orcamento_id', 'nivel', 'forma_codigo']);
             $table->foreign('orcamento_id')->references('id')->on('orcamentos')->cascadeOnDelete();
         });
 
@@ -2269,6 +2350,9 @@ trait BuildsLegacyErpSchema
             $table->unsignedBigInteger('usuario_id')->nullable();
             $table->string('usuario_nome', 120)->nullable();
             $table->text('resposta_cliente')->nullable();
+            // Espelha 2026_09_15_000002_add_niveis_manutencao_to_orcamentos_tables.
+            $table->unsignedTinyInteger('nivel')->nullable();
+            $table->json('niveis_snapshot')->nullable();
             $table->text('observacao')->nullable();
             $table->string('ip_origem', 45)->nullable();
             $table->text('user_agent')->nullable();

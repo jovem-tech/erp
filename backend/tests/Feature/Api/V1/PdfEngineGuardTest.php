@@ -120,7 +120,7 @@ class PdfEngineGuardTest extends TestCase
         ]]);
         $profile->shouldReceive('resolveLogoFile')->once()->andReturn(null);
 
-        $context = (new CompanyContextProvider($profile))->build();
+        $context = (new CompanyContextProvider($profile, app(\App\Services\Photos\OperationalPhotoPdfRenderer::class)))->build();
 
         $this->assertSame('Jovem Tech OS', $context['nome_sistema']);
         $this->assertSame('Jovem Tech OS', $context['nome_fantasia']);

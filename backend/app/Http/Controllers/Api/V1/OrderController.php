@@ -23,10 +23,9 @@ use App\Services\Signatures\DocumentSignatureWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\Storage;
+use App\Services\Orders\Documents\ResolvedDocumentFile;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
-use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class OrderController extends BaseApiController
@@ -475,7 +474,7 @@ class OrderController extends BaseApiController
         ]);
     }
 
-    public function document(Request $request, int $order, int $document): BinaryFileResponse|JsonResponse
+    public function document(Request $request, int $order, int $document): Response|BinaryFileResponse|JsonResponse
     {
         $this->authorize('os:visualizar');
 
@@ -485,18 +484,28 @@ class OrderController extends BaseApiController
         }
 
         $result = $this->orderWorkflowService->resolveDocumentAccess($order, $document, $user);
+        if (($result['result'] ?? 'error') === 'missing_file') {
+            // Sem binário em disco: versão renderizada sob demanda (snapshot)
+            // ou reconstituída — mesma cadeia da Central Documental.
+            $result = $this->orderDocumentCenterService->resolveFileForActor($order, $document, 'a4', $user);
+        }
         if (($result['result'] ?? 'error') !== 'ok') {
             return $this->attachmentErrorResponse($request, $result['result'] ?? 'error', 'DOCUMENT');
         }
 
         $file = $result['file'];
-
-        return response()->file($file['absolute_path'], [
+        $headers = [
             'Content-Type' => $file['mime_type'],
             'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
             'X-Content-Type-Options' => 'nosniff',
             'Content-Security-Policy' => "default-src 'none'; base-uri 'none'; sandbox",
-        ]);
+        ];
+
+        if (($file['resolved'] ?? null) instanceof ResolvedDocumentFile) {
+            return $file['resolved']->toResponse($headers);
+        }
+
+        return response()->file($file['absolute_path'], $headers);
     }
 
     public function documents(Request $request, int $order): JsonResponse
@@ -778,7 +787,7 @@ class OrderController extends BaseApiController
         ]);
     }
 
-    public function documentFile(Request $request, int $order, int $document, string $format): BinaryFileResponse|JsonResponse
+    public function documentFile(Request $request, int $order, int $document, string $format): Response|BinaryFileResponse|JsonResponse
     {
         $this->authorize('os:visualizar');
 
@@ -793,8 +802,12 @@ class OrderController extends BaseApiController
         }
 
         $file = $result['file'];
+        /** @var ResolvedDocumentFile $resolved */
+        $resolved = $file['resolved'];
 
-        return response()->file($file['absolute_path'], [
+        // Persistido (assinatura formal) sai como arquivo; sob demanda sai
+        // como bytes. Cabeçalhos idênticos nos dois casos.
+        return $resolved->toResponse([
             'Content-Type' => $file['mime_type'],
             'Content-Disposition' => 'inline; filename="'.$file['filename'].'"',
             'Cache-Control' => 'no-store, private',
@@ -855,7 +868,7 @@ class OrderController extends BaseApiController
         return $response;
     }
 
-    public function downloadDocuments(Request $request, int $order): StreamedResponse|JsonResponse
+    public function downloadDocuments(Request $request, int $order): BinaryFileResponse|JsonResponse
     {
         $this->authorize('os:visualizar');
 
@@ -874,11 +887,15 @@ class OrderController extends BaseApiController
 
         $file = $result['file'] ?? [];
 
-        return Storage::disk('local')->download(
-            (string) ($file['relative_path'] ?? ''),
+        return response()->download(
+            (string) ($file['absolute_path'] ?? ''),
             (string) ($file['file_name'] ?? 'documentos.zip'),
-            ['Content-Type' => 'application/zip']
-        );
+            [
+                'Content-Type' => 'application/zip',
+                'Cache-Control' => 'private, no-store',
+                'X-Content-Type-Options' => 'nosniff',
+            ]
+        )->deleteFileAfterSend(true);
     }
 
     public function printDocuments(Request $request, int $order): JsonResponse
@@ -1259,6 +1276,27 @@ class OrderController extends BaseApiController
                 null,
                 request: $request
             ),
+            'discount_requires_reason' => $this->error(
+                'Informe o motivo do desconto concedido.',
+                422,
+                'ORDER_CLOSURE_DISCOUNT_REQUIRES_REASON',
+                null,
+                request: $request
+            ),
+            'discount_requires_open_balance' => $this->error(
+                'Esta OS já foi totalmente adiantada antes desta baixa — não há saldo em aberto para descontar. O desconto precisa ser concedido no próprio ato do adiantamento.',
+                422,
+                'ORDER_CLOSURE_DISCOUNT_REQUIRES_OPEN_BALANCE',
+                null,
+                request: $request
+            ),
+            'discount_exceeds_balance' => $this->error(
+                'O desconto informado excede o saldo em aberto desta OS.',
+                422,
+                'ORDER_CLOSURE_DISCOUNT_EXCEEDS_BALANCE',
+                null,
+                request: $request
+            ),
             default => $this->error(
                 'Falha ao concluir a baixa da OS.',
                 500,
@@ -1507,6 +1545,13 @@ class OrderController extends BaseApiController
                 'O arquivo solicitado não foi encontrado no armazenamento legado.',
                 404,
                 'ORDER_'.$kind.'_MISSING_FILE',
+                null,
+                request: $request
+            ),
+            'render_failed' => $this->error(
+                'Não foi possível renderizar esta versão do documento agora. Tente novamente em instantes.',
+                503,
+                'ORDER_'.$kind.'_RENDER_FAILED',
                 null,
                 request: $request
             ),

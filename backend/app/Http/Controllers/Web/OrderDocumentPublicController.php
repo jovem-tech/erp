@@ -3,9 +3,10 @@
 namespace App\Http\Controllers\Web;
 
 use App\Http\Controllers\Controller;
+use App\Services\Orders\Documents\ResolvedDocumentFile;
 use App\Services\Orders\OrderDocumentCenterService;
-use Illuminate\Http\Response;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class OrderDocumentPublicController extends Controller
@@ -38,7 +39,7 @@ class OrderDocumentPublicController extends Controller
             ->header('X-Robots-Tag', 'noindex, noarchive');
     }
 
-    public function file(Request $request, string $token, int $document, string $format): BinaryFileResponse
+    public function file(Request $request, string $token, int $document, string $format): Response|BinaryFileResponse
     {
         $result = $this->orderDocumentCenterService->resolvePublicFile($token, $document, $format);
 
@@ -51,8 +52,12 @@ class OrderDocumentPublicController extends Controller
         }
 
         $file = $result['file'];
+        /** @var ResolvedDocumentFile $resolved */
+        $resolved = $file['resolved'];
 
-        return response()->file($file['absolute_path'], [
+        // Documento sob demanda vem como bytes; o persistido (assinatura
+        // formal) continua saindo como arquivo. Cabeçalhos idênticos.
+        return $resolved->toResponse([
             'Content-Type' => $file['mime_type'],
             'Content-Disposition' => 'inline; filename="' . $file['filename'] . '"',
             'Cache-Control' => 'no-store, private',

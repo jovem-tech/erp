@@ -66,6 +66,16 @@ class DiscriminacaoNfseBuilder
             }
         }
 
+        // So aparece quando o desconto de fato afeta o valor final da nota
+        // (valor_final ja sai liquido dele - ver DocumentoFiscalService::
+        // valoresLiquidos()). Transparencia: deixa explicito ao cliente e a
+        // uma eventual fiscalizacao que o valor menor e desconto comercial
+        // incondicional, nao erro ou receita omitida.
+        $descontoBaixa = round((float) ($order->desconto_baixa ?? 0), 2);
+        if ($descontoBaixa > 0.009) {
+            $frase .= ' Desconto concedido: R$ '.number_format($descontoBaixa, 2, ',', '.').'.';
+        }
+
         return $frase;
     }
 

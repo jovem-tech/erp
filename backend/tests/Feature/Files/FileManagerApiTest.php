@@ -849,7 +849,10 @@ class FileManagerApiTest extends TestCase
             'ordem_menu' => 78,
             'ativo' => 1,
         ]);
-        foreach (['listar', 'metadados', 'baixar', 'quarentenar', 'restaurar', 'administrar'] as $index => $slug) {
+        // 'administrar' nao entra aqui: ja' faz parte do catalogo global
+        // semeado por seedRbacCatalog() (BuildsLegacyErpSchema) — inserir de
+        // novo violaria a unique constraint de `permissoes.slug`.
+        foreach (['listar', 'metadados', 'baixar', 'quarentenar', 'restaurar'] as $index => $slug) {
             DB::table('permissoes')->insert([
                 'id' => 20 + $index,
                 'nome' => ucfirst($slug),

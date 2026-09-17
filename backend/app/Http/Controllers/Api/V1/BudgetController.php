@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Requests\Api\V1\UpsertBudgetRequest;
+use App\Models\Budget;
 use App\Models\User;
 use App\Services\Auth\AdminCredentialVerifier;
 use App\Services\Budgets\BudgetApprovalService;
@@ -457,7 +458,19 @@ class BudgetController extends BaseApiController
             return $this->unauthenticatedResponse($request);
         }
 
-        $result = $this->budgetApprovalService->approveByStaff($budget, $user, $request->input('observacao'));
+        $validated = $request->validate([
+            'observacao' => ['nullable', 'string'],
+            // Orçamento com níveis de manutenção: qual opção o cliente escolheu
+            // (por telefone, presencial...). Ignorado quando não há níveis.
+            'nivel' => ['nullable', 'integer', 'between:'.Budget::NIVEL_MINIMO.','.Budget::NIVEL_MAXIMO],
+        ]);
+
+        $result = $this->budgetApprovalService->approveByStaff(
+            $budget,
+            $user,
+            $validated['observacao'] ?? null,
+            Budget::normalizeLevel($validated['nivel'] ?? null)
+        );
 
         return $this->respondToStaffDecision($result, $request);
     }
@@ -517,6 +530,13 @@ class BudgetController extends BaseApiController
                 (string) ($result['message'] ?? 'Ação não permitida no status atual do orçamento.'),
                 409,
                 'BUDGET_DECISION_CONFLICT',
+                null,
+                request: $request
+            ),
+            'invalid_level' => $this->error(
+                (string) ($result['message'] ?? 'Escolha a opção de manutenção para aprovar esta proposta.'),
+                422,
+                'BUDGET_LEVEL_REQUIRED',
                 null,
                 request: $request
             ),

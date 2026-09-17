@@ -1315,6 +1315,27 @@ class AnexoXService
     }
 
     /**
+     * A receita acumulada do ano já passou do teto do MEI?
+     *
+     * Usado fora do módulo fiscal (ex.: selo de emissão de nota fiscal no
+     * orçamento público) para decidir se ainda faz sentido prometer NFS-e ao
+     * cliente. Fora do MEI a pergunta não se aplica — `acumuladoAnual()`
+     * devolve null e aqui vira `false` (nunca esconde por engano quem não é
+     * MEI). Qualquer falha na apuração também cai para `false`: um selo de
+     * tela a menos é sempre preferível a quebrar a página pública.
+     */
+    public function limiteAnualAtingido(?string $competencia = null): bool
+    {
+        try {
+            $resumo = $this->acumuladoAnual($competencia ?? now()->format('Y-m'));
+        } catch (\Throwable) {
+            return false;
+        }
+
+        return $resumo !== null && ($resumo['faixa'] ?? 'dentro') !== 'dentro';
+    }
+
+    /**
      * O bloco do acumulado a partir dos totais mensais já conhecidos.
      *
      * Compartilhado por `acumuladoAnual()` (que varre os meses) e por

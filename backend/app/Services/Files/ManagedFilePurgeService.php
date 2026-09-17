@@ -126,6 +126,66 @@ class ManagedFilePurgeService
         }
     }
 
+    /**
+     * Retira o binário de um PDF que passou a ser renderizado sob demanda
+     * (snapshot/reconstituição). Não é exclusão de usuário — é troca de
+     * mecanismo — então não passa pela lixeira nem pelo kill switch da
+     * exclusão definitiva, mas continua honrando legal_hold, o contêiner
+     * físico e a trilha de eventos. O chamador já apagou (ou apaga) o
+     * arquivo em disco via os_documento_arquivos; aqui só se garante o
+     * estado do catálogo e a miniatura.
+     */
+    public function retireReplacedBinary(ManagedFile $file, ?int $actorId, string $reason): ManagedFile
+    {
+        return DB::transaction(function () use ($file, $actorId, $reason): ManagedFile {
+            $locked = ManagedFile::query()->lockForUpdate()->findOrFail($file->id);
+            if ($locked->lifecycle_status === FileLifecycleStatus::Purged) {
+                return $locked;
+            }
+            if ((bool) data_get($locked->metadata_json, 'legal_hold', false)) {
+                throw new \DomainException('Arquivo protegido por retenção legal não pode ser retirado.');
+            }
+
+            [$disk, $storageKey] = $this->authorizedTarget($locked);
+            $binaryExisted = $disk->exists($storageKey);
+            if ($binaryExisted) {
+                $this->assertPhysicalContainment($disk, $storageKey);
+                if (! $disk->delete($storageKey) || $disk->exists($storageKey)) {
+                    throw new \RuntimeException('O storage não confirmou a remoção do binário substituído.');
+                }
+            }
+
+            try {
+                $this->pdfThumbnails->forget($locked);
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+
+            $locked->forceFill([
+                'lifecycle_status' => FileLifecycleStatus::Purged,
+                'purged_at' => now(),
+            ])->save();
+
+            $this->events->record(
+                ManagedFileAction::Purged,
+                'success',
+                $locked,
+                $actorId,
+                (string) $locked->category,
+                [
+                    'reason' => $reason,
+                    'authorized_by' => $actorId,
+                    'purge_source' => 'render_on_demand',
+                    'binary_existed' => $binaryExisted,
+                    'path_hash' => hash('sha256', (string) $locked->storage_disk.'|'.$storageKey),
+                    'size_bytes' => (int) $locked->size_bytes,
+                ]
+            );
+
+            return $locked->fresh() ?? $locked;
+        });
+    }
+
     /** @return array{0: FilesystemAdapter, 1: string} */
     private function authorizedTarget(ManagedFile $file): array
     {

@@ -302,6 +302,14 @@
             background: var(--desktop-surface);
         }
 
+        /* Discount block */
+        .closure-discount-block {
+            border: 1px solid var(--desktop-border);
+            border-radius: var(--desktop-radius-sm);
+            padding: 1rem;
+            background: var(--desktop-surface);
+        }
+
         /* Confirm step */
         .closure-confirm-intro {
             font-size: 0.875rem;
@@ -493,6 +501,12 @@
         $valorAberto = (float) ($financeiro['valor_aberto'] ?? $valorFinal);
         $temSaldoAberto = $valorAberto > 0.0;
         $valorMovimentado = (float) ($financeiro['valor_movimentado'] ?? 0);
+        // Conceder desconto ao cliente nesta baixa: permissão própria
+        // (os:administrar), separada de os:editar — ver
+        // OrderClosureService::resolveClosureDiscount() no backend, que é
+        // quem de fato garante isso (esta checagem só evita mostrar um
+        // controle que o ator não pode usar).
+        $podeConcederDesconto = \App\Support\DesktopSession::can('os', 'administrar');
         $clienteTelefone = trim((string) ($closure['cliente_telefone'] ?? ''));
         $clienteEmail = trim((string) ($closure['cliente_email'] ?? ($order['cliente_email'] ?? '')));
         // Documento do tomador: a NFS-e nao sai sem ele, e a hora de descobrir
@@ -929,6 +943,10 @@
                                     <span>Recebido nesta baixa</span>
                                     <strong id="closureFinSummaryAction">R$ 0,00</strong>
                                 </div>
+                                <div class="closure-summary-item" id="closureFinSummaryDiscountWrap" hidden>
+                                    <span>Desconto concedido nesta baixa</span>
+                                    <strong id="closureFinSummaryDiscount">R$ 0,00</strong>
+                                </div>
                                 <div class="closure-summary-item">
                                     <span>Saldo restante após concluir</span>
                                     <strong id="closureFinSummaryBalance">R$ {{ number_format($valorAberto, 2, ',', '.') }}</strong>
@@ -963,6 +981,66 @@
                                     <i class="bi bi-plus-lg me-1"></i>Adicionar recebimento
                                 </button>
                             </div>
+
+                            @if ($podeConcederDesconto)
+                                @if ($temSaldoAberto)
+                                    @php
+                                        $oldDescontoTipo = old('desconto_tipo', 'valor') === 'percentual' ? 'percentual' : 'valor';
+                                        $oldDescontoValor = (float) old('desconto_valor', 0);
+                                        $oldDescontoPercentual = (float) old('desconto_percentual', 0);
+                                        $oldDescontoDisplay = $oldDescontoTipo === 'percentual'
+                                            ? number_format($oldDescontoPercentual, 2, ',', '.') . '%'
+                                            : 'R$ ' . number_format($oldDescontoValor, 2, ',', '.');
+                                    @endphp
+                                    <div class="closure-discount-block mb-3" id="closureDiscountBlock" data-closure-discount-root>
+                                        <div class="closure-panel-title fs-6 mb-2">Desconto concedido ao cliente</div>
+                                        <div class="desktop-grid desktop-grid-two">
+                                            <div>
+                                                <label for="closureDescontoDisplay">Desconto</label>
+                                                <div class="budget-adjustment-group" data-budget-adjustment-group>
+                                                    <input
+                                                        type="text"
+                                                        id="closureDescontoDisplay"
+                                                        class="form-control budget-adjustment-input"
+                                                        value="{{ $oldDescontoDisplay }}"
+                                                        inputmode="decimal"
+                                                        autocomplete="off"
+                                                        data-closure-discount-display
+                                                    >
+                                                    <div class="budget-adjustment-toggle" role="group" aria-label="Modo do desconto">
+                                                        <button type="button" class="budget-adjustment-toggle-btn {{ $oldDescontoTipo === 'valor' ? 'is-active' : '' }}" data-closure-discount-option="valor" aria-pressed="{{ $oldDescontoTipo === 'valor' ? 'true' : 'false' }}">R$</button>
+                                                        <button type="button" class="budget-adjustment-toggle-btn {{ $oldDescontoTipo === 'percentual' ? 'is-active' : '' }}" data-closure-discount-option="percentual" aria-pressed="{{ $oldDescontoTipo === 'percentual' ? 'true' : 'false' }}">%</button>
+                                                    </div>
+                                                </div>
+                                                <div class="budget-adjustment-preview" data-closure-discount-preview-wrapper @if ($oldDescontoTipo !== 'percentual') hidden @endif>
+                                                    <label class="budget-adjustment-preview-label" for="closureDescontoPreview">Valor do desconto</label>
+                                                    <input
+                                                        type="text"
+                                                        id="closureDescontoPreview"
+                                                        class="form-control budget-adjustment-preview-input"
+                                                        value="R$ {{ number_format($oldDescontoTipo === 'percentual' ? round($valorFinal * $oldDescontoPercentual / 100, 2) : $oldDescontoValor, 2, ',', '.') }}"
+                                                        readonly
+                                                        tabindex="-1"
+                                                        data-closure-discount-preview
+                                                    >
+                                                </div>
+                                                <div class="form-text">Não pode exceder o saldo em aberto (R$ {{ number_format($valorAberto, 2, ',', '.') }}).</div>
+                                                <input type="hidden" name="desconto_tipo" value="{{ $oldDescontoTipo }}" data-closure-discount-type>
+                                                <input type="hidden" name="desconto_valor" value="{{ $oldDescontoValor }}" data-closure-discount-amount>
+                                                <input type="hidden" name="desconto_percentual" value="{{ $oldDescontoPercentual }}" data-closure-discount-percent>
+                                            </div>
+                                            <div>
+                                                <label for="closureDescontoMotivo">Motivo do desconto</label>
+                                                <textarea id="closureDescontoMotivo" name="desconto_motivo" class="form-control" rows="2" placeholder="Obrigatório quando há desconto" data-closure-discount-motivo>{{ old('desconto_motivo') }}</textarea>
+                                            </div>
+                                        </div>
+                                    </div>
+                                @else
+                                    <div class="closure-muted-box mb-3" id="closureDiscountBlockedHint">
+                                        Esta OS já foi totalmente adiantada antes desta baixa — não há saldo em aberto para conceder desconto aqui. O desconto precisa ser decidido no próprio ato do adiantamento.
+                                    </div>
+                                @endif
+                            @endif
 
                             <div class="closure-metric-grid">
                                 <article class="summary-card">
@@ -1149,6 +1227,7 @@
                                     <span class="closure-confirm-label">Resultado financeiro</span>
                                     <strong id="closureConfirmProfit">R$ 0,00</strong>
                                     <small id="closureConfirmNet">Líquido previsto: R$ 0,00</small>
+                                    <small id="closureConfirmDiscount" hidden>Desconto concedido: R$ 0,00</small>
                                 </div>
                             </div>
 

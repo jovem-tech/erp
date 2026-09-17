@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-09-11T21:14:19-03:00`
-- Versao do sistema: `5.87.2`
+- Gerado em: `2026-09-15T13:38:24-03:00`
+- Versao do sistema: `5.88.0`
 - Versao da API: `1.7.0`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -231,6 +231,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-09-11-catalogo-equipamentos-tipos-marcas-modelos-csv.md` - Catálogo de equipamentos: tela de gestão + importação CSV (2026-09-11)
 - `documentacao/07-novas-implementacoes/2026-09-11-nfse-na-visualizacao-os.md` - NFS-e vinculada na visualização da OS
 - `documentacao/07-novas-implementacoes/2026-09-11-otimizacao-fotos-operacionais.md` - Fotos operacionais com meta de 400 KB
+- `documentacao/07-novas-implementacoes/2026-09-15-documentos-pdf-sob-demanda.md` - Documentos PDF da OS renderizados sob demanda
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 - `documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md` - Revisão de segurança — Fluxo de orçamento na assistência (com OS)
 
@@ -242,6 +243,7 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/10-deploy/manual-inicializacao-local-windows-xampp.md` - Manual de Inicializacao Local no Windows com XAMPP
 - `documentacao/10-deploy/manual-versionamento-e-deploy.md` - Manual de Publicação — Versionar e Deploy
 - `documentacao/10-deploy/operacao-backup-e-restauracao.md` - Operação — Backup e restauração
+- `documentacao/10-deploy/operacao-documentos-sob-demanda.md` - Operação dos documentos PDF sob demanda (Central Documental / orçamentos)
 - `documentacao/10-deploy/operacao-gerenciador-central-arquivos.md` - Operação do Gerenciador Central de Arquivos
 - `documentacao/10-deploy/operacao-otimizacao-fotos-operacionais.md` - Operação da otimização de fotos operacionais
 - `documentacao/10-deploy/workflow-git-multiambiente.md` - Fluxo Git Multiambiente — Sistema ERP
@@ -294,4 +296,5 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/044-catalogo-equipamentos-csv` - Catálogo de equipamentos (tipos → marcas → modelos) com importação CSV | artefatos: spec, tasks
 - `specs/045-catalogo-equipamentos-edicao-massa-mesclagem` - Catálogo de equipamentos — edição em massa por ID e mesclagem de duplicados | artefatos: spec, tasks
 - `specs/046-otimizacao-fotos-operacionais` - Especificação 046 - Otimização de fotos operacionais | artefatos: spec, plan, tasks
+- `specs/047-documentos-pdf-sob-demanda` - Especificação 047 - Documentos PDF da OS renderizados sob demanda | artefatos: spec, plan, tasks
 

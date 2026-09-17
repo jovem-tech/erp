@@ -20,11 +20,13 @@ use App\Models\OsMargem;
 use App\Models\User;
 use App\Services\Agenda\AgendaSourceReconciler;
 use App\Services\Fiscal\DiscriminacaoNfseBuilder;
+use App\Services\Auth\RbacAuthorizationService;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
 use App\Services\Integrations\Inter\InterCobrancaService;
 use App\Services\Financeiro\FinanceiroCartaoService;
 use App\Services\Financeiro\FinanceiroContaService;
 use App\Services\Financeiro\FinanceiroService;
+use App\Support\BudgetTotals;
 use Illuminate\Http\UploadedFile;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
@@ -80,7 +82,8 @@ class OrderClosureService
         private readonly OrderClosurePdfService $orderClosurePdfService,
         private readonly OrderEventService $orderEventService,
         private readonly AgendaSourceReconciler $agendaReconciler,
-        private readonly DiscriminacaoNfseBuilder $discriminacaoNfseBuilder
+        private readonly DiscriminacaoNfseBuilder $discriminacaoNfseBuilder,
+        private readonly RbacAuthorizationService $rbacAuthorizationService
     ) {
     }
 
@@ -221,6 +224,24 @@ class OrderClosureService
             ? []
             : $this->normalizeReceipts(is_array($payload['recebimentos'] ?? null) ? $payload['recebimentos'] : []);
 
+        // Desconto concedido nesta baixa (opcional). Resolvido e validado
+        // ANTES da transacao, mesmo espirito das checagens acima: falha rapido
+        // sem efeito colateral se o ator nao pode conceder, se faltar motivo,
+        // ou se o valor pedido excede o saldo em aberto. Encerramento sem
+        // cobranca nunca desconta nada — nao ha cobranca para reduzir.
+        $discountResolution = $isNonBilledClosure
+            ? ['ok' => true, 'amount' => 0.0, 'tipo' => Budget::ADJUSTMENT_MODE_VALUE, 'percentual' => null, 'motivo' => null]
+            : $this->resolveClosureDiscount($order, $actor, $payload);
+
+        if (! $discountResolution['ok']) {
+            return ['result' => $discountResolution['result']];
+        }
+
+        $descontoAmount = round((float) $discountResolution['amount'], 2);
+        $descontoTipo = (string) $discountResolution['tipo'];
+        $descontoPercentual = $discountResolution['percentual'];
+        $descontoMotivo = $discountResolution['motivo'];
+
         // Simula os recebimentos em cartao ANTES da transacao: falha rapido sem
         // efeito colateral nenhum se a combinacao operadora/bandeira/parcelas
         // nao tiver taxa ativa configurada.
@@ -286,8 +307,27 @@ class OrderClosureService
                 $isNonBilledClosure,
                 $garantiaDias,
                 $garantiaValidade,
-                $tempoTecnicoHoras
+                $tempoTecnicoHoras,
+                $descontoAmount,
+                $descontoTipo,
+                $descontoPercentual,
+                $descontoMotivo
             ): array {
+                // Reduz o valor final da OS ANTES de criar/tocar o titulo a
+                // receber: ensureReceivableTitle() le' order.valor_final direto
+                // do modelo em memoria, entao precisa ja' ver o valor liquido.
+                // Se ja' existir um titulo ativo (ex.: adiantamento/sinal
+                // lancado antes desta baixa), correctReceivableTitleForOrder()
+                // reduz o valor dele agora - sem isso o titulo continuaria no
+                // valor cheio e o saldo em aberto nunca fecharia em zero. Isto
+                // e' seguro (nunca reduz abaixo do que ja' foi recebido) porque
+                // resolveClosureDiscount() ja' validou amount <= saldo aberto.
+                if ($descontoAmount > 0.009) {
+                    $order->valor_final = round((float) $order->valor_final - $descontoAmount, 2);
+                    $order->desconto = round((float) $order->desconto + $descontoAmount, 2);
+                    $this->financeiroService->correctReceivableTitleForOrder($order, $order->valor_final);
+                }
+
                 // Encerramento sem cobranca nao passa por processReceipts():
                 // ele cria o titulo a receber SEMPRE, e a OS descartada /
                 // devolvida sem reparo ficava com uma cobranca aberta no valor
@@ -337,6 +377,24 @@ class OrderClosureService
                     $orderUpdate['garantia_validade'] = $garantiaValidade;
                 }
 
+                // Persiste o desconto desta baixa em colunas próprias
+                // (desconto_baixa_*), separadas de valor_final/desconto — estas
+                // duas são reescritas por inteiro a cada sync de orçamento
+                // (BudgetOrderSyncService::syncOrderFinancials), então só as
+                // colunas próprias sobrevivem como registro histórico do que
+                // foi concedido aqui caso o orçamento seja ressincronizado
+                // depois.
+                if ($descontoAmount > 0.009) {
+                    $orderUpdate['valor_final'] = $order->valor_final;
+                    $orderUpdate['desconto'] = $order->desconto;
+                    $orderUpdate['desconto_baixa'] = $descontoAmount;
+                    $orderUpdate['desconto_baixa_tipo'] = $descontoTipo;
+                    $orderUpdate['desconto_baixa_percentual'] = $descontoPercentual;
+                    $orderUpdate['desconto_baixa_motivo'] = $descontoMotivo;
+                    $orderUpdate['desconto_baixa_concedido_por'] = (int) $actor->id;
+                    $orderUpdate['desconto_baixa_concedido_em'] = $now;
+                }
+
                 Order::query()->whereKey($order->id)->update($orderUpdate);
 
                 if ($temSaldoPendente) {
@@ -361,6 +419,9 @@ class OrderClosureService
                         'valor_titulo' => round((float) ($titulo?->valor ?? 0), 2),
                         'saldo_pendente' => round($saldoAberto, 2),
                         'recebimentos' => count($recebimentos),
+                        'desconto_baixa' => $descontoAmount > 0.009 ? $descontoAmount : null,
+                        'desconto_baixa_tipo' => $descontoAmount > 0.009 ? $descontoTipo : null,
+                        'desconto_baixa_motivo' => $descontoAmount > 0.009 ? $descontoMotivo : null,
                     ],
                     (int) $actor->id,
                     OrderEvent::ORIGEM_USUARIO,
@@ -1315,6 +1376,76 @@ class OrderClosureService
     }
 
     /**
+     * Resolve e valida o desconto concedido nesta baixa, se algum campo de
+     * desconto veio no payload. Sem efeito colateral — só lê e calcula.
+     *
+     * Regras (ver plano/skill sistema-erp-os-fluxo-fechamento):
+     *  - Calculado sobre `order.valor_final` atual (a base cheia), com a
+     *    mesma matemática %/valor do orçamento (BudgetTotals::adjustment()).
+     *  - Exige a permissão `os:administrar` quando o valor calculado for > 0.
+     *  - Exige motivo/justificativa quando o valor calculado for > 0.
+     *  - Não pode exceder o saldo em aberto ATUAL da OS (o que ainda não foi
+     *    recebido antes desta ação) — nunca mexe em dinheiro já no caixa. Se o
+     *    saldo em aberto já é zero (OS 100% adiantada antes desta baixa), o
+     *    desconto fica bloqueado aqui: precisava ter sido decidido no próprio
+     *    ato do adiantamento.
+     *
+     * @param array<string, mixed> $payload
+     * @return array{ok: true, amount: float, tipo: string, percentual: ?float, motivo: ?string}|array{ok: false, result: string}
+     */
+    private function resolveClosureDiscount(Order $order, User $actor, array $payload): array
+    {
+        $semDesconto = ['ok' => true, 'amount' => 0.0, 'tipo' => Budget::ADJUSTMENT_MODE_VALUE, 'percentual' => null, 'motivo' => null];
+
+        $tipoInformado = $payload['desconto_tipo'] ?? null;
+        $valorInformado = $payload['desconto_valor'] ?? null;
+        $percentualInformado = $payload['desconto_percentual'] ?? null;
+
+        if ($tipoInformado === null && $valorInformado === null && $percentualInformado === null) {
+            return $semDesconto;
+        }
+
+        $valorFinalAtual = round((float) ($order->valor_final ?? 0), 2);
+        $ajuste = BudgetTotals::adjustment($valorFinalAtual, $tipoInformado, $percentualInformado, $valorInformado);
+        $amount = round($ajuste['amount'], 2);
+
+        if ($amount <= 0.009) {
+            return $semDesconto;
+        }
+
+        // Checagem de permissão ANTES de qualquer detalhe de negócio (motivo,
+        // saldo em aberto): mesmo princípio já documentado no topo de close()
+        // para canAccessOrder — quem não pode conceder desconto não deve
+        // aprender nada sobre o saldo da OS a partir da mensagem de erro.
+        if (! $this->rbacAuthorizationService->allows($actor, 'os', 'administrar')) {
+            return ['ok' => false, 'result' => 'forbidden'];
+        }
+
+        $motivo = trim((string) ($payload['desconto_motivo'] ?? ''));
+        if ($motivo === '') {
+            return ['ok' => false, 'result' => 'discount_requires_reason'];
+        }
+
+        $saldoAberto = round((float) ($this->financialSummary($order)['valor_aberto'] ?? $valorFinalAtual), 2);
+
+        if ($saldoAberto <= 0.009) {
+            return ['ok' => false, 'result' => 'discount_requires_open_balance'];
+        }
+
+        if ($amount > $saldoAberto + 0.009) {
+            return ['ok' => false, 'result' => 'discount_exceeds_balance'];
+        }
+
+        return [
+            'ok' => true,
+            'amount' => $amount,
+            'tipo' => $ajuste['mode'],
+            'percentual' => $ajuste['percent'],
+            'motivo' => $motivo,
+        ];
+    }
+
+    /**
      * Lança os recebimentos contra o título a receber da OS (criando-o se
      * ainda não existir) — compartilhado por close() e registerAdvance(): é
      * exatamente o mesmo efeito financeiro, só muda o que acontece com o
@@ -2099,6 +2230,8 @@ class OrderClosureService
                 : null,
             'data_entrega' => $order->data_entrega?->toDateString(),
             'valor_final' => round((float) ($order->valor_final ?? 0), 2),
+            'desconto_baixa' => round((float) ($order->desconto_baixa ?? 0), 2),
+            'desconto_baixa_motivo' => $order->desconto_baixa_motivo,
         ];
     }
 

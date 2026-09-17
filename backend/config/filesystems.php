@@ -49,6 +49,17 @@ return [
             'report' => false,
         ],
 
+        // Cache descartável dos PDFs renderizados sob demanda (documentos da
+        // OS/orçamento). Fica em framework/, que o backup já exclui — perder
+        // este diretório custa um re-render, nunca dados.
+        'pdf_render_cache' => [
+            'driver' => 'local',
+            'root' => storage_path('framework/cache/pdf-render'),
+            'serve' => false,
+            'throw' => false,
+            'report' => false,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),
