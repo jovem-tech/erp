@@ -3,21 +3,31 @@
      com o PDF montado para ela, e decide. Nada é gravado até a aprovação.
 
      Cartão no espírito de tabela de preços: nome, preço, uma linha, botão e
-     só então a lista de itens — dá para decidir sem rolar a lista inteira.
-     A lista é incremental ("inclui tudo da anterior, mais…"); a cumulativa
-     completa fica a um toque em "Ver os N itens incluídos". --}}
+     a lista de itens. A lista é sempre completa e literal — cada item pode
+     estar em qualquer subconjunto de níveis (não é mais "a partir de X"), e
+     mostrar tudo o que realmente compõe cada opção é o que deixa um erro de
+     composição (ex.: duas versões de uma mesma peça na mesma opção) visível
+     antes de o orçamento ser enviado, em vez de escondido atrás de "inclui
+     tudo da anterior". --}}
 @php
     $rawOptions = is_array($budget['niveis'] ?? null) ? $budget['niveis'] : [];
 
-    // Nível sem nenhum item próprio fica idêntico ao vizinho de baixo (mesmo
-    // preço, mesma lista) — mostrar os dois ao cliente só gera a pergunta
-    // "por que pagar mais por uma opção igual?". O nível mais alto nunca cai
-    // aqui: por definição ele é quem define `nivel_maximo`, então sempre tem
-    // ao menos um item exclusivo.
-    $options = array_values(array_filter(
-        $rawOptions,
-        static fn (array $option): bool => ($option['itens_novos'] ?? []) !== []
-    ));
+    // Opção idêntica à vizinha de baixo (mesmos itens, mesmo total) fica de
+    // fora — mostrar as duas só gera a pergunta "por que pagar mais por uma
+    // opção igual?". Comparação pela lista+total já filtrados, não por um
+    // proxy de "item novo" (deixou de fazer sentido: um item pode estar em
+    // Básica e Completa sem estar em Avançada).
+    $options = [];
+    foreach ($rawOptions as $option) {
+        $previous = $options === [] ? null : end($options);
+        $isRedundant = $previous !== null
+            && ($option['itens'] ?? []) === ($previous['itens'] ?? [])
+            && abs((float) ($option['total'] ?? 0) - (float) ($previous['total'] ?? 0)) < 0.01;
+
+        if (! $isRedundant) {
+            $options[] = $option;
+        }
+    }
     if ($options === []) {
         $options = $rawOptions; // nunca deveria zerar, mas não deixa a landing em branco.
     }
@@ -43,8 +53,6 @@
     $termPerOption = static fn (string $campo): bool => ($termsLayout[$campo]['modo'] ?? 'compartilhado') === 'por_opcao';
     $optionValidity = trim((string) ($budget['validade_data'] ?? ''));
     $optionToken = (string) request()->route('token');
-    // Prévia curta por cartão; o resto (e o herdado) abre em "Ver os N itens".
-    $optionPreviewLimit = 3;
     // Nos cartões, "Manutenção" já está implícito pelo título da seção — o
     // nome próprio (Básica/Avançada/Completa) basta e cabe melhor no mobile.
     // Fora daqui (passo 2, WhatsApp, auditoria, PDF) o rótulo completo
@@ -62,8 +70,8 @@
     <p class="eyebrow">Escolha a opção de manutenção</p>
     <h2 class="options-title">Qual cuidado faz mais sentido para você?</h2>
     <p class="helper">
-        Preparamos {{ count($options) }} opções com cobertura crescente — cada uma inclui tudo da anterior.
-        Compare o que muda e escolha com calma: você vê o orçamento detalhado antes de aprovar.
+        Preparamos {{ count($options) }} opções com cobertura crescente. Compare o que está incluído em cada
+        uma e escolha com calma: você vê o orçamento detalhado antes de aprovar.
     </p>
 </section>
 
@@ -73,9 +81,6 @@
             $optionLevel = (int) ($option['nivel'] ?? 0);
             $optionLabel = (string) ($option['label'] ?? '');
             $optionAll = is_array($option['itens'] ?? null) ? $option['itens'] : [];
-            $optionNew = is_array($option['itens_novos'] ?? null) ? $option['itens_novos'] : $optionAll;
-            $optionPreview = array_slice($optionNew, 0, $optionPreviewLimit);
-            $optionHasMore = count($optionAll) > count($optionPreview);
             $previousLabel = $index > 0 ? (string) ($options[$index - 1]['label'] ?? '') : '';
             $optionUrl = route('budgets.public.show', ['token' => $optionToken, 'opcao' => $optionLevel]);
         @endphp
@@ -138,33 +143,19 @@
 
             <div class="option-list-block">
                 <hr class="option-divider">
-                <p class="option-list-heading">
-                    @if ($index === 0 || $previousLabel === '')
-                        Inclui
-                    @else
-                        Inclui tudo da {{ $shortLabel($previousLabel) }}, mais
-                    @endif
-                </p>
+                <p class="option-list-heading">Itens desta opção</p>
             </div>
             <ul class="option-list">
-                @forelse ($optionPreview as $descricao)
+                @forelse ($optionAll as $descricao)
                     <li>{{ $descricao }}</li>
                 @empty
-                    <li class="option-list-empty">Nenhum item adicional nesta opção.</li>
+                    <li class="option-list-empty">Nenhum item nesta opção.</li>
                 @endforelse
             </ul>
-            <div class="option-more-slot">
-                @if ($optionHasMore)
-                    <details class="option-more">
-                        <summary>Ver os {{ count($optionAll) }} itens incluídos</summary>
-                        <ul class="option-list">
-                            @foreach ($optionAll as $descricao)
-                                <li>{{ $descricao }}</li>
-                            @endforeach
-                        </ul>
-                    </details>
-                @endif
-            </div>
+            {{-- Sem "ver mais" — a lista acima já é completa e literal. O slot
+                 fica vazio só pra manter os mesmos 8 filhos diretos do subgrid
+                 (ver comentário no topo do cartão). --}}
+            <div class="option-more-slot"></div>
 
             @php
                 $optionPerks = [];

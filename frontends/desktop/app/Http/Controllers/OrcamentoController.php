@@ -789,6 +789,11 @@ class OrcamentoController extends DesktopController
             // Níveis de manutenção: recomendação é opcional; o backend descarta
             // quando o orçamento não tem níveis.
             'nivel_recomendado' => ['nullable', 'integer', Rule::in([1, 2, 3])],
+            // Interruptor "Oferecer opções de manutenção" do formulário. Não
+            // vai ao backend: '0' força todo item em [1] aqui mesmo (verdade
+            // no servidor, mesmo se o JS falhar); '1' exige que todo item
+            // esteja em ao menos uma opção (ver normalização abaixo).
+            'oferece_opcoes' => ['nullable', Rule::in(['0', '1', 0, 1])],
             // Condições por opção de manutenção (chave = nível). Campo vazio
             // herda o padrão; entrega é tri-state ('' herda, '1' sim, '0' não);
             // diferenciais chegam como textarea "um por linha".
@@ -831,7 +836,8 @@ class OrcamentoController extends DesktopController
             'itens.*.acrescimo_percentual' => ['nullable', 'numeric', 'min:0'],
             'itens.*.observacoes' => ['nullable', 'string'],
             'itens.*.modo_precificacao' => ['nullable', 'string', 'max:50'],
-            'itens.*.nivel_minimo' => ['nullable', 'integer', Rule::in([1, 2, 3])],
+            'itens.*.niveis' => ['nullable', 'array'],
+            'itens.*.niveis.*' => ['integer', Rule::in([1, 2, 3])],
             // Só usados quando a OS vinculada está encerrada — ver
             // orcamentos/_admin_confirm_modal.blade.php.
             'admin_email' => ['nullable', 'string'],
@@ -867,6 +873,7 @@ class OrcamentoController extends DesktopController
             'garantia_dias' => 'garantia',
             'parcelas_sem_juros' => 'parcelamento sem juros',
             'nivel_recomendado' => 'opção recomendada',
+            'oferece_opcoes' => 'oferecer opções de manutenção',
             'subtotal' => 'subtotal',
             'desconto' => 'desconto',
             'desconto_tipo' => 'tipo do desconto',
@@ -876,6 +883,10 @@ class OrcamentoController extends DesktopController
             'acrescimo_percentual' => 'percentual do acréscimo',
             'total' => 'total',
         ]);
+
+        // Antes do filter()/values() abaixo: o índice original do item precisa
+        // sobreviver para a chave do erro bater com o campo do formulário.
+        $this->applyMaintenanceOptionsSwitch($validated);
 
         $validated['itens'] = collect($validated['itens'] ?? [])
             ->filter(fn (array $item): bool => $this->itemHasMeaningfulContent($item))
@@ -1156,8 +1167,69 @@ class OrcamentoController extends DesktopController
     }
 
     /**
-     * @return array<string, array<string, mixed>>
+     * Interruptor "Oferecer opções de manutenção" (chave `oferece_opcoes`,
+     * nunca repassada ao backend):
+     *
+     * - '0' → orçamento comum: todo item fica só na Básica e a recomendação
+     *   cai, independentemente do que o formulário mandou nos checkboxes
+     *   ocultos (o JS já faz isso; aqui é a garantia no servidor);
+     * - '1' → item com conteúdo e sem nível nenhum é erro de composição — o
+     *   backend o gravaria em [1] em silêncio, e o técnico não decidiu isso.
+     *
+     * Sem a chave (formulário antigo, revisão travada) nada muda.
+     *
+     * @param  array<string, mixed>  $validated
      */
+    private function applyMaintenanceOptionsSwitch(array &$validated): void
+    {
+        if (! array_key_exists('oferece_opcoes', $validated)) {
+            return;
+        }
+
+        $offersOptions = $validated['oferece_opcoes'] === null ? null : (string) $validated['oferece_opcoes'] === '1';
+        unset($validated['oferece_opcoes']);
+
+        if ($offersOptions === null) {
+            return;
+        }
+
+        $items = is_array($validated['itens'] ?? null) ? $validated['itens'] : [];
+
+        if ($offersOptions === false) {
+            foreach ($items as $index => $item) {
+                if (is_array($item)) {
+                    $items[$index]['niveis'] = [1];
+                }
+            }
+            $validated['itens'] = $items;
+            $validated['nivel_recomendado'] = null;
+
+            return;
+        }
+
+        $errors = [];
+        foreach ($items as $index => $item) {
+            if (! is_array($item) || ! $this->itemHasMeaningfulContent($item)) {
+                continue;
+            }
+
+            $niveis = is_array($item['niveis'] ?? null) ? $item['niveis'] : [];
+            if ($niveis !== []) {
+                continue;
+            }
+
+            $description = trim((string) ($item['descricao'] ?? ''));
+            $label = $description !== '' ? '"' . $description . '"' : (string) ((int) $index + 1);
+            $errors['itens.' . $index . '.niveis'] = [
+                'O item ' . $label . ' não está em nenhuma opção de manutenção — inclua-o em uma opção ou exclua o item.',
+            ];
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+    }
+
     /**
      * Catálogo de tipo/marca/modelo (o mesmo usado na abertura de OS e no
      * cadastro de equipamento) para o Select2 de "Equipamento eventual": marca

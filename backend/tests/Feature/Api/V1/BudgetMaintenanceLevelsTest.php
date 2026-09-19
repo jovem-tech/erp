@@ -19,10 +19,12 @@ use Tests\TestCase;
 /**
  * Orçamento em níveis de manutenção (Básica / Avançada / Completa).
  *
- * A lista de itens é única e cada item diz a partir de qual nível entra;
- * o cliente escolhe a opção na página pública e, na aprovação, o orçamento
- * vira o escopo daquela opção (itens acima saem, totais recalculados,
- * snapshot na auditoria). Orçamento comum (tudo nível 1) não muda nada.
+ * A lista de itens é única e cada item declara explicitamente em quais
+ * níveis entra (`orcamento_itens.niveis`, sem cascata — um item não herda
+ * automaticamente os níveis acima do seu); o cliente escolhe a opção na
+ * página pública e, na aprovação, o orçamento vira o escopo daquela opção
+ * (itens que não pertencem a ela saem, totais recalculados, snapshot na
+ * auditoria). Orçamento comum (tudo nível 1) não muda nada.
  */
 class BudgetMaintenanceLevelsTest extends TestCase
 {
@@ -60,16 +62,16 @@ class BudgetMaintenanceLevelsTest extends TestCase
                 'desconto_percentual' => 10,
                 'nivel_recomendado' => 2,
                 'itens' => [
-                    ['descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 100, 'nivel_minimo' => 1],
-                    ['descricao' => 'Bateria', 'quantidade' => 1, 'valor_unitario' => 200, 'nivel_minimo' => 2],
-                    ['descricao' => 'Película e limpeza', 'quantidade' => 1, 'valor_unitario' => 300, 'nivel_minimo' => 3],
+                    ['descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 100, 'niveis' => [1, 2, 3]],
+                    ['descricao' => 'Bateria', 'quantidade' => 1, 'valor_unitario' => 200, 'niveis' => [2, 3]],
+                    ['descricao' => 'Película e limpeza', 'quantidade' => 1, 'valor_unitario' => 300, 'niveis' => [3]],
                 ],
             ]);
 
         $create->assertCreated();
         $budgetId = (int) $create->json('data.budget.id');
 
-        $this->assertDatabaseHas('orcamento_itens', ['orcamento_id' => $budgetId, 'descricao' => 'Bateria', 'nivel_minimo' => 2]);
+        $this->assertDatabaseHas('orcamento_itens', ['orcamento_id' => $budgetId, 'descricao' => 'Bateria', 'niveis' => json_encode([2, 3])]);
         $this->assertDatabaseHas('orcamentos', ['id' => $budgetId, 'nivel_recomendado' => 2, 'nivel_aprovado' => null]);
 
         $detail = $this->withHeader('Authorization', 'Bearer '.$token)
@@ -87,7 +89,7 @@ class BudgetMaintenanceLevelsTest extends TestCase
             ->assertJsonPath('data.budget.niveis.2.itens_count', 3)
             // Escopo gravado antes da decisão é o máximo: igual ao total da Completa.
             ->assertJsonPath('data.budget.total', 540.0)
-            ->assertJsonPath('data.budget.itens.1.nivel_minimo', 2);
+            ->assertJsonPath('data.budget.itens.1.niveis', [2, 3]);
     }
 
     public function test_recommended_level_is_dropped_when_budget_has_a_single_level(): void
@@ -111,7 +113,7 @@ class BudgetMaintenanceLevelsTest extends TestCase
         $budgetId = (int) $create->json('data.budget.id');
 
         $this->assertDatabaseHas('orcamentos', ['id' => $budgetId, 'nivel_recomendado' => null]);
-        $this->assertDatabaseHas('orcamento_itens', ['orcamento_id' => $budgetId, 'nivel_minimo' => 1]);
+        $this->assertDatabaseHas('orcamento_itens', ['orcamento_id' => $budgetId, 'niveis' => json_encode([1])]);
 
         $this->withHeader('Authorization', 'Bearer '.$token)
             ->getJson('/api/v1/orcamentos/'.$budgetId)
@@ -183,16 +185,11 @@ class BudgetMaintenanceLevelsTest extends TestCase
             ->assertDontSee('class="status-badge', false)
             ->assertSee('Ver detalhes do atendimento')
             ->assertSee('Cliente Landing')
-            // Lista incremental: nível 1 "Inclui", níveis seguintes "tudo da anterior, mais".
-            // Nos cartões o rótulo perde o prefixo "Manutenção" (título da seção
-            // já deixa isso implícito); a versão completa continua no texto
-            // acessível do botão, coberto por "Manutenção Básica" acima.
-            ->assertSee('Inclui tudo da Básica, mais')
-            ->assertSee('Inclui tudo da Avançada, mais')
-            // O cumulativo abre em "Ver os N itens" só quando há algo herdado a mostrar.
-            ->assertSee('Ver os 2 itens incluídos')
-            ->assertSee('Ver os 3 itens incluídos')
-            ->assertDontSee('Ver os 1 itens incluídos')
+            // Lista sempre completa e literal (nada de "inclui tudo da anterior,
+            // mais" nem "ver mais" escondendo o resto) — cada cartão mostra tudo
+            // que realmente compõe aquela opção.
+            ->assertSee('Itens desta opção')
+            ->assertDontSee('Inclui tudo da')
             ->assertSee('Escolher esta opção')
             ->assertSee('visually-hidden', false)
             ->assertSee('option-card is-recommended', false)
@@ -202,6 +199,10 @@ class BudgetMaintenanceLevelsTest extends TestCase
         $this->assertSame(1, substr_count($landingHtml, 'btn btn-primary option-cta'));
         $this->assertSame(2, substr_count($landingHtml, 'btn btn-outline-primary option-cta'));
         $this->assertSame(6, substr_count($landingHtml, 'coverage-segment is-filled'));
+        // Fusível está nos 3 cartões, Bateria em 2 (Avançada/Completa), Película só na Completa.
+        $this->assertSame(3, substr_count($landingHtml, '<li>Fusível</li>'));
+        $this->assertSame(2, substr_count($landingHtml, '<li>Bateria</li>'));
+        $this->assertSame(1, substr_count($landingHtml, '<li>Película e limpeza</li>'));
 
         $option = $this->get('/orcamento/token-niveis?opcao=2')->assertOk();
         $option->assertSee('Opção escolhida')
@@ -227,10 +228,9 @@ class BudgetMaintenanceLevelsTest extends TestCase
 
         $levels = BudgetTotals::perLevel(Budget::query()->findOrFail($budgetId));
         $this->assertSame([100.0, 300.0, 600.0], array_map(static fn (array $level): float => $level['total'], $levels));
-        $this->assertSame(['Fusível'], $levels[0]['itens_novos']);
-        $this->assertSame(['Bateria'], $levels[1]['itens_novos']);
+        $this->assertSame(['Fusível'], $levels[0]['itens']);
         $this->assertSame(['Fusível', 'Bateria'], $levels[1]['itens']);
-        $this->assertSame(['Película e limpeza'], $levels[2]['itens_novos']);
+        $this->assertSame(['Fusível', 'Bateria', 'Película e limpeza'], $levels[2]['itens']);
     }
 
     public function test_public_landing_suggests_the_middle_level_when_none_is_manually_recommended(): void
@@ -266,17 +266,19 @@ class BudgetMaintenanceLevelsTest extends TestCase
             'subtotal' => 400.00,
             'total' => 400.00,
         ]);
-        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Fusível', 'valor_unitario' => 100, 'total' => 100, 'ordem' => 1, 'nivel_minimo' => 1]);
-        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Vidro traseiro', 'valor_unitario' => 300, 'total' => 300, 'ordem' => 2, 'nivel_minimo' => 3]);
+        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Fusível', 'valor_unitario' => 100, 'total' => 100, 'ordem' => 1, 'niveis' => json_encode([1, 2, 3])]);
+        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Vidro traseiro', 'valor_unitario' => 300, 'total' => 300, 'ordem' => 2, 'niveis' => json_encode([3])]);
 
         $response = $this->get('/orcamento/token-nivel-vazio')->assertOk();
         $response
             ->assertSee('Manutenção Básica')
             ->assertSee('Manutenção Completa')
-            // A Avançada não aparece como cartão — só existiria pra repetir a Básica.
+            // A Avançada não aparece como cartão — teria a mesma lista e o
+            // mesmo total da Básica (Vidro traseiro só entra na Completa).
             ->assertDontSee('Manutenção Avançada')
-            // A Completa referencia a última opção realmente visível (a Básica), não a vazia.
-            ->assertSee('Inclui tudo da Básica, mais')
+            // A lista de cada opção agora é sempre completa e literal.
+            ->assertSee('Itens desta opção')
+            ->assertSee('Fusível')
             ->assertSee('Vidro traseiro');
     }
 
@@ -329,7 +331,7 @@ class BudgetMaintenanceLevelsTest extends TestCase
             'valor_unitario' => 400,
             'total' => 400,
             'ordem' => 4,
-            'nivel_minimo' => 3,
+            'niveis' => json_encode([3]),
         ]);
         app(\App\Services\Estoque\EstoqueReservaService::class)->sincronizar(Budget::query()->findOrFail($budgetId));
         $this->assertSame(1.0, (float) DB::table('pecas')->where('id', $pecaId)->value('quantidade_reservada'));
@@ -397,6 +399,112 @@ class BudgetMaintenanceLevelsTest extends TestCase
             ->assertSee('Manutenção Avançada')
             ->assertDontSee('Escolha a opção de manutenção')
             ->assertDontSee('Tela original');
+    }
+
+    /**
+     * Regressão: itens que são ALTERNATIVA entre si (ex.: RAM 2GB/4GB/8GB, uma
+     * por opção) não podem se somar. Cada item marca só o(s) nível(is) em que
+     * realmente deve aparecer — sem cascata, a Completa nunca vê as memórias
+     * de 2GB/4GB que só existiam pra oferecer a Básica/Avançada.
+     */
+    public function test_alternative_items_across_levels_do_not_stack(): void
+    {
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Alternativas']);
+        $pecaId = $this->createPecaRecord(['quantidade_atual' => 5]);
+        $budgetId = $this->createBudgetRecord([
+            'numero' => 'ORC-ALTERNATIVAS',
+            'cliente_id' => $clientId,
+            'telefone_contato' => '(11) 99999-9999',
+            'status' => 'aguardando_resposta',
+            'token_publico' => 'token-alternativas',
+            'token_expira_em' => now()->addDays(5),
+            'subtotal' => 950.00,
+            'total' => 950.00,
+        ]);
+        // Diagnóstico entra em qualquer opção escolhida.
+        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Diagnóstico', 'valor_unitario' => 50, 'total' => 50, 'ordem' => 1, 'niveis' => json_encode([1, 2, 3])]);
+        // Três módulos de RAM concorrentes: só um pode valer por opção.
+        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Memória RAM 2GB', 'valor_unitario' => 100, 'total' => 100, 'ordem' => 2, 'niveis' => json_encode([1])]);
+        $this->createBudgetItemRecord($budgetId, [
+            'tipo_item' => 'peca',
+            'referencia_id' => $pecaId,
+            'descricao' => 'Memória RAM 4GB',
+            'valor_unitario' => 300,
+            'total' => 300,
+            'ordem' => 3,
+            'niveis' => json_encode([2]),
+        ]);
+        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Memória RAM 8GB', 'valor_unitario' => 500, 'total' => 500, 'ordem' => 4, 'niveis' => json_encode([3])]);
+        app(\App\Services\Estoque\EstoqueReservaService::class)->sincronizar(Budget::query()->findOrFail($budgetId));
+        $this->assertSame(1.0, (float) DB::table('pecas')->where('id', $pecaId)->value('quantidade_reservada'));
+
+        $budget = Budget::query()->findOrFail($budgetId);
+
+        // Cada opção projeta só a alternativa que lhe pertence — nunca as três juntas.
+        $this->assertSame(['Diagnóstico', 'Memória RAM 2GB'], BudgetTotals::itemsForLevel($budget, 1)->pluck('descricao')->all());
+        $this->assertSame(['Diagnóstico', 'Memória RAM 4GB'], BudgetTotals::itemsForLevel($budget, 2)->pluck('descricao')->all());
+        $this->assertSame(['Diagnóstico', 'Memória RAM 8GB'], BudgetTotals::itemsForLevel($budget, 3)->pluck('descricao')->all());
+
+        $levels = BudgetTotals::perLevel($budget);
+        $this->assertSame(150.0, $levels[0]['total']);
+        $this->assertSame(350.0, $levels[1]['total']);
+        // Antes da correção este total somava as três memórias (950.0).
+        $this->assertSame(550.0, $levels[2]['total']);
+
+        $this->mock(BudgetPdfService::class, function ($mock): void {
+            $mock->shouldReceive('generate')->once()->andReturn(['ok' => false, 'message' => 'motor indisponível']);
+        });
+
+        $this->post('/orcamento/token-alternativas/aprovar', ['resposta_cliente' => 'Aprovado pelo cliente.', 'nivel' => 3])
+            ->assertRedirect(route('budgets.public.show', [
+                'token' => 'token-alternativas',
+                'resultado' => 'sucesso',
+                'mensagem' => 'Orçamento aprovado com sucesso.',
+            ]));
+
+        // A aprovação na Completa mantém só a RAM de 8GB — as outras duas somem.
+        $this->assertSame(
+            ['Diagnóstico', 'Memória RAM 8GB'],
+            DB::table('orcamento_itens')->where('orcamento_id', $budgetId)->orderBy('ordem')->pluck('descricao')->all()
+        );
+        $this->assertDatabaseHas('orcamentos', ['id' => $budgetId, 'nivel_aprovado' => 3, 'subtotal' => 550.00, 'total' => 550.00]);
+        // A reserva da RAM de 4GB (perdedora da alternativa) foi liberada.
+        $this->assertSame(0.0, (float) DB::table('pecas')->where('id', $pecaId)->value('quantidade_reservada'));
+    }
+
+    /**
+     * Regressão irmã da anterior: o subtotal/total gravados ANTES da
+     * aprovação (o "Total final" que o técnico vê montando o orçamento)
+     * também não pode somar cegamente toda linha — isso superestimaria o
+     * escopo quando há alternativas, mesmo sem nenhuma aprovação envolvida.
+     * O valor certo é o do nível mais alto que os itens realmente formam.
+     */
+    public function test_draft_subtotal_reflects_the_highest_tier_not_a_naive_sum_of_alternatives(): void
+    {
+        $admin = $this->admin();
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Subtotal']);
+        $token = $this->loginAndGetToken($admin->email);
+
+        $create = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->postJson('/api/v1/orcamentos', [
+                'cliente_id' => $clientId,
+                'telefone_contato' => '(11) 98888-7777',
+                'envolve_equipamento' => false,
+                'itens' => [
+                    ['descricao' => 'Diagnóstico', 'quantidade' => 1, 'valor_unitario' => 50, 'niveis' => [1, 2, 3]],
+                    ['descricao' => 'Memória RAM 2GB', 'quantidade' => 1, 'valor_unitario' => 100, 'niveis' => [1]],
+                    ['descricao' => 'Memória RAM 4GB', 'quantidade' => 1, 'valor_unitario' => 300, 'niveis' => [2]],
+                    ['descricao' => 'Memória RAM 8GB', 'quantidade' => 1, 'valor_unitario' => 500, 'niveis' => [3]],
+                ],
+            ]);
+
+        $create->assertCreated();
+        $budgetId = (int) $create->json('data.budget.id');
+
+        // A soma cega das 4 linhas seria 950; o escopo máximo real (Completa,
+        // só com a RAM de 8GB) é 550.
+        $create->assertJsonPath('data.budget.total', 550.0);
+        $this->assertDatabaseHas('orcamentos', ['id' => $budgetId, 'subtotal' => 550.00, 'total' => 550.00]);
     }
 
     public function test_single_level_budget_approves_exactly_as_before(): void
@@ -497,8 +605,8 @@ class BudgetMaintenanceLevelsTest extends TestCase
                 'tipo_orcamento' => 'previo',
                 'cliente_id' => $clientId,
                 'itens' => [
-                    ['tipo_item' => 'servico', 'descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 100, 'nivel_minimo' => 1],
-                    ['tipo_item' => 'servico', 'descricao' => 'Bateria', 'quantidade' => 1, 'valor_unitario' => 200, 'nivel_minimo' => 2],
+                    ['tipo_item' => 'servico', 'descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 100, 'niveis' => [1, 2]],
+                    ['tipo_item' => 'servico', 'descricao' => 'Bateria', 'quantidade' => 1, 'valor_unitario' => 200, 'niveis' => [2]],
                 ],
             ]);
 
@@ -536,7 +644,7 @@ class BudgetMaintenanceLevelsTest extends TestCase
         $this->assertSame('Manutenção Avançada', $projected['orcamento']['opcao_texto']);
         $this->assertSame(300.0, $projected['orcamento']['total']);
         $this->assertSame(['Fusível', 'Bateria'], array_column($projected['itens'], 'descricao'));
-        $this->assertSame(['1', '2'], array_column($projected['itens'], 'nivel'));
+        $this->assertSame(['1, 2, 3', '2, 3'], array_column($projected['itens'], 'nivel'));
         $this->assertSame('https://erp.test/orcamento/token-pdf?opcao=2', $projected['orcamento']['link_aprovacao']);
 
         $full = $factory->build(['budget' => $budget->fresh()], ['approval_link' => 'https://erp.test/orcamento/token-pdf']);
@@ -594,9 +702,9 @@ class BudgetMaintenanceLevelsTest extends TestCase
                 'garantia_dias' => 90,
                 'entrega_domicilio' => false,
                 'itens' => [
-                    ['descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 100, 'nivel_minimo' => 1],
-                    ['descricao' => 'Bateria', 'quantidade' => 1, 'valor_unitario' => 200, 'nivel_minimo' => 2],
-                    ['descricao' => 'Película e limpeza', 'quantidade' => 1, 'valor_unitario' => 300, 'nivel_minimo' => 3],
+                    ['descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 100, 'niveis' => [1, 2, 3]],
+                    ['descricao' => 'Bateria', 'quantidade' => 1, 'valor_unitario' => 200, 'niveis' => [2, 3]],
+                    ['descricao' => 'Película e limpeza', 'quantidade' => 1, 'valor_unitario' => 300, 'niveis' => [3]],
                 ],
                 'niveis_condicoes' => [
                     // Nível 2 só muda a garantia; o resto herda.
@@ -907,7 +1015,7 @@ class BudgetMaintenanceLevelsTest extends TestCase
             'subtotal' => 100,
             'total' => 100,
         ]);
-        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Fusível', 'valor_unitario' => 100, 'total' => 100, 'ordem' => 1, 'nivel_minimo' => 1]);
+        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Fusível', 'valor_unitario' => 100, 'total' => 100, 'ordem' => 1, 'niveis' => json_encode([1])]);
 
         $this->get('/orcamento/token-entrega-simples')
             ->assertOk()
@@ -1090,9 +1198,9 @@ class BudgetMaintenanceLevelsTest extends TestCase
             'total' => 600.00,
         ], $overrides));
 
-        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Fusível', 'valor_unitario' => 100, 'total' => 100, 'ordem' => 1, 'nivel_minimo' => 1]);
-        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Bateria', 'valor_unitario' => 200, 'total' => 200, 'ordem' => 2, 'nivel_minimo' => 2]);
-        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Película e limpeza', 'valor_unitario' => 300, 'total' => 300, 'ordem' => 3, 'nivel_minimo' => 3]);
+        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Fusível', 'valor_unitario' => 100, 'total' => 100, 'ordem' => 1, 'niveis' => json_encode([1, 2, 3])]);
+        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Bateria', 'valor_unitario' => 200, 'total' => 200, 'ordem' => 2, 'niveis' => json_encode([2, 3])]);
+        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Película e limpeza', 'valor_unitario' => 300, 'total' => 300, 'ordem' => 3, 'niveis' => json_encode([3])]);
 
         return $budgetId;
     }

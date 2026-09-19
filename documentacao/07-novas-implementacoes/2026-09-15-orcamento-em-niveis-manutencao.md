@@ -236,6 +236,195 @@ escolhida." — que só aparece quando o orçamento marca a opção **e** a empr
 passou do teto anual de faturamento; a decisão é do backend (`BudgetApprovalService`), a view só
 lê o resultado.
 
+## Itens deixam de ser cumulativos por cascata (2026-09-17)
+
+Bug relatado pelo usuário: itens que são **alternativa** entre si (ex.: RAM
+2GB na Básica, RAM 4GB na Avançada, RAM 8GB na Completa) se somavam na opção
+mais alta em vez de se substituírem — a Completa cobrava as três memórias
+juntas, sendo que só a de 8GB seria realmente usada. A causa era estrutural:
+o modelo original (`nivel_minimo`, "opção N = itens com `nivel_minimo <= N`")
+é uma cascata pura, sem forma de um item pertencer só a um subconjunto
+específico de níveis.
+
+**Modelo novo:** `orcamento_itens.nivel_minimo` (tinyint) foi substituído por
+`orcamento_itens.niveis` (JSON, array de inteiros 1..3) — cada item declara
+explicitamente em quais opções entra, sem cascata nenhuma (migration
+`2026_09_17_000001_replace_nivel_minimo_with_niveis_on_orcamento_itens`, com
+backfill `nivel_minimo=k → niveis=[k..3]` para preservar o comportamento dos
+orçamentos já existentes). No desktop, o único `<select>` de nível virou 4
+checkboxes por item — Básica / Avançada / Completa / Todos ("Todos" é só
+atalho de UI que marca os três, nunca é um valor gravado). Padrão de uma
+linha nova: só Básica, igual a hoje, até o orçamento já ter algum item com
+nível restrito — daí em diante o padrão vira Todos (a maioria dos itens
+costuma valer pra toda opção; só a minoria, como a RAM do exemplo, precisa de
+exclusão manual).
+
+`App\Support\BudgetTotals::itemsForLevel()` continua sendo o único lugar que
+decide "o que pertence ao nível N" (agora por associação exata,
+`in_array($nivel, $item->niveis)`) — landing pública, página da opção
+(`?opcao=N`), PDF e o resumo do desktop herdam a correção automaticamente.
+`BudgetApprovalService::applyApprovedLevel()` (a poda na aprovação) passou a
+reaproveitar essa mesma função (`whereNotIn('id', itemsForLevel(...)->pluck('id'))`)
+em vez de ter sua própria regra — importante porque um item "perdedor" de uma
+alternativa pode ter `niveis` contendo o nível aprovado sem ser quem deveria
+sobreviver.
+
+**Efeito colateral corrigido junto:** o subtotal/total gravados ANTES da
+aprovação (o que o técnico vê montando o orçamento) somavam cegamente toda
+linha, sem olhar nível — inofensivo na cascata antiga (a soma de tudo sempre
+batia com a opção mais alta), mas superestimava o total quando há
+alternativas. `BudgetWorkflowService::syncItems()` agora soma só os itens que
+pertencem ao nível mais alto que os itens realmente formam; o mesmo ajuste foi
+espelhado no preview client-side (`orcamentos-form.js`, `updateSummary()`).
+
+**Landing pública, consequência necessária do modelo novo:** com associação
+arbitrária por checkbox, "item novo neste nível" (`itens_novos`,
+`nivel_minimo === N`) deixou de fazer sentido — um item pode estar na Básica
+e na Completa sem estar na Avançada. `opcoes.blade.php` parou de mostrar
+"Inclui tudo da X, mais…" com a lista cumulativa escondida atrás de "Ver os N
+itens incluídos"; cada cartão agora lista **tudo, sempre, por extenso**
+("Itens desta opção") — o que teria exposto o bug da RAM antes de o
+orçamento ser enviado. O critério de esconder uma opção redundante (mesmo
+preço/lista da vizinha de baixo) passou a comparar a lista+total já
+projetados em vez do proxy antigo.
+
+Testes: `BudgetMaintenanceLevelsTest` (2 casos novos: alternância entre
+níveis e subtotal do rascunho) + suíte inteira sem regressão nova (baseline
+verificado com `git stash` antes/depois: 8 falhas pré-existentes na suíte
+`Budget*`, nenhuma nova). `OrcamentoNiveisTest` no desktop atualizado para o
+formato `niveis[]`; suíte completa do desktop sem regressão nova (mesmas 3
+falhas pré-existentes já documentadas). Verificado visualmente via Chrome
+headless (harness com HTML real dumpado por teste, removido em seguida) —
+formulário com os 4 checkboxes em 1500px/1300px/430px, e a landing pública
+com o cenário exato da RAM (Básica R$150 só com a de 2GB, Avançada R$350 só
+com a de 4GB, Completa R$550 só com a de 8GB).
+
+**Correção de layout (mesmo dia):** a coluna "Tipo" da linha de item
+(`budget-item-line-primary`, `desktop.css`) estava dimensionada para os 96px
+que bastavam quando havia só um `<select>` de nível ao lado; com os 4
+checkboxes de nível ocupando mais espaço vertical/horizontal, o `<select>`
+Serviço/Peça passou a não caber e invadir visualmente a coluna de Nível
+(bug relatado pelo usuário com print). Colunas alargadas para 132px/128px
+conforme o breakpoint, e regra defensiva (`min-width: 0` nos `select`/`input`/
+`textarea` de `.budget-item-field`) para nenhum controle do grid voltar a
+transbordar. Conferido via Chrome headless, antes e depois, em 1360px.
+
+Bump de versão + CHANGELOG feitos nesta entrada: **v6.0.0.0** (tier `major`
+— a migration dá `dropColumn('nivel_minimo')`, primeiro critério de MAJOR do
+`VERSIONING.md`). Falta só o commit (arquivos tocados: migration nova + `Budget`/`BudgetItem`/
+`BudgetTotals`/`BudgetApprovalService`/`BudgetWorkflowService`/
+`BudgetRevisionService`/`BudgetPdfContextFactory`/`PdfTemplateRegistry`/
+`UpsertBudgetRequest` no backend; `OrcamentoController`, `item-row.blade.php`,
+`show.blade.php`, `orcamentos-form.js`, `desktop.css` no desktop;
+`opcoes.blade.php` e os dois arquivos de teste no backend/desktop).
+
+## Composição das opções no desktop (2026-09-18)
+
+**Problema.** Os 4 checkboxes por item (Básica/Avançada/Completa/Todos) da
+rodada anterior perguntavam ao técnico "em quais opções este item entra?",
+mas ele pensa "o que entra em cada opção?". Rótulos truncados, atalho "Todos"
+e um padrão silencioso (1º item = só Básica, depois = Todos) produziram, num
+orçamento real, "Desmontagem e higienização" só na Básica e "pasta térmica"
+fora da Básica — e ninguém via a composição das três opções antes do cliente.
+O modelo de dados (`orcamento_itens.niveis`, sem cascata) estava certo; o
+**processo de preenchimento** estava errado. Backend: zero mudanças.
+
+**Processo novo (só desktop, o único com formulário de item):**
+
+1. **Interruptor "Oferecer opções de manutenção"** no cabeçalho de "Itens do
+   orçamento" (`oferece_opcoes`, par marcador oculto `0` + checkbox `1`, o
+   mesmo padrão de `entrega_domicilio` — o rascunho local guarda e restaura
+   sozinho). Desligado em orçamento novo; na edição, começa ligado quando o
+   orçamento gravado tem opções; some quando há `nivel_aprovado` (a lista já é
+   o escopo contratado, e forçar níveis ali mudaria a fingerprint dos itens e
+   reabriria a decisão do cliente). Desligado = orçamento comum: nenhum
+   controle de nível na tela, toda linha em `[1]`.
+2. **Cartão do item volta a ser só "o quê e quanto"**: o campo "Nível" saiu;
+   os 3 checkboxes continuam na linha, `hidden`, com o mesmo
+   `name="itens[i][niveis][]"`/`id` — wire idêntico, os regexes dos testes de
+   edição continuam válidos. No lugar, um selo de leitura
+   (`data-budget-item-levels-badge`: "Em todas as opções", "Só na Completa",
+   "Avançada e Completa", "Fora de todas as opções" em vermelho) que leva à
+   linha do item no quadro.
+3. **Quadro "Composição das opções"** (`data-budget-tiers-board`, logo abaixo
+   de "Adicionar item"): linhas = itens, colunas = opções, célula = botão
+   `role="checkbox"` que inclui/tira o item; rodapé com nº de itens e **total
+   por opção** (mesma fórmula de `BudgetTotals::perLevel`: subtotal da opção
+   − desconto global (% proporcional, fixo integral) + acréscimo, piso 0);
+   por coluna, "todos · nenhum" e **"+ Item só nesta opção"** (cria o item já
+   restrito àquela coluna — o gesto natural para RAM 4GB "só na Avançada");
+   "Recomendar ao cliente" mudou do resumo para o cabeçalho do quadro (mesmo
+   `name`). Coluna recomendada tingida; coluna vazia acima da última com itens
+   fica esmaecida com "Não será oferecida: sem itens" (o backend oferece
+   sempre `1..maxLevel`). O quadro é reconciliado de forma **incremental** a
+   cada `updateSummary` (roda a cada tecla): nunca recria `<tr>`/botões
+   existentes, para não perder o foco do teclado. Item novo pelo botão geral
+   nasce nas três opções (o técnico só TIRA o que não pertence).
+4. **Regras**, ao vivo no quadro (`data-budget-tiers-alerts`) e no envio
+   (antes do modal de revisão, ponto comum de criar e editar):
+   - ERRO (bloqueia): item com conteúdo fora de todas as opções — "O item X
+     não está em nenhuma opção — inclua em uma opção ou exclua o item." Sem
+     isto o backend gravava `[1]` em silêncio. Também entra nas pendências da
+     aba financeiro do wizard de criação.
+   - AVISO (Swal "Salvar assim mesmo / Voltar e ajustar"): opção vazia abaixo
+     da última com itens ("o cliente veria uma opção sem itens" — o backend
+     gera o cartão "Nenhum item nesta opção"); opção igual à anterior ("o
+     cliente não verá esta opção" — a landing esconde a redundante); só a
+     Básica com itens ("o cliente verá um orçamento comum"); todas iguais ("o
+     cliente verá uma única opção" — aqui o backend AINDA trata como com
+     opções: envio sem PDF, aprovação exige escolher).
+5. **Desligar o interruptor** com composição diferenciada (linhas com
+   conjuntos diferentes, ex.: RAM 2/4/8 GB) pergunta "Manter os itens de qual
+   opção?" (só opções com itens, padrão = recomendada ou a mais alta) e remove
+   da lista os itens que estão só nas outras — juntar tudo numa lista única
+   recriaria a soma 2GB+4GB+8GB por outra porta. Sem diferenciação, desliga em
+   silêncio; cada linha guarda backup (`data-budget-levels-backup`) e religar
+   restaura o que sobrou.
+6. **Servidor** (`OrcamentoController::applyMaintenanceOptionsSwitch`):
+   `oferece_opcoes=0` força `niveis=[1]` em todo item e zera
+   `nivel_recomendado` (verdade no servidor mesmo se o JS falhar);
+   `oferece_opcoes=1` + item com conteúdo sem nível → `ValidationException`
+   em `itens.N.niveis` com mensagem autoexplicativa (o flash lista os erros
+   planos). A chave nunca vai ao backend. Na reexibição após erro, o partial
+   devolve o item órfão como órfão (`$field('niveis', old('itens') ? [] : [1])`)
+   em vez de "só Básica".
+7. **Detalhe** (`show.blade.php`): a coluna "Nível" com chips virou **uma
+   coluna por opção** (✓/—, `data-budget-show-level-col/-cell`), a mesma
+   matriz do formulário; o rodapé "Totais dos itens" some com opções (soma
+   cega de toda linha não é o valor de nada quando há alternativas); novo link
+   **"Abrir página do cliente"** (`target=_blank`; `GET /orcamento/{token}` não
+   registra visualização — única mutação é `markExpired` em token vencido —
+   mas a página mostra Aprovar/Recusar: é para conferir, não para clicar pelo
+   cliente). Texto de cascata ("cada opção inclui tudo da anterior") corrigido
+   aqui e no recap do formulário.
+8. **Modal de revisão**: abaixo do total de cada opção, a lista literal dos
+   itens que a compõem ("Itens da Básica: …").
+
+**Bugs pré-existentes corrigidos no caminho:** (a) `createRow` usava
+`count(linhas)` como índice — excluir uma linha do meio e adicionar outra
+duplicava `itens[N]` e o PHP ficava com um item só; agora `nextRowIndex()` =
+maior `data-index` + 1; (b) `getRowLevels` caía em `[1]` quando nada estava
+marcado, escondendo o órfão e somando-o na Básica — devolve o conjunto cru
+(o fallback fica só em `createRow`, para rascunhos antigos).
+
+**Verificação:** `OrcamentoNiveisTest` 17/17 (5 novos: edição com opções
+liga o interruptor e marca os checkboxes ocultos; sem opções fica desligado;
+com `nivel_aprovado` some; `oferece_opcoes=0` manda `[1]` em todos e zera a
+recomendação; `oferece_opcoes=1` rejeita item sem nível); conjunto
+`Orcamento|Budget` do desktop 82 testes com as mesmas 3 falhas pré-existentes
+(mensagens do envio para consulta e `@disabled` no marcador
+`formas_pagamento[]`). Harness Chrome headless com o `orcamentos-form.js` real
+(HTML dumpado por teste descartável, depois removido): ligar → 1 linha ✓✓✓;
+"+ Item só nesta opção" na Completa → `false,false,true` e selo "Só na
+Completa"; "nenhum" na Básica → aviso de opção vazia; RAM 2/4/8 + Diagnóstico
+→ colunas R$ 150/350/550 iguais ao recap, subtotal gravado = 550; órfão →
+linha vermelha + erro; excluir do meio e adicionar → `data-index` únicos;
+desligar → Swal com select "Básica (2 itens) / Avançada / Completa", cancelar
+mantém ligado, confirmar Avançada remove 2GB e 8GB e deixa tudo em `[1]`;
+religar restaura. Screenshots em 1500/1300/430 px (em 430 px a tabela rola
+dentro de `.table-responsive`; ≤768 px esconde o subtítulo das colunas).
+Bump: **v6.0.1.0** (patch — só arquivos existentes, sem migration).
+
 ## O que isto NÃO faz (v2, se os dados justificarem)
 
 Procedência estruturada da peça, corte por valor de mercado do aparelho,

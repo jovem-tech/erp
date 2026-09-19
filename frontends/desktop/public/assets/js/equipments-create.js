@@ -1109,7 +1109,10 @@
     };
 
     const ensureRequiredPhotos = () => {
-        if (state.photos.length > 0) {
+        // Cadastro pendente (orçamento com aparelho ainda no cliente): a foto
+        // fica para a chegada à assistência, ver renderPendingRegistrationNotice
+        // e EquipmentWorkflowService, que trava a OS até ela chegar.
+        if (state.photos.length > 0 || isPendingRegistrationMode) {
             return true;
         }
 
@@ -1888,6 +1891,14 @@
         });
 
         // Atualiza o rótulo do botão (Próximo/Criar) conforme os obrigatórios.
+        // Tipo/marca/modelo/cliente são Select2: a própria lib dispara 'change'
+        // via jQuery .trigger(), que NÃO chega a um addEventListener nativo no
+        // form (só bubbling nativo). Sem este listener em jQuery, o rótulo
+        // ficava preso em "Próximo" mesmo com os obrigatórios completos, e o
+        // clique acabava salvando de verdade sem o operador perceber a virada.
+        if (typeof window.jQuery !== 'undefined' && window.jQuery.fn && typeof window.jQuery.fn.on === 'function') {
+            window.jQuery(form).on('change', updateEquipmentSubmitState);
+        }
         form.addEventListener('input', updateEquipmentSubmitState);
         form.addEventListener('change', updateEquipmentSubmitState);
         updateEquipmentSubmitState();

@@ -785,17 +785,24 @@ class BudgetApprovalService
     }
 
     /**
-     * Poda os itens acima do nível escolhido e recalcula o total. Só delete e
-     * soma: nada é reprecificado (a cotação gravada em cada linha fica como
-     * está, igual ao que cotacaoCongelada() garante para orçamento fechado).
+     * Poda os itens que não pertencem ao nível escolhido e recalcula o
+     * total. Só delete e soma: nada é reprecificado (a cotação gravada em
+     * cada linha fica como está, igual ao que cotacaoCongelada() garante
+     * para orçamento fechado). A poda reaproveita BudgetTotals::itemsForLevel()
+     * — a mesma função que decide o que aparece na landing/PDF decide o que
+     * sobrevive na aprovação, então as duas nunca podem divergir (importante
+     * pra itens que são alternativa de outro: nenhum dos dois teria
+     * `niveis` "acima" do nível aprovado, só a exclusão explícita filtra).
      * As condições comerciais do nível escolhido viram as do orçamento pelo
      * mesmo motivo (OS, baixa e revisão leem as colunas base direto).
      */
     private function applyApprovedLevel(Budget $budget, int $nivel): void
     {
+        $keepIds = BudgetTotals::itemsForLevel($budget, $nivel)->pluck('id')->all();
+
         BudgetItem::query()
             ->where('orcamento_id', (int) $budget->id)
-            ->where('nivel_minimo', '>', $nivel)
+            ->whereNotIn('id', $keepIds)
             ->delete();
 
         $this->budgetCommercialTermsService->collapseApprovedLevel($budget, $nivel);
@@ -1885,7 +1892,7 @@ class BudgetApprovalService
                     'desconto' => (float) ($item->desconto ?? 0),
                     'acrescimo' => (float) ($item->acrescimo ?? 0),
                     'total' => (float) ($item->total ?? 0),
-                    'nivel_minimo' => Budget::normalizeLevel($item->nivel_minimo) ?? Budget::NIVEL_MINIMO,
+                    'niveis' => Budget::normalizeLevels($item->niveis),
                     'observacoes' => trim((string) ($item->observacoes ?? '')),
                 ])->all(),
         ];

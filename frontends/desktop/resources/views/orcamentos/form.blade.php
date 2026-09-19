@@ -69,7 +69,28 @@
     $levelTermOverrides = old('niveis_condicoes', $budget['niveis_condicoes'] ?? []);
     $levelTermOverrides = is_array($levelTermOverrides) ? $levelTermOverrides : [];
     $termLevelOptions = is_array($form['niveis'] ?? null) ? $form['niveis'] : [];
-    $levelTermsLocked = (int) ($budget['nivel_aprovado'] ?? 0) > 0;
+    // Depois de aprovado, a lista já é o escopo contratado: não há mais
+    // opções a oferecer — interruptor some, quadro e blocos por nível ficam
+    // escondidos de vez.
+    $levelsLocked = (int) ($budget['nivel_aprovado'] ?? 0) > 0;
+    $levelTermsLocked = $levelsLocked;
+    // Mesmo fallback do partial de item: o quadro precisa das três colunas
+    // mesmo quando o form-data não trouxe o catálogo.
+    $levelOptions = $termLevelOptions !== [] ? $termLevelOptions : [
+        ['value' => 1, 'label' => 'Manutenção Básica', 'subtitle' => 'Volta a funcionar'],
+        ['value' => 2, 'label' => 'Manutenção Avançada', 'subtitle' => 'Corrige e previne'],
+        ['value' => 3, 'label' => 'Manutenção Completa', 'subtitle' => 'Como novo'],
+    ];
+    $recommendedLevel = (int) old('nivel_recomendado', $budget['nivel_recomendado'] ?? 0);
+    // Oferecer opções de manutenção é decisão explícita do técnico
+    // (interruptor), não inferência do padrão de um checkbox: ligado, o
+    // quadro de composição aparece e todo item novo entra nas três opções;
+    // desligado, é orçamento comum e nenhum controle de nível existe na tela.
+    // Na edição, começa ligado quando o orçamento gravado já tem opções.
+    $offersOptionsOld = old('oferece_opcoes');
+    $offersOptions = ! $levelsLocked && ($offersOptionsOld !== null
+        ? (string) $offersOptionsOld === '1'
+        : (($isEditMode ?? false) && ! empty($budget['has_tiers'])));
     $levelOverride = static function (int $nivel, string $campo) use ($levelTermOverrides): mixed {
         $linha = $levelTermOverrides[$nivel] ?? $levelTermOverrides[(string) $nivel] ?? null;
 
@@ -581,6 +602,9 @@
                                 <option value="{{ $equipmentId }}" data-cliente-id="{{ $equipmentClienteId }}" data-foto-url="{{ $equipmentFotoUrl }}" @selected($selectedEquipmentId === $equipmentId)>{{ $equipmentLabel !== '' ? $equipmentLabel : 'Equipamento #' . $equipmentId }}{{ $serial !== '' ? ' · S/N ' . $serial : '' }}{{ $clientName !== '' ? ' · ' . $clientName : '' }}</option>
                             @endforeach
                         </select>
+                        <span class="equipment-list-photo-link d-none flex-shrink-0" data-budget-equipment-photo-preview aria-hidden="true">
+                            <img class="equipment-list-photo" alt="Foto do equipamento selecionado" data-budget-equipment-photo-preview-img>
+                        </span>
                         @if ($canCreateEquipment)
                             <button
                                 type="button"
@@ -798,6 +822,19 @@
                     <h3 class="surface-title fs-5 mb-1">Itens do orçamento</h3>
                     <p class="surface-subtitle mb-0">Lance serviços cadastrados, peças do estoque ou itens avulsos sem cadastro vinculado.</p>
                 </div>
+                @unless ($levelsLocked)
+                    {{-- Marcador oculto + checkbox de mesmo name (padrão de
+                         entrega_domicilio): o rascunho local guarda/restaura
+                         sozinho e o servidor sempre recebe 0 ou 1. --}}
+                    <div class="budget-tiers-switch">
+                        <div class="form-check form-switch mb-0">
+                            <input type="hidden" name="oferece_opcoes" value="0" @disabled($lockedForConvertedEdit)>
+                            <input id="orcamentoOfereceOpcoes" class="form-check-input" type="checkbox" role="switch" name="oferece_opcoes" value="1" data-budget-tiers-toggle @checked($offersOptions) @disabled($lockedForConvertedEdit)>
+                            <label class="form-check-label fw-semibold" for="orcamentoOfereceOpcoes">Oferecer opções de manutenção</label>
+                        </div>
+                        <small class="budget-tiers-switch-hint">Básica, Avançada e Completa — o cliente compara e escolhe uma.</small>
+                    </div>
+                @endunless
             </div>
 
             <div class="table-responsive mb-3">
@@ -832,6 +869,85 @@
                     Adicionar item
                 </button>
             </div>
+
+            {{-- Composição das opções: o único lugar onde se define em quais
+                 opções cada item entra. Linhas = itens, colunas = opções,
+                 célula = clique inclui/tira — a mesma tabela que o cliente
+                 verá na página pública. As linhas são montadas pelo JS a
+                 partir dos itens (orcamentos-form.js, syncTiersBoard); os
+                 checkboxes de nível continuam ocultos dentro de cada item e
+                 são o que vai no POST. Visível só com o interruptor ligado. --}}
+            <section class="budget-tiers-board mb-4" data-budget-tiers-board data-budget-levels-locked="{{ $levelsLocked ? '1' : '0' }}" aria-labelledby="orcamentoTiersTitulo" hidden>
+                <div class="budget-tiers-board-head">
+                    <div>
+                        <p class="desktop-eyebrow mb-2">Opções de manutenção</p>
+                        <h3 id="orcamentoTiersTitulo" class="surface-title fs-5 mb-1">Composição das opções</h3>
+                        <p class="surface-subtitle mb-0">Marque em quais opções cada item entra. O cliente verá exatamente estas colunas, cada uma com o seu total.</p>
+                    </div>
+                    <div class="budget-tiers-recommended">
+                        <label for="orcamentoNivelRecomendado" class="mb-1">Recomendar ao cliente</label>
+                        <select id="orcamentoNivelRecomendado" name="nivel_recomendado" class="form-select" data-budget-level-recommended @disabled($lockedForConvertedEdit)>
+                            <option value="" @selected($recommendedLevel <= 0)>Sem recomendação</option>
+                            @foreach ($levelOptions as $levelOption)
+                                <option value="{{ (int) ($levelOption['value'] ?? 0) }}" @selected($recommendedLevel === (int) ($levelOption['value'] ?? 0))>{{ $levelOption['label'] ?? '' }}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table align-middle budget-tiers-table">
+                        <thead>
+                        <tr>
+                            <th scope="col" class="budget-tiers-item-col">Item</th>
+                            @foreach ($levelOptions as $levelOption)
+                                @php
+                                    $tierLevel = (int) ($levelOption['value'] ?? 0);
+                                    $tierShortLabel = str_replace('Manutenção ', '', (string) ($levelOption['label'] ?? ''));
+                                @endphp
+                                <th scope="col" class="budget-tiers-col" data-budget-tiers-col="{{ $tierLevel }}" data-budget-tiers-label="{{ $tierShortLabel }}">
+                                    <span class="budget-tiers-col-name">{{ $tierShortLabel }}</span>
+                                    <span class="budget-tiers-col-subtitle">{{ $levelOption['subtitle'] ?? '' }}</span>
+                                    <span class="budget-tiers-col-tools">
+                                        <button type="button" class="budget-tiers-col-tool" data-budget-tiers-col-all="{{ $tierLevel }}" title="Incluir todos os itens nesta opção" @disabled($lockedForConvertedEdit)>todos</button>
+                                        <span aria-hidden="true">·</span>
+                                        <button type="button" class="budget-tiers-col-tool" data-budget-tiers-col-none="{{ $tierLevel }}" title="Tirar todos os itens desta opção" @disabled($lockedForConvertedEdit)>nenhum</button>
+                                    </span>
+                                    <span class="budget-tiers-col-note" data-budget-tiers-col-note hidden>Não será oferecida: sem itens</span>
+                                </th>
+                            @endforeach
+                        </tr>
+                        </thead>
+                        <tbody data-budget-tiers-rows></tbody>
+                        <tfoot>
+                        <tr class="budget-tiers-foot-count">
+                            <th scope="row">Itens</th>
+                            @foreach ($levelOptions as $levelOption)
+                                <td data-budget-tiers-count="{{ (int) ($levelOption['value'] ?? 0) }}">0</td>
+                            @endforeach
+                        </tr>
+                        <tr class="budget-tiers-foot-total">
+                            <th scope="row">Total da opção</th>
+                            @foreach ($levelOptions as $levelOption)
+                                <td data-budget-tiers-total="{{ (int) ($levelOption['value'] ?? 0) }}">R$ 0,00</td>
+                            @endforeach
+                        </tr>
+                        <tr class="budget-tiers-foot-add">
+                            <th scope="row"></th>
+                            @foreach ($levelOptions as $levelOption)
+                                <td data-budget-tiers-add-col="{{ (int) ($levelOption['value'] ?? 0) }}">
+                                    <button type="button" class="btn btn-outline-primary btn-sm budget-tiers-add" data-budget-tiers-add="{{ (int) ($levelOption['value'] ?? 0) }}" @disabled($lockedForConvertedEdit)>
+                                        <i class="bi bi-plus-lg me-1" aria-hidden="true"></i>Item só nesta opção
+                                    </button>
+                                </td>
+                            @endforeach
+                        </tr>
+                        </tfoot>
+                    </table>
+                </div>
+
+                <ul class="budget-tiers-alerts mb-0" data-budget-tiers-alerts hidden></ul>
+            </section>
 
             <template id="orcamentoItemTemplate">
                 @include('orcamentos.partials.item-row', ['index' => '__INDEX__', 'item' => [], 'quickCatalogs' => $quickCatalogs, 'lockedForConvertedEdit' => $lockedForConvertedEdit])
@@ -1168,31 +1284,17 @@
                     </div>
                 </div>
 
-                @php
-                    $levelOptions = is_array($form['niveis'] ?? null) ? $form['niveis'] : [];
-                    $recommendedLevel = (int) old('nivel_recomendado', $budget['nivel_recomendado'] ?? 0);
-                    // Depois de aprovado, a lista já é o escopo contratado: não
-                    // há mais opções a oferecer, o bloco fica escondido de vez.
-                    $levelsLocked = (int) ($budget['nivel_aprovado'] ?? 0) > 0;
-                @endphp
-                {{-- Níveis de manutenção: aparece só quando algum item está em
-                     nível 2 ou 3 (o JS controla). O total final acima continua
-                     sendo o escopo máximo — é o que fica gravado até o cliente
-                     escolher a opção na página pública. --}}
+                {{-- Recap por opção (aparece só quando algum item está em
+                     nível 2 ou 3 — o JS controla). A composição em si é
+                     editada no quadro logo abaixo dos itens; aqui é só a
+                     conferência final perto do botão de salvar. O total final
+                     acima continua sendo o escopo máximo — é o que fica
+                     gravado até o cliente escolher a opção na página pública. --}}
                 <div class="budget-levels-summary" data-budget-levels-summary data-budget-levels-locked="{{ $levelsLocked ? '1' : '0' }}" hidden>
                     <div class="budget-levels-summary-head">
                         <div>
                             <p class="desktop-eyebrow mb-1">Opções de manutenção</p>
-                            <p class="surface-subtitle mb-0">O cliente compara as opções na página de aprovação e escolhe uma. Cada opção inclui tudo da anterior; o total final acima é o da opção completa.</p>
-                        </div>
-                        <div class="budget-levels-recommended">
-                            <label for="orcamentoNivelRecomendado" class="mb-1">Recomendar ao cliente</label>
-                            <select id="orcamentoNivelRecomendado" name="nivel_recomendado" class="form-select" data-budget-level-recommended @disabled($lockedForConvertedEdit)>
-                                <option value="" @selected($recommendedLevel <= 0)>Sem recomendação</option>
-                                @foreach ($levelOptions as $levelOption)
-                                    <option value="{{ (int) ($levelOption['value'] ?? 0) }}" @selected($recommendedLevel === (int) ($levelOption['value'] ?? 0))>{{ $levelOption['label'] ?? '' }}</option>
-                                @endforeach
-                            </select>
+                            <p class="surface-subtitle mb-0">O cliente compara as opções na página de aprovação e escolhe uma. O total final acima é o da opção mais completa.</p>
                         </div>
                     </div>
                     <div class="budget-levels-grid" data-budget-levels-grid>

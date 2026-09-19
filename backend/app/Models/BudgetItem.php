@@ -25,7 +25,7 @@ class BudgetItem extends Model
         'acrescimo_percentual' => 'float',
         'total' => 'float',
         'ordem' => 'integer',
-        'nivel_minimo' => 'integer',
+        'niveis' => 'array',
         'preco_custo_referencia' => 'float',
         'preco_venda_referencia' => 'float',
         'preco_base' => 'float',
