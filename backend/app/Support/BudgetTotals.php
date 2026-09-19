@@ -80,14 +80,19 @@ final class BudgetTotals
     }
 
     /**
-     * Itens que entram no nível informado (cumulativo), na ordem da proposta.
+     * Itens que entram no nível informado — associação exata (cada item
+     * declara em quais níveis aparece, sem cascata), na ordem da proposta.
      *
      * @return Collection<int, BudgetItem>
      */
     public static function itemsForLevel(Budget $budget, int $nivel): Collection
     {
         return $budget->items
-            ->filter(static fn (BudgetItem $item): bool => (int) ($item->nivel_minimo ?? Budget::NIVEL_MINIMO) <= $nivel)
+            ->filter(static function (BudgetItem $item) use ($nivel): bool {
+                $niveis = is_array($item->niveis) && $item->niveis !== [] ? $item->niveis : [Budget::NIVEL_MINIMO];
+
+                return in_array($nivel, $niveis, true);
+            })
             ->sortBy('ordem')
             ->values();
     }
@@ -99,7 +104,7 @@ final class BudgetTotals
      *
      * Vazio quando o orçamento não tem níveis para escolher.
      *
-     * @return array<int, array{nivel: int, label: string, subtitle: string, subtotal: float, desconto: float, acrescimo: float, total: float, itens: array<int, string>, itens_novos: array<int, string>, itens_count: int, recomendado: bool}>
+     * @return array<int, array{nivel: int, label: string, subtitle: string, subtotal: float, desconto: float, acrescimo: float, total: float, itens: array<int, string>, itens_count: int, recomendado: bool}>
      */
     public static function perLevel(Budget $budget): array
     {
@@ -129,13 +134,10 @@ final class BudgetTotals
                 'desconto' => $totals['desconto'],
                 'acrescimo' => $totals['acrescimo'],
                 'total' => $totals['total'],
-                // Tudo o que a opção cobre (cumulativo) — o "ver os N itens".
+                // Tudo o que a opção cobre — lista literal e completa, sem
+                // recorte incremental (cada item pode estar em qualquer
+                // subconjunto de níveis, não só "a partir de X").
                 'itens' => $describe($items),
-                // Só o que esta opção acrescenta em relação à anterior — o
-                // "inclui tudo da X, mais…" do cartão. No nível 1 é a lista toda.
-                'itens_novos' => $describe($items->filter(
-                    static fn (BudgetItem $item): bool => (int) ($item->nivel_minimo ?? Budget::NIVEL_MINIMO) === $nivel
-                )),
                 'itens_count' => $items->count(),
                 'recomendado' => $recommended === $nivel,
             ];

@@ -1791,7 +1791,7 @@ class BudgetWorkflowService
                 'acrescimo_tipo' => $this->resolveAdjustmentMode($item->acrescimo_tipo),
                 'acrescimo_percentual' => $item->acrescimo_percentual !== null ? round((float) $item->acrescimo_percentual, 4) : null,
                 'total' => (float) ($item->total ?? 0),
-                'nivel_minimo' => Budget::normalizeLevel($item->nivel_minimo) ?? Budget::NIVEL_MINIMO,
+                'niveis' => Budget::normalizeLevels($item->niveis),
                 'observacoes' => (string) ($item->observacoes ?? ''),
                 // `valor_recomendado` e `modo_precificacao` valem para todos: o
                 // primeiro e o piso (quem vende precisa saber que passou dele) e
@@ -2388,7 +2388,8 @@ class BudgetWorkflowService
                 'acrescimo_percentual' => $addition['percent'],
                 'total' => round($total, 2),
                 'ordem' => (int) ($item['ordem'] ?? $order),
-                'nivel_minimo' => Budget::normalizeLevel($item['nivel_minimo'] ?? null) ?? Budget::NIVEL_MINIMO,
+                // insert() bruto não passa pelo cast do Eloquent — grava o JSON já serializado.
+                'niveis' => json_encode(Budget::normalizeLevels($item['niveis'] ?? null)),
                 'observacoes' => $observacoes,
                 'preco_custo_referencia' => $custoReferencia,
                 'preco_venda_referencia' => $vendaReferencia,
@@ -2435,11 +2436,31 @@ class BudgetWorkflowService
             return 0.0;
         }
 
-        return round(array_reduce($normalizedItems, static fn (float $carry, array $item): float => $carry + (float) ($item['total'] ?? 0), 0.0), 2);
+        // O subtotal gravado é o escopo máximo — igual à opção mais completa
+        // que os itens formam. Somar toda linha sem olhar o nível superestima
+        // esse subtotal quando há itens que são ALTERNATIVA entre si (ex.:
+        // RAM 2GB/4GB/8GB): cada linha só entra uma vez aqui, mesmo que
+        // nenhuma delas sozinha alcance o nível mais alto, então a soma cega
+        // contaria as três — o nível mais alto de fato é quem decide quais
+        // linhas realmente compõem esse escopo máximo.
+        $itemLevels = array_map(
+            static fn (array $item): array => Budget::normalizeLevels(json_decode((string) $item['niveis'], true)),
+            $normalizedItems
+        );
+        $maxNivel = max(array_merge(...$itemLevels));
+
+        $itemsSubtotal = 0.0;
+        foreach ($normalizedItems as $index => $item) {
+            if (in_array($maxNivel, $itemLevels[$index], true)) {
+                $itemsSubtotal += (float) ($item['total'] ?? 0);
+            }
+        }
+
+        return round($itemsSubtotal, 2);
     }
 
     /**
-     * Assinatura dos itens (conteúdo + nível), usada só para detectar se
+     * Assinatura dos itens (conteúdo + níveis), usada só para detectar se
      * syncItems() de fato mudou algo — não serve para nada além disso.
      */
     private function itemsFingerprint(Budget $budget): string
@@ -2454,7 +2475,7 @@ class BudgetWorkflowService
                 (string) $item->valor_unitario,
                 (string) $item->desconto,
                 (string) $item->acrescimo,
-                (string) $item->nivel_minimo,
+                implode(',', Budget::normalizeLevels($item->niveis)),
             ]))
             ->implode(';');
     }

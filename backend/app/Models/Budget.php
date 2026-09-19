@@ -52,10 +52,11 @@ class Budget extends Model
     public const MAX_INTEREST_FREE_INSTALLMENTS = 24;
 
     /**
-     * Níveis de manutenção (cumulativos): cada item diz a partir de qual
-     * nível entra (`orcamento_itens.nivel_minimo`) e o nível N é a projeção
-     * "itens com nivel_minimo <= N". Um orçamento cujos itens são todos de
-     * nível 1 é um orçamento comum — nada de níveis aparece para o cliente.
+     * Níveis de manutenção: cada item declara explicitamente em quais níveis
+     * entra (`orcamento_itens.niveis`, conjunto sem cascata — um item de
+     * nível mais alto não herda automaticamente os itens de nível mais
+     * baixo). Um orçamento cujos itens marcam só o nível 1 é um orçamento
+     * comum — nada de níveis aparece para o cliente.
      */
     public const NIVEL_MINIMO = 1;
 
@@ -315,11 +316,36 @@ class Budget extends Model
     }
 
     /**
-     * Maior nível presente nos itens (1 quando não há itens).
+     * Normaliza o conjunto de níveis de um item vindo de fora: inteiros
+     * únicos dentro de [NIVEL_MINIMO, NIVEL_MAXIMO], ordenados. Vazio ou
+     * inválido cai em [NIVEL_MINIMO] — todo item precisa pertencer a pelo
+     * menos um nível.
+     *
+     * @return array<int, int>
+     */
+    public static function normalizeLevels(mixed $value): array
+    {
+        $raw = is_array($value) ? $value : [];
+
+        $niveis = collect($raw)
+            ->map(static fn (mixed $nivel): ?int => self::normalizeLevel($nivel))
+            ->filter(static fn (?int $nivel): bool => $nivel !== null)
+            ->unique()
+            ->sort()
+            ->values()
+            ->all();
+
+        return $niveis !== [] ? $niveis : [self::NIVEL_MINIMO];
+    }
+
+    /**
+     * Maior nível referenciado por algum item (1 quando não há itens).
      */
     public function maxLevel(): int
     {
-        $max = (int) $this->items->max(static fn (BudgetItem $item): int => (int) ($item->nivel_minimo ?? 1));
+        $max = (int) $this->items
+            ->flatMap(static fn (BudgetItem $item): array => is_array($item->niveis) && $item->niveis !== [] ? $item->niveis : [1])
+            ->max();
 
         return max(self::NIVEL_MINIMO, min(self::NIVEL_MAXIMO, $max));
     }

@@ -162,6 +162,9 @@ class BudgetRevisionService
             $data['orcamento_id'] = $targetBudgetId;
             $data['created_at'] = $now;
             $data['updated_at'] = $now;
+            // toArray() decodifica o cast 'niveis' => 'array'; insert() bruto
+            // não recodifica de volta — grava o JSON já serializado.
+            $data['niveis'] = json_encode(Budget::normalizeLevels($data['niveis'] ?? null));
 
             return $data;
         })->all();

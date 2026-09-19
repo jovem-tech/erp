@@ -195,8 +195,8 @@ class PdfTemplateRegistry
                         'acrescimo' => 'moeda',
                         'valor_total' => 'moeda',
                         'observacoes' => 'string',
-                        // Nível de manutenção a partir do qual o item entra
-                        // (1, 2 ou 3) — para modelos personalizados.
+                        // Níveis de manutenção em que o item entra (ex.: "2, 3")
+                        // — para modelos personalizados.
                         'nivel' => 'string',
                     ],
                     'formas_pagamento' => [

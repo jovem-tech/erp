@@ -1,5 +1,17 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v6.0.1.0 — 2026-09-18 09:47
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Orcamento em niveis: interruptor 'Oferecer opcoes de manutencao' + quadro 'Composicao das opcoes' (linhas = itens, colunas = Basica/Avancada/Completa, total por opcao, '+ Item so nesta opcao') substitui os 4 checkboxes por item; item novo entra nas 3 opcoes; validacao de item orfao (bloqueia) e de opcao vazia/igual/unica (confirma); desligar com itens alternativos pergunta qual opcao vira o orcamento unico; servidor honra oferece_opcoes=0/1; detalhe mostra a matriz item x opcao, esconde soma cega com opcoes e ganha 'Abrir pagina do cliente'; modal de revisao lista os itens por opcao. Corrige indice duplicado de itens[N] ao adicionar item depois de excluir um do meio e o fallback [1] que escondia item sem nivel.
+- **Arquivos:** frontends/desktop/resources/views/orcamentos/form.blade.php,frontends/desktop/resources/views/orcamentos/partials/item-row.blade.php,frontends/desktop/resources/views/orcamentos/show.blade.php,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/app/Http/Controllers/OrcamentoController.php,frontends/desktop/tests/Feature/Desktop/OrcamentoNiveisTest.php,documentacao/07-novas-implementacoes/2026-09-15-orcamento-em-niveis-manutencao.md
+
+## v6.0.0.0 — 2026-09-17 23:00
+- **Tier:** major
+- **Autor/Agente:** Claude
+- **Descrição:** Itens do orcamento deixam de empilhar por cascata: nivel_minimo (tinyint) vira niveis[] (JSON), cada item marca explicitamente em quais opcoes entra, sem cascata - corrige alternativas que se somavam entre niveis (ex.: RAM 2/4/8GB cobradas juntas na opcao Completa). Migration com dropColumn + backfill preserva orcamentos existentes; subtotal do rascunho e landing publica (itens_novos) ajustados para o novo modelo. Desktop: select unico de nivel vira 4 checkboxes por item (Basica/Avancada/Completa/Todos). Corrige tambem bug de layout: coluna Tipo ficou estreita demais para o select de Servico/Peca ao lado dos 4 checkboxes e invadia visualmente a coluna Nivel.
+- **Arquivos:** backend/database/migrations/2026_09_17_000001_replace_nivel_minimo_with_niveis_on_orcamento_itens.php,backend/app/Models/Budget.php,backend/app/Models/BudgetItem.php,backend/app/Support/BudgetTotals.php,backend/app/Services/Budgets/BudgetApprovalService.php,backend/app/Services/Budgets/BudgetWorkflowService.php,backend/app/Services/Budgets/BudgetRevisionService.php,backend/app/Services/Pdf/Contexts/BudgetPdfContextFactory.php,backend/app/Services/Pdf/PdfTemplateRegistry.php,backend/app/Http/Requests/Api/V1/UpsertBudgetRequest.php,backend/resources/views/budgets/public/partials/opcoes.blade.php,backend/tests/Concerns/BuildsLegacyErpSchema.php,backend/tests/Feature/Api/V1/BudgetMaintenanceLevelsTest.php,frontends/desktop/app/Http/Controllers/OrcamentoController.php,frontends/desktop/resources/views/orcamentos/partials/item-row.blade.php,frontends/desktop/resources/views/orcamentos/show.blade.php,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/tests/Feature/Desktop/OrcamentoNiveisTest.php,documentacao/07-novas-implementacoes/2026-09-15-orcamento-em-niveis-manutencao.md
+
 ## v5.89.0.0 — 2026-09-17 10:32
 - **Tier:** minor
 - **Autor/Agente:** Codex

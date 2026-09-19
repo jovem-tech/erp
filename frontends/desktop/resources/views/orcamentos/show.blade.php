@@ -130,6 +130,12 @@
                     <button type="button" class="dropdown-item" data-copy-link="{{ $publicLink }}">
                         <i class="bi bi-clipboard me-2"></i>Copiar link
                     </button>
+                    {{-- Abrir não registra visualização nem muda nada no
+                         orçamento — mas a página mostra Aprovar/Recusar: é
+                         para conferir, não para clicar no lugar do cliente. --}}
+                    <a href="{{ $publicLink }}" class="dropdown-item" target="_blank" rel="noopener">
+                        <i class="bi bi-box-arrow-up-right me-2"></i>Abrir página do cliente
+                    </a>
                 @endif
 
                 @if (! empty($budget['can_edit']))
@@ -289,7 +295,7 @@
                 <div>
                     <p class="desktop-eyebrow mb-2">Opções de manutenção</p>
                     <h2 class="surface-title fs-5 mb-1">O cliente escolhe uma destas opções na página de aprovação</h2>
-                    <p class="surface-subtitle mb-0">Cada opção inclui tudo da anterior. Ao aprovar, o orçamento passa a conter só os itens da opção escolhida.</p>
+                    <p class="surface-subtitle mb-0">Cada item aparece só nas opções marcadas para ele (colunas na lista de itens abaixo). Ao aprovar, o orçamento passa a conter só os itens da opção escolhida.</p>
                 </div>
             </div>
             <div class="desktop-grid desktop-grid-three">
@@ -518,7 +524,11 @@
                     <tr>
                         <th>Tipo</th>
                         @if ($hasTiers)
-                            <th>Nível</th>
+                            {{-- Uma coluna por opção: a mesma matriz item × opção
+                                 que o técnico montou no formulário. --}}
+                            @foreach ($levels as $level)
+                                <th class="text-center" data-budget-show-level-col="{{ (int) ($level['nivel'] ?? 0) }}">{{ str_replace('Manutenção ', '', (string) ($level['label'] ?? '')) }}</th>
+                            @endforeach
                         @endif
                         <th>Descrição</th>
                         <th>Qtd</th>
@@ -537,9 +547,23 @@
                         <tr>
                             <td data-label="Tipo">{{ ucfirst((string) ($item['tipo_item'] ?? 'servico')) }}</td>
                             @if ($hasTiers)
-                                <td data-label="Nível">
-                                    <span class="desktop-chip">{{ str_replace('Manutenção ', '', (string) ($levels[max(0, (int) ($item['nivel_minimo'] ?? 1) - 1)]['label'] ?? ('Nível ' . (int) ($item['nivel_minimo'] ?? 1)))) }}</span>
-                                </td>
+                                @php
+                                    $itemLevels = array_map('intval', is_array($item['niveis'] ?? null) && $item['niveis'] !== [] ? $item['niveis'] : [1]);
+                                @endphp
+                                @foreach ($levels as $level)
+                                    @php
+                                        $levelNumber = (int) ($level['nivel'] ?? 0);
+                                        $levelShort = str_replace('Manutenção ', '', (string) ($level['label'] ?? ''));
+                                        $includedInLevel = in_array($levelNumber, $itemLevels, true);
+                                    @endphp
+                                    <td class="text-center" data-label="{{ $levelShort }}" data-budget-show-level-cell="{{ $levelNumber }}" data-included="{{ $includedInLevel ? '1' : '0' }}">
+                                        @if ($includedInLevel)
+                                            <i class="bi bi-check-lg text-success" role="img" aria-label="Incluído na {{ $levelShort }}"></i>
+                                        @else
+                                            <span class="text-secondary" role="img" aria-label="Fora da {{ $levelShort }}">—</span>
+                                        @endif
+                                    </td>
+                                @endforeach
                             @endif
                             <td data-label="Descrição">
                                 <div class="fw-semibold">{{ $item['descricao'] !== '' ? $item['descricao'] : 'Sem descrição' }}</div>
@@ -605,17 +629,22 @@
                         </tr>
                     @endforeach
                     </tbody>
-                    <tfoot class="table-group-divider">
-                    <tr class="fw-semibold">
-                        <td colspan="4" class="text-end">Totais dos itens</td>
-                        <td data-label="Desconto">R$ {{ number_format($itemsDescontoTotal, 2, ',', '.') }}</td>
-                        <td data-label="Acréscimo">R$ {{ number_format($itemsAcrescimoTotal, 2, ',', '.') }}</td>
-                        <td data-label="Total" class="fw-bold">R$ {{ number_format($itemsTotalGeral, 2, ',', '.') }}</td>
-                        @if ($veCusto)
-                            <td colspan="2"></td>
-                        @endif
-                    </tr>
-                    </tfoot>
+                    {{-- Com opções, a soma cega de toda linha não é o valor de
+                         nada (as alternativas de cada opção não se somam); o
+                         total de cada opção já está nos cartões acima. --}}
+                    @unless ($hasTiers)
+                        <tfoot class="table-group-divider">
+                        <tr class="fw-semibold">
+                            <td colspan="4" class="text-end">Totais dos itens</td>
+                            <td data-label="Desconto">R$ {{ number_format($itemsDescontoTotal, 2, ',', '.') }}</td>
+                            <td data-label="Acréscimo">R$ {{ number_format($itemsAcrescimoTotal, 2, ',', '.') }}</td>
+                            <td data-label="Total" class="fw-bold">R$ {{ number_format($itemsTotalGeral, 2, ',', '.') }}</td>
+                            @if ($veCusto)
+                                <td colspan="2"></td>
+                            @endif
+                        </tr>
+                        </tfoot>
+                    @endunless
                 </table>
             </div>
         @else
@@ -676,8 +705,12 @@
                                 <i class="bi bi-clipboard me-1"></i>
                                 Copiar
                             </button>
+                            <a href="{{ $publicLink }}" class="btn btn-sm btn-outline-secondary" target="_blank" rel="noopener">
+                                <i class="bi bi-box-arrow-up-right me-1"></i>
+                                Abrir página do cliente
+                            </a>
                         </div>
-                        <small class="text-secondary d-block mt-1">Use este link para envio avulso (WhatsApp, e-mail ou outro canal).</small>
+                        <small class="text-secondary d-block mt-1">Use este link para envio avulso (WhatsApp, e-mail ou outro canal). Abra para conferir o que o cliente verá — sem aprovar ou recusar por ele.</small>
                     </div>
                 @endif
 

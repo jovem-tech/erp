@@ -7,9 +7,12 @@
     $indexKey = (string) ($index ?? 0);
     $typeId = 'orcamentoItemType-' . $indexKey;
     $levelId = 'orcamentoItemLevel-' . $indexKey;
-    // Níveis de manutenção (cumulativos): a partir de qual opção o item
-    // entra. Rótulos vêm do backend (formData.niveis); o fallback cobre o
-    // template de linha nova quando o form não trouxe o catálogo.
+    // Níveis de manutenção: em quais opções o item entra — sem cascata. Os
+    // checkboxes ficam OCULTOS na linha (são o que vai no POST e a fonte da
+    // verdade para o JS); quem os liga/desliga é o quadro "Composição das
+    // opções" abaixo da lista, nunca um controle no cartão. Rótulos vêm do
+    // backend (formData.niveis); o fallback cobre o template de linha nova
+    // quando o form não trouxe o catálogo.
     $levelOptions = is_array($form['niveis'] ?? null) && ($form['niveis'] ?? []) !== []
         ? $form['niveis']
         : [
@@ -36,6 +39,11 @@
 
         return $item[$name] ?? $default;
     };
+    // Reexibição após erro de validação: item que foi enviado sem nível
+    // nenhum (órfão) volta órfão — se caísse em [1] o erro sumiria da tela
+    // sem o técnico ter decidido nada.
+    $rawSelectedLevels = $field('niveis', is_array(old('itens')) ? [] : [1]);
+    $selectedLevels = array_map('intval', is_array($rawSelectedLevels) ? $rawSelectedLevels : [$rawSelectedLevels]);
     $parseDecimal = static function (mixed $value, int $scale = 4): float {
         if ($value === null || $value === '') {
             return 0.0;
@@ -104,22 +112,13 @@
                         <option value="peca" @selected((string) $field('tipo_item') === 'peca')>Peça</option>
                     </select>
                     <input type="hidden" name="itens[{{ $indexKey }}][modo_precificacao]" value="{{ $field('modo_precificacao', 'manual') }}" data-budget-item-mode @disabled($lockedForConvertedEdit)>
-                </div>
-
-                <div class="budget-item-field budget-item-field-level">
-                    <label for="{{ $levelId }}" class="budget-item-field-label">Nível</label>
-                    <select
-                        id="{{ $levelId }}"
-                        name="itens[{{ $indexKey }}][nivel_minimo]"
-                        class="form-select"
-                        data-budget-item-level
-                        title="A partir de qual opção de manutenção este item entra. Os níveis são cumulativos: a Avançada inclui a Básica, a Completa inclui as duas."
-                        @disabled($lockedForConvertedEdit)
-                    >
-                        @foreach ($levelOptions as $levelOption)
-                            <option value="{{ (int) ($levelOption['value'] ?? 1) }}" @selected((int) $field('nivel_minimo', 1) === (int) ($levelOption['value'] ?? 1))>{{ str_replace('Manutenção ', '', (string) ($levelOption['label'] ?? '')) }}</option>
-                        @endforeach
-                    </select>
+                    {{-- Níveis: ocultos, dirigidos pelo quadro de composição
+                         (ver comentário no topo). Checkbox com `hidden` ainda
+                         envia quando marcado. --}}
+                    @foreach ($levelOptions as $levelOption)
+                        @php $levelValue = (int) ($levelOption['value'] ?? 1); @endphp
+                        <input id="{{ $levelId }}-{{ $levelValue }}" type="checkbox" name="itens[{{ $indexKey }}][niveis][]" value="{{ $levelValue }}" data-budget-item-level-checkbox hidden @checked(in_array($levelValue, $selectedLevels, true)) @disabled($lockedForConvertedEdit)>
+                    @endforeach
                 </div>
 
                 <div class="budget-item-field budget-item-field-reference">
@@ -308,6 +307,10 @@
                 <div class="budget-item-field budget-item-field-actions">
                     <div class="budget-item-field-label">Ações</div>
                     <div class="budget-item-actions">
+                        {{-- Selo de leitura: em quais opções o item está. Só
+                             aparece com o interruptor ligado; o clique leva
+                             à linha do item no quadro (onde se edita). --}}
+                        <button type="button" class="budget-item-levels-badge" data-budget-item-levels-badge title="Ver na composição das opções" hidden></button>
                         @if ($canQuickCreateAny)
                             <button
                                 type="button"

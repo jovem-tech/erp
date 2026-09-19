@@ -7,13 +7,15 @@ use Tests\TestCase;
 
 /**
  * Orçamento em níveis de manutenção (Básica / Avançada / Completa) no
- * desktop: o técnico marca o nível em cada item, o resumo mostra as opções,
- * a tela de detalhe expõe a opção aprovada e a aprovação "por outros meios"
- * informa qual opção o cliente escolheu.
+ * desktop: o técnico liga "Oferecer opções de manutenção" e monta as opções
+ * no quadro de composição (linhas = itens, colunas = opções); os checkboxes
+ * de nível continuam ocultos em cada item e são o que vai no POST. A tela
+ * de detalhe mostra a mesma matriz e a opção aprovada, e a aprovação "por
+ * outros meios" informa qual opção o cliente escolheu.
  */
 class OrcamentoNiveisTest extends TestCase
 {
-    public function test_create_form_renders_level_select_per_item_and_levels_summary(): void
+    public function test_create_form_renders_the_options_switch_the_board_and_hidden_level_inputs(): void
     {
         Http::preventStrayRequests();
         Http::fake(array_merge($this->notificationsFixture(), $this->companyFixture(), [
@@ -46,13 +48,108 @@ class OrcamentoNiveisTest extends TestCase
 
         $response
             ->assertOk()
-            ->assertSee('name="itens[0][nivel_minimo]"', false)
-            ->assertSee('data-budget-item-level', false)
-            ->assertSee('data-budget-levels-summary', false)
+            // Wire compatível: os checkboxes de nível continuam na linha do
+            // item, só que ocultos — quem os liga/desliga é o quadro.
+            ->assertSee('name="itens[0][niveis][]"', false)
+            ->assertSee('data-budget-item-level-checkbox', false)
+            ->assertDontSee('data-budget-item-level-all', false)
+            ->assertDontSee('budget-item-field-level', false)
+            // Interruptor no cabeçalho dos itens, desligado em orçamento novo.
+            ->assertSee('id="orcamentoOfereceOpcoes"', false)
+            ->assertSee('data-budget-tiers-toggle', false)
+            ->assertSee('Oferecer opções de manutenção')
+            // Quadro de composição com as três colunas, atalhos e "item só nesta opção".
+            ->assertSee('data-budget-tiers-board', false)
+            ->assertSee('Composição das opções')
+            ->assertSee('data-budget-tiers-col="3"', false)
+            ->assertSee('data-budget-tiers-col-none="1"', false)
+            ->assertSee('data-budget-tiers-add="2"', false)
+            ->assertSee('data-budget-tiers-alerts', false)
+            ->assertSee('data-budget-item-levels-badge', false)
+            // Recomendação mora no quadro; o recap do resumo continua.
             ->assertSee('name="nivel_recomendado"', false)
+            ->assertSee('data-budget-levels-summary', false)
             ->assertSee('data-budget-level-card="3"', false)
             ->assertSee('Manutenção Completa')
-            ->assertSee('Opções de manutenção');
+            ->assertSee('Opções de manutenção')
+            ->assertDontSee('inclui tudo da anterior');
+
+        $content = (string) $response->getContent();
+        $this->assertDoesNotMatchRegularExpression('/id="orcamentoOfereceOpcoes"[^>]*checked/', $content);
+        $this->assertMatchesRegularExpression('/id="orcamentoItemLevel-0-1"[^>]*hidden/', $content);
+        // Linha nova (template) e primeira linha nascem só na Básica; o JS
+        // passa para as três quando o interruptor está ligado.
+        $this->assertMatchesRegularExpression('/id="orcamentoItemLevel-0-1"[^>]*checked/', $content);
+        $this->assertDoesNotMatchRegularExpression('/id="orcamentoItemLevel-0-2"[^>]*checked/', $content);
+    }
+
+    public function test_edit_form_with_options_renders_the_switch_on_and_marks_each_item_levels(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake(array_merge($this->notificationsFixture(), $this->companyFixture(), $this->editFixture([
+            'has_tiers' => true,
+            'nivel_maximo' => 3,
+            'nivel_recomendado' => 3,
+            'itens' => [
+                $this->itemPayload(['id' => 1, 'descricao' => 'Diagnóstico', 'niveis' => [1, 2, 3]]),
+                $this->itemPayload(['id' => 2, 'descricao' => 'RAM 8GB', 'niveis' => [3]]),
+            ],
+        ])));
+
+        $response = $this
+            ->withSession(array_merge($this->desktopSession(['orcamentos' => ['visualizar', 'criar', 'editar']]), ['desktop_theme' => 'default']))
+            ->get('/orcamentos/993/editar');
+
+        $response->assertOk()->assertSee('<option value="3" selected>Manutenção Completa</option>', false);
+
+        $content = (string) $response->getContent();
+        $this->assertMatchesRegularExpression('/id="orcamentoOfereceOpcoes"[^>]*checked/', $content);
+        $this->assertMatchesRegularExpression('/id="orcamentoItemLevel-0-1"[^>]*checked/', $content);
+        $this->assertMatchesRegularExpression('/id="orcamentoItemLevel-0-2"[^>]*checked/', $content);
+        $this->assertMatchesRegularExpression('/id="orcamentoItemLevel-0-3"[^>]*checked/', $content);
+        $this->assertDoesNotMatchRegularExpression('/id="orcamentoItemLevel-1-1"[^>]*checked/', $content);
+        $this->assertDoesNotMatchRegularExpression('/id="orcamentoItemLevel-1-2"[^>]*checked/', $content);
+        $this->assertMatchesRegularExpression('/id="orcamentoItemLevel-1-3"[^>]*checked/', $content);
+    }
+
+    public function test_edit_form_without_options_renders_the_switch_off(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake(array_merge($this->notificationsFixture(), $this->companyFixture(), $this->editFixture([
+            'itens' => [$this->itemPayload(['id' => 1, 'descricao' => 'Fusível', 'niveis' => [1]])],
+        ])));
+
+        $response = $this
+            ->withSession(array_merge($this->desktopSession(['orcamentos' => ['visualizar', 'criar', 'editar']]), ['desktop_theme' => 'default']))
+            ->get('/orcamentos/993/editar');
+
+        $response->assertOk()->assertSee('data-budget-tiers-toggle', false);
+        $this->assertDoesNotMatchRegularExpression('/id="orcamentoOfereceOpcoes"[^>]*checked/', (string) $response->getContent());
+    }
+
+    public function test_edit_form_hides_the_switch_once_an_option_was_approved(): void
+    {
+        // Depois da aprovação a lista já é o escopo contratado: nada a
+        // oferecer, e o JS não pode forçar níveis (mudaria a fingerprint dos
+        // itens e reabriria a decisão do cliente).
+        Http::preventStrayRequests();
+        Http::fake(array_merge($this->notificationsFixture(), $this->companyFixture(), $this->editFixture([
+            'status' => 'pendente_abertura_os',
+            'status_label' => 'Aprovado',
+            'nivel_aprovado' => 2,
+            'nivel_aprovado_label' => 'Manutenção Avançada',
+            'itens' => [$this->itemPayload(['id' => 1, 'descricao' => 'Bateria', 'niveis' => [2, 3]])],
+        ])));
+
+        $response = $this
+            ->withSession(array_merge($this->desktopSession(['orcamentos' => ['visualizar', 'criar', 'editar']]), ['desktop_theme' => 'default']))
+            ->get('/orcamentos/993/editar');
+
+        $response
+            ->assertOk()
+            ->assertDontSee('data-budget-tiers-toggle', false)
+            ->assertDontSee('name="oferece_opcoes"', false)
+            ->assertSee('data-budget-tiers-board data-budget-levels-locked="1"', false);
     }
 
     public function test_store_forwards_item_levels_and_recommended_level_to_backend(): void
@@ -77,14 +174,15 @@ class OrcamentoNiveisTest extends TestCase
                 'prazo_execucao' => '3 dias',
                 'telefone_contato' => '(11) 99999-9999',
                 'validade_dias' => 10,
+                'oferece_opcoes' => 1,
                 'nivel_recomendado' => 2,
                 'subtotal' => 'R$ 300,00',
                 'desconto' => 'R$ 0,00',
                 'acrescimo' => 'R$ 0,00',
                 'total' => 'R$ 300,00',
                 'itens' => [
-                    ['tipo_item' => 'servico', 'descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 'R$ 100,00', 'nivel_minimo' => 1],
-                    ['tipo_item' => 'servico', 'descricao' => 'Bateria', 'quantidade' => 1, 'valor_unitario' => 'R$ 200,00', 'nivel_minimo' => 2],
+                    ['tipo_item' => 'servico', 'descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 'R$ 100,00', 'niveis' => [1]],
+                    ['tipo_item' => 'servico', 'descricao' => 'Bateria', 'quantidade' => 1, 'valor_unitario' => 'R$ 200,00', 'niveis' => [2]],
                 ],
             ]);
 
@@ -93,9 +191,92 @@ class OrcamentoNiveisTest extends TestCase
         Http::assertSent(static function ($request): bool {
             return $request->url() === 'http://127.0.0.1:8000/api/v1/orcamentos'
                 && (int) ($request['nivel_recomendado'] ?? 0) === 2
-                && (int) ($request['itens'][0]['nivel_minimo'] ?? 0) === 1
-                && (int) ($request['itens'][1]['nivel_minimo'] ?? 0) === 2;
+                && ($request['itens'][0]['niveis'] ?? []) === [1]
+                && ($request['itens'][1]['niveis'] ?? []) === [2]
+                // O interruptor é do formulário; o backend infere pelos itens.
+                && ! array_key_exists('oferece_opcoes', $request->data());
         });
+    }
+
+    public function test_store_with_options_off_sends_every_item_in_the_basic_level_only(): void
+    {
+        // Garantia no servidor do que o JS já faz: interruptor desligado =
+        // orçamento comum, mesmo que os checkboxes ocultos tenham vindo
+        // marcados (rascunho antigo, DOM manipulado) — e sem recomendação.
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/orcamentos' => Http::response([
+                'status' => 'success',
+                'data' => ['budget' => ['id' => 952]],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+        ]);
+
+        $response = $this
+            ->withSession(array_merge($this->desktopSession(['orcamentos' => ['visualizar', 'criar']]), ['desktop_theme' => 'default']))
+            ->post('/orcamentos', [
+                'tipo_orcamento' => 'previo',
+                'status' => 'rascunho',
+                'origem' => 'manual',
+                'cliente_nome_avulso' => 'Cliente Níveis',
+                'relato_cliente' => 'Não liga',
+                'prazo_execucao' => '3 dias',
+                'telefone_contato' => '(11) 99999-9999',
+                'validade_dias' => 10,
+                'oferece_opcoes' => 0,
+                'nivel_recomendado' => 2,
+                'subtotal' => 'R$ 300,00',
+                'desconto' => 'R$ 0,00',
+                'acrescimo' => 'R$ 0,00',
+                'total' => 'R$ 300,00',
+                'itens' => [
+                    ['tipo_item' => 'servico', 'descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 'R$ 100,00', 'niveis' => [2, 3]],
+                    ['tipo_item' => 'servico', 'descricao' => 'Bateria', 'quantidade' => 1, 'valor_unitario' => 'R$ 200,00'],
+                ],
+            ]);
+
+        $response->assertRedirect(route('orcamentos.show', 952));
+
+        Http::assertSent(static function ($request): bool {
+            $data = $request->data();
+
+            return $request->url() === 'http://127.0.0.1:8000/api/v1/orcamentos'
+                && ($data['itens'][0]['niveis'] ?? []) === [1]
+                && ($data['itens'][1]['niveis'] ?? []) === [1]
+                && array_key_exists('nivel_recomendado', $data)
+                && $data['nivel_recomendado'] === null
+                && ! array_key_exists('oferece_opcoes', $data);
+        });
+    }
+
+    public function test_store_with_options_on_rejects_an_item_left_out_of_every_option(): void
+    {
+        // Sem isto o backend gravaria o item em [1] em silêncio — o técnico
+        // veria o item aparecer na Básica sem ter decidido nada.
+        Http::fake();
+
+        $response = $this
+            ->withSession(array_merge($this->desktopSession(['orcamentos' => ['visualizar', 'criar']]), ['desktop_theme' => 'default']))
+            ->from('/orcamentos/novo')
+            ->post('/orcamentos', [
+                'tipo_orcamento' => 'previo',
+                'status' => 'rascunho',
+                'cliente_nome_avulso' => 'Cliente Níveis',
+                'relato_cliente' => 'Não liga',
+                'prazo_execucao' => '3 dias',
+                'telefone_contato' => '(11) 99999-9999',
+                'oferece_opcoes' => 1,
+                'total' => 'R$ 300,00',
+                'itens' => [
+                    ['tipo_item' => 'servico', 'descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 'R$ 100,00', 'niveis' => [1, 2, 3]],
+                    ['tipo_item' => 'servico', 'descricao' => 'Memória RAM 8GB', 'quantidade' => 1, 'valor_unitario' => 'R$ 200,00'],
+                ],
+            ]);
+
+        $response
+            ->assertRedirect('/orcamentos/novo')
+            ->assertSessionHasErrors(['itens.1.niveis' => 'O item "Memória RAM 8GB" não está em nenhuma opção de manutenção — inclua-o em uma opção ou exclua o item.']);
+        Http::assertNothingSent();
     }
 
     public function test_store_rejects_an_unknown_level(): void
@@ -114,11 +295,11 @@ class OrcamentoNiveisTest extends TestCase
                 'telefone_contato' => '(11) 99999-9999',
                 'total' => 'R$ 100,00',
                 'itens' => [
-                    ['tipo_item' => 'servico', 'descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 'R$ 100,00', 'nivel_minimo' => 7],
+                    ['tipo_item' => 'servico', 'descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 'R$ 100,00', 'niveis' => [7]],
                 ],
             ]);
 
-        $response->assertRedirect('/orcamentos/novo')->assertSessionHasErrors('itens.0.nivel_minimo');
+        $response->assertRedirect('/orcamentos/novo')->assertSessionHasErrors('itens.0.niveis.0');
         Http::assertNothingSent();
     }
 
@@ -138,8 +319,8 @@ class OrcamentoNiveisTest extends TestCase
                         ['nivel' => 3, 'label' => 'Manutenção Completa', 'subtitle' => 'Como novo', 'total' => 600.0, 'itens_count' => 3, 'recomendado' => false],
                     ],
                     'itens' => [
-                        $this->itemPayload(['descricao' => 'Fusível', 'nivel_minimo' => 1]),
-                        $this->itemPayload(['descricao' => 'Bateria', 'nivel_minimo' => 2, 'valor_unitario' => 200.0, 'total' => 200.0]),
+                        $this->itemPayload(['descricao' => 'Fusível', 'niveis' => [1]]),
+                        $this->itemPayload(['descricao' => 'Bateria', 'niveis' => [2], 'valor_unitario' => 200.0, 'total' => 200.0]),
                     ],
                 ])],
                 'error' => null,
@@ -157,9 +338,25 @@ class OrcamentoNiveisTest extends TestCase
             ->assertSee('Total (opção completa)')
             ->assertSee('Manutenção Avançada · Recomendada')
             ->assertSee('R$ 300,00')
-            ->assertSee('<th>Nível</th>', false)
+            ->assertDontSee('inclui tudo da anterior')
+            // A mesma matriz item × opção do formulário: uma coluna por opção.
+            ->assertSee('data-budget-show-level-col="1"', false)
+            ->assertSee('data-budget-show-level-col="3"', false)
+            ->assertSee('data-budget-show-level-cell="1" data-included="1"', false)
+            ->assertSee('data-budget-show-level-cell="2" data-included="1"', false)
+            ->assertSee('data-budget-show-level-cell="3" data-included="0"', false)
+            // Soma cega de toda linha não é o valor de nada com opções.
+            ->assertDontSee('Totais dos itens')
+            // Conferir a página do cliente sem sair do detalhe.
+            ->assertSee('href="http://127.0.0.1:8000/orcamento/token-abc" class="dropdown-item" target="_blank" rel="noopener"', false)
+            ->assertSee('Abrir página do cliente')
             ->assertSee('data-confirm-input-label="Opção escolhida pelo cliente"', false)
             ->assertSee('name="nivel" value="2" data-confirm-value', false);
+
+        // Fusível só na Básica, Bateria só na Avançada: 2 células marcadas em 6.
+        $content = (string) $response->getContent();
+        $this->assertSame(2, substr_count($content, 'data-included="1"'));
+        $this->assertSame(4, substr_count($content, 'data-included="0"'));
     }
 
     public function test_show_page_without_tiers_keeps_the_plain_layout(): void
@@ -181,7 +378,9 @@ class OrcamentoNiveisTest extends TestCase
         $response
             ->assertOk()
             ->assertDontSee('opções de manutenção')
-            ->assertDontSee('<th>Nível</th>', false)
+            ->assertDontSee('data-budget-show-level-col', false)
+            ->assertDontSee('data-budget-show-level-cell', false)
+            ->assertSee('Totais dos itens')
             ->assertDontSee('data-confirm-input-label="Opção escolhida pelo cliente"', false);
     }
 
@@ -297,8 +496,8 @@ class OrcamentoNiveisTest extends TestCase
                             3 => ['garantia_dias' => 365, 'garantia_label' => '1 ano', 'parcelas_sem_juros' => 12, 'entrega_domicilio' => null, 'formas_pagamento' => ['pix', 'cartao_credito'], 'beneficios' => ['Instalação expressa', 'Película de brinde']],
                         ],
                         'itens' => [
-                            $this->itemPayload(['id' => 1, 'descricao' => 'Fusível', 'nivel_minimo' => 1]),
-                            $this->itemPayload(['id' => 2, 'descricao' => 'Bateria', 'nivel_minimo' => 3]),
+                            $this->itemPayload(['id' => 1, 'descricao' => 'Fusível', 'niveis' => [1]]),
+                            $this->itemPayload(['id' => 2, 'descricao' => 'Bateria', 'niveis' => [3]]),
                         ],
                     ]),
                 ],
@@ -327,8 +526,18 @@ class OrcamentoNiveisTest extends TestCase
             ->assertDontSee('name="niveis_condicoes[2][garantia_dias]" class="form-select"><option value="">Herdar do padrão acima</option><option value="90" selected>', false);
 
         // Uma opção "Sim" selecionada só onde foi gravada: em nenhum nível aqui.
-        $this->assertSame(0, substr_count((string) $response->getContent(), '<option value="1" selected>Sim, incluir entrega</option>'));
-        $this->assertSame(1, substr_count((string) $response->getContent(), '<option value="0" selected>Não incluir entrega</option>'));
+        $content = (string) $response->getContent();
+        $this->assertSame(0, substr_count($content, '<option value="1" selected>Sim, incluir entrega</option>'));
+        $this->assertSame(1, substr_count($content, '<option value="0" selected>Não incluir entrega</option>'));
+
+        // Checkboxes de nível refletem `niveis` de cada item — sem cascata:
+        // Fusível (niveis=[1]) só marca Básica, Bateria (niveis=[3]) só Completa.
+        $this->assertMatchesRegularExpression('/id="orcamentoItemLevel-0-1"[^>]*checked/', $content);
+        $this->assertDoesNotMatchRegularExpression('/id="orcamentoItemLevel-0-2"[^>]*checked/', $content);
+        $this->assertDoesNotMatchRegularExpression('/id="orcamentoItemLevel-0-3"[^>]*checked/', $content);
+        $this->assertDoesNotMatchRegularExpression('/id="orcamentoItemLevel-1-1"[^>]*checked/', $content);
+        $this->assertDoesNotMatchRegularExpression('/id="orcamentoItemLevel-1-2"[^>]*checked/', $content);
+        $this->assertMatchesRegularExpression('/id="orcamentoItemLevel-1-3"[^>]*checked/', $content);
     }
 
     public function test_store_forwards_delivery_and_per_level_terms_with_split_benefits(): void
@@ -360,8 +569,8 @@ class OrcamentoNiveisTest extends TestCase
                 'acrescimo' => 'R$ 0,00',
                 'total' => 'R$ 300,00',
                 'itens' => [
-                    ['tipo_item' => 'servico', 'descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 'R$ 100,00', 'nivel_minimo' => 1],
-                    ['tipo_item' => 'servico', 'descricao' => 'Bateria', 'quantidade' => 1, 'valor_unitario' => 'R$ 200,00', 'nivel_minimo' => 3],
+                    ['tipo_item' => 'servico', 'descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 'R$ 100,00', 'niveis' => [1]],
+                    ['tipo_item' => 'servico', 'descricao' => 'Bateria', 'quantidade' => 1, 'valor_unitario' => 'R$ 200,00', 'niveis' => [3]],
                 ],
                 'niveis_condicoes' => [
                     // Tudo em "herdar": chega vazio e o backend não grava nada.
@@ -419,7 +628,7 @@ class OrcamentoNiveisTest extends TestCase
             'acrescimo' => 'R$ 0,00',
             'total' => 'R$ 100,00',
             'itens' => [
-                ['tipo_item' => 'servico', 'descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 'R$ 100,00', 'nivel_minimo' => 1],
+                ['tipo_item' => 'servico', 'descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 'R$ 100,00', 'niveis' => [1]],
             ],
         ];
 
@@ -472,9 +681,9 @@ class OrcamentoNiveisTest extends TestCase
                             3 => ['garantia_dias' => 365, 'garantia_label' => '1 ano', 'parcelas_sem_juros' => null, 'entrega_domicilio' => true, 'formas_pagamento' => [], 'beneficios' => ['Instalação expressa']],
                         ],
                         'itens' => [
-                            $this->itemPayload(['id' => 1, 'descricao' => 'Fusível', 'nivel_minimo' => 1]),
-                            $this->itemPayload(['id' => 2, 'descricao' => 'Bateria', 'nivel_minimo' => 2]),
-                            $this->itemPayload(['id' => 3, 'descricao' => 'Película', 'nivel_minimo' => 3]),
+                            $this->itemPayload(['id' => 1, 'descricao' => 'Fusível', 'niveis' => [1]]),
+                            $this->itemPayload(['id' => 2, 'descricao' => 'Bateria', 'niveis' => [2]]),
+                            $this->itemPayload(['id' => 3, 'descricao' => 'Película', 'niveis' => [3]]),
                         ],
                     ]),
                 ],
@@ -530,6 +739,36 @@ class OrcamentoNiveisTest extends TestCase
                 'max_parcelas_sem_juros' => 24,
             ],
             'default_validity_days' => 10,
+        ];
+    }
+
+    /**
+     * Fakes de form-data + orçamento 993 para a tela de edição.
+     *
+     * @param  array<string, mixed>  $budgetOverrides
+     * @return array<string, mixed>
+     */
+    private function editFixture(array $budgetOverrides = []): array
+    {
+        return [
+            'http://127.0.0.1:8000/api/v1/orcamentos/form-data*' => Http::response([
+                'status' => 'success',
+                'data' => ['form' => $this->formData()],
+                'error' => null,
+                'meta' => [],
+            ]),
+            'http://127.0.0.1:8000/api/v1/orcamentos/993' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'budget' => $this->budgetPayload(array_replace([
+                        'id' => 993,
+                        'status' => 'rascunho',
+                        'status_label' => 'Rascunho',
+                    ], $budgetOverrides)),
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
         ];
     }
 
@@ -611,7 +850,7 @@ class OrcamentoNiveisTest extends TestCase
             'acrescimo_tipo' => 'valor',
             'acrescimo_percentual' => null,
             'total' => 100.0,
-            'nivel_minimo' => 1,
+            'niveis' => [1],
             'observacoes' => '',
             'valor_recomendado' => 0.0,
             'modo_precificacao' => 'manual',

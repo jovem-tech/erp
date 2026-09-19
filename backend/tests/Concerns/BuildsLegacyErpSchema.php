@@ -2129,7 +2129,7 @@ trait BuildsLegacyErpSchema
             'acrescimo_percentual' => null,
             'total' => 100.00,
             'ordem' => 1,
-            'nivel_minimo' => 1,
+            'niveis' => json_encode([1]),
             'observacoes' => null,
             'preco_custo_referencia' => 0,
             'preco_venda_referencia' => 100.00,
@@ -2250,8 +2250,8 @@ trait BuildsLegacyErpSchema
             $table->decimal('acrescimo_percentual', 8, 4)->nullable();
             $table->decimal('total', 12, 2)->default(0);
             $table->integer('ordem')->default(0);
-            // Espelha 2026_09_15_000002_add_niveis_manutencao_to_orcamentos_tables.
-            $table->unsignedTinyInteger('nivel_minimo')->default(1);
+            // Espelha 2026_09_17_000001_replace_nivel_minimo_with_niveis_on_orcamento_itens.
+            $table->json('niveis')->nullable();
             $table->text('observacoes')->nullable();
             $table->decimal('preco_custo_referencia', 12, 2)->default(0);
             $table->decimal('preco_venda_referencia', 12, 2)->default(0);

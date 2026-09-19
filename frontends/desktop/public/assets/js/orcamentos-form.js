@@ -566,6 +566,21 @@
         const restoreButton = document.querySelector('[data-budget-draft-restore]');
         const discardButton = document.querySelector('[data-budget-draft-discard]');
         const itemsCount = document.querySelector('[data-budget-items-count]');
+        // Opções de manutenção: interruptor no cabeçalho dos itens + quadro
+        // "Composição das opções" (linhas = itens, colunas = opções). O
+        // quadro nunca é a fonte da verdade — ele lê e escreve os checkboxes
+        // ocultos de cada linha de item (itens[i][niveis][]).
+        const tiersToggle = document.querySelector('[data-budget-tiers-toggle]');
+        const tiersBoard = document.querySelector('[data-budget-tiers-board]');
+        const tiersRowsBody = tiersBoard?.querySelector('[data-budget-tiers-rows]') ?? null;
+        const tiersAlerts = tiersBoard?.querySelector('[data-budget-tiers-alerts]') ?? null;
+        const tiersLevels = Array.from(tiersBoard?.querySelectorAll('[data-budget-tiers-col]') ?? [])
+            .map((th) => ({
+                level: parseInt(th.dataset.budgetTiersCol ?? '0', 10),
+                label: normalizeText(th.dataset.budgetTiersLabel) || `Nível ${th.dataset.budgetTiersCol}`,
+            }))
+            .filter(({ level }) => Number.isFinite(level) && level >= 1 && level <= 3);
+        const tiersLocked = tiersBoard instanceof HTMLElement && tiersBoard.dataset.budgetLevelsLocked === '1';
         const validityDaysSelect = document.querySelector('[data-budget-validity-days]');
         const validityDateInput = document.querySelector('[data-budget-validity-date]');
         const clientSelect = document.getElementById('orcamentoClienteId');
@@ -574,6 +589,8 @@
         const emailInput = document.getElementById('orcamentoEmailContato');
         const orderSelect = document.getElementById('orcamentoOsId');
         const equipmentSelect = document.getElementById('orcamentoEquipamentoId');
+        const equipmentPhotoPreview = document.querySelector('[data-budget-equipment-photo-preview]');
+        const equipmentPhotoPreviewImg = document.querySelector('[data-budget-equipment-photo-preview-img]');
         const titleInput = document.getElementById('orcamentoTitulo');
         // Tipo e origem são derivados da presença de OS (sem OS = avulso/prévio;
         // com OS = assistência). Exibidos read-only, o valor real vai em hidden.
@@ -825,6 +842,14 @@
         };
 
         const syncEquipmentModeCore = () => {
+            // Miniatura acompanha a opção selecionada (dataset.fotoUrl vem do
+            // Blade nas opções iniciais, do AJAX em setEquipmentOptions, e do
+            // cadastro recém-criado em applyCreatedEquipment).
+            const selectedEquipmentOption = equipmentSelect instanceof HTMLSelectElement
+                ? equipmentSelect.options[equipmentSelect.selectedIndex] || null
+                : null;
+            setEquipmentPhotoPreview(selectedEquipmentOption?.dataset?.fotoUrl || '');
+
             const envolve = envolveCheckbox instanceof HTMLInputElement ? envolveCheckbox.checked : true;
             const hasEventualClient = ! clientLocked
                 && filledInput(clientFallbackForExclusivity)
@@ -1502,6 +1527,25 @@
             return url.toString();
         };
 
+        // Miniatura ao lado do select: mostra a foto principal do equipamento
+        // recém-cadastrado (quando anexada) — mesma classe usada no dropdown
+        // (buildEquipmentResultMarkup) e no seletor de equipamento da OS.
+        const setEquipmentPhotoPreview = (url) => {
+            if (!(equipmentPhotoPreview instanceof HTMLElement) || !(equipmentPhotoPreviewImg instanceof HTMLImageElement)) {
+                return;
+            }
+
+            const normalized = normalizeText(url);
+            if (normalized === '') {
+                equipmentPhotoPreview.classList.add('d-none');
+                equipmentPhotoPreviewImg.removeAttribute('src');
+                return;
+            }
+
+            equipmentPhotoPreviewImg.src = normalized;
+            equipmentPhotoPreview.classList.remove('d-none');
+        };
+
         const applyCreatedEquipment = (equipment) => {
             const equipmentId = Number(equipment?.id || 0) || 0;
 
@@ -1510,13 +1554,18 @@
             }
 
             const value = String(equipmentId);
+            // Backend retorna marca/modelo como brand_name/model_name (ver
+            // EquipmentController::buildEquipmentSelectionPayload) — não
+            // marca_nome/modelo_nome, por isso o rótulo saía só com o tipo.
             const label = [
                 normalizeText(equipment?.tipo_nome),
-                [normalizeText(equipment?.marca_nome), normalizeText(equipment?.modelo_nome)]
-                    .filter(Boolean)
-                    .join(' '),
+                [
+                    normalizeText(equipment?.brand_name ?? equipment?.brandName),
+                    normalizeText(equipment?.model_name ?? equipment?.modelName),
+                ].filter(Boolean).join(' '),
             ].filter(Boolean).join(' - ') || `Equipamento #${value}`;
             const serial = normalizeText(equipment?.numero_serie || equipment?.imei);
+            const photoUrl = normalizeText(equipment?.photo_url ?? equipment?.photoUrl);
 
             let option = Array.from(equipmentSelect.options).find((item) => item.value === value) || null;
 
@@ -1528,6 +1577,13 @@
 
             option.textContent = serial !== '' ? `${label} · S/N ${serial}` : label;
             option.dataset.clienteId = String(Number(equipment?.cliente_id || 0) || 0);
+            if (photoUrl !== '') {
+                option.dataset.fotoUrl = photoUrl;
+            } else {
+                delete option.dataset.fotoUrl;
+            }
+            // A miniatura é sincronizada por syncEquipmentModeCore(), chamado
+            // logo abaixo — reflete a option recém-preenchida.
 
             // Equipamento cadastrado e equipamento eventual são mutuamente
             // exclusivos: limpar o eventual antes evita que syncEquipmentMode()
@@ -1684,6 +1740,10 @@
         const tabPanels = Array.from(document.querySelectorAll('[data-budget-panel]'));
         const state = {
             draftLoaded: false,
+            // Identidade estável de cada linha de item (o data-index pode ter
+            // buracos e é o índice do POST, não uma chave de UI). O quadro de
+            // composição casa suas linhas com as dos itens por este uid.
+            itemUidSeq: 0,
             quickItemRow: null,
             quickItemType: 'servico',
             quickItemSubmitting: false,
@@ -2725,19 +2785,417 @@
             return total;
         };
 
-        const getRowLevel = (row) => {
-            const levelSelect = row.querySelector('[data-budget-item-level]');
-            const level = levelSelect instanceof HTMLSelectElement ? parseInt(levelSelect.value, 10) : 1;
+        /**
+         * Conjunto cru de níveis marcados na linha — pode ser vazio (item
+         * "órfão", fora de todas as opções). Sem fallback para [1] de
+         * propósito: o fallback escondia o órfão e o somava na Básica, e o
+         * quadro precisa enxergá-lo para apontar o erro antes do envio.
+         */
+        const getRowLevels = (row) => Array.from(row.querySelectorAll('[data-budget-item-level-checkbox]'))
+            .filter((checkbox) => checkbox instanceof HTMLInputElement && checkbox.checked)
+            .map((checkbox) => parseInt(checkbox.value, 10))
+            .filter((level) => Number.isFinite(level) && level >= 1 && level <= 3);
 
-            return Number.isFinite(level) && level >= 1 && level <= 3 ? level : 1;
+        const setRowLevels = (row, levels) => {
+            row.querySelectorAll('[data-budget-item-level-checkbox]').forEach((checkbox) => {
+                if (checkbox instanceof HTMLInputElement) {
+                    checkbox.checked = levels.includes(parseInt(checkbox.value, 10));
+                }
+            });
+        };
+
+        // O interruptor só existe enquanto há opções a oferecer (some depois
+        // da aprovação) e só age quando não está travado (revisão de
+        // orçamento convertido). Fora disso o quadro fica inerte e os níveis
+        // gravados não são tocados — forçar [1] num orçamento aprovado
+        // mudaria a fingerprint dos itens e reabriria a decisão do cliente.
+        const tiersToggleActive = () => tiersToggle instanceof HTMLInputElement
+            && !tiersToggle.disabled
+            && !tiersLocked
+            && tiersLevels.length > 0;
+        const tiersEnabled = () => tiersToggleActive() && tiersToggle.checked;
+        const allTierLevels = () => tiersLevels.map(({ level }) => level);
+        const tiersLevelLabel = (level) => tiersLevels.find((entry) => entry.level === level)?.label ?? `Nível ${level}`;
+        const tiersRowName = (row) => {
+            const descriptionInput = row.querySelector('[data-budget-item-description]');
+
+            return (descriptionInput instanceof HTMLInputElement ? normalizeText(descriptionInput.value) : '') || '(sem descrição)';
+        };
+        const findItemRowByUid = (uid) => Array.from(itemsBody.querySelectorAll('[data-budget-item-row]'))
+            .find((row) => row.dataset.budgetItemUid === uid) ?? null;
+
+        /**
+         * Texto do selo de leitura no cartão do item.
+         */
+        const describeRowLevels = (levels) => {
+            if (levels.length === 0) {
+                return { text: 'Fora de todas as opções', danger: true };
+            }
+            if (allTierLevels().every((level) => levels.includes(level))) {
+                return { text: 'Em todas as opções', danger: false };
+            }
+            if (levels.length === 1) {
+                return { text: `Só na ${tiersLevelLabel(levels[0])}`, danger: false };
+            }
+
+            return { text: levels.map(tiersLevelLabel).join(' e '), danger: false };
         };
 
         /**
-         * Níveis de manutenção (cumulativos): a opção N soma os itens com
-         * nível <= N e aplica o MESMO ajuste global do orçamento — percentual
-         * sobre o subtotal da opção, valor fixo integral — exatamente a regra
-         * de BudgetTotals::perLevel no backend. A última opção bate com o
-         * total final gravado.
+         * Interruptor desligado = orçamento comum: toda linha fica só na
+         * Básica, sempre, mesmo que algum caminho (rascunho, reexibição por
+         * erro) tenha trazido outra coisa. Roda a cada updateSummary porque
+         * restaurar o rascunho marca o checkbox sem disparar `change`.
+         */
+        const syncTiersMode = () => {
+            if (!tiersToggleActive() || tiersToggle.checked) {
+                return;
+            }
+
+            itemsBody.querySelectorAll('[data-budget-item-row]').forEach((row) => {
+                const levels = getRowLevels(row);
+                if (levels.length !== 1 || levels[0] !== 1) {
+                    setRowLevels(row, [1]);
+                }
+            });
+        };
+
+        /**
+         * Linhas com conteúdo + níveis + total, na ordem da lista. É o que o
+         * quadro, a validação e o interruptor enxergam; linhas em branco (item
+         * recém-criado) aparecem no quadro mas não contam.
+         */
+        const collectTierEntries = () => Array.from(itemsBody.querySelectorAll('[data-budget-item-row]'))
+            .filter((row) => rowHasMeaningfulContent(row))
+            .map((row) => {
+                const totalInputNode = row.querySelector('[data-budget-item-total]');
+
+                return {
+                    row,
+                    levels: getRowLevels(row),
+                    total: totalInputNode instanceof HTMLInputElement ? toNumber(totalInputNode.value) : 0,
+                };
+            });
+
+        /**
+         * Colunas do quadro a partir das linhas com conteúdo: quem entra em
+         * cada opção, quantos, e até onde vai a oferta (maxLevel = opção
+         * mais alta com algum item — o backend oferece sempre 1..maxLevel).
+         */
+        const analyzeTiers = (entries) => {
+            const columns = tiersLevels.map(({ level, label }) => {
+                const included = entries.filter((entry) => entry.levels.includes(level));
+
+                return {
+                    level,
+                    label,
+                    included,
+                    count: included.length,
+                    // Assinatura da composição da coluna, para comparar colunas
+                    // entre si (mesmos itens = opção redundante).
+                    key: included.map((entry) => entry.row.dataset.budgetItemUid ?? '').join('|'),
+                };
+            });
+            const maxLevel = columns.reduce((max, column) => (column.count > 0 ? Math.max(max, column.level) : max), 0);
+
+            return { columns, maxLevel };
+        };
+
+        /**
+         * Regras da composição. Erro bloqueia o envio (o servidor gravaria
+         * algo que o técnico não decidiu); aviso pede confirmação (o cliente
+         * veria algo estranho, mas é uma escolha possível). Os textos dizem
+         * exatamente o que aconteceria na página pública.
+         */
+        const validateTiers = (entries = null) => {
+            const result = { errors: [], warnings: [] };
+
+            if (!tiersEnabled()) {
+                return result;
+            }
+
+            const rows = Array.isArray(entries) ? entries : collectTierEntries();
+
+            rows.forEach((entry) => {
+                if (entry.levels.length === 0) {
+                    result.errors.push({
+                        row: entry.row,
+                        message: `O item "${tiersRowName(entry.row)}" não está em nenhuma opção — inclua em uma opção ou exclua o item.`,
+                    });
+                }
+            });
+
+            const { columns, maxLevel } = analyzeTiers(rows);
+            if (rows.length === 0 || maxLevel === 0) {
+                return result;
+            }
+
+            if (maxLevel <= 1) {
+                result.warnings.push('Só a Básica tem itens — o cliente verá um orçamento comum, sem opções.');
+
+                return result;
+            }
+
+            columns.forEach((column) => {
+                if (column.count === 0 && column.level < maxLevel) {
+                    result.warnings.push(`A opção ${column.label} está vazia; o cliente veria uma opção sem itens.`);
+                }
+            });
+
+            const nonEmpty = columns.filter((column) => column.count > 0);
+            const allIdentical = nonEmpty.length > 1 && nonEmpty.every((column) => column.key === nonEmpty[0].key);
+            if (allIdentical) {
+                // Aqui o backend ainda trata como "com opções" (envio sem PDF,
+                // aprovação exige escolher) — a landing só colapsa os cartões.
+                result.warnings.push('As opções são iguais — o cliente verá uma única opção. Desligue "Oferecer opções de manutenção" se quiser um orçamento comum.');
+            } else {
+                for (let index = 1; index < nonEmpty.length; index += 1) {
+                    if (nonEmpty[index].key === nonEmpty[index - 1].key) {
+                        result.warnings.push(`${nonEmpty[index].label} é igual à ${nonEmpty[index - 1].label} — o cliente não verá esta opção.`);
+                    }
+                }
+            }
+
+            return result;
+        };
+
+        let lastTiersAlertsHtml = '';
+        const renderTiersAlerts = (validation) => {
+            if (!(tiersAlerts instanceof HTMLElement)) {
+                return;
+            }
+
+            const html = [
+                ...validation.errors.map((problem) => `<li class="is-error">${escapeHtml(problem.message)}</li>`),
+                ...validation.warnings.map((message) => `<li class="is-warning">${escapeHtml(message)}</li>`),
+            ].join('');
+
+            if (html !== lastTiersAlertsHtml) {
+                tiersAlerts.innerHTML = html;
+                lastTiersAlertsHtml = html;
+            }
+            tiersAlerts.hidden = html === '';
+        };
+
+        const createTiersRow = (uid) => {
+            const tr = document.createElement('tr');
+            tr.setAttribute('data-budget-tiers-row', '');
+            tr.dataset.budgetTiersUid = uid;
+
+            const th = document.createElement('th');
+            th.scope = 'row';
+            th.innerHTML = '<span class="budget-tiers-row-name" data-budget-tiers-row-name></span><small class="budget-tiers-row-total" data-budget-tiers-row-total></small>';
+            tr.appendChild(th);
+
+            tiersLevels.forEach(({ level, label }) => {
+                const td = document.createElement('td');
+                td.dataset.budgetTiersCellCol = String(level);
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.className = 'budget-tiers-cell';
+                button.setAttribute('role', 'checkbox');
+                button.setAttribute('aria-checked', 'false');
+                button.setAttribute('aria-label', `Incluir na ${label}`);
+                button.dataset.budgetTiersCell = String(level);
+                td.appendChild(button);
+                tr.appendChild(td);
+            });
+
+            return tr;
+        };
+
+        const setText = (node, text) => {
+            if (node instanceof HTMLElement && node.textContent !== text) {
+                node.textContent = text;
+            }
+        };
+
+        /**
+         * Reconcilia o quadro com as linhas de item — incremental de
+         * propósito: roda a cada tecla (input da form) e não pode recriar
+         * <tr>/<button> existentes, senão o foco do teclado se perde. Só
+         * escreve no DOM o que mudou.
+         */
+        const syncTiersBoard = (rowTotals, globalDiscount, globalAddition) => {
+            if (!(tiersBoard instanceof HTMLElement) || !(tiersRowsBody instanceof HTMLElement)) {
+                return;
+            }
+
+            const enabled = tiersEnabled();
+            if (tiersBoard.hidden !== !enabled) {
+                tiersBoard.hidden = !enabled;
+            }
+
+            rowTotals.forEach(({ row, levels }) => {
+                const badge = row.querySelector('[data-budget-item-levels-badge]');
+                if (!(badge instanceof HTMLElement)) {
+                    return;
+                }
+                if (badge.hidden !== !enabled) {
+                    badge.hidden = !enabled;
+                }
+                if (enabled) {
+                    const { text, danger } = describeRowLevels(levels);
+                    setText(badge, text);
+                    badge.classList.toggle('is-danger', danger);
+                }
+            });
+
+            if (!enabled) {
+                return;
+            }
+
+            const existing = new Map();
+            tiersRowsBody.querySelectorAll('[data-budget-tiers-row]').forEach((tr) => {
+                existing.set(tr.dataset.budgetTiersUid, tr);
+            });
+
+            const meaningfulUids = new Set();
+            const entries = [];
+            const seen = new Set();
+
+            rowTotals.forEach((entry, position) => {
+                const uid = entry.row.dataset.budgetItemUid;
+                if (!uid) {
+                    return;
+                }
+                seen.add(uid);
+
+                const meaningful = rowHasMeaningfulContent(entry.row);
+                if (meaningful) {
+                    meaningfulUids.add(uid);
+                    entries.push(entry);
+                }
+
+                let tr = existing.get(uid);
+                if (!(tr instanceof HTMLElement)) {
+                    tr = createTiersRow(uid);
+                }
+                const current = tiersRowsBody.children[position] ?? null;
+                if (current !== tr) {
+                    tiersRowsBody.insertBefore(tr, current);
+                }
+
+                setText(tr.querySelector('[data-budget-tiers-row-name]'), tiersRowName(entry.row));
+                setText(tr.querySelector('[data-budget-tiers-row-total]'), formatMoney(entry.total));
+                tr.querySelectorAll('[data-budget-tiers-cell]').forEach((button) => {
+                    const level = parseInt(button.dataset.budgetTiersCell ?? '0', 10);
+                    const on = entry.levels.includes(level);
+                    const checked = on ? 'true' : 'false';
+                    if (button.getAttribute('aria-checked') !== checked) {
+                        button.setAttribute('aria-checked', checked);
+                    }
+                    button.classList.toggle('is-on', on);
+                });
+                tr.classList.toggle('is-blank', !meaningful);
+                tr.classList.toggle('is-orphan', meaningful && entry.levels.length === 0);
+            });
+
+            existing.forEach((tr, uid) => {
+                if (!seen.has(uid)) {
+                    tr.remove();
+                }
+            });
+
+            const { columns, maxLevel } = analyzeTiers(entries);
+            const recommendedSelect = document.querySelector('[data-budget-level-recommended]');
+            const recommended = recommendedSelect instanceof HTMLSelectElement ? parseInt(recommendedSelect.value, 10) : 0;
+
+            columns.forEach((column) => {
+                const levelSubtotal = roundCurrency(column.included.reduce((sum, entry) => sum + entry.total, 0));
+                const discount = globalDiscount.mode === 'percentual'
+                    ? calculatePercentAmount(levelSubtotal, globalDiscount.percent)
+                    : globalDiscount.amount;
+                const addition = globalAddition.mode === 'percentual'
+                    ? calculatePercentAmount(levelSubtotal, globalAddition.percent)
+                    : globalAddition.amount;
+                const levelTotal = roundCurrency(Math.max(0, levelSubtotal - discount + addition));
+                const unoffered = maxLevel > 0 && column.level > maxLevel;
+                const hole = maxLevel > 0 && column.count === 0 && column.level < maxLevel;
+
+                setText(tiersBoard.querySelector(`[data-budget-tiers-count="${column.level}"]`), String(column.count));
+                setText(tiersBoard.querySelector(`[data-budget-tiers-total="${column.level}"]`), formatMoney(levelTotal));
+
+                tiersBoard.querySelectorAll(
+                    `[data-budget-tiers-col="${column.level}"], [data-budget-tiers-cell-col="${column.level}"], [data-budget-tiers-count="${column.level}"], [data-budget-tiers-total="${column.level}"], [data-budget-tiers-add-col="${column.level}"]`
+                ).forEach((cell) => {
+                    cell.classList.toggle('is-recommended', recommended === column.level);
+                    cell.classList.toggle('is-unoffered', unoffered);
+                    cell.classList.toggle('is-hole', hole);
+                });
+
+                const note = tiersBoard.querySelector(`[data-budget-tiers-col="${column.level}"] [data-budget-tiers-col-note]`);
+                if (note instanceof HTMLElement && note.hidden !== !unoffered) {
+                    note.hidden = !unoffered;
+                }
+            });
+
+            renderTiersAlerts(validateTiers(entries));
+        };
+
+        const flashElement = (element, className) => {
+            if (!(element instanceof HTMLElement)) {
+                return;
+            }
+            element.classList.remove(className);
+            // Reinicia a animação mesmo que a classe já estivesse lá.
+            void element.offsetWidth;
+            element.classList.add(className);
+            window.setTimeout(() => element.classList.remove(className), 1400);
+        };
+
+        /**
+         * Leva o operador até o item no quadro (ou até o cartão, se o quadro
+         * estiver escondido) e destaca os dois por um instante.
+         */
+        const focusTiersRow = (row) => {
+            if (!(row instanceof HTMLElement)) {
+                return;
+            }
+
+            switchTab('financeiro');
+
+            window.requestAnimationFrame(() => {
+                const boardRow = tiersRowsBody instanceof HTMLElement && tiersEnabled()
+                    ? Array.from(tiersRowsBody.querySelectorAll('[data-budget-tiers-row]'))
+                        .find((tr) => tr.dataset.budgetTiersUid === row.dataset.budgetItemUid) ?? null
+                    : null;
+
+                (boardRow ?? row).scrollIntoView({ behavior: 'smooth', block: 'center' });
+                flashElement(boardRow, 'is-flash');
+                flashElement(row, 'budget-item-row-flash');
+                boardRow?.querySelector('[data-budget-tiers-cell]')?.focus({ preventScroll: true });
+            });
+        };
+
+        const focusTiersProblem = (problem) => {
+            showToast('warning', String(problem?.message || 'Confira a composição das opções.'));
+            focusTiersRow(problem?.row);
+        };
+
+        const confirmTiersWarnings = (warnings) => {
+            if (typeof window.Swal === 'undefined') {
+                return Promise.resolve(window.confirm(`${warnings.join('\n')}\n\nSalvar assim mesmo?`));
+            }
+
+            return window.Swal.fire({
+                icon: 'warning',
+                title: 'Confira as opções de manutenção',
+                html: `<ul class="text-start mb-0">${warnings.map((message) => `<li>${escapeHtml(message)}</li>`).join('')}</ul>`,
+                showCancelButton: true,
+                confirmButtonText: 'Salvar assim mesmo',
+                cancelButtonText: 'Voltar e ajustar',
+                reverseButtons: true,
+            }).then((result) => Boolean(result.isConfirmed));
+        };
+
+        /**
+         * Níveis de manutenção: em quais opções o item entra — sem cascata,
+         * cada item pode estar em qualquer subconjunto de níveis. A opção N
+         * soma os itens cujo conjunto inclui N e aplica o MESMO ajuste global
+         * do orçamento — percentual sobre o subtotal da opção, valor fixo
+         * integral — exatamente a regra de BudgetTotals::itemsForLevel/perLevel
+         * no backend.
          */
         const updateLevelsSummary = (rowTotals, globalDiscount, globalAddition) => {
             const summary = document.querySelector('[data-budget-levels-summary]');
@@ -2746,9 +3204,10 @@
             }
 
             const locked = summary.dataset.budgetLevelsLocked === '1';
-            const maxLevel = rowTotals.reduce((max, entry) => Math.max(max, entry.level), 1);
+            const maxLevel = rowTotals.reduce((max, entry) => Math.max(max, ...entry.levels), 1);
             const hasTiers = !locked && maxLevel > 1;
-            const recommendedSelect = summary.querySelector('[data-budget-level-recommended]');
+            // O select de recomendação mora no quadro de composição, não aqui.
+            const recommendedSelect = document.querySelector('[data-budget-level-recommended]');
 
             summary.hidden = !hasTiers;
 
@@ -2790,7 +3249,7 @@
                     return;
                 }
 
-                const included = rowTotals.filter((entry) => entry.level <= level);
+                const included = rowTotals.filter((entry) => entry.levels.includes(level));
                 const levelSubtotal = roundCurrency(included.reduce((sum, entry) => sum + entry.total, 0));
                 const discount = globalDiscount.mode === 'percentual'
                     ? calculatePercentAmount(levelSubtotal, globalDiscount.percent)
@@ -2813,14 +3272,28 @@
         };
 
         const updateSummary = () => {
-            let subtotal = 0;
             const rowTotals = [];
+
+            // Antes de somar: interruptor desligado força toda linha em [1].
+            syncTiersMode();
 
             itemsBody.querySelectorAll('[data-budget-item-row]').forEach((row) => {
                 const rowTotal = updateRowTotal(row);
-                subtotal += rowTotal;
-                rowTotals.push({ level: getRowLevel(row), total: rowTotal });
+                rowTotals.push({ row, levels: getRowLevels(row), total: rowTotal });
             });
+
+            // O subtotal gravado é o escopo máximo — o do nível mais alto que
+            // os itens formam, não a soma cega de toda linha. Somar tudo
+            // superestimaria quando há itens que são ALTERNATIVA entre si
+            // (ex.: RAM 2GB/4GB/8GB): nenhuma delas sozinha alcança o nível
+            // mais alto, mas a soma cega as contaria as três juntas — mesma
+            // regra do backend em BudgetWorkflowService::syncItems().
+            const maxLevel = rowTotals.reduce((max, entry) => Math.max(max, ...entry.levels), 1);
+            const subtotal = roundCurrency(
+                rowTotals
+                    .filter((entry) => entry.levels.includes(maxLevel))
+                    .reduce((sum, entry) => sum + entry.total, 0)
+            );
 
             if (subtotalInput instanceof HTMLInputElement) {
                 subtotalInput.value = formatMoney(subtotal);
@@ -2835,6 +3308,7 @@
             }
 
             updateLevelsSummary(rowTotals, globalDiscount, globalAddition);
+            syncTiersBoard(rowTotals, globalDiscount, globalAddition);
             updateItemsCount();
             saveDraftDebounced();
             syncPrimaryAction();
@@ -2929,7 +3403,7 @@
                     index: index + 1,
                     type,
                     typeLabel: type === 'peca' ? 'Peca' : 'Servico',
-                    level: getRowLevel(row),
+                    levels: getRowLevels(row),
                     referenceLabel,
                     description,
                     quantity,
@@ -2993,6 +3467,7 @@
             return Array.from(summary.querySelectorAll('[data-budget-level-card]'))
                 .filter((card) => card instanceof HTMLElement && !card.hidden)
                 .map((card) => ({
+                    level: parseInt(card.dataset.budgetLevelCard ?? '0', 10),
                     label: normalizeText(card.querySelector('.budget-level-card-name')?.textContent),
                     total: normalizeText(card.querySelector('[data-budget-level-total]')?.textContent),
                     count: normalizeText(card.querySelector('[data-budget-level-count]')?.textContent),
@@ -3137,15 +3612,21 @@
                 return '<div class="budget-review-empty">Nenhum item preenchido ate o momento.</div>';
             }
 
-            const hasTiers = items.some((item) => (item.level ?? 1) > 1);
             const levelName = (level) => ({ 1: 'Basica', 2: 'Avancada', 3: 'Completa' })[level] ?? `Nivel ${level}`;
+            const itemLevels = (item) => (Array.isArray(item.levels) && item.levels.length > 0 ? item.levels : [1]);
+            const hasTiers = items.some((item) => itemLevels(item).some((level) => level > 1));
+            const levelsLabel = (item) => {
+                const levels = itemLevels(item);
+
+                return levels.length >= 3 ? 'Todos os niveis' : levels.map(levelName).join(', ');
+            };
 
             return items.map((item) => `
                 <article class="budget-review-item">
                     <div class="budget-review-item-head">
                         <div>
                             <strong>${escapeHtml(item.description !== '' ? item.description : 'Item sem descricao')}</strong>
-                            <span>${escapeHtml(item.typeLabel)}${item.referenceLabel !== '' ? ` • ${escapeHtml(item.referenceLabel)}` : ''}${hasTiers ? ` • a partir da ${escapeHtml(levelName(item.level ?? 1))}` : ''}</span>
+                            <span>${escapeHtml(item.typeLabel)}${item.referenceLabel !== '' ? ` • ${escapeHtml(item.referenceLabel)}` : ''}${hasTiers ? ` • ${escapeHtml(levelsLabel(item))}` : ''}</span>
                         </div>
                         <strong>${escapeHtml(formatMoney(item.total))}</strong>
                     </div>
@@ -3160,16 +3641,32 @@
             `).join('');
         };
 
-        const renderReviewTotals = (snapshot) => renderReviewEntries([
-            { label: 'Subtotal', value: formatMoney(snapshot.subtotal) },
-            { label: 'Desconto geral', value: formatAdjustmentSummary(snapshot.globalDiscount) },
-            { label: 'Acrescimo geral', value: formatAdjustmentSummary(snapshot.globalAddition) },
-            { label: 'Total final', value: formatMoney(snapshot.total) },
-            ...(Array.isArray(snapshot.levels) ? snapshot.levels : []).map((level) => ({
-                label: `${level.label}${level.recommended ? ' (recomendada)' : ''} • ${level.count}`,
-                value: level.total,
-            })),
-        ]);
+        const renderReviewTotals = (snapshot) => {
+            const levels = Array.isArray(snapshot.levels) ? snapshot.levels : [];
+            const items = Array.isArray(snapshot.items) ? snapshot.items : [];
+
+            return renderReviewEntries([
+                { label: 'Subtotal', value: formatMoney(snapshot.subtotal) },
+                { label: 'Desconto geral', value: formatAdjustmentSummary(snapshot.globalDiscount) },
+                { label: 'Acrescimo geral', value: formatAdjustmentSummary(snapshot.globalAddition) },
+                { label: 'Total final', value: formatMoney(snapshot.total) },
+                // Por opção: total e a lista literal do que ela inclui — a
+                // última conferência antes de o cliente ver a mesma coisa.
+                ...levels.flatMap((level) => [
+                    {
+                        label: `${level.label}${level.recommended ? ' (recomendada)' : ''} • ${level.count}`,
+                        value: level.total,
+                    },
+                    {
+                        label: `Itens da ${String(level.label).replace('Manutenção ', '')}`,
+                        value: items
+                            .filter((item) => Array.isArray(item.levels) && item.levels.includes(level.level))
+                            .map((item) => (item.description !== '' ? item.description : 'Item sem descricao'))
+                            .join(', ') || 'Nenhum item',
+                    },
+                ]),
+            ]);
+        };
 
         const renderReviewNotes = (snapshot) => {
             const blocks = [
@@ -3486,6 +3983,11 @@
                 return;
             }
 
+            if (!row.dataset.budgetItemUid) {
+                state.itemUidSeq += 1;
+                row.dataset.budgetItemUid = String(state.itemUidSeq);
+            }
+
             bindMoneyInputs(row);
 
             const typeSelect = row.querySelector('[data-budget-item-type]');
@@ -3535,7 +4037,8 @@
                 input?.addEventListener('change', () => updateSummary());
             });
 
-            row.querySelector('[data-budget-item-level]')?.addEventListener('change', () => updateSummary());
+            // Selo de leitura dos níveis: só leva ao quadro, onde se edita.
+            row.querySelector('[data-budget-item-levels-badge]')?.addEventListener('click', () => focusTiersRow(row));
 
             // specs/040: a quantidade muda o veredito. Pedir 5 de uma peca com
             // 2 disponiveis tem de virar "Parcial" na hora, nao continuar
@@ -3564,9 +4067,21 @@
             updateQuickCreateButtonLabel(row);
         };
 
+        /**
+         * Próximo índice livre para `itens[N]`: maior data-index existente + 1.
+         * Contar as linhas não serve — depois de excluir uma do meio, a
+         * contagem repete um índice ainda em uso e o PHP fica com um item só
+         * (o último com aquele nome sobrescreve o outro).
+         */
+        const nextRowIndex = () => Array.from(itemsBody.querySelectorAll('[data-budget-item-row]'))
+            .reduce((max, row) => {
+                const value = parseInt(row.dataset.index ?? '', 10);
+
+                return Number.isFinite(value) ? Math.max(max, value) : max;
+            }, -1) + 1;
+
         const createRow = (data = {}) => {
-            const currentIndex = itemsBody.querySelectorAll('[data-budget-item-row]').length;
-            const index = data.index ?? currentIndex;
+            const index = data.index ?? nextRowIndex();
             const html = template.innerHTML.replaceAll('__INDEX__', String(index));
             const wrapper = document.createElement('tbody');
             wrapper.innerHTML = html.trim();
@@ -3576,6 +4091,10 @@
                 return null;
             }
 
+            // Padrão da linha nova segue o interruptor, nunca um palpite: com
+            // opções ligadas o item entra nas três (a maioria vale para toda
+            // opção; o técnico só TIRA o que não pertence), desligadas é só a
+            // Básica, como orçamento comum.
             const fields = {
                 tipo_item: 'servico',
                 referencia_id: '',
@@ -3590,12 +4109,11 @@
                 acrescimo_percentual: 0,
                 observacoes: '',
                 modo_precificacao: 'manual',
-                nivel_minimo: 1,
+                niveis: tiersEnabled() ? allTierLevels() : [1],
                 ...data,
             };
 
             const typeSelect = row.querySelector('[data-budget-item-type]');
-            const levelSelect = row.querySelector('[data-budget-item-level]');
             const referenceSelect = row.querySelector('[data-budget-item-reference]');
             const descriptionInput = row.querySelector('[data-budget-item-description]');
             const quantityInput = row.querySelector('[data-budget-item-quantity]');
@@ -3616,11 +4134,12 @@
             if (typeSelect instanceof HTMLSelectElement) {
                 typeSelect.value = String(fields.tipo_item || 'servico');
             }
-            if (levelSelect instanceof HTMLSelectElement) {
-                // Rascunhos antigos (sem nivel_minimo) caem no nível 1.
-                const level = parseInt(String(fields.nivel_minimo ?? 1), 10);
-                levelSelect.value = String(Number.isFinite(level) && level >= 1 && level <= 3 ? level : 1);
-            }
+            const rawLevels = Array.isArray(fields.niveis) ? fields.niveis : [fields.niveis];
+            const parsedLevels = rawLevels
+                .map((level) => parseInt(String(level), 10))
+                .filter((level) => Number.isFinite(level) && level >= 1 && level <= 3);
+            // Rascunhos antigos (sem niveis) caem no nível 1, igual a antes.
+            setRowLevels(row, parsedLevels.length > 0 ? parsedLevels : [1]);
             if (referenceSelect instanceof HTMLSelectElement) {
                 referenceSelect.dataset.selectedReference = String(fields.referencia_id || '');
             }
@@ -3742,7 +4261,7 @@
                     acrescimo_percentual: additionPercentInput instanceof HTMLInputElement ? additionPercentInput.value : '',
                     observacoes: notesInput instanceof HTMLTextAreaElement ? notesInput.value : '',
                     modo_precificacao: modeInput instanceof HTMLInputElement ? modeInput.value : 'manual',
-                    nivel_minimo: getRowLevel(row),
+                    niveis: getRowLevels(row),
                 });
             });
 
@@ -3850,6 +4369,16 @@
             }
 
             itemsBody.innerHTML = '';
+
+            // Rascunho anterior ao interruptor (sem `oferece_opcoes`): liga se
+            // algum item guardado já estava fora da Básica. Precisa vir ANTES
+            // de recriar as linhas, porque o padrão da linha nova lê o
+            // interruptor, e antes do updateSummary, que força [1] se ele
+            // estiver desligado.
+            if (tiersToggleActive() && !Object.prototype.hasOwnProperty.call(fields, 'oferece_opcoes')) {
+                tiersToggle.checked = items.some((item) => (Array.isArray(item?.niveis) ? item.niveis : [])
+                    .some((level) => parseInt(String(level), 10) > 1));
+            }
 
             const sourceItems = items.length > 0 ? items : [{}];
             sourceItems.forEach((item, index) => {
@@ -4123,6 +4652,17 @@
                 });
             }
 
+            // Item fora de todas as opções é erro de composição: aparece como
+            // pendência da aba financeiro (o wizard sinaliza a aba e guia até
+            // o item), além do alerta no próprio quadro.
+            validateTiers().errors.forEach(({ row, message }) => {
+                pendencies.push({
+                    tab: 'financeiro',
+                    field: row.querySelector('[data-budget-item-description]'),
+                    message,
+                });
+            });
+
             return pendencies;
         };
 
@@ -4282,6 +4822,161 @@
             updateSummary();
         });
 
+        /**
+         * Ligar: cada linha volta ao que tinha antes de um desligamento
+         * anterior nesta sessão (backup) ou, se era só Básica, passa a valer
+         * para as três opções. Desligar com composição diferenciada (linhas
+         * com conjuntos diferentes, ex.: RAM 2/4/8 GB) pergunta qual opção
+         * vira o orçamento único e remove os itens das outras — juntar tudo
+         * numa lista só recriaria a soma 2GB+4GB+8GB por outra porta.
+         */
+        const enableTiers = () => {
+            itemsBody.querySelectorAll('[data-budget-item-row]').forEach((row) => {
+                const backup = normalizeText(row.dataset.budgetLevelsBackup);
+                const levels = getRowLevels(row);
+
+                if (backup !== '') {
+                    setRowLevels(row, backup.split(',').map((level) => parseInt(level, 10)));
+                } else if (levels.length === 1 && levels[0] === 1) {
+                    setRowLevels(row, allTierLevels());
+                }
+                delete row.dataset.budgetLevelsBackup;
+            });
+            updateSummary();
+        };
+
+        const disableTiersKeeping = (keepLevel) => {
+            collectTierEntries().forEach((entry) => {
+                if (keepLevel !== null && !entry.levels.includes(keepLevel)) {
+                    entry.row.remove();
+                }
+            });
+            itemsBody.querySelectorAll('[data-budget-item-row]').forEach((row) => {
+                row.dataset.budgetLevelsBackup = getRowLevels(row).join(',');
+                setRowLevels(row, [1]);
+            });
+            if (!itemsBody.querySelector('[data-budget-item-row]')) {
+                const row = createRow({});
+                if (row) {
+                    itemsBody.appendChild(row);
+                }
+            }
+            if (tiersToggle instanceof HTMLInputElement) {
+                tiersToggle.checked = false;
+            }
+            updateSummary();
+        };
+
+        const handleTiersToggle = () => {
+            if (!tiersToggleActive()) {
+                return;
+            }
+
+            if (tiersToggle.checked) {
+                enableTiers();
+                return;
+            }
+
+            const entries = collectTierEntries();
+            const differentiated = new Set(entries.map((entry) => entry.levels.join(','))).size > 1;
+            if (!differentiated) {
+                disableTiersKeeping(null);
+                return;
+            }
+
+            // Fica ligado enquanto o operador decide.
+            tiersToggle.checked = true;
+
+            const { columns } = analyzeTiers(entries);
+            const candidates = columns.filter((column) => column.count > 0);
+            const recommendedSelect = document.querySelector('[data-budget-level-recommended]');
+            const recommended = recommendedSelect instanceof HTMLSelectElement ? parseInt(recommendedSelect.value, 10) : 0;
+            const defaultLevel = candidates.some((column) => column.level === recommended)
+                ? recommended
+                : candidates[candidates.length - 1].level;
+            const optionLabel = (column) => `${column.label} (${column.count} ${column.count === 1 ? 'item' : 'itens'})`;
+
+            if (typeof window.Swal === 'undefined') {
+                const fallbackLabel = optionLabel(candidates.find((column) => column.level === defaultLevel));
+                if (window.confirm(`Desligar as opções mantendo só os itens da ${fallbackLabel}? Os itens das outras opções serão removidos.`)) {
+                    disableTiersKeeping(defaultLevel);
+                }
+                return;
+            }
+
+            window.Swal.fire({
+                icon: 'question',
+                title: 'Manter os itens de qual opção?',
+                text: 'O orçamento passa a ter um único valor. Os itens que estão só nas outras opções serão removidos da lista.',
+                input: 'select',
+                inputOptions: Object.fromEntries(candidates.map((column) => [String(column.level), optionLabel(column)])),
+                inputValue: String(defaultLevel),
+                showCancelButton: true,
+                confirmButtonText: 'Desligar opções',
+                cancelButtonText: 'Cancelar',
+                reverseButtons: true,
+            }).then((result) => {
+                if (!result.isConfirmed) {
+                    return;
+                }
+                const chosen = parseInt(String(result.value), 10);
+                disableTiersKeeping(candidates.some((column) => column.level === chosen) ? chosen : defaultLevel);
+            });
+        };
+
+        tiersToggle?.addEventListener('change', handleTiersToggle);
+
+        // Quadro de composição: células, atalhos de coluna e "item só nesta
+        // opção" — tudo delegado, porque as linhas do quadro nascem e morrem
+        // com as linhas de item.
+        tiersBoard?.addEventListener('click', (event) => {
+            const target = event.target instanceof Element ? event.target : null;
+            if (!target) {
+                return;
+            }
+
+            const cell = target.closest('[data-budget-tiers-cell]');
+            if (cell instanceof HTMLButtonElement) {
+                const boardRow = cell.closest('[data-budget-tiers-row]');
+                const row = boardRow instanceof HTMLElement ? findItemRowByUid(boardRow.dataset.budgetTiersUid ?? '') : null;
+                const level = parseInt(cell.dataset.budgetTiersCell ?? '0', 10);
+                if (!(row instanceof HTMLElement)) {
+                    return;
+                }
+                const levels = getRowLevels(row);
+                setRowLevels(row, levels.includes(level) ? levels.filter((value) => value !== level) : [...levels, level]);
+                updateSummary();
+                return;
+            }
+
+            const columnAll = target.closest('[data-budget-tiers-col-all]');
+            const columnNone = target.closest('[data-budget-tiers-col-none]');
+            if (columnAll instanceof HTMLButtonElement || columnNone instanceof HTMLButtonElement) {
+                const button = columnAll instanceof HTMLButtonElement ? columnAll : columnNone;
+                const level = parseInt((button.dataset.budgetTiersColAll ?? button.dataset.budgetTiersColNone) ?? '0', 10);
+                const include = columnAll instanceof HTMLButtonElement;
+                itemsBody.querySelectorAll('[data-budget-item-row]').forEach((row) => {
+                    const levels = getRowLevels(row).filter((value) => value !== level);
+                    setRowLevels(row, include ? [...levels, level] : levels);
+                });
+                updateSummary();
+                return;
+            }
+
+            const addInColumn = target.closest('[data-budget-tiers-add]');
+            if (addInColumn instanceof HTMLButtonElement) {
+                const level = parseInt(addInColumn.dataset.budgetTiersAdd ?? '0', 10);
+                const row = createRow({ niveis: [level] });
+                if (!row) {
+                    return;
+                }
+                itemsBody.appendChild(row);
+                updateSummary();
+                row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                row.querySelector('[data-budget-item-description]')?.focus({ preventScroll: true });
+            }
+        });
+
         itemsBody.querySelectorAll('[data-budget-item-row]').forEach((row) => bindRow(row));
 
         bindAdjustmentControl(getGlobalDiscountControl(), () => toNumber(subtotalInput?.value), updateSummary);
@@ -4348,8 +5043,29 @@
             }
 
             event.preventDefault();
-            renderReviewModal();
-            getModal(reviewModalElement)?.show();
+
+            // Composição das opções antes da revisão final (ponto comum de
+            // criar e editar): item órfão bloqueia; opção vazia/igual/única
+            // pede confirmação com o texto do que o cliente veria.
+            const openReview = () => {
+                renderReviewModal();
+                getModal(reviewModalElement)?.show();
+            };
+            const tiersCheck = validateTiers();
+            if (tiersCheck.errors.length > 0) {
+                focusTiersProblem(tiersCheck.errors[0]);
+                return;
+            }
+            if (tiersCheck.warnings.length > 0) {
+                confirmTiersWarnings(tiersCheck.warnings).then((confirmed) => {
+                    if (confirmed) {
+                        openReview();
+                    }
+                });
+                return;
+            }
+
+            openReview();
         });
 
         adminConfirmSubmitButton?.addEventListener('click', () => {

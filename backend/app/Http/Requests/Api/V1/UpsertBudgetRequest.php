@@ -116,7 +116,8 @@ class UpsertBudgetRequest extends BaseApiFormRequest
             'itens.*.acrescimo_percentual' => ['nullable', 'numeric', 'min:0'],
             'itens.*.total' => ['nullable', 'numeric', 'min:0'],
             'itens.*.ordem' => ['nullable', 'integer', 'min:0'],
-            'itens.*.nivel_minimo' => ['nullable', 'integer', 'between:'.Budget::NIVEL_MINIMO.','.Budget::NIVEL_MAXIMO],
+            'itens.*.niveis' => ['nullable', 'array'],
+            'itens.*.niveis.*' => ['integer', 'between:'.Budget::NIVEL_MINIMO.','.Budget::NIVEL_MAXIMO],
             'itens.*.observacoes' => ['nullable', 'string'],
             // Só usados quando a OS vinculada já está encerrada — ver
             // BudgetWorkflowService::isOrderClosed()/AdminCredentialVerifier.
