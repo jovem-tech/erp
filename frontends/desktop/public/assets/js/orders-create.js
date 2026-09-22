@@ -204,6 +204,24 @@
         select.addEventListener(eventName, handler);
     };
 
+    // Depois de trocar `select.value` por JS num select que virou Select2, o
+    // dropdown continua mostrando o texto antigo (ex.: "Selecione") até receber
+    // este `change.select2` — e, pior, o Select2 passa a tratar a opção já
+    // selecionada como "clique = só fechar", então o usuário não consegue
+    // escolhê-la de novo pela UI. Só sincroniza a exibição; não dispara os
+    // handlers de `change` da tela.
+    const syncSelect2Display = (select) => {
+        if (!(select instanceof HTMLSelectElement)
+            || typeof window.jQuery === 'undefined'
+            || !window.jQuery.fn
+            || typeof window.jQuery.fn.select2 !== 'function'
+            || !window.jQuery(select).data('select2')) {
+            return;
+        }
+
+        window.jQuery(select).trigger('change.select2');
+    };
+
     const refreshSelect2 = (element) => {
         if (!(element instanceof HTMLElement)) {
             return;
@@ -766,7 +784,13 @@
                 const observationInput = row.querySelector('[data-order-entry-checklist-observation]');
 
                 if (select instanceof HTMLSelectElement) {
-                    select.addEventListener('change', () => {
+                    // onSelectEvent (jQuery) e não addEventListener: quando o
+                    // checklist já vem renderizado do servidor (OS aberta a
+                    // partir do equipamento), o init global de desktop.js
+                    // transforma estes selects em Select2, que dispara `change`
+                    // só via jQuery — o listener nativo nunca rodava e escolher
+                    // um status pelo dropdown não atualizava o resumo.
+                    onSelectEvent(select, 'change', () => {
                         syncChecklistObservationRequirement(row);
                         updateSummary();
                     });
@@ -810,6 +834,7 @@
                 const select = row.querySelector('[data-order-entry-checklist-status]');
                 if (select instanceof HTMLSelectElement) {
                     select.value = 'ok';
+                    syncSelect2Display(select);
                     syncChecklistObservationRequirement(row);
                 }
             });

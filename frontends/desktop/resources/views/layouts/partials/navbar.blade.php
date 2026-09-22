@@ -214,7 +214,7 @@
             class="desktop-search-input"
             name="q"
             value="{{ request('q') }}"
-            placeholder="O que você procura?"
+            placeholder="Buscar registros ou funções do sistema…"
             aria-label="Pesquisar"
             autocomplete="off"
             data-desktop-search-input

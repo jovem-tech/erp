@@ -3,10 +3,14 @@
 namespace App\Services\Pdf\Contexts;
 
 use App\Models\Budget;
+use App\Models\BudgetApproval;
 use App\Models\BudgetItem;
 use App\Models\Order;
 use App\Services\Budgets\BudgetCommercialTermsService;
+use App\Services\Budgets\BudgetOfferedOptionsService;
 use App\Support\BudgetTotals;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
  * Contexto do documento de orçamento: tudo do OrderPdfContextFactory
@@ -88,7 +92,22 @@ class BudgetPdfContextFactory extends OrderPdfContextFactory
         $items = $projectedLevel !== null
             ? BudgetTotals::itemsForLevel($budget, $projectedLevel)
             : $budget->items;
-        $opcaoTexto = Budget::levelLabel($projectedLevel ?? Budget::normalizeLevel($budget->nivel_aprovado));
+        $approvedLevel = Budget::normalizeLevel($budget->nivel_aprovado);
+        $opcaoNivel = $projectedLevel ?? $approvedLevel;
+        $opcaoTexto = Budget::levelLabel($opcaoNivel);
+        // Seção "Opção de manutenção / Opção aprovada" do modelo padrão: o
+        // título diz em que pé a opção está (em análise ou já aprovada), e o
+        // resto resume o que ela inclui. Tudo vazio em orçamento comum — os
+        // blocos são condicionais e o PDF de sempre não muda.
+        $opcaoTitulo = '';
+        if ($projectedLevel !== null) {
+            $opcaoTitulo = 'Opção de manutenção: '.$opcaoTexto;
+        } elseif ($approvedLevel !== null) {
+            $opcaoTitulo = 'Opção aprovada: '.$opcaoTexto;
+        }
+        $opcaoAprovacaoTexto = $projectedLevel === null && $approvedLevel !== null
+            ? $this->approvalSentence($budget)
+            : '';
         $approvalLink = trim((string) ($options['approval_link'] ?? ''));
         if ($approvalLink !== '' && $projectedLevel !== null) {
             // O botão do PDF da opção cai direto no passo 2 daquela opção.
@@ -114,6 +133,10 @@ class BudgetPdfContextFactory extends OrderPdfContextFactory
             'desconto' => (float) ($projectedTotals['desconto'] ?? $budget->desconto ?? 0),
             'total' => (float) ($projectedTotals['total'] ?? $budget->total ?? 0),
             'opcao_texto' => $opcaoTexto,
+            'opcao_titulo' => $opcaoTitulo,
+            'opcao_subtitulo' => $opcaoNivel !== null ? (string) (Budget::NIVEIS[$opcaoNivel]['subtitle'] ?? '') : '',
+            'opcao_itens_texto' => $opcaoNivel !== null ? $this->itemsCountSentence($items) : '',
+            'opcao_aprovacao_texto' => $opcaoAprovacaoTexto,
             // Orçamento vencido, ou já decidido (aprovado/pendente de OS): nos dois
             // casos não faz sentido convidar o cliente a "aprovar ou recusar" de
             // novo — no vencido porque o link já devolve 410, no já decidido
@@ -130,6 +153,7 @@ class BudgetPdfContextFactory extends OrderPdfContextFactory
             'garantia_prazo' => (string) $terms['garantia_label'],
             'garantia_texto' => (string) $terms['garantia_texto'],
             'entrega_domicilio_texto' => (string) $terms['entrega_domicilio_texto'],
+            'entrega_domicilio_label' => (string) $terms['entrega_domicilio_label'],
             'beneficios_texto' => (string) $terms['beneficios_texto'],
             'condicoes_comerciais' => (string) $terms['resumo'],
         ];
@@ -188,5 +212,65 @@ class BudgetPdfContextFactory extends OrderPdfContextFactory
         $budgetId = (int) ($subject['budget_id'] ?? 0);
 
         return $budgetId > 0 ? Budget::query()->find($budgetId) : null;
+    }
+
+    /**
+     * "3 itens (2 peças, 1 serviço)" — o tamanho da opção numa linha.
+     *
+     * @param  Collection<int, BudgetItem>  $items
+     */
+    private function itemsCountSentence(Collection $items): string
+    {
+        $total = $items->count();
+        if ($total === 0) {
+            return 'Nenhum item';
+        }
+
+        $pecas = $items->filter(static fn (BudgetItem $item): bool => (string) $item->tipo_item === 'peca')->count();
+        $servicos = $items->filter(static fn (BudgetItem $item): bool => (string) $item->tipo_item === 'servico')->count();
+
+        $partes = [];
+        if ($pecas > 0) {
+            $partes[] = $pecas.' '.($pecas === 1 ? 'peça' : 'peças');
+        }
+        if ($servicos > 0) {
+            $partes[] = $servicos.' '.($servicos === 1 ? 'serviço' : 'serviços');
+        }
+        $outros = $total - $pecas - $servicos;
+        if ($outros > 0) {
+            $partes[] = $outros.' '.($outros === 1 ? 'outro' : 'outros');
+        }
+
+        return $total.' '.($total === 1 ? 'item' : 'itens').($partes !== [] ? ' ('.implode(', ', $partes).')' : '');
+    }
+
+    /**
+     * "Aprovada pelo cliente em 22/09/2026 00:59 pelo link público." — quem,
+     * quando e por onde a opção foi aprovada, a partir da última aprovação
+     * registrada (cai na data do orçamento se não houver linha de auditoria).
+     */
+    private function approvalSentence(Budget $budget): string
+    {
+        $budget->loadMissing('approvals');
+        $approval = $budget->approvals
+            ->filter(static fn (BudgetApproval $approval): bool => (string) $approval->acao === 'aprovado')
+            ->sortByDesc(static fn (BudgetApproval $approval): string => ($approval->created_at instanceof Carbon ? $approval->created_at->format('YmdHis') : '').'-'.(int) $approval->id)
+            ->first();
+
+        $quando = $approval?->created_at instanceof Carbon
+            ? $approval->created_at
+            : ($budget->aprovado_em instanceof Carbon ? $budget->aprovado_em : null);
+        if ($quando === null) {
+            return '';
+        }
+
+        $origem = (string) ($approval?->origem ?? '');
+        $quem = trim((string) ($approval?->usuario_nome ?? ''));
+        $sujeito = $origem === 'painel' && $quem !== ''
+            ? 'Aprovada em nome do cliente por '.$quem
+            : 'Aprovada pelo cliente';
+        $porOnde = BudgetOfferedOptionsService::approvalOriginLabel($origem);
+
+        return trim(sprintf('%s em %s%s.', $sujeito, $quando->format('d/m/Y H:i'), $porOnde !== '' ? ' '.$porOnde : ''));
     }
 }

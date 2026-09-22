@@ -6135,6 +6135,16 @@ class DesktopFrontendTest extends TestCase
         $this->assertStringContainsString('select.value = \'ok\';', $script);
         $this->assertStringContainsString("select.value === 'discrepancia'", $script);
         $this->assertStringNotContainsString("response.status || 'ok'", $script);
+
+        // Os selects do checklist viram Select2 (init global de desktop.js) quando
+        // a OS abre a partir do equipamento: "Todos OK" precisa sincronizar a
+        // exibição do Select2 e o listener de change precisa ser via jQuery,
+        // senão escolher um status pelo dropdown não atualiza nada.
+        $checklistBinding = substr($script, strpos($script, 'const renderEntryChecklist'), 6000);
+        $this->assertStringContainsString("onSelectEvent(select, 'change', () => {", $checklistBinding);
+        $this->assertStringNotContainsString("select.addEventListener('change'", $checklistBinding);
+        $this->assertStringContainsString("select.value = 'ok';\n                    syncSelect2Display(select);", $script);
+        $this->assertStringContainsString("window.jQuery(select).trigger('change.select2');", $script);
     }
 
     public function test_nova_os_submission_forwards_budget_when_conversion_permission_exists(): void
@@ -7214,6 +7224,113 @@ class DesktopFrontendTest extends TestCase
             return str_contains($request->url(), '/api/v1/orders/501/imprimir')
                 && str_contains($request->url(), 'formato=a4');
         });
+    }
+
+    /**
+     * OS com orçamento aprovado em níveis: o card "Valores e Orçamento"
+     * mostra a opção aprovada e o resumo das opções apresentadas (itens
+     * por opção expansíveis), e a tabela de peças/serviços diz que é o
+     * escopo aprovado.
+     */
+    public function test_orders_show_page_summarizes_the_maintenance_options_offered_and_chosen(): void
+    {
+        $item = static fn (int $id, string $descricao, float $valor, array $niveis): array => [
+            'id' => $id, 'tipo_item' => 'servico', 'referencia_id' => null, 'descricao' => $descricao,
+            'quantidade' => 1.0, 'valor_unitario' => $valor, 'desconto' => 0.0, 'acrescimo' => 0.0,
+            'total' => $valor, 'niveis' => $niveis, 'observacoes' => '',
+        ];
+        $fusivel = $item(1, 'Fusível', 100.0, [1, 2, 3]);
+        $bateria = $item(2, 'Bateria', 200.0, [2, 3]);
+        $pelicula = $item(3, 'Película e limpeza', 300.0, [3]);
+        $level = static fn (int $nivel, string $label, string $subtitle, float $total, array $itens, bool $recomendado): array => [
+            'nivel' => $nivel, 'label' => $label, 'subtitle' => $subtitle, 'subtotal' => $total, 'desconto' => 0.0,
+            'acrescimo' => 0.0, 'total' => $total, 'itens' => array_column($itens, 'descricao'), 'itens_count' => count($itens),
+            'recomendado' => $recomendado, 'itens_detalhe' => $itens, 'condicoes_comerciais' => null,
+        ];
+
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orders/501' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'order' => [
+                        'id' => 501,
+                        'numero_os' => 'OS26090004',
+                        'status' => 'aguardando_reparo',
+                        'status_nome' => 'Aguardando reparo',
+                        'status_cor' => '#64748b',
+                        'is_encerrada' => false,
+                        'prioridade' => 'normal',
+                        'cliente' => ['id' => 201, 'nome_razao' => 'Cliente Alpha'],
+                        'equipamento' => ['id' => 301, 'resumo_tecnico' => 'Notebook Dell E6420'],
+                        'tecnico' => ['id' => 51, 'nome' => 'Tecnico Banco'],
+                        'fotos' => [],
+                        'documentos' => [],
+                        'status_disponiveis' => [],
+                        'proximas_etapas' => [],
+                        'orcamento' => [
+                            'id' => 76,
+                            'numero' => 'ORC-2609-000018',
+                            'versao' => 1,
+                            'status' => 'aprovado',
+                            'status_label' => 'Aprovado',
+                            'aprovado' => true,
+                            'subtotal' => '300.00',
+                            'desconto' => '0.00',
+                            'total' => '300.00',
+                            'validade_data' => '28/09/2026',
+                            'enviado_em' => '18/09/2026 07:20',
+                            'aprovado_em' => '22/09/2026 00:59',
+                            'has_tiers' => false,
+                            'nivel_recomendado' => 2,
+                            'nivel_aprovado' => 2,
+                            'nivel_aprovado_label' => 'Manutenção Avançada',
+                            'niveis_ofertados' => [
+                                'origem' => 'aprovacao',
+                                'layout' => [],
+                                'aprovacao' => ['id' => 7, 'created_at' => '22/09/2026 00:59', 'origem' => 'link_publico', 'origem_label' => 'pelo link público', 'usuario_nome' => 'Cliente', 'nivel' => 2, 'nivel_label' => 'Manutenção Avançada', 'vigente' => true],
+                                'niveis' => [
+                                    $level(1, 'Manutenção Básica', 'Volta a funcionar', 100.0, [$fusivel], false),
+                                    $level(2, 'Manutenção Avançada', 'Corrige e previne', 300.0, [$fusivel, $bateria], true),
+                                    $level(3, 'Manutenção Completa', 'Como novo', 600.0, [$fusivel, $bateria, $pelicula], false),
+                                ],
+                            ],
+                            'itens' => [
+                                ['id' => 1, 'tipo_item' => 'servico', 'descricao' => 'Fusível', 'quantidade' => 1, 'valor_unitario' => 100, 'total' => 100],
+                                ['id' => 2, 'tipo_item' => 'servico', 'descricao' => 'Bateria', 'quantidade' => 1, 'valor_unitario' => 200, 'total' => 200],
+                            ],
+                        ],
+                    ],
+                ],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge(
+                $this->desktopSession(['os' => ['visualizar'], 'orcamentos' => ['visualizar']]),
+                ['desktop_theme' => 'default']
+            ))
+            ->get('/os/501');
+
+        $response
+            ->assertOk()
+            ->assertSee('Opção aprovada')
+            ->assertSee('Manutenção Avançada')
+            ->assertSee('Opções de manutenção oferecidas')
+            ->assertSee('3 opções apresentadas ao cliente')
+            ->assertSee('em 22/09/2026 00:59 pelo link público')
+            ->assertSee('data-os-budget-option="2" data-chosen="1"', false)
+            ->assertSee('data-os-budget-option="3" data-chosen="0"', false)
+            ->assertSee('Película e limpeza')
+            ->assertSee('Não escolhida')
+            ->assertSee('Ver comparativo completo')
+            ->assertSee(route('orcamentos.show', 76).'#opcoes', false)
+            ->assertSee('Peças e serviços do orçamento — escopo aprovado (Manutenção Avançada)');
+
+        $html = $response->getContent();
+        $this->assertSame(1, substr_count($html, 'data-chosen="1"'));
+        $this->assertSame(2, substr_count($html, 'data-chosen="0"'));
     }
 
     public function test_orders_show_page_renders_summary_grid_and_full_width_operational_cards(): void

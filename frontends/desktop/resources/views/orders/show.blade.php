@@ -437,8 +437,23 @@
                         'Forma de pagamento' => $formaPagamentoExibicao,
                     ], fn ($v) => trim((string) $v) !== '');
 
+                    // Níveis de manutenção: qual opção o cliente aprovou e o que
+                    // lhe foi apresentado (snapshot da aprovação, ou a projeção
+                    // viva enquanto ainda escolhe). Resumo aqui; o comparativo
+                    // completo fica no detalhe do orçamento.
+                    $orcamentoNivelAprovado = $hasOrcamento ? (int) ($orcamento['nivel_aprovado'] ?? 0) : 0;
+                    $orcamentoNivelAprovadoLabel = $hasOrcamento ? trim((string) ($orcamento['nivel_aprovado_label'] ?? '')) : '';
+                    $orcamentoOfertadas = $hasOrcamento && is_array($orcamento['niveis_ofertados'] ?? null) ? $orcamento['niveis_ofertados'] : [];
+                    $orcamentoOpcoes = is_array($orcamentoOfertadas['niveis'] ?? null) ? array_values($orcamentoOfertadas['niveis']) : [];
+                    $orcamentoOpcoesDeAprovacao = (string) ($orcamentoOfertadas['origem'] ?? '') === 'aprovacao';
+                    $orcamentoOpcaoAprovacao = is_array($orcamentoOfertadas['aprovacao'] ?? null) ? $orcamentoOfertadas['aprovacao'] : [];
+                    $orcamentoOpcaoEscolhida = $orcamentoOpcoesDeAprovacao
+                        ? (! empty($orcamentoOpcaoAprovacao['vigente']) ? $orcamentoNivelAprovado : (int) ($orcamentoOpcaoAprovacao['nivel'] ?? 0))
+                        : 0;
+
                     $orcamentoRows = $hasOrcamento ? array_filter([
                         'Status' => $orcamento['status_label'] ?? '',
+                        'Opção aprovada' => $orcamentoNivelAprovadoLabel,
                         'Subtotal' => ($orcamento['subtotal'] ?? null) !== null ? 'R$ ' . $orcamento['subtotal'] : '',
                         'Desconto' => ($orcamento['desconto'] ?? null) !== null ? 'R$ ' . $orcamento['desconto'] : '',
                         'Total' => ($orcamento['total'] ?? null) !== null ? 'R$ ' . $orcamento['total'] : '',
@@ -535,9 +550,103 @@
                     </div>
                 </div>
 
+                @if ($hasOrcamento && $orcamentoOpcoes !== [])
+                    <div class="os-panel-block" data-os-budget-options data-os-budget-options-origin="{{ $orcamentoOpcoesDeAprovacao ? 'aprovacao' : 'atual' }}">
+                        <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+                            <div>
+                                <h4 class="os-panel-title mb-1">Opções de manutenção oferecidas</h4>
+                                <p class="text-secondary small mb-0">
+                                    @if ($orcamentoOpcoesDeAprovacao)
+                                        {{ count($orcamentoOpcoes) }} opções apresentadas ao cliente
+                                        @if (($orcamentoOpcaoAprovacao['nivel_label'] ?? '') !== '')
+                                            · escolhida: <strong>{{ $orcamentoOpcaoAprovacao['nivel_label'] }}</strong>
+                                        @endif
+                                        @if (($orcamentoOpcaoAprovacao['created_at'] ?? '') !== '')
+                                            em {{ $orcamentoOpcaoAprovacao['created_at'] }}{{ ($orcamentoOpcaoAprovacao['origem_label'] ?? '') !== '' ? ' '.$orcamentoOpcaoAprovacao['origem_label'] : '' }}
+                                        @endif
+                                        @if (empty($orcamentoOpcaoAprovacao['vigente']))
+                                            · o orçamento foi alterado depois dessa decisão
+                                        @endif
+                                    @else
+                                        {{ count($orcamentoOpcoes) }} opções aguardando a escolha do cliente
+                                    @endif
+                                </p>
+                            </div>
+                            @if (\App\Support\DesktopSession::can('orcamentos', 'visualizar'))
+                                <a href="{{ route('orcamentos.show', $orcamento['id']) }}#opcoes" class="btn btn-soft btn-sm">
+                                    <i class="bi bi-layout-three-columns me-2"></i>Ver comparativo completo
+                                </a>
+                            @endif
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-stack align-middle mb-0">
+                                <thead>
+                                <tr>
+                                    <th>Opção</th>
+                                    <th>Itens</th>
+                                    <th>Total</th>
+                                    <th>Situação</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach ($orcamentoOpcoes as $opcao)
+                                    @php
+                                        $opcaoNivel = (int) ($opcao['nivel'] ?? 0);
+                                        $opcaoEscolhida = $orcamentoOpcaoEscolhida > 0 && $opcaoNivel === $orcamentoOpcaoEscolhida;
+                                        $opcaoDetalhe = is_array($opcao['itens_detalhe'] ?? null) ? $opcao['itens_detalhe'] : [];
+                                        $opcaoNomes = $opcaoDetalhe !== []
+                                            ? array_map(static fn (array $item): string => trim((string) ($item['descricao'] ?? '')), $opcaoDetalhe)
+                                            : array_map(static fn ($nome): string => trim((string) $nome), is_array($opcao['itens'] ?? null) ? $opcao['itens'] : []);
+                                        $opcaoTotalItens = (int) ($opcao['itens_count'] ?? count($opcaoNomes));
+                                    @endphp
+                                    <tr data-os-budget-option="{{ $opcaoNivel }}" data-chosen="{{ $opcaoEscolhida ? '1' : '0' }}" class="{{ $opcaoEscolhida ? 'table-success' : '' }}">
+                                        <td data-label="Opção">
+                                            <strong>{{ $opcao['label'] ?? '' }}</strong>
+                                            @if (($opcao['subtitle'] ?? '') !== '')
+                                                <span class="d-block small text-secondary">{{ $opcao['subtitle'] }}</span>
+                                            @endif
+                                        </td>
+                                        <td data-label="Itens">
+                                            @if ($opcaoNomes !== [])
+                                                <details>
+                                                    <summary class="small">{{ $opcaoTotalItens }} {{ $opcaoTotalItens === 1 ? 'item' : 'itens' }} · ver</summary>
+                                                    <ul class="small mb-0 mt-1 ps-3">
+                                                        @foreach ($opcaoDetalhe !== [] ? $opcaoDetalhe : $opcaoNomes as $itemOpcao)
+                                                            @if (is_array($itemOpcao))
+                                                                <li>{{ $itemOpcao['descricao'] ?? '' }} <span class="text-secondary">— {{ number_format((float) ($itemOpcao['quantidade'] ?? 0), (float) ($itemOpcao['quantidade'] ?? 0) === floor((float) ($itemOpcao['quantidade'] ?? 0)) ? 0 : 2, ',', '.') }} × R$ {{ number_format((float) ($itemOpcao['valor_unitario'] ?? 0), 2, ',', '.') }}</span></li>
+                                                            @else
+                                                                <li>{{ $itemOpcao }}</li>
+                                                            @endif
+                                                        @endforeach
+                                                    </ul>
+                                                </details>
+                                            @else
+                                                <span class="text-secondary small">Sem itens</span>
+                                            @endif
+                                        </td>
+                                        <td data-label="Total" class="fw-bold">R$ {{ number_format((float) ($opcao['total'] ?? 0), 2, ',', '.') }}</td>
+                                        <td data-label="Situação">
+                                            @if ($opcaoEscolhida)
+                                                <span class="desktop-chip desktop-chip-success"><i class="bi bi-check-circle"></i> {{ ! empty($orcamentoOpcaoAprovacao['vigente']) ? 'Aprovada' : 'Escolhida na época' }}</span>
+                                            @elseif (! empty($opcao['recomendado']))
+                                                <span class="desktop-chip">Recomendada{{ $orcamentoOpcoesDeAprovacao ? ' · não escolhida' : '' }}</span>
+                                            @elseif ($orcamentoOpcoesDeAprovacao)
+                                                <span class="text-secondary small">Não escolhida</span>
+                                            @else
+                                                <span class="text-secondary small">Em aberto</span>
+                                            @endif
+                                        </td>
+                                    </tr>
+                                @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                @endif
+
                 @if ($hasOrcamento && $orcamentoItens !== [])
                     <div class="os-panel-block">
-                        <h4 class="os-panel-title">Peças e serviços do orçamento</h4>
+                        <h4 class="os-panel-title">Peças e serviços do orçamento{{ $orcamentoNivelAprovadoLabel !== '' ? ' — escopo aprovado ('.$orcamentoNivelAprovadoLabel.')' : '' }}</h4>
                         <div class="table-responsive">
                             <table class="table table-stack align-middle">
                                 <thead>
@@ -547,16 +656,34 @@
                                     <th>Qtd</th>
                                     <th>Valor unit.</th>
                                     <th>Total</th>
+                                    <th></th>
                                 </tr>
                                 </thead>
                                 <tbody>
                                 @foreach ($orcamentoItens as $item)
+                                    @php
+                                        $isPecaItem = (string) ($item['tipo_item'] ?? '') === 'peca';
+                                    @endphp
                                     <tr>
                                         <td data-label="Tipo">{{ ucfirst((string) ($item['tipo_item'] ?? 'servico')) }}</td>
                                         <td data-label="Descrição">{{ ($item['descricao'] ?? '') !== '' ? $item['descricao'] : 'Sem descrição' }}</td>
                                         <td data-label="Qtd">{{ number_format((float) ($item['quantidade'] ?? 0), 2, ',', '.') }}</td>
                                         <td data-label="Valor unit.">R$ {{ number_format((float) ($item['valor_unitario'] ?? 0), 2, ',', '.') }}</td>
                                         <td data-label="Total" class="fw-bold">R$ {{ number_format((float) ($item['total'] ?? 0), 2, ',', '.') }}</td>
+                                        <td data-label="" class="text-end">
+                                            {{-- Ficha do item (peça: custo, fornecedor, saldo;
+                                                 serviço: catálogo, tempo padrão, custo direto) no
+                                                 modal _item_detalhe_modal — um por linha, já
+                                                 renderizado com o payload da OS, sem requisição extra. --}}
+                                            <button type="button"
+                                                    class="btn btn-soft btn-sm text-nowrap"
+                                                    data-bs-toggle="modal"
+                                                    data-bs-target="#osItemDetalheModal-{{ (int) ($item['id'] ?? 0) }}"
+                                                    data-os-item-detalhe-trigger="{{ (int) ($item['id'] ?? 0) }}"
+                                                    title="Ver detalhes {{ $isPecaItem ? 'da peça' : 'do serviço' }}">
+                                                <i class="bi bi-eye me-1"></i>Detalhes
+                                            </button>
+                                        </td>
                                     </tr>
                                 @endforeach
                                 </tbody>
@@ -681,6 +808,9 @@
     @include('layouts.partials.photo-viewer-modal')
     @if ($checklist)
         @include('orders._checklist_detail_modal')
+    @endif
+    @if ($hasOrcamento && $orcamentoItens !== [])
+        @include('orders._item_detalhe_modal')
     @endif
 @endpush
 

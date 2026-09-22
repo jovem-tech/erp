@@ -152,6 +152,86 @@ class OrcamentoNiveisTest extends TestCase
             ->assertSee('data-budget-tiers-board data-budget-levels-locked="1"', false);
     }
 
+    /**
+     * Itens das opções não escolhidas (preservados na aprovação) aparecem
+     * na edição como painel de reaproveitamento — fora da lista de itens,
+     * com o botão que os traz de volta. Sem itens descartados, nada.
+     */
+    public function test_edit_form_offers_the_discarded_items_of_the_other_options(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake(array_merge($this->notificationsFixture(), $this->companyFixture(), $this->editFixture([
+            'status' => 'aprovado',
+            'status_label' => 'Aprovado',
+            'nivel_aprovado' => 1,
+            'nivel_aprovado_label' => 'Manutenção Básica',
+            'itens' => [$this->itemPayload(['id' => 1, 'descricao' => 'Fusível', 'niveis' => [1]])],
+            'itens_descartados' => [
+                [
+                    'id' => 41,
+                    'aprovacao_id' => 7,
+                    'nivel_aprovado' => 1,
+                    'nivel_aprovado_label' => 'Manutenção Básica',
+                    'niveis' => [2, 3],
+                    'niveis_labels' => ['Manutenção Avançada', 'Manutenção Completa'],
+                    'descartado_em' => '22/09/2026 00:59',
+                    'tipo_item' => 'peca',
+                    'referencia_id' => 12,
+                    'descricao' => 'Bateria "premium"',
+                    'quantidade' => 1.0,
+                    'valor_unitario' => 200.0,
+                    'desconto' => 0.0,
+                    'desconto_tipo' => 'valor',
+                    'desconto_percentual' => null,
+                    'acrescimo' => 0.0,
+                    'acrescimo_tipo' => 'valor',
+                    'acrescimo_percentual' => null,
+                    'total' => 200.0,
+                    'observacoes' => '',
+                    'modo_precificacao' => 'manual',
+                ],
+            ],
+        ])));
+
+        $response = $this
+            ->withSession(array_merge($this->desktopSession(['orcamentos' => ['visualizar', 'criar', 'editar']]), ['desktop_theme' => 'default']))
+            ->get('/orcamentos/993/editar');
+
+        $response
+            ->assertOk()
+            ->assertSee('Itens das outras opções (não contratados)')
+            ->assertSee('Ofertado na Avançada e Completa')
+            ->assertSee('Cliente aprovou a Básica em 22/09/2026 00:59')
+            ->assertSee('data-budget-discarded-add', false)
+            ->assertSee('Adicionar ao orçamento');
+
+        $html = $response->getContent();
+        // O payload do botão é o que createRow() consome — sem `niveis`.
+        $this->assertMatchesRegularExpression('/data-item="[^"]*referencia_id[^"]*"/', $html);
+        $this->assertStringContainsString('&quot;descricao&quot;:&quot;Bateria \\&quot;premium\\&quot;&quot;', $html);
+        $this->assertStringNotContainsString('&quot;niveis&quot;', substr($html, (int) strpos($html, 'data-budget-discarded-add')));
+        // O item descartado NÃO virou linha do formulário (só o Fusível, mais
+        // o <template> da linha nova).
+        $this->assertStringContainsString('itens[0][descricao]', $html);
+        $this->assertStringNotContainsString('itens[1][descricao]', $html);
+        $this->assertStringNotContainsString('value="Bateria &quot;premium&quot;"', $html);
+    }
+
+    public function test_edit_form_without_discarded_items_has_no_reuse_panel(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake(array_merge($this->notificationsFixture(), $this->companyFixture(), $this->editFixture([
+            'itens' => [$this->itemPayload(['id' => 1, 'descricao' => 'Fusível'])],
+            'itens_descartados' => [],
+        ])));
+
+        $this
+            ->withSession(array_merge($this->desktopSession(['orcamentos' => ['visualizar', 'criar', 'editar']]), ['desktop_theme' => 'default']))
+            ->get('/orcamentos/993/editar')
+            ->assertOk()
+            ->assertDontSee('data-budget-discarded-panel', false);
+    }
+
     public function test_store_forwards_item_levels_and_recommended_level_to_backend(): void
     {
         Http::fake([
@@ -407,7 +487,126 @@ class OrcamentoNiveisTest extends TestCase
             ->withSession(array_merge($this->desktopSession(['orcamentos' => ['visualizar']]), ['desktop_theme' => 'default']))
             ->get('/orcamentos/990')
             ->assertOk()
-            ->assertSee('Opção aprovada: Manutenção Avançada');
+            ->assertSee('Opção aprovada: Manutenção Avançada')
+            ->assertSee('Escopo contratado — Manutenção Avançada')
+            // Sem snapshot (aprovação antiga sem registro), nada de opções.
+            ->assertDontSee('data-budget-offered-options', false);
+    }
+
+    /**
+     * Depois da aprovação o bloco de opções vem do snapshot: cartões com a
+     * escolhida marcada, o comparativo item × opção (inclusive os itens que
+     * saíram do escopo) e o resumo por aprovação.
+     */
+    public function test_show_page_presents_the_offered_options_history_after_approval(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orcamentos/990' => Http::response([
+                'status' => 'success',
+                'data' => ['budget' => $this->budgetPayload([
+                    'status' => 'aprovado',
+                    'status_label' => 'Aprovado',
+                    'can_approve' => false,
+                    'nivel_aprovado' => 2,
+                    'nivel_aprovado_label' => 'Manutenção Avançada',
+                    'total' => 300.0,
+                    'itens' => [
+                        $this->itemPayload(['id' => 1, 'descricao' => 'Fusível', 'niveis' => [1]]),
+                        $this->itemPayload(['id' => 2, 'descricao' => 'Bateria', 'valor_unitario' => 200.0, 'total' => 200.0, 'niveis' => [1]]),
+                    ],
+                    'niveis_ofertados' => $this->offeredOptionsPayload(),
+                    'aprovacoes' => [[
+                        'id' => 7,
+                        'acao' => 'aprovado',
+                        'origem' => 'link_publico',
+                        'usuario_nome' => 'Cliente',
+                        'resposta_cliente' => 'Aprovado. Opção escolhida: Manutenção Avançada.',
+                        'observacao' => '',
+                        'nivel' => 2,
+                        'nivel_label' => 'Manutenção Avançada',
+                        'niveis_resumo' => [
+                            ['nivel' => 1, 'label' => 'Manutenção Básica', 'total' => 100.0, 'itens_count' => 1, 'recomendado' => false],
+                            ['nivel' => 2, 'label' => 'Manutenção Avançada', 'total' => 300.0, 'itens_count' => 2, 'recomendado' => true],
+                            ['nivel' => 3, 'label' => 'Manutenção Completa', 'total' => 600.0, 'itens_count' => 3, 'recomendado' => false],
+                        ],
+                        'created_at' => '22/09/2026 00:59',
+                    ]],
+                ])],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $response = $this
+            ->withSession(array_merge($this->desktopSession(['orcamentos' => ['visualizar']]), ['desktop_theme' => 'default']))
+            ->get('/orcamentos/990')
+            ->assertOk()
+            ->assertSee('data-budget-offered-origin="aprovacao"', false)
+            ->assertSee('O cliente escolheu a Manutenção Avançada')
+            ->assertSee('aprovada em 22/09/2026 00:59 pelo link público')
+            ->assertSee('Aprovada pelo cliente')
+            ->assertSee('Não escolhida')
+            ->assertSee('Manutenção Avançada · Recomendada')
+            ->assertSee('Comparativo do que foi oferecido')
+            // Item que saiu do escopo continua no comparativo, marcado.
+            ->assertSee('Película e limpeza')
+            ->assertSee('fora do escopo contratado')
+            ->assertSee('Total da opção')
+            ->assertSee('Opções apresentadas:')
+            ->assertSee('Básica R$ 100,00 · Avançada R$ 300,00 · Completa R$ 600,00')
+            ->assertSee('Aprovado · Manutenção Avançada');
+
+        $html = $response->getContent();
+        $this->assertSame(1, substr_count($html, 'data-budget-offered-card="2" data-chosen="1"'));
+        $this->assertSame(2, substr_count($html, 'data-chosen="0"'));
+        // 3 linhas (união das opções): Completa inclui as 3, Básica só o Fusível.
+        $this->assertSame(3, substr_count($html, 'data-budget-offered-cell="3" data-included="1"'));
+        $this->assertSame(1, substr_count($html, 'data-budget-offered-cell="1" data-included="1"'));
+        $this->assertSame(2, substr_count($html, 'data-budget-offered-cell="1" data-included="0"'));
+        $this->assertStringContainsString('data-budget-offered-col="2"', $html);
+    }
+
+    /**
+     * Snapshot antigo (só nomes de item) ainda rende o bloco — sem qtd e
+     * unitário no comparativo.
+     */
+    public function test_show_page_handles_a_legacy_snapshot_without_item_details(): void
+    {
+        Http::preventStrayRequests();
+        Http::fake(array_merge($this->notificationsFixture(), [
+            'http://127.0.0.1:8000/api/v1/orcamentos/990' => Http::response([
+                'status' => 'success',
+                'data' => ['budget' => $this->budgetPayload([
+                    'status' => 'aprovado',
+                    'status_label' => 'Aprovado',
+                    'nivel_aprovado' => 1,
+                    'nivel_aprovado_label' => 'Manutenção Básica',
+                    'itens' => [$this->itemPayload()],
+                    'niveis_ofertados' => [
+                        'origem' => 'aprovacao',
+                        'layout' => ['garantia' => ['modo' => 'compartilhado', 'valor' => '90 dias'], 'formas_pagamento' => ['modo' => 'compartilhado', 'valor' => ''], 'parcelamento' => ['modo' => 'compartilhado', 'valor' => ''], 'entrega_domicilio' => ['modo' => 'compartilhado', 'valor' => '']],
+                        'aprovacao' => ['id' => 3, 'created_at' => '16/09/2026 09:00', 'origem' => 'painel', 'origem_label' => 'pelo painel', 'usuario_nome' => 'Otávio', 'nivel' => 1, 'nivel_label' => 'Manutenção Básica', 'vigente' => true],
+                        'niveis' => [
+                            ['nivel' => 1, 'label' => 'Manutenção Básica', 'subtitle' => 'Volta a funcionar', 'subtotal' => 100.0, 'desconto' => 0.0, 'acrescimo' => 0.0, 'total' => 100.0, 'itens' => ['Fusível'], 'itens_count' => 1, 'recomendado' => false, 'itens_detalhe' => [], 'condicoes_comerciais' => null],
+                            ['nivel' => 2, 'label' => 'Manutenção Avançada', 'subtitle' => 'Corrige e previne', 'subtotal' => 300.0, 'desconto' => 0.0, 'acrescimo' => 0.0, 'total' => 300.0, 'itens' => ['Fusível', 'Bateria'], 'itens_count' => 2, 'recomendado' => false, 'itens_detalhe' => [], 'condicoes_comerciais' => null],
+                        ],
+                    ],
+                ])],
+                'error' => null,
+                'meta' => [],
+            ]),
+        ]));
+
+        $this
+            ->withSession(array_merge($this->desktopSession(['orcamentos' => ['visualizar']]), ['desktop_theme' => 'default']))
+            ->get('/orcamentos/990')
+            ->assertOk()
+            ->assertSee('O cliente escolheu a Manutenção Básica')
+            ->assertSee('aprovada em 16/09/2026 09:00 por Otávio pelo painel')
+            ->assertSee('Bateria')
+            ->assertSee('Mesmas condições comerciais em todas as opções')
+            ->assertDontSee('Unitário');
     }
 
     public function test_staff_approval_forwards_the_chosen_level(): void
@@ -776,6 +975,79 @@ class OrcamentoNiveisTest extends TestCase
      * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
+    /**
+     * Snapshot de 3 opções (Fusível em todas, Bateria a partir da Avançada,
+     * Película só na Completa), com a Avançada recomendada.
+     *
+     * @return array<string, mixed>
+     */
+    private function offeredOptionsPayload(): array
+    {
+        $item = static fn (int $id, string $descricao, float $valor, array $niveis): array => [
+            'id' => $id,
+            'tipo_item' => 'servico',
+            'referencia_id' => null,
+            'descricao' => $descricao,
+            'quantidade' => 1.0,
+            'valor_unitario' => $valor,
+            'desconto' => 0.0,
+            'acrescimo' => 0.0,
+            'total' => $valor,
+            'niveis' => $niveis,
+            'observacoes' => '',
+        ];
+        $terms = static fn (string $garantia): array => [
+            'garantia_label' => $garantia,
+            'parcelamento_texto' => '',
+            'formas_pagamento_texto' => 'Pix',
+            'entrega_domicilio' => false,
+            'entrega_domicilio_label' => '',
+            'beneficios' => [],
+        ];
+        $level = static fn (int $nivel, string $label, string $subtitle, float $total, array $itens, bool $recomendado, string $garantia) => [
+            'nivel' => $nivel,
+            'label' => $label,
+            'subtitle' => $subtitle,
+            'subtotal' => $total,
+            'desconto' => 0.0,
+            'acrescimo' => 0.0,
+            'total' => $total,
+            'itens' => array_column($itens, 'descricao'),
+            'itens_count' => count($itens),
+            'recomendado' => $recomendado,
+            'itens_detalhe' => $itens,
+            'condicoes_comerciais' => $terms($garantia),
+        ];
+        $fusivel = $item(1, 'Fusível', 100.0, [1, 2, 3]);
+        $bateria = $item(2, 'Bateria', 200.0, [2, 3]);
+        $pelicula = $item(3, 'Película e limpeza', 300.0, [3]);
+
+        return [
+            'origem' => 'aprovacao',
+            'layout' => [
+                'garantia' => ['modo' => 'por_opcao', 'valor' => ''],
+                'formas_pagamento' => ['modo' => 'compartilhado', 'valor' => 'Pix'],
+                'parcelamento' => ['modo' => 'compartilhado', 'valor' => ''],
+                'entrega_domicilio' => ['modo' => 'compartilhado', 'valor' => ''],
+            ],
+            'aprovacao' => [
+                'id' => 7,
+                'created_at' => '22/09/2026 00:59',
+                'origem' => 'link_publico',
+                'origem_label' => 'pelo link público',
+                'usuario_nome' => 'Cliente',
+                'nivel' => 2,
+                'nivel_label' => 'Manutenção Avançada',
+                'vigente' => true,
+            ],
+            'niveis' => [
+                $level(1, 'Manutenção Básica', 'Volta a funcionar', 100.0, [$fusivel], false, '90 dias'),
+                $level(2, 'Manutenção Avançada', 'Corrige e previne', 300.0, [$fusivel, $bateria], true, '1 ano'),
+                $level(3, 'Manutenção Completa', 'Como novo', 600.0, [$fusivel, $bateria, $pelicula], false, '2 anos'),
+            ],
+        ];
+    }
+
     private function budgetPayload(array $overrides = []): array
     {
         return array_replace([

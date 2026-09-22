@@ -1,0 +1,198 @@
+<?php
+
+use App\Services\Pdf\PdfDefaultTemplates;
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * Orçamento em níveis: o campo solto "Opção de manutenção: X" dos modelos
+ * de orçamento já publicados vira a seção completa da opção (título com o
+ * estado, grade com cobertura/valor/itens/garantia/parcelamento/entrega e a
+ * linha de quem/quando aprovou) — a mesma definição do modelo padrão
+ * (PdfDefaultTemplates::blocoOpcaoManutencao).
+ *
+ * Cirúrgico como 2026_09_15_000003 e 2026_09_16_000002: substitui SÓ o bloco
+ * de topo do corpo que contém `orcamento.opcao_texto`, e só se o modelo
+ * ainda não tem a seção (`orcamento.opcao_titulo`). Modelo personalizado que
+ * removeu o bloco fica como está.
+ */
+return new class extends Migration
+{
+    public function up(): void
+    {
+        if (! Schema::hasTable('pdf_templates') || ! Schema::hasTable('pdf_template_versoes')) {
+            return;
+        }
+
+        $templates = DB::table('pdf_templates')
+            ->where('arquivado', false)
+            ->orderBy('id')
+            ->get(['id', 'tipo_codigo', 'tipo_base_codigo']);
+
+        foreach ($templates as $template) {
+            $base = trim((string) ($template->tipo_base_codigo ?? '')) ?: (string) $template->tipo_codigo;
+
+            if ($base !== 'os_orcamento') {
+                continue;
+            }
+
+            DB::transaction(function () use ($template): void {
+                $row = DB::table('pdf_templates')
+                    ->where('id', $template->id)
+                    ->where('arquivado', false)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($row === null) {
+                    return;
+                }
+
+                $draft = DB::table('pdf_template_versoes')
+                    ->where('template_id', $row->id)
+                    ->where('status', 'rascunho')
+                    ->orderByDesc('versao')
+                    ->first();
+                $published = DB::table('pdf_template_versoes')
+                    ->where('template_id', $row->id)
+                    ->where('status', 'publicado')
+                    ->orderByDesc('versao')
+                    ->first();
+                $source = $draft ?? $published;
+
+                if ($source === null) {
+                    return;
+                }
+
+                try {
+                    $schema = json_decode((string) $source->schema_json, true, 512, JSON_THROW_ON_ERROR);
+                } catch (JsonException) {
+                    return;
+                }
+
+                if (! is_array($schema)) {
+                    return;
+                }
+
+                $corpo = is_array($schema['corpo'] ?? null) ? $schema['corpo'] : [];
+                $corpoJson = json_encode($corpo, JSON_UNESCAPED_UNICODE) ?: '';
+
+                if (str_contains($corpoJson, 'orcamento.opcao_titulo')) {
+                    return;
+                }
+
+                $novo = $this->replaceBlockByMarker($corpo, 'orcamento.opcao_texto', PdfDefaultTemplates::blocoOpcaoManutencao());
+                if ($novo === null) {
+                    return;
+                }
+
+                $schema['corpo'] = $novo;
+
+                $schemaJson = json_encode(
+                    $schema,
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR
+                );
+                $newHash = hash('sha256', $schemaJson);
+
+                if (hash_equals((string) ($source->hash_schema ?? ''), $newHash)) {
+                    return;
+                }
+
+                $this->storeVersion($row, $draft, $published, $schema, $schemaJson, $newHash);
+            }, 3);
+        }
+    }
+
+    public function down(): void
+    {
+        // Não reverte versões documentais: remover uma publicação posterior
+        // violaria a trilha de auditoria e poderia apagar edições do usuário.
+    }
+
+    /**
+     * Troca o primeiro bloco de topo do corpo que contém o marcador (uma
+     * variável) pelos `$blocos`. Devolve null quando o marcador não existe.
+     *
+     * @param  array<int, mixed>  $corpo
+     * @param  array<int, array<string, mixed>>  $blocos
+     * @return array<int, mixed>|null
+     */
+    private function replaceBlockByMarker(array $corpo, string $marcador, array $blocos): ?array
+    {
+        $posicao = null;
+
+        foreach ($corpo as $index => $bloco) {
+            if (! is_array($bloco)) {
+                continue;
+            }
+
+            if (str_contains(json_encode($bloco, JSON_UNESCAPED_UNICODE) ?: '', $marcador)) {
+                $posicao = $index;
+                break;
+            }
+        }
+
+        if ($posicao === null) {
+            return null;
+        }
+
+        return [
+            ...array_slice($corpo, 0, $posicao),
+            ...$blocos,
+            ...array_slice($corpo, $posicao + 1),
+        ];
+    }
+
+    /**
+     * Rascunho é mutável (edita no lugar); publicado é imutável (arquiva e
+     * publica a próxima versão).
+     *
+     * @param  array<string, mixed>  $schema
+     */
+    private function storeVersion(
+        object $template,
+        ?object $draft,
+        ?object $published,
+        array $schema,
+        string $schemaJson,
+        string $hash
+    ): void {
+        $page = is_array($schema['pagina'] ?? null) ? $schema['pagina'] : [];
+        $now = now();
+
+        $payload = [
+            'schema_json' => $schemaJson,
+            'papel' => (string) ($page['papel'] ?? 'a4'),
+            'orientacao' => (string) ($page['orientacao'] ?? 'retrato'),
+            'margens_json' => json_encode($page['margens'] ?? [], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+            'fonte' => (string) ($page['fonte'] ?? 'DejaVu Sans'),
+            'hash_schema' => $hash,
+            'updated_at' => $now,
+        ];
+
+        if ($draft !== null) {
+            DB::table('pdf_template_versoes')->where('id', $draft->id)->update($payload);
+        } else {
+            DB::table('pdf_template_versoes')->where('id', $published->id)->update([
+                'status' => 'arquivado',
+                'updated_at' => $now,
+            ]);
+
+            $nextVersion = ((int) DB::table('pdf_template_versoes')
+                ->where('template_id', $template->id)
+                ->max('versao')) + 1;
+
+            DB::table('pdf_template_versoes')->insert(array_merge($payload, [
+                'template_id' => $template->id,
+                'versao' => $nextVersion,
+                'status' => 'publicado',
+                'publicado_em' => $now,
+                'publicado_por' => null,
+                'criado_por' => null,
+                'created_at' => $now,
+            ]));
+        }
+
+        DB::table('pdf_templates')->where('id', $template->id)->update(['updated_at' => $now]);
+    }
+};

@@ -1,5 +1,29 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v6.2.0.0 — 2026-09-22 06:47
+- **Tier:** minor
+- **Autor/Agente:** Claude
+- **Descrição:** Orcamento em niveis: historico do que foi oferecido ao cliente. Aprovacao grava snapshot completo (itens com qtd/valor e condicoes por opcao) e preserva os itens das opcoes nao escolhidas em orcamento_itens_descartados (uso tecnico: painel 'Itens das outras opcoes' na edicao com 'Adicionar ao orcamento'). Pagina publica aprovada ganha 'Ver as opcoes apresentadas' (?opcoes=1: landing em modo consulta, sem escolher/recusar, escolhida marcada). PDF: secao 'Opcao aprovada: X' com opcao, cobertura, valor, itens incluidos, garantia, parcelamento, entrega e quem/quando aprovou (migration leva aos modelos publicados). Detalhe do orcamento: cartoes por opcao + comparativo item x opcao do snapshot (itens fora do escopo marcados) + resumo por aprovacao. Detalhe da OS: opcao aprovada e tabela das opcoes oferecidas com itens expansiveis. Novo BudgetOfferedOptionsService como unico ponto de 'o que mostrar'.
+- **Arquivos:** backend/app/Services/Budgets/BudgetOfferedOptionsService.php,backend/app/Models/BudgetDiscardedItem.php,backend/app/Models/Budget.php,backend/app/Services/Budgets/BudgetApprovalService.php,backend/app/Services/Budgets/BudgetWorkflowService.php,backend/app/Services/Orders/OrderWorkflowService.php,backend/app/Http/Controllers/Web/BudgetPublicController.php,backend/app/Services/Pdf/Contexts/BudgetPdfContextFactory.php,backend/app/Services/Pdf/PdfDefaultTemplates.php,backend/app/Services/Pdf/PdfTemplateRegistry.php,backend/database/migrations/2026_09_22_000001_create_orcamento_itens_descartados_table.php,backend/database/migrations/2026_09_22_000002_expand_budget_option_block_in_pdf_templates.php,backend/resources/views/budgets/public/show.blade.php,backend/resources/views/budgets/public/partials/opcoes.blade.php,backend/tests/Concerns/BuildsLegacyErpSchema.php,backend/tests/Feature/Api/V1/BudgetMaintenanceLevelsTest.php,frontends/desktop/resources/views/orcamentos/show.blade.php,frontends/desktop/resources/views/orcamentos/partials/opcoes-oferecidas.blade.php,frontends/desktop/resources/views/orcamentos/form.blade.php,frontends/desktop/public/assets/js/orcamentos-form.js,frontends/desktop/public/assets/css/desktop.css,frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/tests/Feature/Desktop/OrcamentoNiveisTest.php,frontends/desktop/tests/Feature/Desktop/DesktopFrontendTest.php,documentacao/07-novas-implementacoes/2026-09-15-orcamento-em-niveis-manutencao.md
+
+## v6.1.2.0 — 2026-09-22 01:25
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Detalhe da OS: cada linha da secao 'Pecas e servicos do orcamento' (peca E servico) ganha botao 'Detalhes' que abre modal com a ficha do item. Peca: codigo, fabricante, classificacao, modelos compativeis, fornecedor, localizacao, preco de venda; saldo/reservado/disponivel/falta para a OS; custo unitario/total/atual + margem da linha; atalho 'Abrir no estoque'. Servico: nome/descricao do catalogo, tipo de equipamento, tempo padrao, valor de catalogo, tributacao (LC 116, codigo nacional, ISS); custo direto padrao + margem; atalho 'Abrir no catalogo'. Aviso quando o custo do cadastro mudou desde o orcamento. Backend: mapLinkedBudget() passa a enviar referencia_id e as fichas 'peca' (so com estoque:visualizar) e 'servico' (so com servicos:visualizar), e custo/margem so com permissao financeira (specs/037) — redacao no payload, nao na view.
+- **Arquivos:** backend/app/Services/Orders/OrderWorkflowService.php,backend/tests/Feature/Api/V1/OrderFlowTest.php,frontends/desktop/resources/views/orders/show.blade.php,frontends/desktop/resources/views/orders/_item_detalhe_modal.blade.php,frontends/desktop/tests/Feature/Desktop/OrderItemDetalheTest.php,documentacao/07-novas-implementacoes/2026-09-22-detalhes-item-orcamento-na-os.md,documentacao/README.md
+
+## v6.1.1.0 — 2026-09-22 01:19
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Editar lancamento financeiro passa a aceitar anexo: secao ANEXOS no form de edicao lista os arquivos ja anexados (preview inline + abrir em nova aba) e recebe novo PDF/foto que sobe depois de o PATCH ser aceito (mesma regra do store: falha no upload nao perde a edicao); permitido mesmo com baixa registrada (comprovante); erros de anexo/anexo_descricao exibidos abaixo dos campos nas duas telas; excluir continua so no detalhe (form DELETE nao pode aninhar no form de edicao)
+- **Arquivos:** frontends/desktop/app/Http/Controllers/FinanceiroController.php,frontends/desktop/resources/views/financeiro/form.blade.php,frontends/desktop/resources/views/financeiro/edit.blade.php,frontends/desktop/tests/Feature/Desktop/FinanceiroAnexoTest.php,documentacao/07-novas-implementacoes/2026-09-22-anexo-na-edicao-do-lancamento.md,documentacao/README.md
+
+## v6.1.0.0 — 2026-09-22 00:19
+- **Tier:** minor
+- **Autor/Agente:** Codex
+- **Descrição:** Busca completa localiza funcoes do sistema: nova secao 'Funções do sistema' (escopo 'funcionalidades', em memoria, sem HTTP) no dropdown do topo e em /buscar, com todos os itens do menu (inclusive ocultos) + catalogo curado de abas, ferramentas, botoes '+ Novo' (F1-F4), exportacoes, acoes dentro de registro (com dica de como chegar) e paginas de ajuda; sinonimos em portugues, busca sem acento/caixa, RBAC por item. Ex.: 'simulador de preços' abre Financeiro > Precificação > aba Simulador; 'fluxo de caixa' abre o relatorio.
+- **Arquivos:** frontends/desktop/app/Support/DesktopFeatureCatalog.php,frontends/desktop/app/Support/DesktopNavigation.php,frontends/desktop/app/Services/SearchService.php,frontends/desktop/resources/views/search/index.blade.php,frontends/desktop/resources/views/layouts/partials/navbar.blade.php,frontends/desktop/tests/Feature/Desktop/FeatureSearchTest.php
+
 ## v6.0.1.0 — 2026-09-18 09:47
 - **Tier:** patch
 - **Autor/Agente:** Claude

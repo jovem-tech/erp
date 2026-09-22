@@ -4,6 +4,7 @@ namespace App\Services\Budgets;
 
 use App\Models\Budget;
 use App\Models\BudgetApproval;
+use App\Models\BudgetDiscardedItem;
 use App\Models\BudgetItem;
 use App\Models\BudgetSend;
 use App\Models\BudgetStatusHistory;
@@ -48,7 +49,8 @@ class BudgetWorkflowService
         private readonly BudgetRevisionService $budgetRevisionService,
         // specs/040: syncItems() reconcilia a reserva de peca.
         private readonly EstoqueReservaService $estoqueReservaService,
-        private readonly AnexoXService $anexoXService
+        private readonly AnexoXService $anexoXService,
+        private readonly BudgetOfferedOptionsService $budgetOfferedOptionsService
     ) {}
 
     /**
@@ -1736,6 +1738,13 @@ class BudgetWorkflowService
             'nivel_recomendado' => Budget::normalizeLevel($budget->nivel_recomendado),
             'nivel_aprovado' => Budget::normalizeLevel($budget->nivel_aprovado),
             'nivel_aprovado_label' => Budget::levelLabel(Budget::normalizeLevel($budget->nivel_aprovado)),
+            // O que foi (ou está sendo) oferecido ao cliente: projeção viva
+            // enquanto há opções a escolher, snapshot da aprovação depois —
+            // é o histórico que o detalhe mostra mesmo com os itens podados.
+            'niveis_ofertados' => $this->budgetOfferedOptionsService->forBudget($budget),
+            // Itens das opções não escolhidas, preservados na aprovação para
+            // reaproveitamento técnico na edição (nunca escopo, nunca cliente).
+            'itens_descartados' => $this->discardedItemsPayload($budget),
             'numero_os' => (string) ($order?->numero_os ?? ''),
             'cliente' => $client ? [
                 'id' => (int) $client->id,
@@ -1821,7 +1830,7 @@ class BudgetWorkflowService
                 'alterado_por_nome' => (string) ($history->user?->nome ?? ''),
                 'created_at' => optional($history->created_at)->format('d/m/Y H:i'),
             ])->all(),
-            'aprovacoes' => $budget->approvals->sortByDesc('created_at')->take(10)->values()->map(static fn (BudgetApproval $approval): array => [
+            'aprovacoes' => $budget->approvals->sortByDesc('created_at')->take(10)->values()->map(fn (BudgetApproval $approval): array => [
                 'id' => (int) $approval->id,
                 'acao' => (string) ($approval->acao ?? ''),
                 'origem' => (string) ($approval->origem ?? ''),
@@ -1830,6 +1839,9 @@ class BudgetWorkflowService
                 'observacao' => (string) ($approval->observacao ?? ''),
                 'nivel' => Budget::normalizeLevel($approval->nivel),
                 'nivel_label' => Budget::levelLabel(Budget::normalizeLevel($approval->nivel)),
+                // Uma linha por opção apresentada naquela aprovação — o
+                // histórico compacto cobre aprovar → editar → reaprovar.
+                'niveis_resumo' => $this->budgetOfferedOptionsService->summarize($approval->niveis_snapshot),
                 'created_at' => optional($approval->created_at)->format('d/m/Y H:i'),
             ])->all(),
             'envios' => $budget->sends->sortByDesc('created_at')->take(10)->values()->map(static fn (BudgetSend $send): array => [
@@ -2311,6 +2323,64 @@ class BudgetWorkflowService
      * Por isso, em orcamento fechado, a cotacao das linhas anteriores e
      * preservada em vez de recalculada.
      */
+    /**
+     * Itens das opções não escolhidas (orcamento_itens_descartados), com o
+     * suficiente para o formulário recriar a linha. Uma revisão enxerga
+     * também os descartados da base que ela revisa.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function discardedItemsPayload(Budget $budget): array
+    {
+        $budgetIds = array_values(array_filter([
+            (int) $budget->id,
+            (int) ($budget->orcamento_revisao_de_id ?? 0),
+        ]));
+
+        return BudgetDiscardedItem::query()
+            ->whereIn('orcamento_id', $budgetIds)
+            ->orderByDesc('descartado_em')
+            ->orderBy('ordem')
+            ->orderBy('id')
+            ->get()
+            ->map(static function (BudgetDiscardedItem $item): array {
+                $niveis = Budget::normalizeLevels($item->niveis);
+
+                return [
+                    'id' => (int) $item->id,
+                    'aprovacao_id' => $item->aprovacao_id !== null ? (int) $item->aprovacao_id : null,
+                    'nivel_aprovado' => (int) $item->nivel_aprovado,
+                    'nivel_aprovado_label' => Budget::levelLabel((int) $item->nivel_aprovado),
+                    'niveis' => $niveis,
+                    'niveis_labels' => array_map(static fn (int $nivel): string => Budget::levelLabel($nivel), $niveis),
+                    'descartado_em' => optional($item->descartado_em)->format('d/m/Y H:i'),
+                    'tipo_item' => (string) ($item->tipo_item ?? ''),
+                    'referencia_id' => $item->referencia_id !== null ? (int) $item->referencia_id : null,
+                    'descricao' => (string) ($item->descricao ?? ''),
+                    'quantidade' => (float) ($item->quantidade ?? 0),
+                    'valor_unitario' => (float) ($item->valor_unitario ?? 0),
+                    'desconto' => (float) ($item->desconto ?? 0),
+                    'desconto_tipo' => (string) ($item->desconto_tipo ?? 'valor'),
+                    'desconto_percentual' => $item->desconto_percentual !== null ? (float) $item->desconto_percentual : null,
+                    'acrescimo' => (float) ($item->acrescimo ?? 0),
+                    'acrescimo_tipo' => (string) ($item->acrescimo_tipo ?? 'valor'),
+                    'acrescimo_percentual' => $item->acrescimo_percentual !== null ? (float) $item->acrescimo_percentual : null,
+                    'total' => (float) ($item->total ?? 0),
+                    'observacoes' => (string) ($item->observacoes ?? ''),
+                    'modo_precificacao' => (string) ($item->modo_precificacao ?? ''),
+                    'preco_custo_referencia' => (float) ($item->preco_custo_referencia ?? 0),
+                    'preco_venda_referencia' => (float) ($item->preco_venda_referencia ?? 0),
+                    'preco_base' => (float) ($item->preco_base ?? 0),
+                    'percentual_encargos' => (float) ($item->percentual_encargos ?? 0),
+                    'valor_encargos' => (float) ($item->valor_encargos ?? 0),
+                    'percentual_margem' => (float) ($item->percentual_margem ?? 0),
+                    'valor_margem' => (float) ($item->valor_margem ?? 0),
+                    'valor_recomendado' => (float) ($item->valor_recomendado ?? 0),
+                ];
+            })
+            ->all();
+    }
+
     private function syncItems(Budget $budget, array $items): float
     {
         $cotacaoCongelada = $this->cotacaoCongelada($budget);

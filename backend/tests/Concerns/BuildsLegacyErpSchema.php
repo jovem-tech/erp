@@ -51,6 +51,7 @@ trait BuildsLegacyErpSchema
             'os_status',
             'os',
             'estoque_reservas',
+            'orcamento_itens_descartados',
             'orcamento_aprovacoes',
             'orcamento_envios',
             'orcamento_status_historico',
@@ -2359,6 +2360,43 @@ trait BuildsLegacyErpSchema
             $table->dateTime('created_at')->nullable();
             $table->foreign('orcamento_id')->references('id')->on('orcamentos')->cascadeOnDelete();
             $table->foreign('usuario_id')->references('id')->on('usuarios')->nullOnDelete();
+        });
+
+        // Espelha 2026_09_22_000001_create_orcamento_itens_descartados_table.
+        Schema::create('orcamento_itens_descartados', function (Blueprint $table): void {
+            $table->id();
+            $table->unsignedBigInteger('orcamento_id');
+            $table->unsignedBigInteger('aprovacao_id')->nullable();
+            $table->unsignedBigInteger('item_original_id')->nullable();
+            $table->unsignedTinyInteger('nivel_aprovado');
+            $table->string('tipo_item', 30)->default('servico');
+            $table->unsignedBigInteger('referencia_id')->nullable();
+            $table->string('descricao', 255);
+            $table->decimal('quantidade', 14, 4)->default(1);
+            $table->decimal('valor_unitario', 12, 2)->default(0);
+            $table->decimal('desconto', 12, 2)->default(0);
+            $table->string('desconto_tipo', 20)->default('valor');
+            $table->decimal('desconto_percentual', 8, 4)->nullable();
+            $table->decimal('acrescimo', 12, 2)->default(0);
+            $table->string('acrescimo_tipo', 20)->default('valor');
+            $table->decimal('acrescimo_percentual', 8, 4)->nullable();
+            $table->decimal('total', 12, 2)->default(0);
+            $table->integer('ordem')->default(0);
+            $table->json('niveis')->nullable();
+            $table->text('observacoes')->nullable();
+            $table->decimal('preco_custo_referencia', 12, 2)->default(0);
+            $table->decimal('preco_venda_referencia', 12, 2)->default(0);
+            $table->decimal('preco_base', 12, 2)->default(0);
+            $table->decimal('percentual_encargos', 12, 2)->default(0);
+            $table->decimal('valor_encargos', 12, 2)->default(0);
+            $table->decimal('percentual_margem', 12, 2)->default(0);
+            $table->decimal('valor_margem', 12, 2)->default(0);
+            $table->decimal('valor_recomendado', 12, 2)->default(0);
+            $table->string('modo_precificacao', 30)->nullable();
+            $table->dateTime('descartado_em');
+            $table->timestamps();
+            $table->foreign('orcamento_id')->references('id')->on('orcamentos')->cascadeOnDelete();
+            $table->foreign('aprovacao_id')->references('id')->on('orcamento_aprovacoes')->nullOnDelete();
         });
     }
 

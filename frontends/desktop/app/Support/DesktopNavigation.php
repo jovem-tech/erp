@@ -85,6 +85,62 @@ class DesktopNavigation
     }
 
     /**
+     * Todas as folhas do menu (inclusive `hidden`), ja filtradas por RBAC, cada
+     * uma com o caminho completo ate ela: [Secao, Grupo?, Item]. E' o que a
+     * busca de funcionalidades usa para mostrar "Financeiro › Relatórios ›
+     * Fluxo de Caixa" e levar o usuario direto la sem ele lembrar o menu.
+     *
+     * @return array<int, array{label:string,route:string,module:string,action:string,icon:string,path:array<int, string>}>
+     */
+    public static function flattenedWithPath(): array
+    {
+        $items = [];
+
+        foreach (self::definition() as $section) {
+            foreach ($section['items'] as $item) {
+                self::collectWithPath($item, [(string) $section['label']], $items);
+            }
+        }
+
+        return $items;
+    }
+
+    /**
+     * @param  array<string, mixed>  $item
+     * @param  array<int, string>  $path
+     * @param  array<int, array<string, mixed>>  $items
+     */
+    private static function collectWithPath(array $item, array $path, array &$items): void
+    {
+        if (isset($item['children']) && is_array($item['children'])) {
+            $path[] = (string) ($item['label'] ?? '');
+
+            foreach ($item['children'] as $child) {
+                self::collectWithPath($child, $path, $items);
+            }
+
+            return;
+        }
+
+        $allowed = self::filterItem($item);
+
+        if ($allowed === null) {
+            return;
+        }
+
+        $path[] = (string) ($allowed['label'] ?? '');
+
+        $items[] = [
+            'label' => (string) ($allowed['label'] ?? ''),
+            'route' => (string) $allowed['route'],
+            'module' => (string) $allowed['module'],
+            'action' => isset($allowed['action']) && is_string($allowed['action']) ? $allowed['action'] : 'visualizar',
+            'icon' => (string) ($allowed['icon'] ?? 'bi-dot'),
+            'path' => $path,
+        ];
+    }
+
+    /**
      * @return array<string, string>|null
      */
     public static function findFavoritable(mixed $routeName): ?array

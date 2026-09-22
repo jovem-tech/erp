@@ -4111,6 +4111,108 @@ a {
     opacity: 0.55;
 }
 
+/* Opções oferecidas (detalhe do orçamento e da OS, depois da aprovação):
+   cartão/coluna da opção que o cliente escolheu em verde; as não escolhidas
+   ficam legíveis, só um degrau abaixo — são registro, não escolha. */
+.summary-card.budget-offered-not-chosen {
+    opacity: 0.8;
+}
+
+.budget-offered-perks {
+    margin: 0.6rem 0 0;
+    padding-left: 1.05rem;
+    color: var(--desktop-text-muted);
+    font-size: 0.82rem;
+    line-height: 1.35;
+}
+
+.budget-offered-perks li + li {
+    margin-top: 0.15rem;
+}
+
+.budget-offered-table thead th.is-approved,
+.budget-offered-table tbody td.is-approved,
+.budget-offered-table tfoot th.is-approved {
+    background: rgba(var(--desktop-success-rgb), 0.09);
+}
+
+.budget-offered-table thead th.is-approved {
+    color: var(--desktop-success-text);
+    border-bottom-color: var(--desktop-success);
+}
+
+.budget-offered-table tfoot th {
+    border-top: 2px solid var(--desktop-border);
+}
+
+.budget-offered-table tbody tr.budget-offered-row-out td:first-child {
+    color: var(--desktop-text-muted);
+}
+
+/* Itens das opções não escolhidas, no formulário de edição: painel de
+   reaproveitamento — nada aqui entra no orçamento sem clique. */
+.budget-discarded-panel {
+    border: 1px dashed rgba(56, 104, 176, 0.35);
+    border-radius: 14px;
+    background: rgba(56, 104, 176, 0.04);
+}
+
+.budget-discarded-panel > summary {
+    cursor: pointer;
+    padding: 0.85rem 1rem;
+    font-weight: 700;
+    color: var(--desktop-heading);
+    list-style: none;
+}
+
+.budget-discarded-panel > summary::-webkit-details-marker {
+    display: none;
+}
+
+.budget-discarded-panel > summary::before {
+    content: '';
+    display: inline-block;
+    width: 0;
+    height: 0;
+    margin-right: 0.55rem;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+    border-left: 6px solid currentColor;
+    transition: transform 0.15s ease;
+}
+
+.budget-discarded-panel[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+.budget-discarded-panel .budget-discarded-body {
+    padding: 0 1rem 1rem;
+}
+
+.budget-discarded-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    padding: 0.6rem 0;
+    border-top: 1px solid var(--desktop-border);
+}
+
+.budget-discarded-item-name {
+    font-weight: 600;
+    color: var(--desktop-heading);
+}
+
+.budget-discarded-item-meta {
+    color: var(--desktop-text-muted);
+    font-size: 0.82rem;
+}
+
+.budget-discarded-item.is-added {
+    opacity: 0.55;
+}
+
 .budget-tiers-table .is-hole {
     background: rgba(245, 158, 11, 0.1);
 }

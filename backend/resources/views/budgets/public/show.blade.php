@@ -25,6 +25,14 @@
     // com itens/totais daquela opção. Orçamento comum nunca entra aqui.
     $selectedOption = (int) ($budget['opcao_selecionada'] ?? 0);
     $showOptions = ! empty($budget['has_tiers']) && ! empty($budget['can_respond']) && $selectedOption <= 0;
+    // Depois da decisão, `?opcoes=1` reabre as opções apresentadas só para
+    // consulta (snapshot da aprovação): mesma landing, sem botão de escolher
+    // nem de recusar, com a aprovada marcada. O backend só liga o modo
+    // quando não há mais o que responder.
+    $showOptionsReadOnly = ! $showOptions && ! empty($budget['modo_consulta_opcoes']);
+    $offeredOptions = is_array($budget['niveis_ofertados']['niveis'] ?? null) ? $budget['niveis_ofertados']['niveis'] : [];
+    $offeredLayout = is_array($budget['niveis_ofertados']['layout'] ?? null) ? $budget['niveis_ofertados']['layout'] : [];
+    $canConsultOptions = empty($budget['can_respond']) && $offeredOptions !== [];
     $publicToken = (string) request()->route('token');
     // Ícones em SVG inline (a página é autocontida e glifo de fonte já falhou
     // uma vez aqui). Strings constantes, impressas com {!! !!}; os partials
@@ -658,6 +666,42 @@
             border: 2px solid var(--primary);
             padding: 3px 14px;
         }
+        /* Consulta pós-decisão: a opção que o cliente aprovou leva o selo
+           verde (mesma família do status "aprovado"); as outras não têm
+           botão nem selo — ficam só como registro do que foi apresentado. */
+        .option-badge-approved {
+            background: var(--success);
+            box-shadow: 0 8px 18px rgba(21, 128, 61, 0.3);
+        }
+        .option-card.is-approved { border-color: var(--success); }
+        .option-card.is-approved .option-cta-static {
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            min-height: 44px;
+            border-radius: 12px;
+            background: var(--success-soft);
+            color: var(--success);
+            font-weight: 700;
+        }
+        .option-card.is-not-chosen { opacity: .82; }
+        .option-card.is-not-chosen .option-cta-static {
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 44px;
+            color: var(--muted);
+            font-size: 13px;
+        }
+        .pill-approved { background: var(--success-soft); color: var(--success); }
+        .options-back {
+            display: flex;
+            justify-content: center;
+            margin: 20px 0 4px;
+        }
         /* Cabeçalho colorido: identidade do nível (ícone + nome). Sempre
            presente, independente de ser o recomendado/mais escolhida —
            por isso não tem seletor de precedência com .is-recommended. */
@@ -891,8 +935,8 @@
 </head>
 <body>
     <main class="shell">
-        <section class="hero {{ $showOptions ? 'hero-landing' : '' }}">
-            @if ($showOptions)
+        <section class="hero {{ $showOptions || $showOptionsReadOnly ? 'hero-landing' : '' }}">
+            @if ($showOptions || $showOptionsReadOnly)
                 {{-- Landing dos níveis: a página fala com uma pessoa e é assinada
                      por uma pessoa. O número do orçamento vira metadado; o status
                      ("aguardando resposta") é jargão de sistema e fica de fora —
@@ -937,19 +981,37 @@
 
                     <div class="hero-main">
                         <h1 class="hero-greeting">{{ $heroFirstName !== '' ? 'Olá, '.$heroFirstName.'.' : 'Olá!' }}</h1>
-                        <p class="lead">
-                            @if ($heroEquipmentShort !== '')
-                                Seu <strong>{{ $heroEquipmentShort }}</strong> já foi avaliado. Agora é só escolher como cuidar dele.
-                            @else
-                                Seu aparelho já foi avaliado. Agora é só escolher como cuidar dele.
-                            @endif
-                        </p>
+                        @if ($showOptionsReadOnly)
+                            {{-- Consulta: o cliente já decidiu; a página lembra o
+                                 que foi apresentado e o que ele escolheu. --}}
+                            <p class="lead">
+                                Estas foram as opções apresentadas
+                                @if ($heroEquipmentShort !== '')
+                                    para o seu <strong>{{ $heroEquipmentShort }}</strong>.
+                                @else
+                                    para o seu aparelho.
+                                @endif
+                                @if (($budget['nivel_aprovado_label'] ?? '') !== '')
+                                    Você escolheu a <strong>{{ $budget['nivel_aprovado_label'] }}</strong>@if (($budget['aprovado_em'] ?? '') !== '') em {{ $budget['aprovado_em'] }}@endif.
+                                @endif
+                            </p>
+                        @else
+                            <p class="lead">
+                                @if ($heroEquipmentShort !== '')
+                                    Seu <strong>{{ $heroEquipmentShort }}</strong> já foi avaliado. Agora é só escolher como cuidar dele.
+                                @else
+                                    Seu aparelho já foi avaliado. Agora é só escolher como cuidar dele.
+                                @endif
+                            </p>
+                        @endif
 
                         <div class="hero-pills">
                             @if (($budget['numero'] ?? '') !== '')
                                 <span class="pill">Orçamento {{ $budget['numero'] }}</span>
                             @endif
-                            @if (($budget['validade_data'] ?? '') !== '')
+                            @if ($showOptionsReadOnly && ($budget['nivel_aprovado_label'] ?? '') !== '')
+                                <span class="pill pill-approved">Opção aprovada: {{ $budget['nivel_aprovado_label'] }}</span>
+                            @elseif (($budget['validade_data'] ?? '') !== '')
                                 <span class="pill">Válido até {{ $budget['validade_data'] }}</span>
                             @endif
                         </div>
@@ -981,7 +1043,7 @@
                 <div class="flash warning">{{ $flashWarning }}</div>
             @endif
 
-            @if ($showOptions)
+            @if ($showOptions || $showOptionsReadOnly)
                 {{-- Landing dos níveis: o cliente veio escolher uma opção, não
                      conferir cadastro. A saudação acima já diz quem e qual
                      aparelho; o cadastro completo fica a um toque. --}}
@@ -1001,6 +1063,8 @@
 
         @if ($showOptions)
             @include('budgets.public.partials.opcoes')
+        @elseif ($showOptionsReadOnly)
+            @include('budgets.public.partials.opcoes', ['readOnly' => true, 'offeredOptions' => $offeredOptions, 'offeredLayout' => $offeredLayout])
         @else
         <section class="grid">
             <article class="card">
@@ -1014,6 +1078,9 @@
                 @elseif (! empty($budget['nivel_aprovado_label']))
                     <div class="option-selected">
                         <span>Opção aprovada: <strong>{{ $budget['nivel_aprovado_label'] }}</strong></span>
+                        @if ($canConsultOptions)
+                            <a href="{{ route('budgets.public.show', ['token' => $publicToken, 'opcoes' => 1]) }}">Ver as opções apresentadas</a>
+                        @endif
                     </div>
                 @endif
 

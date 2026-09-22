@@ -870,6 +870,67 @@
                 </button>
             </div>
 
+            @php
+                // Itens das opções que o cliente NÃO escolheu, preservados na
+                // aprovação (orcamento_itens_descartados). Uso só técnico: se o
+                // cliente muda de ideia (aprovou a Básica, agora quer a
+                // Completa), o técnico traz o item de volta com um clique. Nada
+                // entra no orçamento sem esse clique — e o item entra como
+                // linha comum, na opção que o interruptor mandar.
+                $discardedItems = ($isEditMode ?? false) && is_array($budget['itens_descartados'] ?? null)
+                    ? array_values(array_filter($budget['itens_descartados'], 'is_array'))
+                    : [];
+            @endphp
+            @if ($discardedItems !== [] && ! $lockedForConvertedEdit)
+                <details class="budget-discarded-panel mb-4" data-budget-discarded-panel>
+                    <summary>
+                        Itens das outras opções (não contratados)
+                        <span class="desktop-chip ms-2" data-budget-discarded-count>{{ count($discardedItems) }}</span>
+                    </summary>
+                    <div class="budget-discarded-body">
+                        <p class="text-secondary small mb-2">
+                            Ficaram fora do escopo quando o cliente escolheu a opção aprovada. Se ele mudar de ideia, adicione o item de volta ao orçamento — ele entra como um item comum, com os mesmos valores de quando foi ofertado.
+                        </p>
+                        @foreach ($discardedItems as $discarded)
+                            @php
+                                $discardedLevels = is_array($discarded['niveis_labels'] ?? null) ? $discarded['niveis_labels'] : [];
+                                $discardedMeta = array_filter([
+                                    $discardedLevels !== [] ? 'Ofertado na '.implode(' e ', array_map(static fn (string $label): string => str_replace('Manutenção ', '', $label), $discardedLevels)) : '',
+                                    number_format((float) ($discarded['quantidade'] ?? 0), (float) ($discarded['quantidade'] ?? 0) === floor((float) ($discarded['quantidade'] ?? 0)) ? 0 : 2, ',', '.').' × R$ '.number_format((float) ($discarded['valor_unitario'] ?? 0), 2, ',', '.'),
+                                    ($discarded['nivel_aprovado_label'] ?? '') !== '' ? 'Cliente aprovou a '.str_replace('Manutenção ', '', (string) $discarded['nivel_aprovado_label']).(($discarded['descartado_em'] ?? '') !== '' ? ' em '.$discarded['descartado_em'] : '') : '',
+                                ]);
+                                // Só o que a linha do formulário consome; nível NÃO vai —
+                                // a linha nova segue o interruptor, como qualquer item.
+                                $discardedRowData = [
+                                    'tipo_item' => (string) ($discarded['tipo_item'] ?? 'servico'),
+                                    'referencia_id' => $discarded['referencia_id'] ?? '',
+                                    'descricao' => (string) ($discarded['descricao'] ?? ''),
+                                    'quantidade' => (float) ($discarded['quantidade'] ?? 1),
+                                    'valor_unitario' => (float) ($discarded['valor_unitario'] ?? 0),
+                                    'desconto' => (float) ($discarded['desconto'] ?? 0),
+                                    'desconto_tipo' => (string) ($discarded['desconto_tipo'] ?? 'valor'),
+                                    'desconto_percentual' => (float) ($discarded['desconto_percentual'] ?? 0),
+                                    'acrescimo' => (float) ($discarded['acrescimo'] ?? 0),
+                                    'acrescimo_tipo' => (string) ($discarded['acrescimo_tipo'] ?? 'valor'),
+                                    'acrescimo_percentual' => (float) ($discarded['acrescimo_percentual'] ?? 0),
+                                    'observacoes' => (string) ($discarded['observacoes'] ?? ''),
+                                    'modo_precificacao' => (string) ($discarded['modo_precificacao'] ?? '') ?: 'manual',
+                                ];
+                            @endphp
+                            <div class="budget-discarded-item" data-budget-discarded-item="{{ (int) ($discarded['id'] ?? 0) }}">
+                                <div>
+                                    <div class="budget-discarded-item-name">{{ $discarded['descricao'] ?? '' }}</div>
+                                    <div class="budget-discarded-item-meta">{{ implode(' · ', $discardedMeta) }}</div>
+                                </div>
+                                <button type="button" class="btn btn-sm btn-outline-primary" data-budget-discarded-add data-item="{{ json_encode($discardedRowData, JSON_UNESCAPED_UNICODE) }}">
+                                    <i class="bi bi-arrow-counterclockwise me-1"></i>Adicionar ao orçamento
+                                </button>
+                            </div>
+                        @endforeach
+                    </div>
+                </details>
+            @endif
+
             {{-- Composição das opções: o único lugar onde se define em quais
                  opções cada item entra. Linhas = itens, colunas = opções,
                  célula = clique inclui/tira — a mesma tabela que o cliente

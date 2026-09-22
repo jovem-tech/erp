@@ -1139,6 +1139,151 @@ class OrderFlowTest extends TestCase
             ->assertJsonPath('data.order.custo_auditoria.pendencia_baixa_estoque', true);
     }
 
+    public function test_show_budget_items_carry_part_and_service_sheets_and_cost_only_with_permissions(): void
+    {
+        [$user, $assignedOrder] = $this->seedTechnicianOrders();
+        $clientId = (int) DB::table('os')->where('id', $assignedOrder)->value('cliente_id');
+
+        $servicoId = $this->createServiceRecord([
+            'nome' => 'Formatação completa',
+            'descricao' => 'Backup, formatação e reinstalação',
+            'valor' => 150.00,
+            'tempo_padrao_horas' => 1.50,
+            'custo_direto_padrao' => 60.00,
+            'item_lc116' => '14.01',
+            'aliquota_iss' => 5.00,
+        ]);
+
+        $pecaId = $this->createPecaRecord([
+            'codigo' => 'PC00042',
+            'nome' => 'Tela LCD 15.6',
+            'fornecedor' => 'Distribuidora Norte',
+            'localizacao' => 'Prateleira B3',
+            'preco_custo' => 150.00,
+            'preco_venda' => 260.00,
+            'quantidade_atual' => 3,
+            'quantidade_reservada' => 1,
+        ]);
+
+        $budgetId = (int) DB::table('orcamentos')->insertGetId([
+            'numero' => 'ORC-TESTE-0002',
+            'status' => 'aprovado',
+            'cliente_id' => $clientId,
+            'os_id' => $assignedOrder,
+            'subtotal' => 340.00,
+            'total' => 340.00,
+            'aprovado_em' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('orcamento_itens')->insert([
+            'orcamento_id' => $budgetId,
+            'tipo_item' => 'peca',
+            'referencia_id' => $pecaId,
+            'descricao' => 'Tela LCD 15.6',
+            'quantidade' => 2,
+            'valor_unitario' => 120.00,
+            'total' => 240.00,
+            'preco_custo_referencia' => 140.00,
+            'valor_margem' => 25.00,
+            'percentual_margem' => 20.0,
+            'ordem' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('orcamento_itens')->insert([
+            'orcamento_id' => $budgetId,
+            'tipo_item' => 'peca',
+            'referencia_id' => null,
+            'descricao' => 'Cabo flat avulso',
+            'quantidade' => 1,
+            'valor_unitario' => 100.00,
+            'total' => 100.00,
+            'preco_custo_referencia' => 40.00,
+            'ordem' => 2,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('orcamento_itens')->insert([
+            'orcamento_id' => $budgetId,
+            'tipo_item' => 'servico',
+            'referencia_id' => $servicoId,
+            'descricao' => 'Formatação completa',
+            'quantidade' => 1,
+            'valor_unitario' => 130.00,
+            'total' => 130.00,
+            'preco_custo_referencia' => 45.00,
+            'valor_margem' => 85.00,
+            'percentual_margem' => 65.4,
+            'ordem' => 3,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // Tecnico so com os:visualizar: ve o item, mas nem ficha de estoque/
+        // catalogo nem custo — a redacao e no payload (specs/037), nao na tela.
+        $token = $this->loginAndGetToken($user->email);
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/v1/orders/{$assignedOrder}");
+
+        $response->assertOk()
+            ->assertJsonPath('data.order.orcamento.itens.0.referencia_id', $pecaId)
+            ->assertJsonPath('data.order.orcamento.itens.0.peca', null)
+            ->assertJsonPath('data.order.orcamento.itens.0.servico', null)
+            ->assertJsonMissingPath('data.order.orcamento.itens.0.preco_custo_referencia')
+            ->assertJsonMissingPath('data.order.orcamento.itens.0.valor_margem')
+            ->assertJsonPath('data.order.orcamento.itens.1.referencia_id', null)
+            ->assertJsonPath('data.order.orcamento.itens.1.peca', null)
+            ->assertJsonPath('data.order.orcamento.itens.2.referencia_id', $servicoId)
+            ->assertJsonPath('data.order.orcamento.itens.2.servico', null)
+            ->assertJsonMissingPath('data.order.orcamento.itens.2.preco_custo_referencia');
+
+        // Com estoque + servicos + financeiro: fichas completas, saldo ja
+        // descontando a reserva de terceiros, e custo em reais.
+        $this->grantGroupPermissions(2, [
+            'estoque' => ['visualizar'],
+            'servicos' => ['visualizar'],
+            'financeiro' => ['visualizar'],
+        ]);
+        Cache::forget('rbac_user_'.$user->id);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/v1/orders/{$assignedOrder}");
+
+        $response->assertOk()
+            ->assertJsonPath('data.order.orcamento.itens.0.preco_custo_referencia', 140.0)
+            ->assertJsonPath('data.order.orcamento.itens.0.valor_margem', 25.0)
+            ->assertJsonPath('data.order.orcamento.itens.0.percentual_margem', 20.0)
+            ->assertJsonPath('data.order.orcamento.itens.0.peca.id', $pecaId)
+            ->assertJsonPath('data.order.orcamento.itens.0.peca.codigo', 'PC00042')
+            ->assertJsonPath('data.order.orcamento.itens.0.peca.fornecedor', 'Distribuidora Norte')
+            ->assertJsonPath('data.order.orcamento.itens.0.peca.localizacao', 'Prateleira B3')
+            ->assertJsonPath('data.order.orcamento.itens.0.peca.preco_custo', 150.0)
+            ->assertJsonPath('data.order.orcamento.itens.0.peca.preco_venda', 260.0)
+            ->assertJsonPath('data.order.orcamento.itens.0.peca.quantidade_atual', 3.0)
+            ->assertJsonPath('data.order.orcamento.itens.0.peca.reservado_por_terceiros', 1.0)
+            ->assertJsonPath('data.order.orcamento.itens.0.peca.quantidade_disponivel', 2.0)
+            ->assertJsonPath('data.order.orcamento.itens.0.peca.falta', 0.0)
+            ->assertJsonPath('data.order.orcamento.itens.0.peca.estado', 'em_estoque')
+            // Peca digitada a mao: sem ficha, mas o custo do item continua vindo.
+            ->assertJsonPath('data.order.orcamento.itens.1.peca', null)
+            ->assertJsonPath('data.order.orcamento.itens.1.preco_custo_referencia', 40.0)
+            // Servico do catalogo: ficha do servico + custo direto padrao.
+            ->assertJsonPath('data.order.orcamento.itens.2.peca', null)
+            ->assertJsonPath('data.order.orcamento.itens.2.servico.id', $servicoId)
+            ->assertJsonPath('data.order.orcamento.itens.2.servico.nome', 'Formatação completa')
+            ->assertJsonPath('data.order.orcamento.itens.2.servico.descricao', 'Backup, formatação e reinstalação')
+            ->assertJsonPath('data.order.orcamento.itens.2.servico.valor', 150.0)
+            ->assertJsonPath('data.order.orcamento.itens.2.servico.tempo_padrao_horas', 1.5)
+            ->assertJsonPath('data.order.orcamento.itens.2.servico.item_lc116', '14.01')
+            ->assertJsonPath('data.order.orcamento.itens.2.servico.aliquota_iss', 5.0)
+            ->assertJsonPath('data.order.orcamento.itens.2.servico.ativo', true)
+            ->assertJsonPath('data.order.orcamento.itens.2.servico.custo_direto_padrao', 60.0)
+            ->assertJsonPath('data.order.orcamento.itens.2.preco_custo_referencia', 45.0)
+            ->assertJsonPath('data.order.orcamento.itens.2.valor_margem', 85.0);
+    }
+
     public function test_show_returns_403_when_order_is_not_assigned_to_technician(): void
     {
         [$user, , $unassignedOrder] = $this->seedTechnicianOrders();

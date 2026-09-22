@@ -608,27 +608,91 @@
             <textarea id="financeiroObservacoes" name="observacoes" class="form-control" rows="3" placeholder="Anotações internas sobre este lançamento (opcional).">{{ old('observacoes', $lancamento['observacoes'] ?? '') }}</textarea>
         </div>
 
-        @if (empty($lancamento['id'] ?? null))
-            <div class="desktop-form-section">
-                <div class="desktop-form-section-title">
-                    <i class="bi bi-paperclip"></i>
-                    <span>ANEXO</span>
-                </div>
+        @php
+            // Em edição, lista o que já está anexado para o operador não subir o
+            // mesmo boleto duas vezes. Só leitura aqui: excluir é um <form>
+            // próprio (DELETE) e não pode ficar aninhado dentro deste — fica na
+            // tela de detalhe.
+            $lancamentoId = (int) ($lancamento['id'] ?? 0);
+            $anexosExistentes = $lancamentoId > 0 ? ($lancamento['anexos'] ?? []) : [];
+        @endphp
+        <div class="desktop-form-section">
+            <div class="desktop-form-section-title">
+                <i class="bi bi-paperclip"></i>
+                <span>{{ $lancamentoId > 0 ? 'ANEXOS' : 'ANEXO' }}</span>
+            </div>
+
+            @if ($lancamentoId > 0)
+                @if ($anexosExistentes === [])
+                    <p class="text-secondary small mb-2">Nenhum arquivo anexado ainda — boleto, fatura ou comprovante ainda não foi guardado neste lançamento.</p>
+                @else
+                    <ul class="list-unstyled mb-3">
+                        @foreach ($anexosExistentes as $anexo)
+                            @php
+                                $anexoId = (int) ($anexo['id'] ?? 0);
+                                $anexoUrl = route('financeiro.anexos.download', [$lancamentoId, $anexoId]);
+                                $anexoNome = trim((string) ($anexo['descricao'] ?? '')) !== ''
+                                    ? trim((string) $anexo['descricao'])
+                                    : (trim((string) ($anexo['nome_original'] ?? '')) !== '' ? trim((string) $anexo['nome_original']) : 'Arquivo');
+                                $anexoMime = (string) ($anexo['mime'] ?? '');
+                                $anexoCriadoEm = trim((string) ($anexo['created_at'] ?? ''));
+                                try {
+                                    $anexoData = $anexoCriadoEm !== '' ? \Illuminate\Support\Carbon::parse($anexoCriadoEm)->format('d/m/Y H:i') : '—';
+                                } catch (\Throwable) {
+                                    $anexoData = $anexoCriadoEm;
+                                }
+                            @endphp
+                            <li class="d-flex justify-content-between align-items-center py-2 border-bottom">
+                                <div>
+                                    <span class="fw-semibold">
+                                        <i class="bi bi-file-earmark-text me-1"></i>{{ $anexoNome }}
+                                    </span>
+                                    <div class="small text-secondary">
+                                        {{ number_format(((int) ($anexo['tamanho_bytes'] ?? 0)) / 1024, 0, ',', '.') }} KB ·
+                                        {{ trim((string) ($anexo['uploaded_by']['nome'] ?? '')) !== '' ? $anexo['uploaded_by']['nome'] : 'Usuário removido' }} ·
+                                        {{ $anexoData }}
+                                    </div>
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button type="button" class="btn btn-sm btn-outline-light" title="Visualizar"
+                                            data-bs-toggle="modal" data-bs-target="#anexoPreviewModal"
+                                            data-anexo-url="{{ $anexoUrl }}" data-anexo-mime="{{ $anexoMime }}" data-anexo-nome="{{ $anexoNome }}">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <a href="{{ $anexoUrl }}" target="_blank" rel="noreferrer" class="btn btn-sm btn-outline-light" title="Abrir em nova aba">
+                                        <i class="bi bi-box-arrow-up-right"></i>
+                                    </a>
+                                </div>
+                            </li>
+                        @endforeach
+                    </ul>
+                @endif
+                <p class="text-secondary small mb-2">
+                    Escolha um arquivo abaixo para anexá-lo ao salvar as alterações. Para excluir um anexo, use a tela de detalhes do lançamento.
+                </p>
+            @else
                 <p class="text-secondary small mb-2">
                     Opcional: já anexe o boleto, comprovante ou cheque deste lançamento — evita ter que voltar depois para procurar o arquivo.
                 </p>
-                <div class="desktop-grid desktop-grid-two">
-                    <div>
-                        <label class="form-label" for="financeiroAnexoArquivo">Arquivo (PDF ou foto)</label>
-                        <input type="file" id="financeiroAnexoArquivo" name="anexo" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.webp">
-                    </div>
-                    <div>
-                        <label class="form-label" for="financeiroAnexoDescricao">Descrição do anexo (opcional)</label>
-                        <input type="text" id="financeiroAnexoDescricao" name="anexo_descricao" class="form-control" maxlength="190" placeholder="Ex.: Boleto setembro/2026">
-                    </div>
+            @endif
+
+            <div class="desktop-grid desktop-grid-two">
+                <div>
+                    <label class="form-label" for="financeiroAnexoArquivo">Arquivo (PDF ou foto)</label>
+                    <input type="file" id="financeiroAnexoArquivo" name="anexo" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.webp">
+                    @error('anexo')
+                        <div class="text-danger small mt-1">{{ $message }}</div>
+                    @enderror
+                </div>
+                <div>
+                    <label class="form-label" for="financeiroAnexoDescricao">Descrição do anexo (opcional)</label>
+                    <input type="text" id="financeiroAnexoDescricao" name="anexo_descricao" class="form-control" maxlength="190" placeholder="Ex.: Boleto setembro/2026" value="{{ old('anexo_descricao', '') }}">
+                    @error('anexo_descricao')
+                        <div class="text-danger small mt-1">{{ $message }}</div>
+                    @enderror
                 </div>
             </div>
-        @endif
+        </div>
 
         <div class="desktop-form-actions">
             <a href="{{ $cancelUrl }}" class="btn btn-outline-light">Cancelar</a>
@@ -662,5 +726,11 @@
 @if ($mostraEntradaEstoque && ($canQuickPeca ?? false))
     @push('modals')
         @include('financeiro.partials.peca-quick-modal')
+    @endpush
+@endif
+
+@if ($anexosExistentes !== [])
+    @push('modals')
+        @include('financeiro._anexo_preview_modal')
     @endpush
 @endif
