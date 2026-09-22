@@ -13,7 +13,7 @@
         <div class="surface-card-header">
             <div>
                 <h2 class="surface-title">Busca completa</h2>
-                <p class="surface-subtitle">Pesquise por OS, clientes, equipamentos, orçamentos e demais registros liberados no seu perfil.</p>
+                <p class="surface-subtitle">Pesquise por OS, clientes, equipamentos, orçamentos e demais registros liberados no seu perfil — e também por telas, menus e funções do sistema (ex.: "fluxo de caixa", "simulador de preços").</p>
             </div>
 
             <span class="desktop-chip">{{ number_format($total, 0, ',', '.') }} resultados</span>
@@ -59,7 +59,7 @@
         @include('layouts.partials.empty-state', [
             'icon' => 'bi-search',
             'title' => 'Digite algo para começar a busca',
-            'message' => 'A busca completa já varre os principais campos operacionais liberados pelo backend central.',
+            'message' => 'Vale para registros (OS, clientes, peças…) e para funções do sistema: digite o nome de uma tela, menu ou botão, como "fluxo de caixa" ou "simulador de preços", e vá direto até lá.',
         ])
     @elseif ($sections === [])
         @include('layouts.partials.empty-state', [

@@ -575,10 +575,13 @@ class PdfDefaultTemplates
     }
 
     /**
-     * Orçamento em níveis de manutenção: nomeia a opção que o documento
-     * representa (a que o cliente está olhando na página, ou a aprovada).
-     * Orçamento comum deixa `orcamento.opcao_texto` vazio e o bloco some —
-     * o PDF de sempre não muda um milímetro.
+     * Orçamento em níveis de manutenção: a seção da opção que o documento
+     * representa (a que o cliente está olhando na página, ou a aprovada) —
+     * título com o estado, e numa grade tudo o que a opção inclui: nome,
+     * cobertura, valor, quantos itens, garantia, parcelamento e entrega,
+     * mais a linha de quem/quando aprovou. Os itens em si vêm logo abaixo,
+     * na tabela de sempre. Orçamento comum deixa `orcamento.opcao_texto`
+     * vazio e a seção inteira some — o PDF de sempre não muda um milímetro.
      *
      * Público porque a migration que leva o bloco aos modelos já publicados
      * usa exatamente esta definição.
@@ -589,7 +592,25 @@ class PdfDefaultTemplates
     {
         return [
             ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.opcao_texto', 'operador' => 'preenchido'], 'blocos' => [
-                ['tipo' => 'campo', 'rotulo' => 'Opção de manutenção', 'valor' => '{{ orcamento.opcao_texto }}'],
+                ['tipo' => 'cabecalho_secao', 'texto' => '{{ orcamento.opcao_titulo }}'],
+                ['tipo' => 'grade_campos', 'colunas' => 2, 'campos' => [
+                    ['rotulo' => 'Opção', 'valor' => '{{ orcamento.opcao_texto }}'],
+                    ['rotulo' => 'Cobertura', 'valor' => '{{ orcamento.opcao_subtitulo }}'],
+                    ['rotulo' => 'Valor total', 'valor' => '{{ orcamento.total | moeda }}'],
+                    ['rotulo' => 'Itens incluídos', 'valor' => '{{ orcamento.opcao_itens_texto }}'],
+                ]],
+                ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.garantia_prazo', 'operador' => 'preenchido'], 'blocos' => [
+                    ['tipo' => 'campo', 'rotulo' => 'Garantia', 'valor' => '{{ orcamento.garantia_prazo }}'],
+                ]],
+                ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.parcelamento', 'operador' => 'preenchido'], 'blocos' => [
+                    ['tipo' => 'campo', 'rotulo' => 'Parcelamento', 'valor' => '{{ orcamento.parcelamento }}'],
+                ]],
+                ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.entrega_domicilio_label', 'operador' => 'preenchido'], 'blocos' => [
+                    ['tipo' => 'campo', 'rotulo' => 'Entrega', 'valor' => '{{ orcamento.entrega_domicilio_label }}'],
+                ]],
+                ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.opcao_aprovacao_texto', 'operador' => 'preenchido'], 'blocos' => [
+                    ['tipo' => 'paragrafo', 'texto' => '{{ orcamento.opcao_aprovacao_texto }}'],
+                ]],
             ]],
         ];
     }

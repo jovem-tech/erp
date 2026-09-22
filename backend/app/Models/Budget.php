@@ -558,4 +558,13 @@ class Budget extends Model
     {
         return $this->hasMany(BudgetApproval::class, 'orcamento_id', 'id');
     }
+
+    /**
+     * Itens das opções não escolhidas, preservados na aprovação para
+     * reaproveitamento técnico na edição. Nunca fazem parte do escopo.
+     */
+    public function discardedItems(): HasMany
+    {
+        return $this->hasMany(BudgetDiscardedItem::class, 'orcamento_id', 'id');
+    }
 }

@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-09-17T10:32:18-03:00`
-- Versao do sistema: `5.89.0`
+- Gerado em: `2026-09-22T06:47:09-03:00`
+- Versao do sistema: `6.2.0`
 - Versao da API: `1.7.0`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -234,6 +234,8 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-09-15-documentos-pdf-sob-demanda.md` - Documentos PDF da OS renderizados sob demanda
 - `documentacao/07-novas-implementacoes/2026-09-15-orcamento-em-niveis-manutencao.md` - Orçamento em níveis de manutenção (Básica / Avançada / Completa)
 - `documentacao/07-novas-implementacoes/2026-09-17-selo-nota-fiscal-orcamento-publico.md` - Selo de emissão de NFS-e no orçamento público, condicionado ao limite do MEI
+- `documentacao/07-novas-implementacoes/2026-09-22-anexo-na-edicao-do-lancamento.md` - Anexar arquivo na edição do lançamento financeiro (2026-09-22)
+- `documentacao/07-novas-implementacoes/2026-09-22-detalhes-item-orcamento-na-os.md` - Detalhes da peça e do serviço no detalhe da OS (2026-09-22)
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 - `documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md` - Revisão de segurança — Fluxo de orçamento na assistência (com OS)
 

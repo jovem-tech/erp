@@ -4,6 +4,7 @@ namespace App\Services\Budgets;
 
 use App\Models\Budget;
 use App\Models\BudgetApproval;
+use App\Models\BudgetDiscardedItem;
 use App\Models\BudgetItem;
 use App\Models\BudgetSend;
 use App\Models\BudgetStatusHistory;
@@ -47,7 +48,8 @@ class BudgetApprovalService
         // specs/040: toda transicao de status reconcilia a reserva de peca.
         private readonly EstoqueReservaService $estoqueReservaService,
         private readonly CompanyContextProvider $companyContextProvider,
-        private readonly AnexoXService $anexoXService
+        private readonly AnexoXService $anexoXService,
+        private readonly BudgetOfferedOptionsService $budgetOfferedOptionsService
     ) {
     }
 
@@ -325,7 +327,7 @@ class BudgetApprovalService
     /**
      * @return array<string, mixed>
      */
-    public function publicViewData(string $token, ?int $opcao = null): array
+    public function publicViewData(string $token, ?int $opcao = null, bool $consultarOpcoes = false): array
     {
         $budget = $this->findByToken($token);
 
@@ -343,7 +345,7 @@ class BudgetApprovalService
 
         return [
             'result' => 'ok',
-            'budget' => $this->publicBudgetPayload($budget, $opcao),
+            'budget' => $this->publicBudgetPayload($budget, $opcao, $consultarOpcoes),
         ];
     }
 
@@ -646,8 +648,20 @@ class BudgetApprovalService
             // oferecido fica no snapshot da auditoria. Orçamento comum (tudo
             // nível 1) passa reto, como sempre passou.
             $snapshot = null;
+            $discardedRows = [];
             if ($nivel !== null && $budget->hasTiers()) {
-                $snapshot = BudgetTotals::perLevel($budget);
+                $snapshot = $this->budgetOfferedOptionsService->capture($budget);
+                // Os itens das opções não escolhidas saem do escopo, mas não
+                // do banco: viram linhas de orcamento_itens_descartados
+                // (reaproveitamento técnico na edição — o cliente só vê o
+                // snapshot). Mesma função de decisão da poda, nunca regra
+                // própria.
+                $keepIds = BudgetTotals::itemsForLevel($budget, $nivel)->pluck('id')->all();
+                $discardedRows = $budget->items
+                    ->reject(static fn (BudgetItem $item): bool => in_array((int) $item->id, $keepIds, true))
+                    ->map(static fn (BudgetItem $item): array => $item->toArray())
+                    ->values()
+                    ->all();
                 $this->applyApprovedLevel($budget, $nivel);
                 $levelApplied = true;
             }
@@ -665,7 +679,7 @@ class BudgetApprovalService
             // qual caminho a transicao chegou aqui.
             $this->estoqueReservaService->sincronizar($budget, isset($ctx['usuario_id']) ? (int) $ctx['usuario_id'] : null);
 
-            BudgetApproval::query()->create([
+            $approval = BudgetApproval::query()->create([
                 'orcamento_id' => (int) $budget->id,
                 'token_publico' => (string) ($budget->token_publico ?? ''),
                 'acao' => 'aprovado',
@@ -680,6 +694,10 @@ class BudgetApprovalService
                 'user_agent' => ($ctx['ua'] ?? null) !== null ? Str::limit((string) $ctx['ua'], 255, '') : null,
                 'created_at' => $approvedAt,
             ]);
+
+            if ($levelApplied && $discardedRows !== []) {
+                $this->storeDiscardedItems($budget, $approval, (int) $nivel, $discardedRows, $approvedAt);
+            }
 
             $this->recordStatusHistory(
                 $budget,
@@ -810,6 +828,37 @@ class BudgetApprovalService
         $budget->forceFill(['nivel_aprovado' => $nivel])->save();
         BudgetTotals::recalculate($budget);
         $budget->refresh();
+    }
+
+    /**
+     * Copia para orcamento_itens_descartados as linhas que a poda tirou do
+     * escopo — cópia 1:1 das colunas do item, ligada à aprovação.
+     *
+     * @param  array<int, array<string, mixed>>  $rows  `BudgetItem::toArray()` de cada item descartado
+     */
+    private function storeDiscardedItems(Budget $budget, BudgetApproval $approval, int $nivel, array $rows, Carbon $when): void
+    {
+        $inserts = [];
+        foreach ($rows as $row) {
+            $insert = [
+                'orcamento_id' => (int) $budget->id,
+                'aprovacao_id' => (int) $approval->id,
+                'item_original_id' => (int) ($row['id'] ?? 0) ?: null,
+                'nivel_aprovado' => $nivel,
+                'descartado_em' => $when,
+                'created_at' => $when,
+                'updated_at' => $when,
+            ];
+            foreach (BudgetDiscardedItem::COPIED_COLUMNS as $column) {
+                $value = $row[$column] ?? null;
+                $insert[$column] = $column === 'niveis'
+                    ? json_encode(Budget::normalizeLevels($value))
+                    : $value;
+            }
+            $inserts[] = $insert;
+        }
+
+        BudgetDiscardedItem::query()->insert($inserts);
     }
 
     /**
@@ -1788,7 +1837,7 @@ class BudgetApprovalService
     /**
      * @return array<string, mixed>
      */
-    private function publicBudgetPayload(Budget $budget, ?int $opcao = null): array
+    private function publicBudgetPayload(Budget $budget, ?int $opcao = null, bool $consultarOpcoes = false): array
     {
         $status = trim((string) ($budget->status ?? Budget::STATUS_DRAFT));
         $expired = $this->tokenExpired($budget);
@@ -1802,37 +1851,23 @@ class BudgetApprovalService
         $selectedLevel = $hasTiers && $canRespond && $opcao !== null && $opcao <= $budget->maxLevel()
             ? Budget::normalizeLevel($opcao)
             : null;
-        $levels = $hasTiers ? BudgetTotals::perLevel($budget) : [];
+        // Opções com condições comerciais por cartão e o layout (campo a
+        // campo, dito uma vez no rodapé ou dentro de cada cartão) saem do
+        // mesmo serviço que congela o snapshot na aprovação — o que o cliente
+        // vê antes e o que consulta depois é, por construção, a mesma coisa.
+        $levels = $this->budgetOfferedOptionsService->capture($budget);
         $selectedTotals = $selectedLevel !== null ? ($levels[$selectedLevel - 1] ?? null) : null;
         $items = $selectedLevel !== null
             ? BudgetTotals::itemsForLevel($budget, $selectedLevel)
             : $budget->items->sortBy('ordem')->values();
+        $termsLayout = $this->budgetOfferedOptionsService->termsLayout($levels);
 
-        // Condições comerciais por opção: cada cartão da landing carrega as
-        // suas, e `condicoes_comerciais_layout` diz, campo a campo, se o valor
-        // é o mesmo em todas as opções (dito uma vez, no rodapé) ou varia
-        // (dito dentro de cada cartão). O diff olha TODOS os níveis, não só
-        // os cartões que a view decide exibir — esconder uma diferença real
-        // seria o erro que esta regra existe para evitar.
-        $levelTerms = $hasTiers ? $this->budgetCommercialTermsService->forEachLevel($budget) : [];
-        foreach ($levels as $index => $level) {
-            $levels[$index]['condicoes_comerciais'] = $levelTerms[(int) ($level['nivel'] ?? 0)] ?? null;
-        }
-        $termsLayout = [];
-        foreach ([
-            'garantia' => 'garantia_label',
-            'formas_pagamento' => 'formas_pagamento_texto',
-            'parcelamento' => 'parcelamento_texto',
-            'entrega_domicilio' => 'entrega_domicilio_label',
-        ] as $chave => $campo) {
-            $compartilhado = count($levelTerms) <= 1
-                || ! BudgetCommercialTermsService::diffAcrossLevels(array_values($levelTerms), $campo);
-            $primeiro = $levelTerms !== [] ? reset($levelTerms) : [];
-            $termsLayout[$chave] = [
-                'modo' => $compartilhado ? 'compartilhado' : 'por_opcao',
-                'valor' => $compartilhado ? (string) ($primeiro[$campo] ?? '') : '',
-            ];
-        }
+        // Depois da decisão, o cliente pode reabrir as opções que lhe foram
+        // apresentadas (`?opcoes=1`) só para consulta: vem do snapshot da
+        // aprovação, sem botão de escolher nem de recusar. Enquanto ainda
+        // pode responder, a landing normal é a própria página.
+        $offered = $this->budgetOfferedOptionsService->forBudget($budget);
+        $consultaOpcoes = $consultarOpcoes && ! $canRespond && $offered['niveis'] !== [];
 
         // Selo "emite nota fiscal" na landing: só quando o orçamento marca a
         // opção E a empresa (se MEI) ainda não estourou o teto anual — acima
@@ -1877,6 +1912,9 @@ class BudgetApprovalService
             'opcao_selecionada_label' => Budget::levelLabel($selectedLevel),
             'nivel_aprovado' => Budget::normalizeLevel($budget->nivel_aprovado),
             'nivel_aprovado_label' => Budget::levelLabel(Budget::normalizeLevel($budget->nivel_aprovado)),
+            'aprovado_em' => $budget->aprovado_em instanceof Carbon ? $budget->aprovado_em->format('d/m/Y H:i') : '',
+            'niveis_ofertados' => $offered,
+            'modo_consulta_opcoes' => $consultaOpcoes,
             // O cliente aprova sabendo como paga e por quanto tempo tem
             // garantia: mesmas condições que saem no PDF (as da opção em
             // exibição; depois da decisão, as do nível aprovado).

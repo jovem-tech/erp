@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\DesktopFeatureCatalog;
 use App\Support\DesktopSession;
 use Illuminate\Support\Str;
 
@@ -27,6 +28,10 @@ class SearchService
     {
         $scopes = [
             ['value' => 'tudo', 'label' => 'Busca completa', 'module' => 'dashboard', 'icon' => 'bi-search-heart'],
+            // Telas, menus, abas e botoes do sistema (DesktopFeatureCatalog). Nao
+            // depende de modulo: todo usuario logado tem algum lugar para ir, e o
+            // RBAC e' aplicado item a item dentro do catalogo.
+            ['value' => 'funcionalidades', 'label' => 'Funções do sistema', 'module' => 'dashboard', 'icon' => 'bi-signpost-2'],
             ['value' => 'os', 'label' => 'OS', 'module' => 'os', 'icon' => 'bi-clipboard-check'],
             ['value' => 'orcamentos', 'label' => 'Orçamentos', 'module' => 'orcamentos', 'icon' => 'bi-receipt'],
             ['value' => 'clientes', 'label' => 'Clientes', 'module' => 'clientes', 'icon' => 'bi-people'],
@@ -39,7 +44,7 @@ class SearchService
         ];
 
         return array_values(array_filter($scopes, function (array $scope): bool {
-            if ($scope['value'] === 'tudo') {
+            if (in_array($scope['value'], ['tudo', 'funcionalidades'], true)) {
                 return true;
             }
 
@@ -67,6 +72,14 @@ class SearchService
 
         $sections = [];
         $total = 0;
+
+        // Primeiro: e' em memoria (sem HTTP) e, quando alguem digita o nome de
+        // uma tela, e' o resultado que ela quer ver antes de qualquer registro.
+        if ($this->scopeAllows('funcionalidades', $scope)) {
+            $items = $this->searchFeatures($query, max($limit, 6));
+            $total += count($items);
+            $sections[] = $this->section('funcionalidades', 'Funções do sistema', 'bi-signpost-2', $items);
+        }
 
         if ($this->scopeAllows('os', $scope)) {
             $items = $this->searchOrders($query, $limit);
@@ -137,6 +150,97 @@ class SearchService
     public function suggestions(string $query, string|array $scope = 'tudo', int $limit = 4): array
     {
         return $this->search($query, $scope, $limit);
+    }
+
+    /**
+     * Busca no catalogo de funcionalidades, sem HTTP. Todos os termos digitados
+     * precisam aparecer em algum campo (label, caminho, sinonimos, dica); a
+     * ordem e' por onde bateu: label > sinonimo > caminho/dica. Sem acentos e
+     * sem caixa: "orcamento" acha "Orçamentos".
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function searchFeatures(string $query, int $limit): array
+    {
+        $needle = $this->normalizeText($query);
+        $tokens = array_values(array_filter(explode(' ', $needle), static fn (string $t): bool => $t !== ''));
+
+        if ($tokens === []) {
+            return [];
+        }
+
+        $scored = [];
+
+        foreach (DesktopFeatureCatalog::all() as $feature) {
+            $label = $this->normalizeText($feature['label']);
+            $keywords = $this->normalizeText(implode(' | ', $feature['keywords']));
+            $path = $this->normalizeText(implode(' ', $feature['path']) . ' ' . $feature['hint']);
+            $haystack = $label . ' ' . $keywords . ' ' . $path;
+
+            foreach ($tokens as $token) {
+                if (! str_contains($haystack, $token)) {
+                    continue 2;
+                }
+            }
+
+            if (str_starts_with($label, $needle)) {
+                $score = 100;
+            } elseif (str_contains($label, $needle)) {
+                $score = 70;
+            } elseif (str_contains($keywords, $needle)) {
+                $score = 50;
+            } elseif ($this->containsAll($label . ' ' . $keywords, $tokens)) {
+                $score = 40;
+            } else {
+                $score = 20;
+            }
+
+            $scored[] = ['score' => $score, 'feature' => $feature];
+        }
+
+        usort($scored, static function (array $a, array $b): int {
+            return [$b['score'], $a['feature']['label']] <=> [$a['score'], $b['feature']['label']];
+        });
+
+        return array_map(function (array $entry): array {
+            $feature = $entry['feature'];
+            $meta = $feature['hint'];
+
+            if ($meta === '' && $feature['shortcut'] !== '') {
+                $meta = 'Atalho ' . $feature['shortcut'];
+            }
+
+            return [
+                'id' => crc32($feature['key']),
+                'label' => $feature['label'],
+                'subtitle' => implode(' › ', $feature['path']),
+                'meta' => $meta,
+                'url' => route($feature['route'], $feature['params']),
+                'icon' => $feature['icon'],
+                'kind' => 'Funcionalidade',
+            ];
+        }, array_slice($scored, 0, $limit));
+    }
+
+    /**
+     * @param array<int, string> $tokens
+     */
+    private function containsAll(string $haystack, array $tokens): bool
+    {
+        foreach ($tokens as $token) {
+            if (! str_contains($haystack, $token)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private function normalizeText(string $text): string
+    {
+        $text = Str::lower(Str::ascii($text));
+
+        return trim((string) preg_replace('/\s+/', ' ', $text));
     }
 
     /**
@@ -443,6 +547,10 @@ class SearchService
      */
     private function scopeAllows(string $module, array $scopes): bool
     {
+        if ($module === 'funcionalidades') {
+            return in_array('tudo', $scopes, true) || in_array('funcionalidades', $scopes, true);
+        }
+
         if (in_array('tudo', $scopes, true)) {
             return DesktopSession::can($module, 'visualizar');
         }

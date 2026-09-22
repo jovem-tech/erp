@@ -425,6 +425,114 @@ religar restaura. Screenshots em 1500/1300/430 px (em 430 px a tabela rola
 dentro de `.table-responsive`; ≤768 px esconde o subtítulo das colunas).
 Bump: **v6.0.1.0** (patch — só arquivos existentes, sem migration).
 
+## 2026-09-22 — histórico do que foi oferecido, consulta pelo cliente, PDF da opção e detalhe na OS (v6.2.0.0)
+
+**Problema:** a aprovação podava os itens fora da opção escolhida e gravava em
+`orcamento_aprovacoes.niveis_snapshot` só nomes de item + totais — e ninguém lia
+isso de volta. Depois da decisão, a página pública mostrava só o escopo contratado,
+o PDF imprimia a opção como um campo solto, o detalhe do orçamento escondia o card
+de opções (gated por `has_tiers`) e a OS não sabia de níveis.
+
+**Decisões do usuário:** duas camadas — snapshot COMPLETO na aprovação (o que o
+cliente vê depois) **e** os itens não aprovados preservados no banco, exclusivos
+para uso técnico na edição ("reaproveitar", ex.: aprovou a Básica e agora quer a
+Completa); PDF com a opção escolhida em seção organizada, sem citar as outras;
+OS com resumo + itens por opção expansíveis (não a matriz).
+
+**Peça central: `BudgetOfferedOptionsService`** (backend; depende só de
+`BudgetCommercialTermsService`). `capture()` = `BudgetTotals::perLevel()` + por
+nível `itens_detalhe` (id, tipo, referência, qtd, unitário, total, níveis) +
+`condicoes_comerciais` (`forEachLevel()`); `termsLayout()` (o
+`condicoes_comerciais_layout`, saiu de `publicBudgetPayload()`); `normalize()`
+lê snapshot antigo (só strings) e novo; `forBudget()` é o único ponto que decide
+o que mostrar: projeção viva enquanto `hasTiers()`, senão a última aprovação com
+snapshot (`origem: atual|aprovacao`, `aprovacao.vigente` diz se a opção daquela
+aprovação ainda é a contratada — uma edição posterior reabre a decisão e o bloco
+vira histórico). `summarize()` alimenta `aprovacoes[].niveis_resumo`.
+
+**Aprovação (`finalizeApproval`)**: snapshot agora é `capture()`; antes de
+`applyApprovedLevel()`, os itens fora de `itemsForLevel()` (mesma função de
+decisão) são copiados 1:1 para **`orcamento_itens_descartados`** (migration
+`2026_09_22_000001`; model `BudgetDiscardedItem`; `Budget::discardedItems()`),
+ligados à aprovação (`aprovacao_id`, `nivel_aprovado`, `item_original_id` só
+como referência — `syncItems` recria ids a cada edição). Tabela própria, e não
+um flag em `orcamento_itens`: há leitores crus/joins da tabela de itens
+(`OrderWorkflowService` DB::table, `OrderCompletePdfContextFactory`,
+`OrderClosureService` join, `OsAplicacaoPecaService`, `EstoqueReservaService`,
+`BudgetOrderSyncService`, `BudgetTotals`) que ignorariam um global scope; o
+invariante "itens do orçamento = escopo contratado" fica intocado.
+
+**Payloads:** `budgetDetail()` ganha `niveis_ofertados`, `aprovacoes[].niveis_resumo`
+e `itens_descartados` (com tudo que `createRow()` do form consome; uma revisão
+enxerga também os da base, `orcamento_id IN (id, orcamento_revisao_de_id)`);
+`OrderWorkflowService::mapLinkedBudget()` ganha `has_tiers`, `nivel_recomendado`,
+`nivel_aprovado(_label)` e `niveis_ofertados`; `publicBudgetPayload()` ganha
+`niveis_ofertados`, `aprovado_em` e `modo_consulta_opcoes`.
+
+**Página pública:** `?opcoes=1` (só quando o cliente não pode mais responder e
+há opções registradas — `BudgetPublicController@show` → `publicViewData($token,
+$opcao, $consultarOpcoes)`) reabre a landing em modo consulta: mesmo partial
+`opcoes.blade.php` com `$readOnly` (`offeredOptions`/`offeredLayout` do
+snapshot), sem "Escolher esta opção", sem recusa, sem "Mais escolhida" automática,
+selo verde "Sua escolha" + "Opção aprovada" no cartão escolhido, "Não escolhida"
+nos outros, botão "Voltar ao orçamento aprovado". Na página aprovada, ao lado de
+"Opção aprovada: X", link "Ver as opções apresentadas". Hero: "Estas foram as
+opções apresentadas para o seu {aparelho}. Você escolheu a X em {data}."
+
+**PDF:** `BudgetPdfContextFactory` ganha `orcamento.opcao_titulo` ("Opção de
+manutenção: X" na projeção, "Opção aprovada: X" depois), `opcao_subtitulo`,
+`opcao_itens_texto` ("2 itens (1 peça, 1 serviço)"), `opcao_aprovacao_texto`
+("Aprovada pelo cliente em … pelo link público." / "Aprovada em nome do cliente
+por Fulano em … pelo painel.") e `entrega_domicilio_label` — registradas em
+`PdfTemplateRegistry`. `PdfDefaultTemplates::blocoOpcaoManutencao()` virou seção:
+`cabecalho_secao` com o título + `grade_campos` (Opção, Cobertura, Valor total,
+Itens incluídos) + campos condicionais Garantia/Parcelamento/Entrega + parágrafo
+da aprovação; segue "Diferenciais desta opção" e a tabela de itens. Migration
+`2026_09_22_000002` troca o bloco antigo (marcador `orcamento.opcao_texto`) pelo
+novo em toda família `os_orcamento` publicada (idempotente por
+`orcamento.opcao_titulo`; dev ficou na v8). PDF real do ORC-2609-000018: 51 KB.
+
+**Desktop — detalhe do orçamento:** partial `orcamentos/partials/opcoes-oferecidas.blade.php`
+substitui o card gated por `$hasTiers`: cartões por opção (aprovada em destaque
+com chip "Aprovada pelo cliente"; "Não escolhida" nas outras; condições por opção
+quando variam), "Comparativo do que foi oferecido" (linhas = união dos
+`itens_detalhe`, ✓/— por opção, coluna aprovada em verde, itens fora do escopo
+marcados, totais por opção; snapshot antigo → só descrição) e, pré-aprovação, o
+mesmo card de sempre. Itens: subtítulo "Escopo contratado — X". Aprovações
+recentes: nível + "Opções apresentadas: Básica R$ … · Avançada R$ …". Bloco
+"Personalizado por opção" deixa de sumir pós-aprovação (rótulos do snapshot).
+Fallback: payload sem `niveis_ofertados` mas com `has_tiers` usa `niveis`.
+
+**Desktop — edição (reaproveitar):** painel `<details>` "Itens das outras opções
+(não contratados) · N" logo abaixo da tabela de itens, agrupado com origem
+("Ofertado na Avançada e Completa · 1 × R$ 200,00 · Cliente aprovou a Básica em
+…") e botão "Adicionar ao orçamento" (`data-budget-discarded-add` + `data-item`
+JSON). JS: `createRow({...item})` **sem `niveis`** (a linha segue o interruptor —
+orçamento aprovado tem o interruptor escondido → `[1]`), `updateSummary()`, botão
+vira "Adicionado". Nada no servidor até salvar; `syncItems` grava como item comum
+e a edição de orçamento decidido já reabre a decisão (L912-920).
+
+**Desktop — detalhe da OS:** em "Valores e Orçamento": linha "Opção aprovada";
+bloco "Opções de manutenção oferecidas" (Opção | Itens (`<details>` com a lista)
+| Total | Situação: Aprovada / Recomendada / Não escolhida / Em aberto) com "Ver
+comparativo completo" → `/orcamentos/{id}#opcoes`; "Peças e serviços do
+orçamento — escopo aprovado (X)".
+
+**Testes:** backend `BudgetMaintenanceLevelsTest` 31/31 (3 asserts de redirect
+atualizados para a querystring `resultado/mensagem`, que já era o contrato; novos:
+snapshot completo + descartados + consulta + API + OS, consulta ignorada com
+`can_respond`, snapshot legado, PDF (contexto + HTML renderizado por
+`PdfTemplateRenderer` + validador) e a migration do template). Desktop
+`OrcamentoNiveisTest` 21/21 (histórico pós-aprovação, snapshot legado, painel de
+descartados e ausência dele), `DesktopFrontendTest` OS show com níveis.
+Pré-existentes, NÃO desta entrega: 4 de `BudgetFlowTest` (mesmo redirect) + 1 de
+`BudgetCommercialTermsTest` (textarea de rejeição fora do `<form>`, modal) no
+backend; `BudgetCommercialTermsAssetsTest`, 2 "orcamentos send approval" e 2
+"orders index" (trabalho em andamento de outra sessão) no desktop.
+Verificação visual: página pública em 1200/390 px, detalhe do orçamento e da OS
+via harness (payload real por tinker → view → Chrome headless), PDF via
+`pdftocairo`.
+
 ## O que isto NÃO faz (v2, se os dados justificarem)
 
 Procedência estruturada da peça, corte por valor de mercado do aparelho,

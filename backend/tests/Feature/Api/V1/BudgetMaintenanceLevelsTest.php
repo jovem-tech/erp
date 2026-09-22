@@ -291,9 +291,14 @@ class BudgetMaintenanceLevelsTest extends TestCase
             'token_expira_em' => now()->addDays(5),
         ]);
 
+        // O resultado vai na querystring do redirect (não no flash de sessão):
+        // ver BudgetPublicController::redirectWithResult.
         $this->post('/orcamento/token-sem-nivel/aprovar', ['resposta_cliente' => 'Aprovado pelo cliente.'])
-            ->assertRedirect(route('budgets.public.show', ['token' => 'token-sem-nivel']))
-            ->assertSessionHas('warning', 'Escolha a opção de manutenção para aprovar esta proposta.');
+            ->assertRedirect(route('budgets.public.show', [
+                'token' => 'token-sem-nivel',
+                'resultado' => 'aviso',
+                'mensagem' => 'Escolha a opção de manutenção para aprovar esta proposta.',
+            ]));
 
         $this->assertDatabaseHas('orcamentos', ['id' => $budgetId, 'status' => 'aguardando_resposta', 'nivel_aprovado' => null]);
         $this->assertDatabaseCount('orcamento_aprovacoes', 0);
@@ -350,8 +355,11 @@ class BudgetMaintenanceLevelsTest extends TestCase
         });
 
         $this->post('/orcamento/token-aprova-n2/aprovar', ['resposta_cliente' => 'Aprovado pelo cliente.', 'nivel' => 2])
-            ->assertRedirect(route('budgets.public.show', ['token' => 'token-aprova-n2']))
-            ->assertSessionHas('success', 'Orçamento aprovado com sucesso.');
+            ->assertRedirect(route('budgets.public.show', [
+                'token' => 'token-aprova-n2',
+                'resultado' => 'sucesso',
+                'mensagem' => 'Orçamento aprovado com sucesso.',
+            ]));
 
         $this->assertDatabaseHas('orcamentos', [
             'id' => $budgetId,
@@ -372,6 +380,23 @@ class BudgetMaintenanceLevelsTest extends TestCase
         $snapshot = json_decode((string) $approval->niveis_snapshot, true);
         $this->assertCount(3, $snapshot);
         $this->assertSame(1000.0, (float) $snapshot[2]['total']);
+        // Snapshot completo: itens com qtd/valor e condições comerciais por
+        // opção — é o que o cliente consulta depois, com os itens já podados.
+        $this->assertSame(['Fusível', 'Bateria', 'Película e limpeza', 'Tela original'], array_column($snapshot[2]['itens_detalhe'], 'descricao'));
+        $this->assertSame(400.0, (float) $snapshot[2]['itens_detalhe'][3]['valor_unitario']);
+        $this->assertSame([3], $snapshot[2]['itens_detalhe'][3]['niveis']);
+        $this->assertIsArray($snapshot[1]['condicoes_comerciais']);
+        $this->assertArrayHasKey('garantia_label', $snapshot[1]['condicoes_comerciais']);
+
+        // Os itens podados não somem do banco: viram linhas de
+        // orcamento_itens_descartados ligadas à aprovação, para o técnico
+        // reaproveitar na edição. Nunca voltam ao escopo sozinhos.
+        $discarded = DB::table('orcamento_itens_descartados')->where('orcamento_id', $budgetId)->orderBy('ordem')->get();
+        $this->assertSame(['Película e limpeza', 'Tela original'], $discarded->pluck('descricao')->all());
+        $this->assertSame([(int) $approval->id, (int) $approval->id], $discarded->pluck('aprovacao_id')->map(static fn ($id): int => (int) $id)->all());
+        $this->assertSame(2, (int) $discarded[0]->nivel_aprovado);
+        $this->assertSame($pecaId, (int) $discarded[1]->referencia_id);
+        $this->assertSame(json_encode([3]), (string) $discarded[1]->niveis);
 
         // OS lê os itens ao vivo: financeiro reflete só o escopo aprovado.
         $this->assertDatabaseHas('os', [
@@ -392,13 +417,156 @@ class BudgetMaintenanceLevelsTest extends TestCase
             'corpo' => 'O cliente aprovou o orçamento ORC-NIVEIS (R$ 300,00) — Manutenção Avançada.',
         ]);
 
-        // Depois da decisão a página mostra o escopo contratado e a opção aprovada.
+        // Depois da decisão a página mostra o escopo contratado e a opção
+        // aprovada, com o caminho para rever o que foi apresentado.
         $this->get('/orcamento/token-aprova-n2')
             ->assertOk()
             ->assertSee('Opção aprovada')
             ->assertSee('Manutenção Avançada')
+            ->assertSee('Ver as opções apresentadas')
+            ->assertSee('opcoes=1', false)
             ->assertDontSee('Escolha a opção de manutenção')
             ->assertDontSee('Tela original');
+
+        // `?opcoes=1`: as três opções do snapshot, só para consulta — sem
+        // botão de escolher, sem recusar, com a aprovada marcada e os itens
+        // podados visíveis de novo (agora como registro).
+        $this->get('/orcamento/token-aprova-n2?opcoes=1')
+            ->assertOk()
+            ->assertSee('Estas foram as opções apresentadas')
+            ->assertSee('Você escolheu a')
+            ->assertSee('Sua escolha')
+            ->assertSee('Opção aprovada')
+            ->assertSee('Não escolhida')
+            ->assertSee('Tela original')
+            ->assertSee('Voltar ao orçamento aprovado')
+            ->assertDontSee('Escolher esta opção')
+            ->assertDontSee('Recusar proposta')
+            // O comentário do CSS cita "Mais escolhida"; o que não pode
+            // existir é o selo em si.
+            ->assertDontSee('option-badge-auto">Mais escolhida', false);
+
+        // A API de detalhe expõe o mesmo histórico ao painel: opções do
+        // snapshot (origem aprovação), resumo por aprovação e os itens
+        // descartados para reaproveitar.
+        $detail = $this->withHeader('Authorization', 'Bearer '.$this->loginAndGetToken($admin->email))
+            ->getJson('/api/v1/orcamentos/'.$budgetId)
+            ->assertOk();
+        $detail->assertJsonPath('data.budget.has_tiers', false)
+            ->assertJsonPath('data.budget.niveis', [])
+            ->assertJsonPath('data.budget.niveis_ofertados.origem', 'aprovacao')
+            ->assertJsonPath('data.budget.niveis_ofertados.aprovacao.nivel', 2)
+            ->assertJsonPath('data.budget.niveis_ofertados.aprovacao.vigente', true)
+            ->assertJsonPath('data.budget.niveis_ofertados.aprovacao.origem_label', 'pelo link público')
+            ->assertJsonPath('data.budget.niveis_ofertados.niveis.2.total', 1000.0)
+            ->assertJsonPath('data.budget.niveis_ofertados.niveis.2.itens_detalhe.3.descricao', 'Tela original')
+            ->assertJsonPath('data.budget.niveis_ofertados.layout.garantia.modo', 'compartilhado')
+            ->assertJsonPath('data.budget.aprovacoes.0.nivel_label', 'Manutenção Avançada')
+            ->assertJsonPath('data.budget.aprovacoes.0.niveis_resumo.0.label', 'Manutenção Básica')
+            ->assertJsonPath('data.budget.aprovacoes.0.niveis_resumo.2.total', 1000.0)
+            ->assertJsonPath('data.budget.itens_descartados.0.descricao', 'Película e limpeza')
+            ->assertJsonPath('data.budget.itens_descartados.0.nivel_aprovado_label', 'Manutenção Avançada')
+            ->assertJsonPath('data.budget.itens_descartados.0.niveis_labels', ['Manutenção Completa'])
+            ->assertJsonPath('data.budget.itens_descartados.1.referencia_id', $pecaId)
+            ->assertJsonPath('data.budget.itens_descartados.1.valor_unitario', 400.0);
+
+        // A OS enxerga a opção aprovada e o que foi apresentado.
+        $this->withHeader('Authorization', 'Bearer '.$this->loginAndGetToken($admin->email))
+            ->getJson('/api/v1/orders/'.$orderId)
+            ->assertOk()
+            ->assertJsonPath('data.order.orcamento.nivel_aprovado', 2)
+            ->assertJsonPath('data.order.orcamento.nivel_aprovado_label', 'Manutenção Avançada')
+            ->assertJsonPath('data.order.orcamento.niveis_ofertados.origem', 'aprovacao')
+            ->assertJsonPath('data.order.orcamento.niveis_ofertados.niveis.0.itens_count', 1)
+            ->assertJsonPath('data.order.orcamento.niveis_ofertados.niveis.2.itens_count', 4);
+    }
+
+    public function test_consult_mode_is_ignored_while_the_client_can_still_respond_and_absent_on_plain_budgets(): void
+    {
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Consulta']);
+        $this->tieredBudget($clientId, [
+            'status' => 'aguardando_resposta',
+            'token_publico' => 'token-consulta-aberta',
+            'token_expira_em' => now()->addDays(5),
+        ]);
+
+        // Enquanto pode responder, `?opcoes=1` não muda nada: a landing de
+        // escolha é a própria página.
+        $this->get('/orcamento/token-consulta-aberta?opcoes=1')
+            ->assertOk()
+            ->assertSee('Escolha a opção de manutenção')
+            ->assertSee('Escolher esta opção')
+            ->assertDontSee('Estas foram as opções apresentadas')
+            ->assertDontSee('Voltar ao orçamento aprovado');
+
+        // Orçamento comum aprovado: nada de opções, nem link de consulta.
+        $plainId = $this->createBudgetRecord([
+            'numero' => 'ORC-COMUM-OK',
+            'cliente_id' => $clientId,
+            'telefone_contato' => '(11) 99999-9999',
+            'status' => 'aprovado',
+            'aprovado_em' => now(),
+            'token_publico' => 'token-comum-aprovado',
+            'token_expira_em' => now()->addDays(5),
+            'subtotal' => 120.00,
+            'total' => 120.00,
+        ]);
+        $this->createBudgetItemRecord($plainId, ['descricao' => 'Limpeza', 'valor_unitario' => 120, 'total' => 120, 'ordem' => 1]);
+
+        $this->get('/orcamento/token-comum-aprovado?opcoes=1')
+            ->assertOk()
+            ->assertSee('Limpeza')
+            ->assertDontSee('Ver as opções apresentadas')
+            ->assertDontSee('Estas foram as opções apresentadas');
+        $this->assertDatabaseCount('orcamento_itens_descartados', 0);
+    }
+
+    /**
+     * Snapshot gravado antes desta versão (só nomes de item + totais):
+     * continua legível, sem qtd/valor e sem condições por opção.
+     */
+    public function test_legacy_snapshot_without_item_details_still_renders_the_consult_page(): void
+    {
+        $clientId = $this->createClientRecord(['nome_razao' => 'Cliente Legado']);
+        $budgetId = $this->createBudgetRecord([
+            'numero' => 'ORC-LEGADO',
+            'cliente_id' => $clientId,
+            'telefone_contato' => '(11) 99999-9999',
+            'status' => 'aprovado',
+            'aprovado_em' => now(),
+            'nivel_aprovado' => 1,
+            'token_publico' => 'token-legado',
+            'token_expira_em' => now()->addDays(5),
+            'subtotal' => 100.00,
+            'total' => 100.00,
+        ]);
+        $this->createBudgetItemRecord($budgetId, ['descricao' => 'Fusível', 'valor_unitario' => 100, 'total' => 100, 'ordem' => 1]);
+        DB::table('orcamento_aprovacoes')->insert([
+            'orcamento_id' => $budgetId,
+            'acao' => 'aprovado',
+            'origem' => 'link_publico',
+            'resposta_cliente' => 'Aprovado. Opção escolhida: Manutenção Básica.',
+            'nivel' => 1,
+            'niveis_snapshot' => json_encode([
+                ['nivel' => 1, 'label' => 'Manutenção Básica', 'subtitle' => 'Volta a funcionar', 'subtotal' => 100, 'desconto' => 0, 'acrescimo' => 0, 'total' => 100, 'itens' => ['Fusível'], 'itens_count' => 1, 'recomendado' => false],
+                ['nivel' => 2, 'label' => 'Manutenção Avançada', 'subtitle' => 'Corrige e previne', 'subtotal' => 300, 'desconto' => 0, 'acrescimo' => 0, 'total' => 300, 'itens' => ['Fusível', 'Bateria'], 'itens_count' => 2, 'recomendado' => true],
+            ]),
+            'created_at' => now()->subDay(),
+        ]);
+
+        $this->get('/orcamento/token-legado?opcoes=1')
+            ->assertOk()
+            ->assertSee('Estas foram as opções apresentadas')
+            ->assertSee('Bateria')
+            ->assertSee('Sua escolha')
+            ->assertSee('Recomendado')
+            ->assertDontSee('Escolher esta opção');
+
+        $offered = app(\App\Services\Budgets\BudgetOfferedOptionsService::class)->forBudget(Budget::query()->findOrFail($budgetId));
+        $this->assertSame('aprovacao', $offered['origem']);
+        $this->assertSame([], $offered['niveis'][1]['itens_detalhe']);
+        $this->assertNull($offered['niveis'][1]['condicoes_comerciais']);
+        $this->assertSame('compartilhado', $offered['layout']['garantia']['modo']);
     }
 
     /**
@@ -532,7 +700,11 @@ class BudgetMaintenanceLevelsTest extends TestCase
 
         // `nivel` é ignorado em orçamento comum.
         $this->post('/orcamento/token-comum/aprovar', ['resposta_cliente' => 'Aprovado pelo cliente.', 'nivel' => 3])
-            ->assertSessionHas('success', 'Orçamento aprovado com sucesso.');
+            ->assertRedirect(route('budgets.public.show', [
+                'token' => 'token-comum',
+                'resultado' => 'sucesso',
+                'mensagem' => 'Orçamento aprovado com sucesso.',
+            ]));
 
         $this->assertDatabaseHas('orcamentos', ['id' => $budgetId, 'status' => 'pendente_abertura_os', 'nivel_aprovado' => null, 'total' => 220.00]);
         $this->assertDatabaseHas('orcamento_aprovacoes', ['orcamento_id' => $budgetId, 'nivel' => null, 'resposta_cliente' => 'Aprovado pelo cliente.']);
@@ -642,6 +814,10 @@ class BudgetMaintenanceLevelsTest extends TestCase
 
         $projected = $factory->build(['budget' => $budget], ['approval_link' => 'https://erp.test/orcamento/token-pdf', 'nivel' => 2]);
         $this->assertSame('Manutenção Avançada', $projected['orcamento']['opcao_texto']);
+        $this->assertSame('Opção de manutenção: Manutenção Avançada', $projected['orcamento']['opcao_titulo']);
+        $this->assertSame('Corrige e previne', $projected['orcamento']['opcao_subtitulo']);
+        $this->assertSame('2 itens (2 serviços)', $projected['orcamento']['opcao_itens_texto']);
+        $this->assertSame('', $projected['orcamento']['opcao_aprovacao_texto']);
         $this->assertSame(300.0, $projected['orcamento']['total']);
         $this->assertSame(['Fusível', 'Bateria'], array_column($projected['itens'], 'descricao'));
         $this->assertSame(['1, 2, 3', '2, 3'], array_column($projected['itens'], 'nivel'));
@@ -649,16 +825,110 @@ class BudgetMaintenanceLevelsTest extends TestCase
 
         $full = $factory->build(['budget' => $budget->fresh()], ['approval_link' => 'https://erp.test/orcamento/token-pdf']);
         $this->assertSame('', $full['orcamento']['opcao_texto']);
+        $this->assertSame('', $full['orcamento']['opcao_titulo']);
+        $this->assertSame('', $full['orcamento']['opcao_itens_texto']);
         $this->assertSame(600.0, $full['orcamento']['total']);
         $this->assertCount(3, $full['itens']);
 
-        $budget->forceFill(['status' => Budget::STATUS_APPROVED, 'nivel_aprovado' => 3])->save();
+        $budget->forceFill(['status' => Budget::STATUS_APPROVED, 'nivel_aprovado' => 3, 'aprovado_em' => '2026-09-22 00:59:00'])->save();
+        DB::table('orcamento_aprovacoes')->insert([
+            'orcamento_id' => $budgetId,
+            'acao' => 'aprovado',
+            'origem' => 'link_publico',
+            'resposta_cliente' => 'Aprovado.',
+            'nivel' => 3,
+            'created_at' => '2026-09-22 00:59:00',
+        ]);
         $approved = $factory->build(['budget' => $budget->fresh()], ['approval_link' => 'https://erp.test/orcamento/token-pdf', 'nivel' => 1]);
         $this->assertSame('Manutenção Completa', $approved['orcamento']['opcao_texto']);
+        $this->assertSame('Opção aprovada: Manutenção Completa', $approved['orcamento']['opcao_titulo']);
+        $this->assertSame('Como novo', $approved['orcamento']['opcao_subtitulo']);
+        $this->assertSame('Aprovada pelo cliente em 22/09/2026 00:59 pelo link público.', $approved['orcamento']['opcao_aprovacao_texto']);
         $this->assertSame('', $approved['orcamento']['link_aprovacao']);
 
-        $corpo = json_encode(PdfDefaultTemplates::all()['os_orcamento']['schema']['corpo'], JSON_UNESCAPED_UNICODE);
+        // O modelo padrão imprime a seção da opção com tudo o que ela
+        // inclui, antes da tabela de itens — e nada sobre as outras opções.
+        $schema = PdfDefaultTemplates::all()['os_orcamento']['schema'];
+        $corpo = json_encode($schema['corpo'], JSON_UNESCAPED_UNICODE);
         $this->assertStringContainsString('orcamento.opcao_texto', (string) $corpo);
+        $this->assertStringContainsString('orcamento.opcao_titulo', (string) $corpo);
+        $descriptor = app(\App\Services\Pdf\PdfTemplateRegistry::class)->get('os_orcamento');
+        $this->assertSame([], app(\App\Services\Pdf\PdfSchemaValidator::class)->validate($schema, $descriptor));
+        $html = app(\App\Services\Pdf\PdfTemplateRenderer::class)->render($schema, $approved, $descriptor, 'a4');
+        $this->assertStringContainsString('Opção aprovada: Manutenção Completa', $html);
+        $this->assertStringContainsString('Como novo', $html);
+        $this->assertStringContainsString('Itens incluídos', $html);
+        $this->assertStringContainsString('3 itens (3 serviços)', $html);
+        $this->assertStringContainsString('Aprovada pelo cliente em 22/09/2026 00:59 pelo link público.', $html);
+        $this->assertStringContainsString('R$ 600,00', $html);
+        $this->assertStringNotContainsString('Manutenção Básica', $html);
+        $this->assertStringNotContainsString('Manutenção Avançada', $html);
+        $this->assertLessThan(strpos($html, 'Itens do orçamento'), strpos($html, 'Opção aprovada: Manutenção Completa'));
+
+        // Orçamento comum: a seção inteira some — o PDF de sempre não muda.
+        $plainHtml = app(\App\Services\Pdf\PdfTemplateRenderer::class)->render($schema, $full, $descriptor, 'a4');
+        $this->assertStringNotContainsString('Opção', $plainHtml);
+        $this->assertStringNotContainsString('Itens incluídos', $plainHtml);
+    }
+
+    /**
+     * A migration leva a seção nova aos modelos já publicados (trocando o
+     * campo solto "Opção de manutenção") e é idempotente.
+     */
+    public function test_migration_expands_the_option_block_in_published_budget_templates(): void
+    {
+        $now = now();
+        $legacyCorpo = [
+            ['tipo' => 'cabecalho_secao', 'texto' => 'Dados do cliente'],
+            ['tipo' => 'condicional', 'se' => ['variavel' => 'orcamento.opcao_texto', 'operador' => 'preenchido'], 'blocos' => [
+                ['tipo' => 'campo', 'rotulo' => 'Opção de manutenção', 'valor' => '{{ orcamento.opcao_texto }}'],
+            ]],
+            ...PdfDefaultTemplates::blocoBeneficiosOpcao(),
+            ['tipo' => 'cabecalho_secao', 'texto' => 'Itens do orçamento'],
+        ];
+        $schema = PdfDefaultTemplates::all()['os_orcamento']['schema'];
+        $schema['corpo'] = $legacyCorpo;
+        $schemaJson = json_encode($schema, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        $templateId = DB::table('pdf_templates')->insertGetId([
+            'tipo_codigo' => 'os_orcamento',
+            'tipo_base_codigo' => null,
+            'nome' => 'Orçamento',
+            'arquivado' => false,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        DB::table('pdf_template_versoes')->insert([
+            'template_id' => $templateId,
+            'versao' => 1,
+            'status' => 'publicado',
+            'schema_json' => $schemaJson,
+            'papel' => 'a4',
+            'orientacao' => 'retrato',
+            'margens_json' => json_encode($schema['pagina']['margens'] ?? []),
+            'fonte' => 'DejaVu Sans',
+            'hash_schema' => hash('sha256', $schemaJson),
+            'publicado_em' => $now,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+
+        $migration = require base_path('database/migrations/2026_09_22_000002_expand_budget_option_block_in_pdf_templates.php');
+        $migration->up();
+
+        $published = DB::table('pdf_template_versoes')->where('template_id', $templateId)->where('status', 'publicado')->first();
+        $this->assertSame(2, (int) $published->versao);
+        $this->assertSame('arquivado', DB::table('pdf_template_versoes')->where('template_id', $templateId)->where('versao', 1)->value('status'));
+        $corpo = json_decode((string) $published->schema_json, true)['corpo'];
+        $this->assertSame('Dados do cliente', $corpo[0]['texto']);
+        $this->assertSame('cabecalho_secao', $corpo[1]['blocos'][0]['tipo']);
+        $this->assertSame('{{ orcamento.opcao_titulo }}', $corpo[1]['blocos'][0]['texto']);
+        $this->assertStringContainsString('orcamento.beneficios_texto', json_encode($corpo[2], JSON_UNESCAPED_UNICODE));
+        $this->assertSame('Itens do orçamento', $corpo[3]['texto']);
+        $this->assertStringNotContainsString('"rotulo":"Opção de manutenção"', json_encode($corpo, JSON_UNESCAPED_UNICODE));
+
+        // Rodar de novo não publica outra versão.
+        $migration->up();
+        $this->assertSame(2, (int) DB::table('pdf_template_versoes')->where('template_id', $templateId)->max('versao'));
     }
 
     public function test_public_pdf_download_uses_the_chosen_option(): void

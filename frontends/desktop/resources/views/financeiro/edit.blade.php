@@ -45,4 +45,8 @@
     @if ($canQuickClient ?? false)
         <script src="{{ asset('assets/js/clients-form.js') }}?v={{ filemtime(public_path('assets/js/clients-form.js')) }}"></script>
     @endif
+    @if (($lancamento['anexos'] ?? []) !== [])
+        {{-- Preview inline (botão-olho) dos anexos já existentes, listados na seção ANEXOS do form. --}}
+        <script src="{{ asset('assets/js/financeiro-anexos.js') }}?v={{ filemtime(public_path('assets/js/financeiro-anexos.js')) }}"></script>
+    @endif
 @endsection

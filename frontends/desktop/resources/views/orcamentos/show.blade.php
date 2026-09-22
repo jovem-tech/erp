@@ -16,7 +16,17 @@
         // diz o que o cliente escolheu.
         $levels = is_array($budget['niveis'] ?? null) ? $budget['niveis'] : [];
         $hasTiers = ! empty($budget['has_tiers']) && $levels !== [];
+        $approvedLevel = (int) ($budget['nivel_aprovado'] ?? 0);
         $approvedLevelLabel = trim((string) ($budget['nivel_aprovado_label'] ?? ''));
+        // O que foi (ou está sendo) oferecido: projeção viva antes da decisão,
+        // snapshot da aprovação depois — sobrevive à poda dos itens.
+        $offeredOptions = is_array($budget['niveis_ofertados'] ?? null) ? $budget['niveis_ofertados'] : [];
+        if (empty($offeredOptions['niveis']) && $hasTiers) {
+            // Payload sem `niveis_ofertados` (API mais antiga): a projeção
+            // viva em `niveis` é exatamente o que está sendo oferecido.
+            $offeredOptions = ['niveis' => $levels, 'layout' => [], 'origem' => 'atual', 'aprovacao' => null];
+        }
+        $offeredLevels = is_array($offeredOptions['niveis'] ?? null) ? $offeredOptions['niveis'] : [];
         $budgetId = (int) ($budget['id'] ?? 0);
         $canConvertBudgetToOrder = \App\Support\DesktopSession::can('orcamentos', 'converter_os')
             && \App\Support\DesktopSession::can('os', 'criar');
@@ -289,26 +299,11 @@
         </article>
     </section>
 
-    @if ($hasTiers)
-        <section class="surface-card mb-4">
-            <div class="surface-card-header align-items-start mb-3">
-                <div>
-                    <p class="desktop-eyebrow mb-2">Opções de manutenção</p>
-                    <h2 class="surface-title fs-5 mb-1">O cliente escolhe uma destas opções na página de aprovação</h2>
-                    <p class="surface-subtitle mb-0">Cada item aparece só nas opções marcadas para ele (colunas na lista de itens abaixo). Ao aprovar, o orçamento passa a conter só os itens da opção escolhida.</p>
-                </div>
-            </div>
-            <div class="desktop-grid desktop-grid-three">
-                @foreach ($levels as $level)
-                    <article class="summary-card {{ ! empty($level['recomendado']) ? 'is-highlight' : '' }}">
-                        <span class="summary-card-eyebrow">{{ $level['label'] ?? '' }}{{ ! empty($level['recomendado']) ? ' · Recomendada' : '' }}</span>
-                        <div class="summary-card-value">R$ {{ number_format((float) ($level['total'] ?? 0), 2, ',', '.') }}</div>
-                        <div class="summary-card-meta">{{ (int) ($level['itens_count'] ?? 0) }} {{ (int) ($level['itens_count'] ?? 0) === 1 ? 'item' : 'itens' }}{{ ($level['subtitle'] ?? '') !== '' ? ' · ' . $level['subtitle'] : '' }}</div>
-                    </article>
-                @endforeach
-            </div>
-        </section>
-    @endif
+    @include('orcamentos.partials.opcoes-oferecidas', [
+        'offered' => $offeredOptions,
+        'approvedLevel' => $approvedLevel,
+        'approvedLevelLabel' => $approvedLevelLabel,
+    ])
 
     <section class="desktop-grid desktop-grid-two mb-4">
         <article class="surface-card">
@@ -431,11 +426,14 @@
 
             @php
                 $levelTermOverrides = is_array($budget['niveis_condicoes'] ?? null) ? $budget['niveis_condicoes'] : [];
-                $levelLabels = collect(is_array($budget['niveis'] ?? null) ? $budget['niveis'] : [])->pluck('label', 'nivel');
+                // Rótulos das opções: as vivas antes da decisão, as do snapshot
+                // depois (as personalizações dos níveis não escolhidos
+                // sobrevivem à aprovação e continuam sendo registro).
+                $levelLabels = collect($levels !== [] ? $levels : $offeredLevels)->pluck('label', 'nivel');
             @endphp
-            @if ($levelTermOverrides !== [] && ($budget['has_tiers'] ?? false))
+            @if ($levelTermOverrides !== [] && ($hasTiers || $offeredLevels !== []))
                 {{-- Só o que foi personalizado por opção; o resto herda o padrão acima. --}}
-                <p class="fw-semibold mt-3 mb-2">Personalizado por opção de manutenção</p>
+                <p class="fw-semibold mt-3 mb-2">{{ $hasTiers ? 'Personalizado por opção de manutenção' : 'Personalizado por opção (registro das opções apresentadas)' }}</p>
                 <div class="detail-list">
                     @foreach ($levelTermOverrides as $nivel => $override)
                         @php
@@ -484,6 +482,9 @@
                 @endphp
                 <h2 class="surface-title">Itens do orçamento</h2>
                 <p class="surface-subtitle">
+                    @if ($approvedLevelLabel !== '')
+                        Escopo contratado — {{ $approvedLevelLabel }}.
+                    @endif
                     @if ($veCusto)
                         Serviços e peças com custo, margem e observações por linha.
                     @else
@@ -738,12 +739,26 @@
                     @if ($approvals !== [])
                         <div class="timeline">
                             @foreach ($approvals as $approval)
+                                @php
+                                    $approvalLevelLabel = trim((string) ($approval['nivel_label'] ?? ''));
+                                    $approvalSummary = is_array($approval['niveis_resumo'] ?? null) ? $approval['niveis_resumo'] : [];
+                                @endphp
                                 <article class="timeline-item">
                                     <div class="d-flex flex-wrap justify-content-between gap-2">
-                                        <strong>{{ $approval['acao'] !== '' ? ucfirst($approval['acao']) : 'Ação' }}</strong>
+                                        <strong>{{ $approval['acao'] !== '' ? ucfirst($approval['acao']) : 'Ação' }}{{ $approvalLevelLabel !== '' ? ' · '.$approvalLevelLabel : '' }}</strong>
                                         <small>{{ $approval['usuario_nome'] !== '' ? $approval['usuario_nome'] : 'Usuário não identificado' }}</small>
                                     </div>
                                     <div class="mt-2">{{ $approval['resposta_cliente'] !== '' ? $approval['resposta_cliente'] : 'Sem resposta' }}</div>
+                                    @if ($approvalSummary !== [])
+                                        {{-- O que foi apresentado naquela aprovação — histórico
+                                             compacto, uma linha por opção. --}}
+                                        <div class="mt-1 small text-secondary" data-budget-approval-levels>
+                                            Opções apresentadas: {{ implode(' · ', array_map(
+                                                static fn (array $resumo): string => str_replace('Manutenção ', '', (string) ($resumo['label'] ?? '')).' R$ '.number_format((float) ($resumo['total'] ?? 0), 2, ',', '.'),
+                                                $approvalSummary
+                                            )) }}
+                                        </div>
+                                    @endif
                                 </article>
                             @endforeach
                         </div>

@@ -21,7 +21,14 @@ class BudgetPublicController extends Controller
     {
         // Orçamento com níveis de manutenção: `?opcao=N` mostra o orçamento
         // daquela opção (projeção, nada gravado). Fora disso é ignorado.
-        $result = $this->budgetApprovalService->publicViewData($token, $this->optionFromRequest($request, 'opcao'));
+        // `?opcoes=1`, depois da decisão, reabre as opções apresentadas só
+        // para consulta (snapshot da aprovação); enquanto o cliente ainda
+        // pode responder é ignorado — a landing já é a própria página.
+        $result = $this->budgetApprovalService->publicViewData(
+            $token,
+            $this->optionFromRequest($request, 'opcao'),
+            $request->boolean('opcoes')
+        );
 
         if (($result['result'] ?? 'not_found') === 'expired') {
             abort(410, 'Este link de orçamento expirou. Solicite um novo envio à assistência.');

@@ -26,9 +26,12 @@ use App\Models\OrderProcedureHistory;
 use App\Models\OrderStatus;
 use App\Models\OrderStatusHistory;
 use App\Models\OrderStatusTransition;
+use App\Models\Peca;
+use App\Models\Servico;
 use App\Models\User;
 use App\Models\WhatsappTemplate;
 use App\Notifications\MobileNotification;
+use App\Services\Budgets\BudgetOfferedOptionsService;
 use App\Services\Budgets\BudgetOrderSyncService;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
 use App\Services\EquipmentWorkflowService;
@@ -38,11 +41,13 @@ use App\Services\Files\LegacyCompatibleFileAdapter;
 use App\Services\Financeiro\OsMargemService;
 use App\Services\Integrations\IntegrationSettingsService;
 use App\Services\Photos\OperationalPhotoOptimizer;
+use App\Support\VisibilidadeCusto;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -120,7 +125,8 @@ class OrderWorkflowService
         private readonly EquipmentWorkflowService $equipmentWorkflowService,
         private readonly OperationalPhotoOptimizer $photoOptimizer,
         // specs/040: o vinculo com a OS desce para a linha da reserva.
-        private readonly EstoqueReservaService $estoqueReservaService
+        private readonly EstoqueReservaService $estoqueReservaService,
+        private readonly BudgetOfferedOptionsService $budgetOfferedOptionsService
     ) {}
 
     /**
@@ -3236,6 +3242,24 @@ class OrderWorkflowService
 
         $status = (string) ($budget->status ?? '');
 
+        // Visibilidade de custo do usuario da requisicao (specs/037): custo e
+        // margem por linha so em reais para quem tem permissao financeira. A
+        // redacao acontece AQUI, no payload — um @if na view esconderia o
+        // pixel e deixaria o numero no DOM.
+        $user = auth()->user();
+        $veCusto = VisibilidadeCusto::mostraNumero(VisibilidadeCusto::paraUsuario($user));
+        // A ficha da peca (fornecedor, localizacao, saldo) e dado do modulo de
+        // estoque, e a do servico e do catalogo de servicos: quem nao pode ver
+        // o modulo nao passa a ve-lo pela OS.
+        $podeVer = static fn (string $ability): bool => $user !== null && method_exists($user, 'can') && $user->can($ability);
+        $veEstoque = $podeVer('estoque:visualizar');
+        $veServicos = $podeVer('servicos:visualizar');
+        $pecas = $veEstoque ? $this->loadBudgetParts($budget) : collect();
+        $servicos = $veServicos ? $this->loadBudgetServices($budget) : collect();
+        $disponibilidade = $veEstoque
+            ? $this->estoqueReservaService->disponibilidade($pecas->keys()->all(), (int) $budget->id)
+            : [];
+
         return [
             'id' => (int) ($budget->id ?? 0),
             'numero' => (string) ($budget->numero ?? ''),
@@ -3251,13 +3275,24 @@ class OrderWorkflowService
             'enviado_em' => $this->formatDateTime($budget->enviado_em ?? null),
             'aprovado_em' => $this->formatDateTime($budget->aprovado_em ?? null),
             'created_at' => $this->formatDateTime($budget->created_at ?? null),
+            // Níveis de manutenção: qual opção o cliente aprovou e o que lhe
+            // foi apresentado (snapshot da aprovação, ou a projeção viva
+            // enquanto ainda escolhe) — mesma regra do detalhe do orçamento.
+            'has_tiers' => $budget->hasTiers(),
+            'nivel_recomendado' => Budget::normalizeLevel($budget->nivel_recomendado),
+            'nivel_aprovado' => Budget::normalizeLevel($budget->nivel_aprovado),
+            'nivel_aprovado_label' => Budget::levelLabel(Budget::normalizeLevel($budget->nivel_aprovado)),
+            'niveis_ofertados' => $this->budgetOfferedOptionsService->forBudget($budget),
             // Itens do orçamento — usado pela seção "Peças e serviços" do
             // detalhe da OS. Versão enxuta do mapper completo de
-            // BudgetWorkflowService (que inclui encargos/margem, irrelevantes
-            // aqui); mesmos campos exibidos hoje em orcamentos/show.blade.php.
+            // BudgetWorkflowService (sem encargos/niveis, irrelevantes aqui);
+            // mesmos campos exibidos hoje em orcamentos/show.blade.php, mais
+            // a ficha da peca (`peca`) ou do servico (`servico`) para o modal
+            // de detalhes do item.
             'itens' => $budget->items->sortBy('ordem')->values()->map(fn (BudgetItem $item): array => [
                 'id' => (int) $item->id,
                 'tipo_item' => (string) ($item->tipo_item ?? 'servico'),
+                'referencia_id' => $item->referencia_id !== null ? (int) $item->referencia_id : null,
                 'descricao' => (string) ($item->descricao ?? ''),
                 'quantidade' => (float) ($item->quantidade ?? 0),
                 'valor_unitario' => (float) ($item->valor_unitario ?? 0),
@@ -3265,8 +3300,179 @@ class OrderWorkflowService
                 'acrescimo' => (float) ($item->acrescimo ?? 0),
                 'total' => (float) ($item->total ?? 0),
                 'observacoes' => (string) ($item->observacoes ?? ''),
-            ])->all(),
+                'peca' => $this->mapBudgetItemPart($item, $pecas, $disponibilidade, $veCusto),
+                'servico' => $this->mapBudgetItemService($item, $servicos, $veCusto),
+            ] + ($veCusto ? [
+                'preco_custo_referencia' => (float) ($item->preco_custo_referencia ?? 0),
+                'valor_margem' => (float) ($item->valor_margem ?? 0),
+                'percentual_margem' => (float) ($item->percentual_margem ?? 0),
+            ] : []))->all(),
         ];
+    }
+
+    /**
+     * Pecas do cadastro referenciadas pelos itens do orcamento, numa consulta
+     * so, indexadas por id.
+     *
+     * @return Collection<int, Peca>
+     */
+    private function loadBudgetParts(Budget $budget): Collection
+    {
+        $ids = $budget->items
+            ->where('tipo_item', 'peca')
+            ->pluck('referencia_id')
+            ->filter()
+            ->unique()
+            ->map(static fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+
+        if ($ids === []) {
+            return collect();
+        }
+
+        return Peca::query()
+            ->with(['tipoEquipamento:id,nome', 'estoqueCategoria:id,nome', 'estoqueSubcategoria:id,nome'])
+            ->whereIn('id', $ids)
+            ->get()
+            ->keyBy('id');
+    }
+
+    /**
+     * Servicos do catalogo referenciados pelos itens do orcamento, numa
+     * consulta so, indexados por id.
+     *
+     * @return Collection<int, Servico>
+     */
+    private function loadBudgetServices(Budget $budget): Collection
+    {
+        $ids = $budget->items
+            ->where('tipo_item', 'servico')
+            ->pluck('referencia_id')
+            ->filter()
+            ->unique()
+            ->map(static fn ($id): int => (int) $id)
+            ->values()
+            ->all();
+
+        if ($ids === []) {
+            return collect();
+        }
+
+        return Servico::query()->whereIn('id', $ids)->get()->keyBy('id');
+    }
+
+    /**
+     * Ficha de catalogo do servico de um item do orcamento (modal de detalhes
+     * do item no detalhe da OS). null para peca, servico digitado a mao (sem
+     * referencia_id), servico excluido do catalogo ou usuario sem
+     * servicos:visualizar.
+     *
+     * @param  Collection<int, Servico>  $servicos
+     * @return array<string, mixed>|null
+     */
+    private function mapBudgetItemService(BudgetItem $item, Collection $servicos, bool $veCusto): ?array
+    {
+        if ((string) ($item->tipo_item ?? '') !== 'servico') {
+            return null;
+        }
+
+        $servicoId = (int) ($item->referencia_id ?? 0);
+        $servico = $servicoId > 0 ? $servicos->get($servicoId) : null;
+
+        if (! $servico instanceof Servico) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $servico->id,
+            'nome' => (string) ($servico->nome ?? ''),
+            'descricao' => (string) ($servico->descricao ?? ''),
+            'tipo_equipamento' => (string) ($servico->tipo_equipamento ?? ''),
+            'unidade' => (string) ($servico->unidade ?? ''),
+            'valor' => (float) ($servico->valor ?? 0),
+            'tempo_padrao_horas' => (float) ($servico->tempo_padrao_horas ?? 0),
+            'item_lc116' => (string) ($servico->item_lc116 ?? ''),
+            'codigo_tributacao_nacional' => (string) ($servico->codigo_tributacao_nacional ?? ''),
+            'aliquota_iss' => $servico->aliquota_iss !== null ? (float) $servico->aliquota_iss : null,
+            'status' => (string) ($servico->status ?? 'ativo'),
+            'ativo' => (string) ($servico->status ?? 'ativo') === 'ativo',
+        ] + ($veCusto ? [
+            // Custo direto padrao (mao de obra/insumos) do cadastro — mesmo
+            // papel do preco_custo da peca: comparar com o custo gravado no
+            // orcamento.
+            'custo_direto_padrao' => (float) ($servico->custo_direto_padrao ?? 0),
+        ] : []);
+    }
+
+    /**
+     * Ficha de estoque da peca de um item do orcamento (modal de detalhes do
+     * item no detalhe da OS). null para servico, peca digitada a mao (sem
+     * referencia_id), peca excluida do cadastro ou usuario sem
+     * estoque:visualizar — nesses casos o modal mostra so o que esta no
+     * proprio item.
+     *
+     * @param  Collection<int, Peca>  $pecas
+     * @param  array<int, array{saldo: float, reservado: float, reservado_proprio: float, disponivel: float}>  $disponibilidade
+     * @return array<string, mixed>|null
+     */
+    private function mapBudgetItemPart(BudgetItem $item, Collection $pecas, array $disponibilidade, bool $veCusto): ?array
+    {
+        if ((string) ($item->tipo_item ?? '') !== 'peca') {
+            return null;
+        }
+
+        $pecaId = (int) ($item->referencia_id ?? 0);
+        $peca = $pecaId > 0 ? $pecas->get($pecaId) : null;
+
+        if (! $peca instanceof Peca) {
+            return null;
+        }
+
+        // Mesma leitura de specs/040: a reserva DESTE orcamento volta para o
+        // disponivel — a peca que ele mesmo guardou nao pode aparecer como
+        // falta na OS dele.
+        $saldos = $disponibilidade[$pecaId] ?? [
+            'saldo' => round((float) ($peca->quantidade_atual ?? 0), 4),
+            'reservado' => round((float) ($peca->quantidade_reservada ?? 0), 4),
+            'reservado_proprio' => 0.0,
+            'disponivel' => round((float) ($peca->quantidade_atual ?? 0) - (float) ($peca->quantidade_reservada ?? 0), 4),
+        ];
+        $quantidade = round((float) ($item->quantidade ?? 0), 4);
+        $falta = max(0.0, round($quantidade - max(0.0, (float) $saldos['disponivel']), 4));
+
+        return [
+            'id' => (int) $peca->id,
+            'codigo' => (string) ($peca->codigo ?? ''),
+            'codigo_fabricante' => (string) ($peca->codigo_fabricante ?? ''),
+            'nome' => (string) ($peca->nome ?? ''),
+            // Mesmo fallback de EstoqueController: arvore nova, ou o texto
+            // legado se a peca nunca foi reclassificada.
+            'tipo_equipamento_efetivo' => (string) ($peca->tipoEquipamento?->nome ?: ($peca->tipo_equipamento ?? '')),
+            'estoque_categoria_nome' => (string) ($peca->estoqueCategoria?->nome ?? ''),
+            'categoria_efetiva' => (string) ($peca->estoqueSubcategoria?->nome ?: ($peca->categoria ?? '')),
+            'modelos_compativeis' => (string) ($peca->modelos_compativeis ?? ''),
+            'fornecedor' => (string) ($peca->fornecedor ?? ''),
+            'localizacao' => (string) ($peca->localizacao ?? ''),
+            'unidade' => (string) ($peca->unidade ?? 'UN'),
+            'preco_venda' => (float) ($peca->preco_venda ?? 0),
+            'quantidade_atual' => (float) $saldos['saldo'],
+            'reservado_para_este' => (float) $saldos['reservado_proprio'],
+            'reservado_por_terceiros' => round((float) $saldos['reservado'] - (float) $saldos['reservado_proprio'], 4),
+            'quantidade_disponivel' => (float) $saldos['disponivel'],
+            'falta' => $falta,
+            'estado' => match (true) {
+                $falta <= 0 => 'em_estoque',
+                $falta >= $quantidade => 'a_encomendar',
+                default => 'parcial',
+            },
+            'estoque_minimo' => (float) ($peca->estoque_minimo ?? 0),
+            'ativo' => (bool) ($peca->ativo ?? false),
+            'status' => (string) ($peca->status ?? 'ativo'),
+            'observacoes' => (string) ($peca->observacoes ?? ''),
+        ] + ($veCusto ? [
+            'preco_custo' => (float) ($peca->preco_custo ?? 0),
+        ] : []);
     }
 
     /**

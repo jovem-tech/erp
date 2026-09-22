@@ -596,6 +596,14 @@ class FinanceiroController extends DesktopController
     public function update(Request $request, int $financeiro): RedirectResponse
     {
         $payload = $this->validatedPayload($request);
+        $this->recusarUploadQuebrado($request, 'anexo');
+
+        $anexoValidado = $request->validate([
+            'anexo' => ['nullable', 'file', 'max:20480', 'mimes:pdf,jpg,jpeg,png,webp'],
+            'anexo_descricao' => ['nullable', 'string', 'max:190'],
+        ], [
+            'anexo.mimes' => 'O anexo precisa ser um PDF ou uma foto (jpg, png ou webp).',
+        ], ['anexo' => 'anexo', 'anexo_descricao' => 'descrição do anexo']);
 
         try {
             $this->financeiroService->update($financeiro, $payload);
@@ -621,9 +629,24 @@ class FinanceiroController extends DesktopController
                 ->with('error', 'Não foi possível atualizar o lançamento agora. Tente novamente.');
         }
 
+        $mensagem = 'Lançamento atualizado com sucesso.';
+
+        // Mesma regra do store(): o anexo só sobe DEPOIS de a edição ter sido
+        // aceita — se o upload falhar, as alterações já salvas não se perdem;
+        // só avisa que faltou anexar.
+        if ($request->hasFile('anexo')) {
+            try {
+                $this->financeiroAnexoService->anexar($financeiro, $request->file('anexo'), $anexoValidado['anexo_descricao'] ?? null);
+                $mensagem .= ' Anexo salvo.';
+            } catch (Throwable $exception) {
+                report($exception);
+                $mensagem .= ' As alterações foram salvas, mas o anexo não pôde ser salvo — anexe novamente pela tela de detalhes.';
+            }
+        }
+
         return redirect()
             ->to($this->successTarget($request, $financeiro))
-            ->with('success', 'Lançamento atualizado com sucesso.');
+            ->with('success', $mensagem);
     }
 
     public function destroy(Request $request, int $financeiro): RedirectResponse

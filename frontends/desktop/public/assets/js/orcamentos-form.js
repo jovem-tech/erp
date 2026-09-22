@@ -4822,6 +4822,48 @@
             updateSummary();
         });
 
+        // Reaproveitar item de uma opção não escolhida (painel "Itens das
+        // outras opções"): vira uma linha comum, com os valores de quando foi
+        // ofertado. Sem `niveis` de propósito — a linha nova segue o
+        // interruptor, como qualquer item adicionado à mão.
+        document.querySelectorAll('[data-budget-discarded-add]').forEach((button) => {
+            button.addEventListener('click', () => {
+                let data = {};
+                try {
+                    data = JSON.parse(button.dataset.item || '{}');
+                } catch (error) {
+                    data = {};
+                }
+                if (!data || typeof data !== 'object') {
+                    return;
+                }
+
+                const row = createRow({ ...data });
+                if (!row) {
+                    return;
+                }
+
+                itemsBody.appendChild(row);
+                updateSummary();
+
+                button.disabled = true;
+                button.innerHTML = '<i class="bi bi-check-lg me-1"></i>Adicionado';
+                button.closest('[data-budget-discarded-item]')?.classList.add('is-added');
+
+                const description = normalizeText(data.descricao) || 'Item';
+                if (window.Swal) {
+                    window.Swal.fire({
+                        icon: 'success',
+                        title: 'Item adicionado ao orçamento',
+                        text: `${description} entrou na lista de itens. Confira valores e salve o orçamento.`,
+                        timer: 2600,
+                        showConfirmButton: false,
+                    });
+                }
+                row.querySelector('[data-budget-item-description]')?.focus();
+            });
+        });
+
         /**
          * Ligar: cada linha volta ao que tinha antes de um desligamento
          * anterior nesta sessão (backup) ou, se era só Básica, passa a valer

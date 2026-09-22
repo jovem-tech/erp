@@ -14,6 +14,8 @@ Este índice organiza a documentação da nova plataforma `sistema-erp`.
 
 ## Atualizações recentes
 
+- [Detalhes da peça e do serviço no detalhe da OS](07-novas-implementacoes/2026-09-22-detalhes-item-orcamento-na-os.md)
+- [Anexar arquivo na edição do lançamento financeiro](07-novas-implementacoes/2026-09-22-anexo-na-edicao-do-lancamento.md)
 - [Fotos operacionais com meta de 400 KB](07-novas-implementacoes/2026-09-11-otimizacao-fotos-operacionais.md)
 - [Arquitetura da otimização de fotos operacionais](03-arquitetura-tecnica/otimizacao-fotos-operacionais.md)
 - [Reserva de peça de estoque vinculada ao orçamento](07-novas-implementacoes/2026-09-10-reserva-peca-orcamento.md)

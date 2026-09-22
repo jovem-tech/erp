@@ -117,6 +117,123 @@ class FinanceiroAnexoTest extends TestCase
         $this->assertStringContainsString('name="anexo"', $html);
     }
 
+    public function test_editar_lancamento_com_anexo_envia_o_arquivo_depois_de_atualizar(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/financeiro/187/anexos' => Http::response([
+                'status' => 'success',
+                'data' => ['anexo' => ['id' => 3]],
+                'error' => null,
+                'meta' => [],
+            ], 201),
+            'http://127.0.0.1:8000/api/v1/financeiro/187' => Http::response([
+                'status' => 'success',
+                'data' => ['lancamento' => ['id' => 187, 'tipo' => 'pagar', 'status' => 'pendente']],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar', 'editar']]))
+            ->put('/financeiro/187', [
+                'tipo' => 'pagar',
+                'categoria' => 'Compra de pecas',
+                'descricao' => 'tela teste variavel 11',
+                'valor' => 150.0,
+                'data_vencimento' => now()->addDays(5)->toDateString(),
+                'anexo' => UploadedFile::fake()->create('nota.pdf', 300, 'application/pdf'),
+                'anexo_descricao' => 'Nota do fornecedor',
+            ]);
+
+        $response->assertRedirect(route('financeiro.index'))
+            ->assertSessionHas('success', static fn ($msg) => str_contains($msg, 'Anexo salvo.'));
+
+        Http::assertSent(static fn ($request): bool =>
+            $request->url() === 'http://127.0.0.1:8000/api/v1/financeiro/187' && $request->method() === 'PATCH'
+        );
+        Http::assertSent(static fn ($request): bool =>
+            $request->url() === 'http://127.0.0.1:8000/api/v1/financeiro/187/anexos' && $request->isMultipart()
+        );
+    }
+
+    public function test_editar_lancamento_recusa_anexo_de_tipo_invalido_sem_chamar_o_backend(): void
+    {
+        $response = $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'criar', 'editar']]))
+            ->put('/financeiro/187', [
+                'tipo' => 'pagar',
+                'categoria' => 'Compra de pecas',
+                'descricao' => 'tela teste variavel 11',
+                'valor' => 150.0,
+                'data_vencimento' => now()->addDays(5)->toDateString(),
+                'anexo' => UploadedFile::fake()->create('planilha.docx', 100, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+            ]);
+
+        $response->assertSessionHasErrors('anexo');
+        Http::assertNothingSent();
+    }
+
+    public function test_pagina_de_editar_lancamento_tem_campo_de_anexo_e_lista_os_existentes(): void
+    {
+        Http::fake([
+            'http://127.0.0.1:8000/api/v1/notifications*' => Http::response($this->fakeNotificationsPayload(), 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/catalogo' => Http::response([
+                'status' => 'success',
+                'data' => ['categorias' => [], 'contas_financeiras' => ['contas' => [], 'contas_padrao' => [], 'tipos' => []], 'formas_pagamento' => []],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+            'http://127.0.0.1:8000/api/v1/financeiro/187' => Http::response([
+                'status' => 'success',
+                'data' => [
+                    'lancamento' => [
+                        'id' => 187,
+                        'tipo' => 'pagar',
+                        'categoria' => 'Compra de pecas',
+                        'descricao' => 'tela teste variavel 11',
+                        'valor' => 150.0,
+                        'status' => 'pago',
+                        'data_vencimento' => '2026-09-20',
+                        'anexos' => [
+                            [
+                                'id' => 9,
+                                'nome_original' => 'boleto-pecas.pdf',
+                                'descricao' => 'Boleto setembro/2026',
+                                'mime' => 'application/pdf',
+                                'tamanho_bytes' => 204800,
+                                'created_at' => '2026-09-11T10:00:00-03:00',
+                                'uploaded_by' => ['id' => 1, 'nome' => 'Ana Operadora'],
+                            ],
+                        ],
+                    ],
+                    // Já baixado: o anexo continua permitido (comprovante entra depois do pagamento).
+                    'resumo' => ['total_movimentos' => 1, 'valor_aberto' => 0.0],
+                ],
+                'error' => null,
+                'meta' => [],
+            ], 200),
+        ]);
+
+        $html = (string) $this
+            ->withSession($this->desktopSession(['financeiro' => ['visualizar', 'editar']]))
+            ->get('/financeiro/187/editar')
+            ->assertOk()
+            ->assertSee('ANEXOS')
+            ->assertSee('Boleto setembro/2026')
+            ->assertSee('Ana Operadora')
+            ->assertSee(route('financeiro.anexos.download', [187, 9]), false)
+            ->assertSee('id="anexoPreviewModal"', false)
+            ->assertSee('financeiro-anexos.js', false)
+            ->getContent();
+
+        $this->assertStringContainsString('enctype="multipart/form-data"', $html);
+        $this->assertStringContainsString('name="anexo"', $html);
+        // Excluir anexo é um <form> DELETE próprio e não pode ficar aninhado
+        // dentro do form de edição — o botão de lixeira fica só na tela de detalhe.
+        $this->assertStringNotContainsString('action="' . route('financeiro.anexos.destroy', [187, 9]) . '"', $html);
+    }
+
     public function test_lista_anexos_em_json_para_o_ver_anexos_da_listagem(): void
     {
         Http::fake([

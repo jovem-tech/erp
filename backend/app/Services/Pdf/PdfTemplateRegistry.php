@@ -179,10 +179,21 @@ class PdfTemplateRegistry
                     // representa (a que o cliente está olhando, ou a aprovada).
                     // Vazio em orçamento comum.
                     'orcamento.opcao_texto' => 'string',
+                    // Seção da opção no modelo padrão: título com o estado
+                    // ("Opção de manutenção: …" em análise, "Opção aprovada: …"
+                    // depois), a promessa da opção ("Corrige e previne"), o
+                    // tamanho ("3 itens (2 peças, 1 serviço)") e, só depois da
+                    // decisão, quem/quando/por onde aprovou.
+                    'orcamento.opcao_titulo' => 'string',
+                    'orcamento.opcao_subtitulo' => 'string',
+                    'orcamento.opcao_itens_texto' => 'string',
+                    'orcamento.opcao_aprovacao_texto' => 'string',
                     // Condições que podem variar por opção: entrega em
-                    // domicílio (texto pronto, vazio quando não inclui) e
+                    // domicílio (texto pronto, vazio quando não inclui; o
+                    // rótulo curto serve para grade de campos) e
                     // diferenciais da opção (uma linha por item).
                     'orcamento.entrega_domicilio_texto' => 'string',
+                    'orcamento.entrega_domicilio_label' => 'string',
                     'orcamento.beneficios_texto' => 'string',
                 ]),
                 'collections' => array_merge(self::ORDER_COLLECTIONS, [
