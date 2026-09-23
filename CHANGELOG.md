@@ -1,5 +1,11 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v6.3.0.0 — 2026-09-23 02:31
+- **Tier:** minor
+- **Autor/Agente:** Claude
+- **Descrição:** Baixa da OS ratifica o pacote de manutencao contratado: a tela abre com o que foi vendido (nivel, garantia, formas de pagamento, parcelamento sem juros e entrega), a garantia vem pre-selecionada no prazo prometido, o select de forma de pagamento separa 'Do pacote contratado' de 'Fora do pacote' (agrupa, nunca filtra) e o passo Confirmacao exige assumir + justificar quando o encerramento sai do combinado, gravando em os.pacote_desvios/motivo e na linha do tempo (evento baixa_fora_pacote). Garantia e assimetrica: dar mais que o prometido passa livre. Novo Budget::contractedForOrder() acaba com os quatro criterios divergentes de 'o orcamento desta OS' (numa OS com dois aprovados a baixa sugeria a garantia do documento errado). Corrige tambem: 'Sem garantia' nunca chegava ao backend (array_filter descartava ''), nao zerava garantia_dias quando chegava, orcamento_pendente_aprovacao nunca era repassado pela API (opcao 'Entregue - Reparado e Pago' jamais chegava desabilitada) e a lista de prazos de garantia duplicada no desktop.
+- **Arquivos:** backend/app/Models/Budget.php,backend/app/Models/OrderEvent.php,backend/app/Services/Orders/OrderClosureService.php,backend/app/Services/Budgets/BudgetCommercialTermsService.php,backend/app/Http/Controllers/Api/V1/OrderController.php,backend/app/Http/Requests/Api/V1/CloseOrderRequest.php,backend/database/migrations/2026_09_23_000001_add_pacote_desvio_to_os.php,backend/tests/Concerns/BuildsLegacyErpSchema.php,backend/tests/Feature/Api/V1/OrderClosurePackageTest.php,backend/tests/Feature/Api/V1/OrderWarrantyClosureTest.php,frontends/desktop/app/Http/Controllers/OrderController.php,frontends/desktop/resources/views/orders/closure.blade.php,frontends/desktop/public/assets/js/orders-closure.js,frontends/desktop/tests/Feature/Desktop/OrderClosurePackageTest.php,documentacao/07-novas-implementacoes/2026-09-23-ratificacao-do-pacote-na-baixa.md
+
 ## v6.2.0.0 — 2026-09-22 06:47
 - **Tier:** minor
 - **Autor/Agente:** Claude

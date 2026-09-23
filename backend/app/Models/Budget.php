@@ -388,6 +388,46 @@ class Budget extends Model
     }
 
     /**
+     * Orçamentos que o cliente de fato aprovou — mesmo predicado que
+     * OrderClosureService::hasUnapprovedBudget() mantinha inline. Abrange o
+     * `convertido` (já virou OS) e o registro legado que só tem `aprovado_em`.
+     */
+    public function scopeEffectivelyApproved(Builder $query): Builder
+    {
+        return $query->where(static function (Builder $builder): void {
+            $builder
+                ->whereIn('status', [self::STATUS_APPROVED, self::STATUS_CONVERTED])
+                ->orWhereNotNull('aprovado_em');
+        });
+    }
+
+    /**
+     * O orçamento CONTRATADO de uma OS: o mais recente entre os efetivamente
+     * aprovados. É ele quem define o pacote (garantia, formas de pagamento,
+     * parcelamento e entrega) que a baixa tem de ratificar.
+     *
+     * O desempate é `id DESC`, o MESMO de OrderWorkflowService::
+     * mapLinkedBudget(), para a baixa e o detalhe da OS nunca falarem de
+     * orçamentos diferentes — antes a baixa ordenava por `aprovado_em` e, numa
+     * OS com dois orçamentos aprovados, sugeria a garantia do outro documento.
+     *
+     * null = OS sem pacote contratado (o caminho majoritário, que segue
+     * funcionando exatamente como antes).
+     */
+    public static function contractedForOrder(int $osId): ?self
+    {
+        if ($osId <= 0) {
+            return null;
+        }
+
+        return self::query()
+            ->where('os_id', $osId)
+            ->effectivelyApproved()
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    /**
      * Status em que a proposta já foi enviada e depende da resposta do cliente
      * pelo link público — os únicos que podem virar "vencido" quando o prazo passa.
      *

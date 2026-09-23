@@ -40,6 +40,14 @@ class OrderEvent extends Model
     public const TIPO_FOTOS_ADICIONADAS = 'fotos_adicionadas';
     public const TIPO_CHECKLIST_REGISTRADO = 'checklist_registrado';
     public const TIPO_FECHAMENTO_CONCLUIDO = 'fechamento_concluido';
+
+    /**
+     * Baixa que entregou algo diferente do pacote de manutenção que o cliente
+     * aprovou (garantia menor, forma de pagamento não ofertada, parcelas acima
+     * do prometido sem juros, entrega em domicílio não cumprida). Carrega o
+     * motivo que o operador teve de informar.
+     */
+    public const TIPO_BAIXA_FORA_PACOTE = 'baixa_fora_pacote';
     public const TIPO_RETORNO_AGENDADO = 'retorno_agendado';
     public const TIPO_ADIANTAMENTO_REGISTRADO = 'adiantamento_registrado';
     public const TIPO_TITULO_CRIADO = 'titulo_criado';

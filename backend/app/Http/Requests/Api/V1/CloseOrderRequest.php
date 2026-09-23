@@ -78,6 +78,24 @@ class CloseOrderRequest extends BaseApiFormRequest
                 'integer',
                 Rule::in(array_keys(Budget::WARRANTY_TERMS)),
             ],
+            // Ratificação do pacote de manutenção contratado. Só os TIPOS aqui:
+            // se o motivo é obrigatório depende do pacote aprovado e dos
+            // recebimentos, então a regra mora em OrderClosureService::
+            // resolvePackageRatification(), mesmo critério já usado para o
+            // cartão e para o desconto.
+            'fora_pacote' => [
+                'nullable',
+                'boolean',
+            ],
+            'fora_pacote_motivo' => [
+                'nullable',
+                'string',
+                'max:500',
+            ],
+            'entrega_domicilio_cumprida' => [
+                'nullable',
+                'boolean',
+            ],
             'notificar_cliente' => [
                 'nullable',
                 'boolean',

@@ -153,6 +153,42 @@ class OrderWarrantyClosureTest extends TestCase
         $this->assertSame(730, $response->json('data.garantia.dias_sugerido'));
     }
 
+    public function test_two_approved_budgets_use_the_most_recent_as_contracted_package(): void
+    {
+        [$token, $orderId, $clientId] = $this->seedOrderForClosure();
+        DB::table('os')->where('id', $orderId)->update(['garantia_dias' => 0]);
+
+        // Cenário real que expôs o bug (OS26090006): duas propostas aprovadas
+        // na mesma OS. A de id MAIOR é a vigente; a de id menor foi aprovada
+        // DEPOIS no relógio, e a baixa ordenava por `aprovado_em` — sugeria a
+        // garantia do documento errado (365 em vez de 180).
+        $this->createBudgetRecord([
+            'numero' => 'ORC-2609-000011',
+            'cliente_id' => $clientId,
+            'os_id' => $orderId,
+            'status' => 'aprovado',
+            'garantia_dias' => 365,
+            'aprovado_em' => Carbon::parse('2026-09-16 11:48:53'),
+        ]);
+
+        $vigente = $this->createBudgetRecord([
+            'numero' => 'ORC-2609-000014',
+            'cliente_id' => $clientId,
+            'os_id' => $orderId,
+            'status' => 'aprovado',
+            'nivel_aprovado' => 2,
+            'garantia_dias' => 180,
+            'aprovado_em' => Carbon::parse('2026-09-16 11:42:00'),
+        ]);
+
+        $response = $this->withHeader('Authorization', 'Bearer '.$token)
+            ->getJson("/api/v1/orders/{$orderId}/closure")
+            ->assertOk();
+
+        $this->assertSame(180, $response->json('data.garantia.dias_sugerido'));
+        $this->assertSame($vigente, $response->json('data.pacote.orcamento_id'));
+    }
+
     public function test_invalid_warranty_term_is_rejected(): void
     {
         [$token, $orderId] = $this->seedOrderForClosure();

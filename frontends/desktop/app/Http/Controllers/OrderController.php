@@ -1324,7 +1324,17 @@ class OrderController extends DesktopController
                 'date',
             ],
             'observacao' => ['nullable', 'string'],
-            'garantia_dias' => ['nullable', 'integer', 'in:90,180,365,730'],
+            // Sem 'in:' aqui de propósito: a lista de prazos é
+            // Budget::WARRANTY_TERMS, que só o backend enxerga, e duplicá-la
+            // criava uma promessa que ninguém mantinha (acrescentar um prazo
+            // lá fazia a baixa recusá-lo antes de chegar à API). O <select> já
+            // oferece apenas o que o backend mandou em $closure.garantia.opcoes
+            // e CloseOrderRequest continua sendo a autoridade.
+            'garantia_dias' => ['nullable', 'integer'],
+            // Ratificação do pacote de manutenção contratado.
+            'fora_pacote' => ['nullable', 'boolean'],
+            'fora_pacote_motivo' => ['nullable', 'string', 'max:500'],
+            'entrega_domicilio_cumprida' => ['nullable', 'boolean'],
             'tempo_tecnico_horas' => ['nullable', 'numeric', 'min:0', 'max:999'],
             'notificar_cliente' => ['nullable', 'boolean'],
             'emitir_nota_fiscal' => ['nullable', 'boolean'],
@@ -1378,6 +1388,28 @@ class OrderController extends DesktopController
             'desconto_percentual' => $validated['desconto_percentual'] ?? null,
             'desconto_motivo' => $validated['desconto_motivo'] ?? null,
         ], static fn ($value): bool => $value !== null && $value !== '');
+
+        // O array_filter acima descarta '', e era exatamente isso que fazia
+        // "Sem garantia" nunca chegar ao backend: a chave sumia e o backend
+        // lia como "não informou", mantendo o prazo herdado do orçamento.
+        // Reinserida à mão para o backend distinguir "não perguntei" de
+        // "escolhi nenhuma" (ver OrderClosureService::normalizeWarrantyDays).
+        if ($request->has('garantia_dias')) {
+            $payload['garantia_dias'] = $validated['garantia_dias'] ?? null;
+        }
+
+        // Ratificação do pacote contratado. `entrega_domicilio_cumprida` só
+        // viaja quando a tela de fato perguntou (o switch só existe quando o
+        // pacote prometeu entrega) — ausência significa "não perguntado" e
+        // nunca vira desvio no backend.
+        if ($request->has('fora_pacote')) {
+            $payload['fora_pacote'] = $request->boolean('fora_pacote');
+            $payload['fora_pacote_motivo'] = trim((string) ($validated['fora_pacote_motivo'] ?? ''));
+        }
+
+        if ($request->has('entrega_domicilio_cumprida')) {
+            $payload['entrega_domicilio_cumprida'] = $request->boolean('entrega_domicilio_cumprida');
+        }
 
         $result = $this->orderService->close($order, $payload);
 

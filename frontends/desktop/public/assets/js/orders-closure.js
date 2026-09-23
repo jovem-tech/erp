@@ -6,6 +6,20 @@
     const noRepairStatuses = Array.isArray(config.noRepairStatuses) ? config.noRepairStatuses : [];
     const orcamentoPendenteAprovacao = Boolean(config.orcamentoPendenteAprovacao);
 
+    // Pacote de manutencao contratado (nivel aprovado do orcamento): o que foi
+    // PROMETIDO ao cliente. Sem pacote, tudo aqui fica inerte e a tela se
+    // comporta exatamente como antes.
+    const pacote = config.pacote && typeof config.pacote === 'object' ? config.pacote : {};
+    const temPacote = Boolean(pacote.tem_pacote);
+    const pacoteFormas = Array.isArray(pacote.formas_pagamento_codigos) ? pacote.formas_pagamento_codigos : [];
+    const pacoteGarantiaDias = Number(pacote.garantia_dias) || 0;
+    const pacoteParcelas = Number(pacote.parcelas_sem_juros) || 0;
+    const pacoteEntrega = Boolean(pacote.entrega_domicilio);
+    const warrantyStatuses = Array.isArray(config.warrantyStatuses) ? config.warrantyStatuses : [];
+    // Debito e cartao mas nunca parcela — mesma regra de
+    // BudgetCommercialTermsService::DEBIT_CARD_CODE no backend.
+    const DEBIT_CARD_CODE = 'cartao_debito';
+
     // Formas marcadas como cartao no cadastro de Formas de Pagamento. Usa o
     // catalogo em vez de adivinhar pelo prefixo do codigo, para que formas
     // personalizadas marcadas como cartao tambem peçam operadora/parcelas.
@@ -472,6 +486,7 @@
                         ? 'Nenhuma faixa de parcelas cadastrada para esta operadora/modalidade.'
                         : '';
                 }
+                updateParcelasPackageHint(row);
                 return;
             }
 
@@ -487,6 +502,8 @@
                     ? `${range.max}x disponível para esta operadora.`
                     : `${range.min}x a ${range.max}x disponíveis para esta operadora.`;
             }
+
+            updateParcelasPackageHint(row);
         };
 
         const roundCurrency = (value) => Math.round((Number(value) || 0) * 100) / 100;
@@ -682,6 +699,107 @@
             }
 
             return errors;
+        };
+
+        // --- Ratificacao do pacote contratado -------------------------------
+        // Desvio NAO e erro de etapa: nao bloqueia navegacao. Ele revela o
+        // bloco do passo 4, que exige assumir + justificar. Quem recusa de
+        // fato e o backend (OrderClosureService::resolvePackageRatification).
+        const packageRatifyBox = document.querySelector('[data-closure-package-ratify]');
+        const packageDeviationList = document.querySelector('[data-closure-package-deviations]');
+        const packageFlagCheckbox = document.querySelector('[data-closure-package-flag]');
+        const packageReasonInput = document.querySelector('[data-closure-package-reason]');
+        const packageDeliveryCheckbox = document.querySelector('[data-closure-package-delivery]');
+        const garantiaSelect = document.getElementById('garantiaDias');
+
+        const grantsWarranty = () => warrantyStatuses.includes(encerrarComoSelect?.value || '');
+
+        const refreshSubmitAvailability = () => {
+            if (!(submitButton instanceof HTMLButtonElement)) return;
+            const revisado = Boolean(confirmacaoCheckbox?.checked);
+            submitButton.disabled = !revisado || !syncPackageRatification();
+        };
+
+        const collectPackageDeviations = () => {
+            if (!temPacote) return [];
+
+            const deviations = [];
+
+            // Garantia: assimetrica. Mais que o prometido e cortesia.
+            if (!isAdvanceClosure() && pacoteGarantiaDias > 0 && grantsWarranty()) {
+                const escolhida = parseInt(garantiaSelect?.value || '0', 10) || 0;
+                if (escolhida < pacoteGarantiaDias) {
+                    deviations.push(escolhida > 0
+                        ? `Garantia menor que a prometida (${pacote.garantia_label || pacoteGarantiaDias + ' dias'}).`
+                        : `O pacote prometeu ${pacote.garantia_label || pacoteGarantiaDias + ' dias'} de garantia e esta baixa sai sem garantia.`);
+                }
+            }
+
+            rows().forEach((row) => {
+                const forma = row.querySelector('[data-field="forma_pagamento"]')?.value || '';
+                if (forma === '') return;
+
+                if (pacoteFormas.length > 0 && !pacoteFormas.includes(forma)) {
+                    const label = row.querySelector('[data-field="forma_pagamento"]')?.selectedOptions?.[0]?.text || forma;
+                    deviations.push(`Forma de pagamento fora do pacote: ${label}.`);
+                }
+
+                const modalidade = row.querySelector('[data-field="modalidade"]')?.value || '';
+                const parcelas = parseInt(row.querySelector('[data-field="parcelas"]')?.value || '1', 10) || 1;
+                const ehDebito = modalidade === 'debito' || forma === DEBIT_CARD_CODE;
+
+                if (pacoteParcelas > 0 && !ehDebito && isCardPayment(forma) && parcelas > pacoteParcelas) {
+                    deviations.push(`Parcelamento em ${parcelas}x acima do prometido sem juros (até ${pacoteParcelas}x).`);
+                }
+            });
+
+            if (!isAdvanceClosure() && pacoteEntrega && grantsWarranty()
+                && packageDeliveryCheckbox instanceof HTMLInputElement && !packageDeliveryCheckbox.checked) {
+                deviations.push('Entrega em domicílio foi prometida no pacote e não foi realizada.');
+            }
+
+            return [...new Set(deviations)];
+        };
+
+        const syncPackageRatification = () => {
+            if (!(packageRatifyBox instanceof HTMLElement)) return true;
+
+            const deviations = collectPackageDeviations();
+
+            if (deviations.length === 0) {
+                packageRatifyBox.hidden = true;
+                if (packageDeviationList instanceof HTMLElement) packageDeviationList.innerHTML = '';
+                return true;
+            }
+
+            packageRatifyBox.hidden = false;
+            if (packageDeviationList instanceof HTMLElement) {
+                packageDeviationList.innerHTML = deviations.map((item) => `<li>${item}</li>`).join('');
+            }
+
+            return Boolean(packageFlagCheckbox?.checked)
+                && (packageReasonInput?.value || '').trim() !== '';
+        };
+
+        // Teto de parcelas PROMETIDO pelo pacote. Escreve num elemento
+        // proprio, nunca em min/max — esses sao de syncParcelasLimits(), que
+        // reflete a capacidade real das taxas de cartao. Capacidade e promessa
+        // sao coisas diferentes e nao podem se sobrescrever.
+        const updateParcelasPackageHint = (row) => {
+            const hintEl = row.querySelector('[data-parcelas-package-hint]');
+            if (!(hintEl instanceof HTMLElement)) return;
+
+            const parcelasInput = row.querySelector('[data-field="parcelas"]');
+            const maxCapacidade = parseInt(parcelasInput?.getAttribute('max') || '99', 10) || 99;
+
+            // Pacote acima da capacidade da operadora: o campo ja trava no
+            // limite da taxa, entao o aviso nao teria o que informar.
+            if (!temPacote || pacoteParcelas <= 0 || pacoteParcelas >= maxCapacidade) {
+                hintEl.textContent = '';
+                return;
+            }
+
+            hintEl.textContent = `Pacote contratado: até ${pacoteParcelas}x sem juros. Acima disso é fora do pacote.`;
         };
 
         const validateFinancialStep = () => {
@@ -883,6 +1001,13 @@
 
             // Botão de submissão visível apenas na etapa 3
             if (submitButton) submitButton.classList.toggle('d-none', step !== LAST_STEP);
+
+            // Os desvios do pacote so podem ser listados aqui: eles dependem
+            // de escolhas feitas nas tres etapas anteriores.
+            if (step === LAST_STEP) {
+                syncPackageRatification();
+                refreshSubmitAvailability();
+            }
 
             updateFinanceiroTabAvailability();
 
@@ -1181,11 +1306,17 @@
             }
         });
 
-        // Habilitar botão de submissão ao confirmar revisão
-        confirmacaoCheckbox?.addEventListener('change', () => {
-            if (submitButton instanceof HTMLButtonElement) {
-                submitButton.disabled = !confirmacaoCheckbox.checked;
-            }
+        // Habilitar botão de submissão ao confirmar revisão — e, quando a baixa
+        // sai do pacote contratado, só depois de assumir e justificar.
+        confirmacaoCheckbox?.addEventListener('change', refreshSubmitAvailability);
+
+        [packageFlagCheckbox, packageReasonInput, packageDeliveryCheckbox].forEach((element) => {
+            if (!(element instanceof HTMLElement)) return;
+            const evento = element === packageReasonInput ? 'input' : 'change';
+            element.addEventListener(evento, () => {
+                syncPackageRatification();
+                refreshSubmitAvailability();
+            });
         });
 
         // Desconto concedido nesta baixa: blur do display re-sincroniza os
