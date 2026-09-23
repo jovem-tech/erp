@@ -1608,6 +1608,12 @@ trait BuildsLegacyErpSchema
             $table->string('desconto_baixa_motivo', 255)->nullable();
             $table->unsignedBigInteger('desconto_baixa_concedido_por')->nullable();
             $table->dateTime('desconto_baixa_concedido_em')->nullable();
+            // Espelha 2026_09_23_000001_add_pacote_desvio_to_os: o que a baixa
+            // entregou fora do pacote de manutenção contratado pelo cliente.
+            $table->string('pacote_desvios', 120)->nullable();
+            $table->string('pacote_desvio_motivo', 500)->nullable();
+            $table->unsignedBigInteger('pacote_desvio_por')->nullable();
+            $table->dateTime('pacote_desvio_em')->nullable();
             $table->decimal('valor_final', 10, 2)->default(0);
             $table->boolean('orcamento_aprovado')->default(false);
             $table->dateTime('data_aprovacao')->nullable();

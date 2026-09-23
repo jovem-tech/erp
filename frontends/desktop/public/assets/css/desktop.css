@@ -14,7 +14,15 @@
     --desktop-success: #16a34a;
     --desktop-success-rgb: 22, 163, 74;
     --desktop-success-text: #0e8f5d;
+    /* Atenção / alerta — tom validado em tela (ver .desktop-alert-warning) */
     --desktop-warning: #f59e0b;
+    --desktop-warning-rgb: 245, 158, 11;
+    --desktop-warning-strong: #d97706;
+    --desktop-warning-surface: #fff3cd;
+    --desktop-warning-border: #ffe69c;
+    --desktop-warning-text: #664d03;
+    --desktop-warning-ink: #b45309;
+    --desktop-warning-soft: rgba(245, 158, 11, 0.14);
     --desktop-danger: #ef4444;
     --desktop-danger-rgb: 239, 68, 68;
     --desktop-danger-text: #b91c1c;
@@ -728,8 +736,8 @@ a {
 }
 
 .desktop-chip-warning {
-    color: #b45309;
-    background: rgba(245, 158, 11, 0.16);
+    color: var(--desktop-warning-ink);
+    background: rgba(var(--desktop-warning-rgb), 0.16);
 }
 
 .desktop-chip-danger {
@@ -1287,8 +1295,8 @@ a {
 }
 
 .equipment-collector-status[data-status="warning"] {
-    color: #b45309;
-    background: rgba(245, 158, 11, 0.18);
+    color: var(--desktop-warning-ink);
+    background: rgba(var(--desktop-warning-rgb), 0.18);
 }
 
 .equipment-collector-status[data-status="running"] {
@@ -1302,8 +1310,8 @@ a {
 }
 
 .equipment-collector-status[data-status="expired"] {
-    color: #b45309;
-    background: rgba(245, 158, 11, 0.18);
+    color: var(--desktop-warning-ink);
+    background: rgba(var(--desktop-warning-rgb), 0.18);
 }
 
 .equipment-collector-status[data-status="consumed"] {
@@ -2050,7 +2058,7 @@ a {
 .desktop-favorite-star.is-active,
 .desktop-favorite-star.is-active:hover,
 .desktop-favorite-star.is-active:focus-visible {
-    color: #f59e0b;
+    color: var(--desktop-warning);
 }
 
 .desktop-favorite-star.is-busy,
@@ -3031,8 +3039,8 @@ a {
 }
 
 .desktop-config-preview-status[data-tone="warning"] {
-    border-color: rgba(245, 158, 11, 0.24);
-    background: rgba(245, 158, 11, 0.09);
+    border-color: rgba(var(--desktop-warning-rgb), 0.24);
+    background: rgba(var(--desktop-warning-rgb), 0.09);
 }
 
 .desktop-config-preview-status[data-tone="danger"] {
@@ -4214,7 +4222,7 @@ a {
 }
 
 .budget-tiers-table .is-hole {
-    background: rgba(245, 158, 11, 0.1);
+    background: rgba(var(--desktop-warning-rgb), 0.1);
 }
 
 /* Item recém-criado, ainda sem conteúdo: aparece (o operador vê onde ele
@@ -4310,8 +4318,8 @@ a {
 }
 
 .budget-tiers-alerts li.is-warning {
-    background: rgba(245, 158, 11, 0.14);
-    color: #92400e;
+    background: var(--desktop-warning-soft);
+    color: var(--desktop-warning-ink);
 }
 
 .budget-tiers-alerts li.is-warning::before {
@@ -4572,7 +4580,7 @@ a {
     height: 100%;
     width: 0;
     border-radius: inherit;
-    background: #d97706;
+    background: var(--desktop-warning-strong);
     transition: width 0.2s ease, background-color 0.2s ease;
 }
 
@@ -7194,7 +7202,7 @@ a {
     background:
         radial-gradient(circle at 16% 56%, rgba(111, 90, 252, 0.18), transparent 12%),
         radial-gradient(circle at 42% 28%, rgba(16, 185, 129, 0.16), transparent 14%),
-        radial-gradient(circle at 68% 66%, rgba(245, 158, 11, 0.16), transparent 14%),
+        radial-gradient(circle at 68% 66%, rgba(var(--desktop-warning-rgb), 0.16), transparent 14%),
         radial-gradient(circle at 90% 24%, rgba(59, 130, 246, 0.16), transparent 12%);
 }
 
@@ -8578,7 +8586,8 @@ a {
 
 .os-detail-top-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1.1fr) repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr);
+    grid-template-rows: auto auto;
     gap: 1.25rem;
     align-items: stretch;
 }
@@ -8587,9 +8596,26 @@ a {
     height: 100%;
 }
 
+/* Coluna esquerda: foto ocupa as duas linhas (cliente em cima, equipamento embaixo). */
+.os-detail-top-grid > [data-os-summary-card="photo"] {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+}
+
+.os-detail-top-grid > [data-os-summary-card="client"] {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.os-detail-top-grid > [data-os-summary-card="equipment"] {
+    grid-column: 2;
+    grid-row: 2;
+}
+
 .os-photo-card {
     display: grid;
     gap: 0.85rem;
+    align-content: start;
 }
 
 .os-photo-frame {
@@ -8982,6 +9008,12 @@ a {
 @media (min-width: 993px) and (max-width: 1099.98px) {
     .os-detail-top-grid {
         grid-template-columns: 1fr;
+        grid-template-rows: none;
+    }
+
+    .os-detail-top-grid > [data-os-summary-card] {
+        grid-column: auto;
+        grid-row: auto;
     }
 }
 
@@ -8992,7 +9024,13 @@ a {
 
     .os-detail-top-grid {
         grid-template-columns: 1fr;
+        grid-template-rows: none;
         gap: 1rem;
+    }
+
+    .os-detail-top-grid > [data-os-summary-card] {
+        grid-column: auto;
+        grid-row: auto;
     }
 
     .os-detail-main {
@@ -9633,7 +9671,7 @@ a.agenda-summary-card:hover {
 .agenda-tipo-conta_pagar { --agenda-accent: #ef4444; --agenda-bg: rgba(239, 68, 68, 0.10); }
 .agenda-tipo-conta_receber { --agenda-accent: #16a34a; --agenda-bg: rgba(22, 163, 74, 0.10); }
 .agenda-tipo-retorno_pos_servico { --agenda-accent: #0ea5e9; --agenda-bg: rgba(14, 165, 233, 0.10); }
-.agenda-tipo-prazo_os { --agenda-accent: #f59e0b; --agenda-bg: rgba(245, 158, 11, 0.12); }
+.agenda-tipo-prazo_os { --agenda-accent: var(--desktop-warning); --agenda-bg: rgba(var(--desktop-warning-rgb), 0.12); }
 .agenda-tipo-cobranca_os { --agenda-accent: #a855f7; --agenda-bg: rgba(168, 85, 247, 0.10); }
 
 .agenda-filter.agenda-tipo-manual:not(.is-active),
@@ -10329,7 +10367,7 @@ a.agenda-year-day:hover {
 }
 
 .dashboard-attention-chip.tone-danger { --tone-color: #ef4444; --tone-bg: rgba(239, 68, 68, 0.08); }
-.dashboard-attention-chip.tone-warning { --tone-color: #f59e0b; --tone-bg: rgba(245, 158, 11, 0.09); }
+.dashboard-attention-chip.tone-warning { --tone-color: var(--desktop-warning); --tone-bg: rgba(var(--desktop-warning-rgb), 0.09); }
 .dashboard-attention-chip.tone-attention { --tone-color: #eab308; --tone-bg: rgba(234, 179, 8, 0.10); }
 .dashboard-attention-chip.tone-info { --tone-color: #3b82f6; --tone-bg: rgba(59, 130, 246, 0.08); }
 .dashboard-attention-chip.tone-success { --tone-color: #22c55e; --tone-bg: rgba(34, 197, 94, 0.08); }
@@ -10426,8 +10464,8 @@ a.agenda-year-day:hover {
 /* Tons discretos da agenda: vermelho só para o que já venceu, âmbar para
    hoje, neutro para o resto — ver .dashboard-agenda-item acima. */
 .dashboard-agenda-item.is-today {
-    border-left-color: #f59e0b;
-    background: rgba(245, 158, 11, 0.08);
+    border-left-color: var(--desktop-warning);
+    background: rgba(var(--desktop-warning-rgb), 0.08);
 }
 
 .dashboard-agenda-item.is-upcoming {
@@ -10613,7 +10651,7 @@ a.dashboard-status-legend-item:hover {
 }
 
 .dashboard-order-priority.tone-danger { background: #ef4444; }
-.dashboard-order-priority.tone-warning { background: #f59e0b; }
+.dashboard-order-priority.tone-warning { background: var(--desktop-warning); }
 .dashboard-order-priority.tone-success { background: #22c55e; }
 
 /* --- Estoque baixo ------------------------------------------------------ */
@@ -10813,4 +10851,43 @@ a.dashboard-status-legend-item:hover {
     border: 1px solid var(--desktop-border);
     border-radius: var(--desktop-radius-md);
     background: var(--desktop-surface-soft);
+}
+
+/* Atenção / alerta (tom âmbar do design system) ------------------------ */
+/*
+ * Tom canônico para "cuidado, confira antes de seguir": nem erro (vermelho),
+ * nem confirmação (verde). Use:
+ *   - .alert.alert-warning (Bootstrap) — já ligado aos tokens abaixo;
+ *   - .desktop-alert-warning — mesma faixa sem depender do Bootstrap;
+ *   - .desktop-chip-warning — selo curto dentro de tabelas/cards;
+ *   - var(--desktop-warning) — ícone, barra ou borda de destaque.
+ * Nunca escreva o hex direto: os temas (dark/jovem-tech) reescrevem os tokens.
+ */
+.alert-warning {
+    --bs-alert-color: var(--desktop-warning-text);
+    --bs-alert-bg: var(--desktop-warning-surface);
+    --bs-alert-border-color: var(--desktop-warning-border);
+    --bs-alert-link-color: var(--desktop-warning-text);
+}
+
+.desktop-alert-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid var(--desktop-warning-border);
+    border-radius: var(--desktop-radius-sm);
+    background: var(--desktop-warning-surface);
+    color: var(--desktop-warning-text);
+}
+
+.desktop-alert-warning .bi {
+    flex: 0 0 auto;
+    color: var(--desktop-warning-strong);
+}
+
+.desktop-alert-warning a,
+.alert-warning a {
+    color: inherit;
+    text-decoration: underline;
 }

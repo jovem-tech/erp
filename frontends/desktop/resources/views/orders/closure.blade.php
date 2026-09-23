@@ -189,6 +189,14 @@
             height: 100%;
         }
 
+        /* Card do pacote contratado: empilha ACIMA do painel de fechamento na
+           mesma coluna, então não pode herdar o height:100% do painel padrão
+           (que existe para casar as duas colunas lado a lado) — senão o card
+           estica e empurra o fechamento para fora da tela. */
+        .closure-package-card {
+            height: auto;
+        }
+
         .closure-panel-title {
             font-size: 0.74rem;
             font-weight: 800;
@@ -530,6 +538,17 @@
         // OrderClosureService::close()). Não afeta sem custo/garantia.
         $orcamentoPendenteAprovacao = (bool) ($closure['orcamento_pendente_aprovacao'] ?? false);
 
+        // Pacote de manutenção contratado (nível aprovado do orçamento): o que
+        // foi PROMETIDO ao cliente. `?? []` obrigatório — fixtures de teste e
+        // respostas antigas do backend não têm esta chave, e um acesso direto
+        // derrubaria a tela inteira.
+        $pacote = is_array($closure['pacote'] ?? null) ? $closure['pacote'] : [];
+        $temPacote = (bool) ($pacote['tem_pacote'] ?? false);
+        $pacoteFormasCodigos = is_array($pacote['formas_pagamento_codigos'] ?? null)
+            ? $pacote['formas_pagamento_codigos']
+            : [];
+        $pacoteEntrega = $temPacote && (bool) ($pacote['entrega_domicilio'] ?? false);
+
         $equipamentoNome = trim((string) ($order['equipamento_nome'] ?? ($order['equipamento']['nome'] ?? '')));
         $equipamentoTipo = trim((string) ($order['equipamento_tipo_nome'] ?? ($order['equipamento']['tipo_nome'] ?? ($order['equipamento']['tipo']['nome'] ?? ''))));
         $equipamentoSerie = trim((string) ($order['equipamento_numero_serie'] ?? ($order['equipamento']['numero_serie'] ?? '')));
@@ -773,6 +792,42 @@
             <div class="closure-step-panel" data-step-panel="1">
                 <div class="row g-3">
                     <div class="col-12 col-lg-7">
+                        @if ($temPacote)
+                            {{-- O que o cliente aprovou. Fica no passo 1 porque é
+                                 aqui que a garantia é escolhida, e o operador
+                                 precisa ver a promessa antes de decidir. --}}
+                            <div class="closure-pdv-panel closure-package-card mb-3" data-closure-package-card>
+                                <div class="closure-panel-title">
+                                    Pacote contratado
+                                    @if (($pacote['nivel_label'] ?? '') !== '')
+                                        <span class="badge bg-primary-subtle text-primary-emphasis ms-1">{{ $pacote['nivel_label'] }}</span>
+                                    @endif
+                                </div>
+                                <p class="form-text mb-2">
+                                    O cliente aprovou estas condições
+                                    @if (($pacote['orcamento_numero'] ?? '') !== '')
+                                        no orçamento {{ $pacote['orcamento_numero'] }}.
+                                    @else
+                                        no orçamento vinculado.
+                                    @endif
+                                    Encerrar fora delas exige justificativa.
+                                </p>
+                                <ul class="list-unstyled small mb-0 d-flex flex-column gap-1">
+                                    @if (($pacote['garantia_label'] ?? '') !== '')
+                                        <li><strong>Garantia:</strong> {{ $pacote['garantia_label'] }}</li>
+                                    @endif
+                                    @if (($pacote['formas_pagamento_texto'] ?? '') !== '')
+                                        <li><strong>Pagamento:</strong> {{ $pacote['formas_pagamento_texto'] }}</li>
+                                    @endif
+                                    @if (($pacote['parcelamento_texto'] ?? '') !== '')
+                                        <li><strong>Parcelamento:</strong> {{ rtrim($pacote['parcelamento_texto'], '.') }}</li>
+                                    @endif
+                                    @if ($pacoteEntrega)
+                                        <li><strong>Entrega:</strong> {{ $pacote['entrega_domicilio_label'] ?: 'Entrega no seu endereço' }}</li>
+                                    @endif
+                                </ul>
+                            </div>
+                        @endif
                         <div class="closure-pdv-panel">
                             <div class="closure-panel-title">Fechamento operacional</div>
                             <div class="d-flex align-items-center gap-2 mb-2">
@@ -840,16 +895,25 @@
                                 @endphp
                                 <div class="col-12 col-md-6" id="garantiaWrapper">
                                     <label class="form-label" for="garantiaDias">Garantia</label>
+                                    @php
+                                        // Prazo que o pacote contratado prometeu: marca a opção e
+                                        // alimenta o aviso de desvio no JS. A lista NÃO encolhe —
+                                        // dar mais garantia que o prometido é cortesia.
+                                        $garantiaPrometida = (int) ($garantiaConfig['dias_prometido'] ?? 0);
+                                    @endphp
                                     <select id="garantiaDias" name="garantia_dias" class="form-select @error('garantia_dias') is-invalid @enderror">
                                         <option value="">Sem garantia</option>
                                         @foreach ($garantiaOpcoes as $opcao)
                                             <option value="{{ $opcao['value'] }}" {{ $garantiaSugerida === (string) $opcao['value'] ? 'selected' : '' }}>
-                                                {{ $opcao['label'] }}
+                                                {{ $opcao['label'] }}{{ $garantiaPrometida > 0 && (int) $opcao['value'] === $garantiaPrometida ? ' — prometido no pacote' : '' }}
                                             </option>
                                         @endforeach
                                     </select>
                                     <p class="form-text mb-0">
                                         Contada a partir da data da entrega. Só vale para encerramentos com equipamento reparado.
+                                        @if ($garantiaPrometida > 0)
+                                            Prazo prometido ao cliente: {{ $garantiaConfig['label_prometido'] ?? ($garantiaPrometida . ' dias') }}.
+                                        @endif
                                     </p>
                                     @error('garantia_dias')
                                         <div class="invalid-feedback">{{ $message }}</div>
@@ -1233,6 +1297,51 @@
 
                             <div class="alert alert-info" id="closureConfirmWarning">Revise os dados antes de concluir.</div>
 
+                            @if ($temPacote)
+                                {{-- Ratificação do pacote. Um bloco só, aqui: os desvios
+                                     nascem em três passos diferentes (garantia no 1,
+                                     forma/parcelas no 2, entrega neste), e pedir motivo
+                                     em cada um espalharia três justificativas. --}}
+                                @if ($pacoteEntrega)
+                                    <div class="closure-review-check" data-closure-package-delivery-wrapper>
+                                        {{-- Marcador: checkbox desmarcado não é enviado pelo
+                                             navegador, e o backend precisa distinguir "não
+                                             cumpriu" de "não perguntei" (o lote nunca pergunta). --}}
+                                        <input type="hidden" name="entrega_domicilio_cumprida" value="0">
+                                        <input type="checkbox" id="entregaDomicilioCumprida" class="form-check-input"
+                                            name="entrega_domicilio_cumprida" value="1" data-closure-package-delivery
+                                            {{ old('entrega_domicilio_cumprida', '1') ? 'checked' : '' }}>
+                                        <label for="entregaDomicilioCumprida" class="mb-0">
+                                            Entrega em domicílio realizada — {{ $pacote['entrega_domicilio_label'] ?: 'Entrega no seu endereço' }} foi prometida neste pacote.
+                                        </label>
+                                    </div>
+                                @endif
+
+                                {{-- Fora do bloco oculto de propósito: o marcador precisa
+                                     viajar em toda baixa com pacote, inclusive quando o
+                                     desvio é de garantia e não há switch de entrega. --}}
+                                <input type="hidden" name="fora_pacote" value="0">
+                                <div class="alert alert-warning mt-3" data-closure-package-ratify hidden>
+                                    <strong class="d-block mb-1">Esta baixa sai do pacote contratado</strong>
+                                    <ul class="mb-2 ps-3 small" data-closure-package-deviations></ul>
+                                    <div class="closure-review-check mb-2">
+                                        <input type="checkbox" id="foraPacote" class="form-check-input"
+                                            name="fora_pacote" value="1" data-closure-package-flag
+                                            {{ old('fora_pacote') ? 'checked' : '' }}>
+                                        <label for="foraPacote" class="mb-0">Confirmo que esta entrega difere do que foi vendido ao cliente.</label>
+                                    </div>
+                                    <label class="form-label" for="foraPacoteMotivo">Motivo <span class="text-danger">*</span></label>
+                                    <textarea id="foraPacoteMotivo" name="fora_pacote_motivo" rows="2" maxlength="500"
+                                        class="form-control @error('fora_pacote_motivo') is-invalid @enderror"
+                                        data-closure-package-reason
+                                        placeholder="Ex.: cliente preferiu retirar na loja e pagar por boleto.">{{ old('fora_pacote_motivo') }}</textarea>
+                                    <div class="form-text">Fica registrado na OS e na linha do tempo.</div>
+                                    @error('fora_pacote_motivo')
+                                        <div class="invalid-feedback d-block">{{ $message }}</div>
+                                    @enderror
+                                </div>
+                            @endif
+
                             <div class="closure-review-check">
                                 <input type="checkbox" id="confirmacaoBaixa" class="form-check-input">
                                 <label for="confirmacaoBaixa" class="mb-0">Confirmo que revisei os dados desta baixa antes de concluir.</label>
@@ -1348,9 +1457,32 @@
                         {{-- Opções vêm do cadastro em Configurações Financeiras > Formas de Pagamento. --}}
                         <select class="form-select" data-field="forma_pagamento" required>
                             <option value="">Selecione</option>
-                            @foreach (($closure['formas_pagamento'] ?? []) as $forma)
-                                <option value="{{ $forma['codigo'] }}">{{ $forma['nome'] }}</option>
-                            @endforeach
+                            @if ($pacoteFormasCodigos !== [])
+                                {{-- AGRUPA, nunca filtra: o cliente pode chegar pagando de
+                                     outro jeito, e sumir com a opção tornaria isso
+                                     impossível em vez de justificável. --}}
+                                @php
+                                    $formasCatalogo = collect($closure['formas_pagamento'] ?? []);
+                                    $formasDoPacote = $formasCatalogo->filter(fn ($f) => in_array($f['codigo'] ?? '', $pacoteFormasCodigos, true));
+                                    $formasForaDoPacote = $formasCatalogo->reject(fn ($f) => in_array($f['codigo'] ?? '', $pacoteFormasCodigos, true));
+                                @endphp
+                                <optgroup label="Do pacote contratado">
+                                    @foreach ($formasDoPacote as $forma)
+                                        <option value="{{ $forma['codigo'] }}">{{ $forma['nome'] }}</option>
+                                    @endforeach
+                                </optgroup>
+                                @if ($formasForaDoPacote->isNotEmpty())
+                                    <optgroup label="Fora do pacote" data-outside-package="1">
+                                        @foreach ($formasForaDoPacote as $forma)
+                                            <option value="{{ $forma['codigo'] }}" data-outside-package="1">{{ $forma['nome'] }}</option>
+                                        @endforeach
+                                    </optgroup>
+                                @endif
+                            @else
+                                @foreach (($closure['formas_pagamento'] ?? []) as $forma)
+                                    <option value="{{ $forma['codigo'] }}">{{ $forma['nome'] }}</option>
+                                @endforeach
+                            @endif
                         </select>
                     </div>
                     <div>
@@ -1405,6 +1537,11 @@
                             <label class="form-label">Parcelas</label>
                             <input type="number" min="1" max="99" step="1" class="form-control" data-field="parcelas" value="1">
                             <small class="text-secondary d-block mt-1" data-parcelas-hint></small>
+                            {{-- Elemento SEPARADO do hint acima de propósito: aquele é
+                                 capacidade (taxa cadastrada) e manda em min/max; este é
+                                 promessa (pacote) e só informa. Escrever nos dois no
+                                 mesmo lugar faria um apagar o outro. --}}
+                            <small class="d-block mt-1 text-warning-emphasis" data-parcelas-package-hint></small>
                         </div>
                     </div>
                     <p class="small text-secondary mt-2 mb-0" data-card-preview>Selecione operadora e parcelas para estimar a taxa.</p>
@@ -1449,6 +1586,10 @@
                 ->values(),
             'cartao' => $cartaoDataset,
             'contasFinanceiras' => $accountDataset,
+            // Pacote contratado + encerramentos que concedem garantia: o JS
+            // precisa dos dois para saber quando comparar garantia e entrega.
+            'pacote' => $pacote,
+            'warrantyStatuses' => $closure['garantia']['status_com_garantia'] ?? ['entregue_reparado_pago', 'entregue_reparado_sem_custo', 'entregue_reparado_garantia'],
             'clienteTelefone' => $clienteTelefone,
             'initialStep' => (int) old('current_step', 1),
             'recebimentoErrors' => collect($errors->keys())

@@ -42,7 +42,12 @@
     <link href="{{ asset('assets/libs/select2-bootstrap-5-theme/select2-bootstrap-5-theme.min.css') }}" rel="stylesheet">
     <link href="{{ asset('assets/css/desktop.css') }}?v={{ filemtime(public_path('assets/css/desktop.css')) }}" rel="stylesheet">
     @if (session('desktop_theme') && session('desktop_theme') !== 'default')
-        <link href="{{ asset('assets/css/themes/' . e(session('desktop_theme')) . '.css') }}" rel="stylesheet">
+        @php
+            // filemtime: mesmo cache-busting do desktop.css, senao o tema fica preso na versao antiga.
+            $desktopThemeCss = 'assets/css/themes/' . session('desktop_theme') . '.css';
+            $desktopThemeCssPath = public_path($desktopThemeCss);
+        @endphp
+        <link href="{{ asset($desktopThemeCss) }}{{ file_exists($desktopThemeCssPath) ? '?v=' . filemtime($desktopThemeCssPath) : '' }}" rel="stylesheet">
     @endif
     @yield('styles')
 </head>

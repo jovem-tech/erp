@@ -1151,9 +1151,18 @@ class OrderController extends BaseApiController
                     'status_pagamento_pendente' => $result['status_pagamento_pendente'] ?? null,
                     'status_sem_reparo' => $result['status_sem_reparo'] ?? [],
                     'status_entregue' => $result['status_entregue'] ?? null,
+                    // O service já calculava isto e a tela já o consome, mas
+                    // a chave nunca era repassada: a opção "Entregue -
+                    // Reparado e Pago" nunca chegava desabilitada no desktop.
+                    // O bloqueio real em close() sempre existiu — era só a
+                    // dica visual que faltava.
+                    'orcamento_pendente_aprovacao' => $result['orcamento_pendente_aprovacao'] ?? false,
                     // Prazos de garantia oferecidos + o já prometido pelo
                     // orçamento aprovado, para a baixa abrir preenchida.
                     'garantia' => $result['garantia'] ?? null,
+                    // Pacote contratado (nível de manutenção aprovado): o que
+                    // foi vendido ao cliente e a baixa tem de ratificar.
+                    'pacote' => $result['pacote'] ?? null,
                 ],
                 request: $request
             ),
@@ -1274,6 +1283,14 @@ class OrderController extends BaseApiController
                 422,
                 'ORDER_CLOSURE_CARD_PAYMENT_INVALID',
                 null,
+                request: $request
+            ),
+            'closure_outside_package_requires_reason' => $this->error(
+                (string) ($result['message'] ?? 'Esta baixa sai do pacote contratado pelo cliente.')
+                    . ' Marque "fora do pacote" e informe o motivo para registrar a diferença na OS.',
+                422,
+                'ORDER_CLOSURE_OUTSIDE_PACKAGE_REQUIRES_REASON',
+                ['desvios' => $result['desvios'] ?? []],
                 request: $request
             ),
             'discount_requires_reason' => $this->error(

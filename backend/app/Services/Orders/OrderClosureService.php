@@ -21,6 +21,7 @@ use App\Models\User;
 use App\Services\Agenda\AgendaSourceReconciler;
 use App\Services\Fiscal\DiscriminacaoNfseBuilder;
 use App\Services\Auth\RbacAuthorizationService;
+use App\Services\Budgets\BudgetCommercialTermsService;
 use App\Services\Channels\Whatsapp\WhatsappMessagingService;
 use App\Services\Integrations\Inter\InterCobrancaService;
 use App\Services\Financeiro\FinanceiroCartaoService;
@@ -72,6 +73,17 @@ class OrderClosureService
     // o único dos closureCodes() com REVENUE_CLOSURE_CODE (gera receita).
     private const DELIVERED_STATUS = OrderStatus::REVENUE_CLOSURE_CODE;
 
+    // Desvios do pacote de manutenção contratado. Gravados como CSV em
+    // `os.pacote_desvios` e ecoados no erro 422 para a tela destacar o que
+    // saiu do combinado. Ver resolvePackageRatification().
+    public const PACKAGE_DEVIATION_WARRANTY = 'garantia';
+
+    public const PACKAGE_DEVIATION_PAYMENT_METHOD = 'forma_pagamento';
+
+    public const PACKAGE_DEVIATION_INSTALLMENTS = 'parcelas';
+
+    public const PACKAGE_DEVIATION_HOME_DELIVERY = 'entrega_domicilio';
+
     public function __construct(
         private readonly OrderWorkflowService $orderWorkflowService,
         private readonly FinanceiroService $financeiroService,
@@ -83,7 +95,8 @@ class OrderClosureService
         private readonly OrderEventService $orderEventService,
         private readonly AgendaSourceReconciler $agendaReconciler,
         private readonly DiscriminacaoNfseBuilder $discriminacaoNfseBuilder,
-        private readonly RbacAuthorizationService $rbacAuthorizationService
+        private readonly RbacAuthorizationService $rbacAuthorizationService,
+        private readonly BudgetCommercialTermsService $budgetCommercialTermsService
     ) {
     }
 
@@ -101,6 +114,8 @@ class OrderClosureService
         if (! $this->orderWorkflowService->canAccessOrder($actor, $order)) {
             return ['result' => 'forbidden'];
         }
+
+        $pacote = $this->contractedPackage($order);
 
         return [
             'result' => 'ok',
@@ -131,22 +146,113 @@ class OrderClosureService
             // Garantia entregue ao cliente: a tela já abre com o prazo que o
             // orçamento aprovado prometeu, para o operador não ter que lembrar.
             'garantia' => [
+                // A lista NUNCA encolhe para o prazo do pacote: dar mais
+                // garantia do que o prometido é cortesia e passa livre. Só
+                // prazo MENOR é desvio (ver resolvePackageRatification).
                 'opcoes' => Budget::warrantyOptions(),
-                'dias_sugerido' => $this->suggestedWarrantyDays($order),
+                'dias_sugerido' => $this->suggestedWarrantyDays($order, $pacote),
+                'dias_prometido' => $pacote['garantia_dias'],
+                'label_prometido' => $pacote['garantia_label'],
                 'status_com_garantia' => self::WARRANTY_CLOSURE_STATUSES,
             ],
+            // O que foi vendido ao cliente e a baixa tem de ratificar.
+            'pacote' => $pacote,
         ];
     }
 
     /**
-     * Prazo de garantia que a tela de baixa deve sugerir: o que já estiver na
-     * OS, senão o prometido pelo orçamento aprovado mais recente.
+     * O pacote que o cliente contratou: garantia, formas de pagamento,
+     * parcelamento sem juros e entrega em domicílio do nível aprovado.
+     *
+     * Lê por BudgetCommercialTermsService::forBudget() — o MESMO ponto que a
+     * página pública usou para prometer — em vez de reler `orcamentos.*` cru.
+     * Depois da aprovação esse serviço já resolve sozinho para
+     * `nivel_aprovado` (ver resolveEffectiveLevel), então não há nível a
+     * passar aqui.
+     *
+     * Devolve o shape completo mesmo sem pacote (`tem_pacote` false), para a
+     * tela e as validações nunca precisarem de isset() e o caminho "OS sem
+     * orçamento aprovado" continuar sendo o default barato.
+     *
+     * @return array<string, mixed>
      */
-    private function suggestedWarrantyDays(Order $order): ?int
+    private function contractedPackage(Order $order): array
+    {
+        $vazio = [
+            'tem_pacote' => false,
+            'orcamento_id' => null,
+            'orcamento_numero' => '',
+            'nivel' => null,
+            'nivel_label' => '',
+            'garantia_dias' => null,
+            'garantia_label' => '',
+            'formas_pagamento' => [],
+            'formas_pagamento_codigos' => [],
+            'formas_pagamento_texto' => '',
+            'parcelas_sem_juros' => null,
+            'parcelamento_texto' => '',
+            'entrega_domicilio' => false,
+            'entrega_domicilio_label' => '',
+            'resumo' => '',
+        ];
+
+        $budget = Budget::contractedForOrder((int) $order->id);
+
+        if (! $budget instanceof Budget) {
+            return $vazio;
+        }
+
+        $terms = $this->budgetCommercialTermsService->forBudget($budget);
+
+        if (($terms['tem_conteudo'] ?? false) !== true) {
+            return $vazio;
+        }
+
+        $nivel = Budget::normalizeLevel($terms['nivel'] ?? null);
+        $formas = is_array($terms['formas_pagamento'] ?? null) ? $terms['formas_pagamento'] : [];
+
+        return [
+            'tem_pacote' => true,
+            'orcamento_id' => (int) $budget->id,
+            'orcamento_numero' => (string) ($budget->numero ?? ''),
+            'nivel' => $nivel,
+            'nivel_label' => $nivel !== null ? Budget::levelLabel($nivel) : '',
+            'garantia_dias' => $terms['garantia_dias'] !== null ? (int) $terms['garantia_dias'] : null,
+            'garantia_label' => (string) ($terms['garantia_label'] ?? ''),
+            'formas_pagamento' => $formas,
+            'formas_pagamento_codigos' => array_values(array_filter(array_map(
+                static fn ($forma): string => (string) ($forma['codigo'] ?? ''),
+                $formas
+            ), static fn (string $codigo): bool => $codigo !== '')),
+            'formas_pagamento_texto' => (string) ($terms['formas_pagamento_texto'] ?? ''),
+            'parcelas_sem_juros' => $terms['parcelas_sem_juros'] !== null ? (int) $terms['parcelas_sem_juros'] : null,
+            'parcelamento_texto' => (string) ($terms['parcelamento_texto'] ?? ''),
+            'entrega_domicilio' => (bool) ($terms['entrega_domicilio'] ?? false),
+            'entrega_domicilio_label' => (string) ($terms['entrega_domicilio_label'] ?? ''),
+            'resumo' => (string) ($terms['resumo'] ?? ''),
+        ];
+    }
+
+    /**
+     * Prazo de garantia que a tela de baixa deve sugerir: o MAIOR entre o que
+     * a OS já tem e o que o pacote contratado prometeu.
+     *
+     * Era "o da OS vence sempre que for > 0", e isso escondia dois casos: o
+     * `os.garantia_dias` com o default 90 do schema engolia uma promessa de
+     * 365, e a OS sem prazo caía num fallback que ordenava por `aprovado_em` —
+     * numa OS com dois orçamentos aprovados, sugeria a garantia do documento
+     * errado. O fallback antigo continua só para quem não tem pacote nenhum.
+     *
+     * @param  array<string, mixed>  $pacote
+     */
+    private function suggestedWarrantyDays(Order $order, array $pacote): ?int
     {
         $atual = (int) ($order->garantia_dias ?? 0);
-        if ($atual > 0) {
-            return $atual;
+        $prometido = (int) ($pacote['garantia_dias'] ?? 0);
+
+        $maior = max($atual, $prometido);
+        if ($maior > 0) {
+            return $maior;
         }
 
         $doOrcamento = (int) (Budget::query()
@@ -283,12 +389,52 @@ class OrderClosureService
         // enviado na baixa vence o que estava na OS; se nada for enviado, o
         // prazo já registrado (herdado do orçamento) é mantido.
         $concedeGarantia = in_array($encerrarComo, self::WARRANTY_CLOSURE_STATUSES, true);
+        $pacote = $this->contractedPackage($order);
         $garantiaDias = $concedeGarantia
-            ? $this->normalizeWarrantyDays($payload['garantia_dias'] ?? null, $order)
+            ? $this->normalizeWarrantyDays($payload, $order, $pacote['garantia_dias'])
             : null;
         $garantiaValidade = $garantiaDias !== null
             ? Carbon::parse($dataEntrega)->addDays($garantiaDias)->toDateString()
             : null;
+
+        // Ratificação do pacote contratado: ainda ANTES da transação, mesma
+        // disciplina do desconto e da simulação de cartão — falha rápido, sem
+        // efeito colateral. Precisa vir depois de simulateCardPayments()
+        // porque lê a `modalidade` já resolvida de cada recebimento.
+        $ratificacao = $this->resolvePackageRatification(
+            $pacote,
+            $payload,
+            $encerrarComo,
+            $garantiaDias,
+            $recebimentos
+        );
+
+        if (! $ratificacao['ok']) {
+            return [
+                'result' => $ratificacao['result'],
+                'desvios' => $ratificacao['desvios'],
+                'message' => sprintf(
+                    'Esta baixa sai do pacote contratado pelo cliente (%s).',
+                    $this->describePackageDeviations($ratificacao['desvios'])
+                ),
+            ];
+        }
+
+        $pacoteDesvios = $ratificacao['desvios'];
+        $pacoteDesvioMotivo = $ratificacao['motivo'];
+        $entregaDomicilioCumprida = $ratificacao['entrega_cumprida'];
+
+        // "Sem garantia" explícito num encerramento que concede garantia
+        // precisa ZERAR o que estava gravado, senão a baixa registraria uma
+        // mentira: o operador declarou e justificou que não há garantia, e a
+        // OS seguiria exibindo o prazo herdado do orçamento.
+        // Exceção: reparo em garantia (`entregue_reparado_garantia`), onde o
+        // prazo que corre é o da garantia anterior, não uma nova.
+        $zerarGarantia = $concedeGarantia
+            && $garantiaDias === null
+            && $encerrarComo !== 'entregue_reparado_garantia'
+            && array_key_exists('garantia_dias', $payload)
+            && (($payload['garantia_dias'] ?? null) === null || ($payload['garantia_dias'] ?? null) === '');
 
         $observacao = trim((string) ($payload['observacao'] ?? ''));
         $tempoTecnicoHoras = $this->resolveTempoTecnicoFallback($order, $payload);
@@ -311,7 +457,12 @@ class OrderClosureService
                 $descontoAmount,
                 $descontoTipo,
                 $descontoPercentual,
-                $descontoMotivo
+                $descontoMotivo,
+                $pacote,
+                $pacoteDesvios,
+                $pacoteDesvioMotivo,
+                $entregaDomicilioCumprida,
+                $zerarGarantia
             ): array {
                 // Reduz o valor final da OS ANTES de criar/tocar o titulo a
                 // receber: ensureReceivableTitle() le' order.valor_final direto
@@ -371,11 +522,25 @@ class OrderClosureService
                 ];
 
                 // Encerramento sem garantia (devolução/descarte) não zera o que
-                // já estava gravado: só não escreve nada.
+                // já estava gravado: só não escreve nada. A exceção é o
+                // "Sem garantia" escolhido e justificado na baixa, que zera de
+                // fato — ver $zerarGarantia em close().
                 if ($garantiaDias !== null) {
                     $orderUpdate['garantia_dias'] = $garantiaDias;
                     $orderUpdate['garantia_validade'] = $garantiaValidade;
+                } elseif ($zerarGarantia) {
+                    $orderUpdate['garantia_dias'] = 0;
+                    $orderUpdate['garantia_validade'] = null;
                 }
+
+                // Desvio do pacote contratado: escrito SEMPRE (null quando não
+                // houve), diferente do desconto acima. Uma OS reaberta por
+                // cancelClosure() e refechada dentro do pacote não pode ficar
+                // com o desvio da baixa anterior colado nela.
+                $orderUpdate['pacote_desvios'] = $pacoteDesvios !== [] ? implode(',', $pacoteDesvios) : null;
+                $orderUpdate['pacote_desvio_motivo'] = $pacoteDesvios !== [] ? $pacoteDesvioMotivo : null;
+                $orderUpdate['pacote_desvio_por'] = $pacoteDesvios !== [] ? (int) $actor->id : null;
+                $orderUpdate['pacote_desvio_em'] = $pacoteDesvios !== [] ? $now : null;
 
                 // Persiste o desconto desta baixa em colunas próprias
                 // (desconto_baixa_*), separadas de valor_final/desconto — estas
@@ -422,11 +587,67 @@ class OrderClosureService
                         'desconto_baixa' => $descontoAmount > 0.009 ? $descontoAmount : null,
                         'desconto_baixa_tipo' => $descontoAmount > 0.009 ? $descontoTipo : null,
                         'desconto_baixa_motivo' => $descontoAmount > 0.009 ? $descontoMotivo : null,
+                        // Prometido x realizado do pacote contratado. Vai no
+                        // evento (e não só nas colunas) porque o orçamento
+                        // convertido ainda pode ser editado depois: este é o
+                        // retrato do que valia no instante do encerramento.
+                        'pacote' => ($pacote['tem_pacote'] ?? false) === true ? [
+                            'orcamento_id' => $pacote['orcamento_id'],
+                            'orcamento_numero' => $pacote['orcamento_numero'],
+                            'nivel' => $pacote['nivel'],
+                            'nivel_label' => $pacote['nivel_label'],
+                            'garantia_prometida' => $pacote['garantia_dias'],
+                            'garantia_aplicada' => $garantiaDias,
+                            'formas_prometidas' => $pacote['formas_pagamento_codigos'],
+                            'formas_usadas' => array_values(array_unique(array_filter(array_map(
+                                static fn (array $recebimento): string => trim((string) ($recebimento['forma_pagamento'] ?? '')),
+                                $recebimentos
+                            )))),
+                            'parcelas_prometidas' => $pacote['parcelas_sem_juros'],
+                            'parcelas_usadas' => array_values(array_unique(array_map(
+                                static fn (array $recebimento): int => (int) ($recebimento['parcelas'] ?? 1),
+                                $recebimentos
+                            ))),
+                            'entrega_prometida' => $pacote['entrega_domicilio'],
+                            'entrega_cumprida' => $entregaDomicilioCumprida,
+                            'desvios' => $pacoteDesvios,
+                        ] : null,
                     ],
                     (int) $actor->id,
                     OrderEvent::ORIGEM_USUARIO,
                     $now
                 );
+
+                // Evento dedicado quando saiu do combinado: a timeline da OS
+                // precisa dizer isso por extenso, não escondido no `dados` do
+                // fechamento. mapEventCollection() serializa título/descrição
+                // genericamente, então aparece na tela sem tocar em view.
+                if ($pacoteDesvios !== []) {
+                    $this->orderEventService->record(
+                        (int) $order->id,
+                        OrderEvent::CATEGORIA_REGISTRO,
+                        OrderEvent::TIPO_BAIXA_FORA_PACOTE,
+                        'Baixa fora do pacote contratado',
+                        sprintf(
+                            'Encerramento fora do %s: %s. Motivo informado: %s',
+                            $pacote['nivel_label'] !== ''
+                                ? sprintf('pacote contratado (%s)', $pacote['nivel_label'])
+                                : 'pacote contratado',
+                            $this->describePackageDeviations($pacoteDesvios),
+                            $pacoteDesvioMotivo
+                        ),
+                        [
+                            'orcamento_id' => $pacote['orcamento_id'],
+                            'orcamento_numero' => $pacote['orcamento_numero'],
+                            'nivel' => $pacote['nivel'],
+                            'desvios' => $pacoteDesvios,
+                            'motivo' => $pacoteDesvioMotivo,
+                        ],
+                        (int) $actor->id,
+                        OrderEvent::ORIGEM_USUARIO,
+                        $now
+                    );
+                }
 
                 return [
                     'result' => 'ok',
@@ -656,6 +877,30 @@ class OrderClosureService
             return ['result' => $simulation['result'], 'message' => $simulation['message']];
         }
         $recebimentos = $simulation['recebimentos'];
+
+        // Adiantamento/sinal não entrega nem concede garantia, mas MOVE
+        // DINHEIRO — se ficasse de fora da ratificação, seria a porta
+        // documentada para cobrar por fora do pacote sem justificar. Passando
+        // encerrarComo vazio e garantia nula, só as duas dimensões de dinheiro
+        // (forma de pagamento e parcelamento) conseguem disparar.
+        $ratificacao = $this->resolvePackageRatification(
+            $this->contractedPackage($order),
+            $payload,
+            '',
+            null,
+            $recebimentos
+        );
+
+        if (! $ratificacao['ok']) {
+            return [
+                'result' => $ratificacao['result'],
+                'desvios' => $ratificacao['desvios'],
+                'message' => sprintf(
+                    'Este lançamento sai do pacote contratado pelo cliente (%s).',
+                    $this->describePackageDeviations($ratificacao['desvios'])
+                ),
+            ];
+        }
 
         try {
             $result = DB::transaction(function () use (
@@ -2100,20 +2345,169 @@ class OrderClosureService
      * retorna false (nada a aprovar).
      */
     /**
-     * Prazo válido enviado na baixa; sem ele, o que a OS já tinha (herdado do
-     * orçamento na conversão). Prazos fora da lista oferecida são ignorados.
+     * Prazo de garantia efetivo desta baixa.
+     *
+     * Três casos, e a diferença entre os dois últimos é o que permite ao
+     * operador dizer "sem garantia" de verdade:
+     *  - prazo válido enviado          → vale ele;
+     *  - chave AUSENTE no payload      → adota o maior entre o que a OS já
+     *    tinha e o prometido pelo pacote (é o caso da API pura e da baixa em
+     *    lote, que não perguntam garantia — sem isso elas passariam a acusar
+     *    desvio em toda OS com pacote);
+     *  - chave presente e vazia        → "Sem garantia" EXPLÍCITO (null).
+     *
+     * Prazos fora de Budget::WARRANTY_TERMS caem no comportamento de chave
+     * ausente, como antes.
+     *
+     * @param  array<string, mixed>  $payload
      */
-    private function normalizeWarrantyDays(mixed $value, Order $order): ?int
+    private function normalizeWarrantyDays(array $payload, Order $order, ?int $prometido): ?int
     {
-        $dias = (int) $value;
+        $informado = array_key_exists('garantia_dias', $payload);
+        $valor = $payload['garantia_dias'] ?? null;
 
+        $dias = (int) $valor;
         if (array_key_exists($dias, Budget::WARRANTY_TERMS)) {
             return $dias;
         }
 
-        $atual = (int) ($order->garantia_dias ?? 0);
+        if ($informado && ($valor === null || $valor === '')) {
+            return null;
+        }
 
-        return $atual > 0 ? $atual : null;
+        $herdado = max((int) ($order->garantia_dias ?? 0), (int) $prometido);
+
+        return $herdado > 0 ? $herdado : null;
+    }
+
+    /**
+     * Ratificação do pacote contratado: compara o que esta baixa está
+     * entregando com o que o cliente aprovou e devolve a lista de desvios.
+     *
+     * A regra decidida com o usuário é "restringir por padrão, liberar com
+     * motivo": havendo desvio, encerrar exige `fora_pacote` marcado E um
+     * motivo escrito, que fica gravado em `os.pacote_desvio_*`. Não há gate de
+     * permissão — quem pode dar baixa pode justificar (diferente do desconto,
+     * que exige `os:administrar`).
+     *
+     * Cada dimensão é independente e só vale quando o pacote de fato prometeu
+     * aquilo: pacote sem formas cadastradas não restringe forma nenhuma,
+     * `parcelas_sem_juros` nulo não limita parcela, e assim por diante. OS sem
+     * pacote nunca chega aqui com desvio.
+     *
+     * @param  array<string, mixed>  $pacote
+     * @param  array<string, mixed>  $payload
+     * @param  array<int, array<string, mixed>>  $recebimentos  já normalizados
+     * @return array<string, mixed>
+     */
+    private function resolvePackageRatification(
+        array $pacote,
+        array $payload,
+        string $encerrarComo,
+        ?int $garantiaEfetiva,
+        array $recebimentos
+    ): array {
+        $entregaCumprida = array_key_exists('entrega_domicilio_cumprida', $payload)
+            ? filter_var($payload['entrega_domicilio_cumprida'], FILTER_VALIDATE_BOOL)
+            : null;
+
+        if (($pacote['tem_pacote'] ?? false) !== true) {
+            return ['ok' => true, 'desvios' => [], 'motivo' => null, 'entrega_cumprida' => $entregaCumprida];
+        }
+
+        $desvios = [];
+
+        // Garantia — assimétrica de propósito: dar MAIS que o prometido é
+        // cortesia e passa livre; só prazo menor (ou nenhum) quebra a venda.
+        // Devolução/descarte não entram: não houve serviço a garantir.
+        $prometido = (int) ($pacote['garantia_dias'] ?? 0);
+        if ($prometido > 0 && in_array($encerrarComo, self::WARRANTY_CLOSURE_STATUSES, true)
+            && (int) $garantiaEfetiva < $prometido
+        ) {
+            $desvios[] = self::PACKAGE_DEVIATION_WARRANTY;
+        }
+
+        $codigosDoPacote = is_array($pacote['formas_pagamento_codigos'] ?? null)
+            ? $pacote['formas_pagamento_codigos']
+            : [];
+        $parcelasPrometidas = (int) ($pacote['parcelas_sem_juros'] ?? 0);
+
+        foreach ($recebimentos as $recebimento) {
+            $forma = trim((string) ($recebimento['forma_pagamento'] ?? ''));
+
+            if ($codigosDoPacote !== [] && $forma !== '' && ! in_array($forma, $codigosDoPacote, true)) {
+                $desvios[] = self::PACKAGE_DEVIATION_PAYMENT_METHOD;
+            }
+
+            // Parcelamento é promessa de "sem juros", não teto absoluto de
+            // parcelas: parcelar acima disso continua permitido, mas já não é
+            // o que foi vendido. Débito nunca parcela (mesma regra de
+            // BudgetCommercialTermsService::installmentText()).
+            $ehDebito = (string) ($recebimento['modalidade'] ?? '') === 'debito'
+                || $forma === BudgetCommercialTermsService::DEBIT_CARD_CODE;
+
+            if ($parcelasPrometidas > 0
+                && ! $ehDebito
+                && $this->isCardPayment($forma)
+                && (int) ($recebimento['parcelas'] ?? 1) > $parcelasPrometidas
+            ) {
+                $desvios[] = self::PACKAGE_DEVIATION_INSTALLMENTS;
+            }
+        }
+
+        // Entrega em domicílio: só conta quando a tela PERGUNTOU. Chave
+        // ausente = fluxo que não pergunta (API pura, baixa em lote) e nunca
+        // vira desvio — é isso que mantém o lote funcionando.
+        if (($pacote['entrega_domicilio'] ?? false) === true
+            && $entregaCumprida === false
+            && in_array($encerrarComo, self::WARRANTY_CLOSURE_STATUSES, true)
+        ) {
+            $desvios[] = self::PACKAGE_DEVIATION_HOME_DELIVERY;
+        }
+
+        $desvios = array_values(array_unique($desvios));
+
+        if ($desvios === []) {
+            return ['ok' => true, 'desvios' => [], 'motivo' => null, 'entrega_cumprida' => $entregaCumprida];
+        }
+
+        $assumido = filter_var($payload['fora_pacote'] ?? false, FILTER_VALIDATE_BOOL);
+        $motivo = trim((string) ($payload['fora_pacote_motivo'] ?? ''));
+
+        if (! $assumido || $motivo === '') {
+            return [
+                'ok' => false,
+                'result' => 'closure_outside_package_requires_reason',
+                'desvios' => $desvios,
+            ];
+        }
+
+        return [
+            'ok' => true,
+            'desvios' => $desvios,
+            'motivo' => $motivo,
+            'entrega_cumprida' => $entregaCumprida,
+        ];
+    }
+
+    /**
+     * Rótulos dos desvios para a mensagem de erro e para a timeline.
+     *
+     * @param  array<int, string>  $desvios
+     */
+    private function describePackageDeviations(array $desvios): string
+    {
+        $rotulos = [
+            self::PACKAGE_DEVIATION_WARRANTY => 'garantia menor que a prometida',
+            self::PACKAGE_DEVIATION_PAYMENT_METHOD => 'forma de pagamento fora do pacote',
+            self::PACKAGE_DEVIATION_INSTALLMENTS => 'parcelamento acima do prometido sem juros',
+            self::PACKAGE_DEVIATION_HOME_DELIVERY => 'entrega em domicílio prometida e não cumprida',
+        ];
+
+        return implode(', ', array_map(
+            static fn (string $desvio): string => $rotulos[$desvio] ?? $desvio,
+            $desvios
+        ));
     }
 
     private function hasUnapprovedBudget(int $orderId): bool
@@ -2124,16 +2518,10 @@ class OrderClosureService
             return false;
         }
 
-        $hasApprovedBudget = Budget::query()
-            ->where('os_id', $orderId)
-            ->where(static function ($query): void {
-                $query
-                    ->whereIn('status', [Budget::STATUS_APPROVED, Budget::STATUS_CONVERTED])
-                    ->orWhereNotNull('aprovado_em');
-            })
-            ->exists();
-
-        return ! $hasApprovedBudget;
+        // Mesmo predicado de antes, agora em Budget::contractedForOrder() —
+        // a baixa inteira passa a ter uma única resposta para "qual é o
+        // orçamento desta OS".
+        return Budget::contractedForOrder($orderId) === null;
     }
 
     /**

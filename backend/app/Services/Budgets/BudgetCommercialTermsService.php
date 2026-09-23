@@ -54,7 +54,7 @@ class BudgetCommercialTermsService
     /**
      * Débito é cartão, mas não parcela: fica fora do texto de parcelamento.
      */
-    private const DEBIT_CARD_CODE = 'cartao_debito';
+    public const DEBIT_CARD_CODE = 'cartao_debito';
 
     /**
      * Catálogo para montar o formulário: formas ativas, chaves Pix ativas,
