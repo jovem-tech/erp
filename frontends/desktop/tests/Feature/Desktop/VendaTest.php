@@ -215,6 +215,93 @@ class VendaTest extends TestCase
         $this->assertLessThan($posItens, $posBusca);
     }
 
+    public function test_calendario_e_relogio_ficam_no_rodape_da_coluna_esquerda(): void
+    {
+        Http::fake($this->fixtures());
+
+        $html = $this->withSession($this->desktopSession(['vendas' => ['visualizar', 'criar']]))
+            ->get('/vendas/nova')
+            ->assertOk()
+            ->getContent();
+
+        // Na coluna de fechamento, somados a desconto e botões, estouravam a
+        // altura e o "Desconto geral" rolava para fora da vista.
+        $posEsquerda = strpos($html, 'class="pdv-col-esquerda"');
+        $posVendedor = strpos($html, 'id="pdvVendedor"');
+        $posAgenda = strpos($html, 'class="surface-card pdv-terminal-agenda"');
+        $posCentro = strpos($html, 'class="pdv-col-centro"');
+        $posLateral = strpos($html, 'class="pdv-col-lateral"');
+
+        $this->assertNotFalse($posAgenda);
+        $this->assertGreaterThan($posEsquerda, $posAgenda);
+        $this->assertGreaterThan($posVendedor, $posAgenda, 'O calendário vem abaixo de cliente/vendedor.');
+        $this->assertLessThan($posCentro, $posAgenda, 'O calendário precisa estar dentro da coluna esquerda.');
+        // Um bloco só: nada sobrou na coluna da direita.
+        $this->assertSame(1, substr_count($html, 'pdv-terminal-agenda"'));
+        $this->assertGreaterThan($posAgenda, $posLateral);
+    }
+
+    public function test_coluna_esquerda_nunca_mostra_barra_de_rolagem(): void
+    {
+        Http::fake($this->fixtures());
+
+        $html = $this->withSession($this->desktopSession(['vendas' => ['visualizar', 'criar']]))
+            ->get('/vendas/nova')
+            ->assertOk()
+            ->getContent();
+
+        // Com overflow-y: auto, o cartão que preenche a coluna até o fundo
+        // sobrava 1px por arredondamento (escala 125% do Windows) e aparecia
+        // barra de rolagem com a coluna meio vazia.
+        $this->assertMatchesRegularExpression('/\.pdv-col-esquerda\s*\{\s*overflow:\s*hidden;\s*\}/', $html);
+        $this->assertDoesNotMatchRegularExpression('/\.pdv-col-esquerda,\s*\.pdv-col-lateral\s*\{\s*overflow-y:\s*auto;/', $html);
+
+        // Quem absorve a falta de altura é o cartão do calendário: ele encolhe
+        // (flex + min-height: 0) em vez de empurrar a coluna.
+        $this->assertMatchesRegularExpression(
+            '/\.pdv-terminal-agenda\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;[^}]*overflow:\s*hidden;/',
+            $html
+        );
+        $this->assertStringNotContainsString('margin-top: auto', $html);
+
+        // E escolhe o que mostrar conforme a altura que sobrou: ampliado e
+        // empilhado quando sobra (sem boiar num cartão vazio), degraus menores
+        // quando falta.
+        $this->assertStringContainsString('--agenda-escala: 1;', $html);
+        $script = (string) file_get_contents(public_path('assets/js/vendas-pdv.js'));
+        $this->assertStringContainsString('const ajustarAgenda = () => {', $script);
+        $this->assertStringContainsString("classList.add('is-empilhada')", $script);
+        $this->assertStringContainsString("classList.add('is-so-semana')", $script);
+        $this->assertStringContainsString("linha.classList.add('pdv-semana-atual')", $script);
+        $this->assertStringContainsString("classList.add('is-so-relogio')", $script);
+        $this->assertStringContainsString("classList.add('is-sem-espaco')", $script);
+        $this->assertStringContainsString('new window.ResizeObserver(', $script);
+    }
+
+    public function test_pdv_oferece_cancelar_a_venda_em_andamento(): void
+    {
+        Http::fake($this->fixtures());
+
+        $html = $this->withSession($this->desktopSession(['vendas' => ['visualizar', 'criar']]))
+            ->get('/vendas/nova')
+            ->assertOk()
+            ->assertSee('Cancelar venda (Esc)')
+            ->assertSee('Esc cancela')
+            ->getContent();
+
+        // Nasce desabilitado (tela vazia não tem o que cancelar); o JS libera.
+        $this->assertMatchesRegularExpression('/<button[^>]*id="pdvCancelarVenda"[^>]*\bdisabled\b/', $html);
+
+        // Fica logo abaixo de "Finalizar venda", fora do modal de pagamento.
+        $posFinalizar = strpos($html, 'id="pdvAbrirPagamento"');
+        $posCancelar = strpos($html, 'id="pdvCancelarVenda"');
+        $posModal = strpos($html, 'id="pdvPagamentoModal"');
+
+        $this->assertNotFalse($posCancelar);
+        $this->assertGreaterThan($posFinalizar, $posCancelar);
+        $this->assertLessThan($posModal, $posCancelar);
+    }
+
     public function test_pagamento_so_aparece_dentro_do_modal_de_finalizacao(): void
     {
         Http::fake($this->fixtures());

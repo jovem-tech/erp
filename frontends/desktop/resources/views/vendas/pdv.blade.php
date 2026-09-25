@@ -30,16 +30,26 @@
             min-height: 0;
         }
 
-        /* Válvula de segurança: em janela baixa as colunas laterais rolam por
-           dentro em vez de estourar a tela. O centro nunca rola inteiro — quem
-           rola lá é só a lista de itens.
+        /* Válvula de segurança: em janela baixa a coluna de fechamento rola
+           por dentro em vez de estourar a tela. O centro nunca rola inteiro —
+           quem rola lá é só a lista de itens.
            IMPORTANTE: overflow aqui não pode voltar a existir sem cuidado — foi
            isso que escondia os resultados da busca (ver comentário em
            .pdv-resultados). Por isso o dropdown usa position: fixed, imune a
            este overflow. */
-        .pdv-col-esquerda,
         .pdv-col-lateral {
             overflow-y: auto;
+        }
+
+        /* A esquerda NÃO rola, nunca: quem absorve a falta de altura é o
+           cartão do calendário (encolhe e, se preciso, mostra só data e
+           relógio — ver ajustarAgenda em vendas-pdv.js). Com overflow-y: auto
+           aqui, o cartão que preenche a coluna até o fundo sobrava 1px por
+           arredondamento de subpixel em escala 125% do Windows, e isso bastava
+           para aparecer uma barra de rolagem com a coluna meio vazia. O select2
+           abre o dropdown no <body>, então não é cortado por este hidden. */
+        .pdv-col-esquerda {
+            overflow: hidden;
         }
 
         .pdv-bloco-cliente,
@@ -235,45 +245,106 @@
             height: calc(100vh - 1.2rem - 3.9rem);
         }
 
-        /* Calendário + relógio: fixados no rodapé da coluna de fechamento,
-           abaixo do botão Finalizar venda, só em modo terminal. margin-top:
-           auto empurra o bloco para o fim mesmo com espaço sobrando. */
+        /* Calendário + relógio: cartão que ocupa todo o resto da coluna
+           esquerda, abaixo de cliente/vendedor, só em modo terminal. Termina
+           alinhado com o fundo do carrinho, como as outras colunas.
+           Orçamento medido, não chutado: em 1366x600 úteis (a janela do
+           balcão) e com Nome/CPF visíveis, sobram ~194px para este cartão. Um
+           mês de 6 semanas precisa caber aí — por isso o relógio divide a
+           linha do topo com o mês em vez de ganhar linha própria, e as
+           semanas são enxutas. Se ainda assim faltar altura (janela menor),
+           ajustarAgenda() em vendas-pdv.js desce um degrau por vez: só a
+           semana de hoje, depois só data + relógio, e sem espaço nem para
+           isso o cartão fica invisível — nunca rola. */
         .pdv-terminal-agenda {
+            /* Multiplica todos os tamanhos do cartão; ajustarAgenda() escolhe
+               o maior valor que cabe, para o calendário encher o cartão em
+               vez de boiar no meio dele. */
+            --agenda-escala: 1;
+            /* Espaço extra por lado em cada semana, quando nem a escala máxima
+               enche o cartão (também definido por ajustarAgenda). */
+            --agenda-respiro: 0px;
             display: none;
-            margin-top: auto;
-            flex: 0 0 auto;
-            text-align: center;
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow: hidden;
+            flex-direction: column;
+            justify-content: center;
+            padding: .6rem .9rem;
         }
 
         .pdv-modo-terminal .pdv-terminal-agenda {
-            display: block;
+            display: flex;
+        }
+
+        .pdv-modo-terminal .pdv-terminal-agenda.is-sem-espaco {
+            /* visibility, não display: o cartão mantém o tamanho que a coluna
+               lhe dá, e o ResizeObserver não entra em laço. */
+            visibility: hidden;
+        }
+
+        .pdv-agenda-topo {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: baseline;
+            justify-content: space-between;
+            column-gap: .5rem;
+            margin-bottom: calc(.2rem * var(--agenda-escala) + var(--agenda-respiro));
+        }
+
+        /* Cartão com folga (tela cheia de verdade, ou cliente escolhido e o
+           bloco Nome/CPF escondido): relógio grande e centralizado em cima, mês
+           embaixo. Lado a lado, o relógio não cresce sem quebrar a linha. */
+        .pdv-terminal-agenda.is-empilhada .pdv-agenda-topo {
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .pdv-terminal-agenda.is-empilhada .pdv-terminal-relogio {
+            order: -1;
+        }
+
+        .pdv-agenda-mes,
+        .pdv-agenda-data {
+            font-weight: 600;
+            font-size: calc(.9rem * var(--agenda-escala));
+        }
+
+        /* Primeiro degrau quando falta altura: a grade fica só com a semana
+           de hoje (linha marcada em JS — sem :has(), que nem todo navegador
+           do balcão suporta). */
+        .pdv-terminal-agenda.is-so-semana .pdv-terminal-calendario tbody tr:not(.pdv-semana-atual) {
+            display: none;
+        }
+
+        /* O mês só faz sentido junto da grade; sem ela, a data por extenso. */
+        .pdv-agenda-data,
+        .pdv-terminal-agenda.is-so-relogio .pdv-agenda-mes,
+        .pdv-terminal-agenda.is-so-relogio .pdv-terminal-calendario {
+            display: none;
+        }
+
+        .pdv-terminal-agenda.is-so-relogio .pdv-agenda-data {
+            display: inline;
         }
 
         .pdv-terminal-calendario {
             width: 100%;
             border-collapse: collapse;
-            font-size: .78rem;
-        }
-
-        .pdv-terminal-calendario caption {
-            caption-side: top;
-            font-weight: 600;
-            font-size: .85rem;
-            padding-bottom: .35rem;
-            text-transform: capitalize;
+            font-size: calc(.78rem * var(--agenda-escala));
         }
 
         .pdv-terminal-calendario th,
         .pdv-terminal-calendario td {
             width: 14.28%;
             text-align: center;
-            padding: .15rem 0;
+            padding: calc(.05rem * var(--agenda-escala) + var(--agenda-respiro)) 0;
             color: var(--bs-secondary-color, #6c757d);
         }
 
         .pdv-terminal-calendario th {
             font-weight: 500;
-            font-size: .68rem;
+            font-size: calc(.68rem * var(--agenda-escala));
         }
 
         /* Círculo de verdade: aplicado num span de tamanho fixo dentro da
@@ -282,8 +353,11 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            width: 1.4rem;
-            height: 1.4rem;
+            width: calc(1.3rem * var(--agenda-escala));
+            height: calc(1.3rem * var(--agenda-escala));
+            /* Sem isto o span senta na linha de base e a célula ganha a
+               folga dos descendentes: ~4px a mais por semana. */
+            vertical-align: middle;
         }
 
         .pdv-terminal-calendario td.pdv-dia-atual span {
@@ -294,8 +368,9 @@
         }
 
         .pdv-terminal-relogio {
-            margin-top: .5rem;
-            font-size: 1.6rem;
+            font-size: calc(1.6rem * var(--agenda-escala));
+            /* O 1.5 herdado do Bootstrap deixava ~13px de ar vazio numa linha só. */
+            line-height: 1.2;
             font-weight: 600;
             font-variant-numeric: tabular-nums;
             letter-spacing: .04em;
@@ -346,6 +421,16 @@
             .pdv-itens-scroll {
                 max-height: none;
                 overflow-y: visible;
+            }
+
+            .pdv-col-esquerda {
+                overflow: visible;
+            }
+
+            /* Empilhado, o calendário (que mora na coluna esquerda) cairia
+               entre o cliente e a busca, empurrando o carrinho para baixo. */
+            .pdv-modo-terminal .pdv-terminal-agenda {
+                display: none;
             }
         }
 
@@ -477,6 +562,29 @@
                     </div>
                 </section>
 
+                {{-- Só em modo terminal (F3), ocupando o resto desta coluna: é
+                     a que tem espaço sobrando. Na coluna de fechamento, somado
+                     a desconto e botões, estourava a altura e fazia o "Desconto
+                     geral" rolar para fora da vista. Mês, data, grade e relógio
+                     são gerados e atualizados via JS (não no Blade) para não
+                     ficarem desatualizados se o terminal virar o dia aberto. --}}
+                <section class="surface-card pdv-terminal-agenda" aria-hidden="true">
+                    <div class="pdv-agenda-conteudo">
+                        <div class="pdv-agenda-topo">
+                            <span class="pdv-agenda-mes" id="pdvTerminalMes"></span>
+                            <span class="pdv-agenda-data" id="pdvTerminalData"></span>
+                            <span class="pdv-terminal-relogio" id="pdvTerminalRelogio">--:--:--</span>
+                        </div>
+                        <table class="pdv-terminal-calendario" id="pdvTerminalCalendario">
+                            <thead>
+                            <tr>
+                                <th>D</th><th>S</th><th>T</th><th>Q</th><th>Q</th><th>S</th><th>S</th>
+                            </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </section>
             </div>
 
             {{-- Coluna 2: busca + carrinho. Fica no centro porque é onde o
@@ -501,7 +609,7 @@
                          rolagem. --}}
                     <div id="pdvResultados" class="list-group pdv-resultados d-none"></div>
                     <small class="text-secondary d-block mt-2">
-                        Enter adiciona · F2 finaliza · F3 tela cheia · Esc limpa
+                        Enter adiciona · F2 finaliza · F3 tela cheia · Esc cancela
                     </small>
                 </section>
 
@@ -601,23 +709,17 @@
                         <i class="bi bi-check2-circle me-2"></i>
                         Finalizar venda (F2)
                     </button>
-                </section>
 
-                {{-- Só em modo terminal (F3), abaixo do botão Finalizar.
-                     Gerado e atualizado via JS (não no Blade) para não ficar
-                     desatualizado se o terminal ficar aberto virando o dia. --}}
-                <div class="pdv-terminal-agenda" aria-hidden="true">
-                    <table class="pdv-terminal-calendario" id="pdvTerminalCalendario">
-                        <caption></caption>
-                        <thead>
-                        <tr>
-                            <th>D</th><th>S</th><th>T</th><th>Q</th><th>Q</th><th>S</th><th>S</th>
-                        </tr>
-                        </thead>
-                        <tbody></tbody>
-                    </table>
-                    <div class="pdv-terminal-relogio" id="pdvTerminalRelogio">--:--:--</div>
-                </div>
+                    {{-- A venda só existe no navegador até ser finalizada, então
+                         cancelar não fala com o servidor: descarta itens,
+                         cliente, desconto e observações e deixa o PDV pronto
+                         para a próxima. Nasce desabilitado — o JS libera assim
+                         que houver algo lançado. --}}
+                    <button type="button" class="btn btn-outline-danger w-100 mt-2" id="pdvCancelarVenda" disabled>
+                        <i class="bi bi-x-circle me-2"></i>
+                        Cancelar venda (Esc)
+                    </button>
+                </section>
             </div>
         </div>
 

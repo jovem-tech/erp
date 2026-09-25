@@ -21,7 +21,7 @@
             </div>
             <div class="dashboard-help-item">
                 <strong>PDV</strong>
-                <p>Busque por nome, código interno (PC00001) ou código de barras. Enter adiciona o primeiro resultado, F2 finaliza e Esc limpa o carrinho.</p>
+                <p>Busque por nome, código interno (PC00001) ou código de barras. Enter adiciona o primeiro resultado, F2 finaliza e Esc (ou o botão "Cancelar venda") descarta a venda em andamento — itens, cliente, desconto e observações — depois de confirmar.</p>
             </div>
             <div class="dashboard-help-item">
                 <strong>Cliente</strong>

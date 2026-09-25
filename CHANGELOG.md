@@ -1,5 +1,23 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v6.3.3.0 — 2026-09-25 07:25
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** PDV modo terminal: coluna esquerda sem barra de rolagem e calendario encaixado. Causa da barra: o bloco com margin-top: auto preenchia a coluna ate o fundo e o arredondamento de subpixel (escala 125% do Windows) sobrava 1px sobre o overflow-y: auto, com 29px livres na coluna. Coluna esquerda passa a overflow: hidden e o calendario vira cartao (surface-card) que ocupa o resto da coluna e termina alinhado com o fundo do carrinho. ajustarAgenda() (ResizeObserver no cartao) escolhe o que enche a altura: relogio em cima e grade ampliada por --agenda-escala ate 1.8 (sobra vira espaco entre semanas, --agenda-respiro ate 12px), depois mes e relogio lado a lado, so a semana de hoje, so data + relogio, ou nada. Mes sem 'De' maiusculo (Setembro de 2026). Medido em Chrome headless de 520 a 768px uteis, escala 100% e 125%, meses de 5 e 6 semanas, com e sem cliente: coluna esquerda 0px de transbordo e fundo alinhado em todos.
+- **Arquivos:** frontends/desktop/resources/views/vendas/pdv.blade.php,frontends/desktop/public/assets/js/vendas-pdv.js,frontends/desktop/tests/Feature/Desktop/VendaTest.php
+
+## v6.3.2.0 — 2026-09-25 07:11
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** PDV em modo terminal: calendario e relogio saem da coluna de fechamento (direita) para o rodape da coluna esquerda, abaixo de cliente/vendedor. Somados a desconto e aos botoes Finalizar/Cancelar, estouravam a altura da coluna direita (74px a mais em 1366x600 uteis), que rolava e escondia o 'Desconto geral'. Linhas do calendario compactadas (padding, span 1.3rem com vertical-align: middle, entrelinha do relogio 1.2) para um mes de 6 semanas caber na coluna esquerda com Nome/CPF visiveis sem rolar (medido em Chrome headless: sobram 4px no pior caso, 24px em setembro; a direita passa a sobrar 144px). Abaixo de 1200px (colunas empilhadas) o calendario fica oculto para nao cair entre o cliente e a busca.
+- **Arquivos:** frontends/desktop/resources/views/vendas/pdv.blade.php,frontends/desktop/public/assets/js/vendas-pdv.js,frontends/desktop/tests/Feature/Desktop/VendaTest.php
+
+## v6.3.1.0 — 2026-09-25 06:59
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** PDV: botao 'Cancelar venda (Esc)' abaixo de 'Finalizar venda' descarta a venda em andamento e deixa a tela pronta para a proxima, sem recarregar (a tela cheia real nao cai) e sem falar com o servidor (a venda so existe no navegador ate o POST). Antes so havia o Esc, que limpava apenas os itens: cliente, nome/CPF, desconto (e o modo %) e observacoes da venda descartada vazavam para a proxima. Agora Esc e botao fazem o mesmo reset completo, com confirmacao (foco no confirmar: Esc + Enter); o vendedor e mantido. Botao nasce desabilitado e libera com qualquer dado lancado. Esc nao cancela quando ja foi consumido pela lista aberta do select2 ou quando o foco esta num modal ou no proprio dialogo (antes, com itens no carrinho, Esc no cadastro rapido de cliente disparava o 'Limpar a venda?'). Busca de funcionalidades ganha 'Cancelar a venda em andamento' (antes 'cancelar venda' so achava 'Devolver').
+- **Arquivos:** frontends/desktop/public/assets/js/vendas-pdv.js,frontends/desktop/resources/views/vendas/pdv.blade.php,frontends/desktop/resources/views/vendas/help.blade.php,frontends/desktop/tests/Feature/Desktop/VendaTest.php,frontends/desktop/tests/Unit/UnsavedWorkGuardTest.php,frontends/desktop/app/Support/DesktopFeatureCatalog.php
+
 ## v6.3.0.0 — 2026-09-23 02:31
 - **Tier:** minor
 - **Autor/Agente:** Claude
