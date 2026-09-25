@@ -56,6 +56,12 @@
         const descontoTipo = document.getElementById('pdvDescontoTipo');
         const descontoToggle = document.getElementById('pdvDescontoToggle');
 
+        const clienteSelect = document.getElementById('pdvCliente');
+        const clienteNomeInput = document.getElementById('pdvClienteNome');
+        const clienteDocumentoInput = document.getElementById('pdvClienteDocumento');
+        const observacoesInput = document.getElementById('pdvObservacoes');
+        const cancelarVendaBtn = document.getElementById('pdvCancelarVenda');
+
         // Saldo conhecido por peça, alimentado pela busca. Serve só para o aviso
         // na tela — a verdade é conferida pelo backend dentro da transação.
         const saldoPorPeca = new Map();
@@ -365,6 +371,24 @@
             }
         };
 
+        // "Tem o que cancelar?" vai além do carrinho: cliente escolhido, nome
+        // ou CPF digitados, desconto e observações também são desta venda e
+        // vazariam para a próxima. O vendedor fica de fora — é quem está no
+        // balcão, não um dado da venda.
+        const vendaEmAndamento = () => {
+            if (itensBody.querySelector('.pdv-item')) return true;
+            if (clienteSelect && clienteSelect.value) return true;
+
+            const textos = [clienteNomeInput, clienteDocumentoInput, observacoesInput];
+            if (textos.some((campo) => campo && campo.value.trim() !== '')) return true;
+
+            return parseNumber(descontoValor.value) !== 0 || parseNumber(descontoPercentual.value) !== 0;
+        };
+
+        const atualizarBotaoCancelar = () => {
+            if (cancelarVendaBtn) cancelarVendaBtn.disabled = !vendaEmAndamento();
+        };
+
         const recalcular = () => {
             let subtotal = 0;
             let custoTotal = 0;
@@ -464,6 +488,7 @@
             const temItens = itensBody.querySelectorAll('.pdv-item').length > 0;
             semItens.classList.toggle('d-none', temItens);
             abrirPagamentoBtn.disabled = !temItens;
+            atualizarBotaoCancelar();
         };
 
         /* ------------------------------------------------------------------ */
@@ -620,6 +645,10 @@
             if (evento.target.matches('[data-campo]') || evento.target === descontoValor || evento.target === descontoPercentual) {
                 recalcular();
             }
+
+            // Nome, CPF e observações não mexem em total, mas contam como
+            // venda em andamento para o botão "Cancelar venda".
+            atualizarBotaoCancelar();
         });
 
         itensBody.addEventListener('click', (evento) => {
@@ -659,13 +688,16 @@
             adicionarItem({ tipo_item: 'avulso', descricao: '', valor_unitario: 0, controla_estoque: false });
         });
 
-        descontoToggle.addEventListener('click', () => {
-            const percentual = descontoToggle.dataset.modo !== 'percentual';
+        const definirModoDesconto = (percentual) => {
             descontoToggle.dataset.modo = percentual ? 'percentual' : 'valor';
             descontoToggle.textContent = percentual ? '%' : 'R$';
             descontoTipo.value = percentual ? 'percentual' : 'valor';
             descontoValor.classList.toggle('d-none', percentual);
             descontoPercentual.classList.toggle('d-none', !percentual);
+        };
+
+        descontoToggle.addEventListener('click', () => {
+            definirModoDesconto(descontoToggle.dataset.modo !== 'percentual');
             recalcular();
         });
 
@@ -697,6 +729,7 @@
                 const selecionado = $('#pdvCliente').val();
                 document.getElementById('pdvBlocoAvulso').classList.toggle('d-none', Boolean(selecionado));
                 document.getElementById('pdvEditarCliente')?.classList.toggle('d-none', !selecionado);
+                atualizarBotaoCancelar();
             });
         }
 
@@ -1017,14 +1050,94 @@
         entrarTelaCheia(false);
 
         // Calendário do mês + relógio digital, visíveis só em modo terminal
-        // (abaixo do botão Finalizar). Gerados em JS, não no Blade: um
+        // (rodapé da coluna esquerda). Gerados em JS, não no Blade: um
         // terminal deixado aberto virando a meia-noite não pode ficar com o
         // dia errado destacado.
         const calendarioTabela = document.getElementById('pdvTerminalCalendario');
         const relogioEl = document.getElementById('pdvTerminalRelogio');
+        const mesEl = document.getElementById('pdvTerminalMes');
+        const dataEl = document.getElementById('pdvTerminalData');
+        const agendaCartao = document.querySelector('.pdv-terminal-agenda');
+        const agendaConteudo = agendaCartao ? agendaCartao.querySelector('.pdv-agenda-conteudo') : null;
         let diaRenderizado = null;
 
         const doisDigitos = (numero) => String(numero).padStart(2, '0');
+
+        // "setembro de 2026" -> "Setembro de 2026". text-transform: capitalize
+        // pegava toda palavra e escrevia "Setembro De 2026".
+        const inicialMaiuscula = (texto) => texto.charAt(0).toUpperCase() + texto.slice(1);
+
+        // O cartão do calendário recebe da coluna esquerda a altura que
+        // sobrar (flex: 1, min-height: 0, overflow: hidden) — a coluna em si
+        // nunca rola. Aqui ele escolhe o que melhor ENCHE essa altura, do mais
+        // generoso para o mais enxuto:
+        //   1. empilhado (relógio em cima) e ampliado até ESCALA_MAXIMA;
+        //   2. mês e relógio lado a lado, tamanho normal;
+        //   3. só a semana de hoje;
+        //   4. só data + relógio;
+        //   5. nada visível.
+        // A altura do cartão vem da coluna, não do conteúdo, então trocar de
+        // modo ou de escala não realimenta o ResizeObserver abaixo.
+        const ESCALA_MAXIMA = 1.8;
+        const RESPIRO_MAXIMO = 12;
+        const MODOS_AGENDA = ['is-empilhada', 'is-so-semana', 'is-so-relogio', 'is-sem-espaco'];
+
+        const ajustarAgenda = () => {
+            if (!agendaCartao || !agendaConteudo) return;
+
+            const definirEscala = (valor) => agendaCartao.style.setProperty('--agenda-escala', String(valor));
+            const definirRespiro = (px) => agendaCartao.style.setProperty('--agenda-respiro', `${px}px`);
+
+            agendaCartao.classList.remove(...MODOS_AGENDA);
+            definirEscala(1);
+            definirRespiro(0);
+            if (agendaCartao.offsetParent === null) return;
+
+            const estilo = window.getComputedStyle(agendaCartao);
+            const espaco = agendaCartao.clientHeight
+                - parseFloat(estilo.paddingTop)
+                - parseFloat(estilo.paddingBottom);
+            // Largura também conta: ampliado demais, o círculo do dia ou o
+            // relógio passariam da largura da coluna.
+            const cabe = () => agendaConteudo.getBoundingClientRect().height <= espaco
+                && agendaConteudo.scrollWidth <= agendaConteudo.clientWidth + 1;
+
+            // Tudo no cartão é rem x escala, então a altura cresce na mesma
+            // proporção: a primeira estimativa já costuma servir, e o laço só
+            // corrige arredondamento (passos de 0,05, em inteiros para não
+            // acumular erro de ponto flutuante).
+            agendaCartao.classList.add('is-empilhada');
+            const alturaBase = agendaConteudo.getBoundingClientRect().height;
+            const maiorPasso = Math.floor(Math.min(ESCALA_MAXIMA, espaco / alturaBase) * 20);
+            for (let passo = maiorPasso; passo >= 20; passo -= 1) {
+                definirEscala(passo / 20);
+                if (!cabe()) continue;
+
+                // Na escala máxima ainda pode sobrar altura (cliente escolhido
+                // esconde Nome/CPF; a largura da coluna não deixa os círculos
+                // crescerem mais). Em vez de faixas vazias em cima e embaixo,
+                // a sobra vira espaço entre as semanas, até RESPIRO_MAXIMO.
+                const sobra = espaco - agendaConteudo.getBoundingClientRect().height;
+                const linhas = calendarioTabela ? calendarioTabela.rows.length : 0;
+                if (sobra > 0 && linhas > 0) {
+                    for (let px = Math.min(RESPIRO_MAXIMO, Math.floor(sobra / (linhas + 1) / 2)); px > 0; px -= 1) {
+                        definirRespiro(px);
+                        if (cabe()) return;
+                    }
+                    definirRespiro(0);
+                }
+                return;
+            }
+            agendaCartao.classList.remove('is-empilhada');
+            definirEscala(1);
+
+            if (cabe()) return;
+            agendaCartao.classList.add('is-so-semana');
+            if (cabe()) return;
+            agendaCartao.classList.add('is-so-relogio');
+            if (cabe()) return;
+            agendaCartao.classList.add('is-sem-espaco');
+        };
 
         const renderizarCalendario = (agora) => {
             if (!calendarioTabela) return;
@@ -1033,10 +1146,8 @@
             const mes = agora.getMonth();
             const hoje = agora.getDate();
 
-            const legenda = calendarioTabela.querySelector('caption');
-            if (legenda) {
-                legenda.textContent = agora.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-            }
+            setText(mesEl, inicialMaiuscula(agora.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })));
+            setText(dataEl, inicialMaiuscula(agora.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'long' })));
 
             const corpo = calendarioTabela.querySelector('tbody');
             if (!corpo) return;
@@ -1052,7 +1163,12 @@
 
             for (let dia = 1; dia <= totalDias; dia += 1) {
                 const celula = document.createElement('td');
-                if (dia === hoje) celula.classList.add('pdv-dia-atual');
+                if (dia === hoje) {
+                    celula.classList.add('pdv-dia-atual');
+                    // Marcada aqui (e não via :has() no CSS) para o modo
+                    // "só a semana de hoje" do ajustarAgenda.
+                    linha.classList.add('pdv-semana-atual');
+                }
 
                 const marcador = document.createElement('span');
                 marcador.textContent = String(dia);
@@ -1078,6 +1194,8 @@
 
             if (agora.getDate() !== diaRenderizado) {
                 renderizarCalendario(agora);
+                // Virar o mês pode trocar 5 semanas por 6 (uma linha a mais).
+                ajustarAgenda();
             }
         };
 
@@ -1086,28 +1204,73 @@
             setInterval(atualizarAgendaTerminal, 1000);
         }
 
-        const limparVenda = () => {
+        // A altura livre muda com a janela, com a entrada/saída da tela cheia
+        // e quando o bloco Nome/CPF aparece ou some (cliente escolhido).
+        // Observar o próprio cartão cobre todos esses casos de uma vez.
+        if (agendaCartao) {
+            if (typeof window.ResizeObserver === 'function') {
+                new window.ResizeObserver(() => window.requestAnimationFrame(ajustarAgenda)).observe(agendaCartao);
+            } else {
+                window.addEventListener('resize', ajustarAgenda);
+            }
+            ajustarAgenda();
+        }
+
+        // Volta a tela ao estado de "Nova venda" sem recarregar a página:
+        // recarregar derrubaria a tela cheia real (a Fullscreen API só volta
+        // com gesto) e custaria uma ida ao servidor no meio do balcão. Como a
+        // venda só existe no navegador até o POST, não há nada a desfazer no
+        // backend. O vendedor fica como está (ver vendaEmAndamento).
+        const iniciarNovaVenda = () => {
             itensBody.innerHTML = '';
             pagamentosBox.innerHTML = '';
+            saldoPorPeca.clear();
+
+            buscaInput.value = '';
+            renderResultados([]);
+
+            if ($ && $.fn.select2) {
+                // Mesmo caminho do "Consumidor final": o handler de change
+                // reexibe nome/CPF e esconde o lápis de editar cliente.
+                $('#pdvCliente').val(null).trigger('change');
+            } else if (clienteSelect) {
+                clienteSelect.value = '';
+            }
+            document.getElementById('pdvBlocoAvulso').classList.remove('d-none');
+            if (clienteNomeInput) clienteNomeInput.value = '';
+            if (clienteDocumentoInput) clienteDocumentoInput.value = '';
+            if (observacoesInput) observacoesInput.value = '';
+
+            definirModoDesconto(false);
+            descontoValor.value = '0,00';
+            descontoPercentual.value = '0';
+
+            document.getElementById('pdvConfirmarEstoque').value = '0';
+
             recalcular();
             buscaInput.focus();
         };
 
-        // Esc anunciado na tela como "limpa" continua limpando, mas pergunta
-        // antes: e' a mesma tecla que o reflexo do operador usa para "cancelar o
-        // que estou fazendo", e um toque errado apagava uma venda de quinze itens
-        // sem nenhuma forma de voltar. O foco vai para o botao de confirmar, entao
-        // quem quis limpar mesmo resolve com Esc + Enter.
-        const limparVendaComConfirmacao = () => {
-            const quantidade = itensBody.querySelectorAll('.pdv-item').length;
-
-            if (quantidade === 0) {
+        // Pergunta antes: Esc é a mesma tecla que o reflexo do operador usa
+        // para "cancelar o que estou fazendo", e um toque errado apagava uma
+        // venda de quinze itens sem nenhuma forma de voltar. O foco vai para o
+        // botão de confirmar, então quem quis cancelar mesmo resolve com
+        // Esc + Enter.
+        const cancelarVendaComConfirmacao = () => {
+            if (!vendaEmAndamento()) {
                 return;
             }
 
+            const quantidade = itensBody.querySelectorAll('.pdv-item').length;
+            const resumo = quantidade === 0
+                ? ''
+                : (quantidade === 1 ? 'O carrinho tem 1 item. ' : `O carrinho tem ${quantidade} itens. `);
+            const texto = `${resumo}Itens, cliente, desconto e observações serão descartados `
+                + 'e o PDV fica pronto para uma nova venda.';
+
             if (!window.Swal) {
-                if (window.confirm('Limpar a venda e descartar os itens do carrinho?')) {
-                    limparVenda();
+                if (window.confirm(`Cancelar esta venda?\n\n${texto}`)) {
+                    iniciarNovaVenda();
                 }
 
                 return;
@@ -1115,20 +1278,20 @@
 
             window.Swal.fire({
                 icon: 'warning',
-                title: 'Limpar a venda?',
-                text: quantidade === 1
-                    ? 'O item do carrinho será descartado.'
-                    : `Os ${quantidade} itens do carrinho serão descartados.`,
+                title: 'Cancelar esta venda?',
+                text: texto,
                 showCancelButton: true,
                 focusConfirm: true,
-                confirmButtonText: 'Limpar',
-                cancelButtonText: 'Manter',
+                confirmButtonText: 'Sim, cancelar venda',
+                cancelButtonText: 'Voltar à venda',
             }).then((resultado) => {
                 if (resultado.isConfirmed) {
-                    limparVenda();
+                    iniciarNovaVenda();
                 }
             });
         };
+
+        if (cancelarVendaBtn) cancelarVendaBtn.addEventListener('click', cancelarVendaComConfirmacao);
 
         document.addEventListener('keydown', (evento) => {
             if (evento.key === 'F2') {
@@ -1160,14 +1323,19 @@
 
             if (evento.key === 'Escape') {
                 // Esc já tem dono nesta ordem de prioridade: sair da tela cheia
-                // (navegador) e fechar o modal de pagamento (Bootstrap) — nos
-                // dois casos o carrinho não pode ser apagado junto.
+                // (navegador), fechar um modal (pagamento, cadastro rápido de
+                // cliente), fechar o próprio diálogo de confirmação e fechar a
+                // lista aberta do select2 (que marca o evento com
+                // preventDefault) — em nenhum desses casos a venda pode ser
+                // cancelada junto.
+                if (evento.defaultPrevented) return;
                 if (document.fullscreenElement) return;
                 if (pagamentoModalEl && pagamentoModalEl.classList.contains('show')) return;
+                if (evento.target instanceof Element && evento.target.closest('.modal, .swal2-container')) return;
 
-                if (itensBody.querySelectorAll('.pdv-item').length > 0) {
+                if (vendaEmAndamento()) {
                     evento.preventDefault();
-                    limparVendaComConfirmacao();
+                    cancelarVendaComConfirmacao();
                 }
             }
         });

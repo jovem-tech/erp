@@ -83,13 +83,58 @@ class UnsavedWorkGuardTest extends TestCase
         $script = $this->asset('vendas-pdv.js');
 
         $start = strpos($script, "if (evento.key === 'Escape') {");
+        // O handler de atalhos é o último bloco antes da seção "Envio".
+        $end = strpos($script, '/* Envio', (int) $start);
         $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
 
-        $handler = substr($script, (int) $start, 900);
+        $handler = substr($script, (int) $start, (int) $end - (int) $start);
 
-        $this->assertStringContainsString('limparVendaComConfirmacao();', $handler);
+        $this->assertStringContainsString('cancelarVendaComConfirmacao();', $handler);
         // O caminho direto some do handler: quem apaga é o helper, depois do sim.
         $this->assertStringNotContainsString("itensBody.innerHTML = '';", $handler);
+        // Esc que outro componente já consumiu (lista aberta do select2, que
+        // chama preventDefault) ou que mora num modal/diálogo não cancela a venda.
+        $this->assertStringContainsString('if (evento.defaultPrevented) return;', $handler);
+        $this->assertStringContainsString("closest('.modal, .swal2-container')", $handler);
+    }
+
+    /**
+     * "Cancelar venda" é começar outra do zero: se o reset só esvaziasse o
+     * carrinho (como o Esc antigo), o cliente, o desconto e as observações da
+     * venda cancelada iriam parar na próxima.
+     */
+    public function test_cancelar_venda_descarta_tudo_menos_o_vendedor(): void
+    {
+        $script = $this->asset('vendas-pdv.js');
+
+        $start = strpos($script, 'const iniciarNovaVenda = () => {');
+        $end = strpos($script, 'const cancelarVendaComConfirmacao', (int) $start);
+
+        $this->assertNotFalse($start);
+        $this->assertNotFalse($end);
+
+        $reset = substr($script, (int) $start, (int) $end - (int) $start);
+
+        $this->assertStringContainsString("itensBody.innerHTML = '';", $reset);
+        $this->assertStringContainsString("pagamentosBox.innerHTML = '';", $reset);
+        $this->assertStringContainsString("\$('#pdvCliente').val(null).trigger('change');", $reset);
+        $this->assertStringContainsString("clienteNomeInput.value = '';", $reset);
+        $this->assertStringContainsString("clienteDocumentoInput.value = '';", $reset);
+        $this->assertStringContainsString("observacoesInput.value = '';", $reset);
+        $this->assertStringContainsString('definirModoDesconto(false);', $reset);
+        $this->assertStringContainsString("descontoValor.value = '0,00';", $reset);
+        $this->assertStringContainsString("document.getElementById('pdvConfirmarEstoque').value = '0';", $reset);
+        $this->assertStringContainsString('recalcular();', $reset);
+        // Sem recarregar a página: isso derrubaria a tela cheia real do PDV.
+        $this->assertStringNotContainsString('location', $reset);
+        // Quem está no balcão continua o mesmo depois de cancelar.
+        $this->assertStringNotContainsString('pdvVendedor', $reset);
+
+        $this->assertStringContainsString(
+            "cancelarVendaBtn.addEventListener('click', cancelarVendaComConfirmacao);",
+            $script
+        );
     }
 
     private function asset(string $file): string

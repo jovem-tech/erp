@@ -756,6 +756,16 @@ class DesktopFeatureCatalog
                 'hint' => 'Na lista de Lançamentos, abra o lançamento e use "Registrar baixa".',
             ],
             [
+                'key' => 'vendas.cancelar-em-andamento',
+                'label' => 'Cancelar a venda em andamento',
+                'route' => 'vendas.create',
+                'module' => 'vendas', 'action' => 'criar',
+                'icon' => 'bi-x-circle',
+                'path' => ['Atendimento', 'Vendas', 'Nova venda', 'Cancelar venda'],
+                'keywords' => ['cancelar venda', 'desistir da venda', 'descartar venda', 'limpar carrinho', 'zerar pdv', 'começar outra venda'],
+                'hint' => 'No PDV, use "Cancelar venda (Esc)" abaixo de "Finalizar venda". Venda já concluída se desfaz com "Devolver".',
+            ],
+            [
                 'key' => 'vendas.devolver',
                 'label' => 'Devolver uma venda',
                 'route' => 'vendas.index',
