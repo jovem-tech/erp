@@ -2,8 +2,8 @@
 
 Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 
-- Gerado em: `2026-09-25T07:25:58-03:00`
-- Versao do sistema: `6.3.3`
+- Gerado em: `2026-09-26T06:15:19-03:00`
+- Versao do sistema: `6.5.0`
 - Versao da API: `1.7.0`
 - Ambiente oficial de producao: `Ubuntu VPS`
 - Ambiente local de referencia: `Ubuntu Server LAN - BANCADA-02 (192.168.1.100)`
@@ -237,6 +237,8 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `documentacao/07-novas-implementacoes/2026-09-22-anexo-na-edicao-do-lancamento.md` - Anexar arquivo na edição do lançamento financeiro (2026-09-22)
 - `documentacao/07-novas-implementacoes/2026-09-22-detalhes-item-orcamento-na-os.md` - Detalhes da peça e do serviço no detalhe da OS (2026-09-22)
 - `documentacao/07-novas-implementacoes/2026-09-23-ratificacao-do-pacote-na-baixa.md` - Ratificação do pacote de manutenção contratado na baixa da OS
+- `documentacao/07-novas-implementacoes/2026-09-25-fotos-na-visualizacao-da-os.md` - Fotos direto na visualização da OS (2026-09-25)
+- `documentacao/07-novas-implementacoes/2026-09-26-padrao-insercao-imagem.md` - Padrão único de inserção de imagem (2026-09-26)
 - `documentacao/07-novas-implementacoes/historico-de-versoes.md` - Historico de versoes
 - `documentacao/07-novas-implementacoes/revisao-seguranca-orcamento-assistencia.md` - Revisão de segurança — Fluxo de orçamento na assistência (com OS)
 
@@ -302,4 +304,6 @@ Gerado automaticamente por `scripts/php/sync-agent-docs.php`.
 - `specs/045-catalogo-equipamentos-edicao-massa-mesclagem` - Catálogo de equipamentos — edição em massa por ID e mesclagem de duplicados | artefatos: spec, tasks
 - `specs/046-otimizacao-fotos-operacionais` - Especificação 046 - Otimização de fotos operacionais | artefatos: spec, plan, tasks
 - `specs/047-documentos-pdf-sob-demanda` - Especificação 047 - Documentos PDF da OS renderizados sob demanda | artefatos: spec, plan, tasks
+- `specs/048-fotos-na-visualizacao-da-os` - Especificação 048 - Fotos direto na visualização da OS | artefatos: spec, plan, tasks
+- `specs/049-padrao-insercao-imagem` - Especificação 049 - Padrão único de inserção de imagem | artefatos: spec, plan, tasks
 

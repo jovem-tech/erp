@@ -469,6 +469,11 @@ Route::prefix('v1')->group(function (): void {
         Route::match(['put', 'patch'], 'orders/{order}', [OrderController::class, 'update'])
             ->middleware('photo-upload-throttle')
             ->name('api.v1.orders.update');
+        // Fotos direto da visualizacao da OS (specs/048), sem a edicao completa.
+        Route::post('orders/{order}/photos', [OrderController::class, 'storePhotos'])
+            ->whereNumber('order')
+            ->middleware('photo-upload-throttle')
+            ->name('api.v1.orders.photos.store');
         Route::get('orders/{order}/photos/{photo}', [OrderController::class, 'photo'])->name('api.v1.orders.photos.show');
         Route::get('orders/{order}/documents', [OrderController::class, 'documents'])->name('api.v1.orders.documents.index');
         Route::post('orders/{order}/documents/generate', [OrderController::class, 'generateDocuments'])->name('api.v1.orders.documents.generate');

@@ -7993,13 +7993,15 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('cooler do processador', false)
             ->assertSee('Carregador original')
             ->assertSee('Fotos ja anexadas', false)
-            ->assertSee(asset('assets/libs/cropperjs/cropper.min.css'), false)
-            ->assertSee(asset('assets/libs/cropperjs/cropper.min.js'), false)
-            ->assertSee('orderPhotoCropModal', false)
-            ->assertSee('data-order-photo-crop-confirm', false)
-            ->assertSee('data-order-photo-crop-action="rotate-left"', false)
-            ->assertSee('Máximo de 4 fotos por envio e 20 MB por origem. No servidor, o normal é até 400 KB e o máximo excepcional é 700 KB.')
-            ->assertSee('O recorte é pré-comprimido para economizar o envio; o servidor aplica a política final de 400/700 KB.')
+            // Padrão único de inserção de imagem (specs/049): origens do padrão,
+            // recorte opcional pela biblioteca (sem modal próprio da tela).
+            ->assertSee('data-order-create-photo-picker', false)
+            ->assertSee('data-image-picker-camera', false)
+            ->assertSee('data-image-picker-paste', false)
+            ->assertSee('data-image-picker-dropzone', false)
+            ->assertSee('assets/js/image-picker.js', false)
+            ->assertDontSee('orderPhotoCropModal', false)
+            ->assertSee('Máximo de 4 fotos por envio e 20 MB por origem. No servidor, o normal é até 400 KB e o máximo excepcional é 700 KB. Recortar é opcional.')
             ->assertSee('Alterar status', false)
             ->assertSee('Testes finais')
             ->assertSee('Aguardando peças')
@@ -8019,11 +8021,14 @@ class DesktopFrontendTest extends TestCase
         $script = file_get_contents(public_path('assets/js/orders-create.js'));
 
         $this->assertIsString($script);
-        $this->assertStringContainsString('state.photoCropQueue', $script);
-        $this->assertStringContainsString('getCroppedCanvas', $script);
-        $this->assertStringContainsString('commitCroppedPhoto(croppedFile', $script);
+        // Padrão único de inserção de imagem (specs/049): as origens vêm da
+        // biblioteca comum e o recorte é opcional — a tela não recorta sozinha.
+        $this->assertStringContainsString('window.ErpImagePicker?.attach(els.photoPicker', $script);
+        $this->assertStringContainsString('window.ErpImagePicker.crop(entry.file', $script);
+        $this->assertStringContainsString('commitCroppedPhoto(cropped, cropIndex', $script);
         $this->assertStringContainsString('transfer.items.add(entry.file)', $script);
-        $this->assertStringContainsString('maxPhotoUploadBytes', $script);
+        $this->assertStringNotContainsString('photoCropQueue', $script);
+        $this->assertStringNotContainsString('getCroppedCanvas', $script);
         $this->assertStringContainsString('initAccessoryPresets', $script);
         $this->assertStringContainsString('accessoriesField', $script);
         $this->assertStringContainsString('normalizeCapturedEquipmentPhoto', $script);
@@ -8508,7 +8513,13 @@ class DesktopFrontendTest extends TestCase
             ->assertSee('Informa')
             ->assertSee('Ajuda')
             ->assertSee('Fotos *')
-            ->assertSee('Adicionar da galeria')
+            // Padrão único de inserção de imagem (specs/049).
+            ->assertSee('data-equipment-photo-picker', false)
+            ->assertSee('data-image-picker-camera', false)
+            ->assertSee('Computador / galeria')
+            ->assertSee('data-image-picker-dropzone', false)
+            ->assertSee('name="fotos[]"', false)
+            ->assertDontSee('equipmentCropModal', false)
             ->assertSee('A foto principal e obrigatoria no cadastro inicial', false)
             ->assertSee('select2.min.js', false)
             ->assertSee('select2-bootstrap-5-theme.min.css', false)

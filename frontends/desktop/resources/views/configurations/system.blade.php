@@ -432,9 +432,16 @@
                                 @endif
                             </div>
                             <div class="flex-grow-1" style="min-width:220px;">
-                                <label class="form-label" for="empresa_logo">Arquivo da logo</label>
-                                <input type="file" class="form-control" id="empresa_logo" name="empresa_logo" accept="image/png, image/jpeg, image/webp">
-                                <small class="text-muted d-block mt-1">PNG, JPG, GIF ou SVG, até 4&nbsp;MB.</small>
+                                <span class="form-label d-block">Nova logo</span>
+                                {{-- Padrão de inserção de imagem (specs/049). keep-png:
+                                     logo com fundo transparente continua transparente. --}}
+                                <x-image-picker.field
+                                    name="empresa_logo"
+                                    accept="image"
+                                    keep-png
+                                    title="Escolher logo"
+                                    help="PNG, JPG ou WebP, até 4 MB. PNG com fundo transparente continua transparente. Recortar é opcional; a logo só muda ao salvar."
+                                    :input-attributes="['id' => 'empresa_logo']" />
                             </div>
                         </div>
                     </div>
@@ -456,9 +463,13 @@
                                 @endif
                             </div>
                             <div class="flex-grow-1" style="min-width:220px;">
-                                <label class="form-label" for="login_background_image">Arquivo da imagem de fundo</label>
-                                <input type="file" class="form-control" id="login_background_image" name="login_background_image" accept="image/png, image/jpeg, image/webp">
-                                <small class="text-muted d-block mt-1">PNG, JPG ou WebP, ate 4&nbsp;MB. Recomendacao: imagem horizontal com pelo menos 1600px de largura.</small>
+                                <span class="form-label d-block">Nova imagem de fundo</span>
+                                <x-image-picker.field
+                                    name="login_background_image"
+                                    accept="image"
+                                    title="Escolher imagem de fundo"
+                                    help="PNG, JPG ou WebP, até 4 MB. Recomendação: imagem horizontal com pelo menos 1600 px de largura. Recortar é opcional; o fundo só muda ao salvar."
+                                    :input-attributes="['id' => 'login_background_image']" />
                             </div>
                         </div>
                     </div>

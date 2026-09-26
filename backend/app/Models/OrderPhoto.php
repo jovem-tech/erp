@@ -7,6 +7,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class OrderPhoto extends Model
 {
+    public const TIPO_RECEPCAO = 'recepcao';
+
+    public const TIPO_DIAGNOSTICO = 'diagnostico';
+
+    public const TIPO_ENTREGA = 'entrega';
+
+    /** Espelha o enum de `os_fotos.tipo` no banco do legado — nao ha outro valor possivel. */
+    public const TIPOS = [
+        self::TIPO_RECEPCAO,
+        self::TIPO_DIAGNOSTICO,
+        self::TIPO_ENTREGA,
+    ];
+
     protected $table = 'os_fotos';
 
     protected $primaryKey = 'id';

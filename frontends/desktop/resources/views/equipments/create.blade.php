@@ -135,10 +135,6 @@
     }
 @endphp
 
-@section('styles')
-    <link href="{{ asset('assets/libs/cropperjs/cropper.min.css') }}" rel="stylesheet">
-@endsection
-
 @section('content')
     <div class="d-flex flex-wrap justify-content-between gap-3 mb-4">
         <div>
@@ -533,7 +529,10 @@
                 </div>
             </div>
 
-            <div class="equipment-tab-panel" data-equipment-panel="fotos">
+            {{-- Padrão único de inserção de imagem (specs/049): o painel é o
+                 campo — Câmera, Computador/galeria, Colar (Ctrl+V em qualquer
+                 ponto da tela), arrastar e recorte opcional por foto. --}}
+            <div class="equipment-tab-panel" data-equipment-panel="fotos" data-equipment-photo-picker>
                 <input type="hidden" name="foto_principal_index" id="equipmentPrimaryPhotoIndex" value="{{ $primaryNewPhotoIndexValue }}">
                 @if ($isEditMode)
                     <input type="hidden" name="existing_photo_sync" id="equipmentExistingPhotoSync" value="1">
@@ -544,19 +543,15 @@
                         @endforeach
                     </div>
                 @endif
-                <input type="file" name="fotos[]" id="equipmentPhotosInput" class="d-none" accept="image/png,image/jpeg,image/webp,image/avif,image/heic,image/heif,.heic,.heif,.avif" multiple>
+                {{-- Vai no form: equipments-create.js copia as fotos novas para cá (DataTransfer). --}}
+                <input type="file" name="fotos[]" id="equipmentPhotosInput" class="d-none" tabindex="-1" aria-hidden="true" accept="{{ \App\Support\ImagePicker::accept('photo') }}" multiple data-image-picker-input>
 
                 <div class="equipment-photo-toolbar">
-                    <button type="button" class="btn btn-primary" id="equipmentPhotoGalleryButton">
-                        <i class="bi bi-images me-2"></i>
-                        Adicionar da galeria
-                    </button>
-                    <button type="button" class="btn btn-outline-primary" id="equipmentPhotoCameraButton">
-                        <i class="bi bi-camera me-2"></i>
-                        Capturar com câmera
-                    </button>
-                    <span class="surface-subtitle mb-0">Até {{ $maxPhotos }} fotos e 20 MB por origem; normal até 400 KB e máximo excepcional de 700 KB no servidor.</span>
+                    <x-image-picker.buttons accept="photo" size="" />
+                    <span class="surface-subtitle mb-0">Até {{ $maxPhotos }} fotos (JPEG, PNG, WebP, AVIF ou HEIC, 20 MB cada). Recortar é opcional.</span>
                 </div>
+
+                <x-image-picker.dropzone compact title="Adicionar fotos" />
 
                 <div class="equipment-photo-required-note">
                     {{ $isEditMode
@@ -598,7 +593,6 @@
 @endsection
 
 @section('scripts')
-    <script src="{{ asset('assets/libs/cropperjs/cropper.min.js') }}"></script>
     <script>
         window.__EQUIPMENT_CREATE = {!! \Illuminate\Support\Js::from([
             'isEdit' => $isEditMode,
@@ -695,43 +689,6 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancelar</button>
                     <button type="button" class="btn btn-primary" id="quickModelSubmit">Salvar modelo</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal fade" id="equipmentCameraModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
-            <div class="modal-content modal-shell">
-                <div class="modal-header">
-                    <h5 class="modal-title">Capturar foto</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-                </div>
-                <div class="modal-body">
-                    <video id="equipmentCameraVideo" class="equipment-camera-video" autoplay playsinline muted></video>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary" id="equipmentCameraCapture">Capturar</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="modal fade" id="equipmentCropModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-xl">
-            <div class="modal-content modal-shell">
-                <div class="modal-header">
-                    <h5 class="modal-title">Ajustar foto</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Fechar"></button>
-                </div>
-                <div class="modal-body">
-                    {{-- Sem src inicial: <img src=""> dispara 'error' no navegador. --}}
-                    <img alt="Preview para recorte" id="equipmentCropImage" class="equipment-crop-image">
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="button" class="btn btn-primary" id="equipmentCropConfirm">Usar foto</button>
                 </div>
             </div>
         </div>

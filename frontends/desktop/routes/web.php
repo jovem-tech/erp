@@ -545,6 +545,11 @@ Route::middleware('desktop.auth')->group(function (): void {
     Route::post('/os/{order}/procedimentos', [OrderController::class, 'storeProcedure'])
         ->middleware('desktop.permission:os,editar')
         ->name('orders.procedures.store');
+    // Fotos direto da visualizacao da OS (specs/048), sem abrir a edicao.
+    Route::post('/os/{order}/fotos', [OrderController::class, 'storePhotos'])
+        ->whereNumber('order')
+        ->middleware('desktop.permission:os,editar')
+        ->name('orders.photos.store');
     Route::get('/os/{order}/fotos/{photo}', [OrderController::class, 'photo'])
         ->middleware('desktop.permission:os,visualizar')
         ->name('orders.photos.show');

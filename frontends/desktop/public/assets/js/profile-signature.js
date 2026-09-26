@@ -91,7 +91,9 @@
                 item.setAttribute('aria-pressed', active ? 'true' : 'false');
             });
             form.querySelectorAll('[data-signature-panel]').forEach((panel) => panel.classList.toggle('d-none', panel.dataset.signaturePanel !== mode));
-            fileInput.required = mode === 'upload';
+            // Sem `required`: o input do campo padrão de imagem (specs/049) é
+            // oculto, e o navegador bloquearia o envio em silêncio ("campo
+            // inválido não focável"). A falta de arquivo é conferida no submit.
             if (mode === 'desenho') requestAnimationFrame(resizeCanvas);
         });
     });

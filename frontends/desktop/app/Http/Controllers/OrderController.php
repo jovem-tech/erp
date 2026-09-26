@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\ApiAuthenticationException;
 use App\Exceptions\ApiAuthorizationException;
+use App\Exceptions\ApiConnectionException;
 use App\Exceptions\ApiRequestException;
 use App\Services\ClientService;
 use App\Services\DocumentoFiscalService;
@@ -16,6 +17,7 @@ use App\Services\TeamMemberService;
 use App\Services\UserService;
 use App\Support\DesktopSession;
 use App\Support\OrderFlowMapLayout;
+use App\Support\OrderPhotoTypes;
 use App\Support\OrderStatusMacroGroups;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -1910,6 +1912,96 @@ class OrderController extends DesktopController
 
         return redirect()
             ->route('orders.show', $order)
+            ->with('success', $message);
+    }
+
+    /**
+     * Fotos anexadas direto da visualizacao da OS (specs/048). O uploader da
+     * tela pede JSON e recebe a galeria ja renderizada pelo mesmo parcial da
+     * pagina; sem JSON, volta para o detalhe com flash, como updateStatus().
+     */
+    public function storePhotos(Request $request, int $order): RedirectResponse|JsonResponse
+    {
+        $validated = $request->validate([
+            'fotos' => ['required', 'array', 'min:1', 'max:4'],
+            'fotos.*' => ['file', 'max:20480'],
+            'tipo' => ['nullable', 'string', 'in:'.implode(',', array_keys(OrderPhotoTypes::LABELS))],
+        ], [
+            'fotos.required' => 'Selecione ao menos uma foto.',
+            'fotos.max' => 'Envie no máximo 4 fotos por vez.',
+            'fotos.*.max' => 'Cada foto pode ter no máximo 20 MB.',
+            'fotos.*.uploaded' => 'Uma das fotos passa de 20 MB ou não chegou inteira ao servidor.',
+            'tipo.in' => 'Escolha a categoria Recepção, Diagnóstico ou Entrega.',
+        ]);
+
+        $tipo = (string) ($validated['tipo'] ?? 'recepcao');
+        $failure = null;
+        $status = 422;
+
+        try {
+            $result = $this->orderService->addPhotos($order, $this->extractUploadedFiles($request, 'fotos'), $tipo);
+        } catch (ApiAuthenticationException $exception) {
+            if ($request->wantsJson()) {
+                return response()->json(['message' => $exception->getMessage()], 401);
+            }
+
+            return redirect()->route('login')->with('error', $exception->getMessage());
+        } catch (ApiAuthorizationException $exception) {
+            $failure = $exception->getMessage();
+            $status = 403;
+        } catch (ApiConnectionException $exception) {
+            // Timeout no meio de um upload e' ambiguo: o backend pode ter gravado
+            // depois que o desktop desistiu de esperar. Reenviar as cegas duplica.
+            report($exception);
+            $failure = 'O servidor demorou a responder e as fotos podem ter sido gravadas. Recarregue a página e confira antes de enviar de novo.';
+            $status = 504;
+        } catch (ApiRequestException $exception) {
+            // Recusa de validação do backend chega como "Falha na validação dos
+            // dados enviados."; a frase que ajuda o técnico (formato, extensão
+            // que não bate com o conteúdo) vem nos detalhes por campo.
+            $failure = collect((array) ($exception->details() ?? []))
+                ->flatten()
+                ->first(static fn ($message): bool => is_string($message) && trim($message) !== '')
+                ?? $exception->getMessage();
+            $status = $exception->statusCode() >= 400 ? $exception->statusCode() : 422;
+        } catch (Throwable $exception) {
+            report($exception);
+            $failure = 'Não foi possível enviar as fotos agora. Tente novamente.';
+            $status = 500;
+        }
+
+        if ($failure !== null) {
+            if ($request->wantsJson()) {
+                return response()->json(['message' => $failure], $status);
+            }
+
+            return redirect()
+                ->to(route('orders.show', $order).'#os-fotos')
+                ->with('error', $failure);
+        }
+
+        $added = count($result['foto_ids']);
+        $tipoLabel = OrderPhotoTypes::label($tipo);
+        $message = $added === 1
+            ? "1 foto adicionada em {$tipoLabel}."
+            : "{$added} fotos adicionadas em {$tipoLabel}.";
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => $message,
+                'added' => $added,
+                'total' => count($result['fotos']),
+                'html' => view('orders._photos_gallery', [
+                    'orderId' => $order,
+                    'photos' => $result['fotos'],
+                    'newPhotoIds' => $result['foto_ids'],
+                ])->render(),
+            ], 201);
+        }
+
+        return redirect()
+            ->to(route('orders.show', $order).'#os-fotos')
             ->with('success', $message);
     }
 

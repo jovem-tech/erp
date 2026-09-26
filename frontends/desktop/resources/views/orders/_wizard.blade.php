@@ -828,7 +828,10 @@
                         <div class="order-create-photo-preview-grid" data-order-pending-equipment-photos-preview></div>
                     </div>
 
-                    <div class="order-create-field order-create-field-span-2">
+                    {{-- Padrão único de inserção de imagem (specs/049): Câmera,
+                         Computador/galeria, Colar (Ctrl+V em qualquer ponto da tela),
+                         arrastar e recorte opcional por foto. --}}
+                    <div class="order-create-field order-create-field-span-2" data-order-create-photo-picker>
                         <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-2">
                             <div>
                                 <label class="mb-0">{{ $isEditing ? 'Adicionar novas fotos' : 'Fotos de entrada do equipamento' }}</label>
@@ -836,10 +839,7 @@
                             </div>
 
                             <div class="d-flex flex-wrap gap-2">
-                                <button type="button" class="btn btn-primary btn-sm" data-order-create-photos-pick>
-                                    <i class="bi bi-upload me-1"></i>
-                                    Selecionar fotos
-                                </button>
+                                <x-image-picker.buttons accept="photo" />
                                 <button type="button" class="btn btn-outline-light btn-sm" data-order-create-photos-clear>
                                     <i class="bi bi-trash me-1"></i>
                                     Limpar
@@ -847,18 +847,24 @@
                             </div>
                         </div>
 
+                        {{-- Vai no form: orders-create.js copia as fotos da lista para cá (DataTransfer). --}}
                         <input
                             type="file"
                             id="orderPhotos"
                             name="fotos[]"
                             class="d-none @error('fotos') is-invalid @enderror @error('fotos.*') is-invalid @enderror"
-                            accept="image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,.heic,.heif,.avif"
+                            tabindex="-1"
+                            aria-hidden="true"
+                            accept="{{ \App\Support\ImagePicker::accept('photo') }}"
                             multiple
                             data-order-create-photos-input
+                            data-image-picker-input
                         >
 
+                        <x-image-picker.dropzone compact title="Adicionar fotos de entrada" class="mb-2" />
+
                         <div class="order-create-photo-preview-grid" data-order-create-photos-preview></div>
-                        <div class="text-secondary small mt-2">Máximo de 4 fotos por envio e 20 MB por origem. No servidor, o normal é até 400 KB e o máximo excepcional é 700 KB.</div>
+                        <div class="text-secondary small mt-2">Máximo de 4 fotos por envio e 20 MB por origem. No servidor, o normal é até 400 KB e o máximo excepcional é 700 KB. Recortar é opcional.</div>
                         @error('fotos')<div class="invalid-feedback d-block mt-2">{{ $message }}</div>@enderror
                         @error('fotos.*')<div class="invalid-feedback d-block mt-2">{{ $message }}</div>@enderror
                     </div>
@@ -1057,7 +1063,6 @@
         </div>
     @endif
 
-    @include('orders._photo_crop_modal')
 
     @if ($canCreateClient)
         @include('clients.quick-modal', [

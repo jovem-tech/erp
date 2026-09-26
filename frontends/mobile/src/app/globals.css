@@ -1865,6 +1865,69 @@ img {
   border: 1px solid rgba(255, 255, 255, 0.18);
 }
 
+/* Padrão único de inserção de imagem (specs/049): recorte opcional por foto,
+   arrastar e diálogo do recorte. */
+.photo-grid__crop {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  min-height: 28px;
+  width: 28px;
+  padding: 0;
+  border-radius: 999px;
+  background: rgba(5, 12, 23, 0.78);
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.photo-grid--dragging {
+  outline: 2px dashed var(--accent);
+  outline-offset: 4px;
+  border-radius: 12px;
+}
+
+.photo-picker__hint {
+  font-size: 0.78rem;
+}
+
+@media (pointer: coarse) {
+  .photo-picker__hint {
+    display: none;
+  }
+}
+
+.photo-crop-backdrop {
+  z-index: 90;
+}
+
+.photo-crop-card {
+  width: min(900px, 100%);
+  display: grid;
+  gap: 12px;
+}
+
+.photo-crop-stage {
+  height: clamp(220px, calc(100vh - 300px), 65vh);
+  overflow: hidden;
+  border-radius: 16px;
+  background: #050c17;
+}
+
+.photo-crop-stage img {
+  display: block;
+  max-width: 100%;
+}
+
+.photo-crop-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.photo-crop-tools .button {
+  width: auto;
+}
+
 .photo-grid__add {
   aspect-ratio: 1;
   border-radius: 12px;

@@ -7,12 +7,14 @@ use App\Http\Requests\Api\V1\BatchUpdateStatusRequest;
 use App\Http\Requests\Api\V1\CancelOrderClosureRequest;
 use App\Http\Requests\Api\V1\CloseOrderRequest;
 use App\Http\Requests\Api\V1\OrderEventIndexRequest;
+use App\Http\Requests\Api\V1\StoreOrderPhotosRequest;
 use App\Http\Requests\Api\V1\StoreOrderProcedureRequest;
 use App\Http\Requests\Api\V1\UpdateOrderStatusRequest;
 use App\Http\Requests\Api\V1\UpsertOrderRequest;
 use App\Models\FinanceiroFormaPagamento;
 use App\Models\Order;
 use App\Models\OrderDocument;
+use App\Models\OrderPhoto;
 use App\Models\User;
 use App\Services\Auth\AdminCredentialVerifier;
 use App\Services\Orders\OrderClosureService;
@@ -444,6 +446,60 @@ class OrderController extends BaseApiController
                 'Falha ao atualizar a OS.',
                 500,
                 'ORDER_UPDATE_FAILED',
+                null,
+                request: $request
+            ),
+        };
+    }
+
+    /**
+     * Anexa fotos a uma OS sem a edicao completa (specs/048). Responde com a
+     * galeria inteira da OS, na mesma forma de `fotos` do detalhe, para o
+     * frontend redesenhar as miniaturas sem recarregar a pagina.
+     */
+    public function storePhotos(StoreOrderPhotosRequest $request, int $order): JsonResponse
+    {
+        $this->authorize('os:editar');
+
+        $user = $this->authenticatedUser($request);
+        if ($user === null) {
+            return $this->unauthenticatedResponse($request);
+        }
+
+        $result = $this->orderWorkflowService->addOrderPhotos(
+            $order,
+            $user,
+            $this->extractUploadedFiles($request, 'fotos'),
+            (string) ($request->validated('tipo') ?? OrderPhoto::TIPO_RECEPCAO)
+        );
+
+        return match ($result['result'] ?? 'error') {
+            'ok' => $this->success(
+                [
+                    'foto_ids' => $result['photo_ids'] ?? [],
+                    'fotos' => $result['photos'] ?? [],
+                ],
+                201,
+                request: $request
+            ),
+            'forbidden' => $this->error(
+                'Você não tem permissão para alterar esta OS.',
+                403,
+                'ORDER_FORBIDDEN',
+                null,
+                request: $request
+            ),
+            'not_found' => $this->error(
+                'OS não encontrada.',
+                404,
+                'ORDER_NOT_FOUND',
+                null,
+                request: $request
+            ),
+            default => $this->error(
+                'Não foi possível anexar as fotos à OS. Tente novamente.',
+                500,
+                'ORDER_PHOTOS_STORE_FAILED',
                 null,
                 request: $request
             ),

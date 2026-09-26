@@ -363,6 +363,9 @@
          rapido, que e' incluido por 5 telas (OS, PDV, financeiro, equipamentos,
          orcamento). Carregar por tela deixaria alguma de fora. --}}
     <script src="{{ asset('assets/js/documento.js') }}?v={{ filemtime(public_path('assets/js/documento.js')) }}"></script>
+    {{-- Padrão único de inserção de imagem (specs/049): global para que toda
+         tela — atual ou futura — que use <x-image-picker.*> já funcione. --}}
+    <script src="{{ asset('assets/js/image-picker.js') }}?v={{ filemtime(public_path('assets/js/image-picker.js')) }}"></script>
     @yield('scripts')
 </body>
 </html>
