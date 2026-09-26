@@ -13,19 +13,6 @@
 
     const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
     const maxPhotos = Number(config.maxPhotos || 4);
-    const maxPhotoSourceBytes = 20 * 1024 * 1024;
-    const acceptedPhotoTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/heic', 'image/heif']);
-    const acceptedPhotoExtensions = new Set(['jpg', 'jpeg', 'png', 'webp', 'avif', 'heic', 'heif']);
-    const photoExtension = (file) => String(file?.name || '').split('.').pop()?.toLowerCase() || '';
-    const isAcceptedPhoto = (file) => {
-        const mime = String(file?.type || '').toLowerCase();
-        if (acceptedPhotoTypes.has(mime)) {
-            return true;
-        }
-
-        return (mime === '' || mime === 'application/octet-stream')
-            && acceptedPhotoExtensions.has(photoExtension(file));
-    };
     const isEditMode = Boolean(config.isEdit);
     const isEmbeddedMode = document.body.classList.contains('desktop-body-embedded');
 
@@ -37,12 +24,6 @@
         transientModelIdsByTypeBrand: new Map(),
         isApplyingSnapshot: false,
         photos: [],
-        photoQueue: [],
-        cropper: null,
-        cropTargetFileName: '',
-        activeCropFile: null,
-        cropObjectUrl: '',
-        activeStream: null,
         collectorTimer: null,
         collectorSnapshot: null,
     };
@@ -79,8 +60,8 @@
         colorSwatches: Array.from(document.querySelectorAll('.equipment-color-swatch')),
         photosInput: document.getElementById('equipmentPhotosInput'),
         photoGrid: document.getElementById('equipmentPhotoGrid'),
-        photoGalleryButton: document.getElementById('equipmentPhotoGalleryButton'),
-        photoCameraButton: document.getElementById('equipmentPhotoCameraButton'),
+        // Painel ligado ao padrão único de inserção de imagem (specs/049).
+        photoPanel: document.querySelector('[data-equipment-photo-picker]'),
         primaryPhotoIndex: document.getElementById('equipmentPrimaryPhotoIndex'),
         primaryExistingPhotoId: document.getElementById('equipmentPrimaryExistingPhotoId'),
         existingPhotoSync: document.getElementById('equipmentExistingPhotoSync'),
@@ -113,12 +94,6 @@
         collectorCommandCodeLinux: document.getElementById('collectorPairingCommandLinux'),
         collectorCommandCopyLinux: document.getElementById('collectorPairingCommandCopyLinux'),
         collectorPairingCodeInput: document.getElementById('equipmentCollectorPairingCode'),
-        cameraModal: document.getElementById('equipmentCameraModal'),
-        cameraVideo: document.getElementById('equipmentCameraVideo'),
-        cameraCapture: document.getElementById('equipmentCameraCapture'),
-        cropModal: document.getElementById('equipmentCropModal'),
-        cropImage: document.getElementById('equipmentCropImage'),
-        cropConfirm: document.getElementById('equipmentCropConfirm'),
         fillButtons: Array.from(document.querySelectorAll('[data-fill-target]')),
     };
 
@@ -1073,6 +1048,7 @@
                     </div>
                     <div class="equipment-photo-card-actions">
                         <button type="button" class="btn btn-sm btn-outline-primary" data-photo-primary="${index}">Principal</button>
+                        ${item.source === 'new' && item.previewable !== false ? `<button type="button" class="btn btn-sm btn-outline-light" data-photo-crop="${index}"><i class="bi bi-crop me-1"></i>Recortar</button>` : ''}
                         <button type="button" class="btn btn-sm btn-outline-danger" data-photo-remove="${index}">Remover</button>
                     </div>
                 </article>
@@ -1089,6 +1065,33 @@
         if (window.DesktopUi && typeof window.DesktopUi.refreshPhotoViewers === 'function') {
             window.DesktopUi.refreshPhotoViewers(els.photoGrid);
         }
+
+        // Recorte opcional (specs/049): troca a foto pela versão recortada.
+        els.photoGrid.querySelectorAll('[data-photo-crop]').forEach((button) => {
+            button.addEventListener('click', async () => {
+                const index = Number(button.dataset.photoCrop || -1);
+                const item = state.photos[index];
+                if (!item || item.source !== 'new' || !window.ErpImagePicker) {
+                    return;
+                }
+
+                const cropped = await window.ErpImagePicker.crop(item.file, { accept: 'photo' });
+                if (!(cropped instanceof File) || state.photos[index] !== item) {
+                    return;
+                }
+
+                URL.revokeObjectURL(item.previewUrl);
+                item.file = cropped;
+                item.previewUrl = URL.createObjectURL(cropped);
+                item.name = cropped.name;
+                item.meta = `${Math.round(cropped.size / 1024)} KB`;
+                syncPhotoInput();
+                renderPhotos();
+                if (index === 0) {
+                    applyDominantColor(cropped);
+                }
+            });
+        });
 
         els.photoGrid.querySelectorAll('[data-photo-remove]').forEach((button) => {
             button.addEventListener('click', () => {
@@ -1122,7 +1125,7 @@
             'Foto obrigatoria',
             'Adicione ao menos uma foto principal antes de salvar o equipamento.'
         );
-        els.photoGalleryButton?.focus?.();
+        els.photoPanel?.querySelector('[data-image-picker-pick]')?.focus?.();
 
         return false;
     };
@@ -1171,7 +1174,11 @@
         image.src = URL.createObjectURL(file);
     };
 
-    const addPhotoFile = (file, previewable = true) => {
+    // Prévia (e recorte) só para o que o navegador decodifica; HEIC/HEIF segue
+    // sem prévia e o servidor converte.
+    const canPreviewPhoto = (file) => (window.ErpImagePicker ? window.ErpImagePicker.canCrop(file) : true);
+
+    const addPhotoFile = (file, previewable = canPreviewPhoto(file)) => {
         if (!(file instanceof File)) {
             return;
         }
@@ -1196,129 +1203,6 @@
         if (state.photos.length === 1 && previewable) {
             applyDominantColor(file);
         }
-    };
-
-    const openCropperForFile = (file) => {
-        if (!(els.cropImage instanceof HTMLImageElement) || !window.Cropper) {
-            addPhotoFile(file);
-            return;
-        }
-
-        state.cropTargetFileName = file.name;
-        state.activeCropFile = file;
-        state.cropObjectUrl = URL.createObjectURL(file);
-        els.cropImage.src = state.cropObjectUrl;
-
-        const modal = getModal(els.cropModal);
-        modal?.show();
-
-        els.cropImage.onerror = () => {
-            if (!(state.activeCropFile instanceof File)) {
-                return;
-            }
-
-            addPhotoFile(state.activeCropFile, false);
-            showAlert('info', 'Prévia indisponível', 'A foto será enviada no formato original e convertida com segurança pelo servidor.');
-            state.activeCropFile = null;
-            modal?.hide();
-        };
-
-        els.cropImage.onload = () => {
-            state.cropper?.destroy?.();
-            state.cropper = new Cropper(els.cropImage, {
-                viewMode: 1,
-                autoCropArea: 1,
-                background: false,
-            });
-        };
-    };
-
-    const processPhotoQueue = () => {
-        const next = state.photoQueue.shift();
-        if (!next) {
-            return;
-        }
-
-        openCropperForFile(next);
-    };
-
-    const stopCameraStream = () => {
-        if (!state.activeStream) {
-            return;
-        }
-
-        state.activeStream.getTracks().forEach((track) => track.stop());
-        state.activeStream = null;
-    };
-
-    const startCamera = async () => {
-        if (!(els.cameraVideo instanceof HTMLVideoElement)) {
-            return;
-        }
-
-        if (!navigator.mediaDevices?.getUserMedia) {
-            showAlert('error', 'Câmera indisponível', 'Este navegador não oferece suporte a captura de câmera.');
-            return;
-        }
-
-        try {
-            state.activeStream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment' },
-                audio: false,
-            });
-            els.cameraVideo.srcObject = state.activeStream;
-            getModal(els.cameraModal)?.show();
-        } catch (error) {
-            console.error('[equipments-create] Falha ao iniciar câmera', error);
-            showAlert('error', 'Não foi possível abrir a câmera', 'Você ainda pode usar a galeria para enviar a foto.');
-        }
-    };
-
-    const captureCameraFrame = () => {
-        if (!(els.cameraVideo instanceof HTMLVideoElement)) {
-            return;
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = els.cameraVideo.videoWidth || 1280;
-        canvas.height = els.cameraVideo.videoHeight || 720;
-        const context = canvas.getContext('2d');
-        if (!context) {
-            return;
-        }
-
-        context.drawImage(els.cameraVideo, 0, 0, canvas.width, canvas.height);
-        canvas.toBlob((blob) => {
-            if (!blob) {
-                showAlert('error', 'Falha ao capturar', 'Não foi possível gerar a imagem da câmera.');
-                return;
-            }
-
-            const file = new File([blob], `camera-${Date.now()}.jpg`, { type: 'image/jpeg' });
-            getModal(els.cameraModal)?.hide();
-            stopCameraStream();
-            openCropperForFile(file);
-        }, 'image/jpeg', 0.92);
-    };
-
-    const confirmCrop = () => {
-        if (!state.cropper) {
-            return;
-        }
-
-        state.cropper.getCroppedCanvas({ width: 1600, height: 1200 }).toBlob((blob) => {
-            if (!blob) {
-                showAlert('error', 'Falha ao recortar', 'Não foi possível preparar a foto.');
-                return;
-            }
-
-            const file = new File([blob], state.cropTargetFileName || `equipamento-${Date.now()}.jpg`, { type: 'image/jpeg' });
-            addPhotoFile(file);
-            getModal(els.cropModal)?.hide();
-            state.cropper?.destroy?.();
-            state.cropper = null;
-            processPhotoQueue();
-        }, 'image/jpeg', 0.92);
     };
 
     const appendTextValue = (inputId, value) => {
@@ -1621,48 +1505,30 @@
             syncPhotoInput();
         }
 
-        els.photoGalleryButton?.addEventListener('click', () => els.photosInput?.click());
-        els.photosInput?.addEventListener('change', (event) => {
-            const files = Array.from(event.target.files || []);
-            const validFiles = files.filter((file) => {
-                if (!isAcceptedPhoto(file)) {
-                    showAlert('warning', 'Formato não suportado', `${file.name}: use JPEG, PNG, WebP, AVIF, HEIC ou HEIF.`);
-                    return false;
+        // Câmera, Computador/galeria, Colar e arrastar pelo padrão único de
+        // inserção de imagem (specs/049). A foto entra direto na grade — o
+        // recorte é opcional, pelo botão "Recortar" de cada foto nova.
+        window.ErpImagePicker?.attach(els.photoPanel, {
+            accept: 'photo',
+            paste: 'page',
+            maxFiles: maxPhotos,
+            reveal: () => setActiveTab('fotos'),
+            viewTarget: () => els.photoGrid,
+            onFiles: (files) => {
+                const availableSlots = Math.max(0, maxPhotos - state.photos.length);
+                if (availableSlots === 0) {
+                    showAlert('warning', 'Limite atingido', `O cadastro aceita no máximo ${maxPhotos} fotos.`);
+                    return 0;
                 }
-                if (file.size <= 0 || file.size > maxPhotoSourceBytes) {
-                    showAlert('warning', 'Arquivo muito grande', `${file.name}: a origem deve ter até 20 MB.`);
-                    return false;
+                if (files.length > availableSlots) {
+                    showAlert('warning', 'Limite atingido', `O cadastro aceita no máximo ${maxPhotos} fotos; ${files.length - availableSlots} ficaram de fora.`);
                 }
 
-                return true;
-            });
-            const availableSlots = Math.max(0, maxPhotos - state.photos.length - state.photoQueue.length);
-            state.photoQueue.push(...validFiles.slice(0, availableSlots));
-            event.target.value = '';
-            if (!state.cropper) {
-                processPhotoQueue();
-            }
-        });
+                const accepted = files.slice(0, availableSlots);
+                accepted.forEach((file) => addPhotoFile(file));
 
-        els.photoCameraButton?.addEventListener('click', startCamera);
-        els.cameraCapture?.addEventListener('click', captureCameraFrame);
-        els.cropConfirm?.addEventListener('click', confirmCrop);
-
-        els.cameraModal?.addEventListener('hidden.bs.modal', stopCameraStream);
-        els.cropModal?.addEventListener('hidden.bs.modal', () => {
-            state.cropper?.destroy?.();
-            state.cropper = null;
-            state.activeCropFile = null;
-            if (state.cropObjectUrl !== '') {
-                URL.revokeObjectURL(state.cropObjectUrl);
-                state.cropObjectUrl = '';
-            }
-            if (els.cropImage instanceof HTMLImageElement) {
-                els.cropImage.removeAttribute('src');
-            }
-            if (state.photoQueue.length > 0) {
-                processPhotoQueue();
-            }
+                return accepted.length;
+            },
         });
 
         renderPhotos();
@@ -1765,7 +1631,7 @@
             }
         }
         if (state.photos.length === 0 && ! isPendingRegistrationMode) {
-            return { tab: 'fotos', el: els.photoGalleryButton };
+            return { tab: 'fotos', el: els.photoPanel?.querySelector('[data-image-picker-pick]') };
         }
         return null;
     };

@@ -13,17 +13,6 @@
         // Foto de perfil = foto principal do equipamento (equipamentos_fotos.is_principal).
         $equipmentPhoto = $order['equipamento_foto'] ?? null;
 
-        // Fotos da OS agrupadas pelo tipo real do catálogo (recepcao/diagnostico/entrega).
-        $photosByTipo = static function (array $tipos) use ($photos): array {
-            return array_values(array_filter(
-                $photos,
-                static fn ($photo): bool => in_array($photo['tipo'] ?? '', $tipos, true)
-            ));
-        };
-        $photosRecepcao = $photosByTipo(['recepcao']);
-        $photosDiagnostico = $photosByTipo(['diagnostico']);
-        $photosEntrega = $photosByTipo(['entrega']);
-
         // Catálogo de status e próximas etapas reais (transições válidas).
         $statusOptions = $order['status_disponiveis'] ?? [];
         $nextSteps = $order['proximas_etapas'] ?? [];
@@ -62,6 +51,11 @@
 
         $checklist = $order['checklist'] ?? null;
         $photoViewerGroup = 'order-' . (int) ($order['id'] ?? 0) . '-photos';
+
+        // Fotos direto na visualização (specs/048): quem edita a OS anexa foto
+        // aqui, inclusive com a OS encerrada (foto da entrega vem depois da baixa).
+        $canAddPhotos = $canEditOrder;
+        $photoSuggestedTipo = \App\Support\OrderPhotoTypes::suggestedFor((string) ($order['status_grupo_macro'] ?? ''));
 
         // Mesma paleta de estados de prazo usada no card da listagem
         // (orders/index.blade.php) — mantém a leitura visual consistente entre
@@ -756,36 +750,58 @@
                 @endif
             </article>
 
-            {{-- Seção final: Fotos --}}
-            <article class="surface-card">
-                <h3 class="os-info-card-title mb-3"><span><i class="bi bi-images me-1"></i>Fotos</span></h3>
-                @if ($photos !== [])
-                    @foreach (['Recepção' => $photosRecepcao, 'Diagnóstico' => $photosDiagnostico, 'Entrega' => $photosEntrega] as $groupLabel => $groupPhotos)
-                        @if ($groupPhotos !== [])
-                            <div class="os-panel-block">
-                                <h4 class="os-panel-title">{{ $groupLabel }} <span class="os-count">{{ count($groupPhotos) }}</span></h4>
-                                <div class="os-photo-grid">
-                                    @foreach ($groupPhotos as $photo)
-                                        <a href="{{ route('orders.photos.show', [$order['id'], $photo['id']]) }}"
-                                            class="os-photo-thumb"
-                                            target="_blank"
-                                            rel="noreferrer"
-                                            title="{{ $photo['tipo_label'] ?? 'Foto' }}"
-                                            data-photo-viewer-trigger
-                                            data-photo-viewer-group="{{ $photoViewerGroup }}"
-                                            data-photo-viewer-title="{{ $photo['tipo_label'] ?? 'Foto' }}">
-                                            <img src="{{ route('orders.photos.show', [$order['id'], $photo['id']]) }}" alt="{{ $photo['tipo_label'] ?? 'Foto' }}">
-                                        </a>
+            {{-- Seção final: Fotos. Quem pode editar a OS anexa fotos aqui mesmo,
+                 sem abrir a edição (specs/048), pelo padrão único de inserção de
+                 imagem (specs/049): câmera, computador/galeria, colar (Ctrl+V em
+                 qualquer ponto da página), arrastar e recorte opcional. A fila só
+                 grava no "Enviar" — não existe exclusão de foto de OS. --}}
+            <article class="surface-card os-photos-card" id="os-fotos"
+                @if ($canAddPhotos)
+                    data-image-picker="uploader"
+                    data-image-picker-accept="photo"
+                    data-image-picker-paste="page"
+                    data-image-picker-upload-url="{{ route('orders.photos.store', (int) $order['id']) }}"
+                    data-image-picker-field="fotos[]"
+                    data-image-picker-batch="4"
+                    data-image-picker-gallery="#os-fotos [data-order-photos-gallery]"
+                    data-image-picker-noun="foto"
+                    data-image-picker-noun-plural="fotos"
+                @endif>
+                <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                    <h3 class="os-info-card-title mb-0"><span><i class="bi bi-images me-1"></i>Fotos</span></h3>
+                    @if ($canAddPhotos)
+                        <x-image-picker.buttons accept="photo" />
+                    @endif
+                </div>
+
+                <div data-order-photos-gallery>
+                    @include('orders._photos_gallery', ['orderId' => (int) $order['id'], 'photos' => $photos])
+                </div>
+
+                @if ($canAddPhotos)
+                    <x-image-picker.dropzone
+                        :empty="$photos === []"
+                        empty-title="Nenhuma foto nesta OS ainda"
+                        title="Adicionar mais fotos"
+                        more-title="Adicionar mais fotos" />
+
+                    <x-image-picker.queue title="Fotos prontas para enviar">
+                        <x-slot:extras>
+                            <label class="image-picker-queue-extra">
+                                <span>Categoria</span>
+                                <select class="form-select form-select-sm image-picker-select" name="tipo" data-select2="false" data-image-picker-extra data-order-photo-tipo>
+                                    @foreach (\App\Support\OrderPhotoTypes::LABELS as $photoTipoValue => $photoTipoLabel)
+                                        <option value="{{ $photoTipoValue }}" @selected($photoTipoValue === $photoSuggestedTipo)>{{ $photoTipoLabel }}</option>
                                     @endforeach
-                                </div>
-                            </div>
-                        @endif
-                    @endforeach
-                @else
+                                </select>
+                            </label>
+                        </x-slot:extras>
+                    </x-image-picker.queue>
+                @elseif ($photos === [])
                     @include('layouts.partials.empty-state', [
                         'icon' => 'bi-images',
                         'title' => 'Sem fotos vinculadas',
-                        'message' => 'Quando existirem imagens desta OS, o backend central fará a mediação do acesso.',
+                        'message' => 'Esta OS ainda não tem fotos de recepção, diagnóstico ou entrega.',
                     ])
                 @endif
             </article>

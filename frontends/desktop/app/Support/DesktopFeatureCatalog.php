@@ -656,6 +656,16 @@ class DesktopFeatureCatalog
                 'hint' => 'Abra a OS e use "Imprimir OS (A4)" ou "Imprimir cupom (80mm)".',
             ],
             [
+                'key' => 'orders.fotos',
+                'label' => 'Adicionar fotos à OS',
+                'route' => 'orders.index',
+                'module' => 'os', 'action' => 'editar',
+                'icon' => 'bi-camera',
+                'path' => ['Atendimento', 'Ordens de Serviço', 'abrir OS', 'Fotos'],
+                'keywords' => ['foto', 'fotos da os', 'anexar foto', 'tirar foto', 'câmera', 'webcam', 'colar imagem', 'print', 'imagem do defeito', 'foto do diagnóstico', 'foto da entrega'],
+                'hint' => 'Abra a OS e use o quadro "Fotos": Câmera, Computador / galeria, Colar (Ctrl+V) ou arraste as imagens.',
+            ],
+            [
                 'key' => 'orders.checklist-entrada',
                 'label' => 'Checklist de entrada na OS',
                 'route' => 'orders.create',

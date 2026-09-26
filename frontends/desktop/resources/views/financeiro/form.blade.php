@@ -678,8 +678,15 @@
 
             <div class="desktop-grid desktop-grid-two">
                 <div>
-                    <label class="form-label" for="financeiroAnexoArquivo">Arquivo (PDF ou foto)</label>
-                    <input type="file" id="financeiroAnexoArquivo" name="anexo" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.webp">
+                    <span class="form-label d-block">Arquivo (PDF ou foto)</span>
+                    {{-- Padrão de inserção de imagem (specs/049): foto do boleto pela
+                         câmera, print do comprovante com Ctrl+V, PDF arrastado. --}}
+                    <x-image-picker.field
+                        name="anexo"
+                        accept="document"
+                        paste="page"
+                        title="Escolher arquivo"
+                        :input-attributes="['id' => 'financeiroAnexoArquivo']" />
                     @error('anexo')
                         <div class="text-danger small mt-1">{{ $message }}</div>
                     @enderror

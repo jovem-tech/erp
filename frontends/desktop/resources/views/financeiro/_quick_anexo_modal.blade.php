@@ -20,8 +20,12 @@
                 </div>
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label">Arquivo (PDF ou foto)</label>
-                        <input type="file" name="arquivo" class="form-control" accept=".pdf,.jpg,.jpeg,.png,.webp" required data-input-anexo-financeiro>
+                        <span class="form-label d-block">Arquivo (PDF ou foto)</span>
+                        <x-image-picker.field
+                            name="arquivo"
+                            accept="document"
+                            title="Escolher arquivo"
+                            :input-attributes="['data-input-anexo-financeiro' => true]" />
                     </div>
                     <div>
                         <label class="form-label">Descrição (opcional)</label>

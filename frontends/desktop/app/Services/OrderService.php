@@ -112,6 +112,29 @@ class OrderService
     }
 
     /**
+     * Anexa fotos sem a edicao completa da OS (specs/048). O backend aceita no
+     * maximo 4 por chamada; quem tem mais divide em lotes antes de chegar aqui.
+     *
+     * @param  array<int, UploadedFile>  $photos
+     * @return array{foto_ids: array<int, int>, fotos: array<int, array<string, mixed>>}
+     */
+    public function addPhotos(int $id, array $photos, string $tipo): array
+    {
+        $response = $this->apiClient->postMultipart('/orders/'.$id.'/photos', [
+            'tipo' => $tipo,
+        ], [
+            'fotos[]' => $photos,
+        ]);
+
+        $data = is_array($response['data'] ?? null) ? $response['data'] : [];
+
+        return [
+            'foto_ids' => array_values(array_map('intval', (array) ($data['foto_ids'] ?? []))),
+            'fotos' => array_values(array_filter((array) ($data['fotos'] ?? []), 'is_array')),
+        ];
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function closureMetadata(int $id): array

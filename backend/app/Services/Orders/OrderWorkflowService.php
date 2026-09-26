@@ -868,10 +868,66 @@ class OrderWorkflowService
     }
 
     /**
+     * Anexa fotos a uma OS existente sem passar pela edicao completa — o botao
+     * de fotos da tela de detalhe (specs/048). Mesmo pipeline de updateOrder():
+     * otimizacao fora da transacao, gravacao transacional em storeOrderPhotos()
+     * e limpeza dos temporarios no finally.
+     *
+     * OperationalPhotoException (formato, tamanho, processador indisponivel)
+     * sobe de proposito: o handler global a transforma no 4xx/503 com codigo
+     * proprio que o frontend mostra ao tecnico.
+     *
+     * @param  array<int, UploadedFile>  $uploadedPhotos
+     * @return array{result: string, photo_ids?: list<int>, photos?: array<int, array<string, mixed>>}
+     */
+    public function addOrderPhotos(int $orderId, User $actor, array $uploadedPhotos, string $tipo = OrderPhoto::TIPO_RECEPCAO): array
+    {
+        $order = Order::query()->find($orderId);
+
+        if (! $order instanceof Order) {
+            return [
+                'result' => 'not_found',
+            ];
+        }
+
+        if (! $this->canAccessOrder($actor, $order)) {
+            return [
+                'result' => 'forbidden',
+            ];
+        }
+
+        $tipo = in_array($tipo, OrderPhoto::TIPOS, true) ? $tipo : OrderPhoto::TIPO_RECEPCAO;
+        $optimizedPhotos = $this->photoOptimizer->optimizeMany($uploadedPhotos);
+
+        try {
+            $photoIds = $this->storeOrderPhotos($order, $optimizedPhotos, $tipo, (int) $actor->id);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            return [
+                'result' => 'error',
+            ];
+        } finally {
+            $this->photoOptimizer->cleanupMany($optimizedPhotos);
+        }
+
+        $photos = OrderPhoto::query()
+            ->where('os_id', $orderId)
+            ->orderBy('id')
+            ->get();
+
+        return [
+            'result' => 'ok',
+            'photo_ids' => $photoIds,
+            'photos' => $this->mapPhotoCollection($photos, $orderId),
+        ];
+    }
+
+    /**
      * @param  list<OptimizedOperationalPhoto>  $uploadedPhotos
      * @return array<int, int>
      */
-    private function storeOrderPhotos(Order $order, array $uploadedPhotos, string $tipo = 'recepcao'): array
+    private function storeOrderPhotos(Order $order, array $uploadedPhotos, string $tipo = 'recepcao', ?int $actorId = null): array
     {
         $files = array_values(array_filter(
             $uploadedPhotos,
@@ -971,17 +1027,23 @@ class OrderWorkflowService
             }
 
             if ($createdPhotoIds !== []) {
+                $tipoEvento = $tipo !== '' ? $tipo : 'recepcao';
                 $this->orderEventService->record(
                     (int) $order->id,
                     OrderEvent::CATEGORIA_REGISTRO,
                     OrderEvent::TIPO_FOTOS_ADICIONADAS,
                     'Fotos adicionadas',
-                    sprintf('%d foto(s) anexada(s) à OS.', count($createdPhotoIds)),
+                    sprintf(
+                        '%d foto(s) de %s anexada(s) à OS.',
+                        count($createdPhotoIds),
+                        mb_strtolower($this->humanizePhotoTipo($tipoEvento))
+                    ),
                     [
                         'quantidade' => count($createdPhotoIds),
                         'foto_ids' => $createdPhotoIds,
-                        'tipo' => $tipo !== '' ? $tipo : 'recepcao',
-                    ]
+                        'tipo' => $tipoEvento,
+                    ],
+                    $actorId
                 );
             }
 

@@ -101,6 +101,7 @@ Leia sempre nesta ordem quando precisar de contexto amplo:
 3. Arquivos operacionais devem permanecer em storage privado e sair apenas por endpoint autenticado.
 4. Toda alteracao que mude payload, rota, permissao, fluxo operacional, banco, deploy ou comportamento visual deve atualizar a documentacao correspondente.
 5. Toda implementacao deve considerar seguranca, integridade, escalabilidade, rastreabilidade e paridade entre ambiente local e Ubuntu VPS.
+6. Toda insercao de imagem (atual ou futura, desktop ou mobile) segue o padrao unico de `specs/049-padrao-insercao-imagem`: Camera, Computador/galeria, Colar (Ctrl+V), arrastar e recorte OPCIONAL, pelo componente comum (`<x-image-picker.*>` / `window.ErpImagePicker` no desktop, `PhotoPicker` no mobile). Nunca escreva `<input type="file">` proprio para imagem — `ImageInsertionStandardTest` falha. Detalhes na skill `$sistema-erp-insercao-de-imagem`.
 
 ## Fluxo oficial de entrega
 
@@ -124,6 +125,7 @@ As skills versionadas do proprio ERP ficam em `.agents/skills/`:
 - `$sistema-erp-auditoria-independente`: processo de verificacao para auditorias e para qualquer alegacao de "corrigido"/"concluido" — nunca aceitar sem checar contra o codigo real;
 - `$sistema-erp-deploy-producao`: runbook, problemas conhecidos e checklist do deploy em servidor Ubuntu (LAN/VPS) — usar antes de instalar, atualizar ou diagnosticar producao. Inclui `scripts/bash/deploy-completo.sh` (dev: commit+push+promocao para main) e `scripts/versionar.sh` (versionamento sem IA);
 - `$sistema-erp-os-fluxo-fechamento`: regra de negocio sobre quais status encerram uma OS e por que so a baixa (`OrderClosureService::close()`) pode aplica-los — usar antes de mexer em status de OS, na tela de baixa, ou em relatorios financeiros que leem dados de OS;
+- `$sistema-erp-insercao-de-imagem`: padrao unico de insercao de imagem (Camera, Computador/galeria, Colar, arrastar, recorte opcional) — usar em QUALQUER tela nova ou alterada que receba imagem/foto, no desktop ou no mobile;
 - `$sistema-erp-autenticacao-step-up`: padrao de reautenticacao com credenciais de administrador para acoes sensiveis visiveis a usuarios sem perfil admin (ex.: "Cancelar baixa" de OS) — usar antes de implementar qualquer nova acao que exija confirmacao de admin sem depender do perfil de quem esta logado.
 
 ## Automacao documental e versionamento

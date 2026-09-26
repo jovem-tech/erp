@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import type { DragEvent } from 'react';
 import {
   compressImageFile,
   isOperationalPhotoFile,
@@ -8,7 +9,21 @@ import {
 } from '@/lib/photo-compression';
 import { FieldLabel } from '@/components/ui/field-label';
 
-function LocalPhotoPreview({ file, url, index }: { file: File; url: string; index: number }) {
+// Carregado só quando o técnico toca em "Recortar" (Cropper.js fica fora do
+// pacote inicial do app).
+const PhotoCropDialog = lazy(() => import('@/components/orders/order-form-wizard/photo-crop-dialog'));
+
+function LocalPhotoPreview({
+  file,
+  url,
+  index,
+  onFailed,
+}: {
+  file: File;
+  url: string;
+  index: number;
+  onFailed: () => void;
+}) {
   const [failed, setFailed] = useState(false);
 
   useEffect(() => setFailed(false), [url]);
@@ -24,7 +39,7 @@ function LocalPhotoPreview({ file, url, index }: { file: File; url: string; inde
   }
 
   // eslint-disable-next-line @next/next/no-img-element -- preview de blob local, sem otimização do Next
-  return <img src={url} alt={`Foto ${index + 1}`} onError={() => setFailed(true)} />;
+  return <img src={url} alt={`Foto ${index + 1}`} onError={() => { setFailed(true); onFailed(); }} />;
 }
 
 type PhotoPickerProps = {
@@ -39,6 +54,13 @@ type PhotoPickerProps = {
 
 let pasteFileCounter = 0;
 
+const hasDraggedFiles = (event: DragEvent<HTMLElement>): boolean => Array.from(event.dataTransfer?.types ?? []).includes('Files');
+
+/**
+ * Padrão único de inserção de imagem (specs/049, o mesmo do desktop): Câmera
+ * (a do aparelho), Galeria, Colar (botão e Ctrl+V fora de campo de texto),
+ * arrastar e recorte OPCIONAL em cada foto.
+ */
 export function PhotoPicker({
   label,
   value,
@@ -49,9 +71,13 @@ export function PhotoPicker({
   required = false,
 }: PhotoPickerProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [failedPreviews, setFailedPreviews] = useState<Set<number>>(new Set());
+  const [cropIndex, setCropIndex] = useState<number | null>(null);
+  const [dragging, setDragging] = useState(false);
   // Só decidido no cliente (Clipboard API depende de `navigator`), então
   // começa false para o SSR/hidratação baterem antes de checar o suporte.
   const [canReadClipboard, setCanReadClipboard] = useState(false);
@@ -63,6 +89,7 @@ export function PhotoPicker({
   useEffect(() => {
     const urls = value.map((file) => URL.createObjectURL(file));
     setPreviewUrls(urls);
+    setFailedPreviews(new Set());
 
     return () => {
       urls.forEach((url) => URL.revokeObjectURL(url));
@@ -108,14 +135,14 @@ export function PhotoPicker({
     }
   };
 
-  const handleFiles = async (fileList: FileList | null): Promise<void> => {
+  const handleFiles = async (fileList: FileList | null, input: HTMLInputElement | null): Promise<void> => {
     if (!fileList || fileList.length === 0) {
       return;
     }
 
     await processFiles(Array.from(fileList));
-    if (inputRef.current) {
-      inputRef.current.value = '';
+    if (input) {
+      input.value = '';
     }
   };
 
@@ -199,18 +226,80 @@ export function PhotoPicker({
     }
   };
 
+  const handleDrop = (event: DragEvent<HTMLElement>): void => {
+    if (!hasDraggedFiles(event)) {
+      return;
+    }
+    event.preventDefault();
+    setDragging(false);
+    if (disabled || remainingSlots <= 0) {
+      return;
+    }
+    void processFiles(Array.from(event.dataTransfer.files ?? []));
+  };
+
   const handleRemove = (index: number): void => {
     onChange(value.filter((_, fileIndex) => fileIndex !== index));
   };
+
+  const handleCropped = async (index: number, cropped: File): Promise<void> => {
+    setCropIndex(null);
+    try {
+      const compressed = await compressImageFile(cropped);
+      onChange(value.map((file, fileIndex) => (fileIndex === index ? compressed : file)));
+    } catch {
+      setError('Não foi possível usar o recorte. A foto original foi mantida.');
+    }
+  };
+
+  const cropFile = cropIndex !== null ? value[cropIndex] : undefined;
 
   return (
     <div className="field">
       <FieldLabel required={required}>{label}</FieldLabel>
 
-      <div className="photo-grid">
+      <div
+        className={`photo-grid${dragging ? ' photo-grid--dragging' : ''}`}
+        data-testid="photo-picker-grid"
+        onDragEnter={(event) => {
+          if (hasDraggedFiles(event)) {
+            event.preventDefault();
+            setDragging(true);
+          }
+        }}
+        onDragOver={(event) => {
+          if (hasDraggedFiles(event)) {
+            event.preventDefault();
+          }
+        }}
+        onDragLeave={(event) => {
+          if (event.currentTarget === event.target) {
+            setDragging(false);
+          }
+        }}
+        onDrop={handleDrop}
+      >
         {value.map((file, index) => (
           <div className="photo-grid__item" key={`${file.name}-${index}`}>
-            {previewUrls[index] ? <LocalPhotoPreview file={file} url={previewUrls[index]} index={index} /> : null}
+            {previewUrls[index] ? (
+              <LocalPhotoPreview
+                file={file}
+                url={previewUrls[index]}
+                index={index}
+                onFailed={() => setFailedPreviews((current) => new Set(current).add(index))}
+              />
+            ) : null}
+            {!failedPreviews.has(index) ? (
+              <button
+                type="button"
+                className="photo-grid__crop"
+                onClick={() => setCropIndex(index)}
+                disabled={disabled || processing}
+                aria-label={`Recortar foto ${index + 1}`}
+              >
+                ✂
+              </button>
+            ) : null}
             <button
               type="button"
               className="photo-grid__remove"
@@ -227,10 +316,21 @@ export function PhotoPicker({
           <button
             type="button"
             className="photo-grid__add"
+            onClick={() => cameraInputRef.current?.click()}
+            disabled={disabled || processing}
+          >
+            {processing ? 'Processando...' : 'Câmera'}
+          </button>
+        ) : null}
+
+        {remainingSlots > 0 ? (
+          <button
+            type="button"
+            className="photo-grid__add"
             onClick={() => inputRef.current?.click()}
             disabled={disabled || processing}
           >
-            {processing ? 'Processando...' : '+ Adicionar foto'}
+            {processing ? 'Processando...' : 'Galeria'}
           </button>
         ) : null}
 
@@ -246,6 +346,10 @@ export function PhotoPicker({
         ) : null}
       </div>
 
+      {remainingSlots > 0 ? (
+        <span className="muted photo-picker__hint">Também dá para arrastar fotos para cá ou colar com Ctrl+V. Recortar é opcional.</span>
+      ) : null}
+
       {error ? (
         <div className="notice notice--danger">
           <span>{error}</span>
@@ -260,9 +364,29 @@ export function PhotoPicker({
         accept="image/jpeg,image/png,image/webp,image/avif,image/heic,image/heif,.heic,.heif,.avif"
         multiple
         hidden
-        onChange={(event) => handleFiles(event.target.files)}
+        onChange={(event) => handleFiles(event.target.files, inputRef.current)}
         disabled={disabled}
       />
+      <input
+        ref={cameraInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        hidden
+        onChange={(event) => handleFiles(event.target.files, cameraInputRef.current)}
+        disabled={disabled}
+        data-testid="photo-picker-camera-input"
+      />
+
+      {cropFile && cropIndex !== null ? (
+        <Suspense fallback={null}>
+          <PhotoCropDialog
+            file={cropFile}
+            onCancel={() => setCropIndex(null)}
+            onDone={(cropped) => void handleCropped(cropIndex, cropped)}
+          />
+        </Suspense>
+      ) : null}
     </div>
   );
 }

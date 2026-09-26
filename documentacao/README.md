@@ -14,6 +14,8 @@ Este índice organiza a documentação da nova plataforma `sistema-erp`.
 
 ## Atualizações recentes
 
+- [Padrão único de inserção de imagem (câmera, colar, arrastar, recorte opcional)](07-novas-implementacoes/2026-09-26-padrao-insercao-imagem.md)
+- [Fotos direto na visualização da OS (câmera, colar, arrastar)](07-novas-implementacoes/2026-09-25-fotos-na-visualizacao-da-os.md)
 - [Ratificação do pacote de manutenção contratado na baixa da OS](07-novas-implementacoes/2026-09-23-ratificacao-do-pacote-na-baixa.md)
 - [Detalhes da peça e do serviço no detalhe da OS](07-novas-implementacoes/2026-09-22-detalhes-item-orcamento-na-os.md)
 - [Anexar arquivo na edição do lançamento financeiro](07-novas-implementacoes/2026-09-22-anexo-na-edicao-do-lancamento.md)

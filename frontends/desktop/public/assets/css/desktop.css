@@ -1471,20 +1471,6 @@ a {
     flex-wrap: wrap;
 }
 
-.equipment-camera-video,
-.equipment-crop-image {
-    width: 100%;
-    max-height: 68vh;
-    border-radius: var(--desktop-radius-md);
-    background: #111827;
-    object-fit: contain;
-}
-
-.equipment-crop-image {
-    display: block;
-    height: 68vh;
-}
-
 .equipment-suggestion-panel {
     display: grid;
     gap: 0.75rem;
@@ -8879,6 +8865,429 @@ a {
     height: 100%;
     object-fit: contain;
     background: #fff;
+}
+
+/* Fotos novas da OS destacadas na galeria depois do envio (specs/048). */
+.os-photo-thumb.is-new {
+    border-color: var(--desktop-primary);
+    box-shadow: 0 0 0 3px var(--desktop-primary-soft);
+    animation: os-photo-new 1.4s ease-out 1;
+}
+
+@keyframes os-photo-new {
+    0% { transform: scale(0.9); opacity: 0.35; }
+    45% { transform: scale(1.03); opacity: 1; }
+    100% { transform: scale(1); }
+}
+
+.os-photos-card [data-order-photos-gallery]:has(.os-panel-block) {
+    margin-bottom: 1rem;
+}
+
+/* ─── Padrão único de inserção de imagem (specs/049) ─────────────────────────
+   public/assets/js/image-picker.js + componentes <x-image-picker.*>. Toda
+   tela que recebe imagem usa estas classes — não crie variação por tela. */
+.image-picker-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.image-picker-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+.image-picker-help {
+    color: var(--desktop-text-soft);
+    font-size: 0.78rem;
+}
+
+/* Ações que só fazem sentido com imagem escolhida (ex.: "Salvar foto"). */
+.image-picker-field:not(.has-image-picker-items) .image-picker-when-filled {
+    display: none !important;
+}
+
+.image-picker-ready.is-dragover {
+    border-radius: var(--desktop-radius-md);
+    box-shadow: 0 0 0 3px var(--desktop-primary-soft), var(--desktop-shadow-soft);
+}
+
+.image-picker-dropzone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    padding: 0.9rem 1rem;
+    border: 2px dashed var(--desktop-border-strong);
+    border-radius: var(--desktop-radius-md);
+    background: var(--desktop-surface-soft);
+    color: var(--desktop-text-soft);
+    font-size: 0.86rem;
+    text-align: center;
+    cursor: pointer;
+    transition: var(--desktop-transition);
+}
+
+.image-picker-dropzone.is-empty {
+    padding: 1.9rem 1rem;
+}
+
+.image-picker-dropzone > i {
+    font-size: 1.5rem;
+    line-height: 1;
+    color: var(--desktop-primary);
+}
+
+.image-picker-dropzone.is-empty > i {
+    font-size: 2.2rem;
+}
+
+.image-picker-dropzone strong {
+    color: var(--desktop-heading);
+    font-size: 0.95rem;
+}
+
+.image-picker-dropzone kbd {
+    padding: 0.08rem 0.35rem;
+    font-size: 0.75rem;
+}
+
+.image-picker-dropzone:hover,
+.image-picker-dropzone:focus-visible,
+.is-drag-active .image-picker-dropzone {
+    border-color: var(--desktop-primary);
+    background: var(--desktop-primary-soft);
+    outline: none;
+}
+
+.image-picker-dropzone[aria-disabled="true"] {
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+/* Faixa de uma linha: no campo de formulário e quando a fila está aberta
+   (o foco passa a ser o Enviar). */
+.image-picker-dropzone.is-compact,
+.has-image-picker-queue .image-picker-dropzone {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.6rem;
+    padding: 0.55rem 1rem;
+}
+
+.image-picker-dropzone.is-compact > i,
+.has-image-picker-queue .image-picker-dropzone > i {
+    font-size: 1.15rem;
+}
+
+.image-picker-hint-coarse {
+    display: none;
+}
+
+@media (pointer: coarse) {
+    .image-picker-hint-fine {
+        display: none;
+    }
+
+    .image-picker-hint-coarse {
+        display: inline;
+    }
+}
+
+.image-picker-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+    gap: 0.75rem;
+}
+
+.image-picker-field .image-picker-list:empty {
+    display: none;
+}
+
+.image-picker-item {
+    position: relative;
+    min-width: 0;
+    margin: 0;
+}
+
+.image-picker-thumb {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1 / 1;
+    overflow: hidden;
+    border: 1px solid var(--desktop-border);
+    border-radius: var(--desktop-radius-sm);
+    background: var(--desktop-surface-soft);
+}
+
+.image-picker-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: #fff;
+}
+
+.image-picker-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.2rem;
+    color: var(--desktop-text-soft);
+    font-size: 1.6rem;
+}
+
+.image-picker-placeholder small {
+    font-size: 0.72rem;
+}
+
+.image-picker-item figcaption {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    margin-top: 0.3rem;
+    overflow: hidden;
+    color: var(--desktop-text-soft);
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+.image-picker-item-remove,
+.image-picker-item-crop {
+    position: absolute;
+    top: 0.35rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(15, 23, 42, 0.72);
+    color: #fff;
+    font-size: 0.72rem;
+    transition: var(--desktop-transition);
+}
+
+.image-picker-item-remove {
+    right: 0.35rem;
+}
+
+.image-picker-item-crop {
+    left: 0.35rem;
+}
+
+.image-picker-item-remove:hover,
+.image-picker-item-remove:focus-visible {
+    background: var(--desktop-danger);
+}
+
+.image-picker-item-crop:hover,
+.image-picker-item-crop:focus-visible {
+    background: var(--desktop-primary);
+}
+
+.image-picker-item-remove:disabled,
+.image-picker-item-crop:disabled {
+    opacity: 0.4;
+}
+
+.image-picker-queue {
+    margin-top: 1rem;
+    padding: 1rem;
+    border: 1px solid var(--desktop-border-strong);
+    border-radius: var(--desktop-radius-md);
+    background: var(--desktop-surface);
+}
+
+.image-picker-queue-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.85rem;
+}
+
+.image-picker-queue-head strong {
+    color: var(--desktop-heading);
+}
+
+.image-picker-queue-extra {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    color: var(--desktop-text-soft);
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.image-picker-queue-extra .form-select {
+    width: auto;
+    min-width: 150px;
+}
+
+/* Selects nativos do padrão (data-select2="false"): o `background: #ffffff`
+   global de .form-select apaga a seta do Bootstrap. Devolve uma seta em cinza
+   médio, legível no tema claro e no escuro (que só trocam background-color). */
+.image-picker-select {
+    min-height: 36px;
+    padding: 0.3rem 2rem 0.3rem 0.75rem;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 0.7rem center;
+    background-size: 14px 10px;
+    font-size: 0.86rem;
+}
+
+.image-picker-error {
+    margin: 0.85rem 0 0;
+    font-size: 0.88rem;
+}
+
+.image-picker-queue-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    margin-top: 0.9rem;
+}
+
+.image-picker-progress {
+    display: flex;
+    flex: 1 1 220px;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.image-picker-progress .progress {
+    height: 8px;
+}
+
+.image-picker-progress small {
+    color: var(--desktop-text-soft);
+}
+
+.image-picker-queue-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-left: auto;
+}
+
+.image-picker-camera-device {
+    width: auto;
+    max-width: 240px;
+}
+
+.image-picker-camera-stage {
+    position: relative;
+    overflow: hidden;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--desktop-radius-md);
+    background: #0b1120;
+}
+
+.image-picker-camera-stage video {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.image-picker-camera-status {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    background: rgba(11, 17, 32, 0.86);
+    color: #e2e8f0;
+    font-weight: 600;
+    text-align: center;
+}
+
+.image-picker-camera-flash {
+    position: absolute;
+    inset: 0;
+    background: #fff;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.image-picker-camera-flash.is-flashing {
+    animation: image-picker-flash 0.35s ease-out 1;
+}
+
+@keyframes image-picker-flash {
+    0% { opacity: 0.85; }
+    100% { opacity: 0; }
+}
+
+.image-picker-camera-shots {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    overflow-x: auto;
+}
+
+.image-picker-camera-shots:empty {
+    display: none;
+}
+
+.image-picker-camera-shots img {
+    flex: 0 0 auto;
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border: 1px solid var(--desktop-border);
+    border-radius: var(--desktop-radius-sm);
+}
+
+/* Cropper.js exige img com max-width: 100%; altura fixa dá área de trabalho
+   estável em qualquer proporção de foto. */
+.image-picker-crop-stage {
+    /* Cabeçalho + ferramentas + rodapé do modal somam ~300 px: a área de corte
+       fica com o resto, para "Usar recorte" nunca sair da tela. */
+    height: clamp(220px, calc(100vh - 300px), 65vh);
+    overflow: hidden;
+    border-radius: var(--desktop-radius-md);
+    background: #111827;
+}
+
+.image-picker-crop-stage img {
+    display: block;
+    max-width: 100%;
+}
+
+@media (max-width: 575.98px) {
+    .image-picker-actions,
+    .image-picker-queue-actions,
+    .image-picker-queue-extra {
+        width: 100%;
+    }
+
+    .image-picker-actions .btn,
+    .image-picker-queue-actions .btn,
+    .image-picker-queue-extra .form-select {
+        flex: 1 1 auto;
+    }
+
+    .image-picker-crop-stage {
+        height: clamp(200px, calc(100vh - 340px), 55vh);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .os-photo-thumb.is-new,
+    .image-picker-camera-flash.is-flashing {
+        animation: none;
+    }
 }
 
 [data-photo-viewer-trigger] {

@@ -6597,6 +6597,103 @@ paths:
         "503":
           $ref: "#/components/responses/PhotoProcessorUnavailable"
 
+  /orders/{order}/photos:
+    post:
+      tags:
+        - Ordens
+      summary: Anexar fotos à OS sem a edição completa.
+      description: |
+        Usado pelo quadro Fotos da visualização da OS (specs/048). Exige
+        `os:editar` e respeita o escopo do técnico (só a OS atribuída a ele).
+        Mesmo pipeline das fotos da edição: validação de conteúdo real
+        (`OperationalPhotoUpload`), otimização central (specs/046) e o
+        throttle de 8 envios com foto por minuto por usuário e IP. Gera o
+        evento `fotos_adicionadas` (categoria `registro`) com a categoria da
+        foto e o usuário. Quem tem mais de 4 fotos divide em lotes.
+
+        A resposta traz `foto_ids` (as fotos recém-criadas) e `fotos` — a
+        galeria inteira da OS, na mesma forma de `fotos` do detalhe
+        (`GET /orders/{order}`), para o cliente redesenhar as miniaturas.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - fotos
+              properties:
+                fotos:
+                  type: array
+                  minItems: 1
+                  maxItems: 4
+                  description: JPEG, PNG, WebP, AVIF, HEIC ou HEIF; até 20 MB e 60 MP cada.
+                  items:
+                    type: string
+                    format: binary
+                tipo:
+                  type: string
+                  enum: [recepcao, diagnostico, entrega]
+                  default: recepcao
+                  description: Categoria das fotos do lote (`os_fotos.tipo`).
+      responses:
+        "201":
+          description: Fotos anexadas.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ApiSuccess"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          foto_ids:
+                            type: array
+                            items:
+                              type: integer
+                          fotos:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                id:
+                                  type: integer
+                                tipo:
+                                  type: string
+                                  enum: [recepcao, diagnostico, entrega]
+                                tipo_label:
+                                  type: string
+                                  example: Diagnóstico
+                                arquivo:
+                                  type: string
+                                nome_arquivo:
+                                  type: string
+                                url:
+                                  type: string
+                                created_at:
+                                  type: string
+                                  nullable: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+        "500":
+          $ref: "#/components/responses/ServerError"
+        "503":
+          $ref: "#/components/responses/PhotoProcessorUnavailable"
+
   /orders/{order}/photos/{photo}:
     get:
       tags:

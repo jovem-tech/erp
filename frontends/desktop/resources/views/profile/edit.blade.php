@@ -20,26 +20,34 @@
                 </div>
 
                 <div class="profile-photo-actions">
-                    <div class="d-flex gap-2 flex-wrap">
-                        <form method="post" action="{{ route('profile.photo.update') }}" enctype="multipart/form-data" data-profile-photo-form>
-                            @csrf
-                            <label for="profilePhotoFile" class="btn btn-sm btn-outline-light mb-0">
-                                <i class="bi bi-upload me-1"></i>Escolher foto
-                            </label>
-                            <input type="file" id="profilePhotoFile" name="photo_file" class="d-none" accept="image/png,image/jpeg,image/webp" data-profile-photo-input>
-                        </form>
-
-                        @if (! empty($profile['foto_url'] ?? null))
-                            <form method="post" action="{{ route('profile.photo.destroy') }}">
-                                @csrf
-                                @method('delete')
-                                <button type="submit" class="btn btn-sm btn-outline-danger">
-                                    <i class="bi bi-trash me-1"></i>Remover
+                    {{-- Padrão de inserção de imagem (specs/049): a foto escolhida
+                         aparece no círculo e só é gravada no "Salvar foto" — dá
+                         tempo de recortar (o recorte já abre quadrado). --}}
+                    <form method="post" action="{{ route('profile.photo.update') }}" enctype="multipart/form-data" data-profile-photo-form>
+                        @csrf
+                        <x-image-picker.field
+                            name="photo_file"
+                            accept="image"
+                            crop-ratio="1"
+                            title="Trocar foto"
+                            :input-attributes="['id' => 'profilePhotoFile', 'data-profile-photo-input' => true]">
+                            <div class="image-picker-when-filled">
+                                <button type="submit" class="btn btn-primary btn-sm">
+                                    <i class="bi bi-check2 me-1"></i>Salvar foto
                                 </button>
-                            </form>
-                        @endif
-                    </div>
-                    <p class="small text-secondary mt-2 mb-0">PNG, JPG ou WebP. Máximo de 4 MB.</p>
+                            </div>
+                        </x-image-picker.field>
+                    </form>
+
+                    @if (! empty($profile['foto_url'] ?? null))
+                        <form method="post" action="{{ route('profile.photo.destroy') }}" class="mt-2">
+                            @csrf
+                            @method('delete')
+                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                <i class="bi bi-trash me-1"></i>Remover foto atual
+                            </button>
+                        </form>
+                    @endif
                 </div>
             </div>
 
@@ -169,9 +177,16 @@
                     </div>
 
                     <div class="d-none" data-signature-panel="upload">
-                        <label for="signatureFile">Arquivo PNG, JPG ou WebP</label>
-                        <input type="file" id="signatureFile" name="signature_file" class="form-control" accept="image/png,image/jpeg,image/webp" data-signature-file>
-                        <p class="small text-secondary mt-2 mb-0">Máximo de 2 MB. O sistema converte para PNG e remove metadados do arquivo.</p>
+                        {{-- keep-png: assinatura escaneada costuma ter fundo
+                             transparente, que o JPEG transformaria em branco/preto. --}}
+                        <x-image-picker.field
+                            name="signature_file"
+                            accept="image"
+                            :max-bytes="2 * 1024 * 1024"
+                            keep-png
+                            title="Escolher imagem da assinatura"
+                            help="PNG, JPG ou WebP, até 2 MB. O sistema converte para PNG e remove metadados do arquivo. Recortar é opcional."
+                            :input-attributes="['id' => 'signatureFile', 'data-signature-file' => true]" />
                     </div>
 
                     <div>
@@ -244,7 +259,7 @@
         .profile-photo-preview { width: 84px; height: 84px; border-radius: 50%; overflow: hidden; background: #f1f5fb; border: 1px solid #dbe6f5; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .profile-photo-preview img { width: 100%; height: 100%; object-fit: cover; display: block; }
         .profile-photo-preview i { font-size: 2rem; color: #9aabc4; }
-        .profile-photo-actions form { display: inline-flex; }
+        .profile-photo-actions { flex: 1 1 280px; min-width: 0; }
     </style>
 @endsection
 

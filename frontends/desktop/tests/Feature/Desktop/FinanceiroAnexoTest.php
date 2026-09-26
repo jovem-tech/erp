@@ -388,7 +388,13 @@ class FinanceiroAnexoTest extends TestCase
             ->assertSee('Ana Operadora')
             ->assertSee(route('financeiro.anexos.download', [155, 9]), false)
             ->assertSee('Anexar arquivo')
+            // Padrão único de inserção de imagem (specs/049): câmera, colar e
+            // arrastar também no anexo — o input do form segue com o data-* que
+            // habilita o botão Anexar.
+            ->assertSee('data-image-picker-accept="document"', false)
             ->getContent();
+
+        $this->assertMatchesRegularExpression('/<input[^>]*name="arquivo"[^>]*data-input-anexo-financeiro[^>]*data-image-picker-input/s', $html);
 
         // Regressão: um "data-botao-anexo-financeiro"> com aspa sobrando
         // vira, para o navegador, um atributo cujo NOME literal termina em
