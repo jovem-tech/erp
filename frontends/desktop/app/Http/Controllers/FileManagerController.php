@@ -121,13 +121,10 @@ class FileManagerController extends DesktopController
 
     public function downloadBatch(Request $request): Response|RedirectResponse
     {
-        $validated = $request->validate([
-            'file_uuids' => ['required', 'array', 'min:1', 'max:50'],
-            'file_uuids.*' => ['required', 'uuid', 'distinct'],
-        ]);
+        $selection = $this->validatedSelection($request, 50);
 
         try {
-            $download = $this->files->downloadBatch((array) $validated['file_uuids']);
+            $download = $this->files->downloadBatch($selection);
         } catch (ApiAuthenticationException $exception) {
             return redirect()->route('login')->with('error', $exception->getMessage());
         } catch (ApiAuthorizationException|ApiRequestException $exception) {
@@ -191,9 +188,8 @@ class FileManagerController extends DesktopController
 
     public function trashBatch(Request $request): JsonResponse|RedirectResponse
     {
+        $selection = $this->validatedSelection($request, 100);
         $validated = $request->validate([
-            'file_uuids' => ['required', 'array', 'min:1', 'max:100'],
-            'file_uuids.*' => ['required', 'uuid', 'distinct'],
             'reason' => ['required', 'string', 'min:10', 'max:500'],
             'admin_email' => ['required', 'string', 'email', 'max:255'],
             'admin_password' => ['required', 'string', 'max:200'],
@@ -201,7 +197,7 @@ class FileManagerController extends DesktopController
 
         try {
             $result = $this->files->trashBatch(
-                (array) $validated['file_uuids'],
+                $selection,
                 [
                     'reason' => trim((string) $validated['reason']),
                     'admin_email' => trim((string) $validated['admin_email']),
@@ -295,9 +291,8 @@ class FileManagerController extends DesktopController
 
     private function performTrashBatchAction(Request $request, string $action): JsonResponse|RedirectResponse
     {
+        $selection = $this->validatedSelection($request, $action === 'purge' ? 50 : 100);
         $rules = [
-            'file_uuids' => ['required', 'array', 'min:1', 'max:'.($action === 'purge' ? '50' : '100')],
-            'file_uuids.*' => ['required', 'uuid', 'distinct'],
             'reason' => ['required', 'string', 'min:10', 'max:500'],
             'admin_email' => ['required', 'string', 'email', 'max:255'],
             'admin_password' => ['required', 'string', 'max:200'],
@@ -317,8 +312,8 @@ class FileManagerController extends DesktopController
 
         try {
             $result = $action === 'purge'
-                ? $this->files->purgeBatch((array) $validated['file_uuids'], $payload)
-                : $this->files->restoreBatch((array) $validated['file_uuids'], $payload);
+                ? $this->files->purgeBatch($selection, $payload)
+                : $this->files->restoreBatch($selection, $payload);
         } catch (ApiAuthenticationException $exception) {
             return $this->actionError($request, $exception->getMessage(), 401, true);
         } catch (ApiAuthorizationException $exception) {
@@ -350,6 +345,47 @@ class FileManagerController extends DesktopController
             (int) ($result['failed_count'] ?? 0) > 0 ? 'error' : 'success',
             $message
         );
+    }
+
+    /**
+     * Alvo de uma ação em lote: os UUIDs marcados na página ou, com select_all,
+     * todos os arquivos do filtro atual. Nesse modo o backend resolve o conjunto
+     * e recusa a ação se o total mudou desde que a página foi exibida.
+     *
+     * @return array<string, mixed>
+     */
+    private function validatedSelection(Request $request, int $maxExplicit): array
+    {
+        if (! $request->boolean('select_all')) {
+            $validated = $request->validate([
+                'file_uuids' => ['required', 'array', 'min:1', 'max:'.$maxExplicit],
+                'file_uuids.*' => ['required', 'uuid', 'distinct'],
+            ]);
+
+            return ['file_uuids' => array_values((array) $validated['file_uuids'])];
+        }
+
+        $validated = $request->validate([
+            'filters' => ['required', 'array'],
+            'filters.q' => ['nullable', 'string', 'max:200'],
+            'filters.category' => ['nullable', 'string', 'max:64'],
+            'filters.lifecycle_status' => ['required', 'string', 'in:active,archived,trashed'],
+            'filters.integrity_status' => ['nullable', 'string', 'max:32'],
+            'filters.security_status' => ['nullable', 'string', 'max:32'],
+            'filters.migration_status' => ['nullable', 'string', 'max:32'],
+            'filters.created_from' => ['nullable', 'date_format:Y-m-d'],
+            'filters.created_to' => ['nullable', 'date_format:Y-m-d'],
+            'expected_total' => ['required', 'integer', 'min:1'],
+        ]);
+
+        return [
+            'select_all' => true,
+            'filters' => array_filter(
+                (array) $validated['filters'],
+                static fn (mixed $value): bool => $value !== null && $value !== ''
+            ),
+            'expected_total' => (int) $validated['expected_total'],
+        ];
     }
 
     /**

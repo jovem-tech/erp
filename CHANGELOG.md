@@ -1,5 +1,17 @@
 # Changelog — Sistema ERP Jovem Tech
 
+## v6.6.1.0 — 2026-09-26 10:30
+- **Tier:** patch
+- **Autor/Agente:** Claude
+- **Descrição:** Gerenciador de Arquivos: os cards de pasta (categorias, Todos, Lixeira, Auditoria) abrem limpos, mantendo só o modo de visualização. Antes carregavam o Local e a busca anteriores: clicar em 'Fotos de equipamentos' a partir da Lixeira listava só a lixeira dessa categoria, embora o card anunciasse 110 itens.
+- **Arquivos:** frontends/desktop/resources/views/files/index.blade.php,frontends/desktop/tests/Feature/Desktop/FileManagerTest.php
+
+## v6.6.0.0 — 2026-09-26 10:18
+- **Tier:** minor
+- **Autor/Agente:** Claude
+- **Descrição:** Gerenciador de Arquivos: 'Selecionar todos' do filtro (todas as páginas, não só a exibida) para mover à lixeira, restaurar, excluir definitivamente e baixar; novo botão 'Esvaziar lixeira'. O backend resolve o conjunto pelo filtro e recusa a ação se o total mudou desde que a tela foi carregada (FILE_SELECTION_CHANGED); teto FILE_MANAGER_BULK_SELECTION_MAX_FILES=1000; download em lote segue limitado a 50 por ZIP.
+- **Arquivos:** backend/app/Http/Controllers/Api/V1/FileManagerController.php,backend/config/file-manager.php,backend/.env.example,backend/tests/Feature/Files/FileManagerApiTest.php,frontends/desktop/app/Http/Controllers/FileManagerController.php,frontends/desktop/app/Services/FileManagerService.php,frontends/desktop/resources/views/files/index.blade.php,frontends/desktop/tests/Feature/Desktop/FileManagerTest.php
+
 ## v6.5.0.0 — 2026-09-26 06:15
 - **Tier:** minor
 - **Autor/Agente:** Claude

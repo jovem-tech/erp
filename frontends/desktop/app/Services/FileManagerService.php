@@ -65,50 +65,42 @@ class FileManagerService
     }
 
     /**
-     * @param  array<int, string>  $uuids
+     * @param  array<string, mixed>  $selection  ver FileManagerController::validatedSelection()
      * @return array{body: string, headers: array<string, string>, status: int}
      */
-    public function downloadBatch(array $uuids): array
+    public function downloadBatch(array $selection): array
     {
-        return $this->apiClient->postDownload('/files/download-batch', [
-            'file_uuids' => array_values($uuids),
-        ]);
+        return $this->apiClient->postDownload('/files/download-batch', $selection);
     }
 
     /**
-     * @param  array<int, string>  $uuids
+     * @param  array<string, mixed>  $selection  UUIDs marcados ou select_all + filtros
      * @param  array<string, string>  $payload
      * @return array<string, mixed>
      */
-    public function trashBatch(array $uuids, array $payload): array
+    public function trashBatch(array $selection, array $payload): array
     {
-        return (array) ($this->apiClient->postOnce('/files/trash-batch', array_merge($payload, [
-            'file_uuids' => array_values($uuids),
-        ]))['data'] ?? []);
+        return (array) ($this->apiClient->postOnce('/files/trash-batch', array_merge($payload, $selection))['data'] ?? []);
     }
 
     /**
-     * @param  array<int, string>  $uuids
+     * @param  array<string, mixed>  $selection  UUIDs marcados ou select_all + filtros
      * @param  array<string, string>  $payload
      * @return array<string, mixed>
      */
-    public function restoreBatch(array $uuids, array $payload): array
+    public function restoreBatch(array $selection, array $payload): array
     {
-        return (array) ($this->apiClient->postOnce('/files/restore-batch', array_merge($payload, [
-            'file_uuids' => array_values($uuids),
-        ]))['data'] ?? []);
+        return (array) ($this->apiClient->postOnce('/files/restore-batch', array_merge($payload, $selection))['data'] ?? []);
     }
 
     /**
-     * @param  array<int, string>  $uuids
+     * @param  array<string, mixed>  $selection  UUIDs marcados ou select_all + filtros
      * @param  array<string, string>  $payload
      * @return array<string, mixed>
      */
-    public function purgeBatch(array $uuids, array $payload): array
+    public function purgeBatch(array $selection, array $payload): array
     {
-        return (array) ($this->apiClient->postOnce('/files/purge-batch', array_merge($payload, [
-            'file_uuids' => array_values($uuids),
-        ]))['data'] ?? []);
+        return (array) ($this->apiClient->postOnce('/files/purge-batch', array_merge($payload, $selection))['data'] ?? []);
     }
 
     /** @param array<string, string|int> $payload */

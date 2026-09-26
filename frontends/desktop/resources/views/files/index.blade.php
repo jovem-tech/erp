@@ -109,6 +109,20 @@
         $selectedCategory = (string) ($filters['category'] ?? '');
         $auditOnly = (bool) ($filters['audit_only'] ?? false);
         $selectedLifecycle = $auditOnly ? 'audit' : (string) ($filters['lifecycle_status'] ?? 'active');
+        $matchingTotal = (int) ($pagination['total'] ?? count($files));
+        $trashedTotal = (int) ($totals['trashed'] ?? 0);
+        $selectableOnPage = collect($files)->filter(static fn (array $file): bool => ($file['lifecycle_status'] ?? '') !== 'purged')->count();
+        // "Todos do filtro" só vale onde o estado é um só (ativos, arquivados ou
+        // lixeira): o backend recusa estados de origem inválidos para cada ação.
+        $selectAllMatchingAvailable = in_array($selectedLifecycle, ['active', 'archived', 'trashed'], true)
+            && $matchingTotal > $selectableOnPage;
+        $bulkFilters = array_filter(
+            \Illuminate\Support\Arr::only($filters, ['q', 'category', 'lifecycle_status', 'integrity_status', 'security_status', 'migration_status', 'created_from', 'created_to']),
+            static fn (mixed $value): bool => $value !== null && $value !== ''
+        );
+        $selectAllMatchingLabel = 'Selecionar todos os '.number_format($matchingTotal, 0, ',', '.')
+            .($selectedCategory !== '' ? ' de '.($categoryLabels[$selectedCategory] ?? 'desta categoria') : ($selectedLifecycle === 'trashed' ? ' da lixeira' : ' do filtro'));
+        $maxBatchDownload = 50;
     @endphp
 
     <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
@@ -152,7 +166,10 @@
         </div>
         <div class="row g-2">
             <div class="col-6 col-md-4 col-xl-2">
-                <a href="{{ route('files.index', array_merge(request()->except(['page', 'category', 'lifecycle_status', 'integrity_status']), ['view' => $viewMode])) }}" class="surface-card file-category-card p-3 text-decoration-none d-flex flex-column justify-content-between {{ $selectedCategory === '' && ! in_array($selectedLifecycle, ['trashed', 'audit'], true) ? 'is-active' : '' }}">
+                {{-- Os cards são pastas: abrem limpos (só mantêm o modo de visualização).
+                     Carregar o Local/busca anteriores fazia "Fotos de OS" clicado a partir
+                     da Lixeira listar só a lixeira, embora o card anunciasse os ativos. --}}
+                <a href="{{ route('files.index', ['view' => $viewMode]) }}" class="surface-card file-category-card p-3 text-decoration-none d-flex flex-column justify-content-between {{ $selectedCategory === '' && ! in_array($selectedLifecycle, ['trashed', 'audit'], true) ? 'is-active' : '' }}">
                     <i class="bi bi-folder2-open fs-3 text-primary"></i>
                     <div><strong class="d-block text-body">Todos os arquivos</strong><span class="small text-secondary">{{ number_format((int) ($totals['files'] ?? 0), 0, ',', '.') }} itens</span></div>
                 </a>
@@ -163,21 +180,21 @@
                 @endphp
                 @continue((int) ($row['file_count'] ?? 0) === 0)
                 <div class="col-6 col-md-4 col-xl-2">
-                    <a href="{{ route('files.index', array_merge(request()->except(['page', 'category']), ['category' => $category, 'view' => $viewMode])) }}" class="surface-card file-category-card p-3 text-decoration-none d-flex flex-column justify-content-between {{ $selectedCategory === $category ? 'is-active' : '' }}">
+                    <a href="{{ route('files.index', ['category' => $category, 'view' => $viewMode]) }}" class="surface-card file-category-card p-3 text-decoration-none d-flex flex-column justify-content-between {{ $selectedCategory === $category && ! in_array($selectedLifecycle, ['trashed', 'audit'], true) ? 'is-active' : '' }}">
                         <i class="bi {{ $categoryIcons[$category] ?? 'bi-folder' }} fs-3 text-primary"></i>
                         <div><strong class="d-block text-body">{{ $label }}</strong><span class="small text-secondary">{{ number_format((int) ($row['file_count'] ?? 0), 0, ',', '.') }} itens</span></div>
                     </a>
                 </div>
             @endforeach
             <div class="col-6 col-md-4 col-xl-2">
-                <a href="{{ route('files.index', array_merge(request()->except(['page', 'category']), ['lifecycle_status' => 'trashed', 'view' => $viewMode])) }}" class="surface-card file-category-card p-3 text-decoration-none d-flex flex-column justify-content-between {{ $selectedLifecycle === 'trashed' ? 'is-active' : '' }}">
+                <a href="{{ route('files.index', ['lifecycle_status' => 'trashed', 'view' => $viewMode]) }}" class="surface-card file-category-card p-3 text-decoration-none d-flex flex-column justify-content-between {{ $selectedLifecycle === 'trashed' ? 'is-active' : '' }}">
                     <i class="bi bi-trash3 fs-3 text-danger"></i>
                     <div><strong class="d-block text-body">Lixeira</strong><span class="small text-secondary">{{ number_format((int) ($totals['trashed'] ?? 0), 0, ',', '.') }} itens</span></div>
                 </a>
             </div>
             @if ((int) ($totals['audit_records'] ?? 0) > 0)
                 <div class="col-6 col-md-4 col-xl-2">
-                    <a href="{{ route('files.index', array_merge(request()->except(['page', 'category', 'integrity_status']), ['lifecycle_status' => 'audit', 'view' => $viewMode])) }}" class="surface-card file-category-card p-3 text-decoration-none d-flex flex-column justify-content-between {{ $auditOnly ? 'is-active' : '' }}">
+                    <a href="{{ route('files.index', ['lifecycle_status' => 'audit', 'view' => $viewMode]) }}" class="surface-card file-category-card p-3 text-decoration-none d-flex flex-column justify-content-between {{ $auditOnly ? 'is-active' : '' }}">
                         <i class="bi bi-shield-exclamation fs-3 text-warning"></i>
                         <div><strong class="d-block text-body">Auditoria</strong><span class="small text-secondary">{{ number_format((int) ($totals['audit_records'] ?? 0), 0, ',', '.') }} registros</span></div>
                     </a>
@@ -243,11 +260,18 @@
                     <div class="small text-warning-emphasis mt-1"><i class="bi bi-shield-lock me-1"></i>A exclusão definitiva está bloqueada pelo kill switch do servidor.</div>
                 @endif
             </div>
-            @if ($canAdminister)
-                <button type="button" class="btn btn-soft btn-sm" data-bs-toggle="modal" data-bs-target="#trashRetentionModal">
-                    <i class="bi bi-sliders me-1"></i>Configurar retenção
-                </button>
-            @endif
+            <div class="d-flex flex-wrap gap-2">
+                @if ($canDelete)
+                    <button type="button" class="btn btn-outline-danger btn-sm" id="emptyTrash" @disabled(!$permanentDeletionEnabled || $trashedTotal === 0) title="{{ !$permanentDeletionEnabled ? 'A exclusão definitiva está bloqueada pelo kill switch do servidor' : ($trashedTotal === 0 ? 'A lixeira está vazia' : 'Excluir definitivamente todos os arquivos da lixeira') }}">
+                        <i class="bi bi-trash3-fill me-1"></i>Esvaziar lixeira
+                    </button>
+                @endif
+                @if ($canAdminister)
+                    <button type="button" class="btn btn-soft btn-sm" data-bs-toggle="modal" data-bs-target="#trashRetentionModal">
+                        <i class="bi bi-sliders me-1"></i>Configurar retenção
+                    </button>
+                @endif
+            </div>
         </section>
     @elseif ($auditOnly)
         <section class="surface-card p-3 mb-3" aria-labelledby="file-audit-title">
@@ -261,6 +285,11 @@
             <input class="form-check-input m-0" type="checkbox" id="selectAllFiles" aria-label="Selecionar todos os arquivos desta página">
             <label for="selectAllFiles" class="small fw-semibold mb-0">Selecionar página</label>
             <span class="badge text-bg-primary" id="selectedFilesCount">0 selecionados</span>
+            @if ($selectAllMatchingAvailable)
+                <button type="button" class="btn btn-link btn-sm p-0 fw-semibold text-decoration-none" id="selectAllMatching" data-select-label="{{ $selectAllMatchingLabel }}">
+                    <i class="bi bi-check2-all me-1"></i>{{ $selectAllMatchingLabel }}
+                </button>
+            @endif
             @if (! in_array($selectedLifecycle, ['trashed', 'audit'], true) && ! $canDelete)
                 <span class="small text-secondary"><i class="bi bi-lock me-1"></i>A exclusão exige a permissão Arquivos: Excluir.</span>
             @elseif ($selectedLifecycle === 'trashed' && ! $canRestore && ! $canDelete)
@@ -639,6 +668,18 @@
             const canTrash = @json($canDelete && $mutationsEnabled);
             const canRestore = @json($canRestore && $mutationsEnabled);
             const canPurge = @json($canDelete && $permanentDeletionEnabled);
+            const selectAllMatchingButton = document.getElementById('selectAllMatching');
+            const emptyTrashButton = document.getElementById('emptyTrash');
+            const purgeTitle = document.getElementById('purgeFilesModalLabel');
+            const purgeTitleDefault = purgeTitle?.textContent || '';
+            const lifecycle = @json($selectedLifecycle);
+            const matchingTotal = @json($matchingTotal);
+            const trashedTotal = @json($trashedTotal);
+            const bulkFilters = @json((object) $bulkFilters);
+            const maxBatchDownload = @json($maxBatchDownload);
+            // true = "todos do filtro": a ação vai com select_all + filtros e o
+            // backend resolve o conjunto em todas as páginas.
+            let allMatching = false;
             const syncForm = document.querySelector('[data-file-sync-form]');
             const modalReturnFocus = new WeakMap();
             document.querySelectorAll('.modal').forEach((modalElement) => {
@@ -714,65 +755,131 @@
 
             const selectedItems = () => checkboxes.filter((item) => item.checked);
             const selected = () => selectedItems().map((item) => item.value);
-            const setInputs = (form, uuids) => {
+            // Alvo de uma ação: lista de UUIDs ou { filters, total } para "todos do filtro".
+            const currentTarget = () => (allMatching ? { filters: bulkFilters, total: matchingTotal } : selected());
+            const targetCount = (target) => (Array.isArray(target) ? target.length : target.total);
+            const hiddenInput = (name, value) => {
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = name;
+                input.value = value;
+                return input;
+            };
+            const setInputs = (form, target) => {
                 const container = form?.querySelector('[data-selected-inputs]');
                 if (!container) return;
-                container.replaceChildren(...uuids.map((uuid) => {
-                    const input = document.createElement('input');
-                    input.type = 'hidden';
-                    input.name = 'file_uuids[]';
-                    input.value = uuid;
-                    return input;
-                }));
+                if (Array.isArray(target)) {
+                    container.replaceChildren(...target.map((uuid) => hiddenInput('file_uuids[]', uuid)));
+                    return;
+                }
+                container.replaceChildren(
+                    hiddenInput('select_all', '1'),
+                    hiddenInput('expected_total', String(target.total)),
+                    ...Object.entries(target.filters).map(([key, value]) => hiddenInput(`filters[${key}]`, value))
+                );
             };
             const updateSelection = () => {
                 const items = selectedItems();
                 const total = items.length;
+                if (selectAllMatchingButton) {
+                    selectAllMatchingButton.innerHTML = allMatching
+                        ? '<i class="bi bi-x-lg me-1"></i>Limpar seleção'
+                        : `<i class="bi bi-check2-all me-1"></i>${selectAllMatchingButton.dataset.selectLabel}`;
+                }
+                selectAll.checked = checkboxes.length > 0 && total === checkboxes.length;
+                selectAll.indeterminate = total > 0 && total < checkboxes.length;
+                if (allMatching) {
+                    count.textContent = `${matchingTotal.toLocaleString('pt-BR')} selecionados (todas as páginas)`;
+                    if (downloadButton) {
+                        downloadButton.disabled = !canDownload || lifecycle !== 'active' || matchingTotal > maxBatchDownload;
+                        downloadButton.title = matchingTotal > maxBatchDownload
+                            ? `O download em lote aceita até ${maxBatchDownload} arquivos por pacote.`
+                            : '';
+                    }
+                    if (trashButton) trashButton.disabled = !canTrash || !['active', 'archived'].includes(lifecycle);
+                    if (restoreButton) restoreButton.disabled = !canRestore || lifecycle !== 'trashed';
+                    if (purgeButton) purgeButton.disabled = !canPurge || lifecycle !== 'trashed';
+                    return;
+                }
                 count.textContent = `${total} selecionado${total === 1 ? '' : 's'}`;
-                if (downloadButton) downloadButton.disabled = !canDownload || total === 0 || items.some((item) => item.dataset.downloadable !== '1');
+                if (downloadButton) {
+                    downloadButton.disabled = !canDownload || total === 0 || items.some((item) => item.dataset.downloadable !== '1');
+                    downloadButton.title = '';
+                }
                 if (trashButton) trashButton.disabled = !canTrash || total === 0 || items.some((item) => item.dataset.trashable !== '1');
                 if (restoreButton) restoreButton.disabled = !canRestore || total === 0 || items.some((item) => item.dataset.restoreable !== '1');
                 if (purgeButton) purgeButton.disabled = !canPurge || total === 0 || items.some((item) => item.dataset.purgeable !== '1');
-                selectAll.checked = checkboxes.length > 0 && total === checkboxes.length;
-                selectAll.indeterminate = total > 0 && total < checkboxes.length;
             };
-            const openTrash = (uuids, label = '') => {
-                if (!trashModal || !uuids.length) return;
-                setInputs(trashForm, uuids);
+            const openTrash = (target, label = '') => {
+                const total = targetCount(target);
+                if (!trashModal || !total) return;
+                setInputs(trashForm, target);
                 document.getElementById('trashFilesDescription').textContent = label
                     ? `O arquivo “${label}” poderá ser restaurado posteriormente.`
-                    : `${uuids.length} arquivo${uuids.length === 1 ? '' : 's'} poderão ser restaurados posteriormente.`;
+                    : `${total.toLocaleString('pt-BR')} arquivo${total === 1 ? '' : 's'}${Array.isArray(target) ? '' : ' (todas as páginas)'} poderão ser restaurados posteriormente.`;
                 document.getElementById('trashFilesError').classList.add('d-none');
                 trashModal.show();
             };
-            const openTrashAction = (modal, form, descriptionId, uuids, label, verb) => {
-                if (!modal || !form || !uuids.length) return;
-                setInputs(form, uuids);
+            const openTrashAction = (modal, form, descriptionId, target, label, verb) => {
+                const total = targetCount(target);
+                if (!modal || !form || !total) return;
+                setInputs(form, target);
                 const description = document.getElementById(descriptionId);
                 if (description) {
                     description.textContent = label
                         ? `${verb} o arquivo “${label}”.`
-                        : `${verb} ${uuids.length} arquivo${uuids.length === 1 ? '' : 's'}.`;
+                        : `${verb} ${total.toLocaleString('pt-BR')} arquivo${total === 1 ? '' : 's'}${Array.isArray(target) ? '' : ' (todas as páginas)'}.`;
                 }
                 const error = document.getElementById(form.dataset.errorId || '');
                 error?.classList.add('d-none');
                 modal.show();
             };
 
-            checkboxes.forEach((checkbox) => checkbox.addEventListener('change', updateSelection));
+            checkboxes.forEach((checkbox) => checkbox.addEventListener('change', () => {
+                // Desmarcar um item sai do "todos do filtro" e volta à seleção da página.
+                if (!checkbox.checked) allMatching = false;
+                updateSelection();
+            }));
             selectAll?.addEventListener('change', () => {
+                if (!selectAll.checked) allMatching = false;
                 checkboxes.forEach((checkbox) => { checkbox.checked = selectAll.checked; });
                 updateSelection();
             });
+            selectAllMatchingButton?.addEventListener('click', () => {
+                allMatching = !allMatching;
+                checkboxes.forEach((checkbox) => { if (!checkbox.disabled) checkbox.checked = allMatching; });
+                updateSelection();
+            });
             downloadButton?.addEventListener('click', () => {
-                const uuids = selected();
-                if (!uuids.length) return;
-                setInputs(downloadForm, uuids);
+                const target = currentTarget();
+                if (!targetCount(target)) return;
+                setInputs(downloadForm, target);
                 downloadForm.submit();
             });
-            trashButton?.addEventListener('click', () => openTrash(selected()));
-            restoreButton?.addEventListener('click', () => openTrashAction(restoreModal, restoreForm, 'restoreFilesDescription', selected(), '', 'Restaurar'));
-            purgeButton?.addEventListener('click', () => openTrashAction(purgeModal, purgeForm, 'purgeFilesDescription', selected(), '', 'Excluir definitivamente'));
+            trashButton?.addEventListener('click', () => openTrash(currentTarget()));
+            restoreButton?.addEventListener('click', () => openTrashAction(restoreModal, restoreForm, 'restoreFilesDescription', currentTarget(), '', 'Restaurar'));
+            purgeButton?.addEventListener('click', () => openTrashAction(purgeModal, purgeForm, 'purgeFilesDescription', currentTarget(), '', 'Excluir definitivamente'));
+            emptyTrashButton?.addEventListener('click', () => {
+                // Esvaziar = toda a lixeira, independentemente da busca/categoria aplicada.
+                if (purgeTitle) purgeTitle.textContent = 'Esvaziar lixeira';
+                openTrashAction(
+                    purgeModal,
+                    purgeForm,
+                    'purgeFilesDescription',
+                    { filters: { lifecycle_status: 'trashed' }, total: trashedTotal },
+                    '',
+                    'Excluir definitivamente'
+                );
+                const description = document.getElementById('purgeFilesDescription');
+                if (description) {
+                    description.textContent = trashedTotal === 1
+                        ? 'O único arquivo da lixeira será excluído definitivamente.'
+                        : `Os ${trashedTotal.toLocaleString('pt-BR')} arquivos da lixeira serão excluídos definitivamente.`;
+                }
+            });
+            purgeModalElement?.addEventListener('hidden.bs.modal', () => {
+                if (purgeTitle) purgeTitle.textContent = purgeTitleDefault;
+            });
             document.querySelectorAll('.file-trash-one').forEach((button) => button.addEventListener('click', () => {
                 openTrash([button.dataset.fileUuid], button.dataset.fileName || '');
             }));
