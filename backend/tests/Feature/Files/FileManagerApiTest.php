@@ -398,6 +398,96 @@ class FileManagerApiTest extends TestCase
         ]);
     }
 
+    public function test_batch_trash_select_all_hits_every_file_of_the_filter_and_refuses_a_changed_selection(): void
+    {
+        $this->grantGroupPermissions(1, [
+            'arquivos' => ['excluir', 'administrar'],
+            'configuracoes' => ['editar'],
+        ]);
+        $actor = $this->createUserRecord(['grupo_id' => 1, 'perfil' => 'atendente']);
+        $admin = $this->createUserRecord([
+            'grupo_id' => 1,
+            'perfil' => 'atendente',
+            'email' => 'supervisor.todos@example.com',
+        ]);
+        $files = collect(['a' => 1, 'b' => 2, 'c' => 3])
+            // Sujeitos distintos: uma logo nova no mesmo sujeito desvincula a anterior.
+            ->map(fn (int $subjectId, string $suffix): ManagedFile => $this->createManagedLogo($actor->id, 'all-'.$suffix, $subjectId))
+            ->values();
+        Sanctum::actingAs($actor, ['*']);
+        $payload = [
+            'select_all' => true,
+            'filters' => ['category' => 'company_logo', 'lifecycle_status' => 'active'],
+            'reason' => 'Limpeza completa das logos antigas da empresa.',
+            'admin_email' => $admin->email,
+            'admin_password' => 'Senha@123',
+        ];
+
+        // A tela contou 2, o servidor tem 3: nada é movido.
+        $this->postJson('/api/v1/files/trash-batch', $payload + ['expected_total' => 2])
+            ->assertStatus(409)
+            ->assertJsonPath('error.code', 'FILE_SELECTION_CHANGED');
+        $files->each(fn (ManagedFile $file) => $this->assertSame(FileLifecycleStatus::Active, $file->fresh()->lifecycle_status));
+
+        // A lixeira não é um estado de origem aceito para mover à lixeira.
+        $this->postJson('/api/v1/files/trash-batch', array_replace_recursive($payload, [
+            'filters' => ['lifecycle_status' => 'trashed'],
+            'expected_total' => 3,
+        ]))->assertStatus(422);
+
+        config()->set('file-manager.bulk_selection.max_files', 2);
+        $this->postJson('/api/v1/files/trash-batch', $payload + ['expected_total' => 3])
+            ->assertStatus(422)
+            ->assertJsonPath('error.code', 'FILE_SELECTION_TOO_LARGE');
+        config()->set('file-manager.bulk_selection.max_files', 1000);
+
+        $this->postJson('/api/v1/files/trash-batch', $payload + ['expected_total' => 3])
+            ->assertOk()
+            ->assertJsonPath('data.trashed_count', 3);
+        $files->each(fn (ManagedFile $file) => $this->assertSame(FileLifecycleStatus::Trashed, $file->fresh()->lifecycle_status));
+    }
+
+    public function test_empty_trash_purges_every_trashed_file_and_leaves_active_ones(): void
+    {
+        $this->grantGroupPermissions(1, [
+            'arquivos' => ['listar', 'excluir', 'administrar'],
+            'configuracoes' => ['editar'],
+        ]);
+        $actor = $this->createUserRecord(['grupo_id' => 1, 'perfil' => 'atendente']);
+        $admin = $this->createUserRecord([
+            'grupo_id' => 1,
+            'perfil' => 'atendente',
+            'email' => 'supervisor.esvaziar@example.com',
+        ]);
+        $trashed = collect(['x' => 1, 'y' => 2])->map(function (int $subjectId, string $suffix) use ($actor): ManagedFile {
+            $file = $this->createManagedLogo($actor->id, 'empty-'.$suffix, $subjectId);
+            $file->forceFill(['lifecycle_status' => FileLifecycleStatus::Trashed, 'trashed_at' => now()])->save();
+
+            return $file;
+        });
+        $active = $this->createManagedLogo($actor->id, 'empty-keep', 3);
+        Sanctum::actingAs($actor, ['*']);
+
+        $this->postJson('/api/v1/files/purge-batch', [
+            'select_all' => true,
+            'filters' => ['lifecycle_status' => 'trashed'],
+            'expected_total' => 2,
+            'reason' => 'Esvaziar a lixeira após conferência administrativa.',
+            'confirmation' => 'EXCLUIR',
+            'admin_email' => $admin->email,
+            'admin_password' => 'Senha@123',
+        ])->assertOk()
+            ->assertJsonPath('data.purged_count', 2)
+            ->assertJsonPath('data.failed_count', 0);
+
+        $trashed->each(function (ManagedFile $file): void {
+            $this->assertSame(FileLifecycleStatus::Purged, $file->fresh()->lifecycle_status);
+            Storage::disk('local')->assertMissing((string) $file->storage_key);
+        });
+        $this->assertSame(FileLifecycleStatus::Active, $active->fresh()->lifecycle_status);
+        Storage::disk('local')->assertExists((string) $active->storage_key);
+    }
+
     public function test_trashed_file_without_active_link_can_be_previewed_and_restored_by_administrator(): void
     {
         $this->grantGroupPermissions(1, [
@@ -862,7 +952,7 @@ class FileManagerApiTest extends TestCase
         Cache::flush();
     }
 
-    private function createManagedLogo(int $actorId, string $operationSuffix = 'default'): ManagedFile
+    private function createManagedLogo(int $actorId, string $operationSuffix = 'default', int $subjectId = 1): ManagedFile
     {
         $upload = UploadedFile::fake()->image('logo.png', 32, 32);
 
@@ -873,7 +963,7 @@ class FileManagerApiTest extends TestCase
                 origin: FileOrigin::Upload,
                 operationKey: 'file-manager-api-logo:'.$actorId.':'.$operationSuffix,
                 subjectType: 'configuration',
-                subjectId: 1,
+                subjectId: $subjectId,
                 relation: 'company_logo',
                 createdBy: $actorId
             )

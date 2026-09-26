@@ -441,6 +441,126 @@ class FileManagerTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_select_all_of_the_filter_is_forwarded_as_filters_and_expected_total(): void
+    {
+        Http::fake([
+            '*/api/v1/files/trash-batch' => Http::response($this->success(['trashed_count' => 290])),
+            '*/api/v1/files/purge-batch' => Http::response($this->success(['purged_count' => 7, 'failed_count' => 0])),
+        ]);
+        $stepUp = [
+            'reason' => 'Limpeza completa dos documentos de OS antigos.',
+            'admin_email' => 'admin@example.com',
+            'admin_password' => 'Senha@123',
+        ];
+
+        $this->withSession($this->desktopSession())
+            ->withHeader('Accept', 'application/json')
+            ->post('/arquivos/excluir-selecionados', array_merge($stepUp, [
+                'select_all' => '1',
+                'filters' => ['category' => 'order_pdf', 'lifecycle_status' => 'active', 'q' => ''],
+                'expected_total' => '290',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('result.trashed_count', 290);
+
+        // Esvaziar lixeira: toda a lixeira, com a confirmação EXCLUIR.
+        $this->withSession($this->desktopSession())
+            ->withHeader('Accept', 'application/json')
+            ->post('/arquivos/excluir-definitivamente', array_merge($stepUp, [
+                'select_all' => '1',
+                'filters' => ['lifecycle_status' => 'trashed'],
+                'expected_total' => '7',
+                'confirmation' => 'EXCLUIR',
+            ]))
+            ->assertOk()
+            ->assertJsonPath('result.purged_count', 7);
+
+        // Fora de ativos/arquivados/lixeira não existe "todos do filtro".
+        $this->withSession($this->desktopSession())
+            ->withHeader('Accept', 'application/json')
+            ->post('/arquivos/excluir-selecionados', array_merge($stepUp, [
+                'select_all' => '1',
+                'filters' => ['lifecycle_status' => 'purged'],
+                'expected_total' => '3',
+            ]))
+            ->assertStatus(422);
+
+        Http::assertSent(static fn ($request): bool => str_ends_with($request->url(), '/api/v1/files/trash-batch')
+            && $request['select_all'] === true
+            && $request['filters'] === ['category' => 'order_pdf', 'lifecycle_status' => 'active']
+            && $request['expected_total'] === 290
+            && ! isset($request['file_uuids']));
+        Http::assertSent(static fn ($request): bool => str_ends_with($request->url(), '/api/v1/files/purge-batch')
+            && $request['select_all'] === true
+            && $request['filters'] === ['lifecycle_status' => 'trashed']
+            && $request['expected_total'] === 7
+            && $request['confirmation'] === 'EXCLUIR');
+        Http::assertSentCount(2);
+    }
+
+    public function test_list_with_more_pages_offers_selecting_every_file_of_the_category(): void
+    {
+        Http::fake([
+            '*/api/v1/file-manager/dashboard*' => Http::response($this->success([
+                'totals' => ['files' => 290, 'bytes' => 1024, 'trashed' => 0],
+                'by_category' => [['category' => 'order_pdf', 'file_count' => 290, 'total_bytes' => 1024]],
+                'operation' => ['mode' => 'shadow', 'permanent_deletion_enabled' => true],
+                'state_mutations_enabled' => true,
+            ])),
+            '*/api/v1/files*' => Http::response($this->success([[
+                'uuid' => '019f7c54-fd90-7cc1-a455-aa6f3efd15d1',
+                'safe_download_name' => 'orcamento_os26090004_v1_a4.pdf',
+                'detected_mime_type' => 'application/pdf',
+                'size_bytes' => 1024,
+                'category' => 'order_pdf',
+                'lifecycle_status' => 'active',
+                'integrity_status' => 'valid',
+                'security_status' => 'clean',
+            ]], ['pagination' => ['current_page' => 1, 'per_page' => 50, 'total' => 290, 'last_page' => 6]])),
+            '*/api/v1/file-manager/findings*' => Http::response($this->success([])),
+        ]);
+
+        $this->withSession($this->desktopSession())
+            ->get('/arquivos?category=order_pdf&view=list')
+            ->assertOk()
+            ->assertSee('id="selectAllMatching"', false)
+            ->assertSee('Selecionar todos os 290 de Documentos de OS')
+            ->assertSee('const matchingTotal = 290;', false)
+            ->assertSee('"category":"order_pdf"', false)
+            ->assertDontSee('id="emptyTrash"', false);
+    }
+
+    public function test_category_cards_open_the_folder_without_carrying_the_previous_filters(): void
+    {
+        Http::fake([
+            '*/api/v1/file-manager/dashboard*' => Http::response($this->success([
+                'totals' => ['files' => 222, 'bytes' => 1024, 'trashed' => 1, 'audit_records' => 3],
+                'by_category' => [
+                    ['category' => 'equipment_photo', 'file_count' => 110, 'total_bytes' => 512],
+                    ['category' => 'order_photo', 'file_count' => 112, 'total_bytes' => 512],
+                ],
+                'operation' => ['mode' => 'shadow'],
+            ])),
+            '*/api/v1/files*' => Http::response($this->success([], ['pagination' => [
+                'current_page' => 1, 'per_page' => 50, 'total' => 0, 'last_page' => 1,
+            ]])),
+            '*/api/v1/file-manager/findings*' => Http::response($this->success([])),
+        ]);
+
+        // Na Lixeira, filtrada por categoria e busca (o caso do log de 26/09 10:26).
+        $html = $this->withSession($this->desktopSession())
+            ->get('/arquivos?view=list&lifecycle_status=trashed&category=order_photo&q=recepcao')
+            ->assertOk()
+            ->getContent();
+
+        $this->assertStringContainsString('/arquivos?category=equipment_photo&amp;view=list" class="surface-card file-category-card', $html);
+        $this->assertStringContainsString('/arquivos?category=order_photo&amp;view=list" class="surface-card file-category-card', $html);
+        $this->assertStringContainsString('/arquivos?view=list" class="surface-card file-category-card', $html);
+        $this->assertStringContainsString('/arquivos?lifecycle_status=trashed&amp;view=list" class="surface-card file-category-card', $html);
+        $this->assertStringContainsString('/arquivos?lifecycle_status=audit&amp;view=list" class="surface-card file-category-card', $html);
+        $this->assertDoesNotMatchRegularExpression('/href="[^"]*category=[a-z_]+[^"]*(lifecycle_status|q=)[^"]*" class="surface-card file-category-card/', $html);
+    }
+
     public function test_trash_list_exposes_preview_details_restore_purge_and_retention_controls(): void
     {
         $uuid = '019f7c54-fd90-7cc1-a455-aa6f3efd15d1';
@@ -485,6 +605,10 @@ class FileManagerTest extends TestCase
         $response->assertOk()
             ->assertSee('Retenção da lixeira')
             ->assertSee('30 dias')
+            ->assertSee('id="emptyTrash"', false)
+            ->assertSee('Esvaziar lixeira')
+            // Uma única página: selecionar a página já é selecionar tudo.
+            ->assertDontSee('id="selectAllMatching"', false)
             ->assertSee('Restaurar selecionados')
             ->assertSee('Excluir definitivamente')
             ->assertSee('title="Detalhes"', false)

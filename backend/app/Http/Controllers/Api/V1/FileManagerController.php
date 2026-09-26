@@ -175,33 +175,7 @@ class FileManagerController extends BaseApiController
             ->withCount([
                 'links as active_links_count' => static fn (Builder $query): Builder => $query->whereNull('unlinked_at'),
             ]);
-        if ($auditOnly) {
-            $this->applyAuditRecordFilter($query);
-            unset($validated['lifecycle_status'], $validated['integrity_status']);
-        } elseif (! isset($validated['integrity_status']) || $validated['integrity_status'] === '') {
-            $query->where('integrity_status', '!=', FileIntegrityStatus::Missing->value);
-        }
-        if (! $auditOnly && (! isset($validated['lifecycle_status']) || $validated['lifecycle_status'] === '')) {
-            $query->where('lifecycle_status', '!=', FileLifecycleStatus::Purged->value);
-        }
-        foreach (['category', 'lifecycle_status', 'integrity_status', 'security_status', 'migration_status'] as $filter) {
-            if (isset($validated[$filter]) && $validated[$filter] !== '') {
-                $query->where($filter, $validated[$filter]);
-            }
-        }
-        if (! empty($validated['created_from'])) {
-            $query->whereDate('created_at', '>=', $validated['created_from']);
-        }
-        if (! empty($validated['created_to'])) {
-            $query->whereDate('created_at', '<=', $validated['created_to']);
-        }
-        if (! empty($validated['q'])) {
-            $search = str_replace(['%', '_'], ['\\%', '\\_'], trim((string) $validated['q']));
-            $query->where(static function (Builder $query) use ($search): void {
-                $query->where('uuid', $search)
-                    ->orWhere('safe_download_name', 'like', '%'.$search.'%');
-            });
-        }
+        $this->applyCatalogFilters($query, $validated, $auditOnly);
 
         $paginator = $query->orderByDesc('id')->paginate($perPage);
 
@@ -285,11 +259,16 @@ class FileManagerController extends BaseApiController
     public function downloadBatch(Request $request): BinaryFileResponse|JsonResponse
     {
         $this->authorize('arquivos:baixar');
-        $validated = $request->validate([
-            'file_uuids' => ['required', 'array', 'min:1', 'max:'.(int) config('file-manager.batch_download.max_files', 50)],
-            'file_uuids.*' => ['required', 'uuid', 'distinct'],
-        ]);
-        $files = $this->findFiles((array) $validated['file_uuids']);
+        $files = $this->resolveBatchSelection(
+            $request,
+            (int) config('file-manager.batch_download.max_files', 50),
+            // O pacote ZIP tem o mesmo teto nos dois modos de seleção.
+            (int) config('file-manager.batch_download.max_files', 50),
+            [FileLifecycleStatus::Active->value]
+        );
+        if ($files instanceof JsonResponse) {
+            return $files;
+        }
         $actor = $this->actor($request);
         foreach ($files as $file) {
             if (! $this->authorizers->allows($actor, $file, 'download')) {
@@ -346,11 +325,17 @@ class FileManagerController extends BaseApiController
         }
 
         $actionData = $request->validate([
-            'file_uuids' => ['required', 'array', 'min:1', 'max:100'],
-            'file_uuids.*' => ['required', 'uuid', 'distinct'],
             'reason' => ['required', 'string', 'min:10', 'max:500'],
         ]);
-        $files = $this->findFiles((array) $actionData['file_uuids']);
+        $files = $this->resolveBatchSelection(
+            $request,
+            100,
+            (int) config('file-manager.bulk_selection.max_files', 1000),
+            [FileLifecycleStatus::Active->value, FileLifecycleStatus::Archived->value]
+        );
+        if ($files instanceof JsonResponse) {
+            return $files;
+        }
         $actor = $this->actor($request);
         foreach ($files as $file) {
             if (! $this->authorizers->allows($actor, $file, 'trash')) {
@@ -404,11 +389,17 @@ class FileManagerController extends BaseApiController
         }
 
         $actionData = $request->validate([
-            'file_uuids' => ['required', 'array', 'min:1', 'max:100'],
-            'file_uuids.*' => ['required', 'uuid', 'distinct'],
             'reason' => ['required', 'string', 'min:10', 'max:500'],
         ]);
-        $files = $this->findFiles((array) $actionData['file_uuids']);
+        $files = $this->resolveBatchSelection(
+            $request,
+            100,
+            (int) config('file-manager.bulk_selection.max_files', 1000),
+            [FileLifecycleStatus::Trashed->value]
+        );
+        if ($files instanceof JsonResponse) {
+            return $files;
+        }
         $actor = $this->actor($request);
         foreach ($files as $file) {
             if (! $this->authorizers->allows($actor, $file, 'restore')) {
@@ -465,12 +456,20 @@ class FileManagerController extends BaseApiController
         }
 
         $actionData = $request->validate([
-            'file_uuids' => ['required', 'array', 'min:1', 'max:50'],
-            'file_uuids.*' => ['required', 'uuid', 'distinct'],
             'reason' => ['required', 'string', 'min:10', 'max:500'],
             'confirmation' => ['required', 'string', Rule::in(['EXCLUIR'])],
         ]);
-        $files = $this->findFiles((array) $actionData['file_uuids']);
+        // select_all com filters.lifecycle_status=trashed e sem outros filtros
+        // é o "Esvaziar lixeira": o mesmo conjunto que a lixeira lista e conta.
+        $files = $this->resolveBatchSelection(
+            $request,
+            50,
+            (int) config('file-manager.bulk_selection.max_files', 1000),
+            [FileLifecycleStatus::Trashed->value]
+        );
+        if ($files instanceof JsonResponse) {
+            return $files;
+        }
         $actor = $this->actor($request);
         foreach ($files as $file) {
             if (! $this->authorizers->allows($actor, $file, 'purge')) {
@@ -610,6 +609,104 @@ class FileManagerController extends BaseApiController
             meta: $this->paginationMeta($paginator),
             request: $request
         );
+    }
+
+    /**
+     * Filtros da listagem do catálogo. Também resolvem a seleção "todos os
+     * arquivos do filtro" das ações em lote, para que a ação atinja exatamente
+     * o conjunto que a listagem conta e exibe.
+     *
+     * @param  array<string, mixed>  $validated
+     */
+    private function applyCatalogFilters(Builder $query, array $validated, bool $auditOnly = false): Builder
+    {
+        if ($auditOnly) {
+            $this->applyAuditRecordFilter($query);
+            unset($validated['lifecycle_status'], $validated['integrity_status']);
+        } elseif (! isset($validated['integrity_status']) || $validated['integrity_status'] === '') {
+            $query->where('integrity_status', '!=', FileIntegrityStatus::Missing->value);
+        }
+        if (! $auditOnly && (! isset($validated['lifecycle_status']) || $validated['lifecycle_status'] === '')) {
+            $query->where('lifecycle_status', '!=', FileLifecycleStatus::Purged->value);
+        }
+        foreach (['category', 'lifecycle_status', 'integrity_status', 'security_status', 'migration_status'] as $filter) {
+            if (isset($validated[$filter]) && $validated[$filter] !== '') {
+                $query->where($filter, $validated[$filter]);
+            }
+        }
+        if (! empty($validated['created_from'])) {
+            $query->whereDate('created_at', '>=', $validated['created_from']);
+        }
+        if (! empty($validated['created_to'])) {
+            $query->whereDate('created_at', '<=', $validated['created_to']);
+        }
+        if (! empty($validated['q'])) {
+            $search = str_replace(['%', '_'], ['\\%', '\\_'], trim((string) $validated['q']));
+            $query->where(static function (Builder $query) use ($search): void {
+                $query->where('uuid', $search)
+                    ->orWhere('safe_download_name', 'like', '%'.$search.'%');
+            });
+        }
+
+        return $query;
+    }
+
+    /**
+     * Resolve o alvo de uma ação em lote: os UUIDs marcados na página ou, com
+     * select_all, todos os arquivos que batem com o filtro da listagem. No
+     * segundo caso o total visto na tela (expected_total) precisa bater com o
+     * do servidor: se um arquivo entrou ou saiu do filtro entre a listagem e a
+     * confirmação, a ação é recusada em vez de atingir um conjunto diferente.
+     *
+     * @param  array<int, string>  $allowedLifecycles  estados aceitos no filtro de select_all
+     * @return EloquentCollection<int, ManagedFile>|JsonResponse
+     */
+    private function resolveBatchSelection(
+        Request $request,
+        int $maxExplicit,
+        int $maxAll,
+        array $allowedLifecycles
+    ): EloquentCollection|JsonResponse {
+        if (! $request->boolean('select_all')) {
+            $validated = $request->validate([
+                'file_uuids' => ['required', 'array', 'min:1', 'max:'.$maxExplicit],
+                'file_uuids.*' => ['required', 'uuid', 'distinct'],
+            ]);
+
+            return $this->findFiles((array) $validated['file_uuids']);
+        }
+
+        $rules = ['filters' => ['required', 'array']];
+        foreach ($this->indexRules() as $field => $fieldRules) {
+            if (! in_array($field, ['per_page', 'audit_only'], true)) {
+                $rules['filters.'.$field] = $fieldRules;
+            }
+        }
+        $rules['filters.lifecycle_status'] = ['required', Rule::in($allowedLifecycles)];
+        $rules['expected_total'] = ['required', 'integer', 'min:1'];
+        $validated = $request->validate($rules);
+        $expected = (int) $validated['expected_total'];
+
+        $query = $this->applyCatalogFilters(ManagedFile::query(), (array) $validated['filters']);
+        $total = (clone $query)->count();
+        if ($total > $maxAll) {
+            return $this->error(
+                "A seleção tem {$total} arquivos e o limite desta ação é {$maxAll}. Refine o filtro e tente novamente.",
+                422,
+                'FILE_SELECTION_TOO_LARGE',
+                request: $request
+            );
+        }
+        if ($total !== $expected) {
+            return $this->error(
+                "A seleção mudou desde que a página foi carregada: agora são {$total} arquivos, não {$expected}. Recarregue a página e confirme novamente.",
+                409,
+                'FILE_SELECTION_CHANGED',
+                request: $request
+            );
+        }
+
+        return $query->with('links')->orderBy('id')->get();
     }
 
     /** Restrict the query to immutable purge tombstones and unexpected missing trash. */

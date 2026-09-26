@@ -62,6 +62,12 @@ return [
         'max_files' => max(1, min(100, (int) env('FILE_MANAGER_BATCH_DOWNLOAD_MAX_FILES', 50))),
         'max_bytes' => max(1_048_576, (int) env('FILE_MANAGER_BATCH_DOWNLOAD_MAX_BYTES', 104_857_600)),
     ],
+    // "Selecionar todos do filtro" nas ações em lote (lixeira, restaurar,
+    // excluir definitivamente/esvaziar lixeira). O download continua limitado
+    // pelo pacote ZIP (batch_download.max_files).
+    'bulk_selection' => [
+        'max_files' => max(1, min(5000, (int) env('FILE_MANAGER_BULK_SELECTION_MAX_FILES', 1000))),
+    ],
     'pdf_thumbnails' => [
         'enabled' => (bool) env('FILE_MANAGER_PDF_THUMBNAILS_ENABLED', false),
         'renderer_binary' => env('FILE_MANAGER_PDF_THUMBNAIL_RENDERER', '/usr/bin/pdftocairo'),
